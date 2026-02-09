@@ -30,22 +30,21 @@ Tests exist to catch regressions and validate behavior at service boundaries. We
 
 **Pattern:**
 ```swift
-func testEntityCreation() async throws {
+func testDictationCreation() async throws {
     let dbQueue = try DatabaseQueue()  // In-memory
     let manager = DatabaseManager(dbQueue: dbQueue)
     try await manager.migrate()
 
-    let repo = EntityRepository(dbQueue: dbQueue)
-    let entity = try await repo.create(name: "Alice", type: .person)
-    XCTAssertEqual(entity.name, "Alice")
+    let repo = DictationRepository(dbQueue: dbQueue)
+    let dictation = try await repo.save(Dictation.fixture())
+    XCTAssertNotNil(dictation.id)
 }
 ```
 
 **Examples:**
 - Repository CRUD (create, read, update, delete)
-- Search queries (FTS5, LIKE, vector similarity)
+- Search queries (FTS5 full-text search on dictations)
 - Migration sequences (v1 -> v2 -> v3 apply cleanly)
-- Cascade deletes and referential integrity
 
 ### Integration Tests
 
@@ -68,10 +67,10 @@ struct MockTranscriptionService: TranscriptionService {
 ```
 
 **Examples:**
-- Search service combining FTS5 + semantic results
-- Import pipeline (file read -> parse -> store)
-- Entity extraction pipeline (transcript -> LLM -> entity resolution -> storage)
+- Dictation flow (record -> STT -> pipeline -> paste)
+- Import pipeline (file read -> convert -> transcribe -> store)
 - Text processing pipeline (raw text -> clean text through all stages)
+- Export pipeline (transcription -> format -> file)
 
 ### CLI Tests
 
@@ -80,10 +79,10 @@ struct MockTranscriptionService: TranscriptionService {
 **How:** Real CLI binary + test database. Verify JSON output structure and content.
 
 **Examples:**
-- `meetings list` returns valid JSON array
-- `import <file>` creates a meeting with correct source_type
-- `search "query"` returns expected matches
-- `entities merge` correctly combines records
+- `transcribe <file>` returns valid JSON with transcript and timestamps
+- `flow process "text"` applies clean pipeline correctly
+- `flow words list` returns valid JSON array of custom words
+- `flow snippets add "trigger" "expansion"` creates a snippet
 
 ## What We Skip
 
@@ -197,8 +196,8 @@ func testCapitalizationStage() {
 
 Audio and transcript fixtures live in `Tests/Fixtures/`:
 - Sample transcripts (VTT, SRT, TXT)
-- Pre-computed embeddings
-- Example LLM outputs (for entity extraction tests)
+- Sample audio files (short WAV clips for STT tests)
+- Example LLM outputs (for refinement mode tests)
 
 ## Test File Organization
 

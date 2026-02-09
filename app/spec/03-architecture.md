@@ -69,11 +69,11 @@
 ├──────────────────────────────────────────────────────────────────────────────────┤
 │                          SYSTEM INTEGRATIONS                                     │
 │                                                                                  │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌─────────────┐  ┌──────────────┐   │
-│  │AVAudio   │  │Core Audio│  │ CGEvent  │  │NSPasteboard │  │Accessibility │   │
-│  │Engine    │  │(System   │  │(Global   │  │(Clipboard   │  │(Permission   │   │
-│  │(Mic)     │  │ Audio)   │  │ Hotkey)  │  │ Paste)      │  │ Control)     │   │
-│  └──────────┘  └──────────┘  └──────────┘  └─────────────┘  └──────────────┘   │
+│  ┌──────────┐  ┌──────────┐  ┌─────────────┐  ┌──────────────┐               │
+│  │AVAudio   │  │ CGEvent  │  │NSPasteboard │  │Accessibility │               │
+│  │Engine    │  │(Global   │  │(Clipboard   │  │(Permission   │               │
+│  │(Mic)     │  │ Hotkey)  │  │ Paste)      │  │ Control)     │               │
+│  └──────────┘  └──────────┘  └─────────────┘  └──────────────┘               │
 │                                                                                  │
 │  Total AI Memory: ~4 GB peak (Parakeet ~1.5 GB + LLM ~2.5 GB)                  │
 │  Recommended: 16 GB RAM (Apple Silicon only)                                     │
@@ -274,11 +274,10 @@ protocol TextProcessingPipelineProtocol {
 }
 
 // Pipeline stages (executed in order):
-// 1. Custom word replacements (vocabulary anchors + corrections)
-// 2. Text snippet expansion (trigger → expansion)
-// 3. Capitalization normalization
-// 4. Punctuation cleanup
-// 5. Whitespace normalization
+// 1. Filler removal (verbal fillers: um, uh, you know, etc.)
+// 2. Custom word replacements (vocabulary anchors + corrections)
+// 3. Snippet expansion (trigger → expansion)
+// 4. Whitespace cleanup (collapse spaces, fix punctuation, capitalize)
 ```
 
 **Dependencies:** `CustomWordRepository`, `TextSnippetRepository`
@@ -531,26 +530,30 @@ struct Dictation: Codable, Identifiable {
     let audioPath: String?
     let pastedToApp: String?        // bundle ID of target app
     let processingMode: ProcessingMode
-    let status: DictationStatus     // .completed, .failed, .cancelled
+    let status: DictationStatus     // .recording, .processing, .completed, .error
     let errorMessage: String?
+    var updatedAt: Date
 }
 
 struct Transcription: Codable, Identifiable {
     let id: UUID
     let createdAt: Date
     let fileName: String
-    let filePath: String
-    let durationMs: Int
-    let transcript: String
-    let wordTimestampsJson: String? // JSON-encoded [TimestampedWord]
+    let filePath: String?
+    let durationMs: Int?
+    let rawTranscript: String?
+    let cleanTranscript: String?
+    let wordTimestamps: [WordTimestamp]?
     let status: TranscriptionStatus
+    let errorMessage: String?
+    var updatedAt: Date
 }
 
 struct CustomWord: Codable, Identifiable {
     let id: UUID
     var word: String                // what to match (case-insensitive)
-    var replacement: String         // what to replace with
-    var source: WordSource          // .user, .builtin
+    var replacement: String?        // what to replace with (nil = vocabulary anchor)
+    var source: Source              // .manual, .learned
     var isEnabled: Bool
     let createdAt: Date
     var updatedAt: Date
@@ -869,8 +872,8 @@ CREATE INDEX idx_transcriptions_created_at ON transcriptions(created_at);
 CREATE TABLE custom_words (
     id          TEXT PRIMARY KEY,           -- UUID
     word        TEXT NOT NULL,              -- match target (case-insensitive)
-    replacement TEXT NOT NULL,              -- replacement text
-    source      TEXT NOT NULL DEFAULT 'user', -- 'user' | 'builtin'
+    replacement TEXT,                       -- replacement text (nullable = vocabulary anchor)
+    source      TEXT NOT NULL DEFAULT 'manual', -- 'manual' | 'learned'
     is_enabled  INTEGER NOT NULL DEFAULT 1,
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
@@ -999,9 +1002,7 @@ All four tables are independent. No foreign key relationships. This keeps the sc
 ~/Library/Application Support/MacParakeet/
     ├── macparakeet.db              # SQLite database (all app data)
     ├── dictations/                 # Saved dictation audio files
-    │   ├── 2026-02-08/             # Organized by date
-    │   │   ├── {uuid}.wav
-    │   │   └── {uuid}.wav
+    │   ├── {uuid}.m4a
     │   └── ...
     ├── transcriptions/             # Exported transcripts (user-saved)
     ├── python/                     # Parakeet STT daemon

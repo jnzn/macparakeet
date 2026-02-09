@@ -695,7 +695,6 @@ All UI listed above is v0.1 except where noted:
 
 - Speaker labels in transcript display
 - Speaker color coding
-- Meeting auto-detection prompt
 - Onboarding flow (permissions, first dictation)
 - Empty states for all views
 

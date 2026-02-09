@@ -676,7 +676,7 @@ User-defined corrections for domain vocabulary and proper nouns that STT gets wr
 "post gress" → "PostgreSQL"
 ```
 
-Each custom word is a `(from, to)` pair with an enabled/disabled toggle.
+Each custom word is a `(word, replacement)` pair with an enabled/disabled toggle.
 
 **Step 3: Snippet expansion**
 
@@ -709,8 +709,9 @@ Each snippet has a trigger string, expansion text, and use count for tracking.
 ```sql
 CREATE TABLE custom_words (
     id TEXT PRIMARY KEY,
-    from_text TEXT NOT NULL,
-    to_text TEXT NOT NULL,
+    word TEXT NOT NULL,
+    replacement TEXT,
+    source TEXT NOT NULL DEFAULT 'manual',
     is_enabled INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL

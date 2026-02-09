@@ -454,25 +454,22 @@ The foundation. Dictation works. File transcription works. It is fast.
 - Basic UI (menu bar app, transcription window)
 - Settings (audio input selection, output preferences)
 
-### v0.2: AI Layer
+### v0.2: AI & Text Processing
 
-Local LLM integration makes MacParakeet smart, not just fast.
+Clean pipeline and AI refinement make dictation output polish-ready.
 
-- Command mode (voice-driven text editing via Qwen3-4B)
-- Custom words (vocabulary anchors for better recognition)
-- Text snippets (trigger-to-expansion shortcuts)
-- Dictation history with search
-- YouTube URL import
+- Clean text pipeline (deterministic: filler removal, custom words, snippets)
+- AI text refinement (Qwen3-4B: formal, email, code modes)
+- Custom words & snippets management UI
+- Personal dictionary (auto-learns vocabulary)
 
-### v0.3: Command Mode + Export
+### v0.3: Command Mode & Export
 
-Full export pipeline and command mode refinement.
+Voice-driven text editing and full export pipeline.
 
-- Export formats: SRT, VTT, Markdown, plain text
-- Batch transcription (multiple files)
-- Command mode expansion (more editing commands)
-- Context awareness (read surrounding text for better transcription)
-- Performance optimization and memory footprint reduction
+- Command mode (select text → speak command → LLM edits in-place)
+- YouTube URL transcription (yt-dlp + Parakeet)
+- Full export formats (.txt, .srt, .vtt, .docx, .pdf, .json)
 
 ### v0.4: Polish + App Store
 

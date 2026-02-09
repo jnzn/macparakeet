@@ -36,7 +36,6 @@
 |-------|-------|-------------|
 | Pipeline error | Text processing stage failed | Fall back to raw text, log error |
 | LLM inference failed | MLX model error or OOM | Skip AI features, show raw transcript |
-| Entity extraction failed | Malformed LLM output | Skip entity extraction for this meeting |
 
 ### Export / Storage Errors
 
@@ -61,7 +60,7 @@ During active recording, audio is continuously written to a temporary ring buffe
 1. On app launch, check for `recording-meta.json`
 2. If found, a previous recording was interrupted
 3. Prompt user: "A recording was interrupted. Recover audio?"
-4. If yes, import the buffer as a new meeting
+4. If yes, import the buffer as a new dictation
 5. Clean up recovery files after user decision
 
 **Buffer parameters:**

@@ -2,7 +2,7 @@
 
 > Status: **ACTIVE** - Authoritative, current
 
-**MacParakeet** is a local-first voice toolkit for macOS: system-wide dictation, meeting transcription, and AI-powered text editing -- all running on-device with zero cloud dependency.
+**MacParakeet** is a local-first voice toolkit for macOS: system-wide dictation, file transcription, and AI-powered text editing -- all running on-device with zero cloud dependency.
 
 ## Spec Documents
 
@@ -29,7 +29,7 @@ These decisions are final. Do not second-guess them.
 | Python runtime | uv bootstrap | Isolated venv, no system Python dependency |
 | Database | SQLite via GRDB | Single file, embedded, zero config |
 | Local LLM | Qwen3-4B via MLX-Swift | Best 4B model on benchmarks, dual-mode (thinking/non-thinking) |
-| Platform | macOS 14.2+ (Apple Silicon only) | Core Audio Taps require 14.2, MLX requires Apple Silicon |
+| Platform | macOS 14.2+ (Apple Silicon only) | MLX-Swift framework support, Apple Silicon required for Parakeet + MLX |
 | Business model | One-time purchase ($49) | Key differentiator vs WisprFlow ($144-180/year subscription) |
 
 ## Architecture Decision Records (ADRs)

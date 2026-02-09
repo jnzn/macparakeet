@@ -168,7 +168,7 @@ Stores user-defined vocabulary anchors and corrections.
 | Column | Type | Description |
 |--------|------|-------------|
 | id | UUID | Primary key |
-| trigger | TEXT | The word/phrase to match (case-insensitive) |
+| word | TEXT | The word/phrase to match (case-insensitive) |
 | replacement | TEXT | The corrected word/phrase |
 | isEnabled | BOOLEAN | Whether this word is active |
 | createdAt | DATETIME | When created |

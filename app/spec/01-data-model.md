@@ -4,7 +4,7 @@
 
 ## Overview
 
-MacParakeet uses **SQLite via GRDB** for all persistent storage. Single database file, no cloud sync, no accounts. Data lives at `~/.macparakeet/macparakeet.db`.
+MacParakeet uses **SQLite via GRDB** for all persistent storage. Single database file, no cloud sync, no accounts. Data lives at `~/Library/Application Support/MacParakeet/macparakeet.db`.
 
 **Design Principle (YAGNI):** Only add tables when a version needs them. Don't create empty tables for future features.
 
@@ -47,7 +47,7 @@ CREATE TABLE dictations (
     clean_transcript TEXT,                          -- Post-processed text (nullable if mode=raw)
     audio_path TEXT,                                -- Path to saved audio file (nullable if not retained)
     pasted_to_app TEXT,                             -- Bundle ID of app text was pasted into
-    processing_mode TEXT NOT NULL DEFAULT 'clean',  -- 'raw' or 'clean'
+    processing_mode TEXT NOT NULL DEFAULT 'raw',     -- 'raw' (v0.1) or 'clean' (v0.2 default)
     status TEXT NOT NULL DEFAULT 'completed',       -- 'recording', 'processing', 'completed', 'error'
     error_message TEXT,                             -- Error details if status='error'
     updated_at TEXT NOT NULL                        -- ISO 8601 timestamp
@@ -334,7 +334,7 @@ migrator.registerMigration("v0.1-dictations") { db in
         t.column("cleanTranscript", .text)
         t.column("audioPath", .text)
         t.column("pastedToApp", .text)
-        t.column("processingMode", .text).notNull().defaults(to: "clean")
+        t.column("processingMode", .text).notNull().defaults(to: "raw")
         t.column("status", .text).notNull().defaults(to: "completed")
         t.column("errorMessage", .text)
         t.column("updatedAt", .text).notNull()
@@ -452,7 +452,7 @@ Audio saved to temp dir
     ▼
 STT processes audio
     │
-    ├── Storage = "keep all"  ──► Move to ~/.macparakeet/audio/dictations/{id}.wav
+    ├── Storage = "keep all"  ──► Move to ~/Library/Application Support/MacParakeet/dictations/{id}.m4a
     │                             Set audio_path on dictation record
     │
     ├── Storage = "keep 7 days" ─► Same, but background job prunes after 7 days

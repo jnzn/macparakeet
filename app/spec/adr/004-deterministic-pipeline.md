@@ -27,9 +27,9 @@ Use a **deterministic 4-step pipeline** for the default "clean" processing mode.
 | Step | What It Does | Example |
 |------|-------------|---------|
 | 1. Filler removal | Strip filler words and phrases | "um so like the API" -> "the API" |
-| 2. Casing normalization | Fix sentence casing, preserve proper nouns | "the api works. john said" -> "The API works. John said" |
-| 3. Custom word correction | User-defined vocabulary anchors and corrections | "kube" -> "Kubernetes", "mac parakeet" -> "MacParakeet" |
-| 4. Snippet expansion | Trigger-based text expansion | "addr" -> "123 Main St, Springfield, IL 62704" |
+| 2. Custom word replacement | User-defined vocabulary anchors and corrections | "kube" -> "Kubernetes", "mac parakeet" -> "MacParakeet" |
+| 3. Snippet expansion | Trigger-based text expansion | "addr" -> "123 Main St, Springfield, IL 62704" |
+| 4. Whitespace cleanup | Collapse spaces, fix punctuation spacing, capitalize | "hello   world ." -> "Hello world." |
 
 ### Processing Modes
 

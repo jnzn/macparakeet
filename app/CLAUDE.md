@@ -520,11 +520,11 @@ swift test
 |------|------|
 | App bundle | `/Applications/MacParakeet.app` |
 | Database | `~/Library/Application Support/MacParakeet/macparakeet.db` |
-| Python venv | `~/.macparakeet/python/` |
+| Python venv | `~/Library/Application Support/MacParakeet/python/` |
 | Settings | `~/Library/Preferences/com.macparakeet.plist` |
 | Temp audio | `$TMPDIR/macparakeet/` |
 | Logs | `~/Library/Logs/MacParakeet/` |
-| LLM models | `~/.macparakeet/models/` |
+| LLM models | `~/Library/Application Support/MacParakeet/models/` |
 
 ## Security and Privacy
 
