@@ -12,10 +12,9 @@ let package = Package(
         .library(name: "MacParakeetCore", targets: ["MacParakeetCore"])
     ],
     dependencies: [
-        // MLX for LLM inference
-        .package(url: "https://github.com/ml-explore/mlx-swift", from: "0.21.0"),
-        .package(url: "https://github.com/ml-explore/mlx-swift-examples", branch: "main"),
-        // GRDB for SQLite (history storage)
+        // MLX-Swift for local LLM inference (Qwen3-4B)
+        .package(url: "https://github.com/ml-explore/mlx-swift-lm.git", from: "2.29.0"),
+        // GRDB for SQLite (dictation history + transcription records)
         .package(url: "https://github.com/groue/GRDB.swift", from: "6.29.0")
     ],
     targets: [
@@ -25,12 +24,12 @@ let package = Package(
             dependencies: ["MacParakeetCore"],
             path: "Sources/MacParakeet"
         ),
-        // Shared core library
+        // Shared core library (no UI dependencies)
         .target(
             name: "MacParakeetCore",
             dependencies: [
-                .product(name: "MLX", package: "mlx-swift"),
-                .product(name: "MLXLLM", package: "mlx-swift-examples"),
+                .product(name: "MLXLLM", package: "mlx-swift-lm"),
+                .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
                 .product(name: "GRDB", package: "GRDB.swift")
             ],
             path: "Sources/MacParakeetCore"

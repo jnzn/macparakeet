@@ -1,0 +1,222 @@
+# 09 - Testing
+
+> Status: **ACTIVE** - Authoritative, current
+
+## Philosophy
+
+> "Write tests. Not too many. Mostly integration."
+
+Tests exist to catch regressions and validate behavior at service boundaries. We don't chase coverage numbers. Every test must be deterministic, fast, and produce clear error messages.
+
+## Test Categories
+
+### Unit Tests
+
+**What:** Pure logic, models, data transformations.
+
+**How:** XCTest, no external dependencies, no database, no network.
+
+**Examples:**
+- Transcript word merging logic
+- Text processing pipeline stages (capitalization, punctuation, custom words)
+- Model encoding/decoding
+- Time formatting utilities
+
+### Database Tests
+
+**What:** CRUD operations, queries, migrations, schema integrity.
+
+**How:** In-memory SQLite via GRDB. Each test gets a fresh database -- fast and fully isolated.
+
+**Pattern:**
+```swift
+func testEntityCreation() async throws {
+    let dbQueue = try DatabaseQueue()  // In-memory
+    let manager = DatabaseManager(dbQueue: dbQueue)
+    try await manager.migrate()
+
+    let repo = EntityRepository(dbQueue: dbQueue)
+    let entity = try await repo.create(name: "Alice", type: .person)
+    XCTAssertEqual(entity.name, "Alice")
+}
+```
+
+**Examples:**
+- Repository CRUD (create, read, update, delete)
+- Search queries (FTS5, LIKE, vector similarity)
+- Migration sequences (v1 -> v2 -> v3 apply cleanly)
+- Cascade deletes and referential integrity
+
+### Integration Tests
+
+**What:** Service boundaries, multi-component workflows.
+
+**How:** Protocol-based dependency injection with mock implementations.
+
+**Pattern:**
+```swift
+protocol TranscriptionService {
+    func transcribe(_ audio: AudioBuffer) async throws -> [TranscriptWord]
+}
+
+struct MockTranscriptionService: TranscriptionService {
+    var result: [TranscriptWord] = []
+    func transcribe(_ audio: AudioBuffer) async throws -> [TranscriptWord] {
+        return result
+    }
+}
+```
+
+**Examples:**
+- Search service combining FTS5 + semantic results
+- Import pipeline (file read -> parse -> store)
+- Entity extraction pipeline (transcript -> LLM -> entity resolution -> storage)
+- Text processing pipeline (raw text -> clean text through all stages)
+
+### CLI Tests
+
+**What:** End-to-end flows through the CLI interface.
+
+**How:** Real CLI binary + test database. Verify JSON output structure and content.
+
+**Examples:**
+- `meetings list` returns valid JSON array
+- `import <file>` creates a meeting with correct source_type
+- `search "query"` returns expected matches
+- `entities merge` correctly combines records
+
+## What We Skip
+
+| Skip | Reason | Alternative |
+|------|--------|-------------|
+| SwiftUI view tests | Brittle, slow, low value | Test ViewModels and state logic |
+| Audio capture tests | Hardware-dependent | Test processing logic with fixture data |
+| Third-party internals | Trust GRDB, MLX-Swift, ArgumentParser | Test our integration layer |
+| Visual snapshot tests | Maintenance burden exceeds value | Manual QA for UI changes |
+| Flaky tests | Any test that fails intermittently | Fix or delete -- no `@retry` hacks |
+
+## Running Tests
+
+```bash
+# Fast feedback (unit + database tests, ~10s)
+swift test
+
+# Full suite in parallel
+swift test --parallel
+
+# Single test file
+swift test --filter TextProcessingPipelineTests
+
+# With MLX integration (requires model download, slow)
+MLX_TESTS=1 swift test --filter MLXIntegrationTests
+
+# E2E smoke tests (opt-in, requires built CLI)
+E2E_TESTS=1 swift test --filter E2ETests
+```
+
+**Note:** `swift test` works for all tests because tests don't need Metal shaders. The app itself requires `xcodebuild` (see CLAUDE.md).
+
+## AI Agent Testing Loop
+
+AI agents working on this codebase must follow this loop:
+
+### Before Coding
+```bash
+swift test  # Establish baseline -- all tests must pass
+```
+
+### After Changes
+```bash
+swift test  # Verify no regressions
+```
+
+### Bug Fix Protocol
+1. Write a test that reproduces the bug (must fail)
+2. Run `swift test` to confirm failure
+3. Fix the bug
+4. Run `swift test` to confirm all pass
+5. Commit test + fix together (never separately)
+
+## Test Quality Rules
+
+### Deterministic
+- No `sleep()` or time-dependent assertions
+- No dependency on system state (locale, timezone, disk contents)
+- No random data without fixed seeds
+- Same result on every run, every machine
+
+### Fast
+- Individual test: < 1 second
+- Full suite: < 30 seconds
+- Database tests use in-memory SQLite (no disk I/O)
+- No network calls (mock everything external)
+
+### Clear Errors
+- Test names describe the scenario: `testImportVTTCreatesMemoryWithCorrectTimestamps`
+- Assertion messages explain what went wrong
+- One logical assertion per test (multiple XCTAssert calls are fine if testing one concept)
+
+## Key Test Patterns
+
+### In-Memory SQLite
+
+Every database test creates its own in-memory database. No shared state, no cleanup needed, sub-millisecond setup.
+
+```swift
+let dbQueue = try DatabaseQueue()
+let manager = DatabaseManager(dbQueue: dbQueue)
+try await manager.migrate()
+// Test against a fresh, migrated database
+```
+
+### Protocol-Based DI for Mocking
+
+Services depend on protocols, not concrete types. Tests inject mocks.
+
+```swift
+// Production
+let service = SearchService(db: realDB, embedder: realEmbedder)
+
+// Test
+let service = SearchService(db: inMemoryDB, embedder: mockEmbedder)
+```
+
+### Pipeline Tests as Pure Functions
+
+Text processing pipeline stages are pure functions: input text in, output text out. No mocks needed.
+
+```swift
+func testCapitalizationStage() {
+    let stage = CapitalizationStage()
+    let result = stage.process("hello world. goodbye world.")
+    XCTAssertEqual(result, "Hello world. Goodbye world.")
+}
+```
+
+### Fixture Data
+
+Audio and transcript fixtures live in `Tests/Fixtures/`:
+- Sample transcripts (VTT, SRT, TXT)
+- Pre-computed embeddings
+- Example LLM outputs (for entity extraction tests)
+
+## Test File Organization
+
+```
+Tests/
+  MacParakeetCoreTests/
+    Models/              # Model encoding, validation
+    Database/            # Repository tests, migration tests
+    Services/            # Integration tests with mocks
+    Pipeline/            # Text processing pipeline tests
+    CLI/                 # CLI end-to-end tests
+  Fixtures/              # Shared test data
+```
+
+## Adding a New Test
+
+1. Identify the category (unit, database, integration, CLI)
+2. Find the appropriate test file or create one following naming convention: `{Feature}Tests.swift`
+3. Follow existing patterns in the same category
+4. Run `swift test` to verify
+5. Update test count in CLAUDE.md and README.md if applicable
