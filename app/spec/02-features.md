@@ -84,15 +84,13 @@ The `Fn` key serves as the universal activation trigger with three coexisting mo
 |------|---------|----------|
 | **Double-tap** | Tap Fn twice within 400ms | Persistent recording. Press Fn again to stop. |
 | **Press-and-hold** | Hold Fn for > 400ms | Hold-to-talk. Release Fn auto-stops and pastes. |
-| **Hands-free** | Fn + Space | Continuous dictation. Fn + Space again to stop. |
 
-All three modes coexist with no configuration required. The 400ms threshold distinguishes taps from holds.
+Both modes coexist with no configuration required. The 400ms threshold distinguishes taps from holds.
 
 **Implementation:**
 - `CGEvent` tap for `flagsChanged` events (Fn key generates modifier flag changes)
 - On Fn-down: schedule a 400ms `DispatchWorkItem`. If a second tap arrives before it fires, enter double-tap (persistent mode). If the timer fires with Fn still held, enter hold-mode and begin recording.
 - On Fn-up: if hold timer still pending, cancel it (was a quick tap). If recording in hold-mode, auto-stop and process.
-- Fn+Space: check for Space keyDown while Fn modifier is active. Starts continuous recording. Next Fn+Space stops.
 - Requires Accessibility permission (prompted on first activation).
 
 **Recording flow:**
@@ -101,8 +99,7 @@ All three modes coexist with no configuration required. The 400ms threshold dist
 ┌─────────────────────────────────────────────────────────────────┐
 │ 1. User activates recording:                                     │
 │    - Double-tap Fn (persistent mode), OR                         │
-│    - Hold Fn > 400ms (hold-to-talk mode), OR                    │
-│    - Fn+Space (hands-free continuous mode)                       │
+│    - Hold Fn > 400ms (hold-to-talk mode)                        │
 ├─────────────────────────────────────────────────────────────────┤
 │ 2. Overlay appears (bottom-center pill)                          │
 │    - Recording indicator (waveform animation)                    │
@@ -115,7 +112,6 @@ All three modes coexist with no configuration required. The 400ms threshold dist
 │ 4. User stops recording:                                         │
 │    - Release Fn (hold-to-talk auto-stop), OR                     │
 │    - Press Fn again (persistent mode), OR                        │
-│    - Press Fn+Space again (hands-free mode), OR                  │
 │    - Press Escape (soft cancel with undo window), OR             │
 │    - Silence auto-stop (2s default, if enabled in settings)      │
 ├─────────────────────────────────────────────────────────────────┤
@@ -249,7 +245,6 @@ Space is always reserved for the tooltip (opacity toggle, not conditional render
 **Acceptance criteria:**
 - [ ] Double-tap Fn activates persistent recording from any app
 - [ ] Hold Fn (> 400ms) activates hold-mode, release auto-stops and pastes
-- [ ] Fn+Space activates continuous (hands-free) recording
 - [ ] Overlay appears at bottom-center with waveform animation
 - [ ] Hover tooltips display correctly on non-activating panel
 - [ ] Parakeet transcribes with <500ms end-to-end latency for short dictations

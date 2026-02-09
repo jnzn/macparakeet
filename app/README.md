@@ -11,7 +11,6 @@ Press `Fn` anywhere on your Mac → speak → polished text appears. Like WisprF
 
 - **Double-tap Fn** — Persistent recording (press Fn again to stop)
 - **Hold Fn** — Push-to-talk (release to auto-stop and paste)
-- **Fn+Space** — Hands-free continuous dictation
 
 ### File Transcription
 Drag any audio or video file → get a transcript in seconds.
