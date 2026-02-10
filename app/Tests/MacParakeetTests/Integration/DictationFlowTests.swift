@@ -23,7 +23,7 @@ final class DictationFlowTests: XCTestCase {
         )
     }
 
-    /// End-to-end: start recording → stop → STT → paste → save to DB
+    /// End-to-end: start recording → stop → STT → save to DB
     func testFullDictationFlow() async throws {
         // Setup mock STT result
         let sttResult = STTResult(
@@ -53,7 +53,7 @@ final class DictationFlowTests: XCTestCase {
         let captureStarted = await mockAudio.startCaptureCalled
         XCTAssertTrue(captureStarted)
 
-        // 3. Stop recording → triggers STT → paste → save
+        // 3. Stop recording → triggers STT → save
         let dictation = try await dictationService.stopRecording()
 
         // 4. Verify transcription
@@ -62,16 +62,12 @@ final class DictationFlowTests: XCTestCase {
         XCTAssertEqual(dictation.status, .completed)
         XCTAssertEqual(dictation.processingMode, .raw)
 
-        // 5. Verify pasted to clipboard
-        let pastedText = await mockClipboard.lastPastedText
-        XCTAssertEqual(pastedText, "Send email to Sarah about the Q1 budget review")
-
-        // 6. Verify saved to database
+        // 5. Verify saved to database
         let savedDictation = try dictationRepo.fetch(id: dictation.id)
         XCTAssertNotNil(savedDictation)
         XCTAssertEqual(savedDictation?.rawTranscript, dictation.rawTranscript)
 
-        // 7. Verify in history
+        // 6. Verify in history
         let all = try dictationRepo.fetchAll(limit: nil)
         XCTAssertEqual(all.count, 1)
     }

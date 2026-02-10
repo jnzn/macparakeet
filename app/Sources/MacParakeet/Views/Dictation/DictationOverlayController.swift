@@ -1,11 +1,49 @@
 import AppKit
 import SwiftUI
 
+// MARK: - Mouse Tracking
+
+/// NSView overlay that detects mouse hover and position via NSTrackingArea with `.activeAlways`.
+/// Required because `.help()`, `.onHover`, and standard tracking options
+/// all fail on non-activating NSPanel. See CLAUDE.md Known Pitfalls.
+private final class MouseTrackingView: NSView {
+    var onEnter: (() -> Void)?
+    var onExit: (() -> Void)?
+    var onMoved: ((NSPoint) -> Void)?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach { removeTrackingArea($0) }
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
+            owner: self
+        ))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        onEnter?()
+        onMoved?(convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseExited(with event: NSEvent) { onExit?() }
+
+    override func mouseMoved(with event: NSEvent) {
+        onMoved?(convert(event.locationInWindow, from: nil))
+    }
+
+    // Pass all clicks through to SwiftUI content below
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+// MARK: - Overlay Controller
+
 /// Manages the floating dictation overlay panel.
 /// Non-activating NSPanel that never steals focus from the active app.
 final class DictationOverlayController {
     private var panel: NSPanel?
     private var hostingView: NSHostingView<DictationOverlayView>?
+    private var trackingView: MouseTrackingView?
 
     private let overlayViewModel: DictationOverlayViewModel
 
@@ -32,10 +70,24 @@ final class DictationOverlayController {
         )
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
+        panel.hasShadow = false // SwiftUI handles shadows; system shadow creates visible outline
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentView = hosting
+
+        // Mouse tracking overlay for hover tooltips
+        let tracker = MouseTrackingView(frame: hosting.bounds)
+        tracker.autoresizingMask = [.width, .height]
+        tracker.onEnter = { [weak self] in self?.overlayViewModel.isHovered = true }
+        tracker.onExit = { [weak self] in
+            self?.overlayViewModel.isHovered = false
+            self?.overlayViewModel.hoverTooltip = nil
+        }
+        tracker.onMoved = { [weak self] point in
+            self?.updateHoverTooltip(at: point, in: hosting.bounds)
+        }
+        hosting.addSubview(tracker)
+        trackingView = tracker
 
         // Position at bottom-center, just above the Dock
         if let screen = NSScreen.main {
@@ -54,6 +106,30 @@ final class DictationOverlayController {
         panel?.orderOut(nil)
         panel = nil
         hostingView = nil
+        trackingView = nil
+    }
+
+    /// Determine which element the cursor is over and update the tooltip.
+    /// The pill is centered in the panel. Left zone = cancel, right zone = stop.
+    private func updateHoverTooltip(at point: NSPoint, in bounds: NSRect) {
+        guard case .recording = overlayViewModel.state else {
+            overlayViewModel.hoverTooltip = nil
+            return
+        }
+
+        let panelWidth = bounds.width
+        let pillWidth: CGFloat = 210 // approximate pill content width
+        let pillLeft = (panelWidth - pillWidth) / 2
+        let pillRight = pillLeft + pillWidth
+
+        let x = point.x
+        if x >= pillLeft && x < pillLeft + 45 {
+            overlayViewModel.hoverTooltip = "Cancel (Esc)"
+        } else if x > pillRight - 45 && x <= pillRight {
+            overlayViewModel.hoverTooltip = "Stop & paste (Fn)"
+        } else {
+            overlayViewModel.hoverTooltip = nil
+        }
     }
 
     func updateSize(width: CGFloat) {
@@ -80,6 +156,8 @@ final class DictationOverlayViewModel {
     var state: OverlayState = .recording
     var audioLevel: Float = 0.0
     var recordingElapsedSeconds: Int = 0
+    var isHovered: Bool = false
+    var hoverTooltip: String?
 
     var onCancel: (() -> Void)?
     var onStop: (() -> Void)?
@@ -103,6 +181,18 @@ final class DictationOverlayViewModel {
     func stopTimer() {
         timerTask?.cancel()
         timerTask = nil
+    }
+
+    /// Resume timer without resetting elapsed time (used after undo cancel)
+    func resumeTimer() {
+        timerTask?.cancel()
+        timerTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { break }
+                self?.recordingElapsedSeconds += 1
+            }
+        }
     }
 
     var formattedElapsed: String {

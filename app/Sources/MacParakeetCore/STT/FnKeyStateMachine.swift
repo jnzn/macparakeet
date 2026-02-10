@@ -137,9 +137,25 @@ public final class FnKeyStateMachine {
     public func undoPressed() -> Action {
         if state == .cancelWindow || state == .blocked {
             state = .idle
-            // The caller should resume processing the audio
         }
         return .none
+    }
+
+    /// Called when cancel is triggered via UI button (not Esc key).
+    /// Transitions to cancelWindow so Fn is blocked during the countdown.
+    public func cancelledByUI() {
+        if state == .persistent || state == .holdToTalk {
+            state = .cancelWindow
+        }
+    }
+
+    /// Resume recording after undo — sets the state machine to the active recording mode
+    /// so Fn key gestures work correctly.
+    public func resumeRecording(mode: RecordingMode) {
+        switch mode {
+        case .persistent: state = .persistent
+        case .holdToTalk: state = .holdToTalk
+        }
     }
 
     /// Reset to idle (for testing or error recovery)

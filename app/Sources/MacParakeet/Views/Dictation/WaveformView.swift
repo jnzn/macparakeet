@@ -21,12 +21,16 @@ struct WaveformView: View {
     private func barHeight(for index: Int) -> CGFloat {
         let center = Float(barCount) / 2.0
         let distance = abs(Float(index) - center) / center
-        let baseHeight: Float = 3.0
-        let maxAdditional: Float = 17.0
+        let baseHeight: Float = 4.0
+        let maxAdditional: Float = 16.0
+
+        // Amplify audio level — raw mic levels are typically 0.0-0.3 for speech,
+        // so we boost by 3x and clamp to make the waveform visually responsive.
+        let boosted = min(audioLevel * 3.0, 1.0)
 
         // Center bars are taller, edge bars shorter
         let peakFactor = 1.0 - (distance * 0.6)
-        let level = audioLevel * peakFactor
+        let level = boosted * peakFactor
         let height = baseHeight + (maxAdditional * level)
 
         return CGFloat(max(baseHeight, min(height, 20)))

@@ -98,6 +98,22 @@ public final class HotkeyManager {
         return Unmanaged.passRetained(event)
     }
 
+    /// Notify state machine that cancel was triggered via UI (not Esc).
+    /// Blocks Fn during the cancel countdown window.
+    public func notifyCancelledByUI() {
+        stateMachine.cancelledByUI()
+    }
+
+    /// Resume recording mode after undo, so Fn stops the recording correctly.
+    public func resumeRecording(mode: FnKeyStateMachine.RecordingMode) {
+        stateMachine.resumeRecording(mode: mode)
+    }
+
+    /// Reset state machine to idle (e.g., after cancel countdown expires).
+    public func resetToIdle() {
+        stateMachine.reset()
+    }
+
     private func handleAction(_ action: FnKeyStateMachine.Action) {
         switch action {
         case .none:

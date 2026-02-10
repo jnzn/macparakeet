@@ -168,6 +168,42 @@ final class FnKeyStateMachineTests: XCTestCase {
         XCTAssertEqual(action, .none)
     }
 
+    func testCancelledByUIBlocksFn() {
+        // Start persistent recording
+        _ = sm.fnDown(timestampMs: 1000)
+        _ = sm.fnUp(timestampMs: 1050)
+        _ = sm.fnDown(timestampMs: 1200)
+        XCTAssertEqual(sm.state, .persistent)
+
+        // Cancel via UI button (not Esc)
+        sm.cancelledByUI()
+        XCTAssertEqual(sm.state, .cancelWindow)
+
+        // Fn should be blocked
+        let action = sm.fnDown(timestampMs: 2000)
+        XCTAssertEqual(action, .none)
+        XCTAssertEqual(sm.state, .blocked)
+    }
+
+    func testResumeRecordingAfterUndo() {
+        // Start persistent, cancel via Esc, then undo
+        _ = sm.fnDown(timestampMs: 1000)
+        _ = sm.fnUp(timestampMs: 1050)
+        _ = sm.fnDown(timestampMs: 1200)
+        _ = sm.escapePressed()
+        XCTAssertEqual(sm.state, .cancelWindow)
+
+        // Undo → resume recording
+        sm.resumeRecording(mode: .persistent)
+        XCTAssertEqual(sm.state, .persistent)
+
+        // Fn should stop the recording
+        _ = sm.fnUp(timestampMs: 3000) // release any held key
+        let action = sm.fnDown(timestampMs: 3500)
+        XCTAssertEqual(action, .stopRecording)
+        XCTAssertEqual(sm.state, .idle)
+    }
+
     func testBlockedReleaseToCancelWindow() {
         _ = sm.fnDown(timestampMs: 1000)
         _ = sm.fnUp(timestampMs: 1050)

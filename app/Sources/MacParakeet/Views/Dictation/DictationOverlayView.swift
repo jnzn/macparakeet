@@ -60,16 +60,18 @@ struct DictationOverlayView: View {
 
     var body: some View {
         VStack(spacing: 4) {
-            // Tooltip space (always reserved to prevent resize jitter)
-            Text(tooltipText)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.white)
-                .opacity(0) // Hidden by default, shown on hover via overlay
-                .frame(height: 20)
+            // Tooltip — changes per hovered element via NSTrackingArea
+            tooltipLabel
+                .opacity(viewModel.isHovered && viewModel.hoverTooltip != nil ? 1 : 0)
+                .animation(.easeInOut(duration: 0.15), value: viewModel.isHovered)
+                .animation(.easeInOut(duration: 0.1), value: viewModel.hoverTooltip)
+                .frame(height: 24)
 
             // Content with state-appropriate shape
             overlayContent
         }
+        .padding(.bottom, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
     }
 
     @ViewBuilder
@@ -128,7 +130,7 @@ struct DictationOverlayView: View {
                     .background(Circle().fill(Color.white.opacity(0.12)))
             }
             .buttonStyle(.plain)
-            .help("Cancel (Esc)")
+            // .help() doesn't work on non-activating NSPanel; tooltip shown via NSTrackingArea
 
             // Recording timer
             Text(viewModel.formattedElapsed)
@@ -149,7 +151,7 @@ struct DictationOverlayView: View {
                     .background(Circle().fill(Color.red))
             }
             .buttonStyle(.plain)
-            .help("Stop & paste (Fn)")
+            // Tooltip via NSTrackingArea hover
         }
     }
 
@@ -305,11 +307,49 @@ struct DictationOverlayView: View {
         return (title, subtitle)
     }
 
+    /// Tooltip bubble with dark background — readable over any content
+    @ViewBuilder
+    private var tooltipLabel: some View {
+        if let tooltip = viewModel.hoverTooltip {
+            // Split into action text and key shortcut: "Cancel (Esc)" → "Cancel " + "Esc"
+            Group {
+                if let parenStart = tooltip.firstIndex(of: "("),
+                   let parenEnd = tooltip.firstIndex(of: ")") {
+                    let action = String(tooltip[tooltip.startIndex..<parenStart])
+                    let key = String(tooltip[tooltip.index(after: parenStart)..<parenEnd])
+                    HStack(spacing: 3) {
+                        Text(action.trimmingCharacters(in: .whitespaces))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.85))
+                        Text(key)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color(nsColor: NSColor(red: 0.4, green: 0.7, blue: 1.0, alpha: 1.0)))
+                    }
+                } else {
+                    Text(tooltip)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.85))
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .fill(Color.black.opacity(0.85))
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5)
+                    )
+                    .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
+            )
+        }
+    }
+
     private var tooltipText: String {
         switch viewModel.state {
-        case .recording: return "Press Fn to finish"
-        case .cancelled: return "Dismiss"
-        case .processing: return "Processing..."
+        case .recording: return "" // Per-button tooltips via hoverTooltip
+        case .cancelled: return ""
+        case .processing: return ""
         case .success: return ""
         case .error: return ""
         }

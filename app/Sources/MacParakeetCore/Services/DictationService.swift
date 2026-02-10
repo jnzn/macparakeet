@@ -119,9 +119,6 @@ public actor DictationService: DictationServiceProtocol {
             // Save to database
             try dictationRepo.save(dictation)
 
-            // Paste to active app
-            try await clipboardService.pasteText(result.text)
-
             _state = .success(dictation)
 
             // Reset to idle after brief delay

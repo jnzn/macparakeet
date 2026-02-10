@@ -38,7 +38,7 @@ final class DictationServiceTests: XCTestCase {
         }
     }
 
-    func testStopRecordingSavesAndPastes() async throws {
+    func testStopRecordingTranscribesAndSaves() async throws {
         let expectedResult = STTResult(
             text: "Hello world",
             words: [
@@ -60,10 +60,6 @@ final class DictationServiceTests: XCTestCase {
         let fetched = try dictationRepo.fetch(id: dictation.id)
         XCTAssertNotNil(fetched)
         XCTAssertEqual(fetched?.rawTranscript, "Hello world")
-
-        // Verify pasted
-        let pastedText = await mockClipboard.lastPastedText
-        XCTAssertEqual(pastedText, "Hello world")
     }
 
     // Note: Cancel flow tests, stop-when-not-recording, and STT error propagation

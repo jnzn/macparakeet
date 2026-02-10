@@ -212,6 +212,58 @@ Tests/
   Fixtures/              # Shared test data
 ```
 
+## Manual QA Checklist — Dictation Overlay
+
+These flows must be tested manually after any overlay or hotkey changes. Automated unit tests cover the state machine logic, but the full UX requires human verification.
+
+### Happy Path
+
+| # | Flow | Steps | Expected |
+|---|------|-------|----------|
+| 1 | Persistent recording | Fn+Fn → speak → Fn | Pill appears → waveform animates → checkmark → text pasted |
+| 2 | Hold-to-talk | Hold Fn (>400ms) → speak → release Fn | Pill appears → waveform → checkmark → text pasted |
+
+### Cancel & Undo Flows
+
+| # | Flow | Steps | Expected |
+|---|------|-------|----------|
+| 3 | Cancel via Esc | Fn+Fn → Esc | Pill shows countdown ring (5s) → auto-dismiss |
+| 4 | Cancel via X button | Fn+Fn → click X | Same as Esc cancel — countdown → auto-dismiss |
+| 5 | Undo after Esc cancel | Fn+Fn → Esc → click Undo | Recording restarts, pill shows waveform again |
+| 6 | Undo after X cancel | Fn+Fn → click X → click Undo | Recording restarts, pill shows waveform again |
+| 7 | **Fn after undo** | Fn+Fn → cancel → Undo → Fn | Recording stops, checkmark, text pasted |
+| 8 | **Fn+Fn after undo** | Fn+Fn → cancel → Undo → Fn → Fn+Fn | New recording starts |
+| 9 | Fn blocked during cancel | Fn+Fn → Esc → Fn (during countdown) | Nothing happens — Fn is blocked |
+| 10 | Cancel countdown expires | Fn+Fn → Esc → wait 5s | Pill auto-dismisses, Fn+Fn works again |
+
+### State Transitions
+
+| # | Flow | Steps | Expected |
+|---|------|-------|----------|
+| 11 | Recording → Processing | Fn+Fn → speak → Fn | Pill smoothly transitions from waveform to spinner |
+| 12 | Processing → Success | (after transcription completes) | Animated checkmark appears, then text pastes |
+| 13 | Error display | (trigger STT error) | Error card (rounded rect, icon, title+subtitle, dismiss button) |
+
+### Hover Tooltips
+
+| # | Flow | Steps | Expected |
+|---|------|-------|----------|
+| 14 | Hover X button | Move cursor over X during recording | "Cancel **Esc**" appears above pill (Esc in light blue) |
+| 15 | Hover stop button | Move cursor over stop circle | "Stop & paste **Fn**" appears (Fn in light blue) |
+| 16 | Hover middle area | Move cursor over waveform/timer | No tooltip shown |
+| 17 | Mouse exits pill | Move cursor away from pill | Tooltip fades out |
+
+### Visual Polish
+
+| # | Check | Expected |
+|---|-------|----------|
+| 18 | Pill position | Just above the Dock (~12px gap) |
+| 19 | No visible outline | No system shadow border around pill |
+| 20 | Waveform bars | Visible bars (not dots) even at low audio |
+| 21 | Smooth countdown | Ring drains smoothly, not in jumps |
+| 22 | Smooth state transitions | Pill size changes animate (no jank) |
+| 23 | Checkmark animation | Thin ring draws → thin check strokes in (Apple Pay style) |
+
 ## Adding a New Test
 
 1. Identify the category (unit, database, integration, CLI)
