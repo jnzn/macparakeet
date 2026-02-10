@@ -102,6 +102,12 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Onboarding") {
+                Button("Run Onboarding Again...") {
+                    NotificationCenter.default.post(name: .macParakeetOpenOnboarding, object: nil)
+                }
+            }
+
             // Permissions
             Section("Permissions") {
                 HStack {

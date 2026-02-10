@@ -26,6 +26,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let historyViewModel = DictationHistoryViewModel()
     private let settingsViewModel = SettingsViewModel()
     private let mainWindowState = MainWindowState()
+    private let onboardingWindowController = OnboardingWindowController()
+    private var onboardingObserver: Any?
 
     // MARK: - App Lifecycle
 
@@ -33,10 +35,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         setupMenuBar()
         setupEnvironment()
         setupHotkey()
+        observeOpenOnboarding()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         hotkeyManager?.stop()
+        if let onboardingObserver { NotificationCenter.default.removeObserver(onboardingObserver) }
         Task {
             await appEnvironment?.sttClient.shutdown()
         }
@@ -120,6 +124,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 entitlementsService: env.entitlementsService,
                 checkoutURL: env.checkoutURL
             )
+
+            maybeShowOnboarding()
         } catch {
             print("Failed to initialize app: \(error)")
         }
@@ -145,6 +151,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if manager.start() {
             hotkeyManager = manager
         }
+    }
+
+    private func refreshHotkeyAfterPermissions() {
+        hotkeyManager?.stop()
+        hotkeyManager = nil
+        setupHotkey()
+    }
+
+    private func observeOpenOnboarding() {
+        onboardingObserver = NotificationCenter.default.addObserver(
+            forName: .macParakeetOpenOnboarding,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.showOnboarding()
+            }
+        }
+    }
+
+    private func maybeShowOnboarding() {
+        guard let env = appEnvironment else { return }
+        let completed = UserDefaults.standard.string(forKey: OnboardingViewModel.onboardingCompletedKey) != nil
+        if !completed {
+            showOnboarding(permissionService: env.permissionService, sttClient: env.sttClient)
+        }
+    }
+
+    private func showOnboarding() {
+        guard let env = appEnvironment else { return }
+        showOnboarding(permissionService: env.permissionService, sttClient: env.sttClient)
+    }
+
+    private func showOnboarding(permissionService: PermissionServiceProtocol, sttClient: STTClientProtocol) {
+        onboardingWindowController.show(
+            permissionService: permissionService,
+            sttClient: sttClient,
+            onFinish: { [weak self] in
+                self?.refreshHotkeyAfterPermissions()
+            },
+            onOpenMainApp: { [weak self] in
+                self?.openMainWindow()
+            }
+        )
     }
 
     // MARK: - Dictation Flow
@@ -225,9 +275,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
 
             do {
-                let _ = try await env.dictationService.stopRecording()
+                let dictation = try await env.dictationService.stopRecording()
                 await MainActor.run { vm.state = .success }
-                try? await Task.sleep(for: .seconds(1))
+                // Brief pause so user sees the checkmark before paste
+                try? await Task.sleep(for: .milliseconds(200))
+                try? await env.clipboardService.pasteText(dictation.rawTranscript)
+                try? await Task.sleep(for: .milliseconds(800))
             } catch {
                 await MainActor.run {
                     vm.state = .error(error.localizedDescription)
@@ -247,10 +300,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func cancelDictation() {
         guard let env = appEnvironment, let vm = overlayViewModel else { return }
 
+        // Sync state machine — may have been triggered via UI button, not Esc
+        hotkeyManager?.notifyCancelledByUI()
+
         cancelTask?.cancel()
         cancelTask = Task {
-            await env.dictationService.cancelRecording()
-
+            // Don't cancel the service yet — audio keeps recording during undo window
             await MainActor.run {
                 vm.stopTimer()
                 vm.state = .cancelled(timeRemaining: 5.0)
@@ -265,8 +320,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 }
             }
 
+            // Countdown expired — NOW actually discard the recording
             guard !Task.isCancelled else { return }
+            await env.dictationService.cancelRecording()
             await MainActor.run {
+                self.hotkeyManager?.resetToIdle()
                 self.overlayController?.hide()
                 self.overlayController = nil
             }
@@ -274,20 +332,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func undoCancelDictation() {
-        // Cancel the countdown task so the overlay doesn't auto-dismiss
+        // Cancel the countdown so it doesn't expire and discard audio
         cancelTask?.cancel()
         cancelTask = nil
 
-        // Dismiss overlay and restart recording
-        overlayController?.hide()
-        overlayController = nil
-        overlayViewModel = nil
+        // Sync state machine back to recording mode
+        hotkeyManager?.resumeRecording(mode: .persistent)
 
-        // Restart dictation in persistent mode
-        startDictation(mode: .persistent)
+        // Resume recording — audio was never interrupted, just switch overlay back
+        overlayViewModel?.state = .recording
+        overlayViewModel?.resumeTimer()
     }
 
     private func dismissOverlay() {
+        hotkeyManager?.resetToIdle()
         overlayController?.hide()
         overlayController = nil
         overlayViewModel = nil

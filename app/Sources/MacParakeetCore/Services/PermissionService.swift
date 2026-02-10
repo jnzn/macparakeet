@@ -1,10 +1,12 @@
 import AVFoundation
+import ApplicationServices
 import Foundation
 
 public protocol PermissionServiceProtocol: Sendable {
     func checkMicrophonePermission() async -> PermissionStatus
     func requestMicrophonePermission() async -> Bool
     func checkAccessibilityPermission() -> Bool
+    func requestAccessibilityPermission(prompt: Bool) -> Bool
 }
 
 public enum PermissionStatus: Sendable {
@@ -32,5 +34,11 @@ public final class PermissionService: PermissionServiceProtocol, Sendable {
     public func checkAccessibilityPermission() -> Bool {
         // AXIsProcessTrusted() checks if the app has Accessibility permission
         return AXIsProcessTrusted()
+    }
+
+    public func requestAccessibilityPermission(prompt: Bool = true) -> Bool {
+        let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+        let options: CFDictionary = [promptKey: prompt] as CFDictionary
+        return AXIsProcessTrustedWithOptions(options)
     }
 }

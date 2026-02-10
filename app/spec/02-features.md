@@ -72,6 +72,23 @@ See [00-vision.md](./00-vision.md) for positioning and market context.
 
 ## v0.1 Features (Core MVP)
 
+### F0: First-Run Onboarding
+
+**What:** A premium first-run setup window that guides users through permissions, hotkey basics, and local engine warm-up so the first dictation feels reliable.
+
+**Goals:**
+- Reduce first-run friction (no mysterious permission failures).
+- Teach the core interaction model in under 60 seconds.
+- Warm up the local STT engine on first run to reduce latency.
+
+**Flow:**
+1. Welcome
+2. Microphone permission
+3. Accessibility permission
+4. Hotkey instructions (Fn + Esc)
+5. Speech engine warm-up (retry or defer)
+6. Ready
+
 ### F1: System-Wide Dictation
 
 **What:** Press a hotkey anywhere on macOS, speak, and polished text appears in the active app. The core feature that makes MacParakeet worth using every day.

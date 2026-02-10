@@ -142,6 +142,7 @@ final class MockPermissionService: PermissionServiceProtocol, @unchecked Sendabl
     var microphonePermission: PermissionStatus = .granted
     var accessibilityPermission: Bool = true
     var requestMicResult: Bool = true
+    var requestAccessibilityResult: Bool = true
 
     func checkMicrophonePermission() async -> PermissionStatus {
         microphonePermission
@@ -153,5 +154,10 @@ final class MockPermissionService: PermissionServiceProtocol, @unchecked Sendabl
 
     func checkAccessibilityPermission() -> Bool {
         accessibilityPermission
+    }
+
+    func requestAccessibilityPermission(prompt: Bool) -> Bool {
+        accessibilityPermission = requestAccessibilityResult
+        return accessibilityPermission
     }
 }

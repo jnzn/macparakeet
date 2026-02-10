@@ -36,6 +36,10 @@ public actor MockSTTClient: STTClientProtocol {
         warmUpCalled = true
     }
 
+    public func wasWarmUpCalled() -> Bool {
+        warmUpCalled
+    }
+
     public var ready = true
 
     public func isReady() async -> Bool {
