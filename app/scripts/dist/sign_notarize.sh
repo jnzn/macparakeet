@@ -37,16 +37,26 @@ fi
 echo "[1/8] Clearing extended attributes…"
 xattr -cr "$APP_PATH" || true
 
-echo "[2/8] Codesigning (hardened runtime)…"
+echo "[2/8] Signing nested executables (if any)…"
+# Sign inside-out. `uv` is shipped under Resources and must be signed for notarization.
+while IFS= read -r -d '' bin; do
+  echo "Signing: $bin"
+  codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp "$bin"
+done < <(
+  find "$APP_PATH/Contents/Resources" -maxdepth 1 -type f -perm -111 \
+    \( -name "uv" -o -name "uv-arm64" -o -name "uv-x86_64" \) -print0 2>/dev/null || true
+)
+
+echo "[3/8] Codesigning app (hardened runtime)…"
 codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp "$APP_PATH"
 
-echo "[3/8] Verifying signature…"
+echo "[4/8] Verifying signature…"
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 
 ZIP_PATH="$DIST_DIR/${APP_NAME}.app.zip"
 rm -f "$ZIP_PATH"
 
-echo "[4/8] Creating notarization zip…"
+echo "[5/8] Creating notarization zip…"
 ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
 
 if [[ -z "$NOTARYTOOL_PROFILE" ]]; then
@@ -54,21 +64,21 @@ if [[ -z "$NOTARYTOOL_PROFILE" ]]; then
   exit 0
 fi
 
-echo "[5/8] Submitting to notarization service…"
+echo "[6/8] Submitting to notarization service…"
 xcrun notarytool submit "$ZIP_PATH" --keychain-profile "$NOTARYTOOL_PROFILE" --wait
 
-echo "[6/8] Stapling app…"
+echo "[7/8] Stapling app…"
 xcrun stapler staple "$APP_PATH"
 xcrun stapler validate "$APP_PATH"
 
-echo "[7/8] Gatekeeper assess…"
+echo "[8/8] Gatekeeper assess…"
 spctl --assess --type execute --verbose=4 "$APP_PATH" || true
 
 if [[ "$CREATE_DMG" == "1" ]]; then
   DMG_PATH="$DIST_DIR/${APP_NAME}.dmg"
   rm -f "$DMG_PATH"
 
-  echo "[8/8] Creating DMG…"
+  echo "Creating DMG…"
   hdiutil create -volname "$APP_NAME" -srcfolder "$APP_PATH" -ov -format UDZO "$DMG_PATH" >/dev/null
 
   echo "Signing DMG…"
@@ -83,4 +93,3 @@ if [[ "$CREATE_DMG" == "1" ]]; then
 fi
 
 echo "Done."
-
