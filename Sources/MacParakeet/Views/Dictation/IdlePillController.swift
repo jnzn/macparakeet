@@ -5,38 +5,73 @@ import MacParakeetViewModels
 // MARK: - Mouse Tracking (click-aware)
 
 /// NSView overlay that detects mouse hover and clicks for the idle pill.
-/// Unlike the dictation overlay's tracker, this one intercepts clicks within the pill region.
+/// Uses mouseMoved to precisely track whether the cursor is over the pill region,
+/// not the entire panel. The hover rect changes based on expanded state.
 private final class IdlePillTrackingView: NSView {
     var onEnter: (() -> Void)?
     var onExit: (() -> Void)?
     var onClicked: (() -> Void)?
 
-    /// Region within the view that is clickable (pill bounds in view coordinates).
-    var clickableRect: NSRect = .zero
+    /// Small rect for the collapsed pill (hover trigger zone).
+    var collapsedPillRect: NSRect = .zero
+    /// Larger rect for the expanded pill + tooltip (stays hovered while interacting).
+    var expandedPillRect: NSRect = .zero
+
+    private var isInsidePill = false
+    private var isExpanded = false
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach { removeTrackingArea($0) }
         addTrackingArea(NSTrackingArea(
             rect: bounds,
-            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
             owner: self
         ))
     }
 
-    override func mouseEntered(with event: NSEvent) { onEnter?() }
-    override func mouseExited(with event: NSEvent) { onExit?() }
+    override func mouseEntered(with event: NSEvent) {
+        // Panel entered — start tracking position
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        // Left the panel entirely — always exit hover
+        if isInsidePill {
+            isInsidePill = false
+            isExpanded = false
+            onExit?()
+        }
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let activeRect = isExpanded ? expandedPillRect : collapsedPillRect
+
+        if activeRect.contains(point) {
+            if !isInsidePill {
+                isInsidePill = true
+                isExpanded = true
+                onEnter?()
+            }
+        } else {
+            if isInsidePill {
+                isInsidePill = false
+                isExpanded = false
+                onExit?()
+            }
+        }
+    }
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        if clickableRect.contains(point) {
+        if expandedPillRect.contains(point) {
             onClicked?()
         }
     }
 
-    // Only intercept clicks in the pill region; pass through everywhere else
+    // Only intercept clicks in the expanded pill region; pass through everywhere else
     override func hitTest(_ point: NSPoint) -> NSView? {
-        clickableRect.contains(point) ? self : nil
+        expandedPillRect.contains(point) ? self : nil
     }
 }
 
@@ -92,11 +127,17 @@ final class IdlePillController {
             Task { @MainActor in self?.viewModel.onStartDictation?() }
         }
 
-        // Clickable rect: centered at bottom of panel, generous hit area covering both tooltip and pill
-        let pillWidth: CGFloat = 320
-        let pillHeight: CGFloat = 80
-        let pillX = (panelWidth - pillWidth) / 2
-        tracker.clickableRect = NSRect(x: pillX, y: 0, width: pillWidth, height: pillHeight)
+        // Collapsed pill: small centered nub at bottom (48×10 pill + padding for targeting)
+        let collapsedW: CGFloat = 60  // slightly larger than 48pt pill for easy hover
+        let collapsedH: CGFloat = 24
+        let collapsedX = (panelWidth - collapsedW) / 2
+        tracker.collapsedPillRect = NSRect(x: collapsedX, y: 0, width: collapsedW, height: collapsedH)
+
+        // Expanded: pill + tooltip area
+        let expandedW: CGFloat = 320
+        let expandedH: CGFloat = 80
+        let expandedX = (panelWidth - expandedW) / 2
+        tracker.expandedPillRect = NSRect(x: expandedX, y: 0, width: expandedW, height: expandedH)
 
         hosting.addSubview(tracker)
         trackingView = tracker
