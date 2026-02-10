@@ -37,11 +37,11 @@ final class DictationOverlayController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentView = hosting
 
-        // Position at bottom-center, 40px above screen edge
+        // Position at bottom-center, just above the Dock
         if let screen = NSScreen.main {
             let screenFrame = screen.visibleFrame
             let x = screenFrame.midX - panelWidth / 2
-            let y = screenFrame.origin.y + 40
+            let y = screenFrame.origin.y + 12
             panel.setFrameOrigin(NSPoint(x: x, y: y))
         }
 
@@ -109,5 +109,16 @@ final class DictationOverlayViewModel {
         let minutes = recordingElapsedSeconds / 60
         let seconds = recordingElapsedSeconds % 60
         return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    /// Stable key for animating pill size transitions between states
+    var pillStateKey: String {
+        switch state {
+        case .recording: return "recording"
+        case .cancelled: return "cancelled"
+        case .processing: return "processing"
+        case .success: return "success"
+        case .error: return "error"
+        }
     }
 }

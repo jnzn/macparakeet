@@ -1,16 +1,17 @@
 import SwiftUI
 
-/// 12-bar waveform visualization driven by audio level.
+/// 14-bar waveform visualization driven by audio level.
+/// Thin, airy bars with subtle opacity — premium feel without visual weight.
 struct WaveformView: View {
     let audioLevel: Float
-    let barCount: Int = 12
+    let barCount: Int = 14
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 2.5) {
             ForEach(0..<barCount, id: \.self) { index in
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(Color.white)
-                    .frame(width: 3, height: barHeight(for: index))
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(Color.white.opacity(0.8))
+                    .frame(width: 2, height: barHeight(for: index))
             }
         }
         .frame(height: 20)
@@ -20,8 +21,8 @@ struct WaveformView: View {
     private func barHeight(for index: Int) -> CGFloat {
         let center = Float(barCount) / 2.0
         let distance = abs(Float(index) - center) / center
-        let baseHeight: Float = 4.0
-        let maxAdditional: Float = 16.0
+        let baseHeight: Float = 3.0
+        let maxAdditional: Float = 17.0
 
         // Center bars are taller, edge bars shorter
         let peakFactor = 1.0 - (distance * 0.6)
