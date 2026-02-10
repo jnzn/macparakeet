@@ -4,13 +4,13 @@ This repo is SwiftPM-based, so we assemble a `.app` bundle manually for Develope
 
 ## 1) Build the app bundle
 
-From `app/`:
+From the repo root:
 
 ```bash
 scripts/dist/build_app_bundle.sh
 ```
 
-This creates `app/dist/MacParakeet.app` and bundles:
+This creates `dist/MacParakeet.app` and bundles:
 - `python/macparakeet_stt` into `Contents/Resources/python/`
 - `uv` into `Contents/Resources/uv` if `uv` is on your `PATH`
 
@@ -35,8 +35,8 @@ scripts/dist/sign_notarize.sh
 ```
 
 Outputs:
-- `app/dist/MacParakeet.app` (signed + stapled)
-- `app/dist/MacParakeet.dmg` (signed + stapled)
+- `dist/MacParakeet.app` (signed + stapled)
+- `dist/MacParakeet.dmg` (signed + stapled)
 
 ## Notes
 

@@ -9,7 +9,7 @@ set -euo pipefail
 # - optionally bundles `uv` into Resources if it's available on PATH
 #
 # Outputs:
-#   app/dist/MacParakeet.app
+#   dist/MacParakeet.app
 #
 # Environment variables:
 #   APP_NAME            (default: MacParakeet)

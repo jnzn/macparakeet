@@ -91,10 +91,11 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 | ADR-002 | No cloud processing (100% local) | `spec/adr/002-local-only.md` |
 | ADR-003 | One-time purchase pricing ($49) | `spec/adr/003-one-time-purchase.md` |
 | ADR-004 | Deterministic text processing pipeline | `spec/adr/004-deterministic-pipeline.md` |
+| ADR-005 | First-run onboarding flow | `spec/adr/005-onboarding-first-run.md` |
 
 ## Current Phase
 
-**v0.1 MVP** -- Implemented (188 tests, 21 suites, `swift test` + `xcodebuild` green)
+**v0.1 MVP** -- Implemented (188 tests, 22 suites, `swift test` + `xcodebuild` green)
 
 ### v0.1 MVP (Implemented)
 - [x] System-wide dictation: Fn double-tap (persistent) + hold-to-talk
@@ -259,16 +260,18 @@ macparakeet/
 │   └── adr/            # Architecture Decision Records (locked)
 ├── docs/               # Research, explorations (informative)
 │   ├── competitive-analysis.md
+│   ├── distribution.md # Developer ID signing + notarization guide
 │   └── research/       # Deep dives on competitors, user sentiment
 ├── plans/              # Implementation plans (version controlled)
 │   ├── active/         # Currently being implemented
 │   └── completed/      # Done plans (archived, not deleted)
 ├── Sources/
-│   ├── MacParakeet/        # GUI app (SwiftUI, imports MacParakeetCore)
-│   ├── CLI/                # CLI tool (ArgumentParser, imports MacParakeetCore)
-│   └── MacParakeetCore/    # Shared library (no UI deps)
+│   ├── MacParakeet/            # GUI app (SwiftUI, imports MacParakeetCore + ViewModels)
+│   ├── CLI/                    # CLI tool (ArgumentParser, imports MacParakeetCore)
+│   ├── MacParakeetCore/        # Shared library (no UI deps)
+│   └── MacParakeetViewModels/  # ViewModels (testable, depends on Core)
 ├── Tests/
-│   └── MacParakeetTests/   # Unit, database, and integration tests (188 tests)
+│   └── MacParakeetTests/   # Unit, database, and integration tests (188 tests, 22 suites)
 ├── Assets/             # App icons and images (placeholder)
 ├── python/             # STT daemon (Parakeet via uv)
 │   └── macparakeet_stt/

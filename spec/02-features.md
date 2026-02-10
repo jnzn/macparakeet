@@ -260,16 +260,16 @@ Space is always reserved for the tooltip (opacity toggle, not conditional render
 ```
 
 **Acceptance criteria:**
-- [ ] Double-tap Fn activates persistent recording from any app
-- [ ] Hold Fn (> 400ms) activates hold-mode, release auto-stops and pastes
-- [ ] Overlay appears at bottom-center with waveform animation
-- [ ] Hover tooltips display correctly on non-activating panel
+- [x] Double-tap Fn activates persistent recording from any app
+- [x] Hold Fn (> 400ms) activates hold-mode, release auto-stops and pastes
+- [x] Overlay appears at bottom-center with waveform animation
+- [x] Hover tooltips display correctly on non-activating panel
 - [ ] Parakeet transcribes with <500ms end-to-end latency for short dictations
-- [ ] Text auto-pastes into active app, clipboard restored afterward
-- [ ] Esc triggers soft cancel with 5-second undo window
-- [ ] Undo during cancel window resumes processing
-- [ ] Accessibility permission prompted gracefully on first use
-- [ ] Audio saved to disk (if storage enabled in settings)
+- [x] Text auto-pastes into active app, clipboard restored afterward
+- [x] Esc triggers soft cancel with 5-second undo window
+- [x] Undo during cancel window resumes processing
+- [x] Accessibility permission prompted gracefully on first use
+- [x] Audio saved to disk (if storage enabled in settings)
 
 ---
 
@@ -369,16 +369,16 @@ Display in scrollable result view
 - Word-level timestamps preserved for subtitle export (v0.3)
 
 **Acceptance criteria:**
-- [ ] Drag-and-drop file onto app window triggers transcription
+- [x] Drag-and-drop file onto app window triggers transcription
 - [ ] Drag-and-drop onto menu bar icon triggers transcription
-- [ ] Click "Browse Files" opens file picker
-- [ ] Progress indicator shows during transcription with estimated time
-- [ ] Result displayed in scrollable text view with timestamps
-- [ ] Copy to clipboard button works
-- [ ] All supported audio formats transcribe correctly
-- [ ] All supported video formats extract audio and transcribe
-- [ ] Word-level timestamps stored for later export use
-- [ ] Handles corrupt/empty files gracefully (error message, not crash)
+- [x] Click "Browse Files" opens file picker
+- [x] Progress indicator shows during transcription with estimated time
+- [x] Result displayed in scrollable text view with timestamps
+- [x] Copy to clipboard button works
+- [x] All supported audio formats transcribe correctly
+- [x] All supported video formats extract audio and transcribe
+- [x] Word-level timestamps stored for later export use
+- [x] Handles corrupt/empty files gracefully (error message, not crash)
 
 ---
 
@@ -432,12 +432,12 @@ The app lives primarily in the menu bar. Click the icon for quick actions, or op
 - **Settings** -- App preferences
 
 **Acceptance criteria:**
-- [ ] App launches to menu bar only (no dock icon initially)
+- [x] App launches to menu bar only (no dock icon initially)
 - [ ] Dock icon appears when main window opens, hides when closed
 - [ ] Menu bar icon reflects current state (idle, recording, processing)
-- [ ] Menu bar dropdown shows quick actions
-- [ ] Main window opens on demand (menu bar click or Cmd+O)
-- [ ] Sidebar navigation between Transcribe, Dictations, Settings
+- [x] Menu bar dropdown shows quick actions
+- [x] Main window opens on demand (menu bar click or Cmd+O)
+- [x] Sidebar navigation between Transcribe, Dictations, Settings
 
 ---
 
@@ -616,12 +616,12 @@ Audio path is computed from ID by default. Files stored as M4A (AAC). User can d
 | Save audio recordings | On / Off | On |
 
 **Acceptance criteria:**
-- [ ] All settings persist across app restarts (UserDefaults or GRDB)
+- [x] All settings persist across app restarts (UserDefaults or GRDB)
 - [ ] Hotkey can be changed to alternative keys
-- [ ] Stop mode switch works correctly for both modes
-- [ ] Storage toggle controls whether audio files are saved
-- [ ] "Clear All" requires confirmation, deletes audio files and database entries
-- [ ] Permission status shown with current grant state
+- [x] Stop mode switch works correctly for both modes
+- [x] Storage toggle controls whether audio files are saved
+- [x] "Clear All" requires confirmation, deletes audio files and database entries
+- [x] Permission status shown with current grant state
 
 ---
 
@@ -637,9 +637,9 @@ Audio path is computed from ID by default. Files stored as M4A (AAC). User can d
 | Clipboard | Copy button | Transcript text |
 
 **Acceptance criteria:**
-- [ ] "Copy to clipboard" copies full transcript text
-- [ ] Export to .txt saves file via standard macOS save dialog
-- [ ] Export includes file name and duration header
+- [x] "Copy to clipboard" copies full transcript text
+- [x] Export to .txt saves file via standard macOS save dialog
+- [x] Export includes file name and duration header
 
 ---
 

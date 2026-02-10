@@ -108,14 +108,12 @@ public final class PythonBootstrap: Sendable {
         let startURL = URL(fileURLWithPath: startDir, isDirectory: true)
 
         // Walk up a few levels so this works whether invoked from:
-        // - repo root (`app/python/...`)
-        // - app dir (`python/...`)
+        // - repo root (`python/...`)
         // - SPM build output (`.build/.../debug`)
         var current = startURL
         for _ in 0..<8 {
             let candidateRoots = [
                 current.appendingPathComponent("python", isDirectory: true),
-                current.appendingPathComponent("app/python", isDirectory: true),
             ]
 
             for root in candidateRoots {

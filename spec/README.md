@@ -42,6 +42,7 @@ All ADRs live in `spec/adr/`. These are locked -- they record decisions already 
 | [ADR-002](adr/002-local-only.md) | No cloud processing (100% local) |
 | [ADR-003](adr/003-one-time-purchase.md) | One-time purchase pricing ($49) |
 | [ADR-004](adr/004-deterministic-pipeline.md) | Deterministic text processing pipeline |
+| [ADR-005](adr/005-onboarding-first-run.md) | First-run onboarding flow |
 
 ## Version Roadmap
 
@@ -68,7 +69,7 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 - [x] Basic export (plain text, copy to clipboard)
 - [x] SQLite database (GRDB, dictations + transcriptions + FTS5)
 - [x] CLI tool (`macparakeet transcribe`, `history`, `health`)
-- [x] 188 tests passing (21 test suites)
+- [x] 188 tests passing (22 test suites)
 
 ### v0.2 AI & Text Processing (Planned)
 
