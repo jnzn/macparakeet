@@ -49,23 +49,26 @@ import Layout from '../layouts/Layout.astro';
 
       <h2>Network Connections</h2>
       <p>
-        MacParakeet makes <strong>zero network connections</strong> during normal operation. The app works completely offline.
+        MacParakeet does not send your audio or transcripts to any server.
       </p>
       <p>
-        The only potential network access is:
+        The app may use the network only for setup and maintenance tasks such as:
       </p>
       <ul>
-        <li><strong>License verification</strong> (App Store version only) - Standard Apple license check</li>
-        <li><strong>YouTube downloads</strong> (if you use this feature) - Your request only, not monitored by us</li>
+        <li><strong>Model downloads</strong> - downloading local STT/LLM model files (when applicable)</li>
+        <li><strong>Dependency installs</strong> - installing local Python packages needed to run the STT daemon</li>
       </ul>
+      <p>
+        These connections are for downloading software components only. Your recordings and transcripts stay on-device.
+      </p>
 
       <h2>Data Storage</h2>
       <p>
         MacParakeet stores minimal data locally on your Mac:
       </p>
       <ul>
-        <li><strong>Settings</strong> - Your preferences (hotkey, model selection)</li>
-        <li><strong>History</strong> - Recent transcription metadata (optional, can be disabled)</li>
+        <li><strong>Settings</strong> - Your preferences (hotkey, behavior)</li>
+        <li><strong>History</strong> - Dictation and transcription history stored locally</li>
         <li><strong>Models</strong> - Downloaded AI models for local processing</li>
       </ul>
       <p>
@@ -114,22 +117,39 @@ import Layout from '../layouts/Layout.astro';
 </Layout>
 
 <style>
+  /* Tailwind v4: avoid @apply in component styles (requires @reference).
+     Keep these styles plain CSS to ensure `astro build` works. */
   .prose h2 {
-    @apply text-2xl font-bold mt-8 mb-4 text-white;
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-top: 2rem;
+    margin-bottom: 1rem;
+    color: #fff;
   }
   .prose p {
-    @apply text-slate-300 mb-4;
+    margin-bottom: 1rem;
+    color: rgb(203 213 225);
   }
-  .prose ul, .prose ol {
-    @apply text-slate-300 mb-4 ml-6;
+  .prose ul,
+  .prose ol {
+    margin-bottom: 1rem;
+    margin-left: 1.5rem;
+    color: rgb(203 213 225);
   }
   .prose li {
-    @apply mb-2;
+    margin-bottom: 0.5rem;
   }
   .prose a {
-    @apply text-blue-400 hover:text-blue-300;
+    color: rgb(96 165 250);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .prose a:hover {
+    color: rgb(147 197 253);
   }
   .prose hr {
-    @apply border-slate-800 my-8;
+    margin: 2rem 0;
+    border: 0;
+    border-top: 1px solid rgb(30 41 59);
   }
 </style>

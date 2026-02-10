@@ -17,7 +17,7 @@ Drag any audio or video file → get a transcript in seconds.
 
 - Transcribe a 3-hour podcast in under 2 minutes (300x realtime)
 - Word-level timestamps with confidence scores
-- Export to TXT, SRT, VTT, DOCX
+- Export to TXT (SRT/VTT/DOCX planned)
 
 ## Why MacParakeet?
 
@@ -32,13 +32,21 @@ Drag any audio or video file → get a transcript in seconds.
 
 ## Features
 
-- **Blazing Fast** — Parakeet TDT: 300x realtime, 6.3% WER
+### Implemented (v0.1)
+
+- **Blazing Fast** — Parakeet TDT STT, fully local
 - **100% Private** — Audio never leaves your Mac. No accounts. No tracking.
-- **One-Time Purchase** — $49. No subscriptions. No upsells.
-- **Smart Cleanup** — Removes filler words, fixes casing, expands custom snippets
-- **Command Mode** — Highlight text → speak a command → AI edits in-place (local Qwen3-4B)
-- **Custom Words** — Teach it your vocabulary: "kubernetes" → "Kubernetes", "aye pee eye" → "API"
-- **Dictation History** — Every dictation saved, searchable, with audio playback
+- **System-Wide Dictation** — Fn double-tap (persistent) + hold-to-talk
+- **File Transcription** — Drag-drop audio/video files, word timestamps
+- **Export** — Plain text export (`.txt`) + copy to clipboard
+- **History** — Dictation + transcription history stored locally (SQLite + FTS search)
+
+### Planned (v0.2+)
+
+- **Smart Cleanup** — Deterministic cleanup pipeline (filler removal, casing, snippets)
+- **Command Mode** — Local LLM edits (Qwen3-4B) for command-mode workflows
+- **Custom Words** — Vocabulary + pronunciation hints
+- **More Exports** — SRT/VTT/DOCX and other formats
 
 ## Requirements
 
@@ -70,8 +78,8 @@ MacParakeet processes everything locally. Your audio is never:
 
 | Tier | Price | Includes |
 |------|-------|----------|
-| **Free** | $0 | 15 min/day, basic dictation |
-| **Pro** | $49 (one-time) | Unlimited, command mode, all exports, custom words |
+| **Free** | $0 | Free tier plan (not enforced in this repo yet) |
+| **Pro** | $49 (one-time) | Pro tier plan (licensing + feature gating not implemented here yet) |
 
 ## Development Philosophy
 

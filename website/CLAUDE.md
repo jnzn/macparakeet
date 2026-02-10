@@ -25,23 +25,13 @@ macparakeet-website/
 ├── CLAUDE.md           # This file
 ├── README.md           # Project overview
 ├── astro.config.mjs    # Astro configuration
-├── tailwind.config.js  # Tailwind configuration
 ├── package.json
 ├── src/
 │   ├── layouts/
 │   │   └── Layout.astro    # Base layout
 │   ├── pages/
 │   │   ├── index.astro     # Landing page
-│   │   ├── pricing.astro   # Pricing page
 │   │   └── privacy.astro   # Privacy policy
-│   ├── components/
-│   │   ├── Header.astro
-│   │   ├── Footer.astro
-│   │   ├── Hero.astro
-│   │   ├── Features.astro
-│   │   ├── Pricing.astro
-│   │   ├── FAQ.astro
-│   │   └── CTA.astro
 │   └── styles/
 │       └── global.css
 ├── public/
@@ -74,16 +64,9 @@ bun run preview
 ### Landing Page (`/`)
 - Hero: "The fastest local transcription for Mac"
 - Features: Speed, Privacy, Simplicity
-- Social proof: Testimonials/reviews
 - Pricing: $49 one-time
 - FAQ
 - Download CTA
-
-### Pricing (`/pricing`)
-- Free trial details
-- Pro features ($49)
-- Comparison table vs competitors
-- FAQ about pricing
 
 ### Privacy (`/privacy`)
 - Privacy policy
@@ -113,7 +96,7 @@ bun run preview
 ### Structured Data
 - Product schema for pricing
 - SoftwareApplication schema
-- FAQ schema for FAQ section
+- FAQ schema for FAQ section (if/when FAQ is split into components)
 
 ## Design Guidelines
 
@@ -187,12 +170,11 @@ None required (static site)
 ## Quick Tasks
 
 ### Update pricing
-1. Edit `src/components/Pricing.astro`
-2. Update pricing page `src/pages/pricing.astro`
+1. Edit the pricing section in `src/pages/index.astro`
 
 ### Add testimonial
-1. Add to `src/components/Testimonials.astro`
-2. Include name, role, quote
+1. Add a new card section to `src/pages/index.astro`
+2. Include name, role, quote (no analytics, no tracking)
 
 ### Update screenshots
 1. Replace files in `public/screenshots/`

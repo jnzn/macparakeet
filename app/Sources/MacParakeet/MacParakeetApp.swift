@@ -1,99 +1,37 @@
-// MacParakeet - Fast, Private, Local Transcription
-// Main application entry point
+import AppKit
+import MacParakeetCore
 
-import SwiftUI
-
+/// MacParakeet - Local-first voice app for macOS
+///
+/// Hybrid menu bar app: menu bar always visible, dock icon appears when main window is open.
+/// Uses manual NSApplication.run() for reliable CLI execution (no .app bundle required).
 @main
-struct MacParakeetApp: App {
-    var body: some Scene {
-        WindowGroup {
-            ContentView()
-        }
-        .windowStyle(.hiddenTitleBar)
-        .windowResizability(.contentSize)
+struct MacParakeetApp {
+    static func main() {
+        let app = NSApplication.shared
 
-        // Menu bar presence
-        MenuBarExtra("MacParakeet", systemImage: "waveform") {
-            MenuBarView()
+        // Enforce the documented minimum OS version (macOS 14.2+).
+        // SPM manifests can't express patch-level deployment targets for macOS 14,
+        // so we guard at runtime instead.
+        guard #available(macOS 14.2, *) else {
+            app.setActivationPolicy(.regular)
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.alertStyle = .critical
+            alert.messageText = "macOS 14.2+ Required"
+            alert.informativeText = "MacParakeet requires macOS 14.2 (Sonoma) or later."
+            alert.addButton(withTitle: "Quit")
+            alert.runModal()
+            return
         }
+
+        let delegate = AppDelegate()
+        app.delegate = delegate
+
+        // Start without dock icon (menu bar only)
+        // Dock icon will appear dynamically when main window opens (see AppDelegate)
+        app.setActivationPolicy(.accessory)
+
+        app.run()
     }
-}
-
-struct ContentView: View {
-    @State private var isDragging = false
-
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "waveform.circle.fill")
-                .resizable()
-                .frame(width: 80, height: 80)
-                .foregroundStyle(.blue)
-
-            Text("MacParakeet")
-                .font(.largeTitle)
-                .fontWeight(.bold)
-
-            Text("Drop audio or video file here")
-                .foregroundStyle(.secondary)
-
-            RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [8]))
-                .foregroundStyle(isDragging ? .blue : .secondary)
-                .frame(width: 300, height: 150)
-                .overlay {
-                    VStack {
-                        Image(systemName: "arrow.down.doc")
-                            .font(.system(size: 40))
-                            .foregroundStyle(isDragging ? .blue : .secondary)
-                        Text("Drag & Drop")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .onDrop(of: [.fileURL], isTargeted: $isDragging) { providers in
-                    // TODO: Handle file drop
-                    return true
-                }
-
-            Button("Browse Files") {
-                // TODO: Open file picker
-            }
-            .buttonStyle(.borderedProminent)
-        }
-        .padding(40)
-        .frame(minWidth: 400, minHeight: 400)
-    }
-}
-
-struct MenuBarView: View {
-    var body: some View {
-        VStack {
-            Button("Start Dictation") {
-                // TODO: Start dictation
-            }
-            .keyboardShortcut("d", modifiers: [.option])
-
-            Divider()
-
-            Button("Open Window") {
-                // TODO: Show main window
-            }
-            .keyboardShortcut("o", modifiers: .command)
-
-            Divider()
-
-            Button("Settings...") {
-                // TODO: Open settings
-            }
-            .keyboardShortcut(",", modifiers: .command)
-
-            Button("Quit") {
-                NSApplication.shared.terminate(nil)
-            }
-            .keyboardShortcut("q", modifiers: .command)
-        }
-    }
-}
-
-#Preview {
-    ContentView()
 }
