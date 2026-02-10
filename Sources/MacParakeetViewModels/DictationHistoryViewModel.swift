@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import Foundation
 import MacParakeetCore
+import UniformTypeIdentifiers
 
 @MainActor
 @Observable
@@ -10,14 +11,6 @@ public final class DictationHistoryViewModel {
     public var searchText: String = "" {
         didSet { loadDictations() }
     }
-    public var selectedDictation: Dictation? {
-        didSet {
-            if selectedDictation?.id != oldValue?.id {
-                stopPlayback()
-            }
-        }
-    }
-
     // MARK: - Playback State
 
     public var isPlaying: Bool = false
@@ -34,6 +27,21 @@ public final class DictationHistoryViewModel {
         let currentMs = Int(playbackCurrentTime * 1000)
         let durationMs = Int(playbackDuration * 1000)
         return "\(currentMs.formattedDuration) / \(durationMs.formattedDuration)"
+    }
+
+    public var playingDictation: Dictation? {
+        guard let id = playingDictationId else { return nil }
+        return groupedDictations.flatMap(\.1).first { $0.id == id }
+    }
+
+    // MARK: - Delete Confirmation
+
+    public var pendingDeleteDictation: Dictation?
+
+    public func confirmDelete() {
+        guard let dictation = pendingDeleteDictation else { return }
+        pendingDeleteDictation = nil
+        deleteDictation(dictation)
     }
 
     private var dictationRepo: DictationRepositoryProtocol?
@@ -78,10 +86,18 @@ public final class DictationHistoryViewModel {
             try? FileManager.default.removeItem(atPath: path)
         }
         _ = try? repo.delete(id: dictation.id)
-        if selectedDictation?.id == dictation.id {
-            selectedDictation = nil
-        }
         loadDictations()
+    }
+
+    public func downloadAudio(for dictation: Dictation) {
+        guard let audioPath = dictation.audioPath,
+              FileManager.default.fileExists(atPath: audioPath) else { return }
+        let sourceURL = URL(fileURLWithPath: audioPath)
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = sourceURL.lastPathComponent
+        panel.allowedContentTypes = [.audio]
+        guard panel.runModal() == .OK, let destination = panel.url else { return }
+        try? FileManager.default.copyItem(at: sourceURL, to: destination)
     }
 
     public func copyToClipboard(_ dictation: Dictation) {

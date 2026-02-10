@@ -28,7 +28,7 @@ Design philosophy: **Simple, native, stays out of the way.** No chrome, no clutt
 │  🎤 Transcribe   │  [Depends on sidebar selection]           │
 │  🕒 Dictations   │                                           │
 │  ⚙ Settings      │  - Transcribe: Drop zone + recent list   │
-│                  │  - Dictations: History list + detail      │
+│                  │  - Dictations: History list                │
 │                  │  - Settings: Grouped form                 │
 │                  │                                           │
 └──────────────────┴───────────────────────────────────────────┘
@@ -41,7 +41,7 @@ Minimum window width: 800pt.
 The sidebar uses NavigationSplitView with three flat items (icon + label):
 
 - **Transcribe** (`waveform`) -- Drop zone and recent transcriptions
-- **Dictations** (`clock.arrow.circlepath`) -- History list + detail split pane
+- **Dictations** (`clock.arrow.circlepath`) -- Flat history list with bottom bar player
 - **Settings** (`gearshape`) -- Grouped form settings
 
 Column width: `min: 160, ideal: 180, max: 220`. Window minimum width: 800pt.
@@ -54,105 +54,74 @@ Content transitions between tabs use `DesignSystem.Animation.contentSwap` (0.2s 
 
 ### Layout
 
-Split pane: list on the left (260–420pt), divider, detail on the right (fills remaining space). Content transitions use `DesignSystem.Animation.contentSwap`.
-
-### List View
-
-Date-grouped list (`List(selection:)`) with searchable header. Each group is a `Section` with date header ("Today", "Yesterday", etc.). Empty state shows `MeditativeMerkabaView(size: 56)` with contextual message.
+Full-width flat chronological list with bottom bar audio player. No split pane — dictations are typically short (a sentence or two), so a detail pane wastes space. Content transitions use `DesignSystem.Animation.contentSwap`.
 
 ```
-┌──────────────────────────────────────────────┐
-│  🔍 Search dictations...                      │
-├──────────────────────────────────────────────┤
-│                                              │
-│  TODAY                                       │
-│  ┌────────────────────────────────────────┐  │
-│  │▌ 2:34 PM                    ╭─12s─╮   │  │  ← accent bar + duration pill
-│  │▌ "Can we move the standup   ╰─────╯   │  │
-│  │▌ to 3pm tomorrow..."                  │  │
-│  │▌                      [▶ Play] [Copy]  │  │  ← hover-reveal actions
-│  └────────────────────────────────────────┘  │
-│  ┌────────────────────────────────────────┐  │
-│  │  11:02 AM                   ╭─8s──╮   │  │
-│  │  "Remember to update the    ╰─────╯   │  │
-│  │  API documentation..."                │  │
-│  └────────────────────────────────────────┘  │
-│                                              │
-│  YESTERDAY                                   │
-│  ┌────────────────────────────────────────┐  │
-│  │  5:15 PM                    ╭─23s─╮   │  │
-│  │  "Hi Sarah, following up    ╰─────╯   │  │
-│  │  on our conversation..."              │  │
-│  └────────────────────────────────────────┘  │
-│                                              │
-└──────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│  🔍 Search dictations...                                      │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│  TODAY                                                       │
+│  ┌──────────────────────────────────────────────────────┐    │
+│  │  2:34 PM │ Can we move the standup to 3pm tomorrow?  │    │
+│  │     12s  │ I have a conflict with the design review, │    │
+│  │          │ so it would be great if we could shift it  │    │
+│  │          │ by an hour.           [▶] [📋] [···]       │    │  ← hover actions
+│  └──────────────────────────────────────────────────────┘    │
+│  ┌──────────────────────────────────────────────────────┐    │
+│  │ 11:02 AM │ Remember to update the API documentation  │    │
+│  │      8s  │ before the release.                       │    │
+│  └──────────────────────────────────────────────────────┘    │
+│                                                              │
+│  YESTERDAY                                                   │
+│  ┌──────────────────────────────────────────────────────┐    │
+│  │  5:15 PM │ Hi Sarah, following up on our             │    │
+│  │     23s  │ conversation about the Q3 budget...       │    │
+│  └──────────────────────────────────────────────────────┘    │
+│                                                              │
+├──────────────────────────────────────────────────────────────┤
+│  [▶ 32pt]  "Can we move the standup..."  ═══░░░  0:03/0:12  [✕] │  ← bottom bar player
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ### Row Anatomy
 
 ```
-┌──────────────────────────────────────────────┐
-│▌ {time}                      ╭─{duration}─╮  │  ← leading accent bar (selected)
-│▌ "{transcript, 2 lines max}" ╰────────────╯  │
-│▌                         [▶ Play]  [📋 Copy]  │  ← hover-reveal actions
-└──────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│  {time}  │  {full transcript text}     [▶] [📋] [···]    │  ← hover actions (right)
+│  {dur}   │                                               │
+└──────────────────────────────────────────────────────────┘
 
 Components:
-- Leading accent bar: 3pt wide, accentColor, visible when row is selected
-- Time: 12-hour format (2:34 PM) — monospaced digit font
-- Duration pill: Capsule with faint background (primary 5%)
-- Transcript: rawTranscript, 2-line limit, skipped if empty
-- Hover actions: Play (if audio retained) + Copy — appear with opacity+move transition
-- Hover background: subtle tint (primary 4%) on non-selected rows
-- Context menu: Copy (⌘C), Delete (⌘⌫)
-- Selection: uses `DesignSystem.Animation.selectionChange` (0.15s)
+- Timestamp column: 56pt wide, right-aligned — time (caption.monospacedDigit) + duration below (caption2.monospacedDigit, tertiary)
+- Transcript: cleanTranscript ?? rawTranscript, NO line limit, full text always visible
+- Text selection enabled on transcript
+- Hover actions: Play (if audio) + Copy + three-dot Menu (Download Audio, Delete)
+- Currently-playing row: subtle accent tint background (accentColor 6%)
+- Hover background: subtle tint (primary 4%)
+- Context menu: Play/Pause, Copy, Download Audio, Delete (⌘⌫)
+- No selection state — no accent bar, no List(selection:)
+- Delete shows confirmation alert (shared at view level, not per-row)
 ```
 
-### Dictation Detail (v0.1)
+### Bottom Bar Audio Player
 
-Inline detail pane (right side of split view). Shows selected dictation with playback, transcript, and actions.
+Fixed 52pt bar at the bottom of the history view. Slides in when audio is playing, slides out when stopped.
 
 ```
-┌──────────────────────────────────────────────────────┐
-│  Today at 2:34 PM                         ╭─12s──╮  │  ← relative date + duration pill
-│                                           ╰──────╯  │
-│  ┌──────────────────────────────────────────────┐   │
-│  │  [▶]  ═══════════════░░░░░░░░░  0:03 / 0:12 │   │  ← playback card
-│  └──────────────────────────────────────────────┘   │
-│                                                      │
-│  ─────────────◇───────────                          │  ← sacred geometry divider
-│                                                      │
-│  Transcript                                          │
-│  Can we move the standup to 3pm tomorrow? I have    │
-│  a conflict with the design review, so it would be  │
-│  great if we could shift it by an hour.             │
-│                                                      │
-│  ──────────────────────────────────────────────────  │
-│  [📋 Copy]                              [🗑 Delete]  │
-└──────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│  [▶ 32pt accent circle]  "Transcript snippet..."  ═══░░░  0:15 / 2:30  [✕]  │
+└──────────────────────────────────────────────────────────────┘
 
-Header:
-- Relative date: "Today at 2:34 PM", "Yesterday at 5:15 PM", or "Feb 8, 2026 at 2:34 PM"
-- Duration pill: Capsule, fixedSize to prevent compression
-
-Playback card (if audio retained):
-- Accent-filled 32pt circle with white play/pause icon
-- 6pt capsule progress bar (track: primary 8%, fill: accentColor)
-- Monospaced time display, fixedSize, right-aligned (min 80pt)
-- Card: cardCornerRadius (10pt) with subtleBorder (primary 8%) strokeBorder
-
-Transcript section:
-- SacredGeometryDivider above
-- "Transcript" section header (subheadline.semibold, secondary)
-- Selectable text with lineSpacing(3), fixedSize(horizontal: false, vertical: true)
-
-Actions:
-- Copy (bordered) + Delete (plain, secondary, with confirmation alert)
+Components:
+- Accent-filled 32pt circle with white play/pause icon (identical to old playback card)
+- Single-line transcript snippet for context (callout font)
+- 120pt capsule progress bar (playbackTrack / playbackFill tokens)
+- Monospaced time display (timestamp font)
+- Close button (xmark.circle.fill) calls stopPlayback()
+- Background: controlBackgroundColor with top Divider
+- Transition: .move(edge: .bottom).combined(with: .opacity)
 ```
-
-### Detail Empty State
-
-When no dictation is selected, shows `MeditativeMerkabaView(size: 48, revolutionDuration: 8.0)` centered with "Select a dictation to view details" caption.
 
 ---
 
@@ -592,7 +561,7 @@ Settings open in the content area when "Settings" is selected in the sidebar. Ta
 │  ─────────────────────────────────────────────────────    │
 │                                                           │
 │  TEXT SNIPPETS                              [Manage ▸]   │
-│  Type a trigger, get an expansion.                       │
+│  Say a phrase, get an expansion.                         │
 │  5 snippets configured                                   │
 │                                                           │
 └───────────────────────────────────────────────────────────┘
@@ -638,15 +607,16 @@ Settings open in the content area when "Settings" is selected in the sidebar. Ta
 │  🔍 Search snippets...                       [+ Add]     │
 │                                                           │
 │  ┌─────────────────────────────────────────────────────┐  │
-│  │  Trigger      Expansion                Uses  On     │  │
+│  │  Say...        Expands to...           Uses  On     │  │
 │  │  ─────────────────────────────────────────────────  │  │
-│  │  addr1        123 Main St, Suite 4...  42    [✓]    │  │
-│  │  sig1         Best regards, Dan Moon   18    [✓]    │  │
-│  │  zoom1        https://zoom.us/j/123... 7     [✓]    │  │
+│  │  my address    123 Main St, Suite 4... 42    [✓]    │  │
+│  │  my signature  Best regards, Dan Moon  18    [✓]    │  │
+│  │  my calendly   calendly.com/you/30...  7     [✓]    │  │
+│  │  intro email   Hey, would love to...   12    [✓]    │  │
 │  └─────────────────────────────────────────────────────┘  │
 │                                                           │
-│  Snippets expand automatically when the trigger text     │
-│  appears in your dictation.                              │
+│  Say a trigger phrase while dictating and it expands     │
+│  automatically. Use natural phrases, not abbreviations.  │
 │                                                           │
 └───────────────────────────────────────────────────────────┘
 
@@ -827,7 +797,7 @@ Shared components in `Views/Components/SacredGeometry.swift`:
 
 All UI listed above is v0.1 except where noted:
 - Main window with sidebar
-- Dictation history (list + detail)
+- Dictation history (flat list + bottom bar player)
 - Dictation overlay (all 5 states)
 - Menu bar with status
 - File transcription (drop zone + progress + result)

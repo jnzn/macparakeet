@@ -98,8 +98,7 @@ The UI layer. Thin shell over MacParakeetCore. No business logic lives here.
 - `MainWindowView` — Sidebar (Transcribe / Dictations / Settings) + content pane
 - `TranscribeView` — Drop zone + recent transcriptions list
 - `TranscriptResultView` — Scrollable text with optional word-level timestamps
-- `DictationHistoryView` — Split pane: list + detail
-- `DictationDetailView` — Playback card, transcript, actions
+- `DictationHistoryView` — Flat chronological list with bottom bar audio player
 
 **Shared Components** (`Views/Components/`):
 - `DesignSystem` — Centralized design tokens (Colors, Typography, Spacing, Layout, Animation)
@@ -542,7 +541,7 @@ struct CustomWord: Codable, Identifiable {
 
 struct TextSnippet: Codable, Identifiable {
     let id: UUID
-    var trigger: String             // e.g., "addr"
+    var trigger: String             // e.g., "my address" (natural phrase, not abbreviation)
     var expansion: String           // e.g., "123 Main St, Springfield, IL"
     var isEnabled: Bool
     var useCount: Int

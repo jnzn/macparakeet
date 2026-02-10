@@ -151,34 +151,6 @@ final class DictationHistoryViewModelTests: XCTestCase {
         XCTAssertTrue(mockRepo.deleteCalledWith.contains(dictation.id))
     }
 
-    func testDeleteClearsSelectedDictation() {
-        let dictation = Dictation(durationMs: 1000, rawTranscript: "Selected one")
-        mockRepo.dictations = [dictation]
-
-        viewModel.configure(dictationRepo: mockRepo)
-        viewModel.selectedDictation = dictation
-
-        XCTAssertNotNil(viewModel.selectedDictation)
-
-        viewModel.deleteDictation(dictation)
-
-        XCTAssertNil(viewModel.selectedDictation, "Deleting the selected dictation should clear selection")
-    }
-
-    func testDeleteDoesNotClearUnrelatedSelection() {
-        let dictation1 = Dictation(durationMs: 1000, rawTranscript: "First")
-        let dictation2 = Dictation(durationMs: 2000, rawTranscript: "Second")
-        mockRepo.dictations = [dictation1, dictation2]
-
-        viewModel.configure(dictationRepo: mockRepo)
-        viewModel.selectedDictation = dictation1
-
-        viewModel.deleteDictation(dictation2)
-
-        XCTAssertNotNil(viewModel.selectedDictation, "Deleting a different dictation should not clear selection")
-        XCTAssertEqual(viewModel.selectedDictation?.id, dictation1.id)
-    }
-
     // MARK: - Unconfigured
 
     func testLoadDictationsBeforeConfigureIsNoOp() {
@@ -252,24 +224,6 @@ final class DictationHistoryViewModelTests: XCTestCase {
         XCTAssertNil(viewModel.playingDictationId)
     }
 
-    func testSelectionChangeStopsPlayback() {
-        let dictation1 = Dictation(durationMs: 1000, rawTranscript: "First")
-        let dictation2 = Dictation(durationMs: 2000, rawTranscript: "Second")
-        mockRepo.dictations = [dictation1, dictation2]
-        viewModel.configure(dictationRepo: mockRepo)
-
-        // Simulate playing state
-        viewModel.isPlaying = true
-        viewModel.playingDictationId = dictation1.id
-        viewModel.selectedDictation = dictation1
-
-        // Change selection
-        viewModel.selectedDictation = dictation2
-
-        XCTAssertFalse(viewModel.isPlaying, "Changing selection should stop playback")
-        XCTAssertNil(viewModel.playingDictationId)
-    }
-
     func testPlaybackProgressZeroWhenDurationZero() {
         viewModel.configure(dictationRepo: mockRepo)
         XCTAssertEqual(viewModel.playbackProgress, 0, "Progress should be 0 when duration is 0")
@@ -282,6 +236,37 @@ final class DictationHistoryViewModelTests: XCTestCase {
         viewModel.pausePlayback()
 
         XCTAssertFalse(viewModel.isPlaying)
+    }
+
+    // MARK: - Playing Dictation
+
+    func testPlayingDictationReturnsCurrentlyPlaying() {
+        let dictation = Dictation(durationMs: 1000, rawTranscript: "Playing now")
+        mockRepo.dictations = [dictation]
+        viewModel.configure(dictationRepo: mockRepo)
+
+        XCTAssertNil(viewModel.playingDictation, "Should be nil when nothing is playing")
+
+        viewModel.playingDictationId = dictation.id
+
+        XCTAssertEqual(viewModel.playingDictation?.id, dictation.id, "Should return the currently playing dictation")
+    }
+
+    // MARK: - Confirm Delete
+
+    func testConfirmDeleteRemovesDictation() {
+        let dictation = Dictation(durationMs: 1000, rawTranscript: "To be confirmed deleted")
+        mockRepo.dictations = [dictation]
+        viewModel.configure(dictationRepo: mockRepo)
+
+        viewModel.pendingDeleteDictation = dictation
+        XCTAssertNotNil(viewModel.pendingDeleteDictation)
+
+        viewModel.confirmDelete()
+
+        XCTAssertNil(viewModel.pendingDeleteDictation, "Pending should be cleared after confirm")
+        XCTAssertTrue(mockRepo.deleteCalledWith.contains(dictation.id), "Should have called delete")
+        XCTAssertTrue(viewModel.groupedDictations.isEmpty, "Dictation should be removed from list")
     }
 
     // MARK: - Helpers
