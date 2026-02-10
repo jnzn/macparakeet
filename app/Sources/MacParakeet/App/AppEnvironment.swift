@@ -18,12 +18,11 @@ final class AppEnvironment {
     let checkoutURL: URL?
 
     init() throws {
+        // Ensure required runtime directories exist (db, dictations, temp).
+        try AppPaths.ensureDirectories()
+
         // Database
         let dbPath = AppPaths.databasePath
-        try FileManager.default.createDirectory(
-            atPath: AppPaths.appSupportDir,
-            withIntermediateDirectories: true
-        )
         databaseManager = try DatabaseManager(path: dbPath)
 
         // Repositories
@@ -57,6 +56,10 @@ final class AppEnvironment {
             sttClient: sttClient,
             dictationRepo: dictationRepo,
             clipboardService: clipboardService,
+            shouldSaveAudio: {
+                // Defaults to true if unset (matches Settings UI default).
+                UserDefaults.standard.object(forKey: "saveAudioRecordings") as? Bool ?? true
+            },
             entitlements: entitlementsService
         )
 

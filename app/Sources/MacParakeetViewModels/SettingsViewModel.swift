@@ -168,6 +168,12 @@ public final class SettingsViewModel {
     public func clearAllDictations() {
         guard let repo = dictationRepo else { return }
         try? repo.deleteAll()
+        // Also remove any saved audio files (best effort).
+        let dir = AppPaths.dictationsDir
+        if FileManager.default.fileExists(atPath: dir) {
+            try? FileManager.default.removeItem(atPath: dir)
+            try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        }
         refreshStats()
     }
 }

@@ -177,10 +177,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             do {
                 try await env.dictationService.startRecording()
 
+                // Snapshot settings at start of recording (keeps behavior stable during a recording).
+                let (autoStopEnabled, silenceDelay) = await MainActor.run {
+                    (self.settingsViewModel.silenceAutoStop, self.settingsViewModel.silenceDelay)
+                }
+                let silenceThreshold: Float = 0.03
+                var lastNonSilenceAt = Date()
+                var didAutoStop = false
+
                 // Update audio level periodically
                 while case .recording = await env.dictationService.state {
                     let level = await env.dictationService.audioLevel
                     await MainActor.run { vm.audioLevel = level }
+
+                    if autoStopEnabled {
+                        let now = Date()
+                        if level >= silenceThreshold {
+                            lastNonSilenceAt = now
+                        } else if !didAutoStop, now.timeIntervalSince(lastNonSilenceAt) >= silenceDelay {
+                            didAutoStop = true
+                            await MainActor.run { self.stopDictation() }
+                            break
+                        }
+                    }
+
                     try? await Task.sleep(for: .milliseconds(50))
                 }
             } catch {

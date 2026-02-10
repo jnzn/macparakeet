@@ -60,7 +60,8 @@ struct SettingsView: View {
 
             // General
             Section("General") {
-                Toggle("Launch at login", isOn: $viewModel.launchAtLogin)
+                Toggle("Launch at login (Coming soon)", isOn: $viewModel.launchAtLogin)
+                    .disabled(true)
             }
 
             // Dictation

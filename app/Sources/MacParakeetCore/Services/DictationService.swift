@@ -22,6 +22,7 @@ public actor DictationService: DictationServiceProtocol {
     private let sttClient: STTClientProtocol
     private let dictationRepo: DictationRepositoryProtocol
     private let clipboardService: ClipboardServiceProtocol
+    private let shouldSaveAudio: (@Sendable () -> Bool)?
     private let entitlements: EntitlementsChecking?
 
     private var _state: DictationState = .idle
@@ -41,12 +42,14 @@ public actor DictationService: DictationServiceProtocol {
         sttClient: STTClientProtocol,
         dictationRepo: DictationRepositoryProtocol,
         clipboardService: ClipboardServiceProtocol,
+        shouldSaveAudio: (@Sendable () -> Bool)? = nil,
         entitlements: EntitlementsChecking? = nil
     ) {
         self.audioProcessor = audioProcessor
         self.sttClient = sttClient
         self.dictationRepo = dictationRepo
         self.clipboardService = clipboardService
+        self.shouldSaveAudio = shouldSaveAudio
         self.entitlements = entitlements
     }
 
@@ -88,16 +91,30 @@ public actor DictationService: DictationServiceProtocol {
             // Transcribe
             let result = try await sttClient.transcribe(audioPath: audioURL.path)
 
-            // Clean up temp audio file
-            try? FileManager.default.removeItem(at: audioURL)
-
             // Create dictation record
-            let dictation = Dictation(
+            var dictation = Dictation(
                 durationMs: computeDurationMs(from: result),
                 rawTranscript: result.text,
                 processingMode: .raw,
                 status: .completed
             )
+
+            // Persist audio if enabled; otherwise delete it.
+            if shouldSaveAudio?() ?? false {
+                try? AppPaths.ensureDirectories()
+                let destURL = URL(fileURLWithPath: AppPaths.dictationsDir, isDirectory: true)
+                    .appendingPathComponent("\(dictation.id.uuidString).wav")
+
+                if (try? FileManager.default.moveItem(at: audioURL, to: destURL)) != nil {
+                    dictation.audioPath = destURL.path
+                } else {
+                    // Best-effort fallback: don't fail dictation if file I/O fails.
+                    try? FileManager.default.removeItem(at: audioURL)
+                }
+            } else {
+                // Clean up temp audio file
+                try? FileManager.default.removeItem(at: audioURL)
+            }
 
             // Save to database
             try dictationRepo.save(dictation)
@@ -125,8 +142,10 @@ public actor DictationService: DictationServiceProtocol {
         let generation = cancelGeneration
 
         if case .recording = _state {
-            // Stop capture but discard the result.
-            _ = try? await audioProcessor.stopCapture()
+            // Stop capture but discard the result (and clean up temp audio).
+            if let url = try? await audioProcessor.stopCapture() {
+                try? FileManager.default.removeItem(at: url)
+            }
         }
 
         _state = .cancelled

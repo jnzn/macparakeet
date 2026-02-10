@@ -43,6 +43,9 @@ public final class DictationHistoryViewModel {
 
     public func deleteDictation(_ dictation: Dictation) {
         guard let repo = dictationRepo else { return }
+        if let path = dictation.audioPath {
+            try? FileManager.default.removeItem(atPath: path)
+        }
         _ = try? repo.delete(id: dictation.id)
         if selectedDictation?.id == dictation.id {
             selectedDictation = nil
