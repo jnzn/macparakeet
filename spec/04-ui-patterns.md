@@ -218,7 +218,7 @@ Persistent floating pill at the bottom-center of the screen, always visible when
 |-----------|----------|-------|-------|
 | Pill expand/collapse | 0.35s | `.spring(dampingFraction: 0.8)` | Hover state change |
 | Tooltip appear | 0.2s | `.easeOut` + scale 0.9→1.0 | Show on hover |
-| Accent line width | 0.35s | `.spring(dampingFraction: 0.8)` | Expands with pill |
+| Tooltip disappear | 0.2s | `.easeOut` | Hide on mouse exit |
 
 ---
 
@@ -246,11 +246,13 @@ Compact dark pill overlay, always-on-top, bottom-center of screen. This is the p
 └──────────────────────────────────────────┘
 
 - [✕] Cancel button (SF Symbol: xmark.circle.fill, red tint)
+  - Hover: brightens background (white 12% → 25%), icon fully opaque
 - Waveform: 12 bars, animating to audio amplitude, white
 - Timer: Recording duration (e.g., "0:03"), updates every second
 - [■] Stop button (SF Symbol: stop.circle.fill, white)
+  - Hover: red glow (red 30% background), 10% scale-up
 - Tooltip on [✕]: "Cancel (Esc)"
-- Tooltip on [■]: "Stop Recording"
+- Tooltip on [■]: "Stop & Paste (↵)"
 ```
 
 **2. Cancelled**
@@ -270,12 +272,17 @@ Compact dark pill overlay, always-on-top, bottom-center of screen. This is the p
 
 ```
 ┌──────────────────────────────────────────┐
-│  [spinner]  Processing...  [●]          │
+│  [merkaba]  Processing...               │
 └──────────────────────────────────────────┘
 
-- [spinner]: Indeterminate circular progress (small)
+- [merkaba]: Sacred geometry spinner — two counter-rotating equilateral triangles
+  - Clockwise triangle: 3s full rotation, white 50% stroke
+  - Counter-clockwise triangle: 3s full rotation (opposite), white 30% stroke
+  - 6 vertex dots: 2.5pt core (white 80%) + 7pt blur glow, pulsing 0.6→1.0 over 1.5s
+  - Center nexus: 3pt core (white 90%) + 10pt blur glow, pulsing 0.3→0.7 over 2s
+  - Faint outer guide ring: white 8%, 0.5pt stroke
 - "Processing..." label
-- [●]: Red dot indicator (recording stopped, STT in progress)
+- Cross-fades in from recording state via `.opacity` transition
 ```
 
 **4. Success**
@@ -327,10 +334,18 @@ Errors use a wider rounded-rectangle card instead of the compact pill — distin
 
 Tooltips use AppKit `NSTrackingArea` with `.activeAlways` because the pill is a non-activating `NSPanel`. Standard SwiftUI `.help()` modifiers and `.onHover` do not work on non-activating panels.
 
+**Unified tooltip styling** (shared by idle pill and dictation overlay):
+- Font: 14pt `.medium` (keys: 14pt `.semibold`)
+- Text color: white 90%
+- Key highlights (fn, Esc, ↵): pink tint `(0.85, 0.55, 0.75)` — stands out from white text
+- Background: black 90% capsule fill with white 10% strokeBorder (0.5pt)
+- Shadow: black 30%, radius 8, y-offset 4
+- Padding: 20pt horizontal, 10pt vertical
+
 Implementation pattern:
 - `MouseTrackingOverlay` NSView layered on top of the pill
-- `hitTest` returns `nil` for click passthrough
-- `NSTrackingArea` with `.mouseEnteredAndExited` + `.activeAlways`
+- `hitTest` returns `nil` for click passthrough (dictation overlay) or `self` for click-to-dictate (idle pill)
+- `NSTrackingArea` with `.mouseMoved` + `.activeAlways` for precise hover detection
 - Show/hide tooltip label (opacity toggle, not add/remove, to prevent resize jitter)
 - Reserve space for tooltip text in the layout at all times
 
@@ -745,9 +760,13 @@ Settings open in the content area when "Settings" is selected in the sidebar. Ta
 |-----------|----------|-------|-------|
 | Pill appear | 0.2s | `.easeOut` | Overlay show |
 | Pill dismiss | 0.15s | `.easeIn` | Overlay hide |
-| State transition | 0.2s | `.easeInOut` | Pill state changes |
+| State cross-fade | 0.3s | `.easeInOut` | Pill state changes (opacity transition) |
 | Waveform | 0.05s | `.linear` | Audio bars (tied to amplitude) |
-| Success checkmark | 0.3s | `.spring(dampingFraction: 0.6)` | Checkmark pop |
+| Success appear | 0.5s | `.spring(response: 0.4, dampingFraction: 0.7)` | Scale 0.8→1.0 + opacity |
+| Merkaba rotation | 3.0s | `.linear` (repeating) | Two counter-rotating triangles |
+| Merkaba vertex pulse | 1.5s | `.easeInOut` (repeating) | Vertex dot glow 0.6→1.0 |
+| Merkaba center pulse | 2.0s | `.easeInOut` (repeating) | Center nexus glow 0.3→0.7 |
+| Button hover | 0.15s | `.easeInOut` | Cancel brighten / stop red glow |
 | Progress bar | 0.1s | `.linear` | Transcription progress |
 
 ---

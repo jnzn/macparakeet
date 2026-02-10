@@ -62,6 +62,7 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 - [x] System-wide dictation: Fn double-tap (persistent) + hold-to-talk
 - [x] File transcription: Drag-drop audio/video files
 - [x] Compact dark pill overlay with recording timer + waveform
+- [x] Persistent idle pill (always-visible, click-to-dictate)
 - [x] Auto-paste with clipboard save/restore
 - [x] Dictation history (date-grouped, searchable, detail view, audio playback)
 - [x] Settings (hotkey display, silence auto-stop, storage, permissions)
@@ -69,7 +70,7 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 - [x] Basic export (plain text, copy to clipboard)
 - [x] SQLite database (GRDB, dictations + transcriptions + FTS5)
 - [x] CLI tool (`macparakeet transcribe`, `history`, `health`)
-- [x] 188 tests passing (22 test suites)
+- [x] 191 tests passing (22 test suites)
 
 ### v0.2 AI & Text Processing (Planned)
 

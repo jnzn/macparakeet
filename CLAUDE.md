@@ -95,7 +95,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 
 ## Current Phase
 
-**v0.1 MVP** -- Implemented (188 tests, 22 suites, `swift test` + `xcodebuild` green)
+**v0.1 MVP** -- Implemented (191 tests, 22 suites, `swift test` + `xcodebuild` green)
 
 ### v0.1 MVP (Implemented)
 - [x] System-wide dictation: Fn double-tap (persistent) + hold-to-talk
@@ -277,7 +277,7 @@ macparakeet/
 │   ├── MacParakeetCore/        # Shared library (no UI deps)
 │   └── MacParakeetViewModels/  # ViewModels (testable, depends on Core)
 ├── Tests/
-│   └── MacParakeetTests/   # Unit, database, and integration tests (188 tests, 22 suites)
+│   └── MacParakeetTests/   # Unit, database, and integration tests (191 tests, 22 suites)
 ├── Assets/             # App icons and images (placeholder)
 ├── python/             # STT daemon (Parakeet via uv)
 │   └── macparakeet_stt/
