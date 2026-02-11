@@ -220,10 +220,11 @@ DictationResult returned
 ```swift
 protocol TranscriptionServiceProtocol: Sendable {
     func transcribe(fileURL: URL) async throws -> Transcription
+    func transcribeURL(urlString: String) async throws -> Transcription  // YouTube URL (v0.3)
 }
 ```
 
-**Dependencies:** `AudioProcessor`, `STTClient`, `TranscriptionRepository`
+**Dependencies:** `AudioProcessor`, `STTClient`, `TranscriptionRepository`, `YouTubeDownloader`
 
 **Data Flow:**
 ```
@@ -525,6 +526,7 @@ struct Transcription: Codable, Identifiable, Sendable {
     var status: TranscriptionStatus  // .processing, .completed, .error, .cancelled
     var errorMessage: String?
     var exportPath: String?
+    var sourceURL: String?           // YouTube/web URL (v0.3)
     var updatedAt: Date
 }
 
@@ -868,6 +870,7 @@ CREATE TABLE transcriptions (
     status          TEXT NOT NULL DEFAULT 'processing', -- 'processing' | 'completed' | 'error' | 'cancelled'
     errorMessage    TEXT,                   -- non-null if status == 'error'
     exportPath      TEXT,                   -- path to exported file
+    sourceURL       TEXT,                   -- YouTube/web URL (v0.3)
     updatedAt       TEXT NOT NULL
 );
 CREATE INDEX idx_transcriptions_created_at ON transcriptions(createdAt);
@@ -947,6 +950,7 @@ try migrator.migrate(dbQueue)
 │ status          │
 │ errorMessage    │
 │ exportPath      │
+│ sourceURL       │
 │ updatedAt       │
 └─────────────────┘
 

@@ -33,7 +33,7 @@ struct SettingsView: View {
 
                 if let err = viewModel.licensingError, !err.isEmpty {
                     Text(err)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(DesignSystem.Colors.statusDenied)
                         .font(.caption)
                 }
 
@@ -85,7 +85,13 @@ struct SettingsView: View {
             // Storage
             Section("Storage") {
                 Toggle("Save audio recordings", isOn: $viewModel.saveAudioRecordings)
-                Toggle("Save transcription audio", isOn: $viewModel.saveTranscriptionAudio)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle("Save transcription audio", isOn: $viewModel.saveTranscriptionAudio)
+                    Text("Keep downloaded audio from YouTube transcriptions")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
 
                 HStack {
                     Text("Dictations")

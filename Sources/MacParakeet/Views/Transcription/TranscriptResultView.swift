@@ -42,14 +42,23 @@ struct TranscriptResultView: View {
                         Button {
                             NSWorkspace.shared.open(url)
                         } label: {
-                            HStack(spacing: 3) {
+                            HStack(spacing: 5) {
                                 Image(systemName: "play.rectangle.fill")
                                     .font(.system(size: 10))
+                                    .foregroundStyle(DesignSystem.Colors.youtubeRed.opacity(0.7))
                                 Text(sourceURL.count > 50 ? String(sourceURL.prefix(47)) + "..." : sourceURL)
                                     .font(.caption)
                                     .lineLimit(1)
+                                Image(systemName: "arrow.up.right")
+                                    .font(.system(size: 8, weight: .semibold))
                             }
                             .foregroundStyle(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(
+                                RoundedRectangle(cornerRadius: 5)
+                                    .fill(Color.primary.opacity(0.03))
+                            )
                         }
                         .buttonStyle(.plain)
                         .onHover { hovering in

@@ -2,7 +2,13 @@ import Foundation
 
 public protocol TranscriptionServiceProtocol: Sendable {
     func transcribe(fileURL: URL) async throws -> Transcription
-    func transcribeURL(urlString: String) async throws -> Transcription
+    func transcribeURL(urlString: String, onProgress: (@Sendable (String) -> Void)?) async throws -> Transcription
+}
+
+extension TranscriptionServiceProtocol {
+    public func transcribeURL(urlString: String) async throws -> Transcription {
+        try await transcribeURL(urlString: urlString, onProgress: nil)
+    }
 }
 
 public actor TranscriptionService: TranscriptionServiceProtocol {
@@ -54,7 +60,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         return try await transcribeAudio(fileURL: fileURL, transcription: &transcription, tempFiles: [])
     }
 
-    public func transcribeURL(urlString: String) async throws -> Transcription {
+    public func transcribeURL(urlString: String, onProgress: (@Sendable (String) -> Void)? = nil) async throws -> Transcription {
         guard let downloader = youtubeDownloader else {
             throw YouTubeDownloadError.ytDlpNotFound
         }
@@ -63,6 +69,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             try await entitlements.assertCanTranscribe(now: Date())
         }
 
+        onProgress?("Downloading audio...")
         let downloadResult = try await downloader.download(url: urlString)
 
         var transcription = Transcription(
@@ -72,6 +79,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         )
         try transcriptionRepo.save(transcription)
 
+        onProgress?("Transcribing...")
         return try await transcribeAudio(
             fileURL: downloadResult.audioFileURL,
             transcription: &transcription,

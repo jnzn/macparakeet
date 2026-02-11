@@ -65,14 +65,17 @@ public final class TranscriptionViewModel {
         guard YouTubeURLValidator.isYouTubeURL(url) else { return }
 
         isTranscribing = true
-        progress = "Downloading audio..."
+        progress = "Preparing..."
         errorMessage = nil
         urlInput = ""
 
         Task {
             do {
-                progress = "Transcribing..."
-                let result = try await service.transcribeURL(urlString: url)
+                let result = try await service.transcribeURL(urlString: url) { [weak self] phase in
+                    Task { @MainActor in
+                        self?.progress = phase
+                    }
+                }
                 currentTranscription = result
                 isTranscribing = false
                 progress = ""

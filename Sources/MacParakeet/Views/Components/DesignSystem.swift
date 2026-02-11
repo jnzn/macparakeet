@@ -21,6 +21,8 @@ enum DesignSystem {
         static let subtleBorder = Color.primary.opacity(0.08)
         static let playbackTrack = Color.primary.opacity(0.08)
         static let playbackFill = Color.accentColor
+
+        static let youtubeRed = Color.red
     }
 
     // MARK: - Spacing

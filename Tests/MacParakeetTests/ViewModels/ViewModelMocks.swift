@@ -147,7 +147,7 @@ actor MockTranscriptionService: TranscriptionServiceProtocol {
         )
     }
 
-    func transcribeURL(urlString: String) async throws -> Transcription {
+    func transcribeURL(urlString: String, onProgress: (@Sendable (String) -> Void)? = nil) async throws -> Transcription {
         transcribeURLCallCount += 1
         lastURLString = urlString
 

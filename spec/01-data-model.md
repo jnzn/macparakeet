@@ -115,6 +115,7 @@ CREATE TABLE transcriptions (
     status TEXT NOT NULL DEFAULT 'processing',          -- 'processing', 'completed', 'error', 'cancelled'
     errorMessage TEXT,                                  -- Error details if status='error'
     exportPath TEXT,                                    -- Path to last export (nullable)
+    sourceURL TEXT,                                     -- YouTube/web URL if transcription sourced from URL (v0.3)
     updatedAt TEXT NOT NULL                             -- ISO 8601 timestamp
 );
 
@@ -125,6 +126,7 @@ CREATE INDEX idx_transcriptions_created_at ON transcriptions(createdAt DESC);
 - `wordTimestamps` is a JSON text column, not a separate table. One transcription = one blob of timestamps. GRDB can decode this via `Codable`.
 - `speakerCount` and `speakers` are nullable, populated only when diarization is available (v0.4).
 - `filePath` is nullable because the original file may be moved or deleted after transcription.
+- `sourceURL` distinguishes URL-sourced transcriptions (YouTube) from local file transcriptions. Added in v0.3.
 - No FTS on transcriptions in v0.1. Search by filename or scroll the list. Revisit if the list grows large.
 
 ---
@@ -246,6 +248,7 @@ struct Transcription: Codable, Identifiable {
     var status: TranscriptionStatus
     var errorMessage: String?
     var exportPath: String?
+    var sourceURL: String?              // YouTube/web URL (v0.3, nullable)
     var updatedAt: Date
 
     struct WordTimestamp: Codable {
@@ -406,6 +409,13 @@ migrator.registerMigration("v0.2-text-snippets") { db in
         ON text_snippets("trigger" COLLATE NOCASE)
     """)
 }
+
+// v0.3 — YouTube URL transcription
+migrator.registerMigration("v0.3-transcription-source-url") { db in
+    try db.alter(table: "transcriptions") { t in
+        t.add(column: "sourceURL", .text)
+    }
+}
 ```
 
 ### Migration Rules
@@ -512,4 +522,4 @@ let processing = try dbQueue.read { db in
 
 ---
 
-*Last updated: 2026-02-08*
+*Last updated: 2026-02-10*

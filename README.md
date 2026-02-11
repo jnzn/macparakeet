@@ -44,8 +44,9 @@ Drag any audio or video file → get a transcript in seconds.
 - **Export** — Plain text export (`.txt`) + copy to clipboard
 - **History** — Dictation + transcription history stored locally (SQLite, searchable)
 - **CLI** — `macparakeet transcribe`, `history`, `health`, `flow process/words/snippets`
+- **YouTube Transcription** — Paste a YouTube URL, auto-download audio via yt-dlp, transcribe with Parakeet
 
-### Planned (v0.2+)
+### Planned
 
 - **AI Refinement** — Qwen3-4B for formal, email, and code modes
 - **Command Mode** — Local LLM edits for command-mode workflows

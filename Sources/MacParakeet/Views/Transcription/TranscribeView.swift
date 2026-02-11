@@ -8,16 +8,20 @@ struct TranscribeView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if let transcription = viewModel.currentTranscription {
-                TranscriptResultView(
-                    transcription: transcription,
-                    onBack: { viewModel.currentTranscription = nil }
-                )
-            } else if viewModel.isTranscribing {
-                transcribingView
-            } else {
-                dropZoneView
+            Group {
+                if let transcription = viewModel.currentTranscription {
+                    TranscriptResultView(
+                        transcription: transcription,
+                        onBack: { viewModel.currentTranscription = nil }
+                    )
+                } else if viewModel.isTranscribing {
+                    transcribingView
+                } else {
+                    dropZoneView
+                }
             }
+            .animation(DesignSystem.Animation.contentSwap, value: viewModel.isTranscribing)
+            .animation(DesignSystem.Animation.contentSwap, value: viewModel.currentTranscription?.id)
 
             if !viewModel.transcriptions.isEmpty && viewModel.currentTranscription == nil && !viewModel.isTranscribing {
                 Divider()
@@ -82,33 +86,57 @@ struct TranscribeView: View {
             .buttonStyle(.borderedProminent)
 
             // YouTube URL input
-            VStack(spacing: DesignSystem.Spacing.sm) {
+            VStack(spacing: DesignSystem.Spacing.md) {
                 HStack(spacing: DesignSystem.Spacing.sm) {
                     Rectangle()
-                        .fill(Color.primary.opacity(0.1))
+                        .fill(Color.primary.opacity(0.08))
                         .frame(height: 0.5)
-                    Text("or")
+                    Text("or paste a link")
                         .font(.caption)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.quaternary)
                     Rectangle()
-                        .fill(Color.primary.opacity(0.1))
+                        .fill(Color.primary.opacity(0.08))
                         .frame(height: 0.5)
                 }
-                .padding(.horizontal, DesignSystem.Spacing.xl)
+                .padding(.horizontal, DesignSystem.Spacing.xxl)
 
                 HStack(spacing: DesignSystem.Spacing.sm) {
-                    TextField("Paste YouTube URL...", text: $viewModel.urlInput)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit {
-                            if viewModel.isValidURL {
-                                viewModel.transcribeURL()
-                            }
-                        }
+                    HStack(spacing: 6) {
+                        Image(systemName: viewModel.isValidURL ? "checkmark.circle.fill" : "play.rectangle")
+                            .font(.system(size: 14))
+                            .foregroundStyle(viewModel.isValidURL ? DesignSystem.Colors.successGreen : Color.primary.opacity(0.15))
+                            .contentTransition(.symbolEffect(.replace))
 
-                    Button("Transcribe") {
-                        viewModel.transcribeURL()
+                        TextField("YouTube URL", text: $viewModel.urlInput)
+                            .textFieldStyle(.plain)
+                            .onSubmit {
+                                if viewModel.isValidURL {
+                                    viewModel.transcribeURL()
+                                }
+                            }
                     }
-                    .buttonStyle(.bordered)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.primary.opacity(0.04))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(
+                                viewModel.isValidURL ? DesignSystem.Colors.successGreen.opacity(0.3) : Color.primary.opacity(0.08),
+                                lineWidth: 0.5
+                            )
+                    )
+
+                    Button {
+                        viewModel.transcribeURL()
+                    } label: {
+                        Image(systemName: "arrow.right.circle.fill")
+                            .font(.system(size: 20))
+                            .foregroundStyle(viewModel.isValidURL ? Color.accentColor : Color.primary.opacity(0.15))
+                    }
+                    .buttonStyle(.plain)
                     .disabled(!viewModel.isValidURL)
                 }
                 .padding(.horizontal, DesignSystem.Spacing.xl)
@@ -121,20 +149,44 @@ struct TranscribeView: View {
 
     // MARK: - Transcribing
 
+    private var isDownloadPhase: Bool {
+        viewModel.progress.localizedCaseInsensitiveContains("download")
+    }
+
     private var transcribingView: some View {
         VStack(spacing: DesignSystem.Spacing.lg) {
             Spacer()
 
-            SpinnerRingView(size: 40, revolutionDuration: 2.5, tintColor: .accentColor)
+            ZStack {
+                // Phase icon behind the spinner
+                Image(systemName: isDownloadPhase ? "arrow.down.circle" : "waveform")
+                    .font(.system(size: 18, weight: .light))
+                    .foregroundStyle(Color.accentColor.opacity(0.3))
+                    .contentTransition(.symbolEffect(.replace))
 
-            Text(viewModel.progress)
-                .font(DesignSystem.Typography.body)
-                .foregroundStyle(.secondary)
+                SpinnerRingView(size: 48, revolutionDuration: isDownloadPhase ? 3.5 : 2.0, tintColor: .accentColor)
+            }
+
+            VStack(spacing: DesignSystem.Spacing.xs) {
+                Text(viewModel.progress)
+                    .font(DesignSystem.Typography.body)
+                    .foregroundStyle(.secondary)
+                    .contentTransition(.numericText())
+                    .animation(.easeInOut(duration: 0.3), value: viewModel.progress)
+
+                if isDownloadPhase {
+                    Text("This may take a moment for longer videos")
+                        .font(.caption)
+                        .foregroundStyle(.quaternary)
+                }
+            }
 
             if let error = viewModel.errorMessage {
                 Text(error)
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(DesignSystem.Colors.statusDenied)
+                    .padding(.horizontal, DesignSystem.Spacing.xl)
+                    .multilineTextAlignment(.center)
             }
 
             Spacer()
@@ -210,10 +262,24 @@ private struct RecentTranscriptionRow: View {
 
             // Content: filename + metadata
             VStack(alignment: .leading, spacing: 2) {
-                Text(transcription.fileName)
-                    .font(.body)
-                    .lineLimit(1)
-                    .foregroundStyle(.primary)
+                HStack(spacing: 6) {
+                    Text(transcription.fileName)
+                        .font(.body)
+                        .lineLimit(1)
+                        .foregroundStyle(.primary)
+
+                    if transcription.sourceURL != nil {
+                        Text("YouTube")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(DesignSystem.Colors.youtubeRed.opacity(0.7))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1.5)
+                            .background(
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(DesignSystem.Colors.youtubeRed.opacity(0.08))
+                            )
+                    }
+                }
 
                 HStack(spacing: DesignSystem.Spacing.sm) {
                     Text(relativeTime(transcription.createdAt))
