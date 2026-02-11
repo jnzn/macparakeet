@@ -43,7 +43,7 @@ struct PortalDropZone: View {
                         revolutionDuration: isDragging ? 3.0 : 6.0,
                         tintColor: DesignSystem.Colors.accent
                     )
-                    .opacity(isDragging ? 0.8 : 0.4)
+                    .opacity(isDragging ? 0.9 : 0.7)
                     .animation(.easeInOut(duration: 0.3), value: isDragging)
                 }
 

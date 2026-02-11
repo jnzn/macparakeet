@@ -250,12 +250,8 @@ private struct RecentTranscriptionRow: View {
 
     var body: some View {
         HStack(spacing: DesignSystem.Spacing.md) {
-            // Sonic mandala thumbnail
-            SonicMandalaView(
-                data: mandalaData,
-                size: 32,
-                style: .monochrome
-            )
+            // Contextual icon thumbnail
+            transcriptionIcon
 
             // Content: filename + metadata
             VStack(alignment: .leading, spacing: 3) {
@@ -315,14 +311,21 @@ private struct RecentTranscriptionRow: View {
         }
     }
 
-    // MARK: - Mandala Data
+    // MARK: - Icon Thumbnail
 
-    private var mandalaData: MandalaData {
-        if let timestamps = transcription.wordTimestamps, !timestamps.isEmpty {
-            return .from(wordTimestamps: timestamps)
+    private var isYouTube: Bool { transcription.sourceURL != nil }
+
+    @ViewBuilder
+    private var transcriptionIcon: some View {
+        let iconColor = isYouTube ? DesignSystem.Colors.youtubeRed : DesignSystem.Colors.accent
+        ZStack {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(iconColor.opacity(0.1))
+            Image(systemName: isYouTube ? "play.rectangle.fill" : "waveform")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(iconColor.opacity(0.7))
         }
-        return .from(text: transcription.rawTranscript ?? transcription.fileName,
-                     durationMs: transcription.durationMs ?? 1000)
+        .frame(width: 36, height: 36)
     }
 
     // MARK: - Status Pill
