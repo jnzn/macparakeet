@@ -74,9 +74,11 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
 
         onProgress?("Downloading audio...")
         let downloadResult = try await downloader.download(url: urlString)
+        let keepDownloadedAudio = shouldKeepDownloadedAudio()
 
         var transcription = Transcription(
             fileName: downloadResult.title,
+            filePath: keepDownloadedAudio ? downloadResult.audioFileURL.path : nil,
             status: .processing,
             sourceURL: urlString
         )
@@ -87,7 +89,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             fileURL: downloadResult.audioFileURL,
             transcription: &transcription,
             tempFiles: [downloadResult.audioFileURL],
-            cleanUpDownloadedFiles: !shouldKeepDownloadedAudio()
+            cleanUpDownloadedFiles: !keepDownloadedAudio
         )
     }
 

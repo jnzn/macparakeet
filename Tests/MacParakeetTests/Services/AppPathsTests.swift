@@ -22,6 +22,11 @@ final class AppPathsTests: XCTestCase {
         XCTAssertTrue(AppPaths.pythonVenvDir.hasSuffix("python"))
     }
 
+    func testYouTubeDownloadsDirIsInsideAppSupport() {
+        XCTAssertTrue(AppPaths.youtubeDownloadsDir.hasPrefix(AppPaths.appSupportDir))
+        XCTAssertTrue(AppPaths.youtubeDownloadsDir.hasSuffix("youtube-downloads"))
+    }
+
     func testTempDirContainsMacParakeet() {
         XCTAssertTrue(AppPaths.tempDir.contains("macparakeet"))
     }

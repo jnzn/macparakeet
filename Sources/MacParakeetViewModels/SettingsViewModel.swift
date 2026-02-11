@@ -39,6 +39,8 @@ public final class SettingsViewModel {
     // Stats
     public var dictationCount = 0
     public var dictationStorageMB: Double = 0
+    public var youtubeDownloadCount = 0
+    public var youtubeDownloadStorageMB: Double = 0
 
     // Licensing / entitlements
     public var entitlementsSummary: String = ""
@@ -51,13 +53,19 @@ public final class SettingsViewModel {
 
     private var permissionService: PermissionServiceProtocol?
     private var dictationRepo: DictationRepositoryProtocol?
+    private var transcriptionRepo: TranscriptionRepositoryProtocol?
     private var customWordRepo: CustomWordRepositoryProtocol?
     private var snippetRepo: TextSnippetRepositoryProtocol?
     private var entitlementsService: EntitlementsService?
     private let defaults: UserDefaults
+    private let youtubeDownloadsDirPath: @Sendable () -> String
 
-    public init(defaults: UserDefaults = .standard) {
+    public init(
+        defaults: UserDefaults = .standard,
+        youtubeDownloadsDirPath: @escaping @Sendable () -> String = { AppPaths.youtubeDownloadsDir }
+    ) {
         self.defaults = defaults
+        self.youtubeDownloadsDirPath = youtubeDownloadsDirPath
         launchAtLogin = defaults.bool(forKey: "launchAtLogin")
         silenceAutoStop = defaults.bool(forKey: "silenceAutoStop")
         let delay = defaults.double(forKey: "silenceDelay")
@@ -70,6 +78,7 @@ public final class SettingsViewModel {
     public func configure(
         permissionService: PermissionServiceProtocol,
         dictationRepo: DictationRepositoryProtocol,
+        transcriptionRepo: TranscriptionRepositoryProtocol? = nil,
         entitlementsService: EntitlementsService,
         checkoutURL: URL?,
         customWordRepo: CustomWordRepositoryProtocol? = nil,
@@ -77,6 +86,7 @@ public final class SettingsViewModel {
     ) {
         self.permissionService = permissionService
         self.dictationRepo = dictationRepo
+        self.transcriptionRepo = transcriptionRepo
         self.entitlementsService = entitlementsService
         self.checkoutURL = checkoutURL
         self.customWordRepo = customWordRepo
@@ -104,6 +114,10 @@ public final class SettingsViewModel {
         }
         customWordCount = (try? customWordRepo?.fetchAll().count) ?? 0
         snippetCount = (try? snippetRepo?.fetchAll().count) ?? 0
+
+        let (count, sizeBytes) = youtubeDownloadStats()
+        youtubeDownloadCount = count
+        youtubeDownloadStorageMB = Double(sizeBytes) / (1024.0 * 1024.0)
     }
 
     public func refreshEntitlements() {
@@ -195,5 +209,46 @@ public final class SettingsViewModel {
             try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         }
         refreshStats()
+    }
+
+    public func clearDownloadedYouTubeAudio() {
+        let dir = youtubeDownloadsDirPath()
+        let fm = FileManager.default
+
+        if fm.fileExists(atPath: dir) {
+            try? fm.removeItem(atPath: dir)
+        }
+        try? fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
+
+        try? transcriptionRepo?.clearStoredAudioPathsForURLTranscriptions()
+        refreshStats()
+    }
+
+    private func youtubeDownloadStats() -> (count: Int, sizeBytes: Int64) {
+        let dirURL = URL(fileURLWithPath: youtubeDownloadsDirPath(), isDirectory: true)
+        let fm = FileManager.default
+
+        guard let enumerator = fm.enumerator(
+            at: dirURL,
+            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return (0, 0)
+        }
+
+        var count = 0
+        var sizeBytes: Int64 = 0
+
+        for case let fileURL as URL in enumerator {
+            guard
+                let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+                values.isRegularFile == true
+            else { continue }
+
+            count += 1
+            sizeBytes += Int64(values.fileSize ?? 0)
+        }
+
+        return (count, sizeBytes)
     }
 }

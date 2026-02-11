@@ -117,7 +117,7 @@ public actor YouTubeDownloader {
     }
 
     private func downloadAudio(ytDlpPath: String, url: String) async throws -> URL {
-        let tempDir = AppPaths.tempDir
+        let tempDir = AppPaths.youtubeDownloadsDir
         let fm = FileManager.default
         if !fm.fileExists(atPath: tempDir) {
             try fm.createDirectory(atPath: tempDir, withIntermediateDirectories: true)

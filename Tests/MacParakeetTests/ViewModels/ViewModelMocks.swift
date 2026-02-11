@@ -110,6 +110,14 @@ final class MockTranscriptionRepository: TranscriptionRepositoryProtocol, @unche
             transcriptions[idx].errorMessage = errorMessage
         }
     }
+
+    func clearStoredAudioPathsForURLTranscriptions() throws {
+        for i in transcriptions.indices {
+            if transcriptions[i].sourceURL != nil {
+                transcriptions[i].filePath = nil
+            }
+        }
+    }
 }
 
 // MARK: - MockTranscriptionService

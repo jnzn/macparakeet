@@ -108,6 +108,9 @@ public final class TranscriptionViewModel {
 
     public func deleteTranscription(_ transcription: Transcription) {
         guard let repo = transcriptionRepo else { return }
+        if transcription.sourceURL != nil, let audioPath = transcription.filePath {
+            try? FileManager.default.removeItem(atPath: audioPath)
+        }
         _ = try? repo.delete(id: transcription.id)
         if currentTranscription?.id == transcription.id {
             currentTranscription = nil

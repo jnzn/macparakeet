@@ -135,9 +135,10 @@ final class TranscriptionServiceTests: XCTestCase {
             youtubeDownloader: downloader
         )
 
-        _ = try await service.transcribeURL(urlString: "https://youtu.be/dQw4w9WgXcQ")
+        let result = try await service.transcribeURL(urlString: "https://youtu.be/dQw4w9WgXcQ")
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: downloadedURL.path))
+        XCTAssertEqual(result.filePath, downloadedURL.path)
     }
 
     func testTranscribeURLDeletesDownloadedAudioWhenDisabled() async throws {
@@ -161,9 +162,10 @@ final class TranscriptionServiceTests: XCTestCase {
             youtubeDownloader: downloader
         )
 
-        _ = try await service.transcribeURL(urlString: "https://youtu.be/dQw4w9WgXcQ")
+        let result = try await service.transcribeURL(urlString: "https://youtu.be/dQw4w9WgXcQ")
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: downloadedURL.path))
+        XCTAssertNil(result.filePath)
     }
 
     private func makeTempDownloadedAudio() throws -> URL {

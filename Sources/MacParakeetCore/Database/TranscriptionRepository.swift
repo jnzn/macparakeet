@@ -8,6 +8,11 @@ public protocol TranscriptionRepositoryProtocol: Sendable {
     func delete(id: UUID) throws -> Bool
     func deleteAll() throws
     func updateStatus(id: UUID, status: Transcription.TranscriptionStatus, errorMessage: String?) throws
+    func clearStoredAudioPathsForURLTranscriptions() throws
+}
+
+extension TranscriptionRepositoryProtocol {
+    public func clearStoredAudioPathsForURLTranscriptions() throws {}
 }
 
 public final class TranscriptionRepository: TranscriptionRepositoryProtocol {
@@ -63,6 +68,14 @@ public final class TranscriptionRepository: TranscriptionRepositoryProtocol {
             transcription.errorMessage = errorMessage
             transcription.updatedAt = Date()
             try transcription.update(db)
+        }
+    }
+
+    public func clearStoredAudioPathsForURLTranscriptions() throws {
+        try dbQueue.write { db in
+            try db.execute(
+                sql: "UPDATE transcriptions SET filePath = NULL WHERE sourceURL IS NOT NULL"
+            )
         }
     }
 }

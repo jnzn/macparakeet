@@ -151,6 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             settingsViewModel.configure(
                 permissionService: env.permissionService,
                 dictationRepo: env.dictationRepo,
+                transcriptionRepo: env.transcriptionRepo,
                 entitlementsService: env.entitlementsService,
                 checkoutURL: env.checkoutURL,
                 customWordRepo: env.customWordRepo,

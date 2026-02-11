@@ -6,19 +6,30 @@ import XCTest
 final class SettingsViewModelTests: XCTestCase {
     var viewModel: SettingsViewModel!
     var mockRepo: MockDictationRepository!
+    var mockTranscriptionRepo: MockTranscriptionRepository!
     var mockPermissions: MockPermissionService!
     var testDefaults: UserDefaults!
     var entitlements: EntitlementsService!
+    var youtubeDownloadsTestDir: URL!
 
     override func setUp() {
         mockRepo = MockDictationRepository()
+        mockTranscriptionRepo = MockTranscriptionRepository()
         mockPermissions = MockPermissionService()
+        youtubeDownloadsTestDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mp-youtube-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: youtubeDownloadsTestDir, withIntermediateDirectories: true)
 
         // Use a unique suite name for isolated UserDefaults per test
         let suiteName = "com.macparakeet.tests.\(UUID().uuidString)"
         testDefaults = UserDefaults(suiteName: suiteName)!
 
-        viewModel = SettingsViewModel(defaults: testDefaults)
+        viewModel = SettingsViewModel(
+            defaults: testDefaults,
+            youtubeDownloadsDirPath: { [youtubeDownloadsTestDir] in
+                youtubeDownloadsTestDir?.path ?? AppPaths.youtubeDownloadsDir
+            }
+        )
 
         entitlements = EntitlementsService(
             config: LicensingConfig(checkoutURL: nil, expectedVariantID: nil),
@@ -31,6 +42,9 @@ final class SettingsViewModelTests: XCTestCase {
         // Clean up the test UserDefaults suite
         if let suiteName = testDefaults.volatileDomainNames.first {
             testDefaults.removePersistentDomain(forName: suiteName)
+        }
+        if let youtubeDownloadsTestDir {
+            try? FileManager.default.removeItem(at: youtubeDownloadsTestDir)
         }
         testDefaults = nil
     }
@@ -234,6 +248,53 @@ final class SettingsViewModelTests: XCTestCase {
         // Should not crash
         viewModel.clearAllDictations()
         XCTAssertEqual(viewModel.dictationCount, 0)
+    }
+
+    // MARK: - YouTube Audio Storage
+
+    func testRefreshStatsIncludesYouTubeDownloadStorage() throws {
+        let fileA = youtubeDownloadsTestDir.appendingPathComponent("a.m4a")
+        let fileB = youtubeDownloadsTestDir.appendingPathComponent("b.webm")
+        XCTAssertTrue(FileManager.default.createFile(atPath: fileA.path, contents: Data(repeating: 0x1, count: 1024)))
+        XCTAssertTrue(FileManager.default.createFile(atPath: fileB.path, contents: Data(repeating: 0x2, count: 2048)))
+
+        viewModel.configure(
+            permissionService: mockPermissions,
+            dictationRepo: mockRepo,
+            transcriptionRepo: mockTranscriptionRepo,
+            entitlementsService: entitlements,
+            checkoutURL: nil
+        )
+
+        XCTAssertEqual(viewModel.youtubeDownloadCount, 2)
+        XCTAssertGreaterThan(viewModel.youtubeDownloadStorageMB, 0)
+    }
+
+    func testClearDownloadedYouTubeAudioRemovesFilesAndClearsStoredPaths() throws {
+        let file = youtubeDownloadsTestDir.appendingPathComponent("a.m4a")
+        XCTAssertTrue(FileManager.default.createFile(atPath: file.path, contents: Data(repeating: 0x1, count: 512)))
+
+        let ytTranscription = Transcription(
+            fileName: "yt",
+            filePath: file.path,
+            status: .completed,
+            sourceURL: "https://youtu.be/dQw4w9WgXcQ"
+        )
+        mockTranscriptionRepo.transcriptions = [ytTranscription]
+
+        viewModel.configure(
+            permissionService: mockPermissions,
+            dictationRepo: mockRepo,
+            transcriptionRepo: mockTranscriptionRepo,
+            entitlementsService: entitlements,
+            checkoutURL: nil
+        )
+
+        viewModel.clearDownloadedYouTubeAudio()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+        XCTAssertEqual(viewModel.youtubeDownloadCount, 0)
+        XCTAssertEqual(mockTranscriptionRepo.transcriptions.first?.filePath, nil)
     }
 
     // MARK: - Round-trip

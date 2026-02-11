@@ -6,6 +6,7 @@ struct SettingsView: View {
     @Bindable var viewModel: SettingsViewModel
 
     @State private var showClearAllAlert = false
+    @State private var showClearYouTubeAudioAlert = false
 
     var body: some View {
         Form {
@@ -100,6 +101,13 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                HStack {
+                    Text("YouTube downloads")
+                    Spacer()
+                    Text("\(viewModel.youtubeDownloadCount) file\(viewModel.youtubeDownloadCount == 1 ? "" : "s") • \(viewModel.youtubeDownloadStorageMB, specifier: "%.1f") MB")
+                        .foregroundStyle(.secondary)
+                }
+
                 Button("Clear All Dictations...", role: .destructive) {
                     showClearAllAlert = true
                 }
@@ -110,6 +118,18 @@ struct SettingsView: View {
                     }
                 } message: {
                     Text("This will permanently delete all \(viewModel.dictationCount) dictation\(viewModel.dictationCount == 1 ? "" : "s") and their audio files. This cannot be undone.")
+                }
+
+                Button("Clear Downloaded YouTube Audio...", role: .destructive) {
+                    showClearYouTubeAudioAlert = true
+                }
+                .alert("Clear Downloaded YouTube Audio?", isPresented: $showClearYouTubeAudioAlert) {
+                    Button("Cancel", role: .cancel) {}
+                    Button("Clear Audio", role: .destructive) {
+                        viewModel.clearDownloadedYouTubeAudio()
+                    }
+                } message: {
+                    Text("This will permanently delete all downloaded YouTube audio files and detach them from existing transcriptions.")
                 }
             }
 

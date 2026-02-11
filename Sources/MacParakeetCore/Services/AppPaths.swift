@@ -22,6 +22,11 @@ public enum AppPaths {
         "\(appSupportDir)/dictations"
     }
 
+    /// Audio storage directory for downloaded YouTube transcription audio
+    public static var youtubeDownloadsDir: String {
+        "\(appSupportDir)/youtube-downloads"
+    }
+
     /// Python venv directory
     public static var pythonVenvDir: String {
         "\(appSupportDir)/python"
@@ -35,7 +40,7 @@ public enum AppPaths {
     /// Ensure all required directories exist
     public static func ensureDirectories() throws {
         let fm = FileManager.default
-        for dir in [appSupportDir, dictationsDir, tempDir] {
+        for dir in [appSupportDir, dictationsDir, youtubeDownloadsDir, tempDir] {
             if !fm.fileExists(atPath: dir) {
                 try fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
             }
