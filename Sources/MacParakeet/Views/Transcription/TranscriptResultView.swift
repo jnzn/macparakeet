@@ -135,6 +135,12 @@ struct TranscriptResultView: View {
                         Label("Plain Text (.txt)", systemImage: "doc.text")
                     }
 
+                    Button {
+                        exportFile(format: .md)
+                    } label: {
+                        Label("Markdown (.md)", systemImage: "text.document")
+                    }
+
                     if hasTimestamps {
                         Divider()
 
@@ -277,11 +283,12 @@ struct TranscriptResultView: View {
     }
 
     private enum ExportFormat {
-        case txt, srt, vtt
+        case txt, md, srt, vtt
 
         var fileExtension: String {
             switch self {
             case .txt: return "txt"
+            case .md: return "md"
             case .srt: return "srt"
             case .vtt: return "vtt"
             }
@@ -290,6 +297,7 @@ struct TranscriptResultView: View {
         var contentType: UTType {
             switch self {
             case .txt: return .plainText
+            case .md: return UTType(filenameExtension: "md") ?? .plainText
             case .srt: return UTType(filenameExtension: "srt") ?? .plainText
             case .vtt: return UTType(filenameExtension: "vtt") ?? .plainText
             }
@@ -308,6 +316,7 @@ struct TranscriptResultView: View {
             do {
                 switch format {
                 case .txt: try exportService.exportToTxt(transcription: transcription, url: url)
+                case .md: try exportService.exportToMarkdown(transcription: transcription, url: url)
                 case .srt: try exportService.exportToSRT(transcription: transcription, url: url)
                 case .vtt: try exportService.exportToVTT(transcription: transcription, url: url)
                 }

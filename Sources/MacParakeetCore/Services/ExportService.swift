@@ -4,8 +4,10 @@ public protocol ExportServiceProtocol: Sendable {
     func exportToTxt(transcription: Transcription, url: URL) throws
     func exportToSRT(transcription: Transcription, url: URL) throws
     func exportToVTT(transcription: Transcription, url: URL) throws
+    func exportToMarkdown(transcription: Transcription, url: URL) throws
     func formatSRT(words: [WordTimestamp]) -> String
     func formatVTT(words: [WordTimestamp]) -> String
+    func formatMarkdown(transcription: Transcription) -> String
     func formatForClipboard(transcription: Transcription) -> String
 }
 
@@ -68,6 +70,60 @@ public final class ExportService: ExportServiceProtocol, Sendable {
             lines.append(cue.text)
             lines.append("")
         }
+        return lines.joined(separator: "\n")
+    }
+
+    /// Export transcription as Markdown file
+    public func exportToMarkdown(transcription: Transcription, url: URL) throws {
+        let content = formatMarkdown(transcription: transcription)
+        try content.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    /// Format transcription as Markdown string
+    public func formatMarkdown(transcription: Transcription) -> String {
+        var lines: [String] = []
+
+        // Title
+        lines.append("# \(transcription.fileName)")
+        lines.append("")
+
+        // Metadata table
+        var meta: [String] = []
+        if let durationMs = transcription.durationMs {
+            meta.append("**Duration:** \(durationMs.formattedDuration)")
+        }
+        if let sourceURL = transcription.sourceURL {
+            meta.append("**Source:** [\(sourceURL)](\(sourceURL))")
+        }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        meta.append("**Transcribed:** \(formatter.string(from: transcription.createdAt))")
+        if let language = transcription.language {
+            meta.append("**Language:** \(language)")
+        }
+
+        if !meta.isEmpty {
+            lines.append(contentsOf: meta)
+            lines.append("")
+        }
+
+        lines.append("---")
+        lines.append("")
+
+        // Transcript body
+        if let timestamps = transcription.wordTimestamps, !timestamps.isEmpty {
+            let cues = buildSubtitleCues(from: timestamps)
+            for cue in cues {
+                let ts = formatReadableTimestamp(ms: cue.startMs)
+                lines.append("**[\(ts)]** \(cue.text)")
+                lines.append("")
+            }
+        } else if let text = transcription.rawTranscript ?? transcription.cleanTranscript {
+            lines.append(text)
+            lines.append("")
+        }
+
         return lines.joined(separator: "\n")
     }
 
@@ -139,6 +195,18 @@ public final class ExportService: ExportServiceProtocol, Sendable {
         let seconds = (ms % 60_000) / 1_000
         let millis = ms % 1_000
         return String(format: "%02d:%02d:%02d.%03d", hours, minutes, seconds, millis)
+    }
+
+    /// Human-readable format: 1:23 or 1:01:23
+    func formatReadableTimestamp(ms: Int) -> String {
+        let totalSeconds = ms / 1000
+        let hours = totalSeconds / 3600
+        let minutes = (totalSeconds % 3600) / 60
+        let seconds = totalSeconds % 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+        }
+        return String(format: "%d:%02d", minutes, seconds)
     }
 
     // MARK: - Plain Text

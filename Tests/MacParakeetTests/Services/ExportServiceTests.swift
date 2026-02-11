@@ -239,6 +239,88 @@ final class ExportServiceTests: XCTestCase {
         try? FileManager.default.removeItem(at: tempURL)
     }
 
+    // MARK: - Markdown Export
+
+    func testFormatMarkdownWithTimestamps() {
+        let transcription = Transcription(
+            fileName: "interview.mp3",
+            durationMs: 5000,
+            wordTimestamps: [
+                WordTimestamp(word: "Hello", startMs: 0, endMs: 500, confidence: 0.99),
+                WordTimestamp(word: "world.", startMs: 600, endMs: 1000, confidence: 0.98),
+                WordTimestamp(word: "How", startMs: 2000, endMs: 2300, confidence: 0.97),
+                WordTimestamp(word: "are", startMs: 2400, endMs: 2600, confidence: 0.96),
+                WordTimestamp(word: "you?", startMs: 2700, endMs: 3000, confidence: 0.95),
+            ],
+            language: "en",
+            status: .completed
+        )
+
+        let md = exportService.formatMarkdown(transcription: transcription)
+        XCTAssertTrue(md.hasPrefix("# interview.mp3"))
+        XCTAssertTrue(md.contains("**Duration:** 0:05"))
+        XCTAssertTrue(md.contains("**Language:** en"))
+        XCTAssertTrue(md.contains("---"))
+        XCTAssertTrue(md.contains("**[0:00]** Hello world."))
+        XCTAssertTrue(md.contains("**[0:02]** How are you?"))
+    }
+
+    func testFormatMarkdownWithoutTimestamps() {
+        let transcription = Transcription(
+            fileName: "note.mp3",
+            durationMs: 3000,
+            rawTranscript: "Just a plain transcript.",
+            status: .completed
+        )
+
+        let md = exportService.formatMarkdown(transcription: transcription)
+        XCTAssertTrue(md.contains("# note.mp3"))
+        XCTAssertTrue(md.contains("Just a plain transcript."))
+        // No timestamp markers
+        XCTAssertFalse(md.contains("**["))
+    }
+
+    func testFormatMarkdownWithYouTubeSource() {
+        let transcription = Transcription(
+            fileName: "Video Title",
+            durationMs: 60000,
+            rawTranscript: "Some content",
+            status: .completed,
+            sourceURL: "https://youtube.com/watch?v=abc123"
+        )
+
+        let md = exportService.formatMarkdown(transcription: transcription)
+        XCTAssertTrue(md.contains("**Source:** [https://youtube.com/watch?v=abc123](https://youtube.com/watch?v=abc123)"))
+    }
+
+    func testExportToMarkdown() throws {
+        let transcription = Transcription(
+            fileName: "test.mp3",
+            rawTranscript: "Hello world",
+            status: .completed
+        )
+
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("test_export_\(UUID().uuidString).md")
+
+        try exportService.exportToMarkdown(transcription: transcription, url: tempURL)
+
+        let content = try String(contentsOf: tempURL, encoding: .utf8)
+        XCTAssertTrue(content.contains("# test.mp3"))
+        XCTAssertTrue(content.contains("Hello world"))
+
+        try? FileManager.default.removeItem(at: tempURL)
+    }
+
+    func testReadableTimestampFormatting() {
+        XCTAssertEqual(exportService.formatReadableTimestamp(ms: 0), "0:00")
+        XCTAssertEqual(exportService.formatReadableTimestamp(ms: 5000), "0:05")
+        XCTAssertEqual(exportService.formatReadableTimestamp(ms: 65000), "1:05")
+        XCTAssertEqual(exportService.formatReadableTimestamp(ms: 3661000), "1:01:01")
+    }
+
+    // MARK: - Fallback Tests
+
     func testExportToSRTWithoutTimestampsFallsBack() throws {
         let transcription = Transcription(
             fileName: "audio.mp3",
