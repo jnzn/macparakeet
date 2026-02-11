@@ -51,12 +51,26 @@ struct PortalDropZone: View {
                     .font(DesignSystem.Typography.pageTitle)
                     .foregroundStyle(isDragging ? DesignSystem.Colors.accent : .primary)
 
-                // Browse link
+                // Browse button
                 Button(action: onBrowse) {
-                    Text("or Browse Files")
-                        .font(DesignSystem.Typography.bodySmall)
-                        .foregroundStyle(.secondary)
-                        .underline(browseHovered, color: .secondary)
+                    HStack(spacing: 6) {
+                        Image(systemName: "folder")
+                            .font(.system(size: 12, weight: .medium))
+                        Text("Browse Files")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .foregroundStyle(browseHovered ? DesignSystem.Colors.onAccent : DesignSystem.Colors.accent)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: DesignSystem.Layout.buttonCornerRadius)
+                            .fill(browseHovered ? DesignSystem.Colors.accent : Color.clear)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DesignSystem.Layout.buttonCornerRadius)
+                            .strokeBorder(DesignSystem.Colors.accent.opacity(browseHovered ? 0 : 0.5), lineWidth: 1.5)
+                    )
+                    .animation(DesignSystem.Animation.hoverTransition, value: browseHovered)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Browse files")

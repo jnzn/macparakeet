@@ -31,25 +31,72 @@ These are embedded into `Info.plist` as:
 
 Prereqs:
 - A **Developer ID Application** certificate in Keychain.
-- `notarytool` credentials stored in Keychain:
+- `notarytool` credentials stored in Keychain under the profile `AC_PASSWORD` (shared with Oatmeal):
 
 ```bash
-xcrun notarytool store-credentials "macparakeet-notary" \
-  --apple-id "you@example.com" \
-  --team-id "TEAMID" \
+xcrun notarytool store-credentials "AC_PASSWORD" \
+  --apple-id "moona3k@gmail.com" \
+  --team-id "FYAF2ZD7RM" \
   --password "app-specific-password"
+```
+
+Verify credentials work:
+
+```bash
+xcrun notarytool history --keychain-profile "AC_PASSWORD"
 ```
 
 Then:
 
 ```bash
-export NOTARYTOOL_PROFILE="macparakeet-notary"
-scripts/dist/sign_notarize.sh
+NOTARYTOOL_PROFILE="AC_PASSWORD" scripts/dist/sign_notarize.sh
 ```
 
 Outputs:
 - `dist/MacParakeet.app` (signed + stapled)
 - `dist/MacParakeet.dmg` (signed + stapled)
+
+## 3) Upload to Cloudflare R2
+
+The signed DMG is hosted on Cloudflare R2 at `downloads.macparakeet.com`.
+
+**Bucket:** `macparakeet-downloads` (Cloudflare R2)
+**Custom domain:** `downloads.macparakeet.com`
+**Public URL:** `https://downloads.macparakeet.com/MacParakeet.dmg`
+
+Upload a new release:
+
+```bash
+npx wrangler r2 object put macparakeet-downloads/MacParakeet.dmg \
+  --file dist/MacParakeet.dmg \
+  --content-type "application/x-apple-diskimage" \
+  --remote
+```
+
+Verify:
+
+```bash
+curl -sI https://downloads.macparakeet.com/MacParakeet.dmg | head -5
+```
+
+## Full release workflow
+
+```bash
+# 1. Build app bundle
+scripts/dist/build_app_bundle.sh
+
+# 2. Sign + notarize (creates .app and .dmg)
+NOTARYTOOL_PROFILE="AC_PASSWORD" scripts/dist/sign_notarize.sh
+
+# 3. Upload DMG to R2
+npx wrangler r2 object put macparakeet-downloads/MacParakeet.dmg \
+  --file dist/MacParakeet.dmg \
+  --content-type "application/x-apple-diskimage" \
+  --remote
+
+# 4. Website download buttons already point to:
+#    https://downloads.macparakeet.com/MacParakeet.dmg
+```
 
 ## Notes
 
@@ -60,3 +107,7 @@ UNIVERSAL=1 scripts/dist/build_app_bundle.sh
 ```
 
 - `MacParakeet` requests microphone permission. The app bundle `Info.plist` includes `NSMicrophoneUsageDescription`.
+- **Users must install to /Applications before launching.** Running directly from a mounted DMG (`/Volumes/MacParakeet/`) will not register with macOS TCC — the app won't appear in System Settings > Privacy & Security > Microphone, and permission requests will silently fail. The DMG includes an Applications symlink for drag-to-install.
+- If a user's microphone permission gets stuck as "Denied", reset it with: `tccutil reset Microphone com.macparakeet.MacParakeet`
+- The Cloudflare R2 bucket uses a custom domain via `wrangler r2 bucket domain add`. The `r2.dev` public URL is also enabled as a fallback.
+- Cloudflare Pages has a 25MB file size limit, so the DMG (27MB) cannot be hosted directly in the website repo's `public/` folder.

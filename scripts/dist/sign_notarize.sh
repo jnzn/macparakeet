@@ -79,7 +79,14 @@ if [[ "$CREATE_DMG" == "1" ]]; then
   rm -f "$DMG_PATH"
 
   echo "Creating DMG…"
-  hdiutil create -volname "$APP_NAME" -srcfolder "$APP_PATH" -ov -format UDZO "$DMG_PATH" >/dev/null
+  # Stage a folder with the app + Applications symlink for drag-to-install experience.
+  DMG_STAGING="$DIST_DIR/.dmg-staging"
+  rm -rf "$DMG_STAGING"
+  mkdir -p "$DMG_STAGING"
+  cp -R "$APP_PATH" "$DMG_STAGING/"
+  ln -s /Applications "$DMG_STAGING/Applications"
+  hdiutil create -volname "$APP_NAME" -srcfolder "$DMG_STAGING" -ov -format UDZO "$DMG_PATH" >/dev/null
+  rm -rf "$DMG_STAGING"
 
   echo "Signing DMG…"
   codesign --force --sign "$SIGN_IDENTITY" --timestamp "$DMG_PATH"

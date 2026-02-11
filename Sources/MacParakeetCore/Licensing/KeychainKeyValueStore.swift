@@ -14,7 +14,8 @@ public final class KeychainKeyValueStore: KeyValueStore {
             kSecAttrService as String: service,
             kSecAttrAccount as String: key,
             kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecReturnData as String: true
+            kSecReturnData as String: true,
+            kSecUseDataProtectionKeychain as String: true,
         ]
 
         var item: CFTypeRef?
@@ -32,6 +33,7 @@ public final class KeychainKeyValueStore: KeyValueStore {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: key,
+            kSecUseDataProtectionKeychain as String: true,
         ]
 
         let attributes: [String: Any] = [
@@ -54,6 +56,7 @@ public final class KeychainKeyValueStore: KeyValueStore {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: key,
+            kSecUseDataProtectionKeychain as String: true,
         ]
         let status = SecItemDelete(query as CFDictionary)
         if status == errSecItemNotFound { return }
