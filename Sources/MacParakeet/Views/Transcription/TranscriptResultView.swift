@@ -1,5 +1,4 @@
 import SwiftUI
-import UniformTypeIdentifiers
 import MacParakeetCore
 
 struct TranscriptResultView: View {
@@ -7,10 +6,12 @@ struct TranscriptResultView: View {
     var onBack: (() -> Void)?
     var onRetranscribe: ((Transcription) -> Void)?
 
-    @State private var showExportDialog = false
     @State private var backHovered = false
     @State private var copied = false
-    @State private var exported = false
+    @State private var showExportConfirmation = false
+    @State private var lastExportedURL: URL?
+    @State private var lastExportedFormat: String?
+    @State private var dismissTask: Task<Void, Never>?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -126,45 +127,8 @@ struct TranscriptResultView: View {
 
             Divider()
 
-            // Export bar
+            // Action bar
             HStack(spacing: DesignSystem.Spacing.sm) {
-                Menu {
-                    Button {
-                        exportFile(format: .txt)
-                    } label: {
-                        Label("Plain Text (.txt)", systemImage: "doc.text")
-                    }
-
-                    Button {
-                        exportFile(format: .md)
-                    } label: {
-                        Label("Markdown (.md)", systemImage: "text.document")
-                    }
-
-                    if hasTimestamps {
-                        Divider()
-
-                        Button {
-                            exportFile(format: .srt)
-                        } label: {
-                            Label("Subtitles (.srt)", systemImage: "captions.bubble")
-                        }
-
-                        Button {
-                            exportFile(format: .vtt)
-                        } label: {
-                            Label("Web Subtitles (.vtt)", systemImage: "captions.bubble.fill")
-                        }
-                    }
-                } label: {
-                    Label(
-                        exported ? "Exported!" : "Export",
-                        systemImage: exported ? "checkmark" : "arrow.down.doc"
-                    )
-                }
-                .menuStyle(.borderlessButton)
-                .frame(width: exported ? 110 : 85)
-
                 Button {
                     copyToClipboard()
                 } label: {
@@ -172,8 +136,37 @@ struct TranscriptResultView: View {
                         copied ? "Copied!" : "Copy",
                         systemImage: copied ? "checkmark" : "doc.on.clipboard"
                     )
+                    .foregroundStyle(copied ? DesignSystem.Colors.successGreen : .primary)
                 }
                 .buttonStyle(.bordered)
+
+                Menu {
+                    Section("Document") {
+                        Button { exportToDownloads(format: .txt) } label: {
+                            Label("Plain Text (.txt)", systemImage: "doc.text")
+                        }
+                        Button { exportToDownloads(format: .md) } label: {
+                            Label("Markdown (.md)", systemImage: "text.document")
+                        }
+                    }
+
+                    if hasTimestamps {
+                        Section("Subtitles") {
+                            Button { exportToDownloads(format: .srt) } label: {
+                                Label("SRT (.srt)", systemImage: "captions.bubble")
+                            }
+                            Button { exportToDownloads(format: .vtt) } label: {
+                                Label("WebVTT (.vtt)", systemImage: "captions.bubble.fill")
+                            }
+                        }
+                    }
+                } label: {
+                    Label("Export", systemImage: "arrow.down.doc")
+                }
+                .menuStyle(.borderedButton)
+                .popover(isPresented: $showExportConfirmation, arrowEdge: .top) {
+                    exportConfirmationPopover
+                }
 
                 if let onRetranscribe, let filePath = transcription.filePath,
                    FileManager.default.fileExists(atPath: filePath) {
@@ -282,53 +275,94 @@ struct TranscriptResultView: View {
         return !words.isEmpty
     }
 
-    private enum ExportFormat {
+    private enum ExportFormat: String {
         case txt, md, srt, vtt
-
-        var fileExtension: String {
-            switch self {
-            case .txt: return "txt"
-            case .md: return "md"
-            case .srt: return "srt"
-            case .vtt: return "vtt"
-            }
-        }
-
-        var contentType: UTType {
-            switch self {
-            case .txt: return .plainText
-            case .md: return UTType(filenameExtension: "md") ?? .plainText
-            case .srt: return UTType(filenameExtension: "srt") ?? .plainText
-            case .vtt: return UTType(filenameExtension: "vtt") ?? .plainText
-            }
-        }
     }
 
-    private func exportFile(format: ExportFormat) {
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [format.contentType]
+    // MARK: - Export Confirmation Popover
 
-        let stem = (transcription.fileName as NSString).deletingPathExtension
-        panel.nameFieldStringValue = "\(stem).\(format.fileExtension)"
+    @ViewBuilder
+    private var exportConfirmationPopover: some View {
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 18))
+                    .foregroundStyle(DesignSystem.Colors.successGreen)
 
-        if panel.runModal() == .OK, let url = panel.url {
-            let exportService = ExportService()
-            do {
-                switch format {
-                case .txt: try exportService.exportToTxt(transcription: transcription, url: url)
-                case .md: try exportService.exportToMarkdown(transcription: transcription, url: url)
-                case .srt: try exportService.exportToSRT(transcription: transcription, url: url)
-                case .vtt: try exportService.exportToVTT(transcription: transcription, url: url)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Exported \(lastExportedFormat?.uppercased() ?? "")")
+                        .font(DesignSystem.Typography.body.bold())
+                    Text(lastExportedURL?.lastPathComponent ?? "")
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
-            } catch {
-                return
+
+                Spacer(minLength: 4)
+
+                Button {
+                    showExportConfirmation = false
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
             }
 
-            withAnimation(DesignSystem.Animation.hoverTransition) { exported = true }
-            Task {
-                try? await Task.sleep(for: .seconds(1.5))
-                withAnimation(DesignSystem.Animation.hoverTransition) { exported = false }
+            if let url = lastExportedURL {
+                Button {
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                    showExportConfirmation = false
+                } label: {
+                    Label("Show in Finder", systemImage: "folder")
+                        .font(DesignSystem.Typography.caption)
+                }
+                .buttonStyle(.bordered)
             }
+        }
+        .padding(DesignSystem.Spacing.md)
+        .frame(minWidth: 220)
+    }
+
+    private func exportToDownloads(format: ExportFormat) {
+        let stem = (transcription.fileName as NSString).deletingPathExtension
+        let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
+        var fileURL = downloadsURL.appendingPathComponent("\(stem).\(format.rawValue)")
+
+        // Avoid overwriting — append (1), (2), etc.
+        var counter = 1
+        while FileManager.default.fileExists(atPath: fileURL.path) {
+            fileURL = downloadsURL.appendingPathComponent("\(stem) (\(counter)).\(format.rawValue)")
+            counter += 1
+        }
+
+        let exportService = ExportService()
+        do {
+            switch format {
+            case .txt: try exportService.exportToTxt(transcription: transcription, url: fileURL)
+            case .md: try exportService.exportToMarkdown(transcription: transcription, url: fileURL)
+            case .srt: try exportService.exportToSRT(transcription: transcription, url: fileURL)
+            case .vtt: try exportService.exportToVTT(transcription: transcription, url: fileURL)
+            }
+        } catch {
+            return
+        }
+
+        SoundManager.shared.play(.transcriptionComplete)
+
+        // Cancel any pending auto-dismiss from a previous export
+        dismissTask?.cancel()
+
+        lastExportedURL = fileURL
+        lastExportedFormat = format.rawValue
+        showExportConfirmation = true
+
+        // Auto-dismiss after 5 seconds
+        dismissTask = Task {
+            try? await Task.sleep(for: .seconds(5.0))
+            guard !Task.isCancelled else { return }
+            showExportConfirmation = false
         }
     }
 
