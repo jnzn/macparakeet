@@ -123,7 +123,6 @@ struct DictationHistoryView: View {
             }
             .padding(.bottom, DesignSystem.Spacing.md)
         }
-        .textSelection(.enabled)
     }
 
     // MARK: - Bottom Bar Player
@@ -141,7 +140,7 @@ struct DictationHistoryView: View {
 
                     Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(DesignSystem.Colors.onAccent)
                         .offset(x: viewModel.isPlaying ? 0 : 1)
                 }
             }
@@ -210,8 +209,8 @@ struct DictationCardRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
-            // Top row: mandala + transcript text
-            HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
+            // Top row: mandala + metadata + actions
+            HStack(spacing: DesignSystem.Spacing.md) {
                 // Sonic mandala thumbnail
                 SonicMandalaView(
                     data: .from(text: dictation.rawTranscript, durationMs: dictation.durationMs),
@@ -219,15 +218,6 @@ struct DictationCardRow: View {
                     style: .monochrome
                 )
 
-                // Transcript text — the star
-                Text(highlightedTranscript)
-                    .font(DesignSystem.Typography.body)
-                    .foregroundStyle(.primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            // Bottom row: metadata + actions
-            HStack(spacing: DesignSystem.Spacing.sm) {
                 Text(formatTime(dictation.createdAt))
                     .font(DesignSystem.Typography.timestamp)
                     .foregroundStyle(.secondary)
@@ -238,48 +228,36 @@ struct DictationCardRow: View {
 
                 Spacer()
 
-                // Always-visible actions
+                // Actions
                 HStack(spacing: 4) {
                     if dictation.audioPath != nil {
-                        actionButton(
+                        CardActionButton(
                             icon: isPlayingThis ? "pause.fill" : "play.fill",
-                            color: DesignSystem.Colors.accent
-                        ) {
-                            onTogglePlayback?()
-                        }
+                            color: DesignSystem.Colors.accent,
+                            action: { onTogglePlayback?() }
+                        )
                     }
 
-                    actionButton(
+                    CardActionButton(
                         icon: isCopied ? "checkmark" : "doc.on.clipboard",
-                        color: isCopied ? DesignSystem.Colors.successGreen : .secondary
-                    ) {
-                        onCopy()
-                    }
+                        color: isCopied ? DesignSystem.Colors.successGreen : .secondary,
+                        action: { onCopy() }
+                    )
                     .animation(DesignSystem.Animation.hoverTransition, value: isCopied)
 
-                    Menu {
-                        if dictation.audioPath != nil {
-                            Button {
-                                onDownloadAudio?()
-                            } label: {
-                                Label("Download Audio", systemImage: "arrow.down.circle")
-                            }
-                        }
-                        Divider()
-                        Button(role: .destructive) {
-                            onDelete()
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 12))
-                            .frame(width: 26, height: 26)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
+                    CardMenuButton(
+                        hasAudio: dictation.audioPath != nil,
+                        onDownloadAudio: { onDownloadAudio?() },
+                        onDelete: { onDelete() }
+                    )
                 }
             }
+
+            // Transcript text — the star
+            Text(highlightedTranscript)
+                .font(DesignSystem.Typography.body)
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(DesignSystem.Spacing.md)
         .background(
@@ -295,46 +273,15 @@ struct DictationCardRow: View {
                     isPlayingThis ? DesignSystem.Colors.accent.opacity(0.2) : DesignSystem.Colors.border.opacity(0.5),
                     lineWidth: 0.5
                 )
+                .allowsHitTesting(false)
         )
         .onHover { hovering in
             withAnimation(DesignSystem.Animation.hoverTransition) {
                 isHovered = hovering
             }
         }
-        .contextMenu {
-            if dictation.audioPath != nil {
-                Button {
-                    onTogglePlayback?()
-                } label: {
-                    Label(isPlayingThis ? "Pause" : "Play", systemImage: isPlayingThis ? "pause.fill" : "play.fill")
-                }
-            }
-            Button("Copy") { onCopy() }
-                .keyboardShortcut("c", modifiers: .command)
-            if dictation.audioPath != nil {
-                Button {
-                    onDownloadAudio?()
-                } label: {
-                    Label("Download Audio", systemImage: "arrow.down.circle")
-                }
-            }
-            Divider()
-            Button("Delete", role: .destructive) { onDelete() }
-                .keyboardShortcut(.delete, modifiers: .command)
-        }
     }
 
-    // MARK: - Action Button
-
-    private func actionButton(icon: String, color: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 12))
-                .frame(width: 26, height: 26)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(color)
-    }
 
     // MARK: - Highlighted Transcript
 
@@ -364,4 +311,86 @@ struct DictationCardRow: View {
         formatter.timeStyle = .short
         return formatter.string(from: date)
     }
+}
+
+// MARK: - Hover-Aware Action Button
+
+private struct CardActionButton: View {
+    let icon: String
+    let color: Color
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 12))
+                .frame(width: 28, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(isHovered ? Color.white.opacity(0.08) : .clear)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isHovered ? .primary : color)
+        .onHover { isHovered = $0 }
+    }
+}
+
+// MARK: - Hover-Aware Menu Button (AppKit NSMenu for reliable clicks)
+
+private struct CardMenuButton: View {
+    let hasAudio: Bool
+    let onDownloadAudio: () -> Void
+    let onDelete: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        CardActionButton(icon: "ellipsis", color: .secondary) {
+            showMenu()
+        }
+    }
+
+    private func showMenu() {
+        let menu = NSMenu()
+
+        if hasAudio {
+            let downloadItem = NSMenuItem(title: "Download Audio", action: #selector(NSApp.sendAction(_:to:from:)), keyEquivalent: "")
+            downloadItem.image = NSImage(systemSymbolName: "arrow.down.circle", accessibilityDescription: nil)
+            downloadItem.target = nil
+            let downloadAction = onDownloadAudio
+            menu.addItem(CallbackMenuItem(title: "Download Audio", icon: "arrow.down.circle", action: downloadAction))
+            menu.addItem(.separator())
+        }
+
+        menu.addItem(CallbackMenuItem(title: "Delete", icon: "trash", isDestructive: true, action: onDelete))
+
+        // Show at mouse location
+        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    }
+}
+
+/// NSMenuItem subclass that invokes a Swift closure on click.
+private final class CallbackMenuItem: NSMenuItem {
+    private let callback: () -> Void
+
+    init(title: String, icon: String, isDestructive: Bool = false, action: @escaping () -> Void) {
+        self.callback = action
+        super.init(title: title, action: #selector(invoke), keyEquivalent: "")
+        self.target = self
+        self.image = NSImage(systemSymbolName: icon, accessibilityDescription: nil)
+        if isDestructive {
+            self.attributedTitle = NSAttributedString(
+                string: title,
+                attributes: [.foregroundColor: NSColor.systemRed]
+            )
+        }
+    }
+
+    required init(coder: NSCoder) { fatalError() }
+
+    @objc private func invoke() { callback() }
 }
