@@ -74,7 +74,7 @@ public final class TranscriptionViewModel {
         Task {
             do {
                 let result = try await service.transcribeURL(urlString: url) { [weak self] phase in
-                    Task { @MainActor in
+                    DispatchQueue.main.async {
                         self?.progress = phase
                         // Parse percentage from "Transcribing... XX%" for visual progress bar
                         if phase.hasSuffix("%"),

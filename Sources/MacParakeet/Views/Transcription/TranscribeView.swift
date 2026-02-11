@@ -206,9 +206,15 @@ struct TranscribeView: View {
                         .frame(width: 180)
                         .animation(.easeInOut(duration: 0.3), value: fraction)
                 } else if isDownloadPhase {
-                    Text("This may take a moment for longer videos")
-                        .font(.caption)
-                        .foregroundStyle(.quaternary)
+                    VStack(spacing: DesignSystem.Spacing.xs) {
+                        ProgressView()
+                            .progressViewStyle(.linear)
+                            .tint(.accentColor)
+                            .frame(width: 180)
+                        Text("This may take a moment for longer videos")
+                            .font(.caption)
+                            .foregroundStyle(.quaternary)
+                    }
                 }
             }
 

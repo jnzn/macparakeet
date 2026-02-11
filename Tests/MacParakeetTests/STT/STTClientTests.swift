@@ -78,4 +78,56 @@ final class STTClientTests: XCTestCase {
         let called = await mock.shutdownCalled
         XCTAssertTrue(called)
     }
+
+    func testConsumeProgressUpdatesHandlesSplitChunks() {
+        var buffer = Data()
+
+        let first = STTClient.consumeProgressUpdates(
+            from: &buffer,
+            appending: Data("PROGRESS:1/10\nPRO".utf8)
+        )
+        XCTAssertEqual(first.count, 1)
+        XCTAssertEqual(first[0].0, 1)
+        XCTAssertEqual(first[0].1, 10)
+
+        let second = STTClient.consumeProgressUpdates(
+            from: &buffer,
+            appending: Data("GRESS:2/10\n".utf8)
+        )
+        XCTAssertEqual(second.count, 1)
+        XCTAssertEqual(second[0].0, 2)
+        XCTAssertEqual(second[0].1, 10)
+    }
+
+    func testConsumeProgressUpdatesIgnoresMalformedLines() {
+        var buffer = Data()
+
+        let updates = STTClient.consumeProgressUpdates(
+            from: &buffer,
+            appending: Data("INFO:start\nPROGRESS:bad\nPROGRESS:3/12\n".utf8)
+        )
+
+        XCTAssertEqual(updates.count, 1)
+        XCTAssertEqual(updates[0].0, 3)
+        XCTAssertEqual(updates[0].1, 12)
+    }
+
+    func testConsumeProgressUpdatesCanFlushTrailingLine() {
+        var buffer = Data()
+
+        let first = STTClient.consumeProgressUpdates(
+            from: &buffer,
+            appending: Data("PROGRESS:4/20".utf8)
+        )
+        XCTAssertTrue(first.isEmpty)
+
+        let flushed = STTClient.consumeProgressUpdates(
+            from: &buffer,
+            appending: Data(),
+            consumeTrailingLine: true
+        )
+        XCTAssertEqual(flushed.count, 1)
+        XCTAssertEqual(flushed[0].0, 4)
+        XCTAssertEqual(flushed[0].1, 20)
+    }
 }

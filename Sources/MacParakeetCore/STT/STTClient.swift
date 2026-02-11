@@ -23,20 +23,18 @@ public actor STTClient: STTClientProtocol {
         try await ensureRunning()
 
         // Monitor stderr for PROGRESS lines from chunk_callback
+        var progressBuffer: OSAllocatedUnfairLock<Data>?
         if let onProgress, let stderrPipe {
+            let buffer = OSAllocatedUnfairLock(initialState: Data())
+            progressBuffer = buffer
             stderrPipe.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
-                guard !data.isEmpty, let str = String(data: data, encoding: .utf8) else { return }
-                for line in str.split(separator: "\n") {
-                    if line.hasPrefix("PROGRESS:") {
-                        let payload = line.dropFirst("PROGRESS:".count)
-                        let parts = payload.split(separator: "/")
-                        if parts.count == 2,
-                           let current = Int(parts[0]),
-                           let total = Int(parts[1]) {
-                            onProgress(current, total)
-                        }
-                    }
+                guard !data.isEmpty else { return }
+                let updates = buffer.withLock { bufferedData in
+                    Self.consumeProgressUpdates(from: &bufferedData, appending: data)
+                }
+                for (current, total) in updates {
+                    onProgress(current, total)
                 }
             }
         }
@@ -44,6 +42,14 @@ public actor STTClient: STTClientProtocol {
         defer {
             if onProgress != nil {
                 stderrPipe?.fileHandleForReading.readabilityHandler = nil
+                if let progressBuffer {
+                    let trailingUpdates = progressBuffer.withLock { bufferedData in
+                        Self.consumeProgressUpdates(from: &bufferedData, appending: Data(), consumeTrailingLine: true)
+                    }
+                    for (current, total) in trailingUpdates {
+                        onProgress?(current, total)
+                    }
+                }
             }
         }
 
@@ -311,5 +317,50 @@ public actor STTClient: STTClientProtocol {
             stdoutRemainder = buffer.withLock { $0 }
             throw error
         }
+    }
+
+    nonisolated static func consumeProgressUpdates(
+        from buffer: inout Data,
+        appending chunk: Data,
+        consumeTrailingLine: Bool = false
+    ) -> [(Int, Int)] {
+        buffer.append(chunk)
+        var updates: [(Int, Int)] = []
+
+        while let newlineIdx = buffer.firstIndex(of: 0x0A) {
+            let lineData = buffer.prefix(upTo: newlineIdx)
+            buffer.removeSubrange(..<buffer.index(after: newlineIdx))
+            if let update = parseProgressUpdate(lineData: lineData) {
+                updates.append(update)
+            }
+        }
+
+        if consumeTrailingLine, !buffer.isEmpty {
+            if let update = parseProgressUpdate(lineData: buffer[...]) {
+                updates.append(update)
+            }
+            buffer.removeAll(keepingCapacity: true)
+        }
+
+        return updates
+    }
+
+    private nonisolated static func parseProgressUpdate(lineData: Data.SubSequence) -> (Int, Int)? {
+        guard let line = String(data: Data(lineData), encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              line.hasPrefix("PROGRESS:")
+        else {
+            return nil
+        }
+
+        let payload = line.dropFirst("PROGRESS:".count)
+        let parts = payload.split(separator: "/", maxSplits: 1)
+        guard parts.count == 2,
+              let current = Int(parts[0]),
+              let total = Int(parts[1])
+        else {
+            return nil
+        }
+        return (current, total)
     }
 }
