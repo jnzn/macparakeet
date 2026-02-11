@@ -61,7 +61,7 @@ struct OnboardingFlowView: View {
                 Label("Local-first. No audio uploads.", systemImage: "lock.shield")
                     .font(DesignSystem.Typography.caption)
                     .foregroundStyle(.secondary)
-                Label("Cmd+V paste requires Accessibility.", systemImage: "keyboard")
+                Label("Paste needs Accessibility.", systemImage: "keyboard")
                     .font(DesignSystem.Typography.caption)
                     .foregroundStyle(.secondary)
             }
@@ -298,28 +298,28 @@ struct OnboardingFlowView: View {
     // MARK: - Welcome Step
 
     private var welcomeStep: some View {
-        VStack(alignment: .center, spacing: DesignSystem.Spacing.lg) {
+        VStack(alignment: .center, spacing: DesignSystem.Spacing.md) {
             // Hero merkaba with particle shimmer
             ZStack {
                 ParticleField(
-                    particleCount: 10,
+                    particleCount: 8,
                     tintColor: DesignSystem.Colors.accent,
                     opacity: 0.3,
                     driftDirection: .orbital
                 )
-                .frame(width: 180, height: 180)
+                .frame(width: 120, height: 120)
 
-                MeditativeMerkabaView(size: 96, revolutionDuration: 5.0, tintColor: DesignSystem.Colors.accent)
+                MeditativeMerkabaView(size: 64, revolutionDuration: 5.0, tintColor: DesignSystem.Colors.accent)
                     .opacity(0.8)
             }
             .frame(maxWidth: .infinity)
 
             Text("Your voice, instantly as text.")
-                .font(DesignSystem.Typography.heroTitle)
+                .font(DesignSystem.Typography.pageTitle)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
 
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 12) {
                 featureRow(
                     icon: "mic.fill",
                     title: "Dictate anywhere",
