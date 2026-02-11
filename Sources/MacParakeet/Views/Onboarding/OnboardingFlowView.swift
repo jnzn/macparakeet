@@ -8,7 +8,7 @@ struct OnboardingFlowView: View {
     let onOpenMainApp: () -> Void
 
     private let windowWidth: CGFloat = 740
-    private let windowHeight: CGFloat = 480
+    private let windowHeight: CGFloat = 500
 
     var body: some View {
         HStack(spacing: 0) {
@@ -17,10 +17,8 @@ struct OnboardingFlowView: View {
             content
         }
         .frame(width: windowWidth, height: windowHeight)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(DesignSystem.Colors.background)
         .onAppear { viewModel.refresh() }
-        // When the user grants permissions in System Settings, they return to the app.
-        // Refresh so badges and "Continue" enablement update immediately.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             viewModel.refresh()
         }
@@ -28,18 +26,16 @@ struct OnboardingFlowView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 10) {
-                    Image(systemName: "waveform")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .frame(width: 28, height: 28)
-                        .background(Circle().fill(.ultraThinMaterial))
+            // App header with warm merkaba
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 12) {
+                    MeditativeMerkabaView(size: 28, revolutionDuration: 6.0, tintColor: DesignSystem.Colors.accent)
+
                     VStack(alignment: .leading, spacing: 2) {
                         Text("MacParakeet")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(DesignSystem.Typography.sectionTitle)
                         Text("First-time setup")
-                            .font(.caption)
+                            .font(DesignSystem.Typography.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -58,17 +54,17 @@ struct OnboardingFlowView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Label("Local-first. No audio uploads.", systemImage: "lock.shield")
-                    .font(.caption)
+                    .font(DesignSystem.Typography.caption)
                     .foregroundStyle(.secondary)
                 Label("Cmd+V paste requires Accessibility.", systemImage: "keyboard")
-                    .font(.caption)
+                    .font(DesignSystem.Typography.caption)
                     .foregroundStyle(.secondary)
             }
             .padding(.horizontal, DesignSystem.Spacing.xl)
             .padding(.bottom, DesignSystem.Spacing.xl)
         }
         .frame(minWidth: 220, maxWidth: 260, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(DesignSystem.Colors.surfaceElevated)
     }
 
     private func stepRow(_ step: OnboardingViewModel.Step) -> some View {
@@ -78,10 +74,10 @@ struct OnboardingFlowView: View {
         return HStack(spacing: 10) {
             ZStack {
                 Circle()
-                    .fill(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
+                    .fill(isSelected ? DesignSystem.Colors.accent.opacity(0.15) : Color.clear)
                     .frame(width: 26, height: 26)
                 Image(systemName: isCompleted ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(isCompleted ? Color.accentColor : .secondary)
+                    .foregroundStyle(isCompleted ? DesignSystem.Colors.accent : .secondary)
             }
 
             Text(step.title)
@@ -93,12 +89,11 @@ struct OnboardingFlowView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(isSelected ? Color.accentColor.opacity(0.08) : Color.clear)
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                .fill(isSelected ? DesignSystem.Colors.accent.opacity(0.08) : Color.clear)
         )
         .contentShape(Rectangle())
         .onTapGesture {
-            // Only allow forward navigation to already-completed steps; otherwise keep it linear.
             if step.rawValue <= viewModel.step.rawValue || stepIsCompleted(step) {
                 viewModel.jump(to: step)
             }
@@ -127,9 +122,9 @@ struct OnboardingFlowView: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 10) {
                 Text(titleForStep(viewModel.step))
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(DesignSystem.Typography.pageTitle)
                 Text(subtitleForStep(viewModel.step))
-                    .font(.system(size: 13))
+                    .font(DesignSystem.Typography.bodySmall)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -177,10 +172,6 @@ struct OnboardingFlowView: View {
                 .buttonStyle(.borderedProminent)
             } else {
                 Button(primaryButtonTitle(for: viewModel.step)) {
-                    if viewModel.step == .engine {
-                        viewModel.goNext()
-                        return
-                    }
                     viewModel.goNext()
                 }
                 .buttonStyle(.borderedProminent)
@@ -195,22 +186,39 @@ struct OnboardingFlowView: View {
     private func stepBody(_ step: OnboardingViewModel.Step) -> some View {
         switch step {
         case .welcome:
-            VStack(alignment: .leading, spacing: 12) {
-                featureRow(
-                    icon: "mic.fill",
-                    title: "Dictate anywhere",
-                    detail: "Double-tap Fn to start. Press Fn again to stop and paste."
-                )
-                featureRow(
-                    icon: "bolt.fill",
-                    title: "Fast loop",
-                    detail: "You'll get text where your cursor is, without switching apps."
-                )
-                featureRow(
-                    icon: "lock.shield.fill",
-                    title: "Local-first",
-                    detail: "Audio stays on your Mac. No uploads."
-                )
+            VStack(alignment: .center, spacing: DesignSystem.Spacing.lg) {
+                // Hero merkaba with particle shimmer
+                ZStack {
+                    ParticleField(
+                        particleCount: 6,
+                        tintColor: DesignSystem.Colors.accent,
+                        opacity: 0.2,
+                        driftDirection: .orbital
+                    )
+                    .frame(width: 140, height: 140)
+
+                    MeditativeMerkabaView(size: 80, revolutionDuration: 6.0, tintColor: DesignSystem.Colors.accent)
+                        .opacity(0.5)
+                }
+                .frame(maxWidth: .infinity)
+
+                VStack(alignment: .leading, spacing: 14) {
+                    featureRow(
+                        icon: "mic.fill",
+                        title: "Dictate anywhere",
+                        detail: "Double-tap Fn to start. Press Fn again to stop and paste."
+                    )
+                    featureRow(
+                        icon: "bolt.fill",
+                        title: "Fast loop",
+                        detail: "You'll get text where your cursor is, without switching apps."
+                    )
+                    featureRow(
+                        icon: "lock.shield.fill",
+                        title: "Local-first",
+                        detail: "Audio stays on your Mac. No uploads."
+                    )
+                }
             }
 
         case .microphone:
@@ -254,18 +262,18 @@ struct OnboardingFlowView: View {
         case .hotkey:
             VStack(alignment: .leading, spacing: 14) {
                 GroupBox {
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 12) {
                         Label("Start dictation: double-tap Fn", systemImage: "hand.tap")
                         Label("Stop & paste: press Fn again", systemImage: "arrow.down.doc")
                         Label("Cancel: Esc", systemImage: "escape")
                     }
-                    .font(.system(size: 13))
+                    .font(DesignSystem.Typography.body)
                     .foregroundStyle(.primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
                 Text("Tip: If your keyboard doesn't send Fn events, you can still use file transcription from the main app window.")
-                    .font(.caption)
+                    .font(DesignSystem.Typography.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -279,20 +287,25 @@ struct OnboardingFlowView: View {
                 }
 
         case .done:
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .center, spacing: DesignSystem.Spacing.lg) {
+                // Celebration merkaba
+                MeditativeMerkabaView(size: 64, revolutionDuration: 4.0, tintColor: DesignSystem.Colors.accent)
+                    .opacity(0.6)
+                    .frame(maxWidth: .infinity)
+
                 GroupBox {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("You're ready.")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(DesignSystem.Typography.sectionTitle)
                         Text("Double-tap Fn to start dictation. The transcript will paste into your active app.")
                             .foregroundStyle(.secondary)
-                            .font(.system(size: 13))
+                            .font(DesignSystem.Typography.bodySmall)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
                 Text("You can revisit this setup anytime from Settings.")
-                    .font(.caption)
+                    .font(DesignSystem.Typography.caption)
                     .foregroundStyle(.secondary)
             }
         }
@@ -306,10 +319,10 @@ struct OnboardingFlowView: View {
                         switch viewModel.engineState {
                         case .ready:
                             Image(systemName: "checkmark.seal.fill")
-                                .foregroundStyle(DesignSystem.Colors.statusGranted)
+                                .foregroundStyle(DesignSystem.Colors.successGreen)
                         case .failed:
                             Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(DesignSystem.Colors.warningOrange)
+                                .foregroundStyle(DesignSystem.Colors.warningAmber)
                         case .skipped:
                             Image(systemName: "clock.fill")
                                 .foregroundStyle(.secondary)
@@ -325,13 +338,13 @@ struct OnboardingFlowView: View {
                     }
 
                     Text(engineDetail(viewModel.engineState))
-                        .font(.system(size: 13))
+                        .font(DesignSystem.Typography.bodySmall)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
 
                     if case .failed(let msg) = viewModel.engineState {
                         Text(msg)
-                            .font(.caption)
+                            .font(DesignSystem.Typography.caption)
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
 
@@ -359,7 +372,7 @@ struct OnboardingFlowView: View {
 
                     if case .working(let message) = viewModel.engineState {
                         Text(message)
-                            .font(.caption)
+                            .font(DesignSystem.Typography.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -368,7 +381,7 @@ struct OnboardingFlowView: View {
 
             if case .ready = viewModel.engineState {
                 Text("Setup complete. You can start dictating immediately.")
-                    .font(.caption)
+                    .font(DesignSystem.Typography.caption)
                     .foregroundStyle(.secondary)
             }
         }
@@ -378,17 +391,17 @@ struct OnboardingFlowView: View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: icon)
                 .font(.system(size: 16))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(DesignSystem.Colors.accent)
                 .frame(width: 36, height: 36)
                 .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.accentColor.opacity(0.1))
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(DesignSystem.Colors.accent.opacity(0.1))
                 )
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.system(size: 14, weight: .semibold))
                 Text(detail)
-                    .font(.system(size: 13))
+                    .font(DesignSystem.Typography.bodySmall)
                     .foregroundStyle(.secondary)
             }
         }
@@ -413,17 +426,17 @@ struct OnboardingFlowView: View {
                         .font(.system(size: 14, weight: .semibold))
                     Spacer()
                     Text(status)
-                        .font(.caption)
+                        .font(DesignSystem.Typography.caption)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(
-                            Capsule().fill(statusStyle == .ok ? DesignSystem.Colors.statusGranted.opacity(0.15) : DesignSystem.Colors.warningOrange.opacity(0.15))
+                            Capsule().fill(statusStyle == .ok ? DesignSystem.Colors.successGreen.opacity(0.15) : DesignSystem.Colors.warningAmber.opacity(0.15))
                         )
-                        .foregroundStyle(statusStyle == .ok ? DesignSystem.Colors.statusGranted : DesignSystem.Colors.warningOrange)
+                        .foregroundStyle(statusStyle == .ok ? DesignSystem.Colors.successGreen : DesignSystem.Colors.warningAmber)
                 }
 
                 Text(detail)
-                    .font(.system(size: 13))
+                    .font(DesignSystem.Typography.bodySmall)
                     .foregroundStyle(.secondary)
 
                 HStack(spacing: 10) {
@@ -491,7 +504,7 @@ struct OnboardingFlowView: View {
     private func engineHeadline(_ state: OnboardingViewModel.EngineState) -> String {
         switch state {
         case .idle: return "Not started"
-        case .working: return "Working…"
+        case .working: return "Working\u{2026}"
         case .ready: return "Ready"
         case .failed: return "Needs attention"
         case .skipped: return "Will set up later"

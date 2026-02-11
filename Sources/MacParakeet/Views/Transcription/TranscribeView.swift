@@ -33,91 +33,66 @@ struct TranscribeView: View {
         }
     }
 
-    // MARK: - Drop Zone
+    // MARK: - Drop Zone (Portal)
 
     private var dropZoneView: some View {
-        VStack(spacing: DesignSystem.Spacing.md) {
-            Spacer()
+        ScrollView {
+            VStack(spacing: DesignSystem.Spacing.lg) {
+                // Portal drop zone — the hero
+                PortalDropZone(
+                    isDragging: $viewModel.isDragging,
+                    onDrop: { providers in
+                        viewModel.handleFileDrop(providers: providers)
+                    },
+                    onBrowse: { openFilePicker() }
+                )
+                .padding(.horizontal, DesignSystem.Spacing.lg)
+                .padding(.top, DesignSystem.Spacing.lg)
 
-            // File drop zone
-            ZStack {
-                RoundedRectangle(cornerRadius: DesignSystem.Layout.cornerRadius)
-                    .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [8, 4]))
-                    .foregroundStyle(viewModel.isDragging ? Color.accentColor : Color.primary.opacity(0.15))
+                // YouTube URL card — separate warm card below
+                youTubeCard
+                    .padding(.horizontal, DesignSystem.Spacing.lg)
 
-                if viewModel.isDragging {
-                    RoundedRectangle(cornerRadius: DesignSystem.Layout.cornerRadius)
-                        .fill(Color.accentColor.opacity(0.04))
-                }
-
-                VStack(spacing: DesignSystem.Spacing.sm) {
-                    MeditativeMerkabaView(
-                        size: 40,
-                        revolutionDuration: viewModel.isDragging ? 2.0 : 6.0,
-                        tintColor: viewModel.isDragging ? .accentColor : nil
-                    )
-                    .animation(.easeInOut(duration: 0.3), value: viewModel.isDragging)
-
-                    Text("Drop audio or video file")
-                        .font(DesignSystem.Typography.headline)
-                        .foregroundStyle(viewModel.isDragging ? Color.accentColor : .primary.opacity(0.7))
-
-                    Text("MP3, WAV, M4A, FLAC, MP4, MOV, MKV")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                // Error banner
+                if let error = viewModel.errorMessage {
+                    errorBanner(error)
+                        .padding(.horizontal, DesignSystem.Spacing.lg)
                 }
             }
-            .frame(height: 160)
-            .onDrop(of: [.fileURL], isTargeted: $viewModel.isDragging) { providers in
-                viewModel.handleFileDrop(providers: providers)
-            }
-            .padding(.horizontal, DesignSystem.Spacing.xl)
+            .padding(.bottom, DesignSystem.Spacing.lg)
+        }
+    }
 
-            Button("Browse Files") {
-                openFilePicker()
-            }
-            .buttonStyle(.borderedProminent)
+    // MARK: - YouTube Card
 
-            // Divider
+    private var youTubeCard: some View {
+        VStack(spacing: DesignSystem.Spacing.sm) {
             HStack(spacing: DesignSystem.Spacing.sm) {
-                Rectangle()
-                    .fill(Color.primary.opacity(0.1))
-                    .frame(height: 0.5)
-                Text("or")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Rectangle()
-                    .fill(Color.primary.opacity(0.1))
-                    .frame(height: 0.5)
-            }
-            .padding(.horizontal, DesignSystem.Spacing.xxl)
-
-            // YouTube URL input
-            HStack(spacing: DesignSystem.Spacing.sm) {
-                HStack(spacing: 6) {
-                    Image(systemName: viewModel.isValidURL ? "checkmark.circle.fill" : "play.rectangle")
-                        .font(.system(size: 14))
-                        .foregroundStyle(viewModel.isValidURL ? DesignSystem.Colors.successGreen : Color.primary.opacity(0.25))
+                HStack(spacing: 8) {
+                    Image(systemName: viewModel.isValidURL ? "checkmark.circle.fill" : "play.rectangle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(viewModel.isValidURL ? DesignSystem.Colors.successGreen : DesignSystem.Colors.accent.opacity(0.4))
                         .contentTransition(.symbolEffect(.replace))
 
-                    TextField("Paste YouTube URL", text: $viewModel.urlInput)
+                    TextField("Paste a YouTube link", text: $viewModel.urlInput)
                         .textFieldStyle(.plain)
+                        .font(DesignSystem.Typography.body)
                         .onSubmit {
                             if viewModel.isValidURL {
                                 viewModel.transcribeURL()
                             }
                         }
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
                 .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.primary.opacity(0.05))
+                    RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                        .fill(DesignSystem.Colors.surfaceElevated)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
                         .strokeBorder(
-                            viewModel.isValidURL ? DesignSystem.Colors.successGreen.opacity(0.3) : Color.primary.opacity(0.1),
+                            viewModel.isValidURL ? DesignSystem.Colors.successGreen.opacity(0.3) : DesignSystem.Colors.border,
                             lineWidth: 0.5
                         )
                 )
@@ -126,43 +101,39 @@ struct TranscribeView: View {
                     viewModel.transcribeURL()
                 } label: {
                     Image(systemName: "arrow.right.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(viewModel.isValidURL ? Color.accentColor : Color.primary.opacity(0.15))
+                        .font(.system(size: 24))
+                        .foregroundStyle(viewModel.isValidURL ? DesignSystem.Colors.accent : Color.primary.opacity(0.15))
                 }
                 .buttonStyle(.plain)
                 .disabled(!viewModel.isValidURL)
             }
-            .padding(.horizontal, DesignSystem.Spacing.xl)
-
-            // Error banner
-            if let error = viewModel.errorMessage {
-                HStack(spacing: DesignSystem.Spacing.sm) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 12))
-                    Text(error)
-                        .font(.caption)
-                        .lineLimit(2)
-                    Spacer()
-                    Button {
-                        viewModel.errorMessage = nil
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 9, weight: .semibold))
-                    }
-                    .buttonStyle(.plain)
-                }
-                .foregroundStyle(DesignSystem.Colors.statusDenied)
-                .padding(DesignSystem.Spacing.sm)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(DesignSystem.Colors.statusDenied.opacity(0.08))
-                )
-                .padding(.horizontal, DesignSystem.Spacing.xl)
-            }
-
-            Spacer()
         }
-        .padding(DesignSystem.Spacing.xl)
+    }
+
+    // MARK: - Error Banner
+
+    private func errorBanner(_ error: String) -> some View {
+        HStack(spacing: DesignSystem.Spacing.sm) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 13))
+            Text(error)
+                .font(DesignSystem.Typography.caption)
+                .lineLimit(2)
+            Spacer()
+            Button {
+                viewModel.errorMessage = nil
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .semibold))
+            }
+            .buttonStyle(.plain)
+        }
+        .foregroundStyle(DesignSystem.Colors.errorRed)
+        .padding(DesignSystem.Spacing.md)
+        .background(
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                .fill(DesignSystem.Colors.errorRed.opacity(0.08))
+        )
     }
 
     // MARK: - Transcribing
@@ -179,10 +150,10 @@ struct TranscribeView: View {
                 // Phase icon behind the spinner
                 Image(systemName: isDownloadPhase ? "arrow.down.circle" : "waveform")
                     .font(.system(size: 18, weight: .light))
-                    .foregroundStyle(Color.accentColor.opacity(0.3))
+                    .foregroundStyle(DesignSystem.Colors.accent.opacity(0.3))
                     .contentTransition(.symbolEffect(.replace))
 
-                SpinnerRingView(size: 48, revolutionDuration: isDownloadPhase ? 3.5 : 2.0, tintColor: .accentColor)
+                SpinnerRingView(size: 48, revolutionDuration: isDownloadPhase ? 3.5 : 2.0, tintColor: DesignSystem.Colors.accent)
             }
 
             VStack(spacing: DesignSystem.Spacing.xs) {
@@ -194,26 +165,26 @@ struct TranscribeView: View {
 
                 if let fraction = viewModel.transcriptionProgress {
                     ProgressView(value: fraction)
-                        .tint(.accentColor)
-                        .frame(width: 180)
+                        .tint(DesignSystem.Colors.accent)
+                        .frame(width: 200)
                         .animation(.easeInOut(duration: 0.3), value: fraction)
                 } else if isDownloadPhase {
                     VStack(spacing: DesignSystem.Spacing.xs) {
                         ProgressView()
                             .progressViewStyle(.linear)
-                            .tint(.accentColor)
-                            .frame(width: 180)
+                            .tint(DesignSystem.Colors.accent)
+                            .frame(width: 200)
                         Text("This may take a moment for longer videos")
-                            .font(.caption)
-                            .foregroundStyle(.quaternary)
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(.tertiary)
                     }
                 }
             }
 
             if let error = viewModel.errorMessage {
                 Text(error)
-                    .font(.caption)
-                    .foregroundStyle(DesignSystem.Colors.statusDenied)
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(DesignSystem.Colors.errorRed)
                     .padding(.horizontal, DesignSystem.Spacing.xl)
                     .multilineTextAlignment(.center)
             }
@@ -227,7 +198,7 @@ struct TranscribeView: View {
     private var recentTranscriptionsList: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Recent Transcriptions")
+                Text("Recent")
                     .font(DesignSystem.Typography.sectionHeader)
                     .foregroundStyle(.secondary)
                 Text("\(viewModel.transcriptions.count)")
@@ -251,7 +222,7 @@ struct TranscribeView: View {
                 .listRowSeparator(.hidden)
             }
             .listStyle(.plain)
-            .frame(maxHeight: 260)
+            .frame(maxHeight: 280)
         }
     }
 
@@ -279,21 +250,18 @@ private struct RecentTranscriptionRow: View {
 
     var body: some View {
         HStack(spacing: DesignSystem.Spacing.md) {
-            // Audio icon with status tint
-            ZStack {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(iconBackgroundColor)
-                    .frame(width: 32, height: 32)
-                Image(systemName: iconName)
-                    .font(.system(size: 13))
-                    .foregroundStyle(iconForegroundColor)
-            }
+            // Sonic mandala thumbnail
+            SonicMandalaView(
+                data: mandalaData,
+                size: 32,
+                style: .monochrome
+            )
 
             // Content: filename + metadata
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(transcription.fileName)
-                        .font(.body)
+                        .font(DesignSystem.Typography.body)
                         .lineLimit(1)
                         .foregroundStyle(.primary)
 
@@ -334,8 +302,8 @@ private struct RecentTranscriptionRow: View {
             // Status pill
             statusPill
         }
-        .padding(.vertical, DesignSystem.Spacing.xs)
-        .padding(.horizontal, DesignSystem.Spacing.xs)
+        .padding(.vertical, DesignSystem.Spacing.sm)
+        .padding(.horizontal, DesignSystem.Spacing.sm)
         .background(
             RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
                 .fill(isHovered ? DesignSystem.Colors.rowHoverBackground : .clear)
@@ -347,36 +315,14 @@ private struct RecentTranscriptionRow: View {
         }
     }
 
-    // MARK: - Icon
+    // MARK: - Mandala Data
 
-    private var iconName: String {
-        if transcription.sourceURL != nil && transcription.status == .completed {
-            return "play.rectangle.fill"
+    private var mandalaData: MandalaData {
+        if let timestamps = transcription.wordTimestamps, !timestamps.isEmpty {
+            return .from(wordTimestamps: timestamps)
         }
-        switch transcription.status {
-        case .completed: return "waveform"
-        case .processing: return "arrow.trianglehead.2.clockwise"
-        case .error: return "exclamationmark.triangle"
-        case .cancelled: return "xmark"
-        }
-    }
-
-    private var iconBackgroundColor: Color {
-        switch transcription.status {
-        case .completed: return DesignSystem.Colors.successGreen.opacity(0.1)
-        case .processing: return Color.accentColor.opacity(0.1)
-        case .error: return DesignSystem.Colors.statusDenied.opacity(0.1)
-        case .cancelled: return Color.primary.opacity(0.05)
-        }
-    }
-
-    private var iconForegroundColor: Color {
-        switch transcription.status {
-        case .completed: return DesignSystem.Colors.successGreen
-        case .processing: return .accentColor
-        case .error: return DesignSystem.Colors.statusDenied
-        case .cancelled: return .secondary
-        }
+        return .from(text: transcription.rawTranscript ?? transcription.fileName,
+                     durationMs: transcription.durationMs ?? 1000)
     }
 
     // MARK: - Status Pill
@@ -388,17 +334,17 @@ private struct RecentTranscriptionRow: View {
             pillLabel("Done", icon: "checkmark", color: DesignSystem.Colors.successGreen)
         case .processing:
             HStack(spacing: 4) {
-                SpinnerRingView(size: 10, revolutionDuration: 2.0, tintColor: .accentColor)
+                SpinnerRingView(size: 10, revolutionDuration: 2.0, tintColor: DesignSystem.Colors.accent)
                 Text("Processing")
                     .font(.caption2)
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(DesignSystem.Colors.accent)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(Capsule().fill(Color.accentColor.opacity(0.1)))
+            .background(Capsule().fill(DesignSystem.Colors.accent.opacity(0.1)))
         case .error:
             VStack(alignment: .trailing, spacing: 2) {
-                pillLabel("Failed", icon: "xmark", color: DesignSystem.Colors.statusDenied)
+                pillLabel("Failed", icon: "xmark", color: DesignSystem.Colors.errorRed)
                 if let msg = transcription.errorMessage {
                     Text(msg.count > 30 ? String(msg.prefix(27)) + "..." : msg)
                         .font(.system(size: 9))

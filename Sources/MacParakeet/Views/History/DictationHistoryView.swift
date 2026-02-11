@@ -18,7 +18,7 @@ struct DictationHistoryView: View {
                 HStack(spacing: DesignSystem.Spacing.sm) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 12))
-                        .foregroundStyle(DesignSystem.Colors.warningOrange)
+                        .foregroundStyle(DesignSystem.Colors.warningAmber)
                     Text(error)
                         .font(.callout)
                         .foregroundStyle(.secondary)
@@ -26,7 +26,7 @@ struct DictationHistoryView: View {
                 }
                 .padding(.horizontal, DesignSystem.Spacing.lg)
                 .padding(.vertical, DesignSystem.Spacing.sm)
-                .background(Color(nsColor: .controlBackgroundColor))
+                .background(DesignSystem.Colors.surfaceElevated)
                 .overlay(alignment: .top) { Divider() }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
@@ -61,35 +61,47 @@ struct DictationHistoryView: View {
     // MARK: - Empty State
 
     private var emptyState: some View {
-        VStack(spacing: DesignSystem.Spacing.md) {
+        VStack(spacing: DesignSystem.Spacing.lg) {
             Spacer()
-            MeditativeMerkabaView(size: 56, revolutionDuration: 8.0)
-            Text(viewModel.searchText.isEmpty ? "No dictations yet" : "No results found")
-                .foregroundStyle(.secondary)
-            Text(viewModel.searchText.isEmpty ? "Press Fn to start dictating" : "Try a different search term")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+
+            MeditativeMerkabaView(size: 72, revolutionDuration: 8.0, tintColor: DesignSystem.Colors.accent)
+                .opacity(0.4)
+
+            VStack(spacing: DesignSystem.Spacing.sm) {
+                Text(viewModel.searchText.isEmpty
+                     ? "Your voice, captured."
+                     : "Nothing matched.")
+                    .font(DesignSystem.Typography.pageTitle)
+                    .foregroundStyle(.primary)
+
+                Text(viewModel.searchText.isEmpty
+                     ? "Press Fn to start dictating."
+                     : "Try different words?")
+                    .font(DesignSystem.Typography.bodySmall)
+                    .foregroundStyle(.secondary)
+            }
+
             Spacer()
         }
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: - Flat List
+    // MARK: - Card-Based List
 
     private var dictationList: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(viewModel.groupedDictations, id: \.0) { dateHeader, dictations in
-                    // Date section header
+                    // Date section header — accent colored
                     Text(dateHeader.uppercased())
                         .font(DesignSystem.Typography.sectionHeader)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(DesignSystem.Colors.accent.opacity(0.7))
                         .padding(.horizontal, DesignSystem.Spacing.lg)
-                        .padding(.top, DesignSystem.Spacing.md)
-                        .padding(.bottom, DesignSystem.Spacing.xs)
+                        .padding(.top, DesignSystem.Spacing.lg)
+                        .padding(.bottom, DesignSystem.Spacing.sm)
 
-                    ForEach(Array(dictations.enumerated()), id: \.element.id) { index, dictation in
-                        DictationRowView(
+                    ForEach(dictations) { dictation in
+                        DictationCardRow(
                             dictation: dictation,
                             searchText: viewModel.searchText,
                             isPlayingThis: viewModel.playingDictationId == dictation.id && viewModel.isPlaying,
@@ -101,16 +113,12 @@ struct DictationHistoryView: View {
                             },
                             onDownloadAudio: { viewModel.downloadAudio(for: dictation) }
                         )
-
-                        if index < dictations.count - 1 {
-                            Divider()
-                                .padding(.leading, 56 + DesignSystem.Spacing.sm + DesignSystem.Spacing.lg)
-                                .padding(.trailing, DesignSystem.Spacing.lg)
-                        }
+                        .padding(.horizontal, DesignSystem.Spacing.lg)
+                        .padding(.bottom, DesignSystem.Spacing.sm)
                     }
                 }
             }
-            .padding(.bottom, DesignSystem.Spacing.sm)
+            .padding(.bottom, DesignSystem.Spacing.md)
         }
         .textSelection(.enabled)
     }
@@ -119,13 +127,13 @@ struct DictationHistoryView: View {
 
     private func bottomBarPlayer(_ dictation: Dictation) -> some View {
         HStack(spacing: DesignSystem.Spacing.md) {
-            // Play/pause button — accent-filled circle
+            // Play/pause button
             Button {
                 viewModel.togglePlayback(for: dictation)
             } label: {
                 ZStack {
                     Circle()
-                        .fill(Color.accentColor)
+                        .fill(DesignSystem.Colors.accent)
                         .frame(width: 32, height: 32)
 
                     Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
@@ -139,7 +147,7 @@ struct DictationHistoryView: View {
             // Transcript snippet
             Text(dictation.cleanTranscript ?? dictation.rawTranscript)
                 .lineLimit(1)
-                .font(.callout)
+                .font(DesignSystem.Typography.body)
                 .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -149,7 +157,7 @@ struct DictationHistoryView: View {
                     Capsule()
                         .fill(DesignSystem.Colors.playbackTrack)
                     Capsule()
-                        .fill(DesignSystem.Colors.playbackFill)
+                        .fill(DesignSystem.Colors.accent)
                         .frame(width: max(0, geo.size.width * viewModel.playbackProgress))
                 }
             }
@@ -175,7 +183,7 @@ struct DictationHistoryView: View {
         .frame(height: 52)
         .background(
             Rectangle()
-                .fill(Color(nsColor: .controlBackgroundColor))
+                .fill(DesignSystem.Colors.surfaceElevated)
                 .overlay(alignment: .top) {
                     Divider()
                 }
@@ -183,9 +191,9 @@ struct DictationHistoryView: View {
     }
 }
 
-// MARK: - Row View
+// MARK: - Card Row View
 
-struct DictationRowView: View {
+struct DictationCardRow: View {
     let dictation: Dictation
     var searchText: String = ""
     var isPlayingThis: Bool = false
@@ -198,9 +206,25 @@ struct DictationRowView: View {
     @State private var isHovered = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: DesignSystem.Spacing.sm) {
-            // Timestamp + duration column
-            VStack(alignment: .trailing, spacing: 2) {
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
+            // Top row: mandala + transcript text
+            HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
+                // Sonic mandala thumbnail
+                SonicMandalaView(
+                    data: .from(text: dictation.rawTranscript, durationMs: dictation.durationMs),
+                    size: 32,
+                    style: .monochrome
+                )
+
+                // Transcript text — the star
+                Text(highlightedTranscript)
+                    .font(DesignSystem.Typography.body)
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            // Bottom row: metadata + actions
+            HStack(spacing: DesignSystem.Spacing.sm) {
                 Text(formatTime(dictation.createdAt))
                     .font(DesignSystem.Typography.timestamp)
                     .foregroundStyle(.secondary)
@@ -208,89 +232,67 @@ struct DictationRowView: View {
                 Text(dictation.durationMs.formattedDuration)
                     .font(DesignSystem.Typography.duration)
                     .foregroundStyle(.tertiary)
-            }
-            .frame(width: 56, alignment: .trailing)
 
-            // Transcript text — full width, no line limit, with search highlight
-            Text(highlightedTranscript)
-                .font(.body)
-                .foregroundStyle(.primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.horizontal, DesignSystem.Spacing.lg)
-        .padding(.vertical, DesignSystem.Spacing.md)
-        .contentShape(Rectangle())
-        .background(
-            RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
-                .fill(isPlayingThis
-                    ? Color.accentColor.opacity(0.06)
-                    : isHovered
-                        ? DesignSystem.Colors.rowHoverBackground
-                        : .clear)
-        )
-        // Hover actions — overlaid on the right with a gradient fade, no layout shift
-        .overlay(alignment: .topTrailing) {
-            HStack(spacing: DesignSystem.Spacing.sm) {
-                if dictation.audioPath != nil {
-                    Button {
-                        onTogglePlayback?()
-                    } label: {
-                        Image(systemName: isPlayingThis ? "pause.fill" : "play.fill")
-                            .font(.system(size: 14))
-                            .frame(width: 28, height: 28)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.accentColor)
-                }
+                Spacer()
 
-                Button(action: onCopy) {
-                    Image(systemName: isCopied ? "checkmark" : "doc.on.clipboard")
-                        .font(.system(size: 14, weight: isCopied ? .semibold : .regular))
-                        .frame(width: 28, height: 28)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(isCopied ? DesignSystem.Colors.successGreen : .secondary)
-                .animation(DesignSystem.Animation.hoverTransition, value: isCopied)
-
-                Menu {
+                // Always-visible actions
+                HStack(spacing: 4) {
                     if dictation.audioPath != nil {
-                        Button {
-                            onDownloadAudio?()
-                        } label: {
-                            Label("Download Audio", systemImage: "arrow.down.circle")
+                        actionButton(
+                            icon: isPlayingThis ? "pause.fill" : "play.fill",
+                            color: DesignSystem.Colors.accent
+                        ) {
+                            onTogglePlayback?()
                         }
                     }
-                    Divider()
-                    Button(role: .destructive) {
-                        onDelete()
-                    } label: {
-                        Label("Delete", systemImage: "trash")
+
+                    actionButton(
+                        icon: isCopied ? "checkmark" : "doc.on.clipboard",
+                        color: isCopied ? DesignSystem.Colors.successGreen : .secondary
+                    ) {
+                        onCopy()
                     }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 14))
-                        .frame(width: 28, height: 28)
+                    .animation(DesignSystem.Animation.hoverTransition, value: isCopied)
+
+                    Menu {
+                        if dictation.audioPath != nil {
+                            Button {
+                                onDownloadAudio?()
+                            } label: {
+                                Label("Download Audio", systemImage: "arrow.down.circle")
+                            }
+                        }
+                        Divider()
+                        Button(role: .destructive) {
+                            onDelete()
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 12))
+                            .frame(width: 26, height: 26)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
             }
-            .padding(.trailing, DesignSystem.Spacing.lg)
-            .padding(.top, DesignSystem.Spacing.md - 2)
-            .padding(.leading, DesignSystem.Spacing.xxl)
-            .background(
-                LinearGradient(
-                    stops: [
-                        .init(color: .clear, location: 0),
-                        .init(color: Color(nsColor: .textBackgroundColor), location: 0.25)
-                    ],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-            )
-            .opacity(isHovered ? 1 : 0)
-            .allowsHitTesting(isHovered)
-            .animation(DesignSystem.Animation.hoverTransition, value: isHovered)
         }
+        .padding(DesignSystem.Spacing.md)
+        .background(
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
+                .fill(isPlayingThis
+                      ? DesignSystem.Colors.accent.opacity(0.06)
+                      : DesignSystem.Colors.cardBackground)
+                .cardShadow(isHovered ? DesignSystem.Shadows.cardHover : DesignSystem.Shadows.cardRest)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
+                .strokeBorder(
+                    isPlayingThis ? DesignSystem.Colors.accent.opacity(0.2) : DesignSystem.Colors.border.opacity(0.5),
+                    lineWidth: 0.5
+                )
+        )
         .onHover { hovering in
             withAnimation(DesignSystem.Animation.hoverTransition) {
                 isHovered = hovering
@@ -319,6 +321,20 @@ struct DictationRowView: View {
         }
     }
 
+    // MARK: - Action Button
+
+    private func actionButton(icon: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 12))
+                .frame(width: 26, height: 26)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(color)
+    }
+
+    // MARK: - Highlighted Transcript
+
     private var highlightedTranscript: AttributedString {
         let text = dictation.cleanTranscript ?? dictation.rawTranscript
         var attributed = AttributedString(text)
@@ -333,8 +349,7 @@ struct DictationRowView: View {
                 options: .caseInsensitive
             ) else { break }
 
-            attributed[range].backgroundColor = Color.yellow.opacity(0.3)
-            attributed[range].foregroundColor = .white
+            attributed[range].backgroundColor = DesignSystem.Colors.accent.opacity(0.2)
             searchStart = range.upperBound
         }
 

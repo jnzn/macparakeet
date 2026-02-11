@@ -1,0 +1,76 @@
+import SwiftUI
+import MacParakeetCore
+
+/// The hero interaction — a warm card with merkaba that responds to file dragging.
+/// "Portal" effect: lifts, glows, particles drift on hover; contracts on file drop.
+struct PortalDropZone: View {
+    @Binding var isDragging: Bool
+    let onDrop: ([NSItemProvider]) -> Bool
+    let onBrowse: () -> Void
+
+    @State private var browseHovered = false
+
+    var body: some View {
+        ZStack {
+            // Card background
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.dropZoneCornerRadius)
+                .fill(isDragging ? DesignSystem.Colors.accentLight : DesignSystem.Colors.surfaceElevated)
+                .overlay(
+                    RoundedRectangle(cornerRadius: DesignSystem.Layout.dropZoneCornerRadius)
+                        .strokeBorder(
+                            isDragging ? DesignSystem.Colors.accent.opacity(0.4) : Color.clear,
+                            lineWidth: 1
+                        )
+                )
+                .cardShadow(isDragging ? DesignSystem.Shadows.portalLift : DesignSystem.Shadows.cardRest)
+
+            // Content
+            VStack(spacing: DesignSystem.Spacing.md) {
+                // Merkaba — state-reactive
+                ZStack {
+                    if isDragging {
+                        ParticleField(
+                            particleCount: 6,
+                            tintColor: DesignSystem.Colors.accent,
+                            opacity: 0.25,
+                            driftDirection: .up
+                        )
+                        .frame(width: 120, height: 120)
+                    }
+
+                    MeditativeMerkabaView(
+                        size: 80,
+                        revolutionDuration: isDragging ? 3.0 : 6.0,
+                        tintColor: DesignSystem.Colors.accent
+                    )
+                    .opacity(isDragging ? 0.8 : 0.4)
+                    .animation(.easeInOut(duration: 0.3), value: isDragging)
+                }
+
+                // Call to action
+                Text("Drop a file to transcribe")
+                    .font(DesignSystem.Typography.pageTitle)
+                    .foregroundStyle(isDragging ? DesignSystem.Colors.accent : .primary)
+
+                // Browse link
+                Button(action: onBrowse) {
+                    Text("or Browse Files")
+                        .font(DesignSystem.Typography.bodySmall)
+                        .foregroundStyle(.secondary)
+                        .underline(browseHovered, color: .secondary)
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering in
+                    browseHovered = hovering
+                    if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+                }
+            }
+            .padding(.vertical, DesignSystem.Spacing.xl)
+        }
+        .frame(minHeight: 220)
+        .onDrop(of: [.fileURL], isTargeted: $isDragging) { providers in
+            onDrop(providers)
+        }
+        .animation(DesignSystem.Animation.portalLift, value: isDragging)
+    }
+}

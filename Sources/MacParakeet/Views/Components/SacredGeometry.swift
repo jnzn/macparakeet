@@ -189,6 +189,7 @@ struct MeditativeMerkabaView: View {
 // MARK: - Sacred Geometry Divider
 
 /// Thin line with centered diamond ornament (two tiny triangles point-to-point).
+/// Warm coral tint on the diamond for personality.
 struct SacredGeometryDivider: View {
     var body: some View {
         HStack(spacing: 0) {
@@ -197,21 +198,19 @@ struct SacredGeometryDivider: View {
             line
         }
         .frame(height: 12)
-        .opacity(0.1)
     }
 
     private var line: some View {
         Rectangle()
-            .fill(Color.primary)
+            .fill(DesignSystem.Colors.border)
             .frame(height: 0.5)
     }
 
     private var diamond: some View {
-        // Two tiny triangles point-to-point forming a diamond
         Canvas { context, size in
             let mid = CGPoint(x: size.width / 2, y: size.height / 2)
-            let hw: CGFloat = 4  // half-width
-            let hh: CGFloat = 6  // half-height
+            let hw: CGFloat = 4
+            let hh: CGFloat = 6
 
             var path = Path()
             path.move(to: CGPoint(x: mid.x, y: mid.y - hh))
@@ -220,7 +219,7 @@ struct SacredGeometryDivider: View {
             path.addLine(to: CGPoint(x: mid.x - hw, y: mid.y))
             path.closeSubpath()
 
-            context.stroke(path, with: .color(.primary), lineWidth: 0.8)
+            context.stroke(path, with: .color(DesignSystem.Colors.accent.opacity(0.3)), lineWidth: 0.8)
         }
         .frame(width: 16, height: 12)
     }

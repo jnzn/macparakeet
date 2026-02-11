@@ -10,32 +10,45 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            // License
             Section("License") {
-                HStack {
-                    Text(viewModel.entitlementsSummary)
-                        .font(.headline)
-                    Spacer()
-                    if viewModel.isUnlocked {
-                        Label("Unlocked", systemImage: "checkmark.seal.fill")
-                            .foregroundStyle(DesignSystem.Colors.statusGranted)
-                            .font(.caption)
-                    } else {
+                if viewModel.isUnlocked {
+                    // Warm unlocked banner
+                    HStack(spacing: DesignSystem.Spacing.md) {
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.system(size: 20))
+                            .foregroundStyle(DesignSystem.Colors.successGreen)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("You're all set!")
+                                .font(DesignSystem.Typography.sectionTitle)
+                            Text(viewModel.entitlementsSummary)
+                                .font(DesignSystem.Typography.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, DesignSystem.Spacing.xs)
+                } else {
+                    HStack {
+                        Text(viewModel.entitlementsSummary)
+                            .font(.headline)
+                        Spacer()
                         Label("Trial", systemImage: "lock.fill")
                             .foregroundStyle(.secondary)
-                            .font(.caption)
+                            .font(DesignSystem.Typography.caption)
                     }
                 }
 
                 if !viewModel.entitlementsDetail.isEmpty {
                     Text(viewModel.entitlementsDetail)
                         .foregroundStyle(.secondary)
-                        .font(.caption)
+                        .font(DesignSystem.Typography.caption)
                 }
 
                 if let err = viewModel.licensingError, !err.isEmpty {
                     Text(err)
-                        .foregroundStyle(DesignSystem.Colors.statusDenied)
-                        .font(.caption)
+                        .foregroundStyle(DesignSystem.Colors.errorRed)
+                        .font(DesignSystem.Typography.caption)
                 }
 
                 if !viewModel.isUnlocked {
@@ -90,7 +103,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Toggle("Keep downloaded YouTube audio", isOn: $viewModel.saveTranscriptionAudio)
                     Text("Enabled by default. Turn off to auto-delete downloaded YouTube audio after transcription.")
-                        .font(.caption)
+                        .font(DesignSystem.Typography.caption)
                         .foregroundStyle(.tertiary)
                 }
 
@@ -104,7 +117,7 @@ struct SettingsView: View {
                 HStack {
                     Text("YouTube downloads")
                     Spacer()
-                    Text("\(viewModel.youtubeDownloadCount) file\(viewModel.youtubeDownloadCount == 1 ? "" : "s") • \(viewModel.youtubeDownloadStorageMB, specifier: "%.1f") MB")
+                    Text("\(viewModel.youtubeDownloadCount) file\(viewModel.youtubeDownloadCount == 1 ? "" : "s") \u{2022} \(viewModel.youtubeDownloadStorageMB, specifier: "%.1f") MB")
                         .foregroundStyle(.secondary)
                 }
 
@@ -165,10 +178,10 @@ struct SettingsView: View {
                 HStack {
                     Spacer()
                     VStack(spacing: DesignSystem.Spacing.sm) {
-                        SpinnerRingView(size: 16, revolutionDuration: 8.0, tintColor: .secondary)
-                            .opacity(0.5)
+                        SpinnerRingView(size: 16, revolutionDuration: 8.0, tintColor: DesignSystem.Colors.accent)
+                            .opacity(0.4)
                         Text("MacParakeet \(appVersion)")
-                            .font(.caption)
+                            .font(DesignSystem.Typography.caption)
                             .foregroundStyle(.tertiary)
                     }
                     Spacer()
@@ -197,12 +210,12 @@ struct SettingsView: View {
             Text(granted ? "Granted" : "Not Granted")
                 .font(.caption2)
         }
-        .foregroundStyle(granted ? DesignSystem.Colors.statusGranted : DesignSystem.Colors.statusDenied)
+        .foregroundStyle(granted ? DesignSystem.Colors.successGreen : DesignSystem.Colors.errorRed)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(
             Capsule()
-                .fill(granted ? DesignSystem.Colors.statusGranted.opacity(0.1) : DesignSystem.Colors.statusDenied.opacity(0.1))
+                .fill(granted ? DesignSystem.Colors.successGreen.opacity(0.1) : DesignSystem.Colors.errorRed.opacity(0.1))
         )
     }
 

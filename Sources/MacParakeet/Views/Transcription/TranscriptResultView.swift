@@ -13,30 +13,58 @@ struct TranscriptResultView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header
-            HStack(spacing: DesignSystem.Spacing.sm) {
-                if let onBack {
-                    Button(action: onBack) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(backHovered ? .primary : .secondary)
-                            .frame(width: 24, height: 24)
-                            .background(
-                                Circle()
-                                    .fill(backHovered ? Color.primary.opacity(0.08) : .clear)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .onHover { hovering in
-                        withAnimation(DesignSystem.Animation.hoverTransition) {
-                            backHovered = hovering
+            // Header with sonic mandala hero
+            VStack(spacing: DesignSystem.Spacing.md) {
+                HStack(spacing: DesignSystem.Spacing.sm) {
+                    if let onBack {
+                        Button(action: onBack) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(backHovered ? .primary : .secondary)
+                                .frame(width: 28, height: 28)
+                                .background(
+                                    Circle()
+                                        .fill(backHovered ? Color.primary.opacity(0.08) : .clear)
+                                )
                         }
+                        .buttonStyle(.plain)
+                        .onHover { hovering in
+                            withAnimation(DesignSystem.Animation.hoverTransition) {
+                                backHovered = hovering
+                            }
+                        }
+                    }
+
+                    Spacer()
+
+                    // Sonic mandala — hero element
+                    SonicMandalaView(
+                        data: mandalaData,
+                        size: 56,
+                        style: .fullColor
+                    )
+
+                    Spacer()
+
+                    // Duration badge
+                    if let durationMs = transcription.durationMs {
+                        Text(durationMs.formattedDuration)
+                            .font(DesignSystem.Typography.duration)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(
+                                Capsule()
+                                    .fill(Color.primary.opacity(0.05))
+                            )
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 2) {
+                // Title + source URL
+                VStack(spacing: 4) {
                     Text(transcription.fileName)
                         .font(DesignSystem.Typography.headline)
+                        .multilineTextAlignment(.center)
 
                     if let sourceURL = transcription.sourceURL,
                        let url = URL(string: sourceURL) {
@@ -48,7 +76,7 @@ struct TranscriptResultView: View {
                                     .font(.system(size: 10))
                                     .foregroundStyle(DesignSystem.Colors.youtubeRed.opacity(0.7))
                                 Text(sourceURL.count > 50 ? String(sourceURL.prefix(47)) + "..." : sourceURL)
-                                    .font(.caption)
+                                    .font(DesignSystem.Typography.caption)
                                     .lineLimit(1)
                                 Image(systemName: "arrow.up.right")
                                     .font(.system(size: 8, weight: .semibold))
@@ -71,20 +99,6 @@ struct TranscriptResultView: View {
                         }
                     }
                 }
-
-                Spacer()
-
-                if let durationMs = transcription.durationMs {
-                    Text(durationMs.formattedDuration)
-                        .font(DesignSystem.Typography.duration)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(
-                            Capsule()
-                                .fill(Color.primary.opacity(0.05))
-                        )
-                }
             }
             .padding(DesignSystem.Spacing.lg)
 
@@ -98,9 +112,9 @@ struct TranscriptResultView: View {
                         timestampedView(words: timestamps)
                     } else if let text = transcription.rawTranscript {
                         Text(text)
-                            .font(DesignSystem.Typography.body)
+                            .font(DesignSystem.Typography.bodyLarge)
                             .textSelection(.enabled)
-                            .lineSpacing(3)
+                            .lineSpacing(4)
                     } else {
                         Text("No transcript available")
                             .foregroundStyle(.secondary)
@@ -149,6 +163,16 @@ struct TranscriptResultView: View {
         }
     }
 
+    // MARK: - Mandala Data
+
+    private var mandalaData: MandalaData {
+        if let timestamps = transcription.wordTimestamps, !timestamps.isEmpty {
+            return .from(wordTimestamps: timestamps)
+        }
+        return .from(text: transcription.rawTranscript ?? transcription.fileName,
+                     durationMs: transcription.durationMs ?? 1000)
+    }
+
     // MARK: - Timestamped View
 
     @ViewBuilder
@@ -168,9 +192,9 @@ struct TranscriptResultView: View {
                     )
 
                 Text(segment.text)
-                    .font(DesignSystem.Typography.body)
+                    .font(DesignSystem.Typography.bodyLarge)
                     .textSelection(.enabled)
-                    .lineSpacing(3)
+                    .lineSpacing(4)
             }
         }
     }

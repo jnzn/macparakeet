@@ -36,7 +36,7 @@ struct MainWindowView: View {
                     .tag(item)
             }
             .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 220)
+            .navigationSplitViewColumnWidth(min: 170, ideal: DesignSystem.Layout.sidebarMinWidth, max: 240)
         } detail: {
             Group {
                 switch state.selectedItem {
@@ -57,7 +57,7 @@ struct MainWindowView: View {
             .animation(DesignSystem.Animation.contentSwap, value: state.selectedItem)
         }
         .frame(
-            minWidth: 800,
+            minWidth: 860,
             minHeight: DesignSystem.Layout.windowMinHeight
         )
     }
