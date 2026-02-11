@@ -1,11 +1,14 @@
 import Foundation
 
 public protocol TranscriptionServiceProtocol: Sendable {
-    func transcribe(fileURL: URL) async throws -> Transcription
+    func transcribe(fileURL: URL, onProgress: (@Sendable (String) -> Void)?) async throws -> Transcription
     func transcribeURL(urlString: String, onProgress: (@Sendable (String) -> Void)?) async throws -> Transcription
 }
 
 extension TranscriptionServiceProtocol {
+    public func transcribe(fileURL: URL) async throws -> Transcription {
+        try await transcribe(fileURL: fileURL, onProgress: nil)
+    }
     public func transcribeURL(urlString: String) async throws -> Transcription {
         try await transcribeURL(urlString: urlString, onProgress: nil)
     }
@@ -44,7 +47,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         self.youtubeDownloader = youtubeDownloader
     }
 
-    public func transcribe(fileURL: URL) async throws -> Transcription {
+    public func transcribe(fileURL: URL, onProgress: (@Sendable (String) -> Void)? = nil) async throws -> Transcription {
         if let entitlements {
             try await entitlements.assertCanTranscribe(now: Date())
         }
@@ -60,7 +63,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         )
         try transcriptionRepo.save(transcription)
 
-        return try await transcribeAudio(fileURL: fileURL, transcription: &transcription, tempFiles: [])
+        return try await transcribeAudio(fileURL: fileURL, transcription: &transcription, tempFiles: [], onProgress: onProgress)
     }
 
     public func transcribeURL(urlString: String, onProgress: (@Sendable (String) -> Void)? = nil) async throws -> Transcription {
@@ -108,11 +111,14 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
     ) async throws -> Transcription {
         var wavURL: URL?
         do {
+            onProgress?("Converting audio...")
             wavURL = try await audioProcessor.convert(fileURL: fileURL)
 
             guard let wavURL else {
                 throw AudioProcessorError.conversionFailed("Failed to produce WAV output")
             }
+
+            onProgress?("Transcribing... 0%")
             let sttProgress: (@Sendable (Int, Int) -> Void)? = onProgress.map { callback in
                 { current, total in
                     let pct = total > 0 ? Int(Double(current) / Double(total) * 100) : 0

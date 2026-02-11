@@ -93,6 +93,14 @@ final class MockTranscriptionRepository: TranscriptionRepositoryProtocol, @unche
         return sorted
     }
 
+    func fetchCompletedByVideoID(_ videoID: String) throws -> Transcription? {
+        transcriptions.first { t in
+            t.status == .completed
+                && t.sourceURL != nil
+                && (t.sourceURL?.contains(videoID) ?? false)
+        }
+    }
+
     func delete(id: UUID) throws -> Bool {
         deleteCalledWith.append(id)
         transcriptions.removeAll { $0.id == id }
@@ -150,7 +158,7 @@ actor MockTranscriptionService: TranscriptionServiceProtocol {
         self.transcribeURLDelayMs = milliseconds
     }
 
-    func transcribe(fileURL: URL) async throws -> Transcription {
+    func transcribe(fileURL: URL, onProgress: (@Sendable (String) -> Void)? = nil) async throws -> Transcription {
         transcribeCallCount += 1
         lastFileURL = fileURL
 

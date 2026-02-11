@@ -12,7 +12,10 @@ struct TranscribeView: View {
                 if let transcription = viewModel.currentTranscription {
                     TranscriptResultView(
                         transcription: transcription,
-                        onBack: { viewModel.currentTranscription = nil }
+                        onBack: { viewModel.currentTranscription = nil },
+                        onRetranscribe: { original in
+                            viewModel.retranscribe(original)
+                        }
                     )
                 } else if viewModel.isTranscribing {
                     transcribingView
@@ -33,48 +36,38 @@ struct TranscribeView: View {
     // MARK: - Drop Zone
 
     private var dropZoneView: some View {
-        VStack(spacing: DesignSystem.Spacing.lg) {
+        VStack(spacing: DesignSystem.Spacing.md) {
             Spacer()
 
-            // Premium drop zone with double-border treatment
+            // File drop zone
             ZStack {
-                // Outer thin solid border
-                RoundedRectangle(cornerRadius: DesignSystem.Layout.cornerRadius + 2)
-                    .strokeBorder(
-                        viewModel.isDragging ? Color.accentColor.opacity(0.3) : Color.primary.opacity(0.06),
-                        lineWidth: 0.5
-                    )
-                    .padding(-4)
-
-                // Inner dashed border
                 RoundedRectangle(cornerRadius: DesignSystem.Layout.cornerRadius)
                     .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [8, 4]))
                     .foregroundStyle(viewModel.isDragging ? Color.accentColor : Color.primary.opacity(0.15))
 
-                // Accent glow on drag-over
                 if viewModel.isDragging {
                     RoundedRectangle(cornerRadius: DesignSystem.Layout.cornerRadius)
                         .fill(Color.accentColor.opacity(0.04))
                 }
 
-                VStack(spacing: DesignSystem.Spacing.md) {
+                VStack(spacing: DesignSystem.Spacing.sm) {
                     MeditativeMerkabaView(
-                        size: 48,
+                        size: 40,
                         revolutionDuration: viewModel.isDragging ? 2.0 : 6.0,
                         tintColor: viewModel.isDragging ? .accentColor : nil
                     )
                     .animation(.easeInOut(duration: 0.3), value: viewModel.isDragging)
 
-                    Text("Drop audio or video file here")
+                    Text("Drop audio or video file")
                         .font(DesignSystem.Typography.headline)
-                        .foregroundStyle(viewModel.isDragging ? Color.accentColor : .secondary)
+                        .foregroundStyle(viewModel.isDragging ? Color.accentColor : .primary.opacity(0.7))
 
                     Text("MP3, WAV, M4A, FLAC, MP4, MOV, MKV")
                         .font(.caption)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                 }
             }
-            .frame(height: DesignSystem.Layout.dropZoneHeight)
+            .frame(height: 160)
             .onDrop(of: [.fileURL], isTargeted: $viewModel.isDragging) { providers in
                 viewModel.handleFileDrop(providers: providers)
             }
@@ -84,6 +77,62 @@ struct TranscribeView: View {
                 openFilePicker()
             }
             .buttonStyle(.borderedProminent)
+
+            // Divider
+            HStack(spacing: DesignSystem.Spacing.sm) {
+                Rectangle()
+                    .fill(Color.primary.opacity(0.1))
+                    .frame(height: 0.5)
+                Text("or")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Rectangle()
+                    .fill(Color.primary.opacity(0.1))
+                    .frame(height: 0.5)
+            }
+            .padding(.horizontal, DesignSystem.Spacing.xxl)
+
+            // YouTube URL input
+            HStack(spacing: DesignSystem.Spacing.sm) {
+                HStack(spacing: 6) {
+                    Image(systemName: viewModel.isValidURL ? "checkmark.circle.fill" : "play.rectangle")
+                        .font(.system(size: 14))
+                        .foregroundStyle(viewModel.isValidURL ? DesignSystem.Colors.successGreen : Color.primary.opacity(0.25))
+                        .contentTransition(.symbolEffect(.replace))
+
+                    TextField("Paste YouTube URL", text: $viewModel.urlInput)
+                        .textFieldStyle(.plain)
+                        .onSubmit {
+                            if viewModel.isValidURL {
+                                viewModel.transcribeURL()
+                            }
+                        }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.primary.opacity(0.05))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(
+                            viewModel.isValidURL ? DesignSystem.Colors.successGreen.opacity(0.3) : Color.primary.opacity(0.1),
+                            lineWidth: 0.5
+                        )
+                )
+
+                Button {
+                    viewModel.transcribeURL()
+                } label: {
+                    Image(systemName: "arrow.right.circle.fill")
+                        .font(.system(size: 22))
+                        .foregroundStyle(viewModel.isValidURL ? Color.accentColor : Color.primary.opacity(0.15))
+                }
+                .buttonStyle(.plain)
+                .disabled(!viewModel.isValidURL)
+            }
+            .padding(.horizontal, DesignSystem.Spacing.xl)
 
             // Error banner
             if let error = viewModel.errorMessage {
@@ -108,63 +157,6 @@ struct TranscribeView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(DesignSystem.Colors.statusDenied.opacity(0.08))
                 )
-                .padding(.horizontal, DesignSystem.Spacing.xl)
-            }
-
-            // YouTube URL input
-            VStack(spacing: DesignSystem.Spacing.md) {
-                HStack(spacing: DesignSystem.Spacing.sm) {
-                    Rectangle()
-                        .fill(Color.primary.opacity(0.08))
-                        .frame(height: 0.5)
-                    Text("or paste a link")
-                        .font(.caption)
-                        .foregroundStyle(.quaternary)
-                    Rectangle()
-                        .fill(Color.primary.opacity(0.08))
-                        .frame(height: 0.5)
-                }
-                .padding(.horizontal, DesignSystem.Spacing.xxl)
-
-                HStack(spacing: DesignSystem.Spacing.sm) {
-                    HStack(spacing: 6) {
-                        Image(systemName: viewModel.isValidURL ? "checkmark.circle.fill" : "play.rectangle")
-                            .font(.system(size: 14))
-                            .foregroundStyle(viewModel.isValidURL ? DesignSystem.Colors.successGreen : Color.primary.opacity(0.15))
-                            .contentTransition(.symbolEffect(.replace))
-
-                        TextField("YouTube URL", text: $viewModel.urlInput)
-                            .textFieldStyle(.plain)
-                            .onSubmit {
-                                if viewModel.isValidURL {
-                                    viewModel.transcribeURL()
-                                }
-                            }
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.primary.opacity(0.04))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .strokeBorder(
-                                viewModel.isValidURL ? DesignSystem.Colors.successGreen.opacity(0.3) : Color.primary.opacity(0.08),
-                                lineWidth: 0.5
-                            )
-                    )
-
-                    Button {
-                        viewModel.transcribeURL()
-                    } label: {
-                        Image(systemName: "arrow.right.circle.fill")
-                            .font(.system(size: 20))
-                            .foregroundStyle(viewModel.isValidURL ? Color.accentColor : Color.primary.opacity(0.15))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!viewModel.isValidURL)
-                }
                 .padding(.horizontal, DesignSystem.Spacing.xl)
             }
 

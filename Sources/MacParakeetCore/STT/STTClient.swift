@@ -60,7 +60,8 @@ public actor STTClient: STTClientProtocol {
             id: requestId
         )
 
-        let responseData = try await sendRequest(request)
+        // Long videos with chunking can take minutes — use generous timeout (like warmUp)
+        let responseData = try await sendRequest(request, timeout: 10 * 60)
         let response = try JSONDecoder().decode(JSONRPCResponse.self, from: responseData)
 
         if let error = response.error {

@@ -5,6 +5,7 @@ public protocol TranscriptionRepositoryProtocol: Sendable {
     func save(_ transcription: Transcription) throws
     func fetch(id: UUID) throws -> Transcription?
     func fetchAll(limit: Int?) throws -> [Transcription]
+    func fetchCompletedByVideoID(_ videoID: String) throws -> Transcription?
     func delete(id: UUID) throws -> Bool
     func deleteAll() throws
     func updateStatus(id: UUID, status: Transcription.TranscriptionStatus, errorMessage: String?) throws
@@ -12,6 +13,7 @@ public protocol TranscriptionRepositoryProtocol: Sendable {
 }
 
 extension TranscriptionRepositoryProtocol {
+    public func fetchCompletedByVideoID(_ videoID: String) throws -> Transcription? { nil }
     public func clearStoredAudioPathsForURLTranscriptions() throws {}
 }
 
@@ -42,6 +44,17 @@ public final class TranscriptionRepository: TranscriptionRepositoryProtocol {
                 request = request.limit(limit)
             }
             return try request.fetchAll(db)
+        }
+    }
+
+    public func fetchCompletedByVideoID(_ videoID: String) throws -> Transcription? {
+        try dbQueue.read { db in
+            try Transcription
+                .filter(Transcription.Columns.sourceURL != nil)
+                .filter(Transcription.Columns.status == Transcription.TranscriptionStatus.completed.rawValue)
+                .filter(Transcription.Columns.sourceURL.like("%\(videoID)%"))
+                .order(Transcription.Columns.createdAt.desc)
+                .fetchOne(db)
         }
     }
 

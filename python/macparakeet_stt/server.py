@@ -101,20 +101,47 @@ def handle_transcribe(params, request_id):
             chunk_callback=_chunk_progress,
         )
 
-        # Extract text and word-level timestamps from AlignedResult
+        # Extract text and word-level timestamps from AlignedResult.
+        # Parakeet TDT returns sub-word tokens (SentencePiece). Tokens with a
+        # leading space start a new word; others are continuations. Merge them
+        # into full words so the UI displays proper text.
         text = result.text if hasattr(result, "text") else str(result)
         words = []
+        current_word = None
 
         if hasattr(result, "sentences"):
             for sentence in result.sentences:
-                if hasattr(sentence, "tokens"):
-                    for token in sentence.tokens:
-                        words.append({
-                            "word": token.text.strip() if hasattr(token, "text") else str(token),
+                if not hasattr(sentence, "tokens"):
+                    continue
+                first_in_sentence = True
+                for token in sentence.tokens:
+                    tok_text = token.text if hasattr(token, "text") else str(token)
+                    if not tok_text:
+                        continue
+
+                    starts_new = first_in_sentence or tok_text[0] == " "
+                    first_in_sentence = False
+
+                    if starts_new:
+                        if current_word is not None:
+                            words.append(current_word)
+                        current_word = {
+                            "word": tok_text.strip(),
                             "start_ms": int(token.start * 1000) if hasattr(token, "start") else 0,
                             "end_ms": int(token.end * 1000) if hasattr(token, "end") else 0,
                             "confidence": getattr(token, "confidence", 1.0),
-                        })
+                        }
+                    else:
+                        # Continuation — append text, extend end time, take min confidence
+                        current_word["word"] += tok_text
+                        current_word["end_ms"] = int(token.end * 1000) if hasattr(token, "end") else current_word["end_ms"]
+                        current_word["confidence"] = min(
+                            current_word["confidence"],
+                            getattr(token, "confidence", 1.0),
+                        )
+
+        if current_word is not None:
+            words.append(current_word)
 
         # Filter out empty words
         words = [w for w in words if w["word"]]

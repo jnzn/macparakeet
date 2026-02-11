@@ -54,7 +54,7 @@ enum DesignSystem {
     enum Layout {
         static let sidebarMinWidth: CGFloat = 180
         static let contentMinWidth: CGFloat = 400
-        static let windowMinHeight: CGFloat = 500
+        static let windowMinHeight: CGFloat = 520
         static let cornerRadius: CGFloat = 12
         static let dropZoneHeight: CGFloat = 200
         static let playbackBarHeight: CGFloat = 6

@@ -4,6 +4,7 @@ import MacParakeetCore
 struct TranscriptResultView: View {
     let transcription: Transcription
     var onBack: (() -> Void)?
+    var onRetranscribe: ((Transcription) -> Void)?
 
     @State private var showExportDialog = false
     @State private var backHovered = false
@@ -132,6 +133,16 @@ struct TranscriptResultView: View {
                 }
                 .buttonStyle(.bordered)
 
+                if let onRetranscribe, let filePath = transcription.filePath,
+                   FileManager.default.fileExists(atPath: filePath) {
+                    Button {
+                        onRetranscribe(transcription)
+                    } label: {
+                        Label("Retranscribe", systemImage: "arrow.trianglehead.2.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+                }
+
                 Spacer()
             }
             .padding(DesignSystem.Spacing.md)
@@ -180,10 +191,11 @@ struct TranscriptResultView: View {
             currentWords.append(word.word)
 
             let isLast = i == words.count - 1
-            let hasGap = i + 1 < words.count && (words[i + 1].startMs - word.endMs) > 500
-            let tooLong = currentWords.count >= 15
+            let endsWithPunctuation = word.word.last.map { ".!?".contains($0) } ?? false
+            let hasLongGap = i + 1 < words.count && (words[i + 1].startMs - word.endMs) > 1500
+            let tooLong = currentWords.count >= 40
 
-            if isLast || hasGap || tooLong {
+            if isLast || (endsWithPunctuation && currentWords.count >= 3) || hasLongGap || tooLong {
                 segments.append(Segment(
                     startMs: segmentStart,
                     text: currentWords.joined(separator: " ")

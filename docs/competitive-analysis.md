@@ -255,6 +255,7 @@ MacParakeet's opportunity is to be the first app that nails all four. WisprFlow 
 | **Processing** | Local only | Cloud only | Local + Cloud | Local + Cloud | Local + Cloud | Local + Cloud | Local + Cloud | Local + Cloud |
 | **Real-time dictation** | Yes | Yes | Limited | Yes | Yes | Yes | Yes | Yes |
 | **File transcription** | Yes | No | Yes | Yes | No | No | No | No |
+| **YouTube URL transcription** | Yes | No | No | No | No | No | No | No |
 | **Command mode** | Yes (local LLM) | Yes (cloud LLM) | No | Yes | No | Yes (Agent Mode) | No | No |
 | **Context awareness** | Future | Yes (cloud, screen reading) | No | No | No | No | No | No |
 | **Styles / tone modes** | v0.2 (5 modes) | Yes (Pro, English only) | No | Yes (4+ modes) | Limited | Limited | No | No |

@@ -41,20 +41,33 @@ public final class TranscriptionViewModel {
         guard let service = transcriptionService else { return }
         isTranscribing = true
         progress = "Preparing..."
+        transcriptionProgress = nil
         errorMessage = nil
 
         Task {
             do {
-                progress = "Transcribing \(url.lastPathComponent)..."
-                let result = try await service.transcribe(fileURL: url)
+                let result = try await service.transcribe(fileURL: url) { [weak self] phase in
+                    DispatchQueue.main.async {
+                        self?.progress = phase
+                        if phase.hasSuffix("%"),
+                           let pctStr = phase.split(separator: " ").last?.dropLast(),
+                           let pct = Double(pctStr) {
+                            self?.transcriptionProgress = pct / 100.0
+                        } else {
+                            self?.transcriptionProgress = nil
+                        }
+                    }
+                }
                 currentTranscription = result
                 isTranscribing = false
                 progress = ""
+                transcriptionProgress = nil
                 loadTranscriptions()
             } catch {
                 errorMessage = error.localizedDescription
                 isTranscribing = false
                 progress = ""
+                transcriptionProgress = nil
                 loadTranscriptions()
             }
         }
@@ -63,7 +76,14 @@ public final class TranscriptionViewModel {
     public func transcribeURL() {
         guard let service = transcriptionService else { return }
         let url = urlInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard YouTubeURLValidator.isYouTubeURL(url) else { return }
+        guard let videoID = YouTubeURLValidator.extractVideoID(url) else { return }
+
+        // Check for existing transcription of the same video
+        if let existing = try? transcriptionRepo?.fetchCompletedByVideoID(videoID) {
+            currentTranscription = existing
+            urlInput = ""
+            return
+        }
 
         isTranscribing = true
         progress = "Preparing..."
@@ -116,6 +136,51 @@ public final class TranscriptionViewModel {
             }
         }
         return true
+    }
+
+    public func retranscribe(_ original: Transcription) {
+        guard let service = transcriptionService,
+              let filePath = original.filePath,
+              FileManager.default.fileExists(atPath: filePath) else { return }
+
+        let url = URL(fileURLWithPath: filePath)
+        isTranscribing = true
+        progress = "Preparing..."
+        transcriptionProgress = nil
+        errorMessage = nil
+        currentTranscription = nil
+
+        Task {
+            do {
+                var result = try await service.transcribe(fileURL: url) { [weak self] phase in
+                    DispatchQueue.main.async {
+                        self?.progress = phase
+                        if phase.hasSuffix("%"),
+                           let pctStr = phase.split(separator: " ").last?.dropLast(),
+                           let pct = Double(pctStr) {
+                            self?.transcriptionProgress = pct / 100.0
+                        } else {
+                            self?.transcriptionProgress = nil
+                        }
+                    }
+                }
+                // Preserve original metadata
+                result.fileName = original.fileName
+                result.sourceURL = original.sourceURL
+                try? transcriptionRepo?.save(result)
+                currentTranscription = result
+                isTranscribing = false
+                progress = ""
+                transcriptionProgress = nil
+                loadTranscriptions()
+            } catch {
+                errorMessage = error.localizedDescription
+                isTranscribing = false
+                progress = ""
+                transcriptionProgress = nil
+                loadTranscriptions()
+            }
+        }
     }
 
     public func deleteTranscription(_ transcription: Transcription) {

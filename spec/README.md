@@ -70,7 +70,7 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 - [x] Basic export (plain text, copy to clipboard)
 - [x] SQLite database (GRDB, dictations + transcriptions + substring search)
 - [x] CLI tool (`macparakeet transcribe`, `history`, `health`)
-- [x] 312 tests passing (`swift test` green)
+- [x] 315 tests passing (`swift test` green)
 
 ### v0.2 AI & Text Processing (In Progress)
 

@@ -198,6 +198,80 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.transcriptionProgress, nil, "Non-percent phase should clear stale progress values")
     }
 
+    // MARK: - Duplicate URL Detection
+
+    func testTranscribeURLShowsExistingWhenAlreadyTranscribed() async {
+        let existing = Transcription(
+            fileName: "Already Done",
+            rawTranscript: "Existing transcript",
+            status: .completed,
+            sourceURL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        )
+        mockRepo.transcriptions = [existing]
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+        viewModel.urlInput = "https://youtu.be/dQw4w9WgXcQ"
+
+        viewModel.transcribeURL()
+
+        // Should show existing result immediately, no transcription started
+        XCTAssertFalse(viewModel.isTranscribing)
+        XCTAssertEqual(viewModel.currentTranscription?.id, existing.id)
+        XCTAssertEqual(viewModel.currentTranscription?.rawTranscript, "Existing transcript")
+        XCTAssertEqual(viewModel.urlInput, "")
+        let callCount = await mockService.transcribeURLCallCount
+        XCTAssertEqual(callCount, 0, "Should not call service when duplicate exists")
+    }
+
+    func testTranscribeURLIgnoresFailedDuplicates() async throws {
+        let failed = Transcription(
+            fileName: "Failed Video",
+            status: .error,
+            sourceURL: "https://youtu.be/dQw4w9WgXcQ"
+        )
+        mockRepo.transcriptions = [failed]
+
+        let expectedResult = Transcription(
+            fileName: "YouTube Video",
+            rawTranscript: "Fresh transcript",
+            status: .completed,
+            sourceURL: "https://youtu.be/dQw4w9WgXcQ"
+        )
+        await mockService.configure(result: expectedResult)
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+        viewModel.urlInput = "https://youtu.be/dQw4w9WgXcQ"
+
+        viewModel.transcribeURL()
+
+        // Should start fresh transcription since existing one failed
+        XCTAssertTrue(viewModel.isTranscribing)
+        let callCount = await mockService.transcribeURLCallCount
+
+        try await Task.sleep(for: .milliseconds(200))
+        let finalCount = await mockService.transcribeURLCallCount
+        XCTAssertEqual(finalCount, 1, "Should transcribe when only failed duplicates exist")
+    }
+
+    func testTranscribeURLMatchesDifferentURLFormats() async {
+        let existing = Transcription(
+            fileName: "Video",
+            rawTranscript: "Transcript",
+            status: .completed,
+            sourceURL: "https://www.youtube.com/watch?v=awOxxHnsiv0"
+        )
+        mockRepo.transcriptions = [existing]
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+
+        // Same video, different URL format
+        viewModel.urlInput = "https://youtu.be/awOxxHnsiv0"
+        viewModel.transcribeURL()
+
+        XCTAssertFalse(viewModel.isTranscribing)
+        XCTAssertEqual(viewModel.currentTranscription?.id, existing.id)
+    }
+
     // MARK: - Delete
 
     func testDeleteTranscription() {
