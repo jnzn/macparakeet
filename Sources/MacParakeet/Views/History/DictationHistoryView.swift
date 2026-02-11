@@ -75,7 +75,7 @@ struct DictationHistoryView: View {
                     .foregroundStyle(.primary)
 
                 Text(viewModel.searchText.isEmpty
-                     ? "Press Fn to start dictating."
+                     ? "Press \(TriggerKey.current.displayName) to start dictating."
                      : "Try different words?")
                     .font(DesignSystem.Typography.bodySmall)
                     .foregroundStyle(.secondary)

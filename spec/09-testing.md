@@ -226,6 +226,8 @@ Tests/
 
 These flows must be tested manually after any overlay or hotkey changes. Automated unit tests cover the state machine logic, but the full UX requires human verification.
 
+> **Note:** "Fn" below refers to whichever trigger key is configured (Fn, Control, Option, Shift, or Command). Default is Fn. Test with at least two different trigger keys.
+
 ### Happy Path
 
 | # | Flow | Steps | Expected |
@@ -246,6 +248,17 @@ These flows must be tested manually after any overlay or hotkey changes. Automat
 | 9 | Fn blocked during cancel | Fn+Fn → Esc → Fn (during countdown) | Nothing happens — Fn is blocked |
 | 10 | Cancel countdown expires | Fn+Fn → Esc → wait 5s | Pill auto-dismisses, Fn+Fn works again |
 
+### Configurable Hotkey
+
+| # | Flow | Steps | Expected |
+|---|------|-------|----------|
+| 10a | Change trigger key | Settings → Hotkey → select Control | Menu bar shows "Hotkey: Control (double-tap / hold)" |
+| 10b | New trigger works | Ctrl+Ctrl → speak → Ctrl | Recording starts/stops with new key |
+| 10c | Bare-tap filtering | Hold Ctrl → press C → release Ctrl | Does NOT trigger dictation (keyboard shortcut) |
+| 10d | Gesture interruption | Ctrl → type "hello" → Ctrl | Does NOT trigger double-tap (typing interrupted) |
+| 10e | Switch back to Fn | Settings → Hotkey → select Fn | Fn works again, Ctrl no longer triggers |
+| 10f | Dynamic UI text | Change to Option → check overlay/pill/history | All say "Option" instead of "Fn" |
+
 ### State Transitions
 
 | # | Flow | Steps | Expected |
@@ -259,7 +272,7 @@ These flows must be tested manually after any overlay or hotkey changes. Automat
 | # | Flow | Steps | Expected |
 |---|------|-------|----------|
 | 14 | Hover X button | Move cursor over X during recording | "Cancel **Esc**" appears above pill (Esc in light blue) |
-| 15 | Hover stop button | Move cursor over stop circle | "Stop & paste **Fn**" appears (Fn in light blue) |
+| 15 | Hover stop button | Move cursor over stop circle | "Stop & paste (**trigger key**)" appears (key name in light blue) |
 | 16 | Hover middle area | Move cursor over waveform/timer | No tooltip shown |
 | 17 | Mouse exits pill | Move cursor away from pill | Tooltip fades out |
 

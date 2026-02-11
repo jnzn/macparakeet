@@ -86,7 +86,7 @@ See [00-vision.md](./00-vision.md) for positioning and market context.
 1. Welcome
 2. Microphone permission
 3. Accessibility permission
-4. Hotkey instructions (Fn + Esc)
+4. Hotkey instructions (configurable trigger + Esc)
 5. Speech engine warm-up (retry or defer)
 6. Ready
 
@@ -94,21 +94,25 @@ See [00-vision.md](./00-vision.md) for positioning and market context.
 
 **What:** Press a hotkey anywhere on macOS, speak, and polished text appears in the active app. The core feature that makes MacParakeet worth using every day.
 
-**Activation — Fn Key:**
+**Activation — Configurable Hotkey:**
 
-The `Fn` key serves as the universal activation trigger with three coexisting modes:
+The hotkey (default: `Fn`, configurable to Control, Option, Shift, or Command in Settings) serves as the universal activation trigger with two coexisting modes:
 
 | Mode | Gesture | Behavior |
 |------|---------|----------|
-| **Double-tap** | Tap Fn twice within 400ms | Persistent recording. Press Fn again to stop. |
-| **Press-and-hold** | Hold Fn for > 400ms | Hold-to-talk. Release Fn auto-stops and pastes. |
+| **Double-tap** | Tap hotkey twice within 400ms | Persistent recording. Press hotkey again to stop. |
+| **Press-and-hold** | Hold hotkey for > 400ms | Hold-to-talk. Release auto-stops and pastes. |
 
 Both modes coexist with no configuration required. The 400ms threshold distinguishes taps from holds.
 
 **Implementation:**
-- `CGEvent` tap for `flagsChanged` events (Fn key generates modifier flag changes)
-- On Fn-down: schedule a 400ms `DispatchWorkItem`. If a second tap arrives before it fires, enter double-tap (persistent mode). If the timer fires with Fn still held, enter hold-mode and begin recording.
-- On Fn-up: if hold timer still pending, cancel it (was a quick tap). If recording in hold-mode, auto-stop and process.
+- `CGEvent` tap for `flagsChanged` events (modifier keys generate flag changes)
+- `TriggerKey` enum maps the selected key to the correct `CGEventFlags` mask
+- Edge detection: only fire on actual transitions of the target modifier flag
+- Bare-tap filtering: if a regular key is pressed while the modifier is held (e.g., Ctrl+C), the release is not counted as a tap — prevents keyboard shortcuts from triggering dictation
+- Gesture interruption: if a non-Escape key is pressed during `waitingForSecondTap`, the state machine resets — prevents double-tap detection across typing
+- On modifier-down: schedule a 400ms `DispatchWorkItem`. If a second tap arrives before it fires, enter double-tap (persistent mode). If the timer fires with the key still held, enter hold-mode and begin recording.
+- On modifier-up: if hold timer still pending, cancel it (was a quick tap). If recording in hold-mode, auto-stop and process.
 - Requires Accessibility permission (prompted on first activation).
 
 **Recording flow:**
@@ -188,7 +192,7 @@ Compact dark pill, icon-only controls, positioned at bottom-center of screen (40
 
 ```
          ┌───────────────────────────────┐
-         │  Press Fn to finish           │  ← Hover tooltip (dark capsule)
+         │  Stop & paste (Fn)            │  ← Hover tooltip (dark capsule)
          └───────────────────────────────┘
          ┌─────────────────────────────┐
          │  [X] ∿∿∿∿∿∿∿∿∿∿∿∿  [■]    │  ← Recording pill
@@ -207,8 +211,7 @@ Compact dark pill, icon-only controls, positioned at bottom-center of screen (40
 | Zone | Tooltip | Shortcut Highlight |
 |------|---------|-------------------|
 | X button (left) | Cancel | `Esc` in blue |
-| Waveform (center) | Press Fn to finish | `Fn` in blue |
-| Stop button (right) | Finish and paste | -- |
+| Stop button (right) | Stop & paste | Trigger key name in blue |
 | Countdown ring | Dismiss | -- |
 | Undo button | Undo | -- |
 
@@ -261,8 +264,9 @@ Space is always reserved for the tooltip (opacity toggle, not conditional render
 ```
 
 **Acceptance criteria:**
-- [x] Double-tap Fn activates persistent recording from any app
-- [x] Hold Fn (> 400ms) activates hold-mode, release auto-stops and pastes
+- [x] Double-tap hotkey activates persistent recording from any app
+- [x] Hold hotkey (> 400ms) activates hold-mode, release auto-stops and pastes
+- [x] Hotkey trigger configurable (Fn, Control, Option, Shift, Command) with bare-tap filtering
 - [x] Overlay appears at bottom-center with waveform animation
 - [x] Hover tooltips display correctly on non-activating panel
 - [ ] Parakeet transcribes with <500ms end-to-end latency for short dictations
@@ -558,7 +562,7 @@ Audio path is computed from ID by default. Files stored as WAV (16kHz mono). Use
 │                                                                  │
 │ DICTATION                                                        │
 │ ┌──────────────────────────────────────────────────────────────┐ │
-│ │ Hotkey: [Fn (double-tap / hold)]             [Change...]    │ │
+│ │ Hotkey: [fn Fn ▾]  (double-tap / hold)                      │ │
 │ │                                                              │ │
 │ │ Stop mode:                                                   │ │
 │ │   ( ) Auto-stop after silence     Delay: [2 sec ▾]          │ │
@@ -596,7 +600,7 @@ Audio path is computed from ID by default. Files stored as WAV (16kHz mono). Use
 
 **Acceptance criteria:**
 - [x] All settings persist across app restarts (UserDefaults or GRDB)
-- [ ] Hotkey can be changed to alternative keys
+- [x] Hotkey can be changed to alternative keys (Fn, Control, Option, Shift, Command)
 - [x] Stop mode switch works correctly for both modes
 - [x] Storage toggle controls whether audio files are saved
 - [x] YouTube storage toggle controls whether downloaded URL audio is kept after transcription

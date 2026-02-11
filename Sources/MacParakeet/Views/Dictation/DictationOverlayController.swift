@@ -1,4 +1,5 @@
 import AppKit
+import MacParakeetCore
 import SwiftUI
 
 // MARK: - Mouse Tracking
@@ -126,7 +127,7 @@ final class DictationOverlayController {
         if x >= pillLeft && x < pillLeft + 45 {
             overlayViewModel.hoverTooltip = "Cancel (Esc)"
         } else if x > pillRight - 45 && x <= pillRight {
-            overlayViewModel.hoverTooltip = "Stop & paste (Fn)"
+            overlayViewModel.hoverTooltip = "Stop & paste (\(TriggerKey.current.displayName))"
         } else {
             overlayViewModel.hoverTooltip = nil
         }

@@ -267,7 +267,7 @@ struct OnboardingFlowView: View {
                 title: "Accessibility access",
                 status: viewModel.accessibilityGranted ? "Granted" : "Not granted",
                 statusStyle: viewModel.accessibilityGranted ? .ok : .warn,
-                detail: "Required for the global Fn hotkey and Cmd+V paste automation."
+                detail: "Required for the global hotkey and Cmd+V paste automation."
             ) {
                 accentButton(
                     "Enable Accessibility",
@@ -323,7 +323,7 @@ struct OnboardingFlowView: View {
                 featureRow(
                     icon: "mic.fill",
                     title: "Dictate anywhere",
-                    detail: "Double-tap Fn to start speaking. Text appears where your cursor is."
+                    detail: "Double-tap \(TriggerKey.current.displayName) to start speaking. Text appears where your cursor is."
                 )
                 featureRow(
                     icon: "bolt.fill",
@@ -347,15 +347,15 @@ struct OnboardingFlowView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     hotkeyFlowStep(
                         number: 1,
-                        key: "Fn",
-                        label: "Double-tap Fn",
+                        key: TriggerKey.current.displayName,
+                        label: "Double-tap \(TriggerKey.current.displayName)",
                         detail: "Start dictation from any app",
                         isLast: false
                     )
                     hotkeyFlowStep(
                         number: 2,
-                        key: "Fn",
-                        label: "Tap Fn again",
+                        key: TriggerKey.current.displayName,
+                        label: "Tap \(TriggerKey.current.displayName) again",
                         detail: "Stop recording and paste text",
                         isLast: false
                     )
@@ -370,7 +370,7 @@ struct OnboardingFlowView: View {
                 .padding(DesignSystem.Spacing.lg)
             }
 
-            Text("Tip: If your keyboard doesn't send Fn events, you can still use file transcription from the main app window.")
+            Text("Tip: If your keyboard doesn't send \(TriggerKey.current.displayName) events, you can still use file transcription from the main app window.")
                 .font(DesignSystem.Typography.caption)
                 .foregroundStyle(.secondary)
         }
@@ -497,7 +497,7 @@ struct OnboardingFlowView: View {
 
             onboardingCard {
                 VStack(alignment: .leading, spacing: 14) {
-                    quickTip(icon: "mic.fill", text: "Double-tap Fn to start dictating anywhere")
+                    quickTip(icon: "mic.fill", text: "Double-tap \(TriggerKey.current.displayName) to start dictating anywhere")
                     quickTip(icon: "doc.fill", text: "Drop an audio file onto the main window to transcribe")
                     quickTip(icon: "gearshape", text: "Visit Settings to customize your experience")
                 }
@@ -695,7 +695,7 @@ struct OnboardingFlowView: View {
         case .microphone:
             return "MacParakeet needs microphone permission to record your voice."
         case .accessibility:
-            return "Accessibility is required for the global Fn hotkey and reliable paste automation."
+            return "Accessibility is required for the global hotkey and reliable paste automation."
         case .hotkey:
             return "You can start dictating from any app without switching context."
         case .engine:

@@ -32,6 +32,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let mainWindowState = MainWindowState()
     private let onboardingWindowController = OnboardingWindowController()
     private var onboardingObserver: Any?
+    private var hotkeyTriggerObserver: Any?
+    private var hotkeyMenuItem: NSMenuItem?
 
     // MARK: - App Lifecycle
 
@@ -41,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         setupEnvironment()
         setupHotkey()
         observeOpenOnboarding()
+        observeHotkeyTriggerChange()
         showIdlePill()
     }
 
@@ -48,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         hideIdlePill()
         hotkeyManager?.stop()
         if let onboardingObserver { NotificationCenter.default.removeObserver(onboardingObserver) }
+        if let hotkeyTriggerObserver { NotificationCenter.default.removeObserver(hotkeyTriggerObserver) }
         Task {
             await appEnvironment?.sttClient.shutdown()
         }
@@ -106,12 +110,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menu.addItem(NSMenuItem.separator())
 
         let hotkeyItem = NSMenuItem(
-            title: "Hotkey: Fn (double-tap / hold)",
+            title: hotkeyMenuTitle,
             action: nil,
             keyEquivalent: ""
         )
         hotkeyItem.isEnabled = false
         menu.addItem(hotkeyItem)
+        hotkeyMenuItem = hotkeyItem
 
         menu.addItem(NSMenuItem.separator())
 
@@ -178,7 +183,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // MARK: - Hotkey
 
     private func setupHotkey() {
-        let manager = HotkeyManager()
+        let manager = HotkeyManager(triggerKey: TriggerKey.current)
 
         manager.onStartRecording = { [weak self] mode in
             self?.startDictation(mode: mode)
@@ -213,6 +218,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self?.showOnboarding()
             }
         }
+    }
+
+    private func observeHotkeyTriggerChange() {
+        hotkeyTriggerObserver = NotificationCenter.default.addObserver(
+            forName: .macParakeetHotkeyTriggerDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.hotkeyManager?.stop()
+                self?.hotkeyManager = nil
+                self?.setupHotkey()
+                self?.hotkeyMenuItem?.title = self?.hotkeyMenuTitle ?? ""
+            }
+        }
+    }
+
+    private var hotkeyMenuTitle: String {
+        "Hotkey: \(TriggerKey.current.displayName) (double-tap / hold)"
     }
 
     private func maybeShowOnboarding() {

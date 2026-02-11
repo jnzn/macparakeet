@@ -1,3 +1,4 @@
+import MacParakeetCore
 import SwiftUI
 
 // MARK: - Animated Checkmark
@@ -304,7 +305,7 @@ struct DictationOverlayView: View {
             return ("Permission Required", "Grant access in System Settings > Privacy & Security.")
         }
         if lower.contains("not recording") {
-            return ("Not Recording", "Press Fn to start recording first.")
+            return ("Not Recording", "Press \(TriggerKey.current.displayName) to start recording first.")
         }
         if lower.contains("timeout") || lower.contains("timed out") {
             return ("Transcription Timed Out", "Try a shorter recording or restart the app.")

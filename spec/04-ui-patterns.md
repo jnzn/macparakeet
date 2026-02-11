@@ -346,7 +346,7 @@ panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 ┌────────────────────────────────┐
 │  MacParakeet                   │
 ├────────────────────────────────┤
-│  Start Dictation       Fn+Fn  │
+│  Start Dictation    (hotkey)  │
 │  Open Window           ⌘O     │
 ├────────────────────────────────┤
 │  Recent Transcriptions   ►    │
@@ -532,7 +532,7 @@ Settings open in the content area when "Settings" is selected in the sidebar. Ta
 │  DICTATION                                                │
 │  ─────────────────────────────────────────────────────    │
 │                                                           │
-│  Hotkey                       [Fn+Fn        ▾]          │
+│  Hotkey                       [fn Fn        ▾]          │
 │  (Double-tap to start dictation)                         │
 │                                                           │
 │  Stop mode                    [● Hold to record]         │

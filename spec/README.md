@@ -59,7 +59,7 @@ All ADRs live in `spec/adr/`. These are locked -- they record decisions already 
 
 Dictation + transcription + history + settings. Get audio in, text out, pasted into any app.
 
-- [x] System-wide dictation: Fn double-tap (persistent) + hold-to-talk
+- [x] System-wide dictation: Configurable hotkey (Fn default), double-tap (persistent) + hold-to-talk
 - [x] File transcription: Drag-drop audio/video files
 - [x] Compact dark pill overlay with recording timer + waveform
 - [x] Persistent idle pill (always-visible, click-to-dictate)
@@ -70,7 +70,7 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 - [x] Basic export (plain text, copy to clipboard)
 - [x] SQLite database (GRDB, dictations + transcriptions + substring search)
 - [x] CLI tool (`macparakeet transcribe`, `history`, `health`)
-- [x] 315 tests passing (`swift test` green)
+- [x] 342 tests passing (`swift test` green)
 
 ### v0.2 AI & Text Processing (In Progress)
 

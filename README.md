@@ -12,6 +12,8 @@ Press `Fn` anywhere on your Mac → speak → polished text appears. Like WisprF
 - **Double-tap Fn** — Persistent recording (press Fn again to stop)
 - **Hold Fn** — Push-to-talk (release to auto-stop and paste)
 
+Trigger key configurable in Settings (Fn, Control, Option, Shift, or Command).
+
 ### File Transcription
 Drag any audio or video file → get a transcript in seconds.
 
@@ -36,7 +38,7 @@ Drag any audio or video file → get a transcript in seconds.
 
 - **Blazing Fast** — Parakeet TDT STT, fully local
 - **100% Private** — Audio never leaves your Mac. No accounts. No tracking.
-- **System-Wide Dictation** — Fn double-tap (persistent) + hold-to-talk
+- **System-Wide Dictation** — Configurable hotkey (Fn default), double-tap (persistent) + hold-to-talk
 - **File Transcription** — Drag-drop audio/video files, word timestamps
 - **Smart Cleanup** — Deterministic 4-step pipeline (filler removal, custom words, snippets, whitespace)
 - **Custom Words** — Domain vocabulary corrections and proper noun casing

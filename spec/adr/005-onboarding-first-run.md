@@ -4,9 +4,9 @@ Date: 2026-02-10
 
 ## Context
 
-MacParakeet is a menu bar app with a global Fn hotkey and paste automation. To deliver a premium first-run experience, we need to:
+MacParakeet is a menu bar app with a configurable global hotkey (default: Fn) and paste automation. To deliver a premium first-run experience, we need to:
 
-- Explain the core interaction model (Fn hotkey, stop/paste, cancel).
+- Explain the core interaction model (hotkey, stop/paste, cancel).
 - Acquire required permissions (Microphone, Accessibility).
 - Prepare the local STT engine (Python/uv + daemon) so the first dictation feels fast and reliable.
 

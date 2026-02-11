@@ -1,8 +1,9 @@
 import SwiftUI
+import MacParakeetCore
 import MacParakeetViewModels
 
 /// Persistent floating pill shown when idle — always visible at bottom of screen.
-/// Expands on hover to show "Click or hold fn to start dictating" tooltip.
+/// Expands on hover to show "Click or hold <trigger key> to start dictating" tooltip.
 struct IdlePillView: View {
     @Bindable var viewModel: IdlePillViewModel
 
@@ -65,7 +66,7 @@ struct IdlePillView: View {
             Text("Click or hold ")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(.white.opacity(0.9))
-            Text("fn")
+            Text(TriggerKey.current.shortSymbol)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(Color(nsColor: NSColor(red: 0.85, green: 0.55, blue: 0.75, alpha: 1.0)))
             Text(" to start dictating")

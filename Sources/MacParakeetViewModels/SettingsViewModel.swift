@@ -10,6 +10,12 @@ public final class SettingsViewModel {
     }
 
     // Dictation
+    public var hotkeyTrigger: String {
+        didSet {
+            defaults.set(hotkeyTrigger, forKey: "hotkeyTrigger")
+            NotificationCenter.default.post(name: Notification.Name("macparakeet.hotkeyTriggerDidChange"), object: nil)
+        }
+    }
     public var silenceAutoStop: Bool {
         didSet { defaults.set(silenceAutoStop, forKey: "silenceAutoStop") }
     }
@@ -66,6 +72,7 @@ public final class SettingsViewModel {
         self.defaults = defaults
         self.youtubeDownloadsDirPath = youtubeDownloadsDirPath
         launchAtLogin = defaults.bool(forKey: "launchAtLogin")
+        hotkeyTrigger = defaults.string(forKey: "hotkeyTrigger") ?? "fn"
         silenceAutoStop = defaults.bool(forKey: "silenceAutoStop")
         let delay = defaults.double(forKey: "silenceDelay")
         silenceDelay = delay == 0 ? 2.0 : delay

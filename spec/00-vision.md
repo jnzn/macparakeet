@@ -29,7 +29,7 @@
 
 Two modes. That is the entire product:
 
-1. **Dictate anywhere** -- Press Fn, speak, release. Text appears where your cursor is.
+1. **Dictate anywhere** -- Press Fn (or your configured hotkey), speak, release. Text appears where your cursor is.
 2. **Drop a file** -- Drag audio/video in. Get a transcript out.
 
 Everything else exists to make those two modes faster, smarter, and more useful.
@@ -448,7 +448,7 @@ All within 60 seconds of first launch. No tutorial, no onboarding wizard, no acc
 The foundation. Dictation works. File transcription works. It is fast.
 
 - Parakeet STT integration (Python daemon via JSON-RPC)
-- System-wide dictation (Fn trigger, floating overlay)
+- System-wide dictation (Fn trigger, configurable, floating overlay)
 - File transcription (drag-and-drop, common audio/video formats)
 - Basic UI (menu bar app, transcription window)
 - Settings (audio input selection, output preferences)

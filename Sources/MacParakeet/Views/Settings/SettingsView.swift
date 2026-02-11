@@ -76,11 +76,10 @@ struct SettingsView: View {
 
             // Dictation
             Section("Dictation") {
-                HStack {
-                    Text("Hotkey")
-                    Spacer()
-                    Text("Fn (double-tap / hold)")
-                        .foregroundStyle(.secondary)
+                Picker("Hotkey", selection: $viewModel.hotkeyTrigger) {
+                    ForEach(TriggerKey.allCases, id: \.rawValue) { key in
+                        Text("\(key.shortSymbol) \(key.displayName)").tag(key.rawValue)
+                    }
                 }
 
                 Toggle("Auto-stop after silence", isOn: $viewModel.silenceAutoStop)

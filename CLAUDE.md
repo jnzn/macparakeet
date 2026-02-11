@@ -95,10 +95,10 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 
 ## Current Phase
 
-**v0.2 In Progress** -- Clean pipeline + management UI implemented (315 tests, `swift test` green)
+**v0.2 In Progress** -- Clean pipeline + management UI implemented (342 tests, `swift test` green)
 
 ### v0.1 MVP (Implemented)
-- [x] System-wide dictation: Fn double-tap (persistent) + hold-to-talk
+- [x] System-wide dictation: Configurable hotkey (Fn default), double-tap (persistent) + hold-to-talk
 - [x] File transcription: Drag-drop audio/video files
 - [x] Compact dark pill overlay with recording timer + waveform
 - [x] Persistent idle pill (always-visible, click-to-dictate)
@@ -284,7 +284,7 @@ macparakeet/
 │   ├── MacParakeetCore/        # Shared library (no UI deps)
 │   └── MacParakeetViewModels/  # ViewModels (testable, depends on Core)
 ├── Tests/
-│   └── MacParakeetTests/   # Unit, database, and integration tests (315 tests)
+│   └── MacParakeetTests/   # Unit, database, and integration tests (342 tests)
 ├── Assets/             # App icons and images (placeholder)
 ├── python/             # STT daemon (Parakeet via uv)
 │   └── macparakeet_stt/

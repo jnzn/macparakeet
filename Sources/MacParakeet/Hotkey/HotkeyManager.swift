@@ -2,7 +2,8 @@ import Cocoa
 import Foundation
 import MacParakeetCore
 
-/// Manages system-wide Fn key detection via CGEvent tap.
+/// Manages system-wide hotkey detection via CGEvent tap.
+/// Supports configurable trigger keys (Fn, Control, Option, Shift, Command).
 /// Requires Accessibility permission.
 public final class HotkeyManager {
     public var onStartRecording: ((FnKeyStateMachine.RecordingMode) -> Void)?
@@ -10,13 +11,24 @@ public final class HotkeyManager {
     public var onCancelRecording: (() -> Void)?
 
     private let stateMachine = FnKeyStateMachine()
+    private let triggerKey: TriggerKey
+    private let targetMask: CGEventFlags
     private var eventTap: CFMachPort?
     private var holdTimer: DispatchWorkItem?
     private var runLoopSource: CFRunLoopSource?
 
-    public init() {}
+    /// Edge detection: was the target modifier pressed in the previous event?
+    private var targetModifierWasPressed = false
 
-    /// Start listening for Fn key events. Requires Accessibility permission.
+    /// Bare-tap filtering: true until a non-Escape key is pressed while modifier is held.
+    private var bareTap = true
+
+    public init(triggerKey: TriggerKey = .fn) {
+        self.triggerKey = triggerKey
+        self.targetMask = Self.mask(for: triggerKey)
+    }
+
+    /// Start listening for key events. Requires Accessibility permission.
     public func start() -> Bool {
         let eventMask: CGEventMask = (1 << CGEventType.flagsChanged.rawValue)
             | (1 << CGEventType.keyDown.rawValue)
@@ -55,6 +67,8 @@ public final class HotkeyManager {
         holdTimer?.cancel()
         eventTap = nil
         runLoopSource = nil
+        targetModifierWasPressed = false
+        bareTap = true
         stateMachine.reset()
     }
 
@@ -65,9 +79,17 @@ public final class HotkeyManager {
 
         if type == .flagsChanged {
             let flags = event.flags
-            let fnPressed = flags.contains(.maskSecondaryFn)
+            let isPressed = flags.contains(targetMask)
 
-            if fnPressed {
+            // Edge detection: only act on actual transitions of the target modifier
+            guard isPressed != targetModifierWasPressed else {
+                return Unmanaged.passRetained(event)
+            }
+            targetModifierWasPressed = isPressed
+
+            if isPressed {
+                // Modifier down — start bare-tap tracking
+                bareTap = true
                 let action = stateMachine.fnDown(timestampMs: timestampMs)
                 handleAction(action)
 
@@ -83,15 +105,35 @@ public final class HotkeyManager {
                     execute: timer
                 )
             } else {
+                // Modifier up
                 holdTimer?.cancel()
-                let action = stateMachine.fnUp(timestampMs: timestampMs)
-                handleAction(action)
+
+                if bareTap {
+                    let action = stateMachine.fnUp(timestampMs: timestampMs)
+                    handleAction(action)
+                } else {
+                    // Not a bare tap (e.g., Ctrl+C) — reset instead of treating as a gesture
+                    stateMachine.reset()
+                }
+                bareTap = true
             }
         } else if type == .keyDown {
             let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
             if keyCode == 53 { // Escape
                 let action = stateMachine.escapePressed()
                 handleAction(action)
+            } else {
+                // Non-Escape key pressed — invalidate bare-tap if modifier is held
+                if targetModifierWasPressed {
+                    bareTap = false
+                }
+
+                // Gesture interruption: if waiting for second tap, a regular key press
+                // means the user is typing, not double-tapping the hotkey
+                if stateMachine.state == .waitingForSecondTap {
+                    stateMachine.reset()
+                    holdTimer?.cancel()
+                }
             }
         }
 
@@ -99,12 +141,12 @@ public final class HotkeyManager {
     }
 
     /// Notify state machine that cancel was triggered via UI (not Esc).
-    /// Blocks Fn during the cancel countdown window.
+    /// Blocks hotkey during the cancel countdown window.
     public func notifyCancelledByUI() {
         stateMachine.cancelledByUI()
     }
 
-    /// Resume recording mode after undo, so Fn stops the recording correctly.
+    /// Resume recording mode after undo, so hotkey stops the recording correctly.
     public func resumeRecording(mode: FnKeyStateMachine.RecordingMode) {
         stateMachine.resumeRecording(mode: mode)
     }
@@ -124,6 +166,18 @@ public final class HotkeyManager {
             onStopRecording?()
         case .cancelRecording:
             onCancelRecording?()
+        }
+    }
+
+    // MARK: - Key Mapping
+
+    private static func mask(for key: TriggerKey) -> CGEventFlags {
+        switch key {
+        case .fn: return .maskSecondaryFn
+        case .control: return .maskControl
+        case .option: return .maskAlternate
+        case .shift: return .maskShift
+        case .command: return .maskCommand
         }
     }
 }
