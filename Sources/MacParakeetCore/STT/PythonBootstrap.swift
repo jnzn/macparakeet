@@ -93,6 +93,25 @@ public final class PythonBootstrap: Sendable {
         return pythonExecutable
     }
 
+    /// Re-install requirements from requirements.txt into an existing venv.
+    /// Use when new dependencies have been added after the venv was first created.
+    public func installRequirements() async throws {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: pythonExecutable) else {
+            _ = try await ensureEnvironment()
+            return
+        }
+
+        let uvPath = try findUV()
+        let requirementsPath = "\(pythonPackagePath)/requirements.txt"
+        if fm.fileExists(atPath: requirementsPath) {
+            try await runProcess(
+                uvPath,
+                arguments: ["pip", "install", "--python", pythonExecutable, "-r", requirementsPath]
+            )
+        }
+    }
+
     /// Environment variables for the daemon process
     public func daemonEnvironment() -> [String: String] {
         var env = ProcessInfo.processInfo.environment
