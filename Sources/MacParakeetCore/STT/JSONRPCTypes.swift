@@ -70,3 +70,15 @@ struct JSONRPCPingResponse: Decodable {
     let error: JSONRPCError?
     let id: Int?
 }
+
+/// JSON-RPC response for warm_up (returns an object like {"status":"ok"})
+struct JSONRPCWarmUpResponse: Decodable {
+    let jsonrpc: String
+    let result: WarmUpResult?
+    let error: JSONRPCError?
+    let id: Int?
+}
+
+struct WarmUpResult: Decodable {
+    let status: String
+}

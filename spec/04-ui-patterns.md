@@ -27,8 +27,9 @@ Design philosophy: **Simple, native, stays out of the way.** No chrome, no clutt
 │                  │                                           │
 │  🎤 Transcribe   │  [Depends on sidebar selection]           │
 │  🕒 Dictations   │                                           │
-│  ⚙ Settings      │  - Transcribe: Drop zone + recent list   │
-│                  │  - Dictations: History list                │
+│  📖 Vocabulary   │  - Transcribe: Drop zone + recent list   │
+│  ⚙ Settings      │  - Dictations: History list               │
+│                  │  - Vocabulary: Processing mode + manage   │
 │                  │  - Settings: Grouped form                 │
 │                  │                                           │
 └──────────────────┴───────────────────────────────────────────┘
@@ -38,11 +39,12 @@ Minimum window width: 800pt.
 
 ### Sidebar
 
-The sidebar uses NavigationSplitView with three flat items (icon + label):
+The sidebar uses NavigationSplitView with four flat items (icon + label):
 
 - **Transcribe** (`waveform`) -- Drop zone and recent transcriptions
 - **Dictations** (`clock.arrow.circlepath`) -- Flat history list with bottom bar player
-- **Settings** (`gearshape`) -- Grouped form settings
+- **Vocabulary** (`book.fill`) -- Processing mode, pipeline guide, custom words & snippets management
+- **Settings** (`gearshape`) -- License, dictation prefs, storage, permissions
 
 Column width: `min: 160, ideal: 180, max: 220`. Window minimum width: 800pt.
 
@@ -538,40 +540,49 @@ Settings open in the content area when "Settings" is selected in the sidebar. Ta
 └───────────────────────────────────────────────────────────┘
 ```
 
-### Processing (v0.2)
+### Vocabulary (v0.2)
+
+The Vocabulary sidebar item is a dedicated panel for managing the text processing pipeline. It replaces the Processing section that was previously in Settings, promoting vocabulary management to a first-class feature.
 
 ```
 ┌───────────────────────────────────────────────────────────┐
-│  PROCESSING                                               │
+│  PROCESSING MODE                                          │
 │  ─────────────────────────────────────────────────────    │
+│  [● Clean (fillers removed)]  [  Raw (no processing)]    │
+│  Raw outputs STT text as-is. Clean removes filler words, │
+│  applies custom word corrections, and expands snippets.   │
 │                                                           │
-│  Mode                         [● Clean]                  │
-│                               [  Raw]                    │
-│  (Clean: remove fillers, fix punctuation. Raw: exact.)   │
-│                                                           │
-│  Remove filler words          [toggle: ON]               │
-│  ("um", "uh", "like", "you know")                        │
-│                                                           │
+│  HOW IT WORKS                                             │
 │  ─────────────────────────────────────────────────────    │
+│  1. Filler Removal — Strips um, uh, like, you know       │
+│  2. Custom Words — Fixes domain terms STT gets wrong      │
+│  3. Text Snippets — Expands trigger phrases to full text  │
+│  4. Whitespace Cleanup — Normalizes spacing/punctuation   │
 │                                                           │
-│  CUSTOM WORDS                              [Manage ▸]    │
-│  Vocabulary corrections applied during processing.       │
-│  12 words configured                                     │
-│                                                           │
+│  TIPS                                                     │
 │  ─────────────────────────────────────────────────────    │
+│  💡 Parakeet already handles punctuation and caps...      │
+│  💡 Custom words fix domain terms STT gets wrong...       │
+│  💡 Leave replacement empty to enforce casing...          │
+│  💡 Snippet triggers should be natural phrases...         │
+│  💡 Changes take effect on the next dictation.            │
 │                                                           │
-│  TEXT SNIPPETS                              [Manage ▸]   │
-│  Say a phrase, get an expansion.                         │
-│  5 snippets configured                                   │
+│  CUSTOM WORDS                              [Manage...]    │
+│  Words defined                                  12        │
+│                                                           │
+│  TEXT SNIPPETS                             [Manage...]    │
+│  Snippets defined                                5        │
 │                                                           │
 └───────────────────────────────────────────────────────────┘
 ```
+
+Note: How It Works, Tips, Custom Words, and Text Snippets sections are only visible when processing mode is set to "Clean".
 
 ### Custom Words Management (v0.2)
 
 ```
 ┌───────────────────────────────────────────────────────────┐
-│  ← Processing    CUSTOM WORDS                            │
+│  ← Vocabulary    CUSTOM WORDS                            │
 │  ─────────────────────────────────────────────────────    │
 │                                                           │
 │  🔍 Search words...                          [+ Add]     │
@@ -805,9 +816,9 @@ All UI listed above is v0.1 except where noted:
 
 ### v0.2 (AI Refinement)
 
-- Settings: Processing pane (mode picker, filler removal)
-- Custom Words management view
-- Text Snippets management view
+- Vocabulary sidebar item (processing mode, pipeline guide, custom words & snippets management)
+- Custom Words management view (sheet from Vocabulary)
+- Text Snippets management view (sheet from Vocabulary)
 - Context mode selector in dictation (raw/clean badge on overlay)
 
 ### v0.3 (Import & Export)

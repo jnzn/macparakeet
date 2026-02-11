@@ -21,7 +21,7 @@ final class TextProcessingPipelineTests: XCTestCase {
         ]
 
         let result = pipeline.process(
-            text: "um basically kubernetes is great you know my signature",
+            text: "um kubernetes is great you know my signature",
             customWords: words,
             snippets: snippets
         )
@@ -50,10 +50,10 @@ final class TextProcessingPipelineTests: XCTestCase {
     }
 
     func testFillerRemovalPreservesPartialWords() {
-        let result = pipeline.removeFillers(from: "factually this is legitimate")
-        // "actually" should not be matched inside "factually"
-        XCTAssertTrue(result.contains("factually"))
-        XCTAssertTrue(result.contains("legitimate"))
+        // Word boundaries prevent "um" from matching inside "umbrella"
+        let result = pipeline.removeFillers(from: "umbrella this is humble")
+        XCTAssertTrue(result.contains("umbrella"))
+        XCTAssertTrue(result.contains("humble"))
     }
 
     func testSentenceStartFillerAtStart() {
@@ -73,9 +73,9 @@ final class TextProcessingPipelineTests: XCTestCase {
     }
 
     func testFillerRemovalCaseInsensitive() {
-        let result = pipeline.removeFillers(from: "UM hello BASICALLY world")
+        let result = pipeline.removeFillers(from: "UM hello UHH world")
         XCTAssertFalse(result.lowercased().contains("um"))
-        XCTAssertFalse(result.lowercased().contains("basically"))
+        XCTAssertFalse(result.lowercased().contains("uhh"))
     }
 
     func testIMeanFiller() {
@@ -89,9 +89,10 @@ final class TextProcessingPipelineTests: XCTestCase {
         XCTAssertFalse(result.contains("kind of"))
     }
 
-    func testLiterallyFiller() {
-        let result = pipeline.removeFillers(from: "this is literally the best")
-        XCTAssertFalse(result.contains("literally"))
+    func testHesitationVariants() {
+        let result = pipeline.removeFillers(from: "umm this is uhh interesting")
+        XCTAssertFalse(result.contains("umm"))
+        XCTAssertFalse(result.contains("uhh"))
     }
 
     // MARK: - Step 2: Custom Words

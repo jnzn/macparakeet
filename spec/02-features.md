@@ -430,7 +430,8 @@ The app lives primarily in the menu bar. Click the icon for quick actions, or op
 **Sidebar sections:**
 - **Transcribe** -- Opens the drop zone + recent transcriptions
 - **Dictations** -- Full dictation history (date-grouped, searchable)
-- **Settings** -- App preferences
+- **Vocabulary** -- Processing mode, pipeline guide, custom words & snippets management
+- **Settings** -- License, dictation prefs, storage, permissions
 
 **Acceptance criteria:**
 - [x] App launches to menu bar only (no dock icon initially)
@@ -438,7 +439,7 @@ The app lives primarily in the menu bar. Click the icon for quick actions, or op
 - [ ] Menu bar icon reflects current state (idle, recording, processing)
 - [x] Menu bar dropdown shows quick actions
 - [x] Main window opens on demand (menu bar click or Cmd+O)
-- [x] Sidebar navigation between Transcribe, Dictations, Settings
+- [x] Sidebar navigation between Transcribe, Dictations, Vocabulary, Settings
 
 ---
 
@@ -651,7 +652,7 @@ Three-tier strategy with conservative defaults (false negatives are better than 
 | Tier | Words | Behavior |
 |------|-------|----------|
 | Multi-word (checked first) | "you know", "I mean", "sort of", "kind of" | Always removed |
-| Always safe | um, uh, umm, uhh, hmm, hm, basically, literally, anyway(s) | Always removed |
+| Always safe | um, uh, umm, uhh | Always removed |
 | Sentence-start only | so, well, like, right | Removed only at sentence boundaries; preserved mid-sentence where meaningful |
 
 **Step 2: Custom word replacements**

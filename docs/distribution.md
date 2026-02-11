@@ -13,6 +13,19 @@ scripts/dist/build_app_bundle.sh
 This creates `dist/MacParakeet.app` and bundles:
 - `python/macparakeet_stt` into `Contents/Resources/python/`
 - `uv` into `Contents/Resources/uv` if `uv` is on your `PATH`
+- SwiftPM resource bundles (e.g. `mlx-swift_Cmlx.bundle` containing `default.metallib`) into `Contents/Resources/`
+
+Optional licensing config (recommended for production):
+
+```bash
+export MACPARAKEET_CHECKOUT_URL="https://..."
+export MACPARAKEET_LS_VARIANT_ID="12345"
+scripts/dist/build_app_bundle.sh
+```
+
+These are embedded into `Info.plist` as:
+- `MacParakeetCheckoutURL`
+- `MacParakeetLemonSqueezyVariantID`
 
 ## 2) Sign + notarize (recommended)
 
@@ -47,4 +60,3 @@ UNIVERSAL=1 scripts/dist/build_app_bundle.sh
 ```
 
 - `MacParakeet` requests microphone permission. The app bundle `Info.plist` includes `NSMicrophoneUsageDescription`.
-

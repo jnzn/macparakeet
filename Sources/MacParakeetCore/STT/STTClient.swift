@@ -61,6 +61,36 @@ public actor STTClient: STTClientProtocol {
 
     public func warmUp() async throws {
         try await ensureRunning()
+
+        // Ask the daemon to preload the model. This can take minutes on first run due to downloads.
+        requestId += 1
+        let request = JSONRPCRequest(
+            method: "warm_up",
+            params: [:],
+            id: requestId
+        )
+
+        let responseData = try await sendRequest(request, timeout: 15 * 60)
+        let response = try JSONDecoder().decode(JSONRPCWarmUpResponse.self, from: responseData)
+
+        if let error = response.error {
+            switch error.code {
+            case -32601:
+                // Backward compatibility: older daemons won't have warm_up.
+                return
+            case -32001:
+                throw STTError.modelNotLoaded
+            case -32002:
+                throw STTError.outOfMemory
+            default:
+                let reason = error.data?.reason ?? error.message
+                throw STTError.daemonStartFailed(reason)
+            }
+        }
+
+        guard response.result?.status == "ok" else {
+            throw STTError.invalidResponse
+        }
     }
 
     public func isReady() async -> Bool {
@@ -166,7 +196,7 @@ public actor STTClient: STTClientProtocol {
         consecutiveCrashes += 1
     }
 
-    private func sendRequest(_ request: JSONRPCRequest) async throws -> Data {
+    private func sendRequest(_ request: JSONRPCRequest, timeout: TimeInterval = 60) async throws -> Data {
         guard let stdinPipe, let stdoutPipe else {
             throw STTError.daemonNotRunning
         }
@@ -177,7 +207,7 @@ public actor STTClient: STTClientProtocol {
 
         stdinPipe.fileHandleForWriting.write(data)
 
-        let responseLine = try await readLine(from: stdoutPipe, timeout: 60)
+        let responseLine = try await readLine(from: stdoutPipe, timeout: timeout)
         guard let responseData = responseLine.data(using: .utf8) else {
             throw STTError.invalidResponse
         }

@@ -113,7 +113,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 
 ### v0.2 Clean Pipeline + AI
 - [x] Clean text pipeline (filler removal, custom words, snippets) -- deterministic, no LLM
-- [x] Custom words & snippets management UI (sheets from Settings)
+- [x] Custom words & snippets management UI (Vocabulary sidebar item)
 - [x] CLI commands: `macparakeet flow process/words/snippets`
 - [ ] Context modes (raw, clean, formal, email, code) -- raw + clean done, AI modes pending
 - [ ] AI text refinement via Qwen3-4B
@@ -225,11 +225,17 @@ Menu Bar Icon (always visible)
     |   +-- Waveform visualization
     |   +-- Cancel/stop controls
     |
+    +-- Vocabulary Panel
+    |   +-- Processing mode (raw/clean)
+    |   +-- Pipeline guide + tips
+    |   +-- Custom words management (sheet)
+    |   +-- Text snippets management (sheet)
+    |
     +-- Settings Window
+    |   +-- License activation
     |   +-- Hotkey configuration
-    |   +-- Processing mode
-    |   +-- Custom words / snippets (v0.2+)
-    |   +-- History management
+    |   +-- Storage management
+    |   +-- Permissions
     |
     +-- History Panel
         +-- Dictation history with search
@@ -240,7 +246,8 @@ Menu Bar Icon (always visible)
 View files organized by feature in `Sources/MacParakeet/Views/`:
 - `Transcription/` -- Main window, drop zone, transcript display, export
 - `Dictation/` -- Overlay, waveform, recording state
-- `Settings/` -- Preferences, hotkey config, custom words
+- `Vocabulary/` -- Processing mode, custom words, text snippets
+- `Settings/` -- License, dictation prefs, storage, permissions
 - `History/` -- Dictation history, search, playback
 - `Components/` -- Reusable components (status badge, waveform view)
 

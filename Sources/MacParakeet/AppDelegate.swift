@@ -161,7 +161,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
             maybeShowOnboarding()
         } catch {
-            print("Failed to initialize app: \(error)")
+            // Don't silently fail. Without a valid environment, the app can't function.
+            NSApp.setActivationPolicy(.regular)
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.alertStyle = .critical
+            alert.messageText = "MacParakeet Failed to Start"
+            alert.informativeText = error.localizedDescription
+            alert.addButton(withTitle: "Quit")
+            _ = alert.runModal()
+            NSApp.terminate(nil)
         }
     }
 

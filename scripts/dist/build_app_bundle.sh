@@ -19,10 +19,11 @@ set -euo pipefail
 #   MIN_MACOS_VERSION   (default: 14.2)
 #   UNIVERSAL           (default: 0) build universal (arm64+x86_64) if 1
 #   SKIP_BUILD          (default: 0) reuse existing Release binary if 1
+#   BUILD_SYSTEM        (default: xcodebuild) 'xcodebuild' or 'swiftpm'
+#   XCODE_DERIVED_DATA  (default: .build/xcode-dist) derived data path for xcodebuild
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
-TEMPLATE_DIR="$ROOT_DIR/scripts/dist"
 
 APP_NAME="${APP_NAME:-MacParakeet}"
 BUNDLE_ID="${BUNDLE_ID:-com.macparakeet.MacParakeet}"
@@ -31,6 +32,8 @@ BUILD_NUMBER="${BUILD_NUMBER:-1}"
 MIN_MACOS_VERSION="${MIN_MACOS_VERSION:-14.2}"
 UNIVERSAL="${UNIVERSAL:-0}"
 SKIP_BUILD="${SKIP_BUILD:-0}"
+BUILD_SYSTEM="${BUILD_SYSTEM:-xcodebuild}"
+XCODE_DERIVED_DATA="${XCODE_DERIVED_DATA:-$ROOT_DIR/.build/xcode-dist}"
 
 APP_DIR="$DIST_DIR/${APP_NAME}.app"
 CONTENTS_DIR="$APP_DIR/Contents"
@@ -40,14 +43,18 @@ RESOURCES_DIR="$CONTENTS_DIR/Resources"
 rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 
-if [[ "$SKIP_BUILD" == "1" ]]; then
-  echo "[1/4] Skipping build (SKIP_BUILD=1)…"
-else
+build_swiftpm() {
+  if [[ "$SKIP_BUILD" == "1" ]]; then
+    echo "[1/4] Skipping build (SKIP_BUILD=1)…"
+    return 0
+  fi
+
   if [[ "$UNIVERSAL" == "1" ]]; then
     echo "[1/4] Building SwiftPM product (universal Release)…"
   else
     echo "[1/4] Building SwiftPM product (Release)…"
   fi
+
   pushd "$ROOT_DIR" >/dev/null
   if [[ "$UNIVERSAL" == "1" ]]; then
     swift build -c release --arch arm64 --arch x86_64 --product MacParakeet
@@ -55,20 +62,91 @@ else
     swift build -c release --product MacParakeet
   fi
   popd >/dev/null
-fi
+}
 
-pushd "$ROOT_DIR" >/dev/null
-BIN_DIR="$(swift build -c release --product MacParakeet --show-bin-path)"
-popd >/dev/null
-BIN_PATH="$BIN_DIR/MacParakeet"
-if [[ ! -f "$BIN_PATH" ]]; then
-  echo "Failed to locate Release binary at: $BIN_PATH" >&2
-  exit 1
-fi
+build_xcodebuild() {
+  # Prefer xcodebuild so SwiftPM resource bundles are produced (notably mlx-swift_Cmlx.bundle with default.metallib).
+  if [[ "$SKIP_BUILD" == "1" ]]; then
+    echo "[1/4] Skipping build (SKIP_BUILD=1)…"
+    return 0
+  fi
 
-echo "[2/4] Assembling app bundle…"
-cp "$BIN_PATH" "$MACOS_DIR/$APP_NAME"
-chmod +x "$MACOS_DIR/$APP_NAME"
+  if [[ "$UNIVERSAL" == "1" ]]; then
+    echo "[1/4] Building via xcodebuild (universal Release)…"
+    local dd_arm="$XCODE_DERIVED_DATA-arm64"
+    local dd_x86="$XCODE_DERIVED_DATA-x86_64"
+
+    xcodebuild build -scheme MacParakeet -configuration Release -destination "platform=OS X,arch=arm64" \
+      -derivedDataPath "$dd_arm" CODE_SIGNING_ALLOWED=NO >/dev/null
+    xcodebuild build -scheme MacParakeet -configuration Release -destination "platform=OS X,arch=x86_64" \
+      -derivedDataPath "$dd_x86" CODE_SIGNING_ALLOWED=NO >/dev/null
+
+    local bin_arm="$dd_arm/Build/Products/Release/MacParakeet"
+    local bin_x86="$dd_x86/Build/Products/Release/MacParakeet"
+    if [[ ! -f "$bin_arm" || ! -f "$bin_x86" ]]; then
+      echo "Failed to locate xcodebuild Release binaries." >&2
+      exit 1
+    fi
+
+    lipo -create "$bin_arm" "$bin_x86" -output "$MACOS_DIR/$APP_NAME"
+    chmod +x "$MACOS_DIR/$APP_NAME"
+
+    # Copy resource bundles from arm build output (they are data-only).
+    local product_dir="$dd_arm/Build/Products/Release"
+    copy_resource_bundles "$product_dir"
+  else
+    echo "[1/4] Building via xcodebuild (Release)…"
+    local dd="$XCODE_DERIVED_DATA"
+    # Apple Silicon is the supported shipping target; lock to arm64 to avoid ambiguous destinations.
+    xcodebuild build -scheme MacParakeet -configuration Release -destination "platform=OS X,arch=arm64" \
+      -derivedDataPath "$dd" CODE_SIGNING_ALLOWED=NO >/dev/null
+
+    local product_dir="$dd/Build/Products/Release"
+    local bin="$product_dir/MacParakeet"
+    if [[ ! -f "$bin" ]]; then
+      echo "Failed to locate xcodebuild Release binary at: $bin" >&2
+      exit 1
+    fi
+
+    cp "$bin" "$MACOS_DIR/$APP_NAME"
+    chmod +x "$MACOS_DIR/$APP_NAME"
+
+    copy_resource_bundles "$product_dir"
+  fi
+}
+
+copy_resource_bundles() {
+  local product_dir="$1"
+  # Copy SwiftPM-generated resource bundles alongside the executable. This is required for some dependencies.
+  if [[ -d "$product_dir" ]]; then
+    while IFS= read -r -d '' bundle; do
+      local name
+      name="$(basename "$bundle")"
+      rm -rf "$RESOURCES_DIR/$name"
+      cp -R "$bundle" "$RESOURCES_DIR/"
+    done < <(find "$product_dir" -maxdepth 1 -type d -name '*.bundle' -print0 2>/dev/null || true)
+  fi
+}
+
+if [[ "$BUILD_SYSTEM" == "swiftpm" ]]; then
+  build_swiftpm
+  # Locate the release binary produced by SwiftPM.
+  pushd "$ROOT_DIR" >/dev/null
+  BIN_DIR="$(swift build -c release --product MacParakeet --show-bin-path)"
+  popd >/dev/null
+  BIN_PATH="$BIN_DIR/MacParakeet"
+  if [[ ! -f "$BIN_PATH" ]]; then
+    echo "Failed to locate Release binary at: $BIN_PATH" >&2
+    exit 1
+  fi
+
+  echo "[2/4] Assembling app bundle…"
+  cp "$BIN_PATH" "$MACOS_DIR/$APP_NAME"
+  chmod +x "$MACOS_DIR/$APP_NAME"
+else
+  build_xcodebuild
+  echo "[2/4] Assembling app bundle…"
+fi
 
 # Bundle the python package sources (needed for `python -m macparakeet_stt`).
 mkdir -p "$RESOURCES_DIR/python"
@@ -124,6 +202,17 @@ fi
 
 echo "[3/4] Writing Info.plist…"
 INFO_PLIST="$CONTENTS_DIR/Info.plist"
+CHECKOUT_URL="${MACPARAKEET_CHECKOUT_URL:-}"
+LS_VARIANT_ID="${MACPARAKEET_LS_VARIANT_ID:-}"
+LICENSING_PLIST=""
+if [[ -n "$CHECKOUT_URL" ]]; then
+  LICENSING_PLIST+="  <key>MacParakeetCheckoutURL</key>\n"
+  LICENSING_PLIST+="  <string>${CHECKOUT_URL}</string>\n"
+fi
+if [[ -n "$LS_VARIANT_ID" && "$LS_VARIANT_ID" =~ ^[0-9]+$ ]]; then
+  LICENSING_PLIST+="  <key>MacParakeetLemonSqueezyVariantID</key>\n"
+  LICENSING_PLIST+="  <integer>${LS_VARIANT_ID}</integer>\n"
+fi
 cat >"$INFO_PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -151,6 +240,7 @@ cat >"$INFO_PLIST" <<EOF
   <string>${MIN_MACOS_VERSION}</string>
   <key>NSMicrophoneUsageDescription</key>
   <string>MacParakeet needs microphone access for dictation.</string>
+$(printf "%b" "$LICENSING_PLIST")
 </dict>
 </plist>
 EOF

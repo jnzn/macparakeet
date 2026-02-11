@@ -81,8 +81,8 @@ MacParakeet processes everything locally. Your audio is never:
 
 | Tier | Price | Includes |
 |------|-------|----------|
-| **Free** | $0 | Free tier plan (not enforced in this repo yet) |
-| **Pro** | $49 (one-time) | Pro tier plan (licensing + feature gating not implemented here yet) |
+| **Free** | $0 | 7-day trial (full features) |
+| **Pro** | $49 (one-time) | License unlock after trial (activation UI + local gating implemented; production checkout/variant config is provided at build time) |
 
 ## Development Philosophy
 

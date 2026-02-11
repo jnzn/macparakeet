@@ -43,6 +43,26 @@ def _make_error(code, message, request_id, data=None):
 def handle_ping(params, request_id):
     return _make_response("pong", request_id)
 
+def handle_warm_up(params, request_id):
+    """Preload the model so first real transcription is fast.
+
+    This may download model weights on first run.
+    """
+    try:
+        _load_model()
+        return _make_response({"status": "ok"}, request_id)
+    except RuntimeError as e:
+        return _make_error(-32001, str(e), request_id)
+    except MemoryError:
+        return _make_error(-32002, "Out of memory", request_id)
+    except Exception as e:
+        return _make_error(
+            -32000,
+            "Warm up failed",
+            request_id,
+            {"reason": str(e)},
+        )
+
 
 def handle_transcribe(params, request_id):
     audio_path = params.get("audio_path")
@@ -101,6 +121,7 @@ def handle_transcribe(params, request_id):
 
 METHODS = {
     "ping": handle_ping,
+    "warm_up": handle_warm_up,
     "transcribe": handle_transcribe,
 }
 

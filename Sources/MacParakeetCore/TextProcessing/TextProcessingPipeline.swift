@@ -44,8 +44,9 @@ public struct TextProcessingPipeline: Sendable {
     ]
 
     /// Always-safe single-word fillers (always removed)
+    /// Only pure hesitation sounds — words that never carry meaning.
     private static let alwaysSafeFillers = [
-        "um", "uh", "basically", "literally", "actually"
+        "um", "uh", "umm", "uhh"
     ]
 
     /// Sentence-start-only fillers (removed only at sentence start)

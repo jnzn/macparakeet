@@ -12,6 +12,7 @@ Package.resolved
 
 # Python
 python/.venv/
+.venv/
 __pycache__/
 *.pyc
 *.pyo

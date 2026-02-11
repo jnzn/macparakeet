@@ -22,7 +22,7 @@ Removes verbal fillers in 3 tiers, ordered by aggressiveness:
 - "you know", "I mean", "sort of", "kind of"
 
 **Always-safe single-word fillers** (always removed):
-- "um", "uh", "basically", "literally", "actually"
+- "um", "uh", "umm", "uhh"
 
 **Sentence-start-only fillers** (removed only at the beginning of a sentence):
 - "so", "well", "like", "right"

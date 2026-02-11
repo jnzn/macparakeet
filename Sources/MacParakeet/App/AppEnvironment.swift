@@ -45,11 +45,28 @@ final class AppEnvironment {
         permissionService = PermissionService()
 
         // Licensing / entitlements (basic guards: 7-day trial + license unlock).
-        // TODO: Set these before release:
-        // - checkoutURL: your Lemon Squeezy checkout link
-        // - expectedVariantID: the Lemon Squeezy Variant ID for MacParakeet
-        checkoutURL = URL(string: ProcessInfo.processInfo.environment["MACPARAKEET_CHECKOUT_URL"] ?? "")
-        let expectedVariantID = Int(ProcessInfo.processInfo.environment["MACPARAKEET_LS_VARIANT_ID"] ?? "")
+        //
+        // Production builds should embed these values in Info.plist via the dist script.
+        // We still support env vars for local development.
+        let checkoutURLString =
+            (Bundle.main.object(forInfoDictionaryKey: "MacParakeetCheckoutURL") as? String)
+            ?? ProcessInfo.processInfo.environment["MACPARAKEET_CHECKOUT_URL"]
+        checkoutURL = checkoutURLString
+            .flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .flatMap { $0.isEmpty ? nil : $0 }
+            .flatMap(URL.init(string:))
+
+        let expectedVariantID: Int? = {
+            if let n = Bundle.main.object(forInfoDictionaryKey: "MacParakeetLemonSqueezyVariantID") as? NSNumber {
+                return n.intValue
+            }
+            let s =
+                (Bundle.main.object(forInfoDictionaryKey: "MacParakeetLemonSqueezyVariantID") as? String)
+                ?? ProcessInfo.processInfo.environment["MACPARAKEET_LS_VARIANT_ID"]
+            guard let s, !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return Int(s.trimmingCharacters(in: .whitespacesAndNewlines))
+        }()
+
         let licensingConfig = LicensingConfig(checkoutURL: checkoutURL, expectedVariantID: expectedVariantID)
         let serviceName = Bundle.main.bundleIdentifier ?? "com.macparakeet"
         let keychain = KeychainKeyValueStore(service: serviceName)

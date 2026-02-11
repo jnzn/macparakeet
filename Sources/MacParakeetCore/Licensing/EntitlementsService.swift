@@ -82,6 +82,14 @@ public actor EntitlementsService: EntitlementsChecking {
             throw EntitlementsError.invalidLicense("Please enter a license key.")
         }
 
+        // Production must be configured to prevent activating a key for the wrong product.
+        // (Variant IDs are not secrets; they should be embedded in Info.plist by the dist script.)
+        guard config.expectedVariantID != nil else {
+            throw EntitlementsError.configuration(
+                "Licensing is not configured in this build. Please reinstall MacParakeet or contact support."
+            )
+        }
+
         let instanceName = try installationInstanceName()
         let activation = try await api.activate(licenseKey: key, instanceName: instanceName)
 
@@ -200,4 +208,3 @@ public actor EntitlementsService: EntitlementsChecking {
         return Int(ceil(seconds / (24 * 60 * 60)))
     }
 }
-

@@ -95,7 +95,7 @@ The UI layer. Thin shell over MacParakeetCore. No business logic lives here.
 **Responsibility:** Primary interface for file transcription. Accepts drag-and-drop, displays transcripts, provides export controls.
 
 **Key Types:**
-- `MainWindowView` — Sidebar (Transcribe / Dictations / Settings) + content pane
+- `MainWindowView` — Sidebar (Transcribe / Dictations / Vocabulary / Settings) + content pane
 - `TranscribeView` — Drop zone + recent transcriptions list
 - `TranscriptResultView` — Scrollable text with optional word-level timestamps
 - `DictationHistoryView` — Flat chronological list with bottom bar audio player

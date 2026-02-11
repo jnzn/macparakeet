@@ -104,6 +104,29 @@ All communication uses JSON-RPC 2.0 over stdin/stdout. One request at a time (no
 
 **Note:** Word timestamps are in milliseconds (matching Oatmeal's convention). The daemon extracts these from parakeet-mlx's `AlignedResult.sentences[].tokens[]` objects, aggregating BPE tokens into words at space boundaries.
 
+### Warm-Up Request
+
+Warm-up is used during onboarding to ensure the daemon is running and the model is loaded (so the first real dictation/transcription isn't the one that pays the download cost).
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "warm_up",
+  "params": {},
+  "id": 2
+}
+```
+
+### Warm-Up Response
+
+```json
+{
+  "jsonrpc": "2.0",
+  "result": { "status": "ok" },
+  "id": 2
+}
+```
+
 ### Error Response
 
 ```json
@@ -185,6 +208,7 @@ This is a one-time cost. Subsequent launches skip directly to daemon start.
 - Transcription requests have a timeout proportional to audio duration
 - Short dictations: 30-second timeout
 - Long files: duration x 0.5 timeout (since model runs at 300x+ realtime, this is generous)
+- Warm-up requests allow a longer timeout (first-run downloads can take several minutes)
 - On timeout: kill daemon, report error, auto-restart on next request
 
 ### Out of Memory
