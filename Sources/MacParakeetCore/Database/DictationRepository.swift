@@ -54,27 +54,27 @@ public final class DictationRepository: DictationRepositoryProtocol {
 
     public func search(query: String, limit: Int? = nil) throws -> [Dictation] {
         try dbQueue.read { db in
-            let pattern = FTS5Pattern(matchingAnyTokenIn: query)
-            guard let pattern else { return [] }
+            let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return [] }
 
+            // Use LIKE for substring matching (users expect "keet" to find "MacParakeet")
+            let likePattern = "%\(trimmed)%"
             let sql: String
             if let limit {
                 sql = """
-                    SELECT dictations.* FROM dictations
-                    JOIN dictations_fts ON dictations_fts.rowid = dictations.rowid
-                    WHERE dictations_fts MATCH ?
-                    ORDER BY dictations.createdAt DESC
+                    SELECT * FROM dictations
+                    WHERE rawTranscript LIKE ? OR cleanTranscript LIKE ?
+                    ORDER BY createdAt DESC
                     LIMIT ?
                 """
-                return try Dictation.fetchAll(db, sql: sql, arguments: [pattern.rawPattern, limit])
+                return try Dictation.fetchAll(db, sql: sql, arguments: [likePattern, likePattern, limit])
             } else {
                 sql = """
-                    SELECT dictations.* FROM dictations
-                    JOIN dictations_fts ON dictations_fts.rowid = dictations.rowid
-                    WHERE dictations_fts MATCH ?
-                    ORDER BY dictations.createdAt DESC
+                    SELECT * FROM dictations
+                    WHERE rawTranscript LIKE ? OR cleanTranscript LIKE ?
+                    ORDER BY createdAt DESC
                 """
-                return try Dictation.fetchAll(db, sql: sql, arguments: [pattern.rawPattern])
+                return try Dictation.fetchAll(db, sql: sql, arguments: [likePattern, likePattern])
             }
         }
     }

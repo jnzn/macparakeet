@@ -72,6 +72,7 @@ struct DictationHistoryView: View {
                     ForEach(Array(dictations.enumerated()), id: \.element.id) { index, dictation in
                         DictationRowView(
                             dictation: dictation,
+                            searchText: viewModel.searchText,
                             isPlayingThis: viewModel.playingDictationId == dictation.id && viewModel.isPlaying,
                             onTogglePlayback: { viewModel.togglePlayback(for: dictation) },
                             onCopy: { viewModel.copyToClipboard(dictation) },
@@ -91,6 +92,7 @@ struct DictationHistoryView: View {
             }
             .padding(.bottom, DesignSystem.Spacing.sm)
         }
+        .textSelection(.enabled)
     }
 
     // MARK: - Bottom Bar Player
@@ -165,6 +167,7 @@ struct DictationHistoryView: View {
 
 struct DictationRowView: View {
     let dictation: Dictation
+    var searchText: String = ""
     var isPlayingThis: Bool = false
     var onTogglePlayback: (() -> Void)?
     var onCopy: () -> Void
@@ -187,8 +190,8 @@ struct DictationRowView: View {
             }
             .frame(width: 56, alignment: .trailing)
 
-            // Transcript text — full, no line limit
-            Text(dictation.cleanTranscript ?? dictation.rawTranscript)
+            // Transcript text — full, no line limit, with search highlight
+            Text(highlightedTranscript)
                 .font(.body)
                 .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -276,6 +279,28 @@ struct DictationRowView: View {
             Button("Delete", role: .destructive) { onDelete() }
                 .keyboardShortcut(.delete, modifiers: .command)
         }
+    }
+
+    private var highlightedTranscript: AttributedString {
+        let text = dictation.cleanTranscript ?? dictation.rawTranscript
+        var attributed = AttributedString(text)
+
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return attributed }
+
+        var searchStart = attributed.startIndex
+        while searchStart < attributed.endIndex {
+            guard let range = attributed[searchStart...].range(
+                of: query,
+                options: .caseInsensitive
+            ) else { break }
+
+            attributed[range].backgroundColor = Color.yellow.opacity(0.3)
+            attributed[range].foregroundColor = .white
+            searchStart = range.upperBound
+        }
+
+        return attributed
     }
 
     private func formatTime(_ date: Date) -> String {
