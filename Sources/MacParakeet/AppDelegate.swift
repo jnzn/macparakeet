@@ -343,7 +343,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         hideIdlePill()
 
-        recordingTask?.cancel()
+        // Cancel old recording task and immediately clean up any overlay it created.
+        // Without this, a rapid double-call to startDictation (before the first task
+        // reaches its isCancelled guard) leaves an orphaned panel on screen.
+        if recordingTask != nil {
+            recordingTask?.cancel()
+            recordingTask = nil
+            overlayController?.hide()
+            overlayController = nil
+            overlayViewModel = nil
+        }
+
         recordingTask = Task {
             do {
                 // Avoid showing the overlay if the user isn't entitled (trial expired).
@@ -517,12 +527,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             // enum) to avoid SwiftUI view reconstruction that fights the ring animation.
             for i in stride(from: 4.0, through: 0, by: -1) {
                 try? await Task.sleep(for: .seconds(1))
-                guard !Task.isCancelled else { return }
+                if Task.isCancelled {
+                    // Callers (confirm/undo) handle their own cleanup, but guarantee
+                    // the hotkey is never left stuck in cancelWindow.
+                    await MainActor.run { self.hotkeyManager?.resetToIdle() }
+                    return
+                }
                 await MainActor.run { vm.cancelTimeRemaining = i }
             }
 
             // Countdown expired — discard and return to idle UI.
-            guard !Task.isCancelled else { return }
             await env.dictationService.confirmCancel()
             await MainActor.run {
                 self.hotkeyManager?.resetToIdle()
@@ -586,6 +600,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func dismissOverlay() {
         recordingTask?.cancel()
         recordingTask = nil
+        cancelTask?.cancel()
+        cancelTask = nil
         hotkeyManager?.resetToIdle()
         overlayController?.hide()
         overlayController = nil
