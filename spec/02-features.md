@@ -31,7 +31,7 @@ See [00-vision.md](./00-vision.md) for positioning and market context.
 │  "Clean text automatically, refine with AI when needed"         │
 ├─────────────────────────────────────────────────────────────────┤
 │  • Clean text pipeline (deterministic: fillers, words, snippets) │
-│  • AI text refinement (Qwen3-4B: formal, email, code modes)    │
+│  • AI text refinement (Qwen3-8B: formal, email, code modes)    │
 │  • Custom words & snippets management UI                        │
 │  • Personal dictionary (auto-learns vocabulary)                 │
 └─────────────────────────────────────────────────────────────────┘
@@ -747,7 +747,7 @@ CREATE TABLE text_snippets (
 
 ### F8: AI Text Refinement
 
-**What:** LLM-powered text transformation for cases where deterministic cleanup is not enough. Uses Qwen3-4B via MLX-Swift, running entirely on-device.
+**What:** LLM-powered text transformation for cases where deterministic cleanup is not enough. Uses Qwen3-8B via MLX-Swift, running entirely on-device.
 
 **Context modes:**
 
@@ -762,7 +762,7 @@ CREATE TABLE text_snippets (
 Modes stack: Formal/Email/Code always run the clean pipeline first, then apply LLM refinement on top.
 
 **LLM details:**
-- Model: Qwen3-4B (4-bit quantized, `mlx-community/Qwen3-4B-4bit`)
+- Model: Qwen3-8B (4-bit quantized, `mlx-community/Qwen3-8B-4bit`)
 - Framework: MLX-Swift (Apple Silicon optimized)
 - Non-thinking mode for all refinement (fast, `temp=0.7, topP=0.8`)
 - System prompts per mode:
@@ -893,7 +893,7 @@ Modes stack: Formal/Email/Code always run the clean pipeline first, then apply L
 ├─────────────────────────────────────────────────────────────────┤
 │ 4. Processing                                                    │
 │    - Command transcribed via Parakeet                            │
-│    - Selected text + command sent to Qwen3-4B                    │
+│    - Selected text + command sent to Qwen3-8B                    │
 │    - LLM edits text according to command                         │
 ├─────────────────────────────────────────────────────────────────┤
 │ 5. Result                                                        │
@@ -928,7 +928,7 @@ Users can define and save custom command templates for repeated use.
 **Technical implementation:**
 - Read selected text via Accessibility API (`AXUIElement`)
 - Transcribe spoken command via Parakeet
-- Send `(selected_text, command)` to Qwen3-4B with system prompt: "Apply the user's command to the provided text. Return only the edited text, no explanation."
+- Send `(selected_text, command)` to Qwen3-8B with system prompt: "Apply the user's command to the provided text. Return only the edited text, no explanation."
 - Replace selected text by simulating Cmd+V with the result (same paste mechanism as dictation)
 - Thinking mode for command interpretation (`temp=0.6, topP=0.95`) to ensure accurate command understanding
 
@@ -1264,7 +1264,7 @@ new scheduling architecture.
 Share transcripts between Mac and iPhone. Capture in-person conversations on iPhone.
 
 ### F18: Translation
-Translate transcribed text to other languages using Qwen3-4B. Activated as a command mode command or processing mode.
+Translate transcribed text to other languages using Qwen3-8B. Activated as a command mode command or processing mode.
 
 ### F19: API / Shortcuts Integration
 Expose transcription as a macOS Shortcut action. Enable automation: "When I receive a voice memo, transcribe it."
@@ -1279,7 +1279,7 @@ Deep integration with code editors:
 - **Terminal:** Voice commands for git, build, test
 
 ### F22: Context Awareness
-Read surrounding text from the active app via macOS Accessibility APIs (AXUIElement) to produce better transcriptions. Knows "React" in a code editor, "react" in a therapy note. All processing local via Qwen3-4B -- no screen content ever leaves device.
+Read surrounding text from the active app via macOS Accessibility APIs (AXUIElement) to produce better transcriptions. Knows "React" in a code editor, "react" in a therapy note. All processing local via Qwen3-8B -- no screen content ever leaves device.
 
 ---
 
@@ -1290,7 +1290,7 @@ Read surrounding text from the active app via macOS Accessibility APIs (AXUIElem
 | Transcription speed | 155x realtime | Parakeet TDT on Apple Silicon (ANE via FluidAudio CoreML) |
 | Dictation latency | <500ms end-to-end | From Fn release to text appearing |
 | Clean pipeline | <1ms | Deterministic, no LLM |
-| LLM refinement | <5s | Qwen3-4B for formal/email/code modes |
+| LLM refinement | <5s | Qwen3-8B for formal/email/code modes |
 | Memory usage (idle) | <200MB | Menu bar + STT model standing by |
 | Memory usage (active) | <3GB | During transcription with both models loaded |
 | App size | <100MB | Plus ~6 GB STT model download on first run |
@@ -1315,7 +1315,7 @@ MacParakeet's brand is privacy. These are non-negotiable.
 
 **What "100% local" means:**
 - Parakeet STT runs on Apple Silicon Neural Engine (ANE) via FluidAudio CoreML -- no cloud API
-- Qwen3-4B LLM runs on Apple Silicon GPU via MLX-Swift/Metal -- no OpenAI, no Anthropic
+- Qwen3-8B LLM runs on Apple Silicon GPU via MLX-Swift/Metal -- no OpenAI, no Anthropic
 - Audio never leaves the device
 - Transcripts never leave the device
 - No "phone home" on launch, no update checks to our servers (App Store handles updates)
@@ -1421,7 +1421,7 @@ v0.4 Polish & Launch:
 Cross-cutting dependency:
 
       Parakeet STT ──► F1, F2, F10, F11, F13, F14, F15
-      Qwen3-4B LLM ──► F8, F10
+      Qwen3-8B LLM ──► F8, F10
       Accessibility ──► F1 (hotkey + paste), F10 (text selection)
       FFmpeg ──────────► F2, F11, F14
       yt-dlp ──────────► F11

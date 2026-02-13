@@ -206,7 +206,7 @@ WisprFlow charges $144-180/year. After 3-4 months of MacParakeet, you have saved
 ```
 
 - Voice commands that edit, rewrite, or transform selected text.
-- Powered by a local LLM (Qwen3-4B via MLX). No cloud.
+- Powered by a local LLM (Qwen3-8B via MLX). No cloud.
 - Works on any selected text in any application.
 - WisprFlow charges $12-15/mo for this. We do it locally for $0/mo after purchase.
 
@@ -319,9 +319,9 @@ In a market of subscriptions ($144-180/yr for WisprFlow) and premium pricing ($2
 
 ### 4. Local Command Mode
 
-WisprFlow's most compelling feature is voice commands: "fix the grammar," "make this shorter," "rewrite as bullets." They do it with cloud AI. We do it with a local LLM (Qwen3-4B via MLX-Swift).
+WisprFlow's most compelling feature is voice commands: "fix the grammar," "make this shorter," "rewrite as bullets." They do it with cloud AI. We do it with a local LLM (Qwen3-8B via MLX-Swift).
 
-This means command mode works offline, has no per-use cost, and keeps your text private. The quality of Qwen3-4B for text editing tasks is more than sufficient for the command set users actually need.
+This means command mode works offline, has no per-use cost, and keeps your text private. The quality of Qwen3-8B for text editing tasks is more than sufficient for the command set users actually need.
 
 ### 5. Focused Simplicity
 
@@ -458,7 +458,7 @@ The foundation. Dictation works. File transcription works. It is fast.
 Clean pipeline and AI refinement make dictation output polish-ready.
 
 - Clean text pipeline (deterministic: filler removal, custom words, snippets)
-- AI text refinement (Qwen3-4B: formal, email, code modes)
+- AI text refinement (Qwen3-8B: formal, email, code modes)
 - Custom words & snippets management UI
 - Personal dictionary (auto-learns vocabulary)
 
@@ -489,7 +489,7 @@ Ship-quality polish. App Store submission.
 |----------|--------|-----------|
 | **Platform** | macOS 14.2+, Apple Silicon only | Parakeet and MLX require Metal. Apple Silicon is the future. |
 | **STT engine** | Parakeet TDT 0.6B-v3 | Fastest and most accurate open-source STT. 155x realtime on ANE, ~2.5% WER via FluidAudio CoreML. |
-| **LLM** | Qwen3-4B via MLX-Swift | Best quality-to-size ratio for local inference. Dual-mode (thinking/non-thinking). |
+| **LLM** | Qwen3-8B via MLX-Swift | Best quality-to-size ratio for local inference. Dual-mode (thinking/non-thinking). |
 | **YouTube downloads** | Standalone yt-dlp | macOS binary, auto-updates via `--update`. No Python needed. |
 | **UI framework** | SwiftUI | Native Mac experience. Menu bar + window. |
 | **Database** | SQLite (GRDB) | Single file. No server. Dictation history, custom words, settings. |

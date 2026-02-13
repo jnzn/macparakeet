@@ -21,7 +21,7 @@ This applies to:
 
 - **STT**: Parakeet TDT 0.6B-v3 runs locally via FluidAudio CoreML on ANE (ADR-001, ADR-007)
 - **Text processing**: Deterministic pipeline runs locally (ADR-004)
-- **LLM features**: Qwen3-4B runs locally via MLX-Swift for command mode and advanced text modes
+- **LLM features**: Qwen3-8B runs locally via MLX-Swift for command mode and advanced text modes
 - **Updates**: Standard macOS app update mechanisms (Sparkle or App Store)
 - **Analytics**: None. No telemetry, no crash reporting, no usage tracking.
 
@@ -35,7 +35,7 @@ This applies to:
 
 A cloud LLM (GPT-4, Claude) would produce better results for command mode and advanced text refinement. However:
 
-- Local LLM (Qwen3-4B) produces **acceptable** results for the use cases that matter (reformatting, expanding abbreviations, command interpretation).
+- Local LLM (Qwen3-8B) produces **acceptable** results for the use cases that matter (reformatting, expanding abbreviations, command interpretation).
 - Local processing is **consistently fast** -- no variance based on server load, network, or time of day.
 - Users can always re-dictate or manually edit. The cost of a slightly less polished LLM output is low; the cost of a 20-second delay or privacy breach is high.
 
@@ -63,8 +63,8 @@ Cloud processing requires ongoing server costs, which necessitates subscription 
 
 ### Negative
 
-- **LLM quality ceiling**: Qwen3-4B (4-bit quantized, local) is significantly less capable than GPT-4 or Claude for complex text transformation. Command mode and formal rewriting will be "good enough" rather than "excellent."
-- **No internet required, but model download is**: First launch requires downloading Parakeet (~6 GB CoreML bundle) and Qwen3 (~2.5 GB) models. After that, fully offline.
+- **LLM quality ceiling**: Qwen3-8B (4-bit quantized, local) is less capable than GPT-4 or Claude for complex text transformation. Command mode and formal rewriting will be "good enough" rather than "excellent."
+- **No internet required, but model download is**: First launch requires downloading Parakeet (~6 GB CoreML bundle) and Qwen3 (~5 GB) models. After that, fully offline.
 - **No cloud backup or sync**: User data stays on-device. If the Mac is lost, dictation history is lost. This is intentional -- users who want cloud backup can use macOS iCloud or Time Machine.
 - **No collaborative features**: Real-time sharing, team vocabularies, or cross-device sync would require cloud infrastructure. These are out of scope.
 

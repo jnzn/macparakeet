@@ -27,7 +27,7 @@ Each ML workload runs on the chip it was designed for:
 
 ```
 CPU:  MacParakeet app (UI, hotkeys, clipboard, history)
-GPU:  Qwen3-4B LLM (via MLX-Swift/Metal) — full GPU, no sharing
+GPU:  Qwen3-8B LLM (via MLX-Swift/Metal) — full GPU, no sharing
 ANE:  Parakeet STT (via FluidAudio/CoreML) — dedicated ML accelerator
 ```
 
@@ -242,12 +242,12 @@ For dictation (the primary use case), transcription time is imperceptible. For l
 
 ```
 Parakeet STT (CoreML/ANE)      ~66 MB working RAM (~130 MB with vocab boosting)
-Qwen3-4B LLM (MLX-Swift/GPU)  ~2.5 GB
+Qwen3-8B LLM (MLX-Swift/GPU)  ~5 GB
 App process (UI + services)    ~100 MB
 Audio buffers                  ~50 MB
 ────────────────────────────────────
-Total peak                     ~2.8 GB (without LLM) / ~2.9 GB (with vocab boosting)
-                               ~5.3 GB (with LLM loaded)
+Total peak                     ~5.3 GB (without vocab boosting)
+                               ~5.4 GB (with vocab boosting)
 
 Recommended: 16 GB RAM (Apple Silicon)
 Minimum: 8 GB (runs comfortably — STT uses only ~66 MB, not ~2 GB+)

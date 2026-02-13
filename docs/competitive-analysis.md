@@ -273,9 +273,9 @@ MacParakeet's opportunity is to be the first app that nails all four. WisprFlow 
 
 ### Intentional Gaps
 
-**Course correction** (WisprFlow): "Let's meet at 2... actually 3" → "Let's meet at 3". Deferred — requires multi-turn LLM conversation tracking, adds significant complexity for a niche use case. Qwen3-4B can't reliably handle this in a single pass. May revisit post-launch if user demand warrants it.
+**Course correction** (WisprFlow): "Let's meet at 2... actually 3" → "Let's meet at 3". Deferred — requires multi-turn LLM conversation tracking, adds significant complexity for a niche use case. Qwen3-8B can't reliably handle this in a single pass. May revisit post-launch if user demand warrants it.
 
-**Context awareness** (WisprFlow): Reading the active app window to inform AI output. Aspirational future feature — local implementation via Accessibility APIs + Qwen3-4B is possible but unscheduled. No version commitment.
+**Context awareness** (WisprFlow): Reading the active app window to inform AI output. Aspirational future feature — local implementation via Accessibility APIs + Qwen3-8B is possible but unscheduled. No version commitment.
 
 ---
 

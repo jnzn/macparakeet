@@ -52,8 +52,9 @@ Drag any audio or video file → get a transcript in seconds.
 
 ### Planned
 
-- **AI Refinement** — Qwen3-4B for formal, email, and code modes
+- **AI Refinement** — Qwen3-8B for formal, email, and code modes
 - **Command Mode** — Local LLM edits for command-mode workflows
+- **Chat with Transcript** — Ask questions about your transcriptions via local LLM
 - **More Exports** — DOCX and other formats
 
 ## Requirements
@@ -69,7 +70,7 @@ Download from [macparakeet.com](https://macparakeet.com)
 ## Tech Stack
 
 - **STT Engine**: Parakeet TDT 0.6B-v3 via FluidAudio CoreML (Neural Engine)
-- **LLM**: Qwen3-4B via MLX-Swift (local, for command mode)
+- **LLM**: Qwen3-8B via MLX-Swift (local, for command mode + chat)
 - **Framework**: Swift + SwiftUI
 - **Database**: SQLite via GRDB
 - **Platform**: macOS 14.2+ (Apple Silicon)
