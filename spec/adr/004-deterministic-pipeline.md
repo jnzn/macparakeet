@@ -15,7 +15,7 @@ Raw STT output -- even from a high-quality model like Parakeet TDT 0.6B-v3 -- be
 
 Two approaches exist for this cleanup:
 
-1. **LLM-based refinement**: Pass raw text through a language model (local Qwen3-4B or cloud GPT-4) to clean, reformat, and improve it.
+1. **LLM-based refinement**: Pass raw text through a language model (local Qwen3-8B or cloud GPT-4) to clean, reformat, and improve it.
 2. **Deterministic pipeline**: Apply rule-based transformations in a fixed order -- filler removal, casing fixes, custom word corrections, snippet expansion.
 
 ## Decision
@@ -37,10 +37,10 @@ Use a **deterministic 4-step pipeline** for the default "clean" processing mode.
 |------|----------|-----|---------|----------|
 | Raw | None | No | 0ms | Verbatim transcription |
 | **Clean (default)** | **4-step** | **No** | **<5ms** | **General dictation** |
-| Formal | 4-step | Yes (Qwen3-4B) | 2-5s | Professional writing |
-| Email | 4-step | Yes (Qwen3-4B) | 2-5s | Email composition |
-| Code | 4-step | Yes (Qwen3-4B) | 2-5s | Code dictation |
-| Command | None | Yes (Qwen3-4B) | 2-5s | System commands, app control |
+| Formal | 4-step | Yes (Qwen3-8B) | 2-5s | Professional writing |
+| Email | 4-step | Yes (Qwen3-8B) | 2-5s | Email composition |
+| Code | 4-step | Yes (Qwen3-8B) | 2-5s | Code dictation |
+| Command | None | Yes (Qwen3-8B) | 2-5s | System commands, app control |
 
 ## Rationale
 
@@ -50,7 +50,7 @@ Unlike older Whisper models, Parakeet TDT 0.6B-v3 outputs well-punctuated, well-
 
 ### Local LLM is unreliable for simple cleanup
 
-Testing with Qwen3-4B (4-bit quantized) for basic text cleanup revealed:
+Testing with Qwen3-8B (4-bit quantized) for basic text cleanup revealed:
 
 - **Meaning changes**: The model sometimes rephrases or paraphrases, altering the user's intended words. For dictation, fidelity to the speaker's actual words is paramount.
 - **Inconsistency**: The same input can produce different outputs across runs. Users expect deterministic behavior from a "clean" mode.

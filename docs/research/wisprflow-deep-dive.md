@@ -165,7 +165,7 @@ WisprFlow sends all audio to cloud servers for transcription. Context awareness 
 - **Privacy risk**: Every word spoken + screen content transmitted to third party. Unacceptable for legal, medical, financial, classified, or any sensitive context.
 - **Latency**: Server round-trip adds 2-5 seconds minimum, 20-30 seconds during peak. Local Parakeet on Apple Silicon is faster than the network round-trip.
 
-**MacParakeet advantage:** 100% local. Parakeet runs on-device. Qwen3-4B runs on-device. Zero network latency. Zero privacy risk.
+**MacParakeet advantage:** 100% local. Parakeet runs on-device. Qwen3-8B runs on-device. Zero network latency. Zero privacy risk.
 
 ### 2. $144-180/Year Subscription
 
@@ -189,7 +189,7 @@ Some users want voice-to-text but cannot or will not send audio to the cloud. Wi
 
 WisprFlow's context awareness reads screen content via accessibility APIs and sends it to cloud servers. Users who need context-aware dictation but can't share screen data have no option.
 
-**MacParakeet advantage:** Context awareness via local Qwen3-4B -- read screen context locally, process locally, never transmit. Same feature, zero privacy risk. (Future)
+**MacParakeet advantage:** Context awareness via local Qwen3-8B -- read screen context locally, process locally, never transmit. Same feature, zero privacy risk. (Future)
 
 ## Feature Parity Matrix
 
@@ -200,13 +200,13 @@ What MacParakeet needs to match or beat WisprFlow:
 | Push-to-talk (hold Fn) | Yes | v0.1 | Yes |
 | Double-tap persistent mode | Yes | v0.1 | Yes |
 | AI filler removal | Yes (cloud LLM) | v0.2 (deterministic pipeline) | Yes |
-| Grammar/punctuation | Yes (cloud LLM) | v0.2 (pipeline + Qwen3) | Yes |
+| Grammar/punctuation | Yes (cloud LLM) | v0.2 (pipeline + Qwen3-8B) | Yes |
 | Course correction | Yes (cloud LLM) | Not planned | -- |
-| Command Mode | Yes (cloud, Pro) | v0.3 (Qwen3-4B) | Yes |
+| Command Mode | Yes (cloud, Pro) | v0.3 (Qwen3-8B) | Yes |
 | Styles / context modes | Yes (cloud, English only) | v0.2 (raw, clean, formal, email, code) | Yes |
 | Personal dictionary | Yes (auto-learn) | v0.2 (custom words) | Yes |
 | Voice shortcuts | Yes | v0.2 (text snippets) | Yes |
-| Context awareness | Yes (cloud, screen reading) | Future (local Qwen3-4B + accessibility) | Yes |
+| Context awareness | Yes (cloud, screen reading) | Future (local Qwen3-8B + accessibility) | Yes |
 | File transcription | No | v0.1 | Yes |
 | 104+ languages | Yes | English-first (Parakeet v3: 25 European) | Yes |
 | Whisper mode | Yes | Not planned (niche) | -- |
@@ -220,7 +220,7 @@ What MacParakeet needs to match or beat WisprFlow:
 
 **WisprFlow, but local.**
 
-Take every feature that makes WisprFlow compelling -- push-to-talk, AI refinement, Command Mode, personal dictionary, context awareness -- and run it entirely on-device using Parakeet (155x realtime STT via FluidAudio CoreML on ANE) and Qwen3-4B (local LLM on GPU via MLX-Swift).
+Take every feature that makes WisprFlow compelling -- push-to-talk, AI refinement, Command Mode, personal dictionary, context awareness -- and run it entirely on-device using Parakeet (155x realtime STT via FluidAudio CoreML on ANE) and Qwen3-8B (local LLM on GPU via MLX-Swift).
 
 Then go further:
 - **File transcription** (WisprFlow is dictation-only, no file import)
@@ -229,7 +229,7 @@ Then go further:
 - **Reliable** = no cloud outages, no "works 60% of the time"
 - **Context awareness without cloud** = same feature, zero privacy risk
 
-Command Mode via local Qwen3-4B is the key Pro feature. WisprFlow proves the demand. MacParakeet delivers it without the cloud.
+Command Mode via local Qwen3-8B is the key Pro feature. WisprFlow proves the demand. MacParakeet delivers it without the cloud.
 
 ## Technical Notes for MacParakeet Implementation
 
@@ -238,10 +238,10 @@ Command Mode via local Qwen3-4B is the key Pro feature. WisprFlow proves the dem
 | WisprFlow Feature | MacParakeet Local Implementation |
 |-------------------|--------------------------------|
 | Cloud STT | Parakeet TDT 0.6B-v3 via FluidAudio CoreML/ANE (155x faster) |
-| Cloud LLM refinement | Qwen3-4B via MLX-Swift (on-device, ~2s cold start) |
-| Context awareness | macOS Accessibility API (AXUIElement) + local Qwen3 |
-| Auto-edit (filler/grammar) | Deterministic pipeline + Qwen3-4B |
-| Command Mode | Selected text + voice command -> Qwen3-4B -> replace |
+| Cloud LLM refinement | Qwen3-8B via MLX-Swift (on-device, ~2s cold start) |
+| Context awareness | macOS Accessibility API (AXUIElement) + local Qwen3-8B |
+| Auto-edit (filler/grammar) | Deterministic pipeline + Qwen3-8B |
+| Command Mode | Selected text + voice command -> Qwen3-8B -> replace |
 | Personal dictionary | SQLite custom_words table + pipeline lookup |
 | Voice shortcuts | SQLite text_snippets table + trigger detection |
 

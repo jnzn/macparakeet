@@ -38,6 +38,14 @@ swift run macparakeet-cli transcribe "<FILE_OR_YOUTUBE_URL>" \
   --downloaded-audio keep
 ```
 
+AI refinement mode (formal/email/code) with local Qwen3-8B:
+
+```bash
+swift run macparakeet-cli transcribe "<FILE_OR_YOUTUBE_URL>" \
+  --mode formal \
+  --downloaded-audio app-default
+```
+
 ## Entitlements/Trial Gating Parity
 
 Enable this only when validating license/trial behavior:
@@ -76,6 +84,15 @@ swift run macparakeet-cli history search "keyword" --limit 20
 swift run macparakeet-cli flow process "your text"
 swift run macparakeet-cli flow words list
 swift run macparakeet-cli flow snippets list
+```
+
+### Local LLM checks
+
+```bash
+swift run macparakeet-cli llm smoke-test --stats
+swift run macparakeet-cli llm generate "Summarize this paragraph in one sentence: ..."
+swift run macparakeet-cli llm refine formal "quick unpolished draft"
+swift run macparakeet-cli llm command "Translate to Spanish" "Hello, how are you?"
 ```
 
 ## Notes
