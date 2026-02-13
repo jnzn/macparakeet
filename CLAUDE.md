@@ -46,7 +46,7 @@ A **fast, private, local-first voice app** for macOS with two co-equal modes: sy
 | Database | SQLite | GRDB (single file, dictation history + transcriptions) |
 | STT | Parakeet TDT 0.6B-v3 | Via FluidAudio CoreML/ANE (~2.5% WER, 155x realtime) |
 | Audio | AVAudioEngine + Core Audio | Mic capture for dictation; FFmpeg (bundled) for video file conversion |
-| LLM | MLX-Swift | Qwen3-4B for command mode + AI refinement (GPU via Metal) |
+| LLM | MLX-Swift | Qwen3-8B for command mode, AI refinement, chat (GPU via Metal) |
 | YouTube | yt-dlp | Standalone macOS binary, weekly non-blocking auto-update via `--update` |
 | Licensing | LemonSqueezy | License key activation, validation API |
 
@@ -141,10 +141,11 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 - [x] Custom words & snippets management UI (Vocabulary sidebar item)
 - [x] CLI commands: `macparakeet-cli flow process/words/snippets`
 - [ ] Context modes (raw, clean, formal, email, code) -- raw + clean done, AI modes pending
-- [ ] AI text refinement via Qwen3-4B
+- [ ] AI text refinement via Qwen3-8B
 
-### v0.3 Command Mode + Export
+### v0.3 Command Mode + Chat + Export
 - [ ] Command Mode (highlight text + voice command -> LLM edits in-place, like WisprFlow Pro)
+- [ ] Chat with transcript (ask questions about YouTube/file transcriptions via Qwen3-8B)
 - [x] YouTube URL transcription (yt-dlp + Parakeet, single video)
 - [x] Export formats (TXT, Markdown, SRT, VTT)
 - [ ] Export formats (DOCX, PDF, JSON)
@@ -189,7 +190,7 @@ let result = try await manager.transcribe(audioSamples, source: .system)
 **Three-chip architecture:**
 ```
 CPU:  MacParakeet app (UI, hotkeys, clipboard, history)
-GPU:  Qwen3-4B LLM (via MLX-Swift/Metal) — full GPU, no sharing
+GPU:  Qwen3-8B LLM (via MLX-Swift/Metal) — full GPU, no sharing
 ANE:  Parakeet STT (via FluidAudio/CoreML) — dedicated ML chip
 ```
 
@@ -205,14 +206,16 @@ ANE:  Parakeet STT (via FluidAudio/CoreML) — dedicated ML chip
 
 | Model | HuggingFace ID |
 |-------|----------------|
-| Qwen3-4B | `mlx-community/Qwen3-4B-4bit` |
+| Qwen3-8B | `mlx-community/Qwen3-8B-4bit` |
+
+One model handles text refinement, command mode, and chat with transcript. 128K context window supports full-length transcripts. ~5 GB GPU RAM at 4-bit quantization.
 
 **Dual-mode operation** (same model, different settings):
 
 | Mode | Use Case | Settings |
 |------|----------|----------|
 | Non-thinking | Text cleanup, formatting | `temp=0.7, topP=0.8` |
-| Thinking | Command mode, complex edits | `temp=0.6, topP=0.95` |
+| Thinking | Command mode, chat, complex edits | `temp=0.6, topP=0.95` |
 
 ### Audio Capture
 

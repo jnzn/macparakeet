@@ -23,11 +23,11 @@ Today, MacParakeet uses **two of three chips**:
 
 ```
 CPU: [App logic, UI, hotkeys, clipboard]
-GPU: [Parakeet STT] + [Qwen3-4B LLM]   ← two ML workloads sharing one chip
+GPU: [Parakeet STT] + [Qwen3-8B LLM]   ← two ML workloads sharing one chip
 ANE: [idle]                               ← dedicated ML chip sitting unused
 ```
 
-Both Parakeet (STT) and Qwen3-4B (LLM) run on the GPU via Metal/MLX. They share the GPU memory pool. On 8GB Macs (base M1/M2/M3/M4), this creates real memory pressure — the Qwen3-4B model alone occupies ~2.5-4GB.
+Both Parakeet (STT) and Qwen3-8B (LLM) run on the GPU via Metal/MLX. They share the GPU memory pool. On 8GB Macs (base M1/M2/M3/M4), this creates real memory pressure — the Qwen3-8B model alone occupies ~5 GB.
 
 **The ANE exists specifically for neural network inference, and we're not using it.**
 
@@ -122,14 +122,14 @@ With FluidAudio CoreML, each ML workload runs on the chip it was designed for:
 
 ```
 CPU: [App logic, UI, hotkeys, clipboard]
-GPU: [Qwen3-4B LLM]                      ← full GPU dedicated to text refinement
+GPU: [Qwen3-8B LLM]                      ← full GPU dedicated to text refinement
 ANE: [Parakeet STT]                       ← dedicated ML chip, finally used
 ```
 
 The dictation-to-refinement pipeline becomes:
 
 ```
-Audio → [Parakeet on ANE] → raw text → [Qwen3-4B on GPU] → refined text
+Audio → [Parakeet on ANE] → raw text → [Qwen3-8B on GPU] → refined text
 ```
 
 **What this means in practice:**
@@ -138,7 +138,7 @@ Audio → [Parakeet on ANE] → raw text → [Qwen3-4B on GPU] → refined text
 - **Better memory efficiency** — FluidAudio benchmarks show ~66 MB peak working RAM for the TDT encoder (~130 MB with vocabulary boosting), dramatically lower than the ~2GB+ MLX/GPU footprint. Total memory including memory-mapped model files is higher but still an improvement. On 8GB Macs, this matters.
 - **Better accuracy** — FluidAudio's CoreML path achieves 2.1-2.5% WER vs our current ~6.3% on MLX. Same Parakeet model weights, but FluidAudio's optimized decoding produces measurably better results.
 - **Lower power** — The ANE is purpose-built for inference and is significantly more power-efficient than running the same workload on the GPU.
-- **Scales with features** — As we add command mode, more AI refinement modes, and heavier Qwen3-4B usage, the GPU isn't also carrying STT. This separation becomes more valuable over time, not less.
+- **Scales with features** — As we add command mode, more AI refinement modes, and heavier Qwen3-8B usage, the GPU isn't also carrying STT. This separation becomes more valuable over time, not less.
 
 ### Unified Memory: The Shared Bottleneck
 
@@ -294,13 +294,13 @@ The CoreML model bundle for `parakeet-tdt-0.6b-v3-coreml` is **~6 GB** on Huggin
 
 ## Decision
 
-**Migrate from parakeet-mlx (Python) to FluidAudio CoreML (Swift). Do it now — before v0.2 AI refinement adds Qwen3-4B to the GPU.**
+**Migrate from parakeet-mlx (Python) to FluidAudio CoreML (Swift). Do it now — before v0.2 AI refinement adds Qwen3-8B to the GPU.**
 
 The CoreML/ANE path is the better architecture — three workloads on three chips instead of two workloads fighting over one, native Swift throughout, fewer moving parts, better accuracy. Use the silicon Apple put in the machine.
 
 ### Why now, not later
 
-- v0.2 is adding Qwen3-4B (LLM) to the GPU — the exact moment GPU contention becomes real
+- v0.2 is adding Qwen3-8B (LLM) to the GPU — the exact moment GPU contention becomes real
 - Migrating now means every feature built on top (AI refinement, command mode) starts on the correct architecture
 - The STT protocol abstraction (`STTClientProtocol`) makes the swap clean — consumers don't know the backend changed
 - Delaying means building more features on Python/MLX, then migrating them later — more work, more risk
@@ -363,7 +363,7 @@ After removing Python, FFmpeg is provided as a bundled app resource.
 
 - `STTClientProtocol` interface — consumers don't know or care about the backend
 - `STTResult` format — text + word timestamps + confidence scores
-- Qwen3-4B via MLX-Swift — the LLM path stays the same
+- Qwen3-8B via MLX-Swift — the LLM path stays the same
 - `AudioFileConverter` — still converts video files via FFmpeg (binary, not pip package)
 - `YouTubeDownloader` — still uses yt-dlp (standalone binary, not pip package)
 - All existing tests against the STT protocol — same contract, new implementation
@@ -382,9 +382,9 @@ After removing Python, FFmpeg is provided as a bundled app resource.
 | `imageio-ffmpeg` dependency | FFmpeg bundled directly |
 | `yt-dlp-ejs` dependency | Use system JS runtime or bundle QuickJS |
 
-### Additional opportunity: Qwen3-4B-Instruct-2507
+### Additional opportunity: Qwen3-8B as primary LLM
 
-While migrating the STT backend, also upgrade the LLM from `Qwen3-4B` to `Qwen3-4B-Instruct-2507`. The July 2025 update ranked #1 among all small language models for instruction following — directly relevant for our text refinement and command mode use cases. This is a model ID change, not an architecture change.
+While migrating the STT backend, the LLM is Qwen3-8B (`mlx-community/Qwen3-8B-4bit`). The 8B model is the most consistent across all benchmarks, handling text refinement, command mode, and chat-with-transcript features. ~5 GB RAM at 4-bit quantization. Monitor for a potential `Qwen3-8B-Instruct-2507` update that could further improve instruction following.
 
 ## Current STT Architecture (What We're Replacing)
 
@@ -451,4 +451,4 @@ YouTube:   yt-dlp (standalone) → .m4a → AudioFileConverter (FFmpeg binary) �
 - [Parakeet TDT v3 CoreML (HuggingFace)](https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml)
 - [VoiceInk GitHub](https://github.com/Beingpax/VoiceInk) — production app using FluidAudio
 - [mlx-swift-lm GitHub](https://github.com/ml-explore/mlx-swift-lm) — Qwen3 LLM runtime (unchanged)
-- [Qwen3-4B-Instruct-2507 (HuggingFace)](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507) — recommended LLM upgrade
+- [Qwen3-8B (HuggingFace)](https://huggingface.co/Qwen/Qwen3-8B) — primary LLM choice

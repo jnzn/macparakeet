@@ -92,7 +92,7 @@ At 0.6B parameters (quantized to ~600MB on disk, ~1.5GB downloaded with tokenize
 
 ### Why
 
-1. **Three-chip utilization** — Moving STT to the ANE frees the GPU entirely for the Qwen3-4B LLM. Zero compute contention.
+1. **Three-chip utilization** — Moving STT to the ANE frees the GPU entirely for the Qwen3-8B LLM. Zero compute contention.
 2. **Memory efficiency** — ~66 MB working RAM (vs ~2 GB+) makes 8GB Macs viable for both STT and LLM simultaneously.
 3. **Better accuracy** — FluidAudio's CoreML decoding achieves ~2.5% WER (vs ~6.3% on MLX). Same model weights, better decoding.
 4. **Eliminates Python** — No venv, no subprocess, no codesigning issues. Pure Swift. App Store compatible.

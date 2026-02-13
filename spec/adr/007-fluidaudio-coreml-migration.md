@@ -7,7 +7,7 @@
 
 MacParakeet v0.1 runs Parakeet TDT 0.6B-v3 via `parakeet-mlx`, a Python daemon communicating over JSON-RPC stdin/stdout. The Python environment is managed by `uv` (isolated venv, ~500 MB dependencies). This was the fastest path to ship Parakeet on Apple Silicon — ADR-001 chose the model, and parakeet-mlx was the only viable runtime at the time.
 
-Three problems have emerged as we prepare to add Qwen3-4B (LLM) in v0.2:
+Three problems have emerged as we prepare to add Qwen3-8B (LLM) in v0.2:
 
 ### 1. Wasted Silicon
 
@@ -15,11 +15,11 @@ Every Apple Silicon Mac has three compute units — CPU, GPU, and ANE (Neural En
 
 ```
 CPU: [App logic, UI, hotkeys, clipboard]
-GPU: [Parakeet STT] + [Qwen3-4B LLM]   ← two ML workloads sharing one chip
+GPU: [Parakeet STT] + [Qwen3-8B LLM]   ← two ML workloads sharing one chip
 ANE: [idle]                               ← dedicated ML chip sitting unused
 ```
 
-Both Parakeet (STT) and Qwen3-4B (LLM) run on the GPU via Metal/MLX. On 8 GB Macs, combined GPU memory pressure (~2 GB STT + ~2.5 GB LLM) makes simultaneous operation impractical. The ANE — purpose-built for neural inference — sits idle.
+Both Parakeet (STT) and Qwen3-8B (LLM) run on the GPU via Metal/MLX. On 8 GB Macs, combined GPU memory pressure (~2 GB STT + ~2.5 GB LLM) makes simultaneous operation impractical. The ANE — purpose-built for neural inference — sits idle.
 
 ### 2. Python Complexity
 
@@ -67,7 +67,7 @@ The model choice (Parakeet TDT 0.6B-v3) is unchanged. Only the runtime changes. 
 
 - `STTClientProtocol` interface — consumers don't know the backend changed
 - `STTResult` format — text + word timestamps + confidence scores
-- Qwen3-4B via MLX-Swift on GPU — LLM path unchanged
+- Qwen3-8B via MLX-Swift on GPU — LLM path unchanged
 - Deterministic text processing pipeline — unchanged
 - All UI, hotkeys, history, export — unchanged
 
@@ -79,7 +79,7 @@ The core argument. With FluidAudio, each ML workload runs on the chip it was des
 
 ```
 CPU: [App logic, UI, hotkeys, clipboard]
-GPU: [Qwen3-4B LLM]                      ← full GPU dedicated to text refinement
+GPU: [Qwen3-8B LLM]                      ← full GPU dedicated to text refinement
 ANE: [Parakeet STT]                       ← dedicated ML chip, finally used
 ```
 
@@ -91,7 +91,7 @@ FluidAudio uses ~66 MB working RAM (~130 MB with vocabulary boosting) vs ~2 GB+ 
 
 ```
 Before:  ~2 GB (STT) + ~2.5 GB (LLM) = ~4.5 GB on GPU alone
-After:   ~66 MB (STT on ANE) + ~2.5 GB (LLM on GPU) = ~2.6 GB across two chips
+After:   ~66 MB (STT on ANE) + ~5 GB (LLM on GPU) = ~5.1 GB across two chips
 ```
 
 ### Better Accuracy
@@ -112,7 +112,7 @@ Removing the Python subprocess is the only path to App Store distribution. This 
 
 ### Why Now
 
-v0.2 adds Qwen3-4B to the GPU — the exact moment GPU contention becomes real. Migrating now means every feature built on top (AI refinement, command mode) starts on the correct architecture. Delaying means building more features on Python/MLX, then migrating them later with more surface area and more risk.
+v0.2 adds Qwen3-8B to the GPU — the exact moment GPU contention becomes real. Migrating now means every feature built on top (AI refinement, command mode) starts on the correct architecture. Delaying means building more features on Python/MLX, then migrating them later with more surface area and more risk.
 
 ## Consequences
 
@@ -153,7 +153,7 @@ v0.2 adds Qwen3-4B to the GPU — the exact moment GPU contention becomes real. 
 
 ### Stay on parakeet-mlx (Python/MLX/GPU)
 
-Rejected. GPU contention with Qwen3-4B is the immediate problem with no solution — the ANE sits idle while two ML workloads share the GPU. The Python complexity and App Store incompatibility are secondary but reinforce the decision.
+Rejected. GPU contention with Qwen3-8B is the immediate problem with no solution — the ANE sits idle while two ML workloads share the GPU. The Python complexity and App Store incompatibility are secondary but reinforce the decision.
 
 ### whisper.cpp (C++ via Swift bridge)
 
@@ -161,7 +161,7 @@ Rejected. Whisper is slower (~15-30x realtime vs ~155x) and less accurate (~7-12
 
 ### MLX-Swift for Parakeet (keep GPU, eliminate Python)
 
-Partially addresses Python elimination but doesn't solve the core problem — STT would still run on the GPU, contending with Qwen3-4B. The ANE would remain idle. FluidAudio CoreML is strictly better: same model, better accuracy, lower memory, dedicated chip.
+Partially addresses Python elimination but doesn't solve the core problem — STT would still run on the GPU, contending with Qwen3-8B. The ANE would remain idle. FluidAudio CoreML is strictly better: same model, better accuracy, lower memory, dedicated chip.
 
 ### Hybrid: FluidAudio STT + keep Python for yt-dlp
 
