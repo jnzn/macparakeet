@@ -2,7 +2,16 @@ name: CI
 
 on:
   push:
+    paths-ignore:
+      - "docs/**"
+      - "spec/**"
+      - "**/*.md"
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "spec/**"
+      - "**/*.md"
+  workflow_dispatch:
 
 jobs:
   swift-test:
