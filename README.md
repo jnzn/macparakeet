@@ -43,6 +43,7 @@ Drag any audio or video file → get a transcript in seconds.
 - **System-Wide Dictation** — Configurable hotkey (Fn default), double-tap (persistent) + hold-to-talk
 - **File Transcription** — Drag-drop audio/video files, word timestamps
 - **Smart Cleanup** — Deterministic 4-step pipeline (filler removal, custom words, snippets, whitespace)
+- **AI Refinement Modes** — Formal, Email, and Code modes powered by local Qwen3-8B with deterministic fallback
 - **Custom Words** — Domain vocabulary corrections and proper noun casing
 - **Text Snippets** — Natural language triggers expand into longer text
 - **Export** — TXT, Markdown, SRT, and VTT exports + copy to clipboard
@@ -52,7 +53,6 @@ Drag any audio or video file → get a transcript in seconds.
 
 ### Planned
 
-- **AI Refinement** — Qwen3-8B for formal, email, and code modes
 - **Command Mode** — Local LLM edits for command-mode workflows
 - **Chat with Transcript** — Ask questions about your transcriptions via local LLM
 - **More Exports** — DOCX and other formats

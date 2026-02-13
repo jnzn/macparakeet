@@ -29,6 +29,7 @@ A **fast, private, local-first voice app** for macOS with two co-equal modes: sy
 | Error handling | `spec/08-error-handling.md` |
 | Testing strategy | `spec/09-testing.md` |
 | AI coding methodology | `spec/10-ai-coding-method.md` |
+| LLM integration | `spec/11-llm-integration.md` |
 | ADRs (locked decisions) | `spec/adr/` -> individual decision records |
 | Competitive research | `docs/competitive-analysis.md` |
 | Brand identity | `docs/brand-identity.md` |
@@ -117,6 +118,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 | ADR-005 | First-run onboarding flow | `spec/adr/005-onboarding-first-run.md` |
 | ADR-006 | Trial + license key activation | `spec/adr/006-trial-and-license-activation.md` |
 | ADR-007 | FluidAudio CoreML migration (Python elimination) | `spec/adr/007-fluidaudio-coreml-migration.md` |
+| ADR-008 | Local LLM runtime baseline (`mlx-swift-lm` + Qwen3-8B) | `spec/adr/008-local-llm-runtime-and-model.md` |
 
 ## Current Phase
 
@@ -140,8 +142,8 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 - [x] Clean text pipeline (filler removal, custom words, snippets) -- deterministic, no LLM
 - [x] Custom words & snippets management UI (Vocabulary sidebar item)
 - [x] CLI commands: `macparakeet-cli flow process/words/snippets` + `macparakeet-cli llm generate/refine/command/smoke-test`
-- [ ] Context modes (raw, clean, formal, email, code) -- raw + clean done, AI modes pending
-- [ ] AI text refinement via Qwen3-8B
+- [x] Context modes (raw, clean, formal, email, code)
+- [x] AI text refinement via Qwen3-8B with deterministic fallback
 
 ### v0.3 Command Mode + Chat + Export
 - [ ] Command Mode (highlight text + voice command -> LLM edits in-place, like WisprFlow Pro)

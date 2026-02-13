@@ -20,6 +20,7 @@
 | 08 | [Error Handling](08-error-handling.md) | Error philosophy, categories, recovery | Active |
 | 09 | [Testing](09-testing.md) | Testing strategy, patterns, guidelines | Active |
 | 10 | [AI Coding Method](10-ai-coding-method.md) | Spec-driven coding philosophy and kernel methodology | Active |
+| 11 | [LLM Integration](11-llm-integration.md) | Local LLM architecture, fallback policy, runtime baseline | Active |
 
 ## Root Decisions (Locked)
 
@@ -78,7 +79,7 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 ### v0.2 AI & Text Processing (In Progress)
 
 - [x] Clean text pipeline (deterministic: fillers, custom words, snippets)
-- [ ] AI text refinement (Qwen3-8B: formal, email, code modes)
+- [x] AI text refinement (Qwen3-8B: formal, email, code modes)
 - [x] Custom words & snippets management UI
 - [ ] Personal dictionary (auto-learns vocabulary)
 - [x] CLI commands (`macparakeet-cli flow process/words/snippets` + `macparakeet-cli llm generate/refine/command/smoke-test`)

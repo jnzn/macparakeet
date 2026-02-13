@@ -31,6 +31,7 @@ public actor DictationService: DictationServiceProtocol {
     private let customWordRepo: CustomWordRepositoryProtocol?
     private let snippetRepo: TextSnippetRepositoryProtocol?
     private let processingMode: @Sendable () -> Dictation.ProcessingMode
+    private let textRefinementService: TextRefinementService
     private let cancelWindow: Duration
 
     private var _state: DictationState = .idle
@@ -55,7 +56,9 @@ public actor DictationService: DictationServiceProtocol {
         entitlements: EntitlementsChecking? = nil,
         customWordRepo: CustomWordRepositoryProtocol? = nil,
         snippetRepo: TextSnippetRepositoryProtocol? = nil,
+        llmService: (any LLMServiceProtocol)? = nil,
         processingMode: (@Sendable () -> Dictation.ProcessingMode)? = nil,
+        refinementOptionsProvider: TextRefinementService.OptionsProvider? = nil,
         cancelWindow: Duration = .seconds(5)
     ) {
         self.audioProcessor = audioProcessor
@@ -67,6 +70,10 @@ public actor DictationService: DictationServiceProtocol {
         self.customWordRepo = customWordRepo
         self.snippetRepo = snippetRepo
         self.processingMode = processingMode ?? { .raw }
+        self.textRefinementService = TextRefinementService(
+            llmService: llmService,
+            optionsProvider: refinementOptionsProvider ?? TextRefinementService.defaultOptionsProvider
+        )
         self.cancelWindow = cancelWindow
     }
 
@@ -204,23 +211,17 @@ public actor DictationService: DictationServiceProtocol {
             throw DictationServiceError.emptyTranscript
         }
 
-        // Run pipeline if not raw mode
         let mode = processingMode()
-        var cleanTranscript: String? = nil
-        var expandedSnippetIDs = Set<UUID>()
-
-        if mode != .raw {
-            let words = (try? customWordRepo?.fetchEnabled()) ?? []
-            let snippets = (try? snippetRepo?.fetchEnabled()) ?? []
-            let pipeline = TextProcessingPipeline()
-            let pipelineResult = pipeline.process(
-                text: result.text,
-                customWords: words,
-                snippets: snippets
-            )
-            cleanTranscript = pipelineResult.text
-            expandedSnippetIDs = pipelineResult.expandedSnippetIDs
-        }
+        let words = mode.usesDeterministicPipeline ? ((try? customWordRepo?.fetchEnabled()) ?? []) : []
+        let snippets = mode.usesDeterministicPipeline ? ((try? snippetRepo?.fetchEnabled()) ?? []) : []
+        let refinement = await textRefinementService.refine(
+            rawText: result.text,
+            mode: mode,
+            customWords: words,
+            snippets: snippets
+        )
+        let cleanTranscript = refinement.text
+        let expandedSnippetIDs = refinement.expandedSnippetIDs
 
         // Create dictation record
         var dictation = Dictation(

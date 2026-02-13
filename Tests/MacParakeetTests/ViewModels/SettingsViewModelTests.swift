@@ -123,6 +123,16 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertFalse(testDefaults.bool(forKey: "saveTranscriptionAudio"))
     }
 
+    func testProcessingModePersists() {
+        viewModel.processingMode = Dictation.ProcessingMode.email.rawValue
+        XCTAssertEqual(testDefaults.string(forKey: "processingMode"), Dictation.ProcessingMode.email.rawValue)
+    }
+
+    func testInvalidProcessingModeFallsBackToClean() {
+        viewModel.processingMode = "invalid-mode"
+        XCTAssertEqual(viewModel.processingMode, Dictation.ProcessingMode.clean.rawValue)
+    }
+
     // MARK: - Permissions
 
     func testRefreshPermissionsUpdatesGrantedState() async throws {

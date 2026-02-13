@@ -17,6 +17,9 @@ public struct Dictation: Codable, Identifiable, Sendable {
     public enum ProcessingMode: String, Codable, Sendable {
         case raw
         case clean
+        case formal
+        case email
+        case code
     }
 
     public enum DictationStatus: String, Codable, Sendable {
@@ -50,6 +53,49 @@ public struct Dictation: Codable, Identifiable, Sendable {
         self.status = status
         self.errorMessage = errorMessage
         self.updatedAt = updatedAt
+    }
+}
+
+public extension Dictation.ProcessingMode {
+    var usesDeterministicPipeline: Bool {
+        self != .raw
+    }
+
+    var usesLLMRefinement: Bool {
+        switch self {
+        case .formal, .email, .code:
+            return true
+        case .raw, .clean:
+            return false
+        }
+    }
+
+    var llmRefinementMode: LLMRefinementMode? {
+        switch self {
+        case .formal:
+            return .formal
+        case .email:
+            return .email
+        case .code:
+            return .code
+        case .raw, .clean:
+            return nil
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .raw:
+            return "Raw"
+        case .clean:
+            return "Clean"
+        case .formal:
+            return "Formal"
+        case .email:
+            return "Email"
+        case .code:
+            return "Code"
+        }
     }
 }
 
