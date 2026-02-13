@@ -16,5 +16,10 @@ jobs:
         with:
           xcode-version: "16.1"
 
+      - name: Toolchain Versions
+        run: |
+          xcodebuild -version
+          swift --version
+
       - name: Swift Test
         run: swift test --parallel
