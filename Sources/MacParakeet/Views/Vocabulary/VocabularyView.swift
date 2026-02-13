@@ -9,6 +9,8 @@ struct VocabularyView: View {
 
     @State private var showCustomWords = false
     @State private var showTextSnippets = false
+    @State private var hoveredCardTitle: String?
+    @State private var hoveredModeTitle: String?
 
     var body: some View {
         ScrollView {
@@ -202,7 +204,8 @@ struct VocabularyView: View {
         icon: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+        let isHovered = hoveredCardTitle == title
+        return VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
             HStack(alignment: .top, spacing: DesignSystem.Spacing.sm) {
                 Image(systemName: icon)
                     .font(.system(size: 14, weight: .semibold))
@@ -229,12 +232,20 @@ struct VocabularyView: View {
         .background(
             RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
                 .fill(DesignSystem.Colors.cardBackground)
-                .cardShadow(DesignSystem.Shadows.cardRest)
+                .cardShadow(isHovered ? DesignSystem.Shadows.cardHover : DesignSystem.Shadows.cardRest)
         )
         .overlay(
             RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
-                .strokeBorder(DesignSystem.Colors.border.opacity(0.6), lineWidth: 0.5)
+                .strokeBorder(
+                    isHovered ? DesignSystem.Colors.accent.opacity(0.2) : DesignSystem.Colors.border.opacity(0.6),
+                    lineWidth: 0.5
+                )
         )
+        .onHover { hovering in
+            withAnimation(DesignSystem.Animation.hoverTransition) {
+                hoveredCardTitle = hovering ? title : nil
+            }
+        }
     }
 
     private func summaryChip(title: String, value: String) -> some View {
@@ -244,6 +255,7 @@ struct VocabularyView: View {
                 .foregroundStyle(.secondary)
             Text(value)
                 .font(DesignSystem.Typography.body.weight(.semibold))
+                .contentTransition(.numericText())
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -275,7 +287,8 @@ struct VocabularyView: View {
         isSelected: Bool,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
+        let isHovered = hoveredModeTitle == title
+        return Button(action: action) {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
                 HStack {
                     Image(systemName: icon)
@@ -304,6 +317,7 @@ struct VocabularyView: View {
             }
             .padding(DesignSystem.Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .scaleEffect(isHovered ? 1.01 : 1.0)
             .background(
                 RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
                     .fill(isSelected ? DesignSystem.Colors.accentLight : DesignSystem.Colors.surfaceElevated)
@@ -317,6 +331,11 @@ struct VocabularyView: View {
             )
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(DesignSystem.Animation.hoverTransition) {
+                hoveredModeTitle = hovering ? title : nil
+            }
+        }
     }
 
     private func pipelineStep(

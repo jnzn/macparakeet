@@ -5,6 +5,8 @@ import MacParakeetViewModels
 struct CustomWordsView: View {
     @Bindable var viewModel: CustomWordsViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var hoveredCardTitle: String?
+    @State private var hoveredWordID: UUID?
 
     var body: some View {
         ScrollView {
@@ -45,10 +47,16 @@ struct CustomWordsView: View {
             subtitle: "Vocabulary anchors and deterministic correction rules.",
             icon: "character.book.closed"
         ) {
-            HStack(spacing: DesignSystem.Spacing.sm) {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 100), spacing: DesignSystem.Spacing.sm)],
+                spacing: DesignSystem.Spacing.sm
+            ) {
                 metricChip(title: "Total", value: "\(viewModel.words.count)")
                 metricChip(title: "Visible", value: "\(viewModel.filteredWords.count)")
                 metricChip(title: "Enabled", value: "\(viewModel.words.filter(\.isEnabled).count)")
+            }
+
+            HStack {
                 Spacer()
                 Button("Done") { dismiss() }
                     .buttonStyle(.borderedProminent)
@@ -120,7 +128,8 @@ struct CustomWordsView: View {
     // MARK: - Rows
 
     private func wordRow(_ word: CustomWord) -> some View {
-        HStack(spacing: DesignSystem.Spacing.md) {
+        let isHovered = hoveredWordID == word.id
+        return HStack(spacing: DesignSystem.Spacing.md) {
             Toggle("", isOn: Binding(
                 get: { word.isEnabled },
                 set: { _ in viewModel.toggleEnabled(word) }
@@ -159,8 +168,13 @@ struct CustomWordsView: View {
         .padding(DesignSystem.Spacing.sm)
         .background(
             RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
-                .fill(DesignSystem.Colors.surfaceElevated)
+                .fill(isHovered ? DesignSystem.Colors.accent.opacity(0.10) : DesignSystem.Colors.surfaceElevated)
         )
+        .onHover { hovering in
+            withAnimation(DesignSystem.Animation.hoverTransition) {
+                hoveredWordID = hovering ? word.id : nil
+            }
+        }
     }
 
     private var emptyWordsState: some View {
@@ -190,7 +204,8 @@ struct CustomWordsView: View {
         icon: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+        let isHovered = hoveredCardTitle == title
+        return VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
             HStack(alignment: .top, spacing: DesignSystem.Spacing.sm) {
                 Image(systemName: icon)
                     .font(.system(size: 14, weight: .semibold))
@@ -217,12 +232,20 @@ struct CustomWordsView: View {
         .background(
             RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
                 .fill(DesignSystem.Colors.cardBackground)
-                .cardShadow(DesignSystem.Shadows.cardRest)
+                .cardShadow(isHovered ? DesignSystem.Shadows.cardHover : DesignSystem.Shadows.cardRest)
         )
         .overlay(
             RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
-                .strokeBorder(DesignSystem.Colors.border.opacity(0.6), lineWidth: 0.5)
+                .strokeBorder(
+                    isHovered ? DesignSystem.Colors.accent.opacity(0.2) : DesignSystem.Colors.border.opacity(0.6),
+                    lineWidth: 0.5
+                )
         )
+        .onHover { hovering in
+            withAnimation(DesignSystem.Animation.hoverTransition) {
+                hoveredCardTitle = hovering ? title : nil
+            }
+        }
     }
 
     private func metricChip(title: String, value: String) -> some View {
@@ -232,6 +255,7 @@ struct CustomWordsView: View {
                 .foregroundStyle(.secondary)
             Text(value)
                 .font(DesignSystem.Typography.body.weight(.semibold))
+                .contentTransition(.numericText())
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)

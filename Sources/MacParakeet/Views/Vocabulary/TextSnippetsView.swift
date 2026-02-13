@@ -5,6 +5,8 @@ import MacParakeetViewModels
 struct TextSnippetsView: View {
     @Bindable var viewModel: TextSnippetsViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var hoveredCardTitle: String?
+    @State private var hoveredSnippetID: UUID?
 
     var body: some View {
         ScrollView {
@@ -46,10 +48,16 @@ struct TextSnippetsView: View {
             subtitle: "Phrase-triggered deterministic expansion rules.",
             icon: "text.insert"
         ) {
-            HStack(spacing: DesignSystem.Spacing.sm) {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 100), spacing: DesignSystem.Spacing.sm)],
+                spacing: DesignSystem.Spacing.sm
+            ) {
                 metricChip(title: "Total", value: "\(viewModel.snippets.count)")
                 metricChip(title: "Visible", value: "\(viewModel.filteredSnippets.count)")
                 metricChip(title: "Enabled", value: "\(viewModel.snippets.filter(\.isEnabled).count)")
+            }
+
+            HStack {
                 Spacer()
                 Button("Done") { dismiss() }
                     .buttonStyle(.borderedProminent)
@@ -141,7 +149,8 @@ struct TextSnippetsView: View {
     // MARK: - Rows
 
     private func snippetRow(_ snippet: TextSnippet) -> some View {
-        HStack(spacing: DesignSystem.Spacing.md) {
+        let isHovered = hoveredSnippetID == snippet.id
+        return HStack(spacing: DesignSystem.Spacing.md) {
             Toggle("", isOn: Binding(
                 get: { snippet.isEnabled },
                 set: { _ in viewModel.toggleEnabled(snippet) }
@@ -189,8 +198,13 @@ struct TextSnippetsView: View {
         .padding(DesignSystem.Spacing.sm)
         .background(
             RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
-                .fill(DesignSystem.Colors.surfaceElevated)
+                .fill(isHovered ? DesignSystem.Colors.accent.opacity(0.10) : DesignSystem.Colors.surfaceElevated)
         )
+        .onHover { hovering in
+            withAnimation(DesignSystem.Animation.hoverTransition) {
+                hoveredSnippetID = hovering ? snippet.id : nil
+            }
+        }
     }
 
     private var emptyState: some View {
@@ -220,7 +234,8 @@ struct TextSnippetsView: View {
         icon: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+        let isHovered = hoveredCardTitle == title
+        return VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
             HStack(alignment: .top, spacing: DesignSystem.Spacing.sm) {
                 Image(systemName: icon)
                     .font(.system(size: 14, weight: .semibold))
@@ -247,12 +262,20 @@ struct TextSnippetsView: View {
         .background(
             RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
                 .fill(DesignSystem.Colors.cardBackground)
-                .cardShadow(DesignSystem.Shadows.cardRest)
+                .cardShadow(isHovered ? DesignSystem.Shadows.cardHover : DesignSystem.Shadows.cardRest)
         )
         .overlay(
             RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
-                .strokeBorder(DesignSystem.Colors.border.opacity(0.6), lineWidth: 0.5)
+                .strokeBorder(
+                    isHovered ? DesignSystem.Colors.accent.opacity(0.2) : DesignSystem.Colors.border.opacity(0.6),
+                    lineWidth: 0.5
+                )
         )
+        .onHover { hovering in
+            withAnimation(DesignSystem.Animation.hoverTransition) {
+                hoveredCardTitle = hovering ? title : nil
+            }
+        }
     }
 
     private func metricChip(title: String, value: String) -> some View {
@@ -262,6 +285,7 @@ struct TextSnippetsView: View {
                 .foregroundStyle(.secondary)
             Text(value)
                 .font(DesignSystem.Typography.body.weight(.semibold))
+                .contentTransition(.numericText())
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)

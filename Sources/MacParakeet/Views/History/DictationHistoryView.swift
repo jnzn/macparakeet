@@ -4,6 +4,8 @@ import MacParakeetViewModels
 
 struct DictationHistoryView: View {
     @Bindable var viewModel: DictationHistoryViewModel
+    @State private var isHistoryHeaderHovered = false
+    @State private var hoveredHeaderChip: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -108,16 +110,25 @@ struct DictationHistoryView: View {
         .background(
             RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
                 .fill(DesignSystem.Colors.cardBackground)
-                .cardShadow(DesignSystem.Shadows.cardRest)
+                .cardShadow(isHistoryHeaderHovered ? DesignSystem.Shadows.cardHover : DesignSystem.Shadows.cardRest)
         )
         .overlay(
             RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
-                .strokeBorder(DesignSystem.Colors.border.opacity(0.6), lineWidth: 0.5)
+                .strokeBorder(
+                    isHistoryHeaderHovered ? DesignSystem.Colors.accent.opacity(0.2) : DesignSystem.Colors.border.opacity(0.6),
+                    lineWidth: 0.5
+                )
         )
+        .onHover { hovering in
+            withAnimation(DesignSystem.Animation.hoverTransition) {
+                isHistoryHeaderHovered = hovering
+            }
+        }
     }
 
     private func headerChip(title: String, value: String, icon: String? = nil) -> some View {
-        HStack(spacing: 8) {
+        let isHovered = hoveredHeaderChip == title
+        return HStack(spacing: 8) {
             if let icon {
                 Image(systemName: icon)
                     .font(.system(size: 11, weight: .semibold))
@@ -130,6 +141,7 @@ struct DictationHistoryView: View {
                     .foregroundStyle(.secondary)
                 Text(value)
                     .font(DesignSystem.Typography.body.weight(.semibold))
+                    .contentTransition(.numericText())
             }
             Spacer(minLength: 0)
         }
@@ -137,8 +149,15 @@ struct DictationHistoryView: View {
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
-                .fill(DesignSystem.Colors.surfaceElevated)
+                .fill(isHovered ? DesignSystem.Colors.accent.opacity(0.10) : DesignSystem.Colors.surfaceElevated)
         )
+        .scaleEffect(isHovered ? 1.01 : 1.0)
+        .animation(DesignSystem.Animation.hoverTransition, value: isHovered)
+        .onHover { hovering in
+            withAnimation(DesignSystem.Animation.hoverTransition) {
+                hoveredHeaderChip = hovering ? title : nil
+            }
+        }
     }
 
     // MARK: - Empty State
@@ -264,6 +283,7 @@ struct DictationHistoryView: View {
                     Capsule()
                         .fill(DesignSystem.Colors.accent)
                         .frame(width: max(0, geo.size.width * viewModel.playbackProgress))
+                        .animation(.linear(duration: 0.12), value: viewModel.playbackProgress)
                 }
             }
             .frame(width: 140, height: DesignSystem.Layout.playbackBarHeight)
@@ -386,6 +406,7 @@ struct DictationCardRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(DesignSystem.Spacing.md)
+        .scaleEffect(isPlayingThis ? 1.005 : 1.0)
         .background(
             RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
                 .fill(isPlayingThis
@@ -406,6 +427,7 @@ struct DictationCardRow: View {
                 isHovered = hovering
             }
         }
+        .animation(.easeInOut(duration: 0.15), value: isPlayingThis)
     }
 
     // MARK: - Highlighted Transcript
