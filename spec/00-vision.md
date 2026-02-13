@@ -422,7 +422,7 @@ MacParakeet and Oatmeal are **separate products** that share underlying technolo
 | Metric | Target |
 |--------|--------|
 | Dictation latency (press-to-text) | < 500ms |
-| Transcription speed (60 min file) | < 15 seconds |
+| Transcription speed (60 min file) | < 30s on M1, < 15s on M1 Pro+ |
 | Word error rate | < 3% (Parakeet via FluidAudio CoreML: ~2.5%) |
 | App crash rate | < 0.1% of sessions |
 | First-use success rate | > 95% (user dictates successfully on first try) |

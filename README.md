@@ -2,6 +2,8 @@
 
 **The fastest, most private voice app for Mac.**
 
+> Migration Note: FluidAudio CoreML is the active target architecture. Specs/docs reflect target runtime behavior while implementation work is in progress.
+
 MacParakeet uses NVIDIA's Parakeet TDT model — running on Apple's Neural Engine via FluidAudio CoreML — to power system-wide voice dictation and file transcription. Entirely on your Mac, with zero cloud uploads.
 
 ## Two Modes

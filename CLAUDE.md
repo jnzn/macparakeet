@@ -1,6 +1,7 @@
 # CLAUDE.md
 
 > Context for AI coding assistants working on MacParakeet.
+> Migration Note: FluidAudio CoreML migration is the active target architecture. Specs/docs define target behavior while runtime implementation is in progress.
 
 ## What is MacParakeet?
 
@@ -118,7 +119,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 
 ## Current Phase
 
-**v0.2 In Progress** -- Clean pipeline + management UI implemented (360 tests, `swift test` green)
+**v0.2 In Progress** -- Clean pipeline + management UI implemented (test suite passing, `swift test` green)
 
 ### v0.1 MVP (Implemented)
 - [x] System-wide dictation: Configurable hotkey (Fn default), double-tap (persistent) + hold-to-talk
@@ -302,7 +303,7 @@ macparakeet/
 │   ├── MacParakeetCore/        # Shared library (no UI deps)
 │   └── MacParakeetViewModels/  # ViewModels (testable, depends on Core)
 ├── Tests/
-│   └── MacParakeetTests/   # Unit, database, and integration tests (360 tests)
+│   └── MacParakeetTests/   # Unit, database, and integration tests
 ├── Assets/             # App icon (.icns + source PNG) and SVG logos
 └── scripts/            # Build, test, and release scripts (placeholder)
 ```
@@ -708,7 +709,7 @@ Use KeyablePanel pattern if text input is needed. Add audioLevelPublisher
 to DictationService so the view can subscribe to audio levels.
 
 ## ADRs Applied
-- ADR-004: Parakeet TDT for STT (dictation sends audio to Parakeet daemon)
+- ADR-001 + ADR-007: Parakeet TDT model with FluidAudio CoreML runtime
 
 ## Files Changed
 - Sources/MacParakeet/Views/Dictation/DictationOverlayView.swift (+145)

@@ -41,7 +41,7 @@ STT and LLM run on separate silicon. Zero compute contention.
 
 [FluidAudio](https://github.com/FluidInference/FluidAudio) is an open-source Swift SDK by FluidInference that runs Parakeet TDT on Apple's Neural Engine via CoreML. Apache 2.0 licensed. ~1,500 GitHub stars, 34 releases, 20+ production apps.
 
-**SwiftPM dependency:** Use the `FluidAudio` product only (not `FluidAudioEspeak` which pulls in GPL-3.0 code).
+**SwiftPM dependency:** Use the `FluidAudio` product only — NOT `FluidAudioEspeak` (GPL-3.0, includes Kokoro TTS via ESpeakNG). PocketTTS (GPL-free) is already included in the core `FluidAudio` product since v0.12.0.
 
 ### API Surface
 
@@ -112,7 +112,7 @@ This runs a secondary CTC encoder (110M params) alongside the primary TDT encode
 
 ### Protocol Layer
 
-The `STTClientProtocol` interface is unchanged from v0.1. The implementation swaps from JSON-RPC/Python to FluidAudio/CoreML:
+The `STTClientProtocol` interface is unchanged from v0.1. The runtime implementation uses FluidAudio/CoreML:
 
 ```swift
 protocol STTClientProtocol: Sendable {

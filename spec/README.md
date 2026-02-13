@@ -1,6 +1,7 @@
 # MacParakeet Spec Index
 
 > Status: **ACTIVE** - Authoritative, current
+> Migration Note: FluidAudio CoreML migration is the active target architecture. Specs describe target behavior while runtime implementation is in progress.
 
 **MacParakeet** is a local-first voice toolkit for macOS: system-wide dictation, file transcription, and AI-powered text editing -- all running on-device with zero cloud dependency.
 
@@ -72,7 +73,7 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 - [x] Basic export (TXT/Markdown/SRT/VTT + copy to clipboard)
 - [x] SQLite database (GRDB, dictations + transcriptions + substring search)
 - [x] Internal dev CLI tool (`macparakeet transcribe`, `history`, `health`)
-- [x] 360 tests passing (`swift test` green)
+- [x] Test suite passing (`swift test` green)
 
 ### v0.2 AI & Text Processing (In Progress)
 

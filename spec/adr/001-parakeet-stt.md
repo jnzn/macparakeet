@@ -2,6 +2,7 @@
 
 > Status: **Accepted**
 > Date: 2026-02-08
+> Runtime Note (2026-02-13): Runtime/mechanism details in this ADR are historical and superseded by ADR-007. ADR-001 remains authoritative for STT model choice.
 
 ## Context
 

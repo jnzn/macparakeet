@@ -1015,7 +1015,7 @@ All four tables are independent. No foreign key relationships. This keeps the sc
 
 | Package | SPM ID | Purpose | Notes |
 |---------|--------|---------|-------|
-| FluidAudio | `FluidAudio` | STT engine (Parakeet TDT via CoreML/ANE) | Apache 2.0. Use `FluidAudio` product only (not `FluidAudioEspeak`). |
+| FluidAudio | `FluidAudio` | STT engine (Parakeet TDT via CoreML/ANE) | Apache 2.0. Use `FluidAudio` product only — NOT `FluidAudioEspeak` (GPL-3.0, would require open-sourcing). |
 | mlx-swift-lm | `MLXLLM`, `MLXLMCommon` | LLM inference (Qwen3-4B) | v2.29.0+, Apple Silicon Metal acceleration |
 | GRDB.swift | `GRDB` | SQLite database | v6.29.0+, single-file storage, migrations, Codable records |
 | swift-argument-parser | `ArgumentParser` | CLI (implemented) | `macparakeet transcribe`, `history`, `health` |
@@ -1167,7 +1167,7 @@ After initial warm-up, subsequent dictations are near-instant (AsrManager stays 
 | 1 hour | ~23 seconds | ~12 seconds |
 | 4 hours (max) | ~93 seconds | ~46 seconds |
 
-Parakeet TDT 0.6B-v3 achieves approximately 155x realtime on Apple Silicon via FluidAudio CoreML/ANE.
+Parakeet TDT 0.6B-v3 throughput varies by device class: approximately 155x realtime on baseline M1 and up to ~300x on M1 Pro+ hardware via FluidAudio CoreML/ANE.
 
 ### Memory Management
 
