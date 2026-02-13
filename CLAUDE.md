@@ -132,13 +132,13 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 - [x] Menu bar app with main window + sidebar navigation
 - [x] Basic export (TXT/Markdown/SRT/VTT + copy to clipboard)
 - [x] SQLite database (GRDB, dictations + transcriptions + substring search)
-- [x] Internal dev CLI tool: `macparakeet transcribe`, `history`, `health`
+- [x] Internal dev CLI tool: `macparakeet-cli transcribe`, `history`, `health`
 - [x] STT engine (Parakeet TDT via FluidAudio CoreML/ANE)
 
 ### v0.2 Clean Pipeline + AI
 - [x] Clean text pipeline (filler removal, custom words, snippets) -- deterministic, no LLM
 - [x] Custom words & snippets management UI (Vocabulary sidebar item)
-- [x] CLI commands: `macparakeet flow process/words/snippets`
+- [x] CLI commands: `macparakeet-cli flow process/words/snippets`
 - [ ] Context modes (raw, clean, formal, email, code) -- raw + clean done, AI modes pending
 - [ ] AI text refinement via Qwen3-4B
 
@@ -531,9 +531,9 @@ xcodebuild build -scheme MacParakeet -destination 'platform=OS X' -derivedDataPa
 
 # Build and run CLI
 swift build --target CLI
-swift run macparakeet --help
-swift run macparakeet transcribe /path/to/audio.mp3
-swift run macparakeet health
+swift run macparakeet-cli --help
+swift run macparakeet-cli transcribe /path/to/audio.mp3
+swift run macparakeet-cli health
 
 # Run tests (swift test works -- tests don't need Metal shaders)
 swift test

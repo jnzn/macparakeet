@@ -199,42 +199,42 @@ Stores trigger-to-expansion mappings.
 
 ```bash
 # Run clean processing on text
-macparakeet flow process "um hello I mean kubernetes is great"
+macparakeet-cli flow process "um hello I mean kubernetes is great"
 # → "Hello, Kubernetes is great."
 
 # Process and copy to clipboard
-macparakeet flow process "text here" --copy
+macparakeet-cli flow process "text here" --copy
 
 # Transcribe with processing
-macparakeet transcribe recording.wav --process
-macparakeet transcribe recording.wav --process --copy
+macparakeet-cli transcribe recording.wav --process
+macparakeet-cli transcribe recording.wav --process --copy
 ```
 
 ### Custom Words
 
 ```bash
 # List all custom words
-macparakeet flow words list
+macparakeet-cli flow words list
 
 # Add a vocabulary anchor
-macparakeet flow words add "kubernetes" "Kubernetes"
+macparakeet-cli flow words add "kubernetes" "Kubernetes"
 
 # Add a correction
-macparakeet flow words add "aye pee eye" "API"
+macparakeet-cli flow words add "aye pee eye" "API"
 
 # Delete a custom word
-macparakeet flow words delete <id>
+macparakeet-cli flow words delete <id>
 ```
 
 ### Text Snippets
 
 ```bash
 # List all snippets
-macparakeet flow snippets list
+macparakeet-cli flow snippets list
 
 # Add a snippet (trigger is a natural phrase, not an abbreviation)
-macparakeet flow snippets add "my signature" "Best regards, David"
+macparakeet-cli flow snippets add "my signature" "Best regards, David"
 
 # Delete a snippet
-macparakeet flow snippets delete <id>
+macparakeet-cli flow snippets delete <id>
 ```

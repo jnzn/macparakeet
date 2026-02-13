@@ -1018,7 +1018,7 @@ All four tables are independent. No foreign key relationships. This keeps the sc
 | FluidAudio | `FluidAudio` | STT engine (Parakeet TDT via CoreML/ANE) | Apache 2.0. Use `FluidAudio` product only — NOT `FluidAudioEspeak` (GPL-3.0, would require open-sourcing). |
 | mlx-swift-lm | `MLXLLM`, `MLXLMCommon` | LLM inference (Qwen3-4B) | v2.29.0+, Apple Silicon Metal acceleration |
 | GRDB.swift | `GRDB` | SQLite database | v6.29.0+, single-file storage, migrations, Codable records |
-| swift-argument-parser | `ArgumentParser` | CLI (implemented) | `macparakeet transcribe`, `history`, `health` |
+| swift-argument-parser | `ArgumentParser` | CLI (implemented) | `macparakeet-cli transcribe`, `history`, `health` |
 
 ### Bundled / Downloaded Binaries
 
