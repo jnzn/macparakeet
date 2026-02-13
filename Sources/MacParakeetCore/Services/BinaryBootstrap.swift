@@ -36,6 +36,7 @@ public actor BinaryBootstrap {
     private static let ytDlpChecksumsFile = "SHA2-256SUMS"
     private static let ytDlpUpdateInterval: TimeInterval = 7 * 24 * 60 * 60
     private static let ytDlpLastUpdateCheckKey = "ytDlp.lastUpdateCheckAt"
+    private static let autoUpdatePreferenceKey = "autoUpdateYouTubeEngine"
 
     private let session: URLSession
     private let defaults: UserDefaults
@@ -105,6 +106,9 @@ public actor BinaryBootstrap {
     // MARK: - Private
 
     private func shouldRunYtDlpUpdateCheck() -> Bool {
+        let autoUpdateEnabled = defaults.object(forKey: Self.autoUpdatePreferenceKey) as? Bool ?? true
+        guard autoUpdateEnabled else { return false }
+
         guard let lastCheck = defaults.object(forKey: Self.ytDlpLastUpdateCheckKey) as? Date else {
             return true
         }

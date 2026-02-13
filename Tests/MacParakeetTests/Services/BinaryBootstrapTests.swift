@@ -157,6 +157,22 @@ final class BinaryBootstrapTests: XCTestCase {
         XCTAssertEqual(tempBinaryArtifactCount(), 0)
     }
 
+    func testAutoUpdateSkipsWhenDisabledInPreferences() async {
+        let bootstrap = makeBootstrap { request in
+            guard let url = request.url else {
+                throw BinaryBootstrapError.downloadFailed("Missing URL")
+            }
+            return (Self.httpResponse(url: url, statusCode: 404), Data())
+        }
+
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.set(false, forKey: "autoUpdateYouTubeEngine")
+
+        await bootstrap.autoUpdateYtDlpIfNeeded()
+
+        XCTAssertNil(defaults.object(forKey: "ytDlp.lastUpdateCheckAt"))
+    }
+
     // MARK: - Helpers
 
     private var binDir: URL {
