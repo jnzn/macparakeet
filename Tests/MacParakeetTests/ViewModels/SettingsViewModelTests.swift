@@ -53,30 +53,30 @@ final class SettingsViewModelTests: XCTestCase {
 
     func testDefaultValues() {
         XCTAssertFalse(viewModel.launchAtLogin, "launchAtLogin should default to false")
+        XCTAssertFalse(viewModel.menuBarOnlyMode, "menuBarOnlyMode should default to false")
         XCTAssertFalse(viewModel.silenceAutoStop, "silenceAutoStop should default to false")
         XCTAssertEqual(viewModel.silenceDelay, 2.0, "silenceDelay should default to 2.0")
         XCTAssertTrue(viewModel.saveAudioRecordings, "saveAudioRecordings should default to true")
         XCTAssertTrue(viewModel.saveTranscriptionAudio, "saveTranscriptionAudio should default to true")
-        XCTAssertTrue(viewModel.autoUpdateYouTubeEngine, "autoUpdateYouTubeEngine should default to true")
     }
 
     func testInitLoadsFromUserDefaults() {
         // Set values in defaults before creating ViewModel
         testDefaults.set(true, forKey: "launchAtLogin")
+        testDefaults.set(true, forKey: AppPreferences.menuBarOnlyModeKey)
         testDefaults.set(true, forKey: "silenceAutoStop")
         testDefaults.set(3.0, forKey: "silenceDelay")
         testDefaults.set(false, forKey: "saveAudioRecordings")
         testDefaults.set(false, forKey: "saveTranscriptionAudio")
-        testDefaults.set(false, forKey: "autoUpdateYouTubeEngine")
 
         let vm = SettingsViewModel(defaults: testDefaults)
 
         XCTAssertTrue(vm.launchAtLogin)
+        XCTAssertTrue(vm.menuBarOnlyMode)
         XCTAssertTrue(vm.silenceAutoStop)
         XCTAssertEqual(vm.silenceDelay, 3.0)
         XCTAssertFalse(vm.saveAudioRecordings)
         XCTAssertFalse(vm.saveTranscriptionAudio)
-        XCTAssertFalse(vm.autoUpdateYouTubeEngine)
     }
 
     func testSilenceDelayDefaultsTo2WhenZero() {
@@ -91,6 +91,12 @@ final class SettingsViewModelTests: XCTestCase {
         viewModel.launchAtLogin = true
 
         XCTAssertTrue(testDefaults.bool(forKey: "launchAtLogin"))
+    }
+
+    func testSettingMenuBarOnlyModePersists() {
+        viewModel.menuBarOnlyMode = true
+
+        XCTAssertTrue(testDefaults.bool(forKey: AppPreferences.menuBarOnlyModeKey))
     }
 
     func testSettingSilenceAutoStopPersists() {
@@ -115,12 +121,6 @@ final class SettingsViewModelTests: XCTestCase {
         viewModel.saveTranscriptionAudio = false
 
         XCTAssertFalse(testDefaults.bool(forKey: "saveTranscriptionAudio"))
-    }
-
-    func testSettingAutoUpdateYouTubeEnginePersists() {
-        viewModel.autoUpdateYouTubeEngine = false
-
-        XCTAssertFalse(testDefaults.bool(forKey: "autoUpdateYouTubeEngine"))
     }
 
     // MARK: - Permissions
@@ -311,20 +311,20 @@ final class SettingsViewModelTests: XCTestCase {
     func testSettingsRoundTrip() {
         // Set everything to non-default values
         viewModel.launchAtLogin = true
+        viewModel.menuBarOnlyMode = true
         viewModel.silenceAutoStop = true
         viewModel.silenceDelay = 5.0
         viewModel.saveAudioRecordings = false
         viewModel.saveTranscriptionAudio = false
-        viewModel.autoUpdateYouTubeEngine = false
 
         // Create a new ViewModel reading from the same defaults
         let vm2 = SettingsViewModel(defaults: testDefaults)
 
         XCTAssertTrue(vm2.launchAtLogin)
+        XCTAssertTrue(vm2.menuBarOnlyMode)
         XCTAssertTrue(vm2.silenceAutoStop)
         XCTAssertEqual(vm2.silenceDelay, 5.0)
         XCTAssertFalse(vm2.saveAudioRecordings)
         XCTAssertFalse(vm2.saveTranscriptionAudio)
-        XCTAssertFalse(vm2.autoUpdateYouTubeEngine)
     }
 }

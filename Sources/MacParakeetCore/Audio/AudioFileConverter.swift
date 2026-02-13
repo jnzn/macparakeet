@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Converts audio/video files to 16kHz mono WAV using FFmpeg subprocess.
 public final class AudioFileConverter: Sendable {
@@ -62,8 +63,7 @@ public final class AudioFileConverter: Sendable {
         process.standardOutput = FileHandle.nullDevice
         process.standardError = stderrHandle
 
-        try process.run()
-        process.waitUntilExit()
+        try await runProcessAndWait(process, timeout: 600)
 
         if process.terminationStatus != 0 {
             stderrHandle.synchronizeFile()
@@ -99,64 +99,55 @@ public final class AudioFileConverter: Sendable {
     }
 
     private func findFFmpeg() throws -> String {
-        let fm = FileManager.default
-
-        // Check bundled FFmpeg first
-        if let bundledPath = Bundle.main.resourcePath.map({ $0 + "/ffmpeg" }),
-           fm.fileExists(atPath: bundledPath) {
-            return bundledPath
+        do {
+            return try BinaryBootstrap.requireBundledFFmpegPath()
+        } catch {
+            throw AudioProcessorError.conversionFailed(
+                "Bundled FFmpeg is missing. Reinstall MacParakeet."
+            )
         }
+    }
 
-        // Check imageio-ffmpeg in the Python venv (installed as a pip dependency).
-        // The binary name includes platform info, so glob for it.
-        let venvSitePackages = FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first?
-            .appendingPathComponent("MacParakeet/python/lib")
-            .path
-        if let sitePackages = venvSitePackages {
-            let binDir = "\(sitePackages)/python3.11/site-packages/imageio_ffmpeg/binaries"
-            if let contents = try? fm.contentsOfDirectory(atPath: binDir) {
-                if let ffmpegBin = contents.first(where: { $0.hasPrefix("ffmpeg") }) {
-                    return "\(binDir)/\(ffmpegBin)"
+    private func runProcessAndWait(_ process: Process, timeout: TimeInterval) async throws {
+        try process.run()
+
+        let resumed = OSAllocatedUnfairLock(initialState: false)
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            process.terminationHandler = { _ in
+                let shouldResume = resumed.withLock { done -> Bool in
+                    guard !done else { return false }
+                    done = true
+                    return true
+                }
+                if shouldResume {
+                    continuation.resume()
+                }
+            }
+
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+                let shouldResume = resumed.withLock { done -> Bool in
+                    guard !done else { return false }
+                    done = true
+                    return true
+                }
+                if shouldResume {
+                    process.terminate()
+                    continuation.resume(
+                        throwing: AudioProcessorError.conversionFailed("FFmpeg conversion timed out")
+                    )
+                }
+            }
+
+            if !process.isRunning {
+                let shouldResume = resumed.withLock { done -> Bool in
+                    guard !done else { return false }
+                    done = true
+                    return true
+                }
+                if shouldResume {
+                    continuation.resume()
                 }
             }
         }
-
-        // Common install paths
-        let searchPaths = [
-            "/opt/homebrew/bin/ffmpeg",
-            "/usr/local/bin/ffmpeg",
-            "/usr/bin/ffmpeg",
-        ]
-
-        for path in searchPaths {
-            if fm.fileExists(atPath: path) {
-                return path
-            }
-        }
-
-        // Try which
-        let whichProcess = Process()
-        let pipe = Pipe()
-        whichProcess.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-        whichProcess.arguments = ["ffmpeg"]
-        whichProcess.standardOutput = pipe
-        whichProcess.standardError = FileHandle.nullDevice
-
-        try whichProcess.run()
-        whichProcess.waitUntilExit()
-
-        if whichProcess.terminationStatus == 0 {
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            if let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !path.isEmpty {
-                return path
-            }
-        }
-
-        throw AudioProcessorError.conversionFailed(
-            "FFmpeg is required but was not found. Please reinstall MacParakeet or install FFmpeg manually."
-        )
     }
 }

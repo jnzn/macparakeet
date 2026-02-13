@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 import MacParakeetCore
 import MacParakeetViewModels
@@ -9,192 +10,35 @@ struct SettingsView: View {
     @State private var showClearYouTubeAudioAlert = false
 
     var body: some View {
-        Form {
-            // License
-            Section("License") {
-                if viewModel.isUnlocked {
-                    // Warm unlocked banner
-                    HStack(spacing: DesignSystem.Spacing.md) {
-                        Image(systemName: "checkmark.seal.fill")
-                            .font(.system(size: 20))
-                            .foregroundStyle(DesignSystem.Colors.successGreen)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("You're all set!")
-                                .font(DesignSystem.Typography.sectionTitle)
-                            Text(viewModel.entitlementsSummary)
-                                .font(DesignSystem.Typography.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                    }
-                    .padding(.vertical, DesignSystem.Spacing.xs)
-                } else {
-                    HStack {
-                        Text(viewModel.entitlementsSummary)
-                            .font(.headline)
-                        Spacer()
-                        Label("Trial", systemImage: "lock.fill")
-                            .foregroundStyle(.secondary)
-                            .font(DesignSystem.Typography.caption)
-                    }
-                }
-
-                if !viewModel.entitlementsDetail.isEmpty {
-                    Text(viewModel.entitlementsDetail)
-                        .foregroundStyle(.secondary)
-                        .font(DesignSystem.Typography.caption)
-                }
-
-                if let err = viewModel.licensingError, !err.isEmpty {
-                    Text(err)
-                        .foregroundStyle(DesignSystem.Colors.errorRed)
-                        .font(DesignSystem.Typography.caption)
-                }
-
-                if !viewModel.isUnlocked {
-                    HStack {
-                        TextField("License key", text: $viewModel.licenseKeyInput)
-                            .textFieldStyle(.roundedBorder)
-                        Button(viewModel.licensingBusy ? "Activating..." : "Activate") {
-                            viewModel.activateLicense()
-                        }
-                        .disabled(viewModel.licensingBusy || viewModel.licenseKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-
-                    if let url = viewModel.checkoutURL {
-                        Button("Buy License...") {
-                            NSWorkspace.shared.open(url)
-                        }
-                    }
-                } else {
-                    Button("Deactivate on This Mac...") {
-                        viewModel.deactivateLicense()
-                    }
-                    .disabled(viewModel.licensingBusy)
-                }
+        ScrollView {
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
+                headerCard
+                generalCard
+                dictationCard
+                storageCard
+                permissionsCard
+                onboardingCard
+                aboutCard
             }
-
-            // Dictation
-            Section("Dictation") {
-                Picker("Hotkey", selection: $viewModel.hotkeyTrigger) {
-                    ForEach(TriggerKey.allCases, id: \.rawValue) { key in
-                        Text("\(key.shortSymbol) \(key.displayName)").tag(key.rawValue)
-                    }
-                }
-
-                Toggle("Auto-stop after silence", isOn: $viewModel.silenceAutoStop)
-
-                if viewModel.silenceAutoStop {
-                    Picker("Silence delay", selection: $viewModel.silenceDelay) {
-                        Text("1 sec").tag(1.0)
-                        Text("1.5 sec").tag(1.5)
-                        Text("2 sec").tag(2.0)
-                        Text("3 sec").tag(3.0)
-                        Text("5 sec").tag(5.0)
-                    }
-                }
-            }
-
-            // Storage
-            Section("Storage") {
-                Toggle("Save audio recordings", isOn: $viewModel.saveAudioRecordings)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Toggle("Keep downloaded YouTube audio", isOn: $viewModel.saveTranscriptionAudio)
-                    Text("Enabled by default. Turn off to auto-delete downloaded YouTube audio after transcription.")
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundStyle(.tertiary)
-                }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Toggle("Auto-update YouTube engine", isOn: $viewModel.autoUpdateYouTubeEngine)
-                    Text("Enabled by default. Checks weekly and updates the YouTube download engine in the background.")
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundStyle(.tertiary)
-                }
-
-                HStack {
-                    Text("Dictations")
-                    Spacer()
-                    Text("\(viewModel.dictationCount) \(viewModel.dictationCount == 1 ? "dictation" : "dictations")")
-                        .foregroundStyle(.secondary)
-                }
-
-                HStack {
-                    Text("YouTube downloads")
-                    Spacer()
-                    Text("\(viewModel.youtubeDownloadCount) file\(viewModel.youtubeDownloadCount == 1 ? "" : "s") \u{2022} \(viewModel.youtubeDownloadStorageMB, specifier: "%.1f") MB")
-                        .foregroundStyle(.secondary)
-                }
-
-                Button("Clear All Dictations...", role: .destructive) {
-                    showClearAllAlert = true
-                }
-                .alert("Clear All Dictations?", isPresented: $showClearAllAlert) {
-                    Button("Cancel", role: .cancel) {}
-                    Button("Clear All", role: .destructive) {
-                        viewModel.clearAllDictations()
-                    }
-                } message: {
-                    Text("This will permanently delete all \(viewModel.dictationCount) dictation\(viewModel.dictationCount == 1 ? "" : "s") and their audio files. This cannot be undone.")
-                }
-
-                Button("Clear Downloaded YouTube Audio...", role: .destructive) {
-                    showClearYouTubeAudioAlert = true
-                }
-                .alert("Clear Downloaded YouTube Audio?", isPresented: $showClearYouTubeAudioAlert) {
-                    Button("Cancel", role: .cancel) {}
-                    Button("Clear Audio", role: .destructive) {
-                        viewModel.clearDownloadedYouTubeAudio()
-                    }
-                } message: {
-                    Text("This will permanently delete all downloaded YouTube audio files and detach them from existing transcriptions.")
-                }
-            }
-
-            Section("Onboarding") {
-                Button("Run Onboarding Again...") {
-                    NotificationCenter.default.post(name: .macParakeetOpenOnboarding, object: nil)
-                }
-            }
-
-            // Permissions
-            Section("Permissions") {
-                HStack {
-                    Text("Microphone")
-                    Spacer()
-                    permissionPill(granted: viewModel.microphoneGranted)
-                }
-
-                HStack {
-                    Text("Accessibility")
-                    Spacer()
-                    permissionPill(granted: viewModel.accessibilityGranted)
-                }
-
-                if !viewModel.accessibilityGranted {
-                    Button("Open System Settings") {
-                        openAccessibilitySettings()
-                    }
-                }
-            }
-
-            // Version footer with merkaba ornament
-            Section {
-                HStack {
-                    Spacer()
-                    VStack(spacing: DesignSystem.Spacing.sm) {
-                        SpinnerRingView(size: 16, revolutionDuration: 8.0, tintColor: DesignSystem.Colors.accent)
-                            .opacity(0.4)
-                        Text("MacParakeet \(appVersion)")
-                            .font(DesignSystem.Typography.caption)
-                            .foregroundStyle(.tertiary)
-                    }
-                    Spacer()
-                }
-            }
+            .padding(DesignSystem.Spacing.lg)
         }
-        .formStyle(.grouped)
+        .background(DesignSystem.Colors.background)
+        .alert("Clear All Dictations?", isPresented: $showClearAllAlert) {
+            Button("Cancel", role: .cancel) {}
+            Button("Clear All", role: .destructive) {
+                viewModel.clearAllDictations()
+            }
+        } message: {
+            Text("This will permanently delete all \(viewModel.dictationCount) dictation\(viewModel.dictationCount == 1 ? "" : "s") and their audio files. This cannot be undone.")
+        }
+        .alert("Clear Downloaded YouTube Audio?", isPresented: $showClearYouTubeAudioAlert) {
+            Button("Cancel", role: .cancel) {}
+            Button("Clear Audio", role: .destructive) {
+                viewModel.clearDownloadedYouTubeAudio()
+            }
+        } message: {
+            Text("This will permanently delete all downloaded YouTube audio files and detach them from existing transcriptions.")
+        }
         .onAppear {
             viewModel.refreshPermissions()
             viewModel.refreshStats()
@@ -202,11 +46,389 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Header
+
+    private var headerCard: some View {
+        settingsCard(
+            title: "Workspace Controls",
+            subtitle: "Local-first settings for dictation and transcription.",
+            icon: "slider.horizontal.3"
+        ) {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 130), spacing: DesignSystem.Spacing.sm)],
+                spacing: DesignSystem.Spacing.sm
+            ) {
+                statChip(
+                    title: "Dictations",
+                    value: "\(viewModel.dictationCount)"
+                )
+
+                statChip(
+                    title: "YouTube Cache",
+                    value: "\(formattedYouTubeStorageMB) MB"
+                )
+
+                statChip(
+                    title: "Microphone",
+                    value: viewModel.microphoneGranted ? "Granted" : "Missing",
+                    isHealthy: viewModel.microphoneGranted
+                )
+
+                statChip(
+                    title: "Accessibility",
+                    value: viewModel.accessibilityGranted ? "Granted" : "Missing",
+                    isHealthy: viewModel.accessibilityGranted
+                )
+            }
+        }
+    }
+
+    // MARK: - General
+
+    private var generalCard: some View {
+        settingsCard(
+            title: "General",
+            subtitle: "App behavior and shell presence.",
+            icon: "gearshape"
+        ) {
+            VStack(spacing: DesignSystem.Spacing.md) {
+                settingsToggleRow(
+                    title: "Menu bar only mode",
+                    detail: "Hide the Dock icon and run from the menu bar only.",
+                    isOn: $viewModel.menuBarOnlyMode
+                )
+
+                Divider()
+
+                settingsToggleRow(
+                    title: "Launch at login",
+                    detail: "Start MacParakeet automatically when you sign in.",
+                    isOn: $viewModel.launchAtLogin
+                )
+            }
+        }
+    }
+
+    // MARK: - Dictation
+
+    private var dictationCard: some View {
+        settingsCard(
+            title: "Dictation",
+            subtitle: "Global hotkey and silence behavior.",
+            icon: "waveform"
+        ) {
+            VStack(spacing: DesignSystem.Spacing.md) {
+                HStack(alignment: .center) {
+                    rowText(
+                        title: "Hotkey",
+                        detail: "System-wide key used to start and stop dictation."
+                    )
+                    Spacer(minLength: DesignSystem.Spacing.md)
+                    Picker("Hotkey", selection: $viewModel.hotkeyTrigger) {
+                        ForEach(TriggerKey.allCases, id: \.rawValue) { key in
+                            Text("\(key.shortSymbol) \(key.displayName)").tag(key.rawValue)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(width: 170)
+                }
+
+                Divider()
+
+                settingsToggleRow(
+                    title: "Auto-stop after silence",
+                    detail: "Stops recording when speech pauses for the selected delay.",
+                    isOn: $viewModel.silenceAutoStop
+                )
+
+                if viewModel.silenceAutoStop {
+                    Divider()
+                    HStack(alignment: .center) {
+                        rowText(
+                            title: "Silence delay",
+                            detail: "How long silence must persist before dictation stops."
+                        )
+                        Spacer(minLength: DesignSystem.Spacing.md)
+                        Picker("Silence delay", selection: $viewModel.silenceDelay) {
+                            Text("1 sec").tag(1.0)
+                            Text("1.5 sec").tag(1.5)
+                            Text("2 sec").tag(2.0)
+                            Text("3 sec").tag(3.0)
+                            Text("5 sec").tag(5.0)
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .frame(width: 140)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Storage
+
+    private var storageCard: some View {
+        settingsCard(
+            title: "Storage",
+            subtitle: "Retention and local helper runtime policy.",
+            icon: "internaldrive"
+        ) {
+            VStack(spacing: DesignSystem.Spacing.md) {
+                settingsToggleRow(
+                    title: "Save audio recordings",
+                    detail: "Keeps dictation audio alongside transcript history.",
+                    isOn: $viewModel.saveAudioRecordings
+                )
+
+                Divider()
+
+                settingsToggleRow(
+                    title: "Keep downloaded YouTube audio",
+                    detail: "Enabled by default. Turn off to auto-delete downloaded audio after transcription.",
+                    isOn: $viewModel.saveTranscriptionAudio
+                )
+
+                Divider()
+
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 190), spacing: DesignSystem.Spacing.md)],
+                    spacing: DesignSystem.Spacing.md
+                ) {
+                    metricTile(
+                        title: "Dictation Records",
+                        value: "\(viewModel.dictationCount)",
+                        detail: viewModel.dictationCount == 1 ? "entry" : "entries"
+                    )
+
+                    metricTile(
+                        title: "YouTube Downloads",
+                        value: "\(viewModel.youtubeDownloadCount)",
+                        detail: "\(formattedYouTubeStorageMB) MB"
+                    )
+                }
+
+                VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
+                    Text("Maintenance")
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(.secondary)
+
+                    HStack(spacing: DesignSystem.Spacing.sm) {
+                        Button("Clear All Dictations...", role: .destructive) {
+                            showClearAllAlert = true
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button("Clear Downloaded YouTube Audio...", role: .destructive) {
+                            showClearYouTubeAudioAlert = true
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+                .padding(DesignSystem.Spacing.sm)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                        .fill(DesignSystem.Colors.errorRed.opacity(0.06))
+                )
+            }
+        }
+    }
+
+    // MARK: - Permissions
+
+    private var permissionsCard: some View {
+        settingsCard(
+            title: "Permissions",
+            subtitle: "Required for recording and global paste automation.",
+            icon: "lock.shield"
+        ) {
+            VStack(spacing: DesignSystem.Spacing.md) {
+                HStack {
+                    rowText(title: "Microphone", detail: "Required for voice capture.")
+                    Spacer()
+                    permissionPill(granted: viewModel.microphoneGranted)
+                }
+
+                Divider()
+
+                HStack {
+                    rowText(title: "Accessibility", detail: "Required for global hotkey and paste.")
+                    Spacer()
+                    permissionPill(granted: viewModel.accessibilityGranted)
+                }
+
+                if !viewModel.accessibilityGranted {
+                    Divider()
+                    Button("Open System Settings") {
+                        openAccessibilitySettings()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(DesignSystem.Colors.accent)
+                }
+            }
+        }
+    }
+
+    // MARK: - Onboarding
+
+    private var onboardingCard: some View {
+        settingsCard(
+            title: "Onboarding",
+            subtitle: "Re-run setup flow for permissions and speech engine warm-up.",
+            icon: "list.number"
+        ) {
+            HStack {
+                rowText(
+                    title: "Run onboarding again",
+                    detail: "Opens first-run setup with guided steps."
+                )
+                Spacer()
+                Button("Open Setup...") {
+                    NotificationCenter.default.post(name: .macParakeetOpenOnboarding, object: nil)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(DesignSystem.Colors.accent)
+            }
+        }
+    }
+
+    // MARK: - About
+
+    private var aboutCard: some View {
+        settingsCard(
+            title: "About",
+            subtitle: "Build identity and runtime posture.",
+            icon: "info.circle"
+        ) {
+            HStack(spacing: DesignSystem.Spacing.md) {
+                SpinnerRingView(size: 18, revolutionDuration: 8.0, tintColor: DesignSystem.Colors.accent)
+                    .opacity(0.6)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("MacParakeet \(appVersion)")
+                        .font(DesignSystem.Typography.body)
+                    Text("Local-first transcription stack")
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+            }
+        }
+    }
+
+    // MARK: - Reusable UI
+
+    private func settingsCard<Content: View>(
+        title: String,
+        subtitle: String,
+        icon: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+            HStack(alignment: .top, spacing: DesignSystem.Spacing.sm) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(DesignSystem.Colors.accent)
+                    .frame(width: 30, height: 30)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(DesignSystem.Colors.accent.opacity(0.12))
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(DesignSystem.Typography.sectionTitle)
+                    Text(subtitle)
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            content()
+        }
+        .padding(DesignSystem.Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
+                .fill(DesignSystem.Colors.cardBackground)
+                .cardShadow(DesignSystem.Shadows.cardRest)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
+                .strokeBorder(DesignSystem.Colors.border.opacity(0.6), lineWidth: 0.5)
+        )
+    }
+
+    private func settingsToggleRow(
+        title: String,
+        detail: String,
+        isOn: Binding<Bool>
+    ) -> some View {
+        HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
+            rowText(title: title, detail: detail)
+            Spacer(minLength: DesignSystem.Spacing.md)
+            Toggle("", isOn: isOn)
+                .labelsHidden()
+        }
+    }
+
+    private func rowText(title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(DesignSystem.Typography.body)
+            Text(detail)
+                .font(DesignSystem.Typography.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func statChip(title: String, value: String, isHealthy: Bool = true) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(DesignSystem.Typography.micro)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(DesignSystem.Typography.body.weight(.semibold))
+                .foregroundStyle(isHealthy ? .primary : DesignSystem.Colors.errorRed)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                .fill(DesignSystem.Colors.surfaceElevated)
+        )
+    }
+
+    private func metricTile(title: String, value: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(DesignSystem.Typography.micro)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(DesignSystem.Typography.sectionTitle)
+            Text(detail)
+                .font(DesignSystem.Typography.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(DesignSystem.Spacing.sm)
+        .background(
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                .fill(DesignSystem.Colors.surfaceElevated)
+        )
+    }
+
+    // MARK: - Helpers
+
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
     }
 
-    // MARK: - Permission Pill
+    private var formattedYouTubeStorageMB: String {
+        String(format: "%.1f", viewModel.youtubeDownloadStorageMB)
+    }
 
     @ViewBuilder
     private func permissionPill(granted: Bool) -> some View {

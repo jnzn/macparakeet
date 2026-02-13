@@ -139,8 +139,8 @@ Both modes coexist with no configuration required. The 400ms threshold distingui
 ├─────────────────────────────────────────────────────────────────┤
 │ 5. Processing                                                    │
 │    - Overlay transitions to processing state                     │
-│    - Audio buffer → temp WAV → Parakeet STT daemon               │
-│    - Parakeet returns transcript (300x realtime, 6.3% WER)       │
+│    - Audio buffer → temp WAV → FluidAudio STT (CoreML/ANE)       │
+│    - Parakeet returns transcript (155x realtime, ~2.5% WER)      │
 │    - (v0.2) Raw → clean pipeline → polished text                 │
 ├─────────────────────────────────────────────────────────────────┤
 │ 6. Result                                                        │
@@ -302,13 +302,13 @@ User drops file(s) onto window or menu bar icon
          │
          ▼
 ┌──────────────────┐
-│    STTClient     │ ── Send WAV to Parakeet daemon via JSON-RPC
+│    STTClient     │ ── Send audio to Parakeet via FluidAudio CoreML
 └────────┬─────────┘
          │
          ▼
 ┌──────────────────┐
-│  Parakeet Daemon │ ── Transcribe with word-level timestamps
-│                  │    300x+ realtime on Apple Silicon
+│  FluidAudio STT  │ ── Transcribe with word-level timestamps
+│                  │    155x realtime on Apple Silicon (ANE)
 └────────┬─────────┘
          │
          ▼
@@ -1011,7 +1011,8 @@ Display result (same view as file transcription)
 ```
 
 **Technical requirements:**
-- yt-dlp (bundled or user-installed) for YouTube audio download
+- yt-dlp standalone managed binary for YouTube audio download (weekly non-blocking `--update`)
+- Bundled FFmpeg binary for media demux/conversion (no system dependency)
 - Supports standard YouTube URL forms (`youtube.com/watch`, `youtu.be`, `youtube.com/shorts`, `youtube.com/embed`, `youtube.com/v`)
 - Playlist pages are processed in single-video mode (`--no-playlist`); full playlist batch transcription is deferred
 - Audio-only download (no video, saves bandwidth and time)
@@ -1286,15 +1287,15 @@ Read surrounding text from the active app via macOS Accessibility APIs (AXUIElem
 
 | Metric | Target | Notes |
 |--------|--------|-------|
-| Transcription speed | 300x+ realtime | Parakeet TDT on Apple Silicon |
+| Transcription speed | 155x realtime | Parakeet TDT on Apple Silicon (ANE via FluidAudio CoreML) |
 | Dictation latency | <500ms end-to-end | From Fn release to text appearing |
 | Clean pipeline | <1ms | Deterministic, no LLM |
 | LLM refinement | <5s | Qwen3-4B for formal/email/code modes |
-| Memory usage (idle) | <200MB | Menu bar + daemon standing by |
-| Memory usage (active) | <4GB | During transcription with model loaded |
-| App size | <500MB | Including bundled uv + FFmpeg |
+| Memory usage (idle) | <200MB | Menu bar + STT model standing by |
+| Memory usage (active) | <3GB | During transcription with both models loaded |
+| App size | <100MB | Plus ~6 GB STT model download on first run |
 | Startup time | <2s | Cold start to menu bar ready |
-| File transcription | 1 hour audio in <12s | On M1 or better |
+| File transcription | 1 hour audio in <25s | On M1 or better (ANE via CoreML) |
 
 ---
 
@@ -1313,8 +1314,8 @@ MacParakeet's brand is privacy. These are non-negotiable.
 | Network only for YouTube | YouTube download is the only network call, user-initiated |
 
 **What "100% local" means:**
-- Parakeet STT runs on Apple Silicon GPU -- no cloud API
-- Qwen3-4B LLM runs on Apple Silicon GPU -- no OpenAI, no Anthropic
+- Parakeet STT runs on Apple Silicon Neural Engine (ANE) via FluidAudio CoreML -- no cloud API
+- Qwen3-4B LLM runs on Apple Silicon GPU via MLX-Swift/Metal -- no OpenAI, no Anthropic
 - Audio never leaves the device
 - Transcripts never leave the device
 - No "phone home" on launch, no update checks to our servers (App Store handles updates)
@@ -1329,7 +1330,7 @@ v0.1 Core MVP:
 
                    ┌──────────────────┐
                    │  Parakeet STT    │ ← Foundation for everything
-                   │  (Python daemon) │
+                   │  (FluidAudio)   │
                    └────────┬─────────┘
                             │
               ┌─────────────┼──────────────┐
@@ -1429,7 +1430,7 @@ Cross-cutting dependency:
 
 **Critical path for MVP (v0.1):**
 ```
-Parakeet daemon bootstrap → Audio capture (AVAudioEngine)
+FluidAudio model download → Audio capture (AVAudioEngine)
     → Dictation service (Fn hotkey + overlay)
     → Text insertion (NSPasteboard + Cmd+V)
     → History (GRDB persistence)

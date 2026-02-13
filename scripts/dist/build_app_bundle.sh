@@ -5,8 +5,8 @@ set -euo pipefail
 #
 # This script:
 # - builds the `MacParakeet` SwiftPM product in Release
-# - assembles a minimal .app bundle (Info.plist + executable + bundled python package)
-# - optionally bundles `uv` and `node` into Resources (downloading if needed)
+# - assembles a minimal .app bundle (Info.plist + executable + bundled helper binaries)
+# - bundles FFmpeg into Resources and optionally bundles `node` for yt-dlp JS runtime support
 #
 # Outputs:
 #   dist/MacParakeet.app
@@ -21,6 +21,8 @@ set -euo pipefail
 #   SKIP_BUILD          (default: 0) reuse existing Release binary if 1
 #   BUILD_SYSTEM        (default: xcodebuild) 'xcodebuild' or 'swiftpm'
 #   XCODE_DERIVED_DATA  (default: .build/xcode-dist) derived data path for xcodebuild
+#   FFMPEG_PATH         (default: /opt/homebrew/bin/ffmpeg) source ffmpeg binary to bundle
+#   ALLOW_NON_PORTABLE_FFMPEG (default: 0) allow bundling ffmpeg with non-system dylib deps
 #   BUNDLE_NODE        (default: 1) bundle Node runtime for yt-dlp
 #   NODE_VERSION       (default: 24.13.1) Node version used when downloading
 
@@ -150,58 +152,30 @@ else
   echo "[2/4] Assembling app bundle…"
 fi
 
-# Bundle the python package sources (needed for `python -m macparakeet_stt`).
-mkdir -p "$RESOURCES_DIR/python"
-rsync -a --delete \
-  --exclude "__pycache__/" \
-  --exclude ".venv/" \
-  "$ROOT_DIR/python/" "$RESOURCES_DIR/python/"
+# Bundle FFmpeg (required at runtime for media demux/conversion).
+FFMPEG_PATH="${FFMPEG_PATH:-/opt/homebrew/bin/ffmpeg}"
+ALLOW_NON_PORTABLE_FFMPEG="${ALLOW_NON_PORTABLE_FFMPEG:-0}"
+if [[ ! -x "$FFMPEG_PATH" ]]; then
+  echo "Error: FFMPEG_PATH not executable: $FFMPEG_PATH" >&2
+  echo "Set FFMPEG_PATH to a portable/static ffmpeg binary to bundle inside the app (not a Homebrew Cellar-linked build)." >&2
+  exit 1
+fi
 
-# Optionally bundle `uv` for first-run setup (PythonBootstrap prefers bundled uv).
-#
-# For universal builds, bundle both arch binaries as `uv-arm64` and `uv-x86_64`.
-UV_VERSION="${UV_VERSION:-0.9.21}"
-if command -v uv >/dev/null 2>&1; then
-  UV_PATH="$(command -v uv)"
-  cp "$UV_PATH" "$RESOURCES_DIR/uv"
-  chmod +x "$RESOURCES_DIR/uv"
-  echo "Bundled uv from: $UV_PATH"
-else
-  echo "uv not found on PATH; downloading uv ${UV_VERSION}…"
-  TMP="$(mktemp -d)"
-  trap 'rm -rf "$TMP"' EXIT
-
-  download_uv() {
-    local asset="$1"
-    local out="$2"
-    local tarball="$TMP/$asset"
-    curl -LsSf "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/${asset}" -o "$tarball"
-    rm -rf "$TMP/extract"
-    mkdir -p "$TMP/extract"
-    tar -xzf "$tarball" -C "$TMP/extract"
-    local uv_bin
-    uv_bin="$(find "$TMP/extract" -maxdepth 2 -type f -name uv | head -n 1)"
-    if [[ -z "${uv_bin:-}" || ! -f "$uv_bin" ]]; then
-      echo "Failed to locate uv binary inside ${asset}" >&2
-      exit 1
-    fi
-    install -m 0755 "$uv_bin" "$out"
-  }
-
-  if [[ "$UNIVERSAL" == "1" ]]; then
-    download_uv "uv-aarch64-apple-darwin.tar.gz" "$RESOURCES_DIR/uv-arm64"
-    download_uv "uv-x86_64-apple-darwin.tar.gz" "$RESOURCES_DIR/uv-x86_64"
-  else
-    ARCH="$(uname -m)"
-    if [[ "$ARCH" == "arm64" ]]; then
-      UV_ASSET="uv-aarch64-apple-darwin.tar.gz"
-    else
-      UV_ASSET="uv-x86_64-apple-darwin.tar.gz"
-    fi
-    download_uv "$UV_ASSET" "$RESOURCES_DIR/uv"
+# Guard against accidentally bundling Homebrew-linked ffmpeg, which depends on
+# external Cellar dylibs and is not portable across machines.
+if [[ "$ALLOW_NON_PORTABLE_FFMPEG" != "1" ]] && command -v otool >/dev/null 2>&1; then
+  NON_SYSTEM_DEPS="$(otool -L "$FFMPEG_PATH" | tail -n +2 | awk '{print $1}' | grep -E '^/' | grep -Ev '^/System/Library/|^/usr/lib/' || true)"
+  if [[ -n "$NON_SYSTEM_DEPS" ]]; then
+    echo "Error: ffmpeg binary has non-system dylib dependencies and is likely not portable:" >&2
+    echo "$NON_SYSTEM_DEPS" >&2
+    echo "Provide a portable/static ffmpeg via FFMPEG_PATH (for example: prebuilt standalone ffmpeg), or set ALLOW_NON_PORTABLE_FFMPEG=1 to override." >&2
+    exit 1
   fi
 fi
 
+cp "$FFMPEG_PATH" "$RESOURCES_DIR/ffmpeg"
+chmod +x "$RESOURCES_DIR/ffmpeg"
+echo "Bundled FFmpeg from: $FFMPEG_PATH"
 
 
 # Optionally bundle `node` for yt-dlp JavaScript runtime support.

@@ -2,7 +2,9 @@
 
 **The fastest, most private voice app for Mac.**
 
-MacParakeet uses NVIDIA's Parakeet TDT model to power system-wide voice dictation and file transcription — entirely on your Mac, with zero cloud uploads.
+> Migration Note: FluidAudio CoreML is the active target architecture. Specs/docs reflect target runtime behavior while implementation work is in progress.
+
+MacParakeet uses NVIDIA's Parakeet TDT model — running on Apple's Neural Engine via FluidAudio CoreML — to power system-wide voice dictation and file transcription. Entirely on your Mac, with zero cloud uploads.
 
 ## Two Modes
 
@@ -17,7 +19,7 @@ Trigger key configurable in Settings (Fn, Control, Option, Shift, or Command).
 ### File Transcription
 Drag any audio or video file → get a transcript in seconds.
 
-- Transcribe a 3-hour podcast in under 2 minutes (300x realtime)
+- Transcribe a 1-hour podcast in under 25 seconds (155x realtime)
 - Word-level timestamps with confidence scores
 - Export to TXT, Markdown, SRT, and VTT (DOCX planned)
 
@@ -26,7 +28,7 @@ Drag any audio or video file → get a transcript in seconds.
 | | MacParakeet | WisprFlow | MacWhisper | Superwhisper |
 |---|---|---|---|---|
 | **Processing** | 100% Local | Cloud | Local | Local |
-| **Speed** | 300x realtime | Varies (server) | 15-30x | 15-30x |
+| **Speed** | 155x realtime | Varies (server) | 15-30x | 15-30x |
 | **Price** | $49 once | $12-15/month | $30 Pro | $250 lifetime |
 | **Privacy** | Zero cloud | Audio uploaded | Local | Local |
 | **Command Mode** | Local LLM | Cloud LLM | No | No |
@@ -66,7 +68,7 @@ Download from [macparakeet.com](https://macparakeet.com)
 
 ## Tech Stack
 
-- **STT Engine**: Parakeet TDT 0.6B-v3 via MLX
+- **STT Engine**: Parakeet TDT 0.6B-v3 via FluidAudio CoreML (Neural Engine)
 - **LLM**: Qwen3-4B via MLX-Swift (local, for command mode)
 - **Framework**: Swift + SwiftUI
 - **Database**: SQLite via GRDB
@@ -93,7 +95,8 @@ MacParakeet is built for **fast feedback loops**. AI agents make mistakes — bu
 
 - **Tests** — Unit and integration tests for all core logic (`swift test`)
 - **Internal CLI** — Headless interface to core services (transcribe files, test the pipeline) so changes can be verified without launching the GUI
-  - Tip: use `macparakeet transcribe ... --database /tmp/macparakeet-dev.db` to avoid writing into your real app database during dev.
+  - Tip: use `swift run macparakeet-cli transcribe ... --database /tmp/macparakeet-dev.db` to avoid writing into your real app database during dev.
+  - See `docs/cli-testing.md` for GUI-parity vs deterministic testing modes.
 - **Protocol-based services** — Mockable boundaries make isolated testing straightforward
 
 The faster the feedback loop, the faster the agent self-corrects. If you can't confirm a change works by running a command, the change isn't done.

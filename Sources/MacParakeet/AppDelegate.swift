@@ -41,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let onboardingWindowController = OnboardingWindowController()
     private var onboardingObserver: Any?
     private var hotkeyTriggerObserver: Any?
+    private var menuBarOnlyModeObserver: Any?
     private var hotkeyMenuItem: NSMenuItem?
 
     // MARK: - App Lifecycle
@@ -52,6 +53,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         setupHotkey()
         observeOpenOnboarding()
         observeHotkeyTriggerChange()
+        observeMenuBarOnlyModeChange()
+        applyActivationPolicyFromSettings()
         showIdlePill()
     }
 
@@ -60,14 +63,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         hotkeyManager?.stop()
         if let onboardingObserver { NotificationCenter.default.removeObserver(onboardingObserver) }
         if let hotkeyTriggerObserver { NotificationCenter.default.removeObserver(hotkeyTriggerObserver) }
+        if let menuBarOnlyModeObserver { NotificationCenter.default.removeObserver(menuBarOnlyModeObserver) }
         Task {
             await appEnvironment?.sttClient.shutdown()
         }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        // Don't quit when window closes — we're a menu bar app
+        // Don't quit when window closes — dictation/menu bar features stay available
         return false
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // Dock click while no visible windows should reopen/create the main window.
+        if !flag {
+            openMainWindow()
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        return true
+    }
+
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+
+        let openItem = NSMenuItem(
+            title: "Open MacParakeet",
+            action: #selector(openMainWindow),
+            keyEquivalent: ""
+        )
+        openItem.target = self
+        menu.addItem(openItem)
+
+        let settingsItem = NSMenuItem(
+            title: "Settings...",
+            action: #selector(openMainWindowToSettings),
+            keyEquivalent: ""
+        )
+        settingsItem.target = self
+        menu.addItem(settingsItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        let quitItem = NSMenuItem(
+            title: "Quit MacParakeet",
+            action: #selector(quitApp),
+            keyEquivalent: ""
+        )
+        quitItem.target = self
+        menu.addItem(quitItem)
+
+        return menu
     }
 
     // MARK: - Main Menu (enables Cmd+A/C/V/X in text fields)
@@ -254,6 +300,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self?.hotkeyMenuItem?.title = self?.hotkeyMenuTitle ?? ""
             }
         }
+    }
+
+    private func observeMenuBarOnlyModeChange() {
+        menuBarOnlyModeObserver = NotificationCenter.default.addObserver(
+            forName: .macParakeetMenuBarOnlyModeDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.applyActivationPolicyFromSettings()
+            }
+        }
+    }
+
+    private func applyActivationPolicyFromSettings() {
+        let mode = settingsViewModel.menuBarOnlyMode ? NSApplication.ActivationPolicy.accessory : .regular
+        NSApp.setActivationPolicy(mode)
     }
 
     private var hotkeyMenuTitle: String {
@@ -789,7 +852,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             createMainWindow()
         }
         mainWindow?.makeKeyAndOrderFront(nil)
-        NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -798,15 +860,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         openMainWindow()
     }
 
-    // NSWindowDelegate
-
-    func windowWillClose(_ notification: Notification) {
-        guard let window = notification.object as? NSWindow,
-              window === mainWindow else { return }
-
-        // Main window closing — hide dock icon, stay in menu bar
-        NSApp.setActivationPolicy(.accessory)
-    }
 
     private func createMainWindow() {
         let contentView = MainWindowView(
@@ -850,7 +903,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // MARK: - Alerts
 
     private func presentEntitlementsAlert(_ error: Error) {
-        NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
 
         let alert = NSAlert()

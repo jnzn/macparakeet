@@ -176,6 +176,26 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(progress, 0.42, accuracy: 0.0001)
     }
 
+    func testTranscribeURLProgressParsesPercentWithTrailingContext() async throws {
+        let expectedResult = Transcription(
+            fileName: "YouTube Video",
+            rawTranscript: "URL transcript",
+            status: .completed,
+            sourceURL: "https://youtu.be/dQw4w9WgXcQ"
+        )
+        await mockService.configure(result: expectedResult)
+        await mockService.configureURLProgress(phases: ["Downloading audio... 42% (18 MB/s)"])
+        await mockService.configureURLDelay(milliseconds: 200)
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+        viewModel.urlInput = "https://youtu.be/dQw4w9WgXcQ"
+        viewModel.transcribeURL()
+
+        try await Task.sleep(for: .milliseconds(50))
+        let progress = try XCTUnwrap(viewModel.transcriptionProgress)
+        XCTAssertEqual(progress, 0.42, accuracy: 0.0001)
+    }
+
     func testTranscribeURLProgressResetsOnPhaseWithoutPercent() async throws {
         let expectedResult = Transcription(
             fileName: "YouTube Video",
@@ -196,6 +216,29 @@ final class TranscriptionViewModelTests: XCTestCase {
 
         try await Task.sleep(for: .milliseconds(50))
         XCTAssertEqual(viewModel.transcriptionProgress, nil, "Non-percent phase should clear stale progress values")
+    }
+
+    func testTranscribeURLProgressTracksPhaseHeadlineAndSourceKind() async throws {
+        let expectedResult = Transcription(
+            fileName: "YouTube Video",
+            rawTranscript: "URL transcript",
+            status: .completed,
+            sourceURL: "https://youtu.be/dQw4w9WgXcQ"
+        )
+        await mockService.configure(result: expectedResult)
+        await mockService.configureURLProgress(phases: ["Converting audio...", "Transcribing... 12%"])
+        await mockService.configureURLDelay(milliseconds: 200)
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+        viewModel.urlInput = "https://youtu.be/dQw4w9WgXcQ"
+        viewModel.transcribeURL()
+
+        XCTAssertEqual(viewModel.sourceKind, .youtubeURL)
+
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(viewModel.progressPhase, .transcribing)
+        XCTAssertEqual(viewModel.sourceKind, .youtubeURL)
+        XCTAssertEqual(viewModel.progressHeadline, "Running speech recognition")
     }
 
     // MARK: - Duplicate URL Detection
