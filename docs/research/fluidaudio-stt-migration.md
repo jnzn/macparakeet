@@ -1,6 +1,6 @@
 # FluidAudio CoreML Migration: STT Backend Evaluation
 
-> Status: **ACTIVE** — Research findings, February 12, 2026
+> Status: **ACTIVE** — Research findings, February 12-13, 2026
 
 ## Problem Statement
 
@@ -34,16 +34,16 @@ Both Parakeet (STT) and Qwen3-4B (LLM) run on the GPU via Metal/MLX. They share 
 ### Secondary Issues
 
 - **Unnecessary complexity**: JSON-RPC over stdin/stdout, subprocess management, daemon health checks, cross-process error propagation — all to bridge Swift and Python. Native Swift would be a single async/await call.
-- **Extra runtime**: Python + uv + venv + FFmpeg are dependencies that exist solely because of the STT backend. Every one is a potential failure point (macOS updates can break venvs, every `.so`/`.dylib` needs codesigning).
+- **Extra runtime**: Python + uv + venv are dependencies that exist primarily because of the STT backend. Every one is a potential failure point (macOS updates can break venvs, every `.so`/`.dylib` needs codesigning).
 - **App Store incompatible**: Sandboxing prohibits spawning arbitrary subprocesses. This permanently closes a distribution channel.
 
 ## Discovery: FluidAudio
 
 [FluidAudio](https://github.com/FluidInference/FluidAudio) is a Swift SDK by FluidInference that runs Parakeet TDT on Apple's **Neural Engine (ANE) via CoreML** — no Python, no GPU, no subprocess.
 
-- **1,455 GitHub stars**, Apache 2.0 license
-- **v0.12.1** released February 12, 2026 (extremely active development)
-- **20+ production apps** ship with it, including VoiceInk (direct competitor)
+- **~1,500 GitHub stars**, Apache 2.0 license
+- **v0.12.1** released February 12, 2026 (34 releases in 7 months, extremely active)
+- **20+ production apps** ship with it, including VoiceInk and Spokenly (direct competitors)
 - Built by FluidInference — small independent team, not affiliated with NVIDIA or Apple
 - Business model: open source SDK, paid custom model training/optimization for enterprises
 
@@ -51,13 +51,14 @@ Both Parakeet (STT) and Qwen3-4B (LLM) run on the GPU via Metal/MLX. They share 
 
 | Capability | Model | Details |
 |-----------|-------|---------|
-| ASR (batch) | Parakeet TDT v2 (English) | 2.1% WER, ~155x RTF on M4 Pro |
-| ASR (batch) | Parakeet TDT v3 (multilingual) | 2.5% WER, ~155x RTF, 25 European languages |
-| ASR (streaming) | Parakeet EOU 120M | Real-time with end-of-utterance detection, 1.3s min latency |
+| ASR (batch) | Parakeet TDT v2 (English) | 2.1% WER, ~146x RTF on M4 Pro |
+| ASR (batch) | Parakeet TDT v3 (multilingual) | 2.5% WER, ~156x RTF, 25 European languages |
+| ASR (streaming) | Parakeet EOU 1.1B | Real-time with end-of-utterance detection, 160ms-1600ms chunks |
 | Diarization | Pyannote + WeSpeaker (offline), Sortformer (real-time) | 15% DER |
 | VAD | Silero | 96% accuracy, 1220x RTF |
-| TTS | PocketTTS | Apache 2.0 (GPL-free) |
+| TTS | PocketTTS (in core product) | Apache 2.0 (GPL-free) |
 | Custom vocabulary | CTC/TDT keyword boosting | 99.3% recall |
+| Qwen3-ASR | Beta (v0.12.1) | LLM-enhanced ASR, early stage |
 
 ### API Surface
 
@@ -66,15 +67,54 @@ Transcription in 5 lines of native Swift:
 ```swift
 import FluidAudio
 
-let models = try await AsrModels.downloadAndLoad(version: .v2)
+let models = try await AsrModels.downloadAndLoad(version: .v3)
 let manager = AsrManager(config: .default)
 try await manager.initialize(models: models)
 
 let result = try await manager.transcribe(samples, source: .system)
-print(result.text)
+print(result.text)        // full transcription
+print(result.confidence)  // e.g. 0.988
+// result.tokenTimings provides word-level timestamps with per-word confidence
 ```
 
-Async/await native. No FFmpeg (uses AVAudioConverter). No subprocess. No JSON-RPC.
+Async/await native. No subprocess. No JSON-RPC.
+
+**Audio input:** All methods require 16kHz mono Float32 samples. FluidAudio provides `AudioConverter` for resampling:
+
+```swift
+// From audio file (WAV, M4A, etc.)
+let samples = try await AudioConverter.resampleAudioFile(path: "path.wav")
+
+// From AVAudioPCMBuffer (e.g., microphone capture)
+let samples = try AudioConverter.resampleBuffer(buffer)
+```
+
+**Critical:** Always use FluidAudio's `AudioConverter` — never manually decode audio. CoreML models require correctly resampled input; manual parsing silently corrupts it.
+
+### Custom Vocabulary Boosting (v0.11.0+)
+
+FluidAudio's CTC-based keyword boosting maps directly to our `CustomWord` model:
+
+```swift
+let vocabulary = CustomVocabularyContext(terms: [
+    CustomVocabularyTerm(text: "MacParakeet"),
+    CustomVocabularyTerm(
+        text: "macOS",
+        aliases: ["Mac OS", "Macos"]  // recognized variants → canonical form
+    ),
+])
+
+let result = try await asrManager.transcribe(
+    audioSamples,
+    customVocabulary: vocabulary
+)
+// result.ctcDetectedTerms — which vocabulary terms were spotted
+// result.ctcAppliedTerms — which were applied to the transcription
+```
+
+This runs a secondary CTC encoder (110M params) alongside the primary TDT encoder. Memory doubles from ~66MB to ~130MB working RAM when vocabulary boosting is active. Tested up to 230 terms, optimal at 1-50.
+
+**Integration opportunity:** Our existing `CustomWord` entries could be fed as `CustomVocabularyTerm` objects, potentially replacing some deterministic pipeline correction with neural recognition at the STT level.
 
 ## Target Architecture: Three Workloads, Three Chips
 
@@ -95,7 +135,8 @@ Audio → [Parakeet on ANE] → raw text → [Qwen3-4B on GPU] → refined text
 **What this means in practice:**
 
 - **Zero compute contention** — ANE and GPU are separate silicon running simultaneously. STT never competes with the LLM for processing cycles.
-- **~1-1.5GB memory savings** — Parakeet uses ~800MB on ANE via CoreML vs ~2GB+ on GPU via MLX. On 8GB Macs, that's significant (see memory analysis below).
+- **Better memory efficiency** — FluidAudio benchmarks show ~66 MB peak working RAM for the TDT encoder (~130 MB with vocabulary boosting), dramatically lower than the ~2GB+ MLX/GPU footprint. Total memory including memory-mapped model files is higher but still an improvement. On 8GB Macs, this matters.
+- **Better accuracy** — FluidAudio's CoreML path achieves 2.1-2.5% WER vs our current ~6.3% on MLX. Same Parakeet model weights, but FluidAudio's optimized decoding produces measurably better results.
 - **Lower power** — The ANE is purpose-built for inference and is significantly more power-efficient than running the same workload on the GPU.
 - **Scales with features** — As we add command mode, more AI refinement modes, and heavier Qwen3-4B usage, the GPU isn't also carrying STT. This separation becomes more valuable over time, not less.
 
@@ -110,19 +151,7 @@ Apple Silicon (e.g., 8GB Mac)
 └── ANE  ──┘
 ```
 
-This means moving STT to the ANE doesn't magically create new memory — but it does use **less** of the shared pool:
-
-| Component | Current (Python/MLX) | With FluidAudio CoreML |
-|-----------|---------------------|----------------------|
-| Parakeet STT | ~2GB+ (GPU/MLX) | ~800MB (ANE/CoreML) |
-| Qwen3-4B LLM (4-bit) | ~2.5-4GB (GPU) | ~2.5-4GB (GPU) |
-| App + macOS overhead | ~2-3GB | ~2-3GB |
-| **Total** | **~6.5-9GB** | **~5.3-8GB** |
-| **Headroom on 8GB Mac** | **-0.5 to 1.5GB** | **0 to 2.7GB** |
-
-That ~1-1.5GB savings from the more efficient CoreML/ANE path is the difference between "barely fits" and "runs comfortably" on base model Macs. Every gigabyte matters when you're running two ML models on an 8GB machine — that's the majority of Apple Silicon MacBooks in the wild.
-
-On 16GB+ Macs the memory pressure is gone either way, but supporting the 8GB base well is important for reach.
+This means moving STT to the ANE doesn't magically create new memory — but it does use **less** of the shared pool. The exact savings depend on how CoreML maps the model into memory, but FluidAudio's benchmarks show dramatically lower working memory (~66 MB) compared to the MLX path (~2GB+). On 8GB Macs, every reduction matters.
 
 ## Technical Comparison
 
@@ -133,18 +162,18 @@ On 16GB+ Macs the memory pressure is gone either way, but supporting the 8GB bas
 | **RTF** | ~300x | ~155x |
 | **1 min dictation** | ~0.2s | ~0.4s |
 | **1 hour file** | ~12s | ~23s |
-| **WER** | 2.1% (same model) | 2.1% (same model) |
-| **Peak memory** | Higher (GPU pool) | ~800MB |
+| **WER** | ~6.3% | 2.1% (v2) / 2.5% (v3) |
+| **Peak working RAM** | ~2GB+ (GPU/MLX pool) | ~66 MB (~130 MB with vocab boosting) |
 | **GPU contention with Qwen3** | Yes | No |
-| **First-run setup** | Minutes (venv + deps) | Seconds (CoreML compile) |
-| **Dependencies** | Python + uv + venv + FFmpeg | SwiftPM only |
+| **First-run setup** | Minutes (venv + ~500 MB deps) | Seconds (CoreML compile) + ~6 GB model download |
+| **Dependencies** | Python + uv + venv | SwiftPM (FluidAudio + swift-transformers) |
 | **Signing** | Dozens of .so/.dylib files | One Swift framework |
-| **App Store** | Blocked | Compatible |
+| **App Store** | Blocked (subprocess) | Compatible |
 | **Crash isolation** | Good (separate process) | Worse (in-process) |
 | **Diarization** | Not included | Built-in |
 | **VAD** | Not included | Built-in |
-| **Streaming ASR** | Not available | Available (EOU model) |
-| **Custom vocabulary** | Not included | Built-in (v0.11.0+) |
+| **Streaming ASR** | Not available | Available (EOU 1.1B model) |
+| **Custom vocabulary** | Not included | Built-in CTC boosting (v0.11.0+) |
 
 ### Speed Difference in Practice
 
@@ -160,6 +189,30 @@ The 300x vs 155x sounds like "twice as fast" but in absolute terms:
 
 For dictation (the primary use case), the difference is imperceptible. For long file transcription, CoreML/ANE is still remarkably fast — 23 seconds for an hour of audio.
 
+### Accuracy Improvement
+
+The WER improvement from ~6.3% (MLX) to 2.1-2.5% (CoreML) is a genuine bonus. Same Parakeet TDT model weights, but FluidAudio's CoreML decoding path produces measurably better results — likely due to their optimized CTC/TDT decoding implementation. The benchmark numbers are from LibriSpeech test-clean; real-world dictation results may vary, but the directional improvement is real.
+
+### Model Size Tradeoff
+
+The CoreML model bundle is **~6 GB** — roughly 2.4x larger than the MLX weights (~2.5 GB). This is the main cost of the migration in terms of user-facing download size.
+
+**Why is the CoreML version larger?**
+
+The MLX path stores model weights in a single quantized format that the GPU interprets at runtime. The CoreML path stores **pre-compiled, hardware-optimized model graphs** — separate compiled bundles for the encoder, decoder, joint network, preprocessor, and mel spectrogram, each optimized for the ANE's specific execution pipeline. This is analogous to how compiled binaries are larger than source code: the extra size buys faster, more efficient execution on the target hardware.
+
+The tradeoff is straightforward:
+
+| | MLX/GPU | CoreML/ANE |
+|---|---------|-----------|
+| Model download | ~2.5 GB | ~6 GB |
+| Runtime memory | ~2 GB+ | ~66 MB working RAM |
+| First-run compile | None | ~3.4s one-time |
+| Speed | ~300x RTF | ~155x RTF |
+| Accuracy | ~6.3% WER | 2.1-2.5% WER |
+
+Larger download, but dramatically lower runtime memory and better accuracy. For a one-time download during onboarding, the extra ~3.5 GB is an acceptable cost — especially since the current Python venv setup already downloads ~500 MB of dependencies plus the ~2.5 GB MLX model weights (total ~3 GB). The net increase is about ~3 GB more than what users already download today.
+
 ## Licensing
 
 All components we'd use are permissive:
@@ -168,11 +221,52 @@ All components we'd use are permissive:
 |-----------|---------|
 | FluidAudio SDK | Apache 2.0 |
 | Parakeet TDT v2/v3 CoreML models | CC-BY-4.0 |
-| Parakeet EOU 120M | nvidia-open-model-license |
+| Parakeet EOU 1.1B | nvidia-open-model-license |
 | Silero VAD | MIT |
 | Diarization models | MIT / Apache 2.0 |
 
-**GPL trap to avoid:** FluidAudio ships two SwiftPM products. `FluidAudio` (core) is all Apache/MIT. `FluidAudioTTS` adds Kokoro TTS which pulls in ESpeakNG (GPL-3.0). We only need the core product — no GPL contamination.
+**GPL trap to avoid:** FluidAudio ships two SwiftPM products. `FluidAudio` (core) is all Apache/MIT — it includes ASR, diarization, VAD, and PocketTTS (GPL-free, moved into core in v0.12.0). `FluidAudioEspeak` adds Kokoro TTS with ESpeakNG (GPL-3.0). We only need the core product — no GPL contamination.
+
+## Build Requirements
+
+| Requirement | Current | With FluidAudio |
+|-------------|---------|-----------------|
+| Swift | 5.9+ | **6.0** (FluidAudio's Package.swift specifies swift-tools-version: 6.0) |
+| macOS | 14.2+ | 14.0+ (FluidAudio minimum; our 14.2+ is fine) |
+| Architecture | Apple Silicon | Apple Silicon (ANE required) |
+| SwiftPM dependencies | GRDB, MLX-Swift, ArgumentParser | + FluidAudio, swift-transformers |
+| C++ targets | None | FastClusterWrapper, MachTaskSelfWrapper (C++17, compiled by SwiftPM) |
+
+**Swift 6 note:** FluidAudio requires Swift 6 toolchain. Our project currently specifies Swift 5.9+. We may need to update our `swift-tools-version` or ensure our project compiles under Swift 6's stricter concurrency model. Since FluidAudio is a dependency (not our code), this should work with Swift 5.9 tools that support Swift 6 packages — but needs validation.
+
+## Model Distribution
+
+### Download Size
+
+The CoreML model bundle for `parakeet-tdt-0.6b-v3-coreml` is **~6 GB** on HuggingFace. This is significantly larger than the MLX weights (~2.5 GB) because CoreML bundles include multiple compiled components (encoder, decoder, joint network, preprocessor, mel spectrogram) in mixed precision optimized for ANE.
+
+| Component | Format |
+|-----------|--------|
+| ParakeetEncoder_15s | `.mlmodelc` |
+| ParakeetDecoder | `.mlmodelc` |
+| RNNTJoint | `.mlmodelc` |
+| Preprocessor | `.mlmodelc` |
+| Melspectrogram_15s | `.mlpackage` |
+| MelEncoder | `.mlmodelc` |
+| Vocab files | `.json` |
+
+### Download Mechanism
+
+- `AsrModels.downloadAndLoad(version:)` checks local cache first
+- If not cached, downloads from HuggingFace (configurable mirror via `ModelRegistry.baseURL`)
+- CoreML compilation happens on first load (~3.4s cold, ~162ms warm on subsequent loads)
+- After first run, models load from local cache
+
+### Options
+
+1. **Download on first use (recommended):** Show progress during onboarding. ~6 GB download, one-time cost. Keeps app bundle small.
+2. **Pre-bundle in app:** Instant first-run, but app download is ~6 GB+ larger. Not practical for direct distribution.
+3. **Custom mirror:** `ModelRegistry.baseURL = "https://your-cdn.example.com"` for faster downloads or air-gapped environments.
 
 ## Risk Assessment
 
@@ -181,11 +275,12 @@ All components we'd use are permissive:
 | Risk | Severity | Mitigation |
 |------|----------|------------|
 | FluidInference goes away | Medium | SDK is Apache 2.0 (forkable), CoreML models are on HuggingFace independently |
-| Breaking API changes | Low | Pin to specific version, SDK has semver from v0.7.9+ |
+| Breaking API changes | Low | Pin to specific version, SDK has semver from v0.7.9+, 34 releases with no breaking changes so far |
 | CoreML crash takes down app | Low | CoreML is mature; can wrap in crash handler. Trade-off vs subprocess complexity. |
-| CoreML first-run compilation | Low | 3-15 seconds one-time, can show progress indicator during onboarding |
-| Model download on first run | Medium | Pre-bundle in app, or download during onboarding (2.67 GB) |
+| CoreML first-run compilation | Low | ~3.4s one-time, show progress indicator during onboarding |
+| Model download on first run | Medium-High | ~6 GB download. Must show progress. Consider CDN mirror for faster downloads. One-time cost is acceptable. |
 | Streaming ASR quality worse than batch | Low | Use batch mode for dictation (process after recording stops), streaming only for real-time feedback if added later |
+| Swift 6 requirement | Low | Our macOS 14.2+ target is compatible; may need swift-tools-version bump |
 
 ### Risks of staying on Python/MLX
 
@@ -197,33 +292,53 @@ All components we'd use are permissive:
 | Distribution/signing complexity | Medium | Automation scripts, but ongoing maintenance burden |
 | First-run venv setup | Low | One-time cost, acceptable |
 
-## Recommendation
+## Decision
 
-**Migrate from parakeet-mlx (Python) to FluidAudio CoreML (Swift).**
+**Migrate from parakeet-mlx (Python) to FluidAudio CoreML (Swift). Do it now — before v0.2 AI refinement adds Qwen3-4B to the GPU.**
 
-The CoreML/ANE path is the better architecture — three workloads on three chips instead of two workloads fighting over one, native Swift throughout, fewer moving parts. Use the silicon Apple put in the machine.
+The CoreML/ANE path is the better architecture — three workloads on three chips instead of two workloads fighting over one, native Swift throughout, fewer moving parts, better accuracy. Use the silicon Apple put in the machine.
 
-### Why v0.4, not now
+### Why now, not later
 
-- v0.2 (AI text refinement) and v0.3 (command mode) are in progress on the current stack
-- The Python daemon works — 360 tests passing, proven architecture
-- Rewriting STT infrastructure mid-feature is unnecessary risk
-- v0.4 is the natural point to clean up the foundation before adding more features on top
+- v0.2 is adding Qwen3-4B (LLM) to the GPU — the exact moment GPU contention becomes real
+- Migrating now means every feature built on top (AI refinement, command mode) starts on the correct architecture
+- The STT protocol abstraction (`STTClientProtocol`) makes the swap clean — consumers don't know the backend changed
+- Delaying means building more features on Python/MLX, then migrating them later — more work, more risk
 
 ### Migration scope
 
-1. **Add FluidAudio as SwiftPM dependency** (`FluidAudio` product only, not `FluidAudioTTS`)
-2. **Replace `STTClient` implementation** — swap JSON-RPC Python calls for FluidAudio's async Swift API
-3. **Remove Python daemon** — delete `python/macparakeet_stt/`, remove uv bootstrap, remove JSON-RPC protocol
-4. **Remove FFmpeg dependency** — FluidAudio uses AVAudioConverter internally
-5. **Update `STTClient` protocol tests** — new implementation, same interface contract
-6. **Decide on model distribution** — bundle in app (larger download, instant first-run) vs. download on first use (smaller app, onboarding delay)
-7. **Evaluate bonus features** — diarization (v0.4 roadmap item), VAD, custom vocabulary boosting
+1. **Add FluidAudio as SwiftPM dependency** (`FluidAudio` product only, not `FluidAudioEspeak`)
+2. **New `STTClient` implementation** — replace JSON-RPC Python daemon calls with FluidAudio async Swift API, conforming to existing `STTClientProtocol`
+3. **Delete Python STT daemon** — remove `python/macparakeet_stt/server.py`, `__main__.py`, and STT-specific Python code
+4. **Delete JSON-RPC protocol layer** — remove `JSONRPCTypes.swift` and daemon subprocess management from `STTClient.swift`
+5. **Slim down `PythonBootstrap`** — retain for yt-dlp (YouTube downloads) but remove STT-specific logic. See "Python dependency chain" below.
+6. **Keep FFmpeg** — still needed for video file transcription (mp4/mov/mkv/webm/avi → audio extraction) and yt-dlp post-processing. FluidAudio's `AudioConverter` handles resampling but NOT video demuxing.
+7. **Update `requirements.txt`** — remove `parakeet-mlx` and `mlx`, keep `yt-dlp`, `yt-dlp-ejs`, and `imageio-ffmpeg`
+8. **Update STT tests** — new implementation, same `STTClientProtocol` contract
+9. **Model download during onboarding** — replace Python venv setup progress with CoreML model download progress (~6 GB)
+10. **Evaluate custom vocabulary integration** — feed `CustomWord` entries as `CustomVocabularyTerm` to FluidAudio's CTC boosting
+
+### Python dependency chain: yt-dlp
+
+Removing the Python STT daemon does NOT eliminate Python entirely. YouTube downloads (`YouTubeDownloader`) depend on yt-dlp, which is currently installed in the same Python venv.
+
+**Options for yt-dlp after STT migration:**
+
+| Option | Pros | Cons |
+|--------|------|------|
+| **Keep slim Python venv** | Minimal change, yt-dlp auto-updates via pip | Still need uv + venv infrastructure |
+| **Standalone yt-dlp binary** | No Python needed at all, single binary to bundle | Manual update process, larger app bundle |
+| **Defer to post-migration** | Reduce migration scope, focus on STT swap | Python venv stays for now |
+
+**Recommendation:** Keep the slim Python venv for now (option 1). This reduces migration risk — we're changing the STT backend, not the YouTube pipeline. Evaluate standalone yt-dlp binary as a separate cleanup task.
 
 ### What doesn't change
 
-- `STTClient` protocol interface — consumers don't know or care about the backend
+- `STTClientProtocol` interface — consumers don't know or care about the backend
+- `STTResult` format — text + word timestamps + confidence scores
 - Qwen3-4B via MLX-Swift — the LLM path stays the same
+- `AudioFileConverter` — still converts video files via FFmpeg
+- `YouTubeDownloader` — still uses yt-dlp (via Python venv or standalone binary)
 - All existing tests against the STT protocol — same contract, new implementation
 - Deterministic text processing pipeline — unchanged
 - UI, hotkeys, history, export — all unchanged
@@ -232,16 +347,63 @@ The CoreML/ANE path is the better architecture — three workloads on three chip
 
 While migrating the STT backend, also upgrade the LLM from `Qwen3-4B` to `Qwen3-4B-Instruct-2507`. The July 2025 update ranked #1 among all small language models for instruction following — directly relevant for our text refinement and command mode use cases. This is a model ID change, not an architecture change.
 
+## Current STT Architecture (What We're Replacing)
+
+For reference, the current architecture that this migration replaces:
+
+### Protocol Layer
+
+```swift
+// STTClientProtocol — this interface stays unchanged
+protocol STTClientProtocol: Sendable {
+    func transcribe(audioPath: String, onProgress: (@Sendable (Int, Int) -> Void)?) async throws -> STTResult
+    func warmUp(onProgress: (@Sendable (String) -> Void)?) async throws
+    func isReady() async -> Bool
+    func shutdown() async
+}
+```
+
+### Data Flow (Current)
+
+```
+Dictation: AudioRecorder → .wav → STTClient → JSON-RPC → Python daemon → STTResult
+File:      AudioFileConverter (FFmpeg) → .wav → STTClient → JSON-RPC → Python daemon → STTResult
+YouTube:   yt-dlp → .m4a → AudioFileConverter (FFmpeg) → .wav → STTClient → JSON-RPC → Python daemon → STTResult
+```
+
+### Data Flow (After Migration)
+
+```
+Dictation: AudioRecorder → AVAudioPCMBuffer → FluidAudio AudioConverter → AsrManager.transcribe() → STTResult
+File:      AudioFileConverter (FFmpeg) → .wav → FluidAudio AudioConverter → AsrManager.transcribe() → STTResult
+YouTube:   yt-dlp → .m4a → AudioFileConverter (FFmpeg) → .wav → FluidAudio AudioConverter → AsrManager.transcribe() → STTResult
+```
+
+### Files Affected
+
+| Action | Files |
+|--------|-------|
+| **Rewrite** | `STTClient.swift` (actor, ~464 lines → FluidAudio wrapper) |
+| **Delete** | `JSONRPCTypes.swift`, `python/macparakeet_stt/server.py`, `python/macparakeet_stt/__main__.py` |
+| **Slim down** | `PythonBootstrap.swift` (remove STT logic, keep yt-dlp support) |
+| **Update** | `requirements.txt` (remove parakeet-mlx, mlx) |
+| **Update** | `STTClientTests.swift`, `JSONRPCTests.swift` (adapt to new implementation) |
+| **Update** | `OnboardingViewModel` (model download progress instead of venv setup) |
+| **Unchanged** | `STTClientProtocol.swift`, `STTResult.swift`, `AudioFileConverter.swift`, all services, all UI, all other tests (~150+ files) |
+
 ## Related Documents
 
 - [Open Source Models Landscape (Feb 2026)](./open-source-models-landscape-2026.md) — full STT/LLM/MLX ecosystem research
-- [ADR-001: Parakeet TDT as Primary STT](../spec/adr/001-parakeet-stt.md) — original STT decision (model choice unchanged, runtime changes)
+- [ADR-001: Parakeet TDT as Primary STT](../spec/adr/001-parakeet-stt.md) — original STT decision (model choice unchanged, runtime changes). Needs amendment post-migration.
 - [Distribution & Signing](./distribution.md) — current distribution approach (will simplify after migration)
 
 ## Sources
 
 - [FluidAudio GitHub](https://github.com/FluidInference/FluidAudio)
+- [FluidAudio Releases](https://github.com/FluidInference/FluidAudio/releases)
 - [FluidAudio API Documentation](https://github.com/FluidInference/FluidAudio/blob/main/Documentation/API.md)
+- [FluidAudio ASR Getting Started](https://github.com/FluidInference/FluidAudio/blob/main/Documentation/ASR/GettingStarted.md)
+- [FluidAudio Custom Vocabulary](https://github.com/FluidInference/FluidAudio/blob/main/Documentation/ASR/CustomVocabulary.md)
 - [FluidAudio Benchmarks](https://github.com/FluidInference/FluidAudio/blob/main/Documentation/Benchmarks.md)
 - [Parakeet TDT v2 CoreML (HuggingFace)](https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v2-coreml)
 - [Parakeet TDT v3 CoreML (HuggingFace)](https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml)

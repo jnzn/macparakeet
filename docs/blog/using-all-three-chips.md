@@ -14,7 +14,7 @@ This is the story of how we found it, why it matters, and what it means for runn
 
 MacParakeet does two things with AI:
 
-1. **Speech-to-text** — We use NVIDIA's Parakeet TDT, a 600-million-parameter model that transcribes speech with ~6% word error rate at over 150x real-time speed. When you press your hotkey and speak, Parakeet turns your voice into text.
+1. **Speech-to-text** — We use NVIDIA's Parakeet TDT, a 600-million-parameter model that turns your voice into text. When you press your hotkey and speak, Parakeet transcribes your speech at over 150x real-time speed.
 
 2. **Text refinement** — We use Qwen3-4B, a 4-billion-parameter language model that cleans up, reformats, and refines your dictated text. Raw speech becomes polished prose — formal tone, email format, code comments, whatever you need.
 
@@ -102,12 +102,12 @@ Meanwhile, the Neural Engine — a chip Apple designed specifically for running 
 
 We found [FluidAudio](https://github.com/FluidInference/FluidAudio), an open-source Swift SDK by a team called FluidInference. They solve a specific problem: taking AI models trained for NVIDIA GPUs and making them run on Apple's Neural Engine via CoreML.
 
-Think of it this way: NVIDIA trains Parakeet for their hardware. FluidInference converts it to run on *Apple's* hardware — specifically the ANE, not the GPU. Same model weights, same accuracy, different silicon.
+Think of it this way: NVIDIA trains Parakeet for their hardware. FluidInference converts it to run on *Apple's* hardware — specifically the ANE, not the GPU. Same model weights, but optimized decoding for Apple's silicon.
 
 Their SDK wraps the converted models in a clean Swift API:
 
 ```swift
-let models = try await AsrModels.downloadAndLoad(version: .v2)
+let models = try await AsrModels.downloadAndLoad(version: .v3)
 let manager = AsrManager(config: .default)
 try await manager.initialize(models: models)
 
@@ -139,16 +139,7 @@ The dictation pipeline becomes:
 You speak → Parakeet transcribes (ANE) → Qwen3 refines (GPU) → polished text
 ```
 
-And the memory picture improves meaningfully:
-
-| What | Before (MLX/GPU) | After (CoreML/ANE) |
-|------|-------------------|---------------------|
-| Parakeet STT | ~2GB | ~800MB |
-| Qwen3-4B LLM | ~2.5-4GB | ~2.5-4GB |
-| macOS + app | ~2-3GB | ~2-3GB |
-| **Total** | **~6.5-9GB** | **~5.3-8GB** |
-
-The ~1-1.5GB savings comes from CoreML/ANE being more memory-efficient than MLX/GPU for this workload. On an 8GB Mac, that's the difference between "barely fits" and "runs with headroom." Every gigabyte matters when you're running two AI models on consumer hardware.
+And the memory picture improves dramatically. FluidAudio's CoreML path uses roughly **66 MB of working memory** for the speech model during inference, compared to the 2GB+ that the MLX/GPU path occupies. On an 8GB Mac, that's the difference between "barely fits" and "runs with headroom."
 
 ---
 
@@ -167,7 +158,25 @@ For dictation — which is what MacParakeet users do most — both feel instant.
 
 For long file transcription, the ANE is still remarkably fast. Twenty-three seconds for an hour of audio. We'll take that trade-off gladly in exchange for better memory efficiency and zero GPU contention.
 
-The accuracy is identical — it's the same Parakeet TDT model with the same weights. The only difference is which chip runs the math.
+---
+
+## Better Accuracy, Too
+
+Here's something we didn't expect: the CoreML path is actually *more accurate* than our previous MLX setup.
+
+FluidAudio's optimized decoding achieves roughly **2.5% word error rate** on standard benchmarks — compared to the ~6% we were seeing with the MLX/GPU path. Same Parakeet model, same weights, but FluidInference's CoreML implementation produces measurably better transcriptions.
+
+We're still investigating why — likely their CTC/TDT decoding optimizations recover more accurate word sequences from the model's output. Whatever the reason, moving to the ANE didn't just save memory and free the GPU. It made our transcriptions better.
+
+---
+
+## The Model Size Tradeoff
+
+There is one cost: the CoreML model bundle is larger. The MLX version weighs about 2.5 GB; the CoreML version is roughly 6 GB.
+
+Why? MLX stores model weights in a compact format that the GPU interprets at runtime. CoreML stores **pre-compiled, hardware-optimized model graphs** — separate bundles for the encoder, decoder, joint network, and preprocessor, each optimized for the ANE's specific execution pipeline. Think of it like the difference between source code and a compiled binary: more bytes on disk, but faster and more efficient execution.
+
+For a one-time download during first launch, we think that's a fair trade. Lower memory usage, better accuracy, and a simpler architecture are worth an extra few gigabytes of initial download.
 
 ---
 
@@ -184,7 +193,7 @@ We also pick up capabilities we would have had to build ourselves:
 - **Speaker diarization** — identify who said what, built into the SDK
 - **Voice activity detection** — know when someone is speaking vs. silence
 - **Streaming ASR** — real-time transcription as audio arrives, not just batch processing
-- **Custom vocabulary boosting** — improve recognition of domain-specific terms
+- **Custom vocabulary boosting** — improve recognition of domain-specific terms at the neural level
 
 These aren't the reason we're making this change — the architecture is. But they're a welcome bonus.
 
@@ -198,10 +207,10 @@ The short answer is that Parakeet is better at the job:
 
 | | Parakeet TDT 0.6B | Whisper Large V3 |
 |---|---|---|
-| Word Error Rate | ~6% | ~7.4% |
+| Word Error Rate | ~2.5% | ~7.4% |
 | Speed (CoreML/ANE) | ~155x real-time | ~12x real-time |
 | Parameters | 600M | 1.55B |
-| Memory | ~800MB (CoreML) | ~10GB |
+| Memory | ~66 MB working RAM | ~10GB |
 
 Parakeet is more accurate, 13x faster, one-third the size, and uses a fraction of the memory. It ranks #3 on the Open ASR Leaderboard for accuracy while being #1 for speed. The two models above it in accuracy (NVIDIA's Canary Qwen 2.5B and IBM's Granite Speech) are 8-100x slower.
 
