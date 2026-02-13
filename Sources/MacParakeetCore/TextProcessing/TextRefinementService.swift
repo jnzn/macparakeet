@@ -74,6 +74,15 @@ public struct TextRefinementService: Sendable {
             customWords: customWords,
             snippets: snippets
         )
+        let deterministicTrimmed = deterministic.text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !deterministicTrimmed.isEmpty else {
+            return TextRefinementResult(
+                text: deterministic.text,
+                expandedSnippetIDs: deterministic.expandedSnippetIDs,
+                path: .deterministic
+            )
+        }
 
         guard mode.usesLLMRefinement, let refinementMode = mode.llmRefinementMode else {
             return TextRefinementResult(

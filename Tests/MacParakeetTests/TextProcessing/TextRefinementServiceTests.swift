@@ -50,4 +50,22 @@ final class TextRefinementServiceTests: XCTestCase {
         XCTAssertEqual(result.path, .llmFallback)
         XCTAssertNotNil(result.fallbackReason)
     }
+
+    func testFormalModeSkipsLLMWhenDeterministicTextIsEmpty() async {
+        let mockLLM = MockLLMService()
+        await mockLLM.configureResponse(text: "Should not be used")
+        let service = TextRefinementService(llmService: mockLLM)
+
+        let result = await service.refine(
+            rawText: "um uh uhh",
+            mode: .formal,
+            customWords: [],
+            snippets: []
+        )
+
+        XCTAssertEqual(result.text, "")
+        XCTAssertEqual(result.path, .deterministic)
+        let requests = await mockLLM.requests
+        XCTAssertEqual(requests.count, 0)
+    }
 }
