@@ -7,17 +7,23 @@ public actor MLXLLMService: LLMServiceProtocol {
 
     private let modelID: String
     private let revision: String
+    private let idleUnloadSeconds: TimeInterval?
     private var modelContainer: ModelContainer?
+    private var idleUnloadTask: Task<Void, Never>?
 
     public init(
         modelID: String = MLXLLMService.defaultModelID,
-        revision: String = "main"
+        revision: String = "main",
+        idleUnloadSeconds: TimeInterval? = 300
     ) {
         self.modelID = modelID
         self.revision = revision
+        self.idleUnloadSeconds = idleUnloadSeconds
     }
 
     public func unload() {
+        idleUnloadTask?.cancel()
+        idleUnloadTask = nil
         modelContainer = nil
     }
 
@@ -27,7 +33,15 @@ public actor MLXLLMService: LLMServiceProtocol {
             throw LLMServiceError.invalidPrompt
         }
 
+        cancelIdleUnloadTask()
+        var shouldScheduleIdleUnload = false
         let container = try await ensureModelLoaded()
+        shouldScheduleIdleUnload = true
+        defer {
+            if shouldScheduleIdleUnload {
+                scheduleIdleUnloadIfNeeded()
+            }
+        }
         let startedAt = Date()
         let parameters = GenerateParameters(
             maxTokens: request.options.maxTokens,
@@ -64,6 +78,30 @@ public actor MLXLLMService: LLMServiceProtocol {
         let loaded = try await loadModelContainer(id: modelID, revision: revision)
         modelContainer = loaded
         return loaded
+    }
+
+    private func cancelIdleUnloadTask() {
+        idleUnloadTask?.cancel()
+        idleUnloadTask = nil
+    }
+
+    private func scheduleIdleUnloadIfNeeded() {
+        cancelIdleUnloadTask()
+
+        guard let idleUnloadSeconds, idleUnloadSeconds > 0 else {
+            return
+        }
+
+        let nanos = UInt64(idleUnloadSeconds * 1_000_000_000)
+        idleUnloadTask = Task { [nanos] in
+            try? await Task.sleep(nanoseconds: nanos)
+            self.unloadAfterIdleTimeout()
+        }
+    }
+
+    private func unloadAfterIdleTimeout() {
+        modelContainer = nil
+        idleUnloadTask = nil
     }
 
     private func withTimeout<T: Sendable>(

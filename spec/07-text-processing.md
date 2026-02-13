@@ -83,7 +83,7 @@ Final normalization pass:
 
 **Formal**: The deterministic pipeline runs first, then the result is sent to Qwen3-8B with a prompt to rewrite in a professional tone. Suitable for business communication.
 
-**Email**: Pipeline first, then LLM formats the text as an email with appropriate greeting, body, and sign-off. User's name and preferred sign-off can be configured.
+**Email**: Pipeline first, then LLM rewrites into polished email-style text.
 
 **Code**: Pipeline first, then LLM preserves technical syntax, variable names, and code-like patterns while cleaning up natural language around them.
 
@@ -157,7 +157,7 @@ The same Qwen3-8B model is used with different settings depending on task comple
 - It loads on first LLM-mode dictation or command mode invocation
 - It stays loaded for a configurable idle timeout (default: 5 minutes)
 - After idle timeout, the model is unloaded to free memory
-- Loading takes ~2-3 seconds; a loading indicator is shown in the UI
+- Loading takes ~2-3 seconds on first use
 
 ---
 

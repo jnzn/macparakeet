@@ -26,18 +26,18 @@ This spec defines how MacParakeet integrates local LLM features with clean archi
 
 ```
 Dictation/Command/Chat Call Site
+    -> TextRefinementService (deterministic-first policy)
     -> PromptBuilder
     -> LLMServiceProtocol
-       -> MLXQwenService (Qwen3-8B)
-    -> LLMResultAdapter
-    -> FallbackPolicy (deterministic output on failure)
+       -> MLXLLMService (Qwen3-8B)
+    -> Fallback to deterministic output on failure
 ```
 
 ### Core Protocol
 
 ```swift
 public protocol LLMServiceProtocol: Sendable {
-    func generate(_ request: LLMRequest) async throws -> LLMResponse
+    func generate(request: LLMRequest) async throws -> LLMResponse
 }
 ```
 
@@ -45,20 +45,21 @@ public protocol LLMServiceProtocol: Sendable {
 
 ```swift
 public struct LLMRequest: Sendable {
-    public let task: LLMTask
-    public let input: String
-    public let context: LLMContext
+    public let prompt: String
+    public let systemPrompt: String?
+    public let options: LLMGenerationOptions
 }
 
 public enum LLMTask: Sendable {
-    case refine(mode: RefinementMode)      // formal/email/code
+    case refine(mode: LLMRefinementMode, input: String)
     case commandTransform(command: String) // "translate to spanish", etc.
-    case transcriptChat(query: String)     // future
+    case transcriptChat(question: String, transcript: String)
 }
 
 public struct LLMResponse: Sendable {
-    public let output: String
-    public let meta: LLMResponseMeta
+    public let text: String
+    public let modelID: String
+    public let durationSeconds: TimeInterval
 }
 ```
 
@@ -81,10 +82,10 @@ No data loss and no silent crash paths are allowed.
 - `clean`: deterministic pipeline only
 - `formal/email/code`: deterministic pipeline -> LLM request -> fallback if needed
 
-2. **Command mode**
+2. **Command mode (CLI today, GUI pending)**
 - selected text + spoken command -> LLM request (`commandTransform`) -> replace selection
 
-3. **Transcript chat (future)**
+3. **Transcript chat (future scaffolding)**
 - query + transcript context chunking -> LLM request (`transcriptChat`)
 
 ---

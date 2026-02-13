@@ -12,16 +12,23 @@ struct VocabularyView: View {
     @State private var hoveredCardTitle: String?
     @State private var hoveredModeTitle: String?
 
+    private var selectedMode: Dictation.ProcessingMode {
+        Dictation.ProcessingMode(rawValue: settingsViewModel.processingMode) ?? .clean
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
                 policyHeaderCard
                 modeSelectionCard
                 capabilityCard
-                if settingsViewModel.processingMode == "clean" {
-                    pipelineCard
-                } else {
+                if selectedMode == .raw {
                     rawModeCard
+                } else {
+                    pipelineCard
+                    if selectedMode.usesLLMRefinement {
+                        llmRefinementCard
+                    }
                 }
             }
             .padding(DesignSystem.Spacing.lg)
@@ -58,7 +65,7 @@ struct VocabularyView: View {
             ) {
                 summaryChip(
                     title: "Current Mode",
-                    value: settingsViewModel.processingMode == "clean" ? "Clean" : "Raw"
+                    value: selectedMode.displayName
                 )
                 summaryChip(
                     title: "Custom Words",
@@ -89,9 +96,9 @@ struct VocabularyView: View {
                     subtitle: "As spoken",
                     detail: "No deterministic cleanup. Useful for verbatim capture.",
                     icon: "waveform",
-                    isSelected: settingsViewModel.processingMode == "raw"
+                    isSelected: selectedMode == .raw
                 ) {
-                    settingsViewModel.processingMode = "raw"
+                    settingsViewModel.processingMode = Dictation.ProcessingMode.raw.rawValue
                 }
 
                 modeCard(
@@ -99,9 +106,39 @@ struct VocabularyView: View {
                     subtitle: "Polished",
                     detail: "Applies deterministic pipeline rules before output.",
                     icon: "sparkles",
-                    isSelected: settingsViewModel.processingMode == "clean"
+                    isSelected: selectedMode == .clean
                 ) {
-                    settingsViewModel.processingMode = "clean"
+                    settingsViewModel.processingMode = Dictation.ProcessingMode.clean.rawValue
+                }
+
+                modeCard(
+                    title: "Formal",
+                    subtitle: "Professional tone",
+                    detail: "Deterministic cleanup, then local LLM rewrite for formal delivery.",
+                    icon: "briefcase",
+                    isSelected: selectedMode == .formal
+                ) {
+                    settingsViewModel.processingMode = Dictation.ProcessingMode.formal.rawValue
+                }
+
+                modeCard(
+                    title: "Email",
+                    subtitle: "Message-ready",
+                    detail: "Deterministic cleanup, then local LLM turns text into polished email style.",
+                    icon: "envelope",
+                    isSelected: selectedMode == .email
+                ) {
+                    settingsViewModel.processingMode = Dictation.ProcessingMode.email.rawValue
+                }
+
+                modeCard(
+                    title: "Code",
+                    subtitle: "Technical writing",
+                    detail: "Deterministic cleanup, then local LLM preserves code/identifier semantics.",
+                    icon: "chevron.left.forwardslash.chevron.right",
+                    isSelected: selectedMode == .code
+                ) {
+                    settingsViewModel.processingMode = Dictation.ProcessingMode.code.rawValue
                 }
             }
         }
@@ -109,7 +146,7 @@ struct VocabularyView: View {
 
     private var capabilityCard: some View {
         vocabularyCard(
-            title: "What Clean Mode Does",
+            title: "What Processing Does",
             subtitle: "Deterministic transforms, no cloud calls.",
             icon: "checkmark.shield"
         ) {
@@ -118,6 +155,9 @@ struct VocabularyView: View {
                 capabilityRow(icon: "character.book.closed", text: "Applies custom word corrections and casing anchors.")
                 capabilityRow(icon: "text.insert", text: "Expands phrase snippets into full text.")
                 capabilityRow(icon: "textformat", text: "Normalizes whitespace and punctuation spacing.")
+                if selectedMode.usesLLMRefinement {
+                    capabilityRow(icon: "cpu", text: "Runs local Qwen3-8B refinement with deterministic fallback.")
+                }
             }
         }
     }
@@ -127,7 +167,7 @@ struct VocabularyView: View {
     private var pipelineCard: some View {
         vocabularyCard(
             title: "Clean Pipeline",
-            subtitle: "Ordered deterministic stages.",
+            subtitle: "Ordered deterministic stages (always run before AI modes).",
             icon: "list.number"
         ) {
             VStack(spacing: 0) {
@@ -179,13 +219,36 @@ struct VocabularyView: View {
         }
     }
 
+    private var llmRefinementCard: some View {
+        vocabularyCard(
+            title: "AI Refinement",
+            subtitle: "Local-only Qwen3-8B pass after deterministic cleanup.",
+            icon: "brain.head.profile"
+        ) {
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
+                capabilityRow(
+                    icon: "shield.lefthalf.filled",
+                    text: "If generation fails or times out, MacParakeet falls back to deterministic clean output."
+                )
+                capabilityRow(
+                    icon: "memorychip",
+                    text: "Model loads lazily on first AI use to keep startup fast."
+                )
+                capabilityRow(
+                    icon: "lock",
+                    text: "All processing stays on-device. No cloud requests."
+                )
+            }
+        }
+    }
+
     private var rawModeCard: some View {
         vocabularyCard(
             title: "Raw Mode Active",
             subtitle: "Pipeline transforms are bypassed.",
             icon: "waveform.badge.exclamationmark"
         ) {
-            Text("Switch to Clean mode when you want deterministic corrections, snippet expansion, and formatting cleanup.")
+            Text("Switch to Clean, Formal, Email, or Code mode when you want post-processing before paste/export.")
                 .font(DesignSystem.Typography.bodySmall)
                 .foregroundStyle(.secondary)
         }
