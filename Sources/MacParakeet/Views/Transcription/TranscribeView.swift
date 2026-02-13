@@ -5,6 +5,39 @@ import MacParakeetViewModels
 
 struct TranscribeView: View {
     @Bindable var viewModel: TranscriptionViewModel
+    private enum PipelineStep: CaseIterable {
+        case download
+        case convert
+        case transcribe
+
+        var title: String {
+            switch self {
+            case .download:
+                return "Fetch"
+            case .convert:
+                return "Normalize"
+            case .transcribe:
+                return "Transcribe"
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .download:
+                return "arrow.down.circle"
+            case .convert:
+                return "waveform.path.ecg"
+            case .transcribe:
+                return "waveform"
+            }
+        }
+    }
+
+    private enum PipelineStepState {
+        case pending
+        case active
+        case complete
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -68,12 +101,24 @@ struct TranscribeView: View {
     // MARK: - YouTube Card
 
     private var youTubeCard: some View {
-        VStack(spacing: DesignSystem.Spacing.sm) {
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+            HStack(alignment: .firstTextBaseline, spacing: DesignSystem.Spacing.sm) {
+                Text("YouTube Transcription")
+                    .font(DesignSystem.Typography.sectionTitle)
+                Text("Local")
+                    .font(DesignSystem.Typography.micro)
+                    .foregroundStyle(DesignSystem.Colors.successGreen)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(DesignSystem.Colors.successGreen.opacity(0.14)))
+                Spacer()
+            }
+
             HStack(spacing: DesignSystem.Spacing.sm) {
                 HStack(spacing: 8) {
-                    Image(systemName: viewModel.isValidURL ? "checkmark.circle.fill" : "play.rectangle.fill")
-                        .font(.system(size: 16))
-                        .foregroundStyle(viewModel.isValidURL ? DesignSystem.Colors.successGreen : DesignSystem.Colors.accent.opacity(0.4))
+                    Image(systemName: viewModel.isValidURL ? "checkmark.circle.fill" : "link")
+                        .font(.system(size: 14))
+                        .foregroundStyle(viewModel.isValidURL ? DesignSystem.Colors.successGreen : .secondary)
                         .contentTransition(.symbolEffect(.replace))
 
                     TextField("Paste a YouTube link", text: $viewModel.urlInput)
@@ -85,49 +130,73 @@ struct TranscribeView: View {
                             }
                         }
 
-                    if viewModel.urlInput.isEmpty {
-                        Button {
-                            if let clip = NSPasteboard.general.string(forType: .string) {
-                                viewModel.urlInput = clip.trimmingCharacters(in: .whitespacesAndNewlines)
-                            }
-                        } label: {
-                            Image(systemName: "doc.on.clipboard")
-                                .font(.system(size: 12))
-                                .foregroundStyle(.tertiary)
+                    Button {
+                        if let clip = NSPasteboard.general.string(forType: .string) {
+                            viewModel.urlInput = clip.trimmingCharacters(in: .whitespacesAndNewlines)
                         }
-                        .buttonStyle(.plain)
-                        .help("Paste from clipboard")
-                        .accessibilityLabel("Paste URL from clipboard")
-                        .accessibilityHint("Pastes clipboard text into the YouTube link field")
+                    } label: {
+                        Text("Paste")
+                            .font(DesignSystem.Typography.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(
+                                Capsule()
+                                    .fill(DesignSystem.Colors.surfaceElevated)
+                            )
                     }
+                    .buttonStyle(.plain)
+                    .help("Paste from clipboard")
+                    .accessibilityLabel("Paste URL from clipboard")
+                    .accessibilityHint("Pastes clipboard text into the YouTube link field")
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
                 .background(
                     RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
-                        .fill(DesignSystem.Colors.surfaceElevated)
+                        .fill(DesignSystem.Colors.background)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
                         .strokeBorder(
-                            viewModel.isValidURL ? DesignSystem.Colors.successGreen.opacity(0.3) : DesignSystem.Colors.border,
-                            lineWidth: 0.5
+                            viewModel.isValidURL ? DesignSystem.Colors.successGreen.opacity(0.35) : DesignSystem.Colors.border,
+                            lineWidth: 0.8
                         )
                 )
 
                 Button {
                     viewModel.transcribeURL()
                 } label: {
-                    Image(systemName: "arrow.right.circle.fill")
-                        .font(.system(size: 24))
-                        .foregroundStyle(viewModel.isValidURL ? DesignSystem.Colors.accent : Color.primary.opacity(0.15))
+                    Label("Transcribe", systemImage: "arrow.right")
+                        .font(DesignSystem.Typography.caption.weight(.semibold))
+                        .foregroundStyle(DesignSystem.Colors.onAccent)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 9)
+                        .background(
+                            RoundedRectangle(cornerRadius: DesignSystem.Layout.buttonCornerRadius)
+                                .fill(viewModel.isValidURL ? DesignSystem.Colors.accent : DesignSystem.Colors.accent.opacity(0.35))
+                        )
                 }
                 .buttonStyle(.plain)
                 .disabled(!viewModel.isValidURL)
                 .accessibilityLabel("Start transcription")
                 .accessibilityHint("Starts transcribing the YouTube link")
             }
+
+            Text("Uses bundled yt-dlp and FFmpeg, then transcribes fully on-device.")
+                .font(DesignSystem.Typography.caption)
+                .foregroundStyle(.secondary)
         }
+        .padding(DesignSystem.Spacing.md)
+        .background(
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
+                .fill(DesignSystem.Colors.cardBackground)
+                .cardShadow(DesignSystem.Shadows.cardRest)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
+                .strokeBorder(DesignSystem.Colors.border.opacity(0.7), lineWidth: 0.5)
+        )
     }
 
     // MARK: - Error Banner
@@ -159,55 +228,84 @@ struct TranscribeView: View {
     // MARK: - Transcribing
 
     private var isDownloadPhase: Bool {
-        viewModel.progress.localizedCaseInsensitiveContains("download")
+        viewModel.progressPhase == .downloading
     }
 
     private var transcribingView: some View {
         VStack(spacing: DesignSystem.Spacing.lg) {
             Spacer()
 
-            ZStack {
-                // Phase icon behind the spinner
-                Image(systemName: isDownloadPhase ? "arrow.down.circle" : "waveform")
-                    .font(.system(size: 18, weight: .light))
-                    .foregroundStyle(DesignSystem.Colors.accent.opacity(0.3))
-                    .contentTransition(.symbolEffect(.replace))
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
+                HStack(spacing: DesignSystem.Spacing.md) {
+                    ZStack {
+                        Image(systemName: phaseSymbol)
+                            .font(.system(size: 17, weight: .light))
+                            .foregroundStyle(DesignSystem.Colors.accent.opacity(0.25))
+                            .contentTransition(.symbolEffect(.replace))
 
-                SpinnerRingView(size: 48, revolutionDuration: isDownloadPhase ? 3.5 : 2.0, tintColor: DesignSystem.Colors.accent)
-            }
+                        SpinnerRingView(size: 46, revolutionDuration: isDownloadPhase ? 3.2 : 2.0, tintColor: DesignSystem.Colors.accent)
+                    }
 
-            VStack(spacing: DesignSystem.Spacing.xs) {
-                Text(viewModel.progress)
-                    .font(DesignSystem.Typography.body)
-                    .foregroundStyle(.secondary)
-                    .contentTransition(.numericText())
-                    .animation(.easeInOut(duration: 0.3), value: viewModel.progress)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Transcription In Progress")
+                            .font(DesignSystem.Typography.sectionTitle)
+                        Text(viewModel.progressHeadline)
+                            .font(DesignSystem.Typography.bodySmall)
+                            .foregroundStyle(.secondary)
+                    }
 
-                if let fraction = viewModel.transcriptionProgress {
-                    ProgressView(value: fraction)
-                        .tint(DesignSystem.Colors.accent)
-                        .frame(width: 200)
-                        .animation(.easeInOut(duration: 0.3), value: fraction)
-                } else if isDownloadPhase {
-                    VStack(spacing: DesignSystem.Spacing.xs) {
+                    Spacer()
+                }
+
+                phaseTimeline
+
+                VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
+                    HStack {
+                        Text(viewModel.progress.isEmpty ? "Preparing..." : viewModel.progress)
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(.secondary)
+                            .contentTransition(.numericText())
+                            .animation(.easeInOut(duration: 0.25), value: viewModel.progress)
+                        Spacer()
+                        if let fraction = viewModel.transcriptionProgress {
+                            Text("\(Int((fraction * 100).rounded()))%")
+                                .font(DesignSystem.Typography.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    if let fraction = viewModel.transcriptionProgress {
+                        ProgressView(value: fraction)
+                            .progressViewStyle(.linear)
+                            .tint(DesignSystem.Colors.accent)
+                            .animation(.easeInOut(duration: 0.2), value: fraction)
+                    } else {
                         ProgressView()
                             .progressViewStyle(.linear)
                             .tint(DesignSystem.Colors.accent)
-                            .frame(width: 200)
-                        Text("This may take a moment for longer videos")
-                            .font(DesignSystem.Typography.caption)
-                            .foregroundStyle(.tertiary)
                     }
                 }
-            }
 
-            if let error = viewModel.errorMessage {
-                Text(error)
+                Text("Processing remains local to this Mac. You can keep working while this runs.")
                     .font(DesignSystem.Typography.caption)
-                    .foregroundStyle(DesignSystem.Colors.errorRed)
-                    .padding(.horizontal, DesignSystem.Spacing.xl)
-                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.tertiary)
+
+                if let error = viewModel.errorMessage {
+                    errorBanner(error)
+                }
             }
+            .padding(DesignSystem.Spacing.lg)
+            .frame(maxWidth: 620)
+            .background(
+                RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
+                    .fill(DesignSystem.Colors.cardBackground)
+                    .cardShadow(DesignSystem.Shadows.cardRest)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
+                    .strokeBorder(DesignSystem.Colors.border.opacity(0.7), lineWidth: 0.5)
+            )
+            .padding(.horizontal, DesignSystem.Spacing.lg)
 
             Spacer()
         }
@@ -218,7 +316,7 @@ struct TranscribeView: View {
     private var recentTranscriptionsList: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Recent")
+                Text("Recent Transcriptions")
                     .font(DesignSystem.Typography.sectionHeader)
                     .foregroundStyle(.secondary)
                 Text("\(viewModel.transcriptions.count)")
@@ -247,6 +345,125 @@ struct TranscribeView: View {
     }
 
     // MARK: - Helpers
+
+    private var phaseSymbol: String {
+        switch viewModel.progressPhase {
+        case .preparing:
+            return "hourglass"
+        case .downloading:
+            return "arrow.down.circle"
+        case .converting:
+            return "waveform.path.ecg"
+        case .transcribing:
+            return "waveform"
+        case .finalizing:
+            return "checkmark.circle"
+        }
+    }
+
+    private var pipelineSteps: [PipelineStep] {
+        switch viewModel.sourceKind {
+        case .youtubeURL:
+            return [.download, .convert, .transcribe]
+        case .localFile:
+            return [.convert, .transcribe]
+        }
+    }
+
+    private var activePipelineStep: PipelineStep? {
+        switch viewModel.progressPhase {
+        case .preparing:
+            return nil
+        case .downloading:
+            return .download
+        case .converting:
+            return .convert
+        case .transcribing, .finalizing:
+            return .transcribe
+        }
+    }
+
+    private var phaseTimeline: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(pipelineSteps.enumerated()), id: \.offset) { index, step in
+                HStack(spacing: 8) {
+                    phaseNode(step: step, state: pipelineStepState(for: step))
+                    if index < pipelineSteps.count - 1 {
+                        Capsule()
+                            .fill(connectorColor(before: step))
+                            .frame(width: 32, height: 2)
+                    }
+                }
+            }
+        }
+    }
+
+    private func phaseNode(step: PipelineStep, state: PipelineStepState) -> some View {
+        VStack(spacing: 6) {
+            ZStack {
+                Circle()
+                    .fill(nodeFillColor(for: state))
+                    .frame(width: 24, height: 24)
+                if state == .complete {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(DesignSystem.Colors.onAccent)
+                } else {
+                    Image(systemName: step.icon)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(nodeIconColor(for: state))
+                }
+            }
+            Text(step.title)
+                .font(DesignSystem.Typography.micro)
+                .foregroundStyle(state == .pending ? .tertiary : .secondary)
+        }
+        .frame(width: 84)
+    }
+
+    private func pipelineStepState(for step: PipelineStep) -> PipelineStepState {
+        guard let activePipelineStep else {
+            return .pending
+        }
+        guard let stepIndex = pipelineSteps.firstIndex(of: step),
+              let activeIndex = pipelineSteps.firstIndex(of: activePipelineStep) else {
+            return .pending
+        }
+        if stepIndex < activeIndex { return .complete }
+        if stepIndex == activeIndex { return .active }
+        return .pending
+    }
+
+    private func nodeFillColor(for state: PipelineStepState) -> Color {
+        switch state {
+        case .pending:
+            return DesignSystem.Colors.surfaceElevated
+        case .active:
+            return DesignSystem.Colors.accent.opacity(0.2)
+        case .complete:
+            return DesignSystem.Colors.accent
+        }
+    }
+
+    private func nodeIconColor(for state: PipelineStepState) -> Color {
+        switch state {
+        case .pending:
+            return .secondary
+        case .active:
+            return DesignSystem.Colors.accent
+        case .complete:
+            return DesignSystem.Colors.onAccent
+        }
+    }
+
+    private func connectorColor(before step: PipelineStep) -> Color {
+        switch pipelineStepState(for: step) {
+        case .complete, .active:
+            return DesignSystem.Colors.accent.opacity(0.35)
+        case .pending:
+            return DesignSystem.Colors.border
+        }
+    }
 
     private func openFilePicker() {
         let panel = NSOpenPanel()

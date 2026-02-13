@@ -13,6 +13,12 @@ struct OnboardingFlowView: View {
     @State private var hoveredStep: OnboardingViewModel.Step?
     @State private var backButtonHovered = false
 
+    private var totalSteps: Int { OnboardingViewModel.Step.allCases.count }
+    private var currentStepIndex: Int { viewModel.step.rawValue + 1 }
+    private var onboardingProgress: Double {
+        Double(currentStepIndex) / Double(max(totalSteps, 1))
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             sidebar
@@ -44,6 +50,16 @@ struct OnboardingFlowView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+
+                Text("Step \(currentStepIndex) of \(totalSteps)")
+                    .font(DesignSystem.Typography.micro)
+                    .foregroundStyle(DesignSystem.Colors.accentDark)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(DesignSystem.Colors.accentLight)
+                    )
             }
             .padding(.top, DesignSystem.Spacing.xl)
             .padding(.horizontal, DesignSystem.Spacing.xl)
@@ -54,6 +70,11 @@ struct OnboardingFlowView: View {
                 }
             }
             .padding(.horizontal, DesignSystem.Spacing.lg)
+
+            ProgressView(value: onboardingProgress)
+                .progressViewStyle(.linear)
+                .tint(DesignSystem.Colors.accent)
+                .padding(.horizontal, DesignSystem.Spacing.xl)
 
             Spacer()
 
@@ -158,6 +179,7 @@ struct OnboardingFlowView: View {
                     .font(DesignSystem.Typography.bodySmall)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                progressStrip
             }
             .padding(.horizontal, 28)
             .padding(.top, 26)
@@ -188,46 +210,55 @@ struct OnboardingFlowView: View {
     // MARK: - Footer
 
     private var footer: some View {
-        HStack {
+        VStack(spacing: 8) {
+            if let hint = continueHint {
+                Text(hint)
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            HStack {
             // Back button — hidden on welcome via opacity
-            Button {
-                viewModel.goBack()
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text("Back")
+                Button {
+                    viewModel.goBack()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("Back")
+                    }
+                    .font(.system(size: 13))
+                    .foregroundStyle(backButtonHovered ? .primary : .secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                            .fill(backButtonHovered ? DesignSystem.Colors.rowHoverBackground : .clear)
+                    )
                 }
-                .font(.system(size: 13))
-                .foregroundStyle(backButtonHovered ? .primary : .secondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
-                        .fill(backButtonHovered ? DesignSystem.Colors.rowHoverBackground : .clear)
-                )
-            }
-            .buttonStyle(.plain)
-            .disabled(viewModel.step == .welcome || viewModel.isBusy)
-            .opacity(viewModel.step == .welcome ? 0 : 1)
-            .onHover { hovering in
-                withAnimation(DesignSystem.Animation.hoverTransition) {
-                    backButtonHovered = hovering
+                .buttonStyle(.plain)
+                .disabled(viewModel.step == .welcome || viewModel.isBusy)
+                .opacity(viewModel.step == .welcome ? 0 : 1)
+                .onHover { hovering in
+                    withAnimation(DesignSystem.Animation.hoverTransition) {
+                        backButtonHovered = hovering
+                    }
                 }
-            }
 
-            Spacer()
+                Spacer()
 
-            if viewModel.step == .done {
-                accentButton("Open MacParakeet", icon: "arrow.right", large: true, disabled: false) {
-                    _ = viewModel.markOnboardingCompleted()
-                    onFinish()
-                    onOpenMainApp()
-                }
-            } else {
-                let disabled = !viewModel.canContinueFromCurrentStep() || viewModel.isBusy
-                accentButton(primaryButtonTitle(for: viewModel.step), icon: "arrow.right", large: false, disabled: disabled) {
-                    viewModel.goNext()
+                if viewModel.step == .done {
+                    accentButton("Open MacParakeet", icon: "arrow.right", large: true, disabled: false) {
+                        _ = viewModel.markOnboardingCompleted()
+                        onFinish()
+                        onOpenMainApp()
+                    }
+                } else {
+                    let disabled = !viewModel.canContinueFromCurrentStep() || viewModel.isBusy
+                    accentButton(primaryButtonTitle(for: viewModel.step), icon: "arrow.right", large: false, disabled: disabled) {
+                        viewModel.goNext()
+                    }
                 }
             }
         }
@@ -285,9 +316,7 @@ struct OnboardingFlowView: View {
         case .engine:
             engineSetupView
                 .onAppear {
-                    let venvPython = URL(fileURLWithPath: AppPaths.pythonVenvDir, isDirectory: true)
-                        .appendingPathComponent("bin/python", isDirectory: false)
-                    let isFirstRun = !FileManager.default.fileExists(atPath: venvPython.path)
+                    let isFirstRun = !STTClient.isModelCached(version: .v3)
                     viewModel.startEngineWarmUp(isFirstRun: isFirstRun)
                 }
         case .done:
@@ -327,8 +356,8 @@ struct OnboardingFlowView: View {
                 )
                 featureRow(
                     icon: "bolt.fill",
-                    title: "300x realtime",
-                    detail: "60 minutes of audio transcribed in ~12 seconds on Apple Silicon."
+                    title: "155x realtime",
+                    detail: "60 minutes of audio transcribed in ~23 seconds on Apple Silicon."
                 )
                 featureRow(
                     icon: "lock.shield.fill",
@@ -451,9 +480,7 @@ struct OnboardingFlowView: View {
 
                         HStack {
                             accentButton("Retry", disabled: false) {
-                                let venvPython = URL(fileURLWithPath: AppPaths.pythonVenvDir, isDirectory: true)
-                                    .appendingPathComponent("bin/python", isDirectory: false)
-                                let isFirstRun = !FileManager.default.fileExists(atPath: venvPython.path)
+                                let isFirstRun = !STTClient.isModelCached(version: .v3)
                                 viewModel.retryEngineWarmUp(isFirstRun: isFirstRun)
                             }
 
@@ -721,7 +748,7 @@ struct OnboardingFlowView: View {
         case .hotkey:
             return "You can start dictating from any app without switching context."
         case .engine:
-            return "First run may install dependencies. After this, startup is fast."
+            return "First run may download local speech assets. After setup, startup is fast."
         case .done:
             return "You're ready to dictate and transcribe locally on your Mac."
         }
@@ -766,9 +793,9 @@ struct OnboardingFlowView: View {
     private func engineDetail(_ state: OnboardingViewModel.EngineState) -> String {
         switch state {
         case .idle:
-            return "We'll start the speech engine now."
+            return "We'll prepare the local speech engine now."
         case .working(_, _):
-            return "This can take a few minutes on first run. Keep this window open."
+            return "This can take a few minutes on first run while speech assets download and initialize."
         case .ready:
             return "Local speech engine is running."
         case .failed:
@@ -781,6 +808,45 @@ struct OnboardingFlowView: View {
     private func openPrivacySettings(anchor: String) {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)") {
             NSWorkspace.shared.open(url)
+        }
+    }
+
+    private var progressStrip: some View {
+        VStack(spacing: 6) {
+            HStack {
+                Text("Setup Progress")
+                    .font(DesignSystem.Typography.micro)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(currentStepIndex)/\(totalSteps)")
+                    .font(DesignSystem.Typography.micro)
+                    .foregroundStyle(.tertiary)
+            }
+
+            ProgressView(value: onboardingProgress)
+                .progressViewStyle(.linear)
+                .tint(DesignSystem.Colors.accent)
+        }
+        .padding(.top, 4)
+    }
+
+    private var continueHint: String? {
+        if viewModel.isBusy {
+            return "Working..."
+        }
+        guard !viewModel.canContinueFromCurrentStep() else {
+            return nil
+        }
+
+        switch viewModel.step {
+        case .microphone:
+            return "Grant microphone access to continue."
+        case .accessibility:
+            return "Enable Accessibility to continue."
+        case .engine:
+            return "Wait for engine setup to finish, or choose Do This Later."
+        case .welcome, .hotkey, .done:
+            return nil
         }
     }
 }

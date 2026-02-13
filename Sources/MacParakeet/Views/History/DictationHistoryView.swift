@@ -4,34 +4,27 @@ import MacParakeetViewModels
 
 struct DictationHistoryView: View {
     @Bindable var viewModel: DictationHistoryViewModel
+    @State private var isHistoryHeaderHovered = false
+    @State private var hoveredHeaderChip: String?
 
     var body: some View {
         VStack(spacing: 0) {
+            historyHeader
+                .padding(.horizontal, DesignSystem.Spacing.lg)
+                .padding(.top, DesignSystem.Spacing.md)
+                .padding(.bottom, DesignSystem.Spacing.sm)
+
             if viewModel.groupedDictations.isEmpty {
                 emptyState
             } else {
                 dictationList
             }
 
-            // Playback error bar
             if let error = viewModel.playbackError {
-                HStack(spacing: DesignSystem.Spacing.sm) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(DesignSystem.Colors.warningAmber)
-                    Text(error)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                }
-                .padding(.horizontal, DesignSystem.Spacing.lg)
-                .padding(.vertical, DesignSystem.Spacing.sm)
-                .background(DesignSystem.Colors.surfaceElevated)
-                .overlay(alignment: .top) { Divider() }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                playbackErrorBanner(error)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
-            // Bottom bar player
             if let playing = viewModel.playingDictation {
                 bottomBarPlayer(playing)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -58,6 +51,115 @@ struct DictationHistoryView: View {
         }
     }
 
+    // MARK: - Header
+
+    private var historyHeader: some View {
+        let total = viewModel.groupedDictations.reduce(0) { $0 + $1.1.count }
+        let isSearching = !viewModel.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+        return VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+            HStack(alignment: .top, spacing: DesignSystem.Spacing.sm) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(DesignSystem.Colors.accent)
+                    .frame(width: 30, height: 30)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(DesignSystem.Colors.accent.opacity(0.12))
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Dictation History")
+                        .font(DesignSystem.Typography.sectionTitle)
+                    Text(isSearching ? "Filtered voice records" : "All recorded dictations")
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+            }
+
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 130), spacing: DesignSystem.Spacing.sm)],
+                spacing: DesignSystem.Spacing.sm
+            ) {
+                headerChip(
+                    title: "Records",
+                    value: "\(total)"
+                )
+                headerChip(
+                    title: "Sections",
+                    value: "\(viewModel.groupedDictations.count)"
+                )
+                if let playing = viewModel.playingDictation {
+                    headerChip(
+                        title: "Playback",
+                        value: playing.durationMs.formattedDuration,
+                        icon: viewModel.isPlaying ? "pause.circle.fill" : "play.circle.fill"
+                    )
+                } else {
+                    headerChip(
+                        title: "Playback",
+                        value: "Idle",
+                        icon: "waveform"
+                    )
+                }
+            }
+        }
+        .padding(DesignSystem.Spacing.md)
+        .background(
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
+                .fill(DesignSystem.Colors.cardBackground)
+                .cardShadow(isHistoryHeaderHovered ? DesignSystem.Shadows.cardHover : DesignSystem.Shadows.cardRest)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
+                .strokeBorder(
+                    isHistoryHeaderHovered ? DesignSystem.Colors.accent.opacity(0.2) : DesignSystem.Colors.border.opacity(0.6),
+                    lineWidth: 0.5
+                )
+        )
+        .onHover { hovering in
+            withAnimation(DesignSystem.Animation.hoverTransition) {
+                isHistoryHeaderHovered = hovering
+            }
+        }
+    }
+
+    private func headerChip(title: String, value: String, icon: String? = nil) -> some View {
+        let isHovered = hoveredHeaderChip == title
+        return HStack(spacing: 8) {
+            if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(DesignSystem.Colors.accent)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(DesignSystem.Typography.micro)
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(DesignSystem.Typography.body.weight(.semibold))
+                    .contentTransition(.numericText())
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                .fill(isHovered ? DesignSystem.Colors.accent.opacity(0.10) : DesignSystem.Colors.surfaceElevated)
+        )
+        .scaleEffect(isHovered ? 1.01 : 1.0)
+        .animation(DesignSystem.Animation.hoverTransition, value: isHovered)
+        .onHover { hovering in
+            withAnimation(DesignSystem.Animation.hoverTransition) {
+                hoveredHeaderChip = hovering ? title : nil
+            }
+        }
+    }
+
     // MARK: - Empty State
 
     private var emptyState: some View {
@@ -70,13 +172,13 @@ struct DictationHistoryView: View {
             VStack(spacing: DesignSystem.Spacing.sm) {
                 Text(viewModel.searchText.isEmpty
                      ? "Your voice, captured."
-                     : "Nothing matched.")
+                     : "No matching records")
                     .font(DesignSystem.Typography.pageTitle)
                     .foregroundStyle(.primary)
 
                 Text(viewModel.searchText.isEmpty
                      ? "Press \(TriggerKey.current.displayName) to start dictating."
-                     : "Try different words?")
+                     : "Try different words or clear your search.")
                     .font(DesignSystem.Typography.bodySmall)
                     .foregroundStyle(.secondary)
             }
@@ -92,13 +194,20 @@ struct DictationHistoryView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(viewModel.groupedDictations, id: \.0) { dateHeader, dictations in
-                    // Date section header — accent colored
-                    Text(dateHeader.uppercased())
-                        .font(DesignSystem.Typography.sectionHeader)
-                        .foregroundStyle(DesignSystem.Colors.accent.opacity(0.7))
-                        .padding(.horizontal, DesignSystem.Spacing.lg)
-                        .padding(.top, DesignSystem.Spacing.lg)
-                        .padding(.bottom, DesignSystem.Spacing.sm)
+                    HStack(alignment: .firstTextBaseline, spacing: DesignSystem.Spacing.sm) {
+                        Text(dateHeader.uppercased())
+                            .font(DesignSystem.Typography.sectionHeader)
+                            .foregroundStyle(DesignSystem.Colors.accent.opacity(0.8))
+                        Text("\(dictations.count)")
+                            .font(DesignSystem.Typography.duration)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(DesignSystem.Colors.surfaceElevated))
+                    }
+                    .padding(.horizontal, DesignSystem.Spacing.lg)
+                    .padding(.top, DesignSystem.Spacing.lg)
+                    .padding(.bottom, DesignSystem.Spacing.sm)
 
                     ForEach(dictations) { dictation in
                         DictationCardRow(
@@ -125,11 +234,26 @@ struct DictationHistoryView: View {
         }
     }
 
-    // MARK: - Bottom Bar Player
+    // MARK: - Status Bars
+
+    private func playbackErrorBanner(_ error: String) -> some View {
+        HStack(spacing: DesignSystem.Spacing.sm) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(DesignSystem.Colors.warningAmber)
+            Text(error)
+                .font(DesignSystem.Typography.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, DesignSystem.Spacing.lg)
+        .padding(.vertical, DesignSystem.Spacing.sm)
+        .background(DesignSystem.Colors.surfaceElevated)
+        .overlay(alignment: .top) { Divider() }
+    }
 
     private func bottomBarPlayer(_ dictation: Dictation) -> some View {
         HStack(spacing: DesignSystem.Spacing.md) {
-            // Play/pause button
             Button {
                 viewModel.togglePlayback(for: dictation)
             } label: {
@@ -146,14 +270,12 @@ struct DictationHistoryView: View {
             }
             .buttonStyle(.plain)
 
-            // Transcript snippet
             Text(dictation.cleanTranscript ?? dictation.rawTranscript)
                 .lineLimit(1)
                 .font(DesignSystem.Typography.body)
                 .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Progress bar
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule()
@@ -161,17 +283,16 @@ struct DictationHistoryView: View {
                     Capsule()
                         .fill(DesignSystem.Colors.accent)
                         .frame(width: max(0, geo.size.width * viewModel.playbackProgress))
+                        .animation(.linear(duration: 0.12), value: viewModel.playbackProgress)
                 }
             }
-            .frame(width: 120, height: DesignSystem.Layout.playbackBarHeight)
+            .frame(width: 140, height: DesignSystem.Layout.playbackBarHeight)
 
-            // Time display
             Text(viewModel.playbackTimeString)
                 .font(DesignSystem.Typography.timestamp)
                 .foregroundStyle(.secondary)
                 .fixedSize()
 
-            // Close button
             Button {
                 viewModel.stopPlayback()
             } label: {
@@ -182,7 +303,7 @@ struct DictationHistoryView: View {
             .buttonStyle(.plain)
         }
         .padding(.horizontal, DesignSystem.Spacing.lg)
-        .frame(height: 52)
+        .frame(height: 56)
         .background(
             Rectangle()
                 .fill(DesignSystem.Colors.surfaceElevated)
@@ -209,26 +330,51 @@ struct DictationCardRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
-            // Top row: mandala + metadata + actions
             HStack(spacing: DesignSystem.Spacing.md) {
-                // Sonic mandala thumbnail
                 SonicMandalaView(
                     data: .from(text: dictation.rawTranscript, durationMs: dictation.durationMs),
                     size: 32,
                     style: .monochrome
                 )
 
-                Text(formatTime(dictation.createdAt))
-                    .font(DesignSystem.Typography.timestamp)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(formatTime(dictation.createdAt))
+                            .font(DesignSystem.Typography.timestamp)
+                            .foregroundStyle(.secondary)
 
-                Text(dictation.durationMs.formattedDuration)
-                    .font(DesignSystem.Typography.duration)
-                    .foregroundStyle(.tertiary)
+                        Text(dictation.durationMs.formattedDuration)
+                            .font(DesignSystem.Typography.duration)
+                            .foregroundStyle(.tertiary)
+
+                        if dictation.audioPath != nil {
+                            Text("Audio")
+                                .font(DesignSystem.Typography.micro)
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(DesignSystem.Colors.surfaceElevated))
+                        }
+                    }
+
+                    HStack(spacing: 6) {
+                        Text(dictation.processingMode == .clean ? "Clean mode" : "Raw mode")
+                            .font(DesignSystem.Typography.micro)
+                            .foregroundStyle(.secondary)
+
+                        if isCopied {
+                            Text("Copied")
+                                .font(DesignSystem.Typography.micro)
+                                .foregroundStyle(DesignSystem.Colors.successGreen)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(DesignSystem.Colors.successGreen.opacity(0.12)))
+                        }
+                    }
+                }
 
                 Spacer()
 
-                // Actions
                 HStack(spacing: 4) {
                     if dictation.audioPath != nil {
                         CardActionButton(
@@ -253,13 +399,14 @@ struct DictationCardRow: View {
                 }
             }
 
-            // Transcript text — the star
             Text(highlightedTranscript)
                 .font(DesignSystem.Typography.body)
                 .foregroundStyle(.primary)
+                .lineLimit(3)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(DesignSystem.Spacing.md)
+        .scaleEffect(isPlayingThis ? 1.005 : 1.0)
         .background(
             RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
                 .fill(isPlayingThis
@@ -270,7 +417,7 @@ struct DictationCardRow: View {
         .overlay(
             RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
                 .strokeBorder(
-                    isPlayingThis ? DesignSystem.Colors.accent.opacity(0.2) : DesignSystem.Colors.border.opacity(0.5),
+                    isPlayingThis ? DesignSystem.Colors.accent.opacity(0.24) : DesignSystem.Colors.border.opacity(0.5),
                     lineWidth: 0.5
                 )
                 .allowsHitTesting(false)
@@ -280,8 +427,8 @@ struct DictationCardRow: View {
                 isHovered = hovering
             }
         }
+        .animation(.easeInOut(duration: 0.15), value: isPlayingThis)
     }
-
 
     // MARK: - Highlighted Transcript
 
@@ -346,8 +493,6 @@ private struct CardMenuButton: View {
     let onDownloadAudio: () -> Void
     let onDelete: () -> Void
 
-    @State private var isHovered = false
-
     var body: some View {
         CardActionButton(icon: "ellipsis", color: .secondary) {
             showMenu()
@@ -358,17 +503,12 @@ private struct CardMenuButton: View {
         let menu = NSMenu()
 
         if hasAudio {
-            let downloadItem = NSMenuItem(title: "Download Audio", action: #selector(NSApp.sendAction(_:to:from:)), keyEquivalent: "")
-            downloadItem.image = NSImage(systemSymbolName: "arrow.down.circle", accessibilityDescription: nil)
-            downloadItem.target = nil
             let downloadAction = onDownloadAudio
             menu.addItem(CallbackMenuItem(title: "Download Audio", icon: "arrow.down.circle", action: downloadAction))
             menu.addItem(.separator())
         }
 
         menu.addItem(CallbackMenuItem(title: "Delete", icon: "trash", isDestructive: true, action: onDelete))
-
-        // Show at mouse location
         menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
 }

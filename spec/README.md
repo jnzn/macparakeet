@@ -1,6 +1,7 @@
 # MacParakeet Spec Index
 
 > Status: **ACTIVE** - Authoritative, current
+> Migration Note: FluidAudio CoreML migration is the active target architecture. Specs describe target behavior while runtime implementation is in progress.
 
 **MacParakeet** is a local-first voice toolkit for macOS: system-wide dictation, file transcription, and AI-powered text editing -- all running on-device with zero cloud dependency.
 
@@ -14,10 +15,11 @@
 | 03 | [Architecture](03-architecture.md) | System architecture, component diagram | Active |
 | 04 | [UI Patterns](04-ui-patterns.md) | UI components, overlay, settings | Active |
 | 05 | [Audio Pipeline](05-audio-pipeline.md) | Audio capture, processing, storage | Active |
-| 06 | [STT Engine](06-stt-engine.md) | Parakeet integration, JSON-RPC protocol | Active |
+| 06 | [STT Engine](06-stt-engine.md) | Parakeet integration via FluidAudio CoreML/ANE | Active |
 | 07 | [Text Processing](07-text-processing.md) | Clean pipeline, custom words, snippets | Active |
 | 08 | [Error Handling](08-error-handling.md) | Error philosophy, categories, recovery | Active |
 | 09 | [Testing](09-testing.md) | Testing strategy, patterns, guidelines | Active |
+| 10 | [AI Coding Method](10-ai-coding-method.md) | Spec-driven coding philosophy and kernel methodology | Active |
 
 ## Root Decisions (Locked)
 
@@ -25,11 +27,10 @@ These decisions are final. Do not second-guess them.
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Local STT | Parakeet TDT 0.6B-v3 via parakeet-mlx | 300x realtime, ~6.3% WER, fully local |
-| Python runtime | uv bootstrap | Isolated venv, no system Python dependency |
+| Local STT | Parakeet TDT 0.6B-v3 via FluidAudio CoreML/ANE | 155x realtime, ~2.5% WER, fully local, ~66 MB working RAM |
 | Database | SQLite via GRDB | Single file, embedded, zero config |
 | Local LLM | Qwen3-4B via MLX-Swift | Best 4B model on benchmarks, dual-mode (thinking/non-thinking) |
-| Platform | macOS 14.2+ (Apple Silicon only) | MLX-Swift framework support, Apple Silicon required for Parakeet + MLX |
+| Platform | macOS 14.2+ (Apple Silicon only) | FluidAudio + MLX-Swift require Apple Silicon; Swift 6.0 |
 | Business model | One-time purchase ($49) | Key differentiator vs WisprFlow ($144-180/year subscription) |
 
 ## Architecture Decision Records (ADRs)
@@ -44,6 +45,7 @@ All ADRs live in `spec/adr/`. These are locked -- they record decisions already 
 | [ADR-004](adr/004-deterministic-pipeline.md) | Deterministic text processing pipeline |
 | [ADR-005](adr/005-onboarding-first-run.md) | First-run onboarding flow |
 | [ADR-006](adr/006-trial-and-license-activation.md) | Trial + license key activation |
+| [ADR-007](adr/007-fluidaudio-coreml-migration.md) | FluidAudio CoreML migration (Python elimination) |
 
 ## Version Roadmap
 
@@ -71,7 +73,7 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 - [x] Basic export (TXT/Markdown/SRT/VTT + copy to clipboard)
 - [x] SQLite database (GRDB, dictations + transcriptions + substring search)
 - [x] Internal dev CLI tool (`macparakeet transcribe`, `history`, `health`)
-- [x] 360 tests passing (`swift test` green)
+- [x] Test suite passing (`swift test` green)
 
 ### v0.2 AI & Text Processing (In Progress)
 
@@ -106,6 +108,7 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 5. **Local-first.** Audio and text never leave the device. No cloud APIs.
 6. **One model.** Qwen3-4B for all LLM tasks. No Llama, no Ollama, no OpenAI.
 7. **`swift test` is the gate.** All tests must pass before and after changes.
+8. **Kernel has precedence for implementation.** When present, `spec/kernel/*` artifacts define executable requirements and contracts.
 
 ### Where to Start
 

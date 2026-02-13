@@ -3,7 +3,7 @@ import ArgumentParser
 @main
 struct CLI: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        commandName: "macparakeet",
+        commandName: "macparakeet-cli",
         abstract: "MacParakeet developer CLI (internal; used for AI-assisted development and testing).",
         version: "0.1.0",
         subcommands: [

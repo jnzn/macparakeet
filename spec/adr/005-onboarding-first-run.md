@@ -8,7 +8,7 @@ MacParakeet is a menu bar app with a configurable global hotkey (default: Fn) an
 
 - Explain the core interaction model (hotkey, stop/paste, cancel).
 - Acquire required permissions (Microphone, Accessibility).
-- Prepare the local STT engine (Python/uv + daemon) so the first dictation feels fast and reliable.
+- Prepare the local STT engine (FluidAudio CoreML model download + warm-up) so the first dictation feels fast and reliable.
 
 Without onboarding, users encounter failures out of context (missing permissions, slow first warm-up) and the product feels brittle.
 

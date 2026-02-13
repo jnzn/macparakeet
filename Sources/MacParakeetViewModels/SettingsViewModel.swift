@@ -8,6 +8,12 @@ public final class SettingsViewModel {
     public var launchAtLogin: Bool {
         didSet { defaults.set(launchAtLogin, forKey: "launchAtLogin") }
     }
+    public var menuBarOnlyMode: Bool {
+        didSet {
+            defaults.set(menuBarOnlyMode, forKey: AppPreferences.menuBarOnlyModeKey)
+            NotificationCenter.default.post(name: Notification.Name("macparakeet.menuBarOnlyModeDidChange"), object: nil)
+        }
+    }
 
     // Dictation
     public var hotkeyTrigger: String {
@@ -36,9 +42,6 @@ public final class SettingsViewModel {
     }
     public var saveTranscriptionAudio: Bool {
         didSet { defaults.set(saveTranscriptionAudio, forKey: "saveTranscriptionAudio") }
-    }
-    public var autoUpdateYouTubeEngine: Bool {
-        didSet { defaults.set(autoUpdateYouTubeEngine, forKey: "autoUpdateYouTubeEngine") }
     }
 
     // Permission status
@@ -75,6 +78,7 @@ public final class SettingsViewModel {
         self.defaults = defaults
         self.youtubeDownloadsDirPath = youtubeDownloadsDirPath
         launchAtLogin = defaults.bool(forKey: "launchAtLogin")
+        menuBarOnlyMode = AppPreferences.isMenuBarOnlyModeEnabled(defaults: defaults)
         hotkeyTrigger = defaults.string(forKey: "hotkeyTrigger") ?? "fn"
         silenceAutoStop = defaults.bool(forKey: "silenceAutoStop")
         let delay = defaults.double(forKey: "silenceDelay")
@@ -82,7 +86,6 @@ public final class SettingsViewModel {
         processingMode = defaults.string(forKey: "processingMode") ?? "clean"
         saveAudioRecordings = defaults.object(forKey: "saveAudioRecordings") as? Bool ?? true
         saveTranscriptionAudio = defaults.object(forKey: "saveTranscriptionAudio") as? Bool ?? true
-        autoUpdateYouTubeEngine = defaults.object(forKey: "autoUpdateYouTubeEngine") as? Bool ?? true
     }
 
     public func configure(

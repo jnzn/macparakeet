@@ -1,10 +1,11 @@
 # CLAUDE.md
 
 > Context for AI coding assistants working on MacParakeet.
+> Migration Note: FluidAudio CoreML migration is the active target architecture. Specs/docs define target behavior while runtime implementation is in progress.
 
 ## What is MacParakeet?
 
-A **fast, private, local-first voice app** for macOS with two co-equal modes: system-wide dictation and file transcription. Powered by NVIDIA's Parakeet TDT via MLX.
+A **fast, private, local-first voice app** for macOS with two co-equal modes: system-wide dictation and file transcription. Powered by NVIDIA's Parakeet TDT via FluidAudio CoreML on the Neural Engine.
 
 **North Star:** The fastest, most private voice app for Mac. No cloud. No subscriptions.
 
@@ -27,6 +28,7 @@ A **fast, private, local-first voice app** for macOS with two co-equal modes: sy
 | Text processing | `spec/07-text-processing.md` |
 | Error handling | `spec/08-error-handling.md` |
 | Testing strategy | `spec/09-testing.md` |
+| AI coding methodology | `spec/10-ai-coding-method.md` |
 | ADRs (locked decisions) | `spec/adr/` -> individual decision records |
 | Competitive research | `docs/competitive-analysis.md` |
 | Brand identity | `docs/brand-identity.md` |
@@ -39,12 +41,12 @@ A **fast, private, local-first voice app** for macOS with two co-equal modes: sy
 | Layer | Choice | Notes |
 |-------|--------|-------|
 | Platform | macOS 14.2+ | Apple Silicon only |
-| Language | Swift 5.9+ | SwiftUI for UI |
+| Language | Swift 6.0 | SwiftUI for UI |
 | Database | SQLite | GRDB (single file, dictation history + transcriptions) |
-| STT | Parakeet TDT 0.6B-v3 | Via parakeet-mlx, Python daemon (~6.3% WER, 300x realtime) |
-| Python | uv bootstrap | Bundled uv binary, isolated venv |
-| Audio | AVAudioEngine + Core Audio | Mic capture for dictation |
-| LLM | MLX-Swift | Qwen3-4B for command mode + AI refinement |
+| STT | Parakeet TDT 0.6B-v3 | Via FluidAudio CoreML/ANE (~2.5% WER, 155x realtime) |
+| Audio | AVAudioEngine + Core Audio | Mic capture for dictation; FFmpeg (bundled) for video file conversion |
+| LLM | MLX-Swift | Qwen3-4B for command mode + AI refinement (GPU via Metal) |
+| YouTube | yt-dlp | Standalone macOS binary, weekly non-blocking auto-update via `--update` |
 | Licensing | LemonSqueezy | License key activation, validation API |
 
 ## Product Context
@@ -113,10 +115,11 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 | ADR-004 | Deterministic text processing pipeline | `spec/adr/004-deterministic-pipeline.md` |
 | ADR-005 | First-run onboarding flow | `spec/adr/005-onboarding-first-run.md` |
 | ADR-006 | Trial + license key activation | `spec/adr/006-trial-and-license-activation.md` |
+| ADR-007 | FluidAudio CoreML migration (Python elimination) | `spec/adr/007-fluidaudio-coreml-migration.md` |
 
 ## Current Phase
 
-**v0.2 In Progress** -- Clean pipeline + management UI implemented (360 tests, `swift test` green)
+**v0.2 In Progress** -- Clean pipeline + management UI implemented (test suite passing, `swift test` green)
 
 ### v0.1 MVP (Implemented)
 - [x] System-wide dictation: Configurable hotkey (Fn default), double-tap (persistent) + hold-to-talk
@@ -130,7 +133,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 - [x] Basic export (TXT/Markdown/SRT/VTT + copy to clipboard)
 - [x] SQLite database (GRDB, dictations + transcriptions + substring search)
 - [x] Internal dev CLI tool: `macparakeet transcribe`, `history`, `health`
-- [x] Python STT daemon (JSON-RPC over stdin/stdout)
+- [x] STT engine (Parakeet TDT via FluidAudio CoreML/ANE)
 
 ### v0.2 Clean Pipeline + AI
 - [x] Clean text pipeline (filler removal, custom words, snippets) -- deterministic, no LLM
@@ -162,39 +165,31 @@ MacParakeet has two primary modes that are equal in importance:
 
 Both modes share the same Parakeet STT backend but have different UI flows and data models.
 
-### STT Integration (Parakeet)
+### STT Integration (Parakeet via FluidAudio)
 
-- Python daemon via JSON-RPC over stdin/stdout
-- uv bootstraps Python environment on first run
+- Native Swift SDK via FluidAudio (CoreML on the Neural Engine)
 - Parakeet TDT 0.6B-v3 returns word-level timestamps + confidence scores
-- ~300x realtime on Apple Silicon (60 min audio in ~12 seconds)
-- ~6.3% Word Error Rate
+- ~155x realtime on Apple Silicon (60 min audio in ~23 seconds)
+- ~2.5% Word Error Rate
+- ~66 MB working memory during inference (vs ~2 GB+ on GPU/MLX)
+- ~6 GB CoreML model bundle downloaded during onboarding
 
-**JSON-RPC Protocol:**
-```json
-// Request
-{
-  "jsonrpc": "2.0",
-  "method": "transcribe",
-  "params": {
-    "audio_path": "/tmp/recording.wav",
-    "language": "en"
-  },
-  "id": 1
-}
+**Swift API:**
+```swift
+let models = try await AsrModels.downloadAndLoad(version: .v3)
+let manager = AsrManager(config: .default)
+try await manager.initialize(models: models)
 
-// Response
-{
-  "jsonrpc": "2.0",
-  "result": {
-    "text": "Hello world",
-    "words": [
-      {"word": "Hello", "start_ms": 0, "end_ms": 500, "confidence": 0.98},
-      {"word": "world", "start_ms": 600, "end_ms": 1000, "confidence": 0.97}
-    ]
-  },
-  "id": 1
-}
+let result = try await manager.transcribe(audioSamples, source: .system)
+// result.text contains the transcription
+// result.words contains word-level timestamps + confidence
+```
+
+**Three-chip architecture:**
+```
+CPU:  MacParakeet app (UI, hotkeys, clipboard, history)
+GPU:  Qwen3-4B LLM (via MLX-Swift/Metal) — full GPU, no sharing
+ANE:  Parakeet STT (via FluidAudio/CoreML) — dedicated ML chip
 ```
 
 ### Database
@@ -221,7 +216,7 @@ Both modes share the same Parakeet STT backend but have different UI flows and d
 ### Audio Capture
 
 - **Dictation**: AVAudioEngine tap on input node (microphone)
-- **File transcription**: FFmpeg (bundled) converts to 16kHz mono WAV for Parakeet
+- **File transcription**: FluidAudio's `AudioConverter` resamples audio; FFmpeg (bundled) demuxes video files
 - No system audio capture needed (that is Oatmeal's meeting recording domain)
 
 ### GUI Structure
@@ -308,10 +303,8 @@ macparakeet/
 │   ├── MacParakeetCore/        # Shared library (no UI deps)
 │   └── MacParakeetViewModels/  # ViewModels (testable, depends on Core)
 ├── Tests/
-│   └── MacParakeetTests/   # Unit, database, and integration tests (360 tests)
+│   └── MacParakeetTests/   # Unit, database, and integration tests
 ├── Assets/             # App icon (.icns + source PNG) and SVG logos
-├── python/             # STT daemon (Parakeet via uv)
-│   └── macparakeet_stt/
 └── scripts/            # Build, test, and release scripts (placeholder)
 ```
 
@@ -336,7 +329,7 @@ Code (Sources/)
 
 ## Implementation Guidelines
 
-1. **Specs are the source of truth** -- All code is generated from and must align with the specs in `spec/`. If code and spec disagree, the spec is correct -- fix the code. When specs are updated, code must follow. When code reveals a spec gap, update the spec first, then implement. Specs drive implementation, not the reverse.
+1. **Specs are the source of truth** -- Follow `spec/10-ai-coding-method.md` precedence: kernel artifacts (`spec/kernel/*`) first, then ADRs, then narrative docs. If code and spec disagree, update code to match the highest-precedence spec (or update the spec if it is wrong).
 2. **ADRs are locked** -- Don't second-guess architectural decisions in `spec/adr/`.
 3. **Version order matters** -- v0.1 features first, not v0.3
 4. **Never lose user data** -- Graceful degradation for dictation history and transcriptions
@@ -344,6 +337,8 @@ Code (Sources/)
 6. **Local-first** -- Audio never leaves device. Period. No cloud option.
 7. **Simplicity is the product** -- Resist feature creep. MacParakeet does two things well.
 8. **Fast feedback loops for agents** -- AI agents make mistakes, but they're good at fixing them *if they can detect them*. Design everything so the agent can verify its own work: tests for logic, CLI for headless smoke-testing of core services, build errors that surface immediately. The faster the feedback loop, the faster the agent self-corrects. If an agent can't confirm its own change works, the change is incomplete.
+9. **Bounded agent discretion** -- Agents should choose the simplest process that works, but behavior changes must follow `spec/10-ai-coding-method.md` kernel workflow. Non-behavioral edits may use a lighter process.
+10. **Protect the context zone** -- For behavior changes, explicitly define in-scope requirements, out-of-scope behavior, and invariants before coding. If the change expands scope, update kernel artifacts first.
 
 ## Documentation Hygiene
 
@@ -370,7 +365,7 @@ Add status headers to documents so future agents know what's current:
 ### When Reading Docs
 
 1. **Check status headers** -- Skip HISTORICAL docs unless researching past decisions
-2. **Verify against code** -- If doc and code disagree, code is truth (then fix doc)
+2. **Apply precedence** -- Resolve conflicts using `spec/10-ai-coding-method.md` source-of-truth order (kernel > ADR > narrative > code/comments)
 3. **Note discrepancies** -- Flag outdated content for update
 
 ### Signs of Stale Docs
@@ -431,12 +426,14 @@ Step-by-step guides for frequent development tasks.
 
 ### Add a new feature
 
-1. Read relevant spec (e.g., `spec/02-features.md`)
-2. Create a plan in `plans/active/` if multi-file
-3. Implement in `Sources/MacParakeetCore/` (logic) and `Sources/MacParakeet/` (UI)
-4. Add tests in `Tests/MacParakeetTests/`
-5. Run `swift test` to verify
-6. Update spec progress markers
+1. Read relevant spec (e.g., `spec/02-features.md`) and `spec/10-ai-coding-method.md`
+2. Identify requirement IDs (or add them in `spec/kernel/requirements.yaml`)
+3. Create a plan in `plans/active/` if multi-file
+4. Implement in `Sources/MacParakeetCore/` (logic) and `Sources/MacParakeet/` (UI)
+5. Add/update tests in `Tests/MacParakeetTests/` mapped to requirement IDs
+6. Update `spec/kernel/traceability.md`
+7. Run focused tests, then `swift test` before merge
+8. Update spec progress markers
 
 ### Add a new database table
 
@@ -457,11 +454,13 @@ Step-by-step guides for frequent development tasks.
 
 ### Fix a bug
 
-1. Write a test that reproduces the bug
-2. Run `swift test` (should fail)
-3. Fix the bug
-4. Run `swift test` (should pass)
-5. Commit with test + fix together
+1. Map the bug to an existing requirement ID (or add one in kernel)
+2. Write a test that reproduces the bug
+3. Run focused tests (should fail)
+4. Fix the bug
+5. Run focused tests (should pass), then run `swift test` before merge
+6. Update `spec/kernel/traceability.md`
+7. Commit with test + fix together
 
 ### Add a CLI command (if CLI target is added)
 
@@ -511,7 +510,7 @@ MLX_TESTS=1 swift test --filter MLXIntegrationTests
 - SwiftUI view tests (test ViewModels instead)
 - Audio capture tests (test processing logic with fixtures)
 - Third-party library internals (trust GRDB, MLX-Swift)
-- Python daemon internals (test the Swift STTClient protocol layer)
+- FluidAudio/CoreML internals (test the Swift STTClient protocol layer)
 
 ## Building
 
@@ -546,16 +545,6 @@ swift test
 open Package.swift  # Opens in Xcode, select MacParakeet scheme
 ```
 
-### Python STT Daemon
-
-Python environment is bootstrapped automatically via uv on first use.
-
-```bash
-# Manual test of the Python daemon
-cd python/macparakeet_stt
-uv run python -m macparakeet_stt.server
-```
-
 ### Verify It Works
 
 After building, quick smoke test:
@@ -574,11 +563,13 @@ swift test
 |------|------|
 | App bundle | `/Applications/MacParakeet.app` |
 | Database | `~/Library/Application Support/MacParakeet/macparakeet.db` |
-| Python venv | `~/Library/Application Support/MacParakeet/python/` |
+| STT models | `~/Library/Application Support/MacParakeet/models/stt/` (CoreML, ~6 GB) |
+| LLM models | `~/Library/Application Support/MacParakeet/models/` |
+| yt-dlp binary | `~/Library/Application Support/MacParakeet/bin/yt-dlp` |
+| FFmpeg binary | `~/Library/Application Support/MacParakeet/bin/ffmpeg` |
 | Settings | `~/Library/Preferences/com.macparakeet.plist` |
 | Temp audio | `$TMPDIR/macparakeet/` |
 | Logs | `~/Library/Logs/MacParakeet/` |
-| LLM models | `~/Library/Application Support/MacParakeet/models/` |
 
 ## Security and Privacy
 
@@ -622,7 +613,7 @@ These patterns are proven from OatFlow development in Oatmeal. Apply them here.
 | Manual NSApplication.run() | No SwiftUI `App` protocol — manual `NSApplication.shared.run()` for reliable CLI execution without .app bundle. Same pattern as Oatmeal. |
 | NSStatusItem for menu bar | Menu bar via `NSStatusBar.system.statusItem()`, not SwiftUI `MenuBarExtra` |
 | NSWindow + NSHostingView | Main window created programmatically, SwiftUI content hosted via `NSHostingView` |
-| Core library has no UI deps | `MacParakeetCore` imports Foundation + GRDB + MLX, never SwiftUI |
+| Core library has no UI deps | `MacParakeetCore` imports Foundation + GRDB + FluidAudio + MLX, never SwiftUI |
 | ViewModels in separate target | `MacParakeetViewModels/` — testable without GUI, depends only on Core |
 | Views organized by feature | `Views/Dictation/`, `Views/Transcription/`, not flat |
 | Observable ViewModels | `@MainActor @Observable` on all ViewModels |
@@ -657,6 +648,7 @@ These are hard-won lessons. Don't repeat them.
 
 - **Dead code from iterating on approaches** -- When switching from one approach to another, delete the old code entirely. Don't leave `_ = unusedVar` artifacts.
 - **Review agents catch real bugs** -- Running a review agent on onboarding or critical flows catches P0 issues. Worth doing for non-trivial UI flows.
+- **`mlx-swift-lm` version window can break CI toolchains** -- For Xcode 16.1 CI, keep `mlx-swift-lm` pinned to `2.29.2` unless re-validated: `2.29.3` has the Jamba trailing-comma parser break (upstream #67: https://github.com/ml-explore/mlx-swift-lm/issues/67), while `2.30.3` has a Swift 6.1 LoRA `consuming` regression (upstream #94: https://github.com/ml-explore/mlx-swift-lm/issues/94).
 
 ---
 
@@ -718,7 +710,7 @@ Use KeyablePanel pattern if text input is needed. Add audioLevelPublisher
 to DictationService so the view can subscribe to audio levels.
 
 ## ADRs Applied
-- ADR-004: Parakeet TDT for STT (dictation sends audio to Parakeet daemon)
+- ADR-001 + ADR-007: Parakeet TDT model with FluidAudio CoreML runtime
 
 ## Files Changed
 - Sources/MacParakeet/Views/Dictation/DictationOverlayView.swift (+145)
@@ -770,13 +762,17 @@ current contents. After the CGEvent Cmd+V is dispatched and a short delay
 ### Before Starting Work
 
 - [ ] Read this file (CLAUDE.md)
+- [ ] Read `spec/10-ai-coding-method.md` for kernel workflow and precedence
 - [ ] Check `spec/README.md` for current version progress
+- [ ] Identify requirement IDs for the change (`spec/kernel/requirements.yaml`)
+- [ ] Define the context zone: in-scope behavior, must-not-change invariants, and out-of-scope behavior
 - [ ] Check `plans/active/` for any in-progress plans
 - [ ] Run `swift test` to establish baseline
 
 ### After Completing Work
 
-- [ ] Run `swift test` -- all tests should pass
+- [ ] Run required focused tests and `swift test` -- all tests should pass
+- [ ] Update `spec/kernel/traceability.md` for changed requirement mappings
 - [ ] Update docs if behavior changed (specs, README, this file)
 - [ ] Archive completed plans to `plans/completed/`
 - [ ] Record learnings in `MEMORY.md` (gotchas, patterns, failed approaches)
