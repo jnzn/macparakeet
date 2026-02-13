@@ -11,7 +11,7 @@ let package = Package(
     ],
     products: [
         .executable(name: "MacParakeet", targets: ["MacParakeet"]),
-        .executable(name: "macparakeet", targets: ["CLI"]),
+        .executable(name: "macparakeet-cli", targets: ["CLI"]),
         .library(name: "MacParakeetCore", targets: ["MacParakeetCore"]),
         .library(name: "MacParakeetViewModels", targets: ["MacParakeetViewModels"])
     ],
