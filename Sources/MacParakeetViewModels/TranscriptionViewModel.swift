@@ -5,11 +5,27 @@ import SwiftUI
 @MainActor
 @Observable
 public final class TranscriptionViewModel {
+    public enum SourceKind: Sendable {
+        case localFile
+        case youtubeURL
+    }
+
+    public enum ProgressPhase: Int, CaseIterable, Sendable {
+        case preparing
+        case downloading
+        case converting
+        case transcribing
+        case finalizing
+    }
+
     public var transcriptions: [Transcription] = []
     public var currentTranscription: Transcription?
     public var isTranscribing = false
     public var progress: String = ""
     public var transcriptionProgress: Double?
+    public private(set) var sourceKind: SourceKind = .localFile
+    public private(set) var progressPhase: ProgressPhase = .preparing
+    public private(set) var progressHeadline: String = "Preparing transcription pipeline"
     public var errorMessage: String?
     public var isDragging = false
     public var urlInput: String = ""
@@ -23,6 +39,7 @@ public final class TranscriptionViewModel {
     private var activeDropRequestID: UUID?
     private var dropPendingCount = 0
     private var dropAccepted = false
+    private static let progressPercentRegex = try! NSRegularExpression(pattern: #"(\d{1,3})(?:\.\d+)?\s*%"#)
 
     public init() {}
 
@@ -42,35 +59,21 @@ public final class TranscriptionViewModel {
 
     public func transcribeFile(url: URL) {
         guard let service = transcriptionService else { return }
-        isTranscribing = true
-        progress = "Preparing..."
-        transcriptionProgress = nil
-        errorMessage = nil
+        beginTranscription(source: .localFile)
 
         Task {
             do {
                 let result = try await service.transcribe(fileURL: url) { [weak self] phase in
                     DispatchQueue.main.async {
-                        self?.progress = phase
-                        if phase.hasSuffix("%"),
-                           let pctStr = phase.split(separator: " ").last?.dropLast(),
-                           let pct = Double(pctStr) {
-                            self?.transcriptionProgress = pct / 100.0
-                        } else {
-                            self?.transcriptionProgress = nil
-                        }
+                        self?.updateProgress(with: phase)
                     }
                 }
                 currentTranscription = result
-                isTranscribing = false
-                progress = ""
-                transcriptionProgress = nil
+                endTranscription()
                 loadTranscriptions()
             } catch {
                 errorMessage = error.localizedDescription
-                isTranscribing = false
-                progress = ""
-                transcriptionProgress = nil
+                endTranscription()
                 loadTranscriptions()
             }
         }
@@ -88,37 +91,22 @@ public final class TranscriptionViewModel {
             return
         }
 
-        isTranscribing = true
-        progress = "Preparing..."
-        transcriptionProgress = nil
-        errorMessage = nil
+        beginTranscription(source: .youtubeURL)
         urlInput = ""
 
         Task {
             do {
                 let result = try await service.transcribeURL(urlString: url) { [weak self] phase in
                     DispatchQueue.main.async {
-                        self?.progress = phase
-                        // Parse percentage from phase text (e.g. "Downloading... XX%")
-                        if phase.hasSuffix("%"),
-                           let pctStr = phase.split(separator: " ").last?.dropLast(),
-                           let pct = Double(pctStr) {
-                            self?.transcriptionProgress = pct / 100.0
-                        } else {
-                            self?.transcriptionProgress = nil
-                        }
+                        self?.updateProgress(with: phase)
                     }
                 }
                 currentTranscription = result
-                isTranscribing = false
-                progress = ""
-                transcriptionProgress = nil
+                endTranscription()
                 loadTranscriptions()
             } catch {
                 errorMessage = error.localizedDescription
-                isTranscribing = false
-                progress = ""
-                transcriptionProgress = nil
+                endTranscription()
                 loadTranscriptions()
             }
         }
@@ -187,24 +175,14 @@ public final class TranscriptionViewModel {
               FileManager.default.fileExists(atPath: filePath) else { return }
 
         let url = URL(fileURLWithPath: filePath)
-        isTranscribing = true
-        progress = "Preparing..."
-        transcriptionProgress = nil
-        errorMessage = nil
+        beginTranscription(source: .localFile)
         currentTranscription = nil
 
         Task {
             do {
                 var result = try await service.transcribe(fileURL: url) { [weak self] phase in
                     DispatchQueue.main.async {
-                        self?.progress = phase
-                        if phase.hasSuffix("%"),
-                           let pctStr = phase.split(separator: " ").last?.dropLast(),
-                           let pct = Double(pctStr) {
-                            self?.transcriptionProgress = pct / 100.0
-                        } else {
-                            self?.transcriptionProgress = nil
-                        }
+                        self?.updateProgress(with: phase)
                     }
                 }
                 // Preserve original metadata
@@ -212,15 +190,11 @@ public final class TranscriptionViewModel {
                 result.sourceURL = original.sourceURL
                 try? transcriptionRepo?.save(result)
                 currentTranscription = result
-                isTranscribing = false
-                progress = ""
-                transcriptionProgress = nil
+                endTranscription()
                 loadTranscriptions()
             } catch {
                 errorMessage = error.localizedDescription
-                isTranscribing = false
-                progress = ""
-                transcriptionProgress = nil
+                endTranscription()
                 loadTranscriptions()
             }
         }
@@ -236,5 +210,80 @@ public final class TranscriptionViewModel {
             currentTranscription = nil
         }
         loadTranscriptions()
+    }
+
+    // MARK: - Progress State
+
+    private func beginTranscription(source: SourceKind) {
+        sourceKind = source
+        isTranscribing = true
+        progress = "Preparing..."
+        transcriptionProgress = nil
+        progressPhase = .preparing
+        progressHeadline = Self.headline(for: .preparing)
+        errorMessage = nil
+    }
+
+    private func endTranscription() {
+        isTranscribing = false
+        progress = ""
+        transcriptionProgress = nil
+        progressPhase = .preparing
+        progressHeadline = Self.headline(for: .preparing)
+    }
+
+    private func updateProgress(with phaseText: String) {
+        progress = phaseText
+        transcriptionProgress = Self.parseProgressFraction(from: phaseText)
+        progressPhase = Self.parsePhase(from: phaseText)
+        progressHeadline = Self.headline(for: progressPhase)
+    }
+
+    private static func parsePhase(from phaseText: String) -> ProgressPhase {
+        let normalized = phaseText.lowercased()
+        if normalized.contains("download") {
+            return .downloading
+        }
+        if normalized.contains("convert") {
+            return .converting
+        }
+        if normalized.contains("transcrib") {
+            return .transcribing
+        }
+        if normalized.contains("saving") || normalized.contains("final") {
+            return .finalizing
+        }
+        if normalized.contains("prepar") {
+            return .preparing
+        }
+        return .transcribing
+    }
+
+    private static func headline(for phase: ProgressPhase) -> String {
+        switch phase {
+        case .preparing:
+            return "Preparing transcription pipeline"
+        case .downloading:
+            return "Fetching source audio"
+        case .converting:
+            return "Normalizing audio stream"
+        case .transcribing:
+            return "Running speech recognition"
+        case .finalizing:
+            return "Finalizing transcript"
+        }
+    }
+
+    private static func parseProgressFraction(from phaseText: String) -> Double? {
+        let range = NSRange(phaseText.startIndex..., in: phaseText)
+        guard let match = progressPercentRegex.firstMatch(in: phaseText, options: [], range: range),
+              match.numberOfRanges >= 2,
+              let numberRange = Range(match.range(at: 1), in: phaseText),
+              let percent = Double(phaseText[numberRange]),
+              percent >= 0 else {
+            return nil
+        }
+
+        return min(percent, 100) / 100
     }
 }
