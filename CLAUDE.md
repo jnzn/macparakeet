@@ -27,6 +27,7 @@ A **fast, private, local-first voice app** for macOS with two co-equal modes: sy
 | Text processing | `spec/07-text-processing.md` |
 | Error handling | `spec/08-error-handling.md` |
 | Testing strategy | `spec/09-testing.md` |
+| AI coding methodology | `spec/10-ai-coding-method.md` |
 | ADRs (locked decisions) | `spec/adr/` -> individual decision records |
 | Competitive research | `docs/competitive-analysis.md` |
 | Brand identity | `docs/brand-identity.md` |
@@ -336,7 +337,7 @@ Code (Sources/)
 
 ## Implementation Guidelines
 
-1. **Specs are the source of truth** -- All code is generated from and must align with the specs in `spec/`. If code and spec disagree, the spec is correct -- fix the code. When specs are updated, code must follow. When code reveals a spec gap, update the spec first, then implement. Specs drive implementation, not the reverse.
+1. **Specs are the source of truth** -- Follow `spec/10-ai-coding-method.md` precedence: kernel artifacts (`spec/kernel/*`) first, then ADRs, then narrative docs. If code and spec disagree, update code to match the highest-precedence spec (or update the spec if it is wrong).
 2. **ADRs are locked** -- Don't second-guess architectural decisions in `spec/adr/`.
 3. **Version order matters** -- v0.1 features first, not v0.3
 4. **Never lose user data** -- Graceful degradation for dictation history and transcriptions
@@ -344,6 +345,8 @@ Code (Sources/)
 6. **Local-first** -- Audio never leaves device. Period. No cloud option.
 7. **Simplicity is the product** -- Resist feature creep. MacParakeet does two things well.
 8. **Fast feedback loops for agents** -- AI agents make mistakes, but they're good at fixing them *if they can detect them*. Design everything so the agent can verify its own work: tests for logic, CLI for headless smoke-testing of core services, build errors that surface immediately. The faster the feedback loop, the faster the agent self-corrects. If an agent can't confirm its own change works, the change is incomplete.
+9. **Bounded agent discretion** -- Agents should choose the simplest process that works, but behavior changes must follow `spec/10-ai-coding-method.md` kernel workflow. Non-behavioral edits may use a lighter process.
+10. **Protect the context zone** -- For behavior changes, explicitly define in-scope requirements, out-of-scope behavior, and invariants before coding. If the change expands scope, update kernel artifacts first.
 
 ## Documentation Hygiene
 
@@ -370,7 +373,7 @@ Add status headers to documents so future agents know what's current:
 ### When Reading Docs
 
 1. **Check status headers** -- Skip HISTORICAL docs unless researching past decisions
-2. **Verify against code** -- If doc and code disagree, code is truth (then fix doc)
+2. **Apply precedence** -- Resolve conflicts using `spec/10-ai-coding-method.md` source-of-truth order (kernel > ADR > narrative > code/comments)
 3. **Note discrepancies** -- Flag outdated content for update
 
 ### Signs of Stale Docs
@@ -431,12 +434,14 @@ Step-by-step guides for frequent development tasks.
 
 ### Add a new feature
 
-1. Read relevant spec (e.g., `spec/02-features.md`)
-2. Create a plan in `plans/active/` if multi-file
-3. Implement in `Sources/MacParakeetCore/` (logic) and `Sources/MacParakeet/` (UI)
-4. Add tests in `Tests/MacParakeetTests/`
-5. Run `swift test` to verify
-6. Update spec progress markers
+1. Read relevant spec (e.g., `spec/02-features.md`) and `spec/10-ai-coding-method.md`
+2. Identify requirement IDs (or add them in `spec/kernel/requirements.yaml`)
+3. Create a plan in `plans/active/` if multi-file
+4. Implement in `Sources/MacParakeetCore/` (logic) and `Sources/MacParakeet/` (UI)
+5. Add/update tests in `Tests/MacParakeetTests/` mapped to requirement IDs
+6. Update `spec/kernel/traceability.md`
+7. Run focused tests, then `swift test` before merge
+8. Update spec progress markers
 
 ### Add a new database table
 
@@ -457,11 +462,13 @@ Step-by-step guides for frequent development tasks.
 
 ### Fix a bug
 
-1. Write a test that reproduces the bug
-2. Run `swift test` (should fail)
-3. Fix the bug
-4. Run `swift test` (should pass)
-5. Commit with test + fix together
+1. Map the bug to an existing requirement ID (or add one in kernel)
+2. Write a test that reproduces the bug
+3. Run focused tests (should fail)
+4. Fix the bug
+5. Run focused tests (should pass), then run `swift test` before merge
+6. Update `spec/kernel/traceability.md`
+7. Commit with test + fix together
 
 ### Add a CLI command (if CLI target is added)
 
@@ -770,13 +777,17 @@ current contents. After the CGEvent Cmd+V is dispatched and a short delay
 ### Before Starting Work
 
 - [ ] Read this file (CLAUDE.md)
+- [ ] Read `spec/10-ai-coding-method.md` for kernel workflow and precedence
 - [ ] Check `spec/README.md` for current version progress
+- [ ] Identify requirement IDs for the change (`spec/kernel/requirements.yaml`)
+- [ ] Define the context zone: in-scope behavior, must-not-change invariants, and out-of-scope behavior
 - [ ] Check `plans/active/` for any in-progress plans
 - [ ] Run `swift test` to establish baseline
 
 ### After Completing Work
 
-- [ ] Run `swift test` -- all tests should pass
+- [ ] Run required focused tests and `swift test` -- all tests should pass
+- [ ] Update `spec/kernel/traceability.md` for changed requirement mappings
 - [ ] Update docs if behavior changed (specs, README, this file)
 - [ ] Archive completed plans to `plans/completed/`
 - [ ] Record learnings in `MEMORY.md` (gotchas, patterns, failed approaches)

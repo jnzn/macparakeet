@@ -18,6 +18,7 @@
 | 07 | [Text Processing](07-text-processing.md) | Clean pipeline, custom words, snippets | Active |
 | 08 | [Error Handling](08-error-handling.md) | Error philosophy, categories, recovery | Active |
 | 09 | [Testing](09-testing.md) | Testing strategy, patterns, guidelines | Active |
+| 10 | [AI Coding Method](10-ai-coding-method.md) | Spec-driven coding philosophy and kernel methodology | Active |
 
 ## Root Decisions (Locked)
 
@@ -106,6 +107,7 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 5. **Local-first.** Audio and text never leave the device. No cloud APIs.
 6. **One model.** Qwen3-4B for all LLM tasks. No Llama, no Ollama, no OpenAI.
 7. **`swift test` is the gate.** All tests must pass before and after changes.
+8. **Kernel has precedence for implementation.** When present, `spec/kernel/*` artifacts define executable requirements and contracts.
 
 ### Where to Start
 
