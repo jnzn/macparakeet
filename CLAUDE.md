@@ -29,6 +29,7 @@ A **fast, private, local-first voice app** for macOS with two co-equal modes: sy
 | Error handling | `spec/08-error-handling.md` |
 | Testing strategy | `spec/09-testing.md` |
 | AI coding methodology | `spec/10-ai-coding-method.md` |
+| LLM integration | `spec/11-llm-integration.md` |
 | ADRs (locked decisions) | `spec/adr/` -> individual decision records |
 | Competitive research | `docs/competitive-analysis.md` |
 | Brand identity | `docs/brand-identity.md` |
@@ -46,7 +47,7 @@ A **fast, private, local-first voice app** for macOS with two co-equal modes: sy
 | Database | SQLite | GRDB (single file, dictation history + transcriptions) |
 | STT | Parakeet TDT 0.6B-v3 | Via FluidAudio CoreML/ANE (~2.5% WER, 155x realtime) |
 | Audio | AVAudioEngine + Core Audio | Mic capture for dictation; FFmpeg (bundled) for video file conversion |
-| LLM | MLX-Swift | Qwen3-4B for command mode + AI refinement (GPU via Metal) |
+| LLM | MLX-Swift | Qwen3-8B for command mode, AI refinement, chat (GPU via Metal) |
 | YouTube | yt-dlp | Standalone macOS binary, weekly non-blocking auto-update via `--update` |
 | Licensing | LemonSqueezy | License key activation, validation API |
 
@@ -117,6 +118,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 | ADR-005 | First-run onboarding flow | `spec/adr/005-onboarding-first-run.md` |
 | ADR-006 | Trial + license key activation | `spec/adr/006-trial-and-license-activation.md` |
 | ADR-007 | FluidAudio CoreML migration (Python elimination) | `spec/adr/007-fluidaudio-coreml-migration.md` |
+| ADR-008 | Local LLM runtime baseline (`mlx-swift-lm` + Qwen3-8B) | `spec/adr/008-local-llm-runtime-and-model.md` |
 
 ## Current Phase
 
@@ -133,18 +135,19 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 - [x] Menu bar app with main window + sidebar navigation
 - [x] Basic export (TXT/Markdown/SRT/VTT + copy to clipboard)
 - [x] SQLite database (GRDB, dictations + transcriptions + substring search)
-- [x] Internal dev CLI tool: `macparakeet-cli transcribe`, `history`, `health`
+- [x] Internal dev CLI tool: `macparakeet-cli transcribe`, `history`, `health`, `flow`, `llm`
 - [x] STT engine (Parakeet TDT via FluidAudio CoreML/ANE)
 
 ### v0.2 Clean Pipeline + AI
 - [x] Clean text pipeline (filler removal, custom words, snippets) -- deterministic, no LLM
 - [x] Custom words & snippets management UI (Vocabulary sidebar item)
-- [x] CLI commands: `macparakeet-cli flow process/words/snippets`
-- [ ] Context modes (raw, clean, formal, email, code) -- raw + clean done, AI modes pending
-- [ ] AI text refinement via Qwen3-4B
+- [x] CLI commands: `macparakeet-cli flow process/words/snippets` + `macparakeet-cli llm generate/refine/command/smoke-test`
+- [x] Context modes (raw, clean, formal, email, code)
+- [x] AI text refinement via Qwen3-8B with deterministic fallback
 
-### v0.3 Command Mode + Export
+### v0.3 Command Mode + Chat + Export
 - [ ] Command Mode (highlight text + voice command -> LLM edits in-place, like WisprFlow Pro)
+- [ ] Chat with transcript (ask questions about YouTube/file transcriptions via Qwen3-8B)
 - [x] YouTube URL transcription (yt-dlp + Parakeet, single video)
 - [x] Export formats (TXT, Markdown, SRT, VTT)
 - [ ] Export formats (DOCX, PDF, JSON)
@@ -189,7 +192,7 @@ let result = try await manager.transcribe(audioSamples, source: .system)
 **Three-chip architecture:**
 ```
 CPU:  MacParakeet app (UI, hotkeys, clipboard, history)
-GPU:  Qwen3-4B LLM (via MLX-Swift/Metal) — full GPU, no sharing
+GPU:  Qwen3-8B LLM (via MLX-Swift/Metal) — full GPU, no sharing
 ANE:  Parakeet STT (via FluidAudio/CoreML) — dedicated ML chip
 ```
 
@@ -205,14 +208,16 @@ ANE:  Parakeet STT (via FluidAudio/CoreML) — dedicated ML chip
 
 | Model | HuggingFace ID |
 |-------|----------------|
-| Qwen3-4B | `mlx-community/Qwen3-4B-4bit` |
+| Qwen3-8B | `mlx-community/Qwen3-8B-4bit` |
+
+One model handles text refinement, command mode, and chat with transcript. 128K context window supports full-length transcripts. ~5 GB GPU RAM at 4-bit quantization.
 
 **Dual-mode operation** (same model, different settings):
 
 | Mode | Use Case | Settings |
 |------|----------|----------|
 | Non-thinking | Text cleanup, formatting | `temp=0.7, topP=0.8` |
-| Thinking | Command mode, complex edits | `temp=0.6, topP=0.95` |
+| Thinking | Command mode, chat, complex edits | `temp=0.6, topP=0.95` |
 
 ### Audio Capture
 
@@ -535,6 +540,8 @@ swift build --target CLI
 swift run macparakeet-cli --help
 swift run macparakeet-cli transcribe /path/to/audio.mp3
 swift run macparakeet-cli health
+swift run macparakeet-cli llm smoke-test --stats
+swift run macparakeet-cli llm refine formal "quick draft text"
 
 # Run tests (swift test works -- tests don't need Metal shaders)
 swift test

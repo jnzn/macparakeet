@@ -16,7 +16,7 @@ let package = Package(
         .library(name: "MacParakeetViewModels", targets: ["MacParakeetViewModels"])
     ],
     dependencies: [
-        // MLX-Swift for local LLM inference (Qwen3-4B)
+        // MLX-Swift for local LLM inference (Qwen3-8B)
         // Pin to 2.29.2: 2.29.3 has Xcode 16.1 parser breakage in Jamba.swift,
         // while 2.30.3 has a known Swift 6.1 LoRA compile regression.
         .package(url: "https://github.com/ml-explore/mlx-swift-lm.git", exact: "2.29.2"),

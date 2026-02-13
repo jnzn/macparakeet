@@ -61,8 +61,8 @@
 │                                                                                  │
 │  ┌──────────────────────────────┐   ┌──────────────────────────────────────────┐ │
 │  │   Parakeet STT (In-Process)  │   │   MLX-Swift LLM (In-Process)             │ │
-│  │   FluidAudio CoreML on ANE   │   │   Qwen3-4B (4-bit quantized)             │ │
-│  │   ~66 MB working RAM         │   │   ~2.5 GB RAM                            │ │
+│  │   FluidAudio CoreML on ANE   │   │   Qwen3-8B (4-bit quantized)             │ │
+│  │   ~66 MB working RAM         │   │   ~5 GB RAM                              │ │
 │  │   ~2.5% WER, 155x realtime   │   │   Command mode + AI refinement           │ │
 │  └──────────────────────────────┘   └──────────────────────────────────────────┘ │
 │                                                                                  │
@@ -75,7 +75,7 @@
 │  │(Mic)     │  │ Hotkey)  │  │ Paste)      │  │ Control)     │               │
 │  └──────────┘  └──────────┘  └─────────────┘  └──────────────┘               │
 │                                                                                  │
-│  Total AI Memory: ~2.7 GB peak (Parakeet ~66 MB on ANE + LLM ~2.5 GB on GPU)   │
+│  Total AI Memory: ~5.2 GB peak (Parakeet ~66 MB on ANE + LLM ~5 GB on GPU)     │
 │  Recommended: 16 GB RAM (Apple Silicon only). Minimum: 8 GB.                    │
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -375,7 +375,7 @@ struct TimestampedWord: Sendable {
 **Architecture:**
 ```
 CPU:  MacParakeet app (UI, hotkeys, clipboard, history)
-GPU:  Qwen3-4B LLM (via MLX-Swift/Metal) — full GPU, no sharing
+GPU:  Qwen3-8B LLM (via MLX-Swift/Metal) — full GPU, no sharing
 ANE:  Parakeet STT (via FluidAudio/CoreML) — dedicated ML accelerator
 ```
 
@@ -438,10 +438,10 @@ enum RefinementLevel {
 
 | Property | Value |
 |----------|-------|
-| Model | Qwen3-4B |
-| HuggingFace ID | `mlx-community/Qwen3-4B-4bit` |
+| Model | Qwen3-8B |
+| HuggingFace ID | `mlx-community/Qwen3-8B-4bit` |
 | Quantization | 4-bit |
-| RAM | ~2.5 GB |
+| RAM | ~5 GB |
 | Framework | MLX-Swift (Apple Silicon Metal) |
 
 **Dual-Mode Operation (same model, different settings):**
@@ -1001,7 +1001,7 @@ All four tables are independent. No foreign key relationships. This keeps the sc
     │   └── ...
     ├── models/                     # Downloaded ML models
     │   ├── stt/                    # CoreML Parakeet models (~6 GB)
-    │   └── Qwen3-4B-4bit/          # LLM model files
+    │   └── Qwen3-8B-4bit/          # LLM model files
     └── bin/                        # Standalone binaries
         ├── yt-dlp                  # YouTube downloader (~35 MB, self-updating)
         └── ffmpeg                  # Video demuxing (~80 MB)
@@ -1016,7 +1016,7 @@ All four tables are independent. No foreign key relationships. This keeps the sc
 | Package | SPM ID | Purpose | Notes |
 |---------|--------|---------|-------|
 | FluidAudio | `FluidAudio` | STT engine (Parakeet TDT via CoreML/ANE) | Apache 2.0. Use `FluidAudio` product only — NOT `FluidAudioEspeak` (GPL-3.0, would require open-sourcing). |
-| mlx-swift-lm | `MLXLLM`, `MLXLMCommon` | LLM inference (Qwen3-4B) | v2.29.0+, Apple Silicon Metal acceleration |
+| mlx-swift-lm | `MLXLLM`, `MLXLMCommon` | LLM inference (Qwen3-8B) | v2.29.0+, Apple Silicon Metal acceleration |
 | GRDB.swift | `GRDB` | SQLite database | v6.29.0+, single-file storage, migrations, Codable records |
 | swift-argument-parser | `ArgumentParser` | CLI (implemented) | `macparakeet-cli transcribe`, `history`, `health` |
 
@@ -1110,11 +1110,11 @@ For App Store distribution, the app needs:
 │                    Memory at Peak                           │
 ├────────────────────────────────────────────────────────────┤
 │  Parakeet STT (CoreML/ANE)       ~66 MB working RAM        │
-│  Qwen3-4B LLM (MLX-Swift/GPU)   ~2.5 GB                   │
+│  Qwen3-8B LLM (MLX-Swift/GPU)   ~5 GB                     │
 │  App process (UI + services)     ~100 MB                   │
 │  Audio buffers                   ~50 MB                    │
 │  ──────────────────────────────────────                    │
-│  Total peak (with LLM)           ~2.8 GB                   │
+│  Total peak (with LLM)           ~5.3 GB                   │
 │                                                            │
 │  Recommended system RAM: 16 GB (Apple Silicon)             │
 │  Minimum: 8 GB (runs comfortably — STT uses ~66 MB)        │
@@ -1147,7 +1147,7 @@ App Launch ──────────> Window shown (fast, no ML loaded)
                            │
                            │ If AI refinement needed:
                            ▼
-                       Load Qwen3-4B (background, ~2-3s)
+                       Load Qwen3-8B (background, ~2-3s)
                            │
                            ▼
                        Refine text (~1-2s)

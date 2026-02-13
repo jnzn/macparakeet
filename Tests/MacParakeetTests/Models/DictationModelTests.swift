@@ -49,6 +49,9 @@ final class DictationModelTests: XCTestCase {
     func testProcessingModeRawValues() {
         XCTAssertEqual(Dictation.ProcessingMode.raw.rawValue, "raw")
         XCTAssertEqual(Dictation.ProcessingMode.clean.rawValue, "clean")
+        XCTAssertEqual(Dictation.ProcessingMode.formal.rawValue, "formal")
+        XCTAssertEqual(Dictation.ProcessingMode.email.rawValue, "email")
+        XCTAssertEqual(Dictation.ProcessingMode.code.rawValue, "code")
     }
 
     func testDictationStatusRawValues() {
@@ -56,6 +59,22 @@ final class DictationModelTests: XCTestCase {
         XCTAssertEqual(Dictation.DictationStatus.processing.rawValue, "processing")
         XCTAssertEqual(Dictation.DictationStatus.completed.rawValue, "completed")
         XCTAssertEqual(Dictation.DictationStatus.error.rawValue, "error")
+    }
+
+    func testProcessingModeHelpers() {
+        XCTAssertFalse(Dictation.ProcessingMode.raw.usesDeterministicPipeline)
+        XCTAssertTrue(Dictation.ProcessingMode.clean.usesDeterministicPipeline)
+        XCTAssertTrue(Dictation.ProcessingMode.formal.usesDeterministicPipeline)
+
+        XCTAssertFalse(Dictation.ProcessingMode.clean.usesLLMRefinement)
+        XCTAssertTrue(Dictation.ProcessingMode.formal.usesLLMRefinement)
+        XCTAssertTrue(Dictation.ProcessingMode.email.usesLLMRefinement)
+        XCTAssertTrue(Dictation.ProcessingMode.code.usesLLMRefinement)
+
+        XCTAssertEqual(Dictation.ProcessingMode.formal.llmRefinementMode, .formal)
+        XCTAssertEqual(Dictation.ProcessingMode.email.llmRefinementMode, .email)
+        XCTAssertEqual(Dictation.ProcessingMode.code.llmRefinementMode, .code)
+        XCTAssertNil(Dictation.ProcessingMode.clean.llmRefinementMode)
     }
 
     func testCodableRoundTrip() throws {

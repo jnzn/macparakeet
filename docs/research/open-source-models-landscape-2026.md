@@ -24,7 +24,7 @@ Deep dive into the current state of open source models relevant to MacParakeet: 
 **Key takeaways:**
 
 - **At snapshot time, Parakeet TDT 0.6B-v2 was assessed as the best English-first STT choice.** Current project decision is v3-only via FluidAudio CoreML (see ADR-007 and spec docs).
-- **Qwen3-4B is still the right LLM**, but the **July 2025 "2507" update** is a meaningful upgrade — it ranked #1 among small language models for instruction following. Available as `mlx-community/Qwen3-4B-Instruct-2507-4bit`.
+- **Qwen3-8B is the right LLM** — the most consistent model across all benchmarks, chosen for text refinement, command mode, and chat-with-transcript features. Available as `mlx-community/Qwen3-8B-4bit`.
 - **MLX is now Apple-endorsed** (WWDC 2025). MLX-Swift has breaking API changes. The ecosystem is maturing fast.
 - **FluidAudio** is the most interesting new development — a Swift CoreML package that runs Parakeet natively on the ANE without a Python daemon. VoiceInk (competitor) already uses it.
 - **No Whisper V4, no Qwen4, no Llama 4 small models.** The landscape is evolutionary, not revolutionary.
@@ -118,7 +118,7 @@ Apple introduced native on-device STT at WWDC 2025:
 
 ## Small LLMs (Sub-8B)
 
-MacParakeet uses Qwen3-4B via MLX-Swift for command mode and AI text refinement.
+MacParakeet uses Qwen3-8B via MLX-Swift for command mode, AI text refinement, and chat-with-transcript features.
 
 ### Qwen3 Family (Alibaba)
 
@@ -142,8 +142,8 @@ The most active player in the small model space.
 
 | Model | Params | Instruction Following | Memory (4-bit MLX) | Release | License |
 |-------|--------|----------------------|---------------------|---------|---------|
-| **Qwen3-4B-Instruct-2507** | 4B | **Best in class** | ~2.5-4GB | Jul 2025 | Apache 2.0 |
-| Qwen3-8B | 8B | Very strong, most consistent | ~4-5GB | Apr 2025 | Apache 2.0 |
+| Qwen3-4B-Instruct-2507 | 4B | Best in class (4B tier) | ~2.5-4GB | Jul 2025 | Apache 2.0 |
+| **Qwen3-8B** | 8B | **Best in class, most consistent** | **~5 GB** | Apr 2025 | Apache 2.0 |
 | Gemma 3 4B | 4B | Good | ~3GB | Mar 2025 | Apache-like |
 | **Gemma 3n E4B** | 8B (3GB eff.) | Good | ~3GB | Jun 2025 | Apache-like |
 | Phi-4-mini | 3.8B | Strong | ~2.5-3GB | Feb 2025 | MIT |
@@ -158,15 +158,15 @@ The most active player in the small model space.
 
 ### Task-Specific Assessment
 
-For MacParakeet's use cases (text cleanup/rewriting + command mode editing):
+For MacParakeet's use cases (text cleanup/rewriting + command mode editing + chat-with-transcript):
 
-1. **Qwen3-4B-Instruct-2507** — Best choice. #1 SLM for instruction following. The July 2025 update specifically improved text generation quality. Dual-mode (thinking for complex edits, non-thinking for quick cleanup).
+1. **Qwen3-8B** — Primary choice. Most consistent model across all benchmarks at ~5 GB RAM (4-bit). Handles text refinement, command mode, and longer-context tasks (chat with transcript) better than smaller models. Dual-mode (thinking for complex edits, non-thinking for quick cleanup). Apache 2.0.
 
-2. **Qwen3-8B** — Marginal quality upgrade, ~4-5GB RAM. Most consistent across all benchmarks. Consider if 4B proves insufficient for command mode.
+2. **Qwen3-4B-Instruct-2507** — Strong alternative at 4B tier. #1 SLM for instruction following. The July 2025 update specifically improved text generation quality. Could serve as a lighter fallback for memory-constrained machines.
 
 3. **Gemma 3n E4B** — Interesting memory efficiency (8B params, ~3GB effective). Newer, less MLX tooling. Worth evaluating.
 
-4. **Phi-4-mini** — Good fallback (3.8B, strong reasoning). Slightly behind Qwen3-4B-2507.
+4. **Phi-4-mini** — Good fallback (3.8B, strong reasoning). Slightly behind Qwen3 models.
 
 5. **Ministral 3B** — Newest (Dec 2025), Apache 2.0. Less community MLX optimization.
 
@@ -214,7 +214,7 @@ The high-level package is now **[mlx-swift-lm](https://github.com/ml-explore/mlx
 ### mlx-community on HuggingFace
 
 Thousands of pre-converted, quantized models. Key for MacParakeet:
-- `mlx-community/Qwen3-4B-Instruct-2507-4bit` — Updated Qwen3-4B
+- `mlx-community/Qwen3-8B-4bit` — Primary LLM for MacParakeet
 - `Qwen/Qwen3-30B-A3B-MLX-4bit` — MoE option (if RAM allows)
 - Qwen3 collection, Qwen3-Next collection, Qwen3-VL collection all available
 
@@ -239,7 +239,7 @@ Introduced at WWDC 2025 — access to Apple's on-device ~3B LLM powering Apple I
 - Free inference, Swift-native, offline capable.
 - Good for: summarization, entity extraction, text refinement, short dialog.
 - **Limitations:** Requires macOS 26, not a general chatbot, no fine-tuning, text-only, no control over model behavior.
-- **Not a replacement for Qwen3-4B** — MacParakeet targets macOS 14.2+, and the Foundation model can't handle command mode editing. Could be a supplementary option for simple cleanup on macOS 26+ users.
+- **Not a replacement for Qwen3-8B** — MacParakeet targets macOS 14.2+, and the Foundation model can't handle command mode editing. Could be a supplementary option for simple cleanup on macOS 26+ users.
 
 ### Emerging Inference Engines
 
@@ -316,7 +316,7 @@ Apple Silicon's unified memory = zero-copy for MLX operations. A $2,000 Mac Stud
 
 ### Immediate (No Architecture Changes)
 
-1. **Upgrade LLM to Qwen3-4B-Instruct-2507.** The July 2025 update ranked #1 among SLMs for instruction following — exactly what MacParakeet needs for text refinement and command mode. Change the HuggingFace model ID to `mlx-community/Qwen3-4B-Instruct-2507-4bit`. Minimal code change, meaningful quality improvement.
+1. **Use Qwen3-8B as the primary LLM.** The most consistent model across all benchmarks, handling text refinement, command mode, and chat-with-transcript features. HuggingFace model ID: `mlx-community/Qwen3-8B-4bit`. ~5 GB RAM at 4-bit quantization.
 
 2. **Snapshot recommendation (historical): keep Parakeet TDT 0.6B-v2 for STT.** Current project decision is v3-only via FluidAudio CoreML.
 
@@ -332,13 +332,13 @@ Apple Silicon's unified memory = zero-copy for MLX operations. A $2,000 Mac Stud
    - Add speaker diarization, VAD, and streaming ASR for free.
    - This is a significant architectural change but would simplify distribution and improve the user experience.
 
-5. **Evaluate Qwen3-8B if command mode quality is insufficient.** Only ~4-5GB RAM at 4-bit. Most consistent model across all benchmarks. Marginal quality upgrade over 4B-2507 for text tasks, but potentially meaningful for complex voice commands.
+5. **Monitor Qwen3-8B-Instruct-2507 availability.** If a July 2025-style "2507" update becomes available for the 8B model (as `mlx-community/Qwen3-8B-Instruct-2507-4bit`), evaluate it as a drop-in upgrade for improved instruction following.
 
 ### Long-Term (Track for Future)
 
 6. **Apple SpeechAnalyzer** — Native API, excellent speed. But requires macOS 26+. Worth considering when MacParakeet's minimum OS version reaches Tahoe.
 
-7. **Apple Foundation Models** — Free on-device LLM via macOS 26+ API. Not a replacement for Qwen3 (too limited), but could supplement simple text cleanup at zero cost.
+7. **Apple Foundation Models** — Free on-device LLM via macOS 26+ API. Not a replacement for Qwen3-8B (too limited), but could supplement simple text cleanup at zero cost.
 
 8. **Gemma 3n E4B** — 8B params with only ~3GB effective memory via Per-Layer Embedding. Interesting efficiency play, but newer and less tested.
 
@@ -367,7 +367,7 @@ Apple Silicon's unified memory = zero-copy for MLX operations. A $2,000 Mac Stud
 
 ### Small LLMs
 - [Qwen3 Official Blog](https://qwenlm.github.io/blog/qwen3/)
-- [Qwen3-4B-Instruct-2507 (HuggingFace)](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507)
+- [Qwen3-8B (HuggingFace)](https://huggingface.co/Qwen/Qwen3-8B)
 - [Qwen3-Next (VentureBeat)](https://venturebeat.com/ai/qwen3-next-debuts-with-impressively-efficient-performance-on-just-3b-active)
 - [Gemma 3 (Google DeepMind)](https://deepmind.google/models/gemma/gemma-3/)
 - [Gemma 3n (Google DeepMind)](https://deepmind.google/models/gemma/gemma-3n/)

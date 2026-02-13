@@ -358,7 +358,7 @@ struct DictationCardRow: View {
                     }
 
                     HStack(spacing: 6) {
-                        Text(dictation.processingMode == .clean ? "Clean mode" : "Raw mode")
+                        Text("\(dictation.processingMode.displayName) mode")
                             .font(DesignSystem.Typography.micro)
                             .foregroundStyle(.secondary)
 

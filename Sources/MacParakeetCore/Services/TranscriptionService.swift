@@ -22,6 +22,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
     private let customWordRepo: CustomWordRepositoryProtocol?
     private let snippetRepo: TextSnippetRepositoryProtocol?
     private let processingMode: @Sendable () -> Dictation.ProcessingMode
+    private let textRefinementService: TextRefinementService
     private let shouldKeepDownloadedAudio: @Sendable () -> Bool
     private let youtubeDownloader: YouTubeDownloading?
 
@@ -32,7 +33,9 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         entitlements: EntitlementsChecking? = nil,
         customWordRepo: CustomWordRepositoryProtocol? = nil,
         snippetRepo: TextSnippetRepositoryProtocol? = nil,
+        llmService: (any LLMServiceProtocol)? = nil,
         processingMode: (@Sendable () -> Dictation.ProcessingMode)? = nil,
+        refinementOptionsProvider: TextRefinementService.OptionsProvider? = nil,
         shouldKeepDownloadedAudio: (@Sendable () -> Bool)? = nil,
         youtubeDownloader: YouTubeDownloading? = nil
     ) {
@@ -43,6 +46,10 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         self.customWordRepo = customWordRepo
         self.snippetRepo = snippetRepo
         self.processingMode = processingMode ?? { .raw }
+        self.textRefinementService = TextRefinementService(
+            llmService: llmService,
+            optionsProvider: refinementOptionsProvider ?? TextRefinementService.defaultOptionsProvider
+        )
         self.shouldKeepDownloadedAudio = shouldKeepDownloadedAudio ?? { true }
         self.youtubeDownloader = youtubeDownloader
     }
@@ -141,19 +148,18 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             transcription.durationMs = result.words.last?.endMs
 
             let mode = processingMode()
-            if mode != .raw {
-                let customWords = (try? customWordRepo?.fetchEnabled()) ?? []
-                let snippets = (try? snippetRepo?.fetchEnabled()) ?? []
-                let pipeline = TextProcessingPipeline()
-                let pipelineResult = pipeline.process(
-                    text: result.text,
-                    customWords: customWords,
-                    snippets: snippets
-                )
-                transcription.cleanTranscript = pipelineResult.text
-                if !pipelineResult.expandedSnippetIDs.isEmpty {
-                    try? snippetRepo?.incrementUseCount(ids: pipelineResult.expandedSnippetIDs)
-                }
+            let customWords = mode.usesDeterministicPipeline ? ((try? customWordRepo?.fetchEnabled()) ?? []) : []
+            let snippets = mode.usesDeterministicPipeline ? ((try? snippetRepo?.fetchEnabled()) ?? []) : []
+            let refinement = await textRefinementService.refine(
+                rawText: result.text,
+                mode: mode,
+                customWords: customWords,
+                snippets: snippets
+            )
+            transcription.cleanTranscript = refinement.text
+
+            if !refinement.expandedSnippetIDs.isEmpty {
+                try? snippetRepo?.incrementUseCount(ids: refinement.expandedSnippetIDs)
             }
 
             transcription.status = .completed

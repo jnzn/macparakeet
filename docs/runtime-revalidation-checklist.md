@@ -7,7 +7,7 @@ Keep local LLM runtime selection evidence-based over time (not one-time).
 
 Current baseline:
 - Primary runtime: MLX-Swift / MLX-Swift-LM
-- Model class: Qwen3-4B 4-bit
+- Model class: Qwen3-8B 4-bit
 - Platform: Apple Silicon macOS app (native Swift)
 
 ## Cadence

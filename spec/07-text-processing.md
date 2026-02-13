@@ -71,9 +71,9 @@ Final normalization pass:
 |------|-----------|--------|---------|
 | Raw | None | N/A | 0ms |
 | Clean | Deterministic pipeline | TextProcessingPipeline | <1ms |
-| Formal | Pipeline + LLM (professional tone) | Qwen3-4B | ~1-3s |
-| Email | Pipeline + LLM (email format) | Qwen3-4B | ~1-3s |
-| Code | Pipeline + LLM (preserve syntax) | Qwen3-4B | ~1-3s |
+| Formal | Pipeline + LLM (professional tone) | Qwen3-8B | ~1-3s |
+| Email | Pipeline + LLM (email format) | Qwen3-8B | ~1-3s |
+| Code | Pipeline + LLM (preserve syntax) | Qwen3-8B | ~1-3s |
 
 ### Mode Details
 
@@ -81,9 +81,9 @@ Final normalization pass:
 
 **Clean** (default): The deterministic 4-step pipeline runs. Fast, predictable, no LLM dependency. Good for most dictation use cases.
 
-**Formal**: The deterministic pipeline runs first, then the result is sent to Qwen3-4B with a prompt to rewrite in a professional tone. Suitable for business communication.
+**Formal**: The deterministic pipeline runs first, then the result is sent to Qwen3-8B with a prompt to rewrite in a professional tone. Suitable for business communication.
 
-**Email**: Pipeline first, then LLM formats the text as an email with appropriate greeting, body, and sign-off. User's name and preferred sign-off can be configured.
+**Email**: Pipeline first, then LLM rewrites into polished email-style text.
 
 **Code**: Pipeline first, then LLM preserves technical syntax, variable names, and code-like patterns while cleaning up natural language around them.
 
@@ -102,7 +102,7 @@ User selects text in any app
     → User speaks a command: "Translate to Spanish", "Make formal", "Fix grammar"
     → MacParakeet captures command via STT
     → Gets selected text via Accessibility API
-    → Sends selected text + spoken command to Qwen3-4B
+    → Sends selected text + spoken command to Qwen3-8B
     → Replaces selected text with result via CGEvent (paste)
 ```
 
@@ -125,7 +125,7 @@ User selects text in any app
 
 ### Constraints
 
-- Selected text is limited to ~4000 tokens (Qwen3-4B context window management)
+- Selected text is limited to ~4000 tokens as a practical limit for command mode (Qwen3-8B supports 128K context)
 - If no text is selected, show a brief tooltip: "Select text first"
 - Command recording uses the same mic pipeline as dictation
 
@@ -137,14 +137,14 @@ User selects text in any app
 
 | Property | Value |
 |----------|-------|
-| Model | Qwen3-4B |
-| HuggingFace ID | `mlx-community/Qwen3-4B-4bit` |
+| Model | Qwen3-8B |
+| HuggingFace ID | `mlx-community/Qwen3-8B-4bit` |
 | Runtime | MLX-Swift |
 | Memory | Loaded/unloaded on demand |
 
 ### Dual-Mode Operation
 
-The same Qwen3-4B model is used with different settings depending on task complexity:
+The same Qwen3-8B model is used with different settings depending on task complexity:
 
 | Mode | Use Case | Temperature | Top-P |
 |------|----------|-------------|-------|
@@ -157,7 +157,7 @@ The same Qwen3-4B model is used with different settings depending on task comple
 - It loads on first LLM-mode dictation or command mode invocation
 - It stays loaded for a configurable idle timeout (default: 5 minutes)
 - After idle timeout, the model is unloaded to free memory
-- Loading takes ~2-3 seconds; a loading indicator is shown in the UI
+- Loading takes ~2-3 seconds on first use
 
 ---
 
@@ -206,8 +206,8 @@ macparakeet-cli flow process "um hello I mean kubernetes is great"
 macparakeet-cli flow process "text here" --copy
 
 # Transcribe with processing
-macparakeet-cli transcribe recording.wav --process
-macparakeet-cli transcribe recording.wav --process --copy
+macparakeet-cli transcribe recording.wav --mode clean
+macparakeet-cli transcribe recording.wav --mode raw
 ```
 
 ### Custom Words
@@ -237,4 +237,22 @@ macparakeet-cli flow snippets add "my signature" "Best regards, David"
 
 # Delete a snippet
 macparakeet-cli flow snippets delete <id>
+```
+
+### Local LLM
+
+```bash
+# Local model smoke test
+macparakeet-cli llm smoke-test --stats
+
+# Direct prompt generation
+macparakeet-cli llm generate "Summarize this in one sentence: ..."
+
+# Refine text (deterministic clean + local LLM)
+macparakeet-cli llm refine formal "quick draft note"
+macparakeet-cli llm refine email "meeting moved to 3pm tomorrow"
+macparakeet-cli llm refine code "check var name and update loop logic"
+
+# Apply a spoken-style command transform
+macparakeet-cli llm command "Translate to Spanish" "Hello, how are you?"
 ```

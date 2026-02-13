@@ -20,6 +20,7 @@
 | 08 | [Error Handling](08-error-handling.md) | Error philosophy, categories, recovery | Active |
 | 09 | [Testing](09-testing.md) | Testing strategy, patterns, guidelines | Active |
 | 10 | [AI Coding Method](10-ai-coding-method.md) | Spec-driven coding philosophy and kernel methodology | Active |
+| 11 | [LLM Integration](11-llm-integration.md) | Local LLM architecture, fallback policy, runtime baseline | Active |
 
 ## Root Decisions (Locked)
 
@@ -29,7 +30,7 @@ These decisions are final. Do not second-guess them.
 |----------|--------|-----------|
 | Local STT | Parakeet TDT 0.6B-v3 via FluidAudio CoreML/ANE | 155x realtime, ~2.5% WER, fully local, ~66 MB working RAM |
 | Database | SQLite via GRDB | Single file, embedded, zero config |
-| Local LLM | Qwen3-4B via MLX-Swift | Best 4B model on benchmarks, dual-mode (thinking/non-thinking) |
+| Local LLM | Qwen3-8B via MLX-Swift | Single model for all LLM tasks (refinement, command mode, chat). 128K context. |
 | Platform | macOS 14.2+ (Apple Silicon only) | FluidAudio + MLX-Swift require Apple Silicon; Swift 6.0 |
 | Business model | One-time purchase ($49) | Key differentiator vs WisprFlow ($144-180/year subscription) |
 
@@ -72,16 +73,16 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 - [x] Menu bar app with main window
 - [x] Basic export (TXT/Markdown/SRT/VTT + copy to clipboard)
 - [x] SQLite database (GRDB, dictations + transcriptions + substring search)
-- [x] Internal dev CLI tool (`macparakeet-cli transcribe`, `history`, `health`)
+- [x] Internal dev CLI tool (`macparakeet-cli transcribe`, `history`, `health`, `flow`, `llm`)
 - [x] Test suite passing (`swift test` green)
 
 ### v0.2 AI & Text Processing (In Progress)
 
 - [x] Clean text pipeline (deterministic: fillers, custom words, snippets)
-- [ ] AI text refinement (Qwen3-4B: formal, email, code modes)
+- [x] AI text refinement (Qwen3-8B: formal, email, code modes)
 - [x] Custom words & snippets management UI
 - [ ] Personal dictionary (auto-learns vocabulary)
-- [x] CLI commands (`macparakeet-cli flow process/words/snippets`)
+- [x] CLI commands (`macparakeet-cli flow process/words/snippets` + `macparakeet-cli llm generate/refine/command/smoke-test`)
 
 ### v0.3 Command Mode & Export (In Progress)
 
@@ -106,7 +107,7 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 3. **Version order matters.** Implement v0.1 before v0.2. Do not jump ahead.
 4. **Never lose user data.** Graceful degradation over silent failure.
 5. **Local-first.** Audio and text never leave the device. No cloud APIs.
-6. **One model.** Qwen3-4B for all LLM tasks. No Llama, no Ollama, no OpenAI.
+6. **One model.** Qwen3-8B for all LLM tasks. No Llama, no Ollama, no OpenAI.
 7. **`swift test` is the gate.** All tests must pass before and after changes.
 8. **Kernel has precedence for implementation.** When present, `spec/kernel/*` artifacts define executable requirements and contracts.
 

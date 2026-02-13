@@ -16,7 +16,7 @@ MacParakeet does two things with AI:
 
 1. **Speech-to-text** — We use NVIDIA's Parakeet TDT, a 600-million-parameter model that turns your voice into text. When you press your hotkey and speak, Parakeet transcribes your speech at over 150x real-time speed.
 
-2. **Text refinement** — We use Qwen3-4B, a 4-billion-parameter language model that cleans up, reformats, and refines your dictated text. Raw speech becomes polished prose — formal tone, email format, code comments, whatever you need.
+2. **Text refinement** — We use Qwen3-8B, an 8-billion-parameter language model that cleans up, reformats, and refines your dictated text. Raw speech becomes polished prose — formal tone, email format, code comments, whatever you need.
 
 Both models run entirely on your Mac. No cloud. No API calls. No data leaving your machine.
 
@@ -57,13 +57,13 @@ MLX is Apple's machine learning framework, and it's fast — the fastest way to 
 - Communicating with our Swift app over JSON-RPC (a text protocol over stdin/stdout)
 - Parakeet running on the GPU via MLX/Metal
 
-For the LLM (Qwen3-4B), we use **MLX-Swift** — the native Swift version of the same framework. Also runs on the GPU via Metal.
+For the LLM (Qwen3-8B), we use **MLX-Swift** — the native Swift version of the same framework. Also runs on the GPU via Metal.
 
 Here's what that architecture looked like:
 
 ```
 CPU:  MacParakeet app (UI, hotkeys, clipboard, history)
-GPU:  Parakeet STT (via Python/MLX) + Qwen3-4B LLM (via MLX-Swift)
+GPU:  Parakeet STT (via Python/MLX) + Qwen3-8B LLM (via MLX-Swift)
 ANE:  [idle]
 ```
 
@@ -83,16 +83,16 @@ You speak → Parakeet transcribes (GPU) → Qwen3 refines (GPU) → polished te
 
 Both steps run on the GPU. They run sequentially — Parakeet finishes, then Qwen3 starts — so they don't literally fight for cycles at the same moment. But they do share the GPU's memory pool.
 
-Parakeet via MLX occupies roughly 2GB of GPU memory. Qwen3-4B at 4-bit quantization needs another 2.5-4GB. On an 8GB Mac (the most common configuration for MacBooks), that leaves very little room for macOS itself. The math gets tight:
+Parakeet via MLX occupies roughly 2GB of GPU memory. Qwen3-8B at 4-bit quantization needs another ~5GB. On an 8GB Mac (the most common configuration for MacBooks), that leaves very little room for macOS itself. The math gets tight:
 
 | What | Memory |
 |------|--------|
 | Parakeet STT (MLX/GPU) | ~2GB |
-| Qwen3-4B LLM (MLX/GPU) | ~2.5-4GB |
+| Qwen3-8B LLM (MLX/GPU) | ~5 GB |
 | macOS + app overhead | ~2-3GB |
-| **Total** | **~6.5-9GB** |
+| **Total** | **~9-10GB** |
 
-On an 8GB machine, that's either just barely fitting or actively swapping. And this is before the user opens a browser or Slack alongside MacParakeet.
+On an 8GB machine, that's well over budget and actively swapping. And this is before the user opens a browser or Slack alongside MacParakeet.
 
 Meanwhile, the Neural Engine — a chip Apple designed specifically for running neural networks efficiently — is doing absolutely nothing.
 
@@ -127,7 +127,7 @@ With FluidAudio, we can put each workload on the chip it belongs on:
 
 ```
 CPU:  MacParakeet app (UI, hotkeys, clipboard, history)
-GPU:  Qwen3-4B LLM (via MLX-Swift)  — full GPU, no sharing
+GPU:  Qwen3-8B LLM (via MLX-Swift)  — full GPU, no sharing
 ANE:  Parakeet STT (via FluidAudio/CoreML) — dedicated ML chip, finally used
 ```
 

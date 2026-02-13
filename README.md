@@ -43,6 +43,7 @@ Drag any audio or video file → get a transcript in seconds.
 - **System-Wide Dictation** — Configurable hotkey (Fn default), double-tap (persistent) + hold-to-talk
 - **File Transcription** — Drag-drop audio/video files, word timestamps
 - **Smart Cleanup** — Deterministic 4-step pipeline (filler removal, custom words, snippets, whitespace)
+- **AI Refinement Modes** — Formal, Email, and Code modes powered by local Qwen3-8B with deterministic fallback
 - **Custom Words** — Domain vocabulary corrections and proper noun casing
 - **Text Snippets** — Natural language triggers expand into longer text
 - **Export** — TXT, Markdown, SRT, and VTT exports + copy to clipboard
@@ -52,8 +53,8 @@ Drag any audio or video file → get a transcript in seconds.
 
 ### Planned
 
-- **AI Refinement** — Qwen3-4B for formal, email, and code modes
 - **Command Mode** — Local LLM edits for command-mode workflows
+- **Chat with Transcript** — Ask questions about your transcriptions via local LLM
 - **More Exports** — DOCX and other formats
 
 ## Requirements
@@ -69,7 +70,7 @@ Download from [macparakeet.com](https://macparakeet.com)
 ## Tech Stack
 
 - **STT Engine**: Parakeet TDT 0.6B-v3 via FluidAudio CoreML (Neural Engine)
-- **LLM**: Qwen3-4B via MLX-Swift (local, for command mode)
+- **LLM**: Qwen3-8B via MLX-Swift (local, for command mode + chat)
 - **Framework**: Swift + SwiftUI
 - **Database**: SQLite via GRDB
 - **Platform**: macOS 14.2+ (Apple Silicon)
@@ -96,6 +97,7 @@ MacParakeet is built for **fast feedback loops**. AI agents make mistakes — bu
 - **Tests** — Unit and integration tests for all core logic (`swift test`)
 - **Internal CLI** — Headless interface to core services (transcribe files, test the pipeline) so changes can be verified without launching the GUI
   - Tip: use `swift run macparakeet-cli transcribe ... --database /tmp/macparakeet-dev.db` to avoid writing into your real app database during dev.
+  - Local LLM checks: `swift run macparakeet-cli llm smoke-test --stats` and `swift run macparakeet-cli llm refine formal "draft text"`.
   - See `docs/cli-testing.md` for GUI-parity vs deterministic testing modes.
 - **Protocol-based services** — Mockable boundaries make isolated testing straightforward
 

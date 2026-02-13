@@ -31,7 +31,13 @@ public final class SettingsViewModel {
 
     // Processing
     public var processingMode: String {
-        didSet { defaults.set(processingMode, forKey: "processingMode") }
+        didSet {
+            guard Dictation.ProcessingMode(rawValue: processingMode) != nil else {
+                processingMode = Dictation.ProcessingMode.clean.rawValue
+                return
+            }
+            defaults.set(processingMode, forKey: "processingMode")
+        }
     }
     public var customWordCount: Int = 0
     public var snippetCount: Int = 0
@@ -83,7 +89,7 @@ public final class SettingsViewModel {
         silenceAutoStop = defaults.bool(forKey: "silenceAutoStop")
         let delay = defaults.double(forKey: "silenceDelay")
         silenceDelay = delay == 0 ? 2.0 : delay
-        processingMode = defaults.string(forKey: "processingMode") ?? "clean"
+        processingMode = Self.normalizedProcessingMode(defaults.string(forKey: "processingMode"))
         saveAudioRecordings = defaults.object(forKey: "saveAudioRecordings") as? Bool ?? true
         saveTranscriptionAudio = defaults.object(forKey: "saveTranscriptionAudio") as? Bool ?? true
     }
@@ -263,5 +269,12 @@ public final class SettingsViewModel {
         }
 
         return (count, sizeBytes)
+    }
+
+    private static func normalizedProcessingMode(_ rawValue: String?) -> String {
+        guard let rawValue, Dictation.ProcessingMode(rawValue: rawValue) != nil else {
+            return Dictation.ProcessingMode.clean.rawValue
+        }
+        return rawValue
     }
 }
