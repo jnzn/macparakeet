@@ -14,7 +14,7 @@
 | 03 | [Architecture](03-architecture.md) | System architecture, component diagram | Active |
 | 04 | [UI Patterns](04-ui-patterns.md) | UI components, overlay, settings | Active |
 | 05 | [Audio Pipeline](05-audio-pipeline.md) | Audio capture, processing, storage | Active |
-| 06 | [STT Engine](06-stt-engine.md) | Parakeet integration, JSON-RPC protocol | Active |
+| 06 | [STT Engine](06-stt-engine.md) | Parakeet integration via FluidAudio CoreML/ANE | Active |
 | 07 | [Text Processing](07-text-processing.md) | Clean pipeline, custom words, snippets | Active |
 | 08 | [Error Handling](08-error-handling.md) | Error philosophy, categories, recovery | Active |
 | 09 | [Testing](09-testing.md) | Testing strategy, patterns, guidelines | Active |
@@ -26,11 +26,10 @@ These decisions are final. Do not second-guess them.
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Local STT | Parakeet TDT 0.6B-v3 via parakeet-mlx | 300x realtime, ~6.3% WER, fully local |
-| Python runtime | uv bootstrap | Isolated venv, no system Python dependency |
+| Local STT | Parakeet TDT 0.6B-v3 via FluidAudio CoreML/ANE | 155x realtime, ~2.5% WER, fully local, ~66 MB working RAM |
 | Database | SQLite via GRDB | Single file, embedded, zero config |
 | Local LLM | Qwen3-4B via MLX-Swift | Best 4B model on benchmarks, dual-mode (thinking/non-thinking) |
-| Platform | macOS 14.2+ (Apple Silicon only) | MLX-Swift framework support, Apple Silicon required for Parakeet + MLX |
+| Platform | macOS 14.2+ (Apple Silicon only) | FluidAudio + MLX-Swift require Apple Silicon; Swift 6.0 |
 | Business model | One-time purchase ($49) | Key differentiator vs WisprFlow ($144-180/year subscription) |
 
 ## Architecture Decision Records (ADRs)

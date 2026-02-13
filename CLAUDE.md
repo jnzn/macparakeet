@@ -4,7 +4,7 @@
 
 ## What is MacParakeet?
 
-A **fast, private, local-first voice app** for macOS with two co-equal modes: system-wide dictation and file transcription. Powered by NVIDIA's Parakeet TDT via MLX.
+A **fast, private, local-first voice app** for macOS with two co-equal modes: system-wide dictation and file transcription. Powered by NVIDIA's Parakeet TDT via FluidAudio CoreML on the Neural Engine.
 
 **North Star:** The fastest, most private voice app for Mac. No cloud. No subscriptions.
 
@@ -40,12 +40,12 @@ A **fast, private, local-first voice app** for macOS with two co-equal modes: sy
 | Layer | Choice | Notes |
 |-------|--------|-------|
 | Platform | macOS 14.2+ | Apple Silicon only |
-| Language | Swift 5.9+ | SwiftUI for UI |
+| Language | Swift 6.0 | SwiftUI for UI |
 | Database | SQLite | GRDB (single file, dictation history + transcriptions) |
-| STT | Parakeet TDT 0.6B-v3 | Via parakeet-mlx, Python daemon (~6.3% WER, 300x realtime) |
-| Python | uv bootstrap | Bundled uv binary, isolated venv |
-| Audio | AVAudioEngine + Core Audio | Mic capture for dictation |
-| LLM | MLX-Swift | Qwen3-4B for command mode + AI refinement |
+| STT | Parakeet TDT 0.6B-v3 | Via FluidAudio CoreML/ANE (~2.5% WER, 155x realtime) |
+| Audio | AVAudioEngine + Core Audio | Mic capture for dictation; FFmpeg (bundled) for video file conversion |
+| LLM | MLX-Swift | Qwen3-4B for command mode + AI refinement (GPU via Metal) |
+| YouTube | yt-dlp | Standalone macOS binary, auto-updates via `--update` |
 | Licensing | LemonSqueezy | License key activation, validation API |
 
 ## Product Context
@@ -131,7 +131,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 - [x] Basic export (TXT/Markdown/SRT/VTT + copy to clipboard)
 - [x] SQLite database (GRDB, dictations + transcriptions + substring search)
 - [x] Internal dev CLI tool: `macparakeet transcribe`, `history`, `health`
-- [x] Python STT daemon (JSON-RPC over stdin/stdout)
+- [x] STT engine (Parakeet TDT via FluidAudio CoreML/ANE)
 
 ### v0.2 Clean Pipeline + AI
 - [x] Clean text pipeline (filler removal, custom words, snippets) -- deterministic, no LLM
@@ -163,39 +163,31 @@ MacParakeet has two primary modes that are equal in importance:
 
 Both modes share the same Parakeet STT backend but have different UI flows and data models.
 
-### STT Integration (Parakeet)
+### STT Integration (Parakeet via FluidAudio)
 
-- Python daemon via JSON-RPC over stdin/stdout
-- uv bootstraps Python environment on first run
+- Native Swift SDK via FluidAudio (CoreML on the Neural Engine)
 - Parakeet TDT 0.6B-v3 returns word-level timestamps + confidence scores
-- ~300x realtime on Apple Silicon (60 min audio in ~12 seconds)
-- ~6.3% Word Error Rate
+- ~155x realtime on Apple Silicon (60 min audio in ~23 seconds)
+- ~2.5% Word Error Rate
+- ~66 MB working memory during inference (vs ~2 GB+ on GPU/MLX)
+- ~6 GB CoreML model bundle downloaded during onboarding
 
-**JSON-RPC Protocol:**
-```json
-// Request
-{
-  "jsonrpc": "2.0",
-  "method": "transcribe",
-  "params": {
-    "audio_path": "/tmp/recording.wav",
-    "language": "en"
-  },
-  "id": 1
-}
+**Swift API:**
+```swift
+let models = try await AsrModels.downloadAndLoad(version: .v3)
+let manager = AsrManager(config: .default)
+try await manager.initialize(models: models)
 
-// Response
-{
-  "jsonrpc": "2.0",
-  "result": {
-    "text": "Hello world",
-    "words": [
-      {"word": "Hello", "start_ms": 0, "end_ms": 500, "confidence": 0.98},
-      {"word": "world", "start_ms": 600, "end_ms": 1000, "confidence": 0.97}
-    ]
-  },
-  "id": 1
-}
+let result = try await manager.transcribe(audioSamples, source: .system)
+// result.text contains the transcription
+// result.words contains word-level timestamps + confidence
+```
+
+**Three-chip architecture:**
+```
+CPU:  MacParakeet app (UI, hotkeys, clipboard, history)
+GPU:  Qwen3-4B LLM (via MLX-Swift/Metal) — full GPU, no sharing
+ANE:  Parakeet STT (via FluidAudio/CoreML) — dedicated ML chip
 ```
 
 ### Database
@@ -222,7 +214,7 @@ Both modes share the same Parakeet STT backend but have different UI flows and d
 ### Audio Capture
 
 - **Dictation**: AVAudioEngine tap on input node (microphone)
-- **File transcription**: FFmpeg (bundled) converts to 16kHz mono WAV for Parakeet
+- **File transcription**: FluidAudio's `AudioConverter` resamples audio; FFmpeg (bundled) demuxes video files
 - No system audio capture needed (that is Oatmeal's meeting recording domain)
 
 ### GUI Structure
@@ -311,8 +303,6 @@ macparakeet/
 ├── Tests/
 │   └── MacParakeetTests/   # Unit, database, and integration tests (360 tests)
 ├── Assets/             # App icon (.icns + source PNG) and SVG logos
-├── python/             # STT daemon (Parakeet via uv)
-│   └── macparakeet_stt/
 └── scripts/            # Build, test, and release scripts (placeholder)
 ```
 
@@ -518,7 +508,7 @@ MLX_TESTS=1 swift test --filter MLXIntegrationTests
 - SwiftUI view tests (test ViewModels instead)
 - Audio capture tests (test processing logic with fixtures)
 - Third-party library internals (trust GRDB, MLX-Swift)
-- Python daemon internals (test the Swift STTClient protocol layer)
+- FluidAudio/CoreML internals (test the Swift STTClient protocol layer)
 
 ## Building
 
@@ -553,16 +543,6 @@ swift test
 open Package.swift  # Opens in Xcode, select MacParakeet scheme
 ```
 
-### Python STT Daemon
-
-Python environment is bootstrapped automatically via uv on first use.
-
-```bash
-# Manual test of the Python daemon
-cd python/macparakeet_stt
-uv run python -m macparakeet_stt.server
-```
-
 ### Verify It Works
 
 After building, quick smoke test:
@@ -581,11 +561,13 @@ swift test
 |------|------|
 | App bundle | `/Applications/MacParakeet.app` |
 | Database | `~/Library/Application Support/MacParakeet/macparakeet.db` |
-| Python venv | `~/Library/Application Support/MacParakeet/python/` |
+| STT models | `~/Library/Application Support/MacParakeet/models/stt/` (CoreML, ~6 GB) |
+| LLM models | `~/Library/Application Support/MacParakeet/models/` |
+| yt-dlp binary | `~/Library/Application Support/MacParakeet/bin/yt-dlp` |
+| FFmpeg binary | `~/Library/Application Support/MacParakeet/bin/ffmpeg` |
 | Settings | `~/Library/Preferences/com.macparakeet.plist` |
 | Temp audio | `$TMPDIR/macparakeet/` |
 | Logs | `~/Library/Logs/MacParakeet/` |
-| LLM models | `~/Library/Application Support/MacParakeet/models/` |
 
 ## Security and Privacy
 
@@ -629,7 +611,7 @@ These patterns are proven from OatFlow development in Oatmeal. Apply them here.
 | Manual NSApplication.run() | No SwiftUI `App` protocol — manual `NSApplication.shared.run()` for reliable CLI execution without .app bundle. Same pattern as Oatmeal. |
 | NSStatusItem for menu bar | Menu bar via `NSStatusBar.system.statusItem()`, not SwiftUI `MenuBarExtra` |
 | NSWindow + NSHostingView | Main window created programmatically, SwiftUI content hosted via `NSHostingView` |
-| Core library has no UI deps | `MacParakeetCore` imports Foundation + GRDB + MLX, never SwiftUI |
+| Core library has no UI deps | `MacParakeetCore` imports Foundation + GRDB + FluidAudio + MLX, never SwiftUI |
 | ViewModels in separate target | `MacParakeetViewModels/` — testable without GUI, depends only on Core |
 | Views organized by feature | `Views/Dictation/`, `Views/Transcription/`, not flat |
 | Observable ViewModels | `@MainActor @Observable` on all ViewModels |

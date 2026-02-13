@@ -34,7 +34,7 @@ Both Parakeet (STT) and Qwen3-4B (LLM) run on the GPU via Metal/MLX. They share 
 ### Secondary Issues
 
 - **Unnecessary complexity**: JSON-RPC over stdin/stdout, subprocess management, daemon health checks, cross-process error propagation — all to bridge Swift and Python. Native Swift would be a single async/await call.
-- **Extra runtime**: Python + uv + venv are dependencies that exist primarily because of the STT backend. Every one is a potential failure point (macOS updates can break venvs, every `.so`/`.dylib` needs codesigning).
+- **Extra runtime**: Python + uv + venv exist primarily because of the STT backend. Every one is a potential failure point (macOS updates can break venvs, every `.so`/`.dylib` needs codesigning). With FluidAudio, Python is eliminated entirely — yt-dlp and FFmpeg run as standalone binaries.
 - **App Store incompatible**: Sandboxing prohibits spawning arbitrary subprocesses. This permanently closes a distribution channel.
 
 ## Discovery: FluidAudio
@@ -309,39 +309,82 @@ The CoreML/ANE path is the better architecture — three workloads on three chip
 
 1. **Add FluidAudio as SwiftPM dependency** (`FluidAudio` product only, not `FluidAudioEspeak`)
 2. **New `STTClient` implementation** — replace JSON-RPC Python daemon calls with FluidAudio async Swift API, conforming to existing `STTClientProtocol`
-3. **Delete Python STT daemon** — remove `python/macparakeet_stt/server.py`, `__main__.py`, and STT-specific Python code
-4. **Delete JSON-RPC protocol layer** — remove `JSONRPCTypes.swift` and daemon subprocess management from `STTClient.swift`
-5. **Slim down `PythonBootstrap`** — retain for yt-dlp (YouTube downloads) but remove STT-specific logic. See "Python dependency chain" below.
-6. **Keep FFmpeg** — still needed for video file transcription (mp4/mov/mkv/webm/avi → audio extraction) and yt-dlp post-processing. FluidAudio's `AudioConverter` handles resampling but NOT video demuxing.
-7. **Update `requirements.txt`** — remove `parakeet-mlx` and `mlx`, keep `yt-dlp`, `yt-dlp-ejs`, and `imageio-ffmpeg`
-8. **Update STT tests** — new implementation, same `STTClientProtocol` contract
-9. **Model download during onboarding** — replace Python venv setup progress with CoreML model download progress (~6 GB)
-10. **Evaluate custom vocabulary integration** — feed `CustomWord` entries as `CustomVocabularyTerm` to FluidAudio's CTC boosting
+3. **Delete entire Python stack** — remove `python/` directory, `PythonBootstrap.swift`, `JSONRPCTypes.swift`, `requirements.txt`, all uv/venv bootstrap code. No Python in the project at all.
+4. **Standalone yt-dlp binary** — replace pip-installed yt-dlp with standalone macOS binary (`yt-dlp_macos`, ~35 MB). Store in `~/Library/Application Support/MacParakeet/bin/`. Auto-updates via `yt-dlp --update`. See "Eliminating Python" below.
+5. **Standalone FFmpeg binary** — bundle FFmpeg or discover from system. Still needed for video file transcription (mp4/mov/mkv/webm/avi → audio extraction) and yt-dlp post-processing. FluidAudio's `AudioConverter` handles resampling but NOT video demuxing.
+6. **Update STT tests** — new implementation, same `STTClientProtocol` contract
+7. **Model download during onboarding** — replace Python venv setup with CoreML model download (~6 GB) + yt-dlp binary download (~35 MB)
+8. **Evaluate custom vocabulary integration** — feed `CustomWord` entries as `CustomVocabularyTerm` to FluidAudio's CTC boosting
 
-### Python dependency chain: yt-dlp
+### Eliminating Python entirely
 
-Removing the Python STT daemon does NOT eliminate Python entirely. YouTube downloads (`YouTubeDownloader`) depend on yt-dlp, which is currently installed in the same Python venv.
+The entire Python stack is being removed — not slimmed down, removed. There is no foreseeable future need for Python in MacParakeet. The full Apple Silicon ML inference stack is native Swift (FluidAudio CoreML for STT, MLX-Swift for LLM). Python was only needed because parakeet-mlx was the fastest path to Parakeet in v0.1. That reason goes away with FluidAudio.
 
-**Options for yt-dlp after STT migration:**
+**yt-dlp without Python:**
 
-| Option | Pros | Cons |
-|--------|------|------|
-| **Keep slim Python venv** | Minimal change, yt-dlp auto-updates via pip | Still need uv + venv infrastructure |
-| **Standalone yt-dlp binary** | No Python needed at all, single binary to bundle | Manual update process, larger app bundle |
-| **Defer to post-migration** | Reduce migration scope, focus on STT swap | Python venv stays for now |
+yt-dlp publishes standalone macOS binaries (~35 MB) that include a bundled Python runtime — no system Python or venv needed. The binary supports **built-in self-updating** via `yt-dlp --update`, which downloads from GitHub releases with SHA-256 verification and atomic replacement.
 
-**Recommendation:** Keep the slim Python venv for now (option 1). This reduces migration risk — we're changing the STT backend, not the YouTube pipeline. Evaluate standalone yt-dlp binary as a separate cleanup task.
+| Aspect | Current (Python venv) | After (standalone binary) |
+|--------|----------------------|--------------------------|
+| Binary location | `~/...MacParakeet/python/bin/yt-dlp` | `~/...MacParakeet/bin/yt-dlp` |
+| Auto-update | `uv pip install --upgrade yt-dlp` | `yt-dlp --update` (built-in) |
+| Update frequency | Weekly check (current cadence) | Weekly check (same cadence) |
+| Dependencies | Python 3.11 + uv + venv (~500 MB) | None (~35 MB standalone) |
+| JS runtime for YouTube | `yt-dlp-ejs` pip package | System Node/Deno, or bundle QuickJS (~1 MB) |
+| Code signing | Every `.so`/`.dylib` in venv | Not in app bundle, no signing issue |
+
+**First-run bootstrap for yt-dlp:**
+
+1. Download `yt-dlp_macos` from GitHub releases (~35 MB)
+2. Verify SHA-256 checksum
+3. Store at `~/Library/Application Support/MacParakeet/bin/yt-dlp`
+4. Mark executable (`chmod +x`)
+
+**Auto-update (weekly, same as current):**
+
+```swift
+// Equivalent of current autoUpdateYouTubeEngineIfNeeded()
+let process = Process()
+process.executableURL = URL(fileURLWithPath: ytDlpPath)
+process.arguments = ["--update"]
+try process.run()
+process.waitUntilExit()
+```
+
+**FFmpeg without Python:**
+
+Currently FFmpeg is discovered from `imageio-ffmpeg` (pip package in the venv) as a fallback. After removing Python:
+
+| Option | Details |
+|--------|---------|
+| **Bundle FFmpeg binary** | Include `ffmpeg` in app Resources (~80 MB). Self-contained, no external deps. |
+| **System FFmpeg** | Discover from Homebrew (`/opt/homebrew/bin/ffmpeg`) or system paths. Most dev machines have it. |
+| **Download on first use** | Download FFmpeg binary during onboarding alongside yt-dlp. Smaller initial app. |
+
+**Recommendation:** Bundle FFmpeg in the app for reliability. Discovery from Homebrew paths as fallback. ~80 MB is acceptable for guaranteed video file support.
 
 ### What doesn't change
 
 - `STTClientProtocol` interface — consumers don't know or care about the backend
 - `STTResult` format — text + word timestamps + confidence scores
 - Qwen3-4B via MLX-Swift — the LLM path stays the same
-- `AudioFileConverter` — still converts video files via FFmpeg
-- `YouTubeDownloader` — still uses yt-dlp (via Python venv or standalone binary)
+- `AudioFileConverter` — still converts video files via FFmpeg (binary, not pip package)
+- `YouTubeDownloader` — still uses yt-dlp (standalone binary, not pip package)
 - All existing tests against the STT protocol — same contract, new implementation
 - Deterministic text processing pipeline — unchanged
 - UI, hotkeys, history, export — all unchanged
+
+### What gets deleted
+
+| Deleted | Reason |
+|---------|--------|
+| `python/` directory | Entire STT daemon and Python package |
+| `PythonBootstrap.swift` | No Python to bootstrap |
+| `JSONRPCTypes.swift` | No JSON-RPC protocol |
+| `requirements.txt` | No pip dependencies |
+| All uv discovery/bootstrap code | No uv needed |
+| `imageio-ffmpeg` dependency | FFmpeg bundled directly |
+| `yt-dlp-ejs` dependency | Use system JS runtime or bundle QuickJS |
 
 ### Additional opportunity: Qwen3-4B-Instruct-2507
 
@@ -368,15 +411,15 @@ protocol STTClientProtocol: Sendable {
 ```
 Dictation: AudioRecorder → .wav → STTClient → JSON-RPC → Python daemon → STTResult
 File:      AudioFileConverter (FFmpeg) → .wav → STTClient → JSON-RPC → Python daemon → STTResult
-YouTube:   yt-dlp → .m4a → AudioFileConverter (FFmpeg) → .wav → STTClient → JSON-RPC → Python daemon → STTResult
+YouTube:   yt-dlp (pip) → .m4a → AudioFileConverter (FFmpeg via imageio) → .wav → STTClient → JSON-RPC → Python daemon → STTResult
 ```
 
 ### Data Flow (After Migration)
 
 ```
 Dictation: AudioRecorder → AVAudioPCMBuffer → FluidAudio AudioConverter → AsrManager.transcribe() → STTResult
-File:      AudioFileConverter (FFmpeg) → .wav → FluidAudio AudioConverter → AsrManager.transcribe() → STTResult
-YouTube:   yt-dlp → .m4a → AudioFileConverter (FFmpeg) → .wav → FluidAudio AudioConverter → AsrManager.transcribe() → STTResult
+File:      AudioFileConverter (FFmpeg binary) → .wav → FluidAudio AudioConverter → AsrManager.transcribe() → STTResult
+YouTube:   yt-dlp (standalone) → .m4a → AudioFileConverter (FFmpeg binary) → .wav → FluidAudio AudioConverter → AsrManager.transcribe() → STTResult
 ```
 
 ### Files Affected
@@ -384,12 +427,15 @@ YouTube:   yt-dlp → .m4a → AudioFileConverter (FFmpeg) → .wav → FluidAud
 | Action | Files |
 |--------|-------|
 | **Rewrite** | `STTClient.swift` (actor, ~464 lines → FluidAudio wrapper) |
-| **Delete** | `JSONRPCTypes.swift`, `python/macparakeet_stt/server.py`, `python/macparakeet_stt/__main__.py` |
-| **Slim down** | `PythonBootstrap.swift` (remove STT logic, keep yt-dlp support) |
-| **Update** | `requirements.txt` (remove parakeet-mlx, mlx) |
-| **Update** | `STTClientTests.swift`, `JSONRPCTests.swift` (adapt to new implementation) |
-| **Update** | `OnboardingViewModel` (model download progress instead of venv setup) |
-| **Unchanged** | `STTClientProtocol.swift`, `STTResult.swift`, `AudioFileConverter.swift`, all services, all UI, all other tests (~150+ files) |
+| **Rewrite** | `YouTubeDownloader.swift` (remove PythonBootstrap dependency, use standalone yt-dlp) |
+| **Rewrite** | `AudioFileConverter.swift` (remove imageio-ffmpeg venv lookup, use bundled/system FFmpeg) |
+| **Delete** | `PythonBootstrap.swift`, `JSONRPCTypes.swift` |
+| **Delete** | `python/` directory entirely (server.py, __main__.py, requirements.txt) |
+| **Add** | `BinaryBootstrap.swift` or similar (download yt-dlp + FFmpeg on first run) |
+| **Update** | `STTClientTests.swift`, `JSONRPCTests.swift` (adapt or replace) |
+| **Update** | `OnboardingViewModel` (model + binary download progress) |
+| **Update** | `HealthCommand.swift` (check yt-dlp binary instead of venv) |
+| **Unchanged** | `STTClientProtocol.swift`, `STTResult.swift`, all services, all UI, all other tests (~150+ files) |
 
 ## Related Documents
 
