@@ -72,7 +72,7 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 - [x] Menu bar app with main window
 - [x] Basic export (TXT/Markdown/SRT/VTT + copy to clipboard)
 - [x] SQLite database (GRDB, dictations + transcriptions + substring search)
-- [x] Internal dev CLI tool (`macparakeet-cli transcribe`, `history`, `health`)
+- [x] Internal dev CLI tool (`macparakeet-cli transcribe`, `history`, `health`, `flow`, `llm`)
 - [x] Test suite passing (`swift test` green)
 
 ### v0.2 AI & Text Processing (In Progress)
@@ -81,7 +81,7 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 - [ ] AI text refinement (Qwen3-8B: formal, email, code modes)
 - [x] Custom words & snippets management UI
 - [ ] Personal dictionary (auto-learns vocabulary)
-- [x] CLI commands (`macparakeet-cli flow process/words/snippets`)
+- [x] CLI commands (`macparakeet-cli flow process/words/snippets` + `macparakeet-cli llm generate/refine/command/smoke-test`)
 
 ### v0.3 Command Mode & Export (In Progress)
 

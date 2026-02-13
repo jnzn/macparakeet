@@ -206,8 +206,8 @@ macparakeet-cli flow process "um hello I mean kubernetes is great"
 macparakeet-cli flow process "text here" --copy
 
 # Transcribe with processing
-macparakeet-cli transcribe recording.wav --process
-macparakeet-cli transcribe recording.wav --process --copy
+macparakeet-cli transcribe recording.wav --mode clean
+macparakeet-cli transcribe recording.wav --mode raw
 ```
 
 ### Custom Words
@@ -237,4 +237,22 @@ macparakeet-cli flow snippets add "my signature" "Best regards, David"
 
 # Delete a snippet
 macparakeet-cli flow snippets delete <id>
+```
+
+### Local LLM
+
+```bash
+# Local model smoke test
+macparakeet-cli llm smoke-test --stats
+
+# Direct prompt generation
+macparakeet-cli llm generate "Summarize this in one sentence: ..."
+
+# Refine text (deterministic clean + local LLM)
+macparakeet-cli llm refine formal "quick draft note"
+macparakeet-cli llm refine email "meeting moved to 3pm tomorrow"
+macparakeet-cli llm refine code "check var name and update loop logic"
+
+# Apply a spoken-style command transform
+macparakeet-cli llm command "Translate to Spanish" "Hello, how are you?"
 ```

@@ -207,6 +207,7 @@ struct TranscribeCommand: AsyncParsableCommand {
 enum CLIError: Error, LocalizedError {
     case fileNotFound(String)
     case unsupportedFormat(String)
+    case localLLMSmokeTestFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -214,6 +215,8 @@ enum CLIError: Error, LocalizedError {
             return "File not found: \(path)"
         case .unsupportedFormat(let ext):
             return "Unsupported format: .\(ext). Supported: \(AudioFileConverter.supportedExtensions.sorted().joined(separator: ", "))"
+        case .localLLMSmokeTestFailed(let output):
+            return "LLM smoke test failed (unexpected response): \(output)"
         }
     }
 }
