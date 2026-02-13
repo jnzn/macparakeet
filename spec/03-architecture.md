@@ -629,7 +629,7 @@ Runs in the Swift process via MLX-Swift framework. Not a separate daemon.
 - MLX-Swift provides native Swift API — no IPC overhead
 - Metal shader compilation needs to happen in the app process
 - Simpler lifecycle: load model into memory, call, unload
-- Unlike Parakeet (Python), the LLM is pure Swift/Metal
+- Like Parakeet (FluidAudio/CoreML), the LLM is pure Swift/Metal
 
 ---
 
@@ -1156,7 +1156,7 @@ App Launch ──────────> Window shown (fast, no ML loaded)
                        Paste result
 ```
 
-After initial warm-up, subsequent dictations are near-instant (daemon stays alive, model stays loaded with idle timeout).
+After initial warm-up, subsequent dictations are near-instant (AsrManager stays initialized, model stays loaded with idle timeout).
 
 ### Transcription Speed
 
@@ -1251,7 +1251,7 @@ actor MockSTTClient: STTClientProtocol {
 
     func transcribe(audioPath: String, onProgress: (@Sendable (Int, Int) -> Void)? = nil) async throws -> STTResult {
         if let error = transcribeError { throw error }
-        guard let result = transcribeResult else { throw STTError.daemonNotRunning }
+        guard let result = transcribeResult else { throw STTError.modelNotReady }
         return result
     }
     func warmUp() async throws {}

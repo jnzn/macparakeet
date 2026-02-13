@@ -91,7 +91,7 @@ User selects file
 ### Download + Conversion Pipeline
 
 ```
-YouTube URL → yt-dlp (audio only) → downloaded audio file → FFmpeg → 16kHz mono WAV → STT Daemon → Transcript
+YouTube URL → yt-dlp (audio only) → downloaded audio file → FFmpeg → 16kHz mono WAV → FluidAudio STT (CoreML/ANE) → Transcript
 ```
 
 - `yt-dlp` is used with `--no-playlist` for single-video processing

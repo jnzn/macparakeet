@@ -19,7 +19,7 @@ Meanwhile, local-only alternatives (MacWhisper, VoiceInk, BetterDictation) have 
 
 This applies to:
 
-- **STT**: Parakeet TDT 0.6B-v3 runs locally via MLX (ADR-001)
+- **STT**: Parakeet TDT 0.6B-v3 runs locally via FluidAudio CoreML on ANE (ADR-001, ADR-007)
 - **Text processing**: Deterministic pipeline runs locally (ADR-004)
 - **LLM features**: Qwen3-4B runs locally via MLX-Swift for command mode and advanced text modes
 - **Updates**: Standard macOS app update mechanisms (Sparkle or App Store)
@@ -64,7 +64,7 @@ Cloud processing requires ongoing server costs, which necessitates subscription 
 ### Negative
 
 - **LLM quality ceiling**: Qwen3-4B (4-bit quantized, local) is significantly less capable than GPT-4 or Claude for complex text transformation. Command mode and formal rewriting will be "good enough" rather than "excellent."
-- **No internet required, but model download is**: First launch requires downloading Parakeet (~1.5GB) and Qwen3 (~2.5GB) models. After that, fully offline.
+- **No internet required, but model download is**: First launch requires downloading Parakeet (~6 GB CoreML bundle) and Qwen3 (~2.5 GB) models. After that, fully offline.
 - **No cloud backup or sync**: User data stays on-device. If the Mac is lost, dictation history is lost. This is intentional -- users who want cloud backup can use macOS iCloud or Time Machine.
 - **No collaborative features**: Real-time sharing, team vocabularies, or cross-device sync would require cloud infrastructure. These are out of scope.
 
