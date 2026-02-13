@@ -51,7 +51,8 @@ public actor MLXLLMService: LLMServiceProtocol {
         let session = ChatSession(
             container,
             instructions: request.systemPrompt,
-            generateParameters: parameters
+            generateParameters: parameters,
+            additionalContext: ["enable_thinking": false]
         )
 
         let output = try await withTimeout(seconds: request.options.timeoutSeconds) {
