@@ -26,6 +26,7 @@ final class LLMChatCommandTests: XCTestCase {
         )
 
         XCTAssertNotNil(context)
+        XCTAssertLessThanOrEqual(context?.count ?? .max, 12_000)
         XCTAssertTrue(context?.contains("[...truncated...]") == true)
         XCTAssertTrue(payload.prompt.contains("Transcript:"))
         XCTAssertTrue(payload.prompt.contains("Question:"))
