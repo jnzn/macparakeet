@@ -11,6 +11,7 @@ struct CLI: AsyncParsableCommand {
             HistoryCommand.self,
             HealthCommand.self,
             FlowCommand.self,
+            LLMCommand.self,
         ],
         defaultSubcommand: nil
     )

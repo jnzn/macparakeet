@@ -78,6 +78,15 @@ swift run macparakeet-cli flow words list
 swift run macparakeet-cli flow snippets list
 ```
 
+### Local LLM checks
+
+```bash
+swift run macparakeet-cli llm smoke-test --stats
+swift run macparakeet-cli llm generate "Summarize this paragraph in one sentence: ..."
+swift run macparakeet-cli llm refine formal "quick unpolished draft"
+swift run macparakeet-cli llm command "Translate to Spanish" "Hello, how are you?"
+```
+
 ## Notes
 
 - CLI validates core service behavior (STT, conversion, pipeline, persistence) but does **not** validate GUI-only flows (windowing/menu bar, hotkey overlay, accessibility-driven paste UX).
