@@ -58,7 +58,6 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.silenceDelay, 2.0, "silenceDelay should default to 2.0")
         XCTAssertTrue(viewModel.saveAudioRecordings, "saveAudioRecordings should default to true")
         XCTAssertTrue(viewModel.saveTranscriptionAudio, "saveTranscriptionAudio should default to true")
-        XCTAssertTrue(viewModel.autoUpdateYouTubeEngine, "autoUpdateYouTubeEngine should default to true")
     }
 
     func testInitLoadsFromUserDefaults() {
@@ -69,7 +68,6 @@ final class SettingsViewModelTests: XCTestCase {
         testDefaults.set(3.0, forKey: "silenceDelay")
         testDefaults.set(false, forKey: "saveAudioRecordings")
         testDefaults.set(false, forKey: "saveTranscriptionAudio")
-        testDefaults.set(false, forKey: "autoUpdateYouTubeEngine")
 
         let vm = SettingsViewModel(defaults: testDefaults)
 
@@ -79,7 +77,6 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(vm.silenceDelay, 3.0)
         XCTAssertFalse(vm.saveAudioRecordings)
         XCTAssertFalse(vm.saveTranscriptionAudio)
-        XCTAssertFalse(vm.autoUpdateYouTubeEngine)
     }
 
     func testSilenceDelayDefaultsTo2WhenZero() {
@@ -124,12 +121,6 @@ final class SettingsViewModelTests: XCTestCase {
         viewModel.saveTranscriptionAudio = false
 
         XCTAssertFalse(testDefaults.bool(forKey: "saveTranscriptionAudio"))
-    }
-
-    func testSettingAutoUpdateYouTubeEnginePersists() {
-        viewModel.autoUpdateYouTubeEngine = false
-
-        XCTAssertFalse(testDefaults.bool(forKey: "autoUpdateYouTubeEngine"))
     }
 
     // MARK: - Permissions
@@ -325,7 +316,6 @@ final class SettingsViewModelTests: XCTestCase {
         viewModel.silenceDelay = 5.0
         viewModel.saveAudioRecordings = false
         viewModel.saveTranscriptionAudio = false
-        viewModel.autoUpdateYouTubeEngine = false
 
         // Create a new ViewModel reading from the same defaults
         let vm2 = SettingsViewModel(defaults: testDefaults)
@@ -336,6 +326,5 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(vm2.silenceDelay, 5.0)
         XCTAssertFalse(vm2.saveAudioRecordings)
         XCTAssertFalse(vm2.saveTranscriptionAudio)
-        XCTAssertFalse(vm2.autoUpdateYouTubeEngine)
     }
 }

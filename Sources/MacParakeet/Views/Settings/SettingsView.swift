@@ -191,14 +191,6 @@ struct SettingsView: View {
 
                 Divider()
 
-                settingsToggleRow(
-                    title: "Auto-update YouTube engine",
-                    detail: "Enabled by default. Runs weekly non-blocking `yt-dlp --update` checks.",
-                    isOn: $viewModel.autoUpdateYouTubeEngine
-                )
-
-                Divider()
-
                 LazyVGrid(
                     columns: [GridItem(.adaptive(minimum: 190), spacing: DesignSystem.Spacing.md)],
                     spacing: DesignSystem.Spacing.md
