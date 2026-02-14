@@ -6,6 +6,7 @@ struct OnboardingFlowView: View {
     @Bindable var viewModel: OnboardingViewModel
     let onFinish: () -> Void
     let onOpenMainApp: () -> Void
+    let onOpenSettings: () -> Void
 
     private let windowWidth: CGFloat = 740
     private let windowHeight: CGFloat = 500
@@ -473,10 +474,26 @@ struct OnboardingFlowView: View {
                                     .fill(DesignSystem.Colors.warningAmber.opacity(0.08))
                             )
 
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Try this:")
+                                .font(DesignSystem.Typography.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            ForEach(engineRecoveryTips(for: msg), id: \.self) { tip in
+                                Text("• \(tip)")
+                                    .font(DesignSystem.Typography.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+
                         HStack {
                             accentButton("Retry", disabled: false) {
                                 viewModel.retryEngineWarmUp()
                             }
+
+                            Button("Open Settings") {
+                                onOpenSettings()
+                            }
+                            .buttonStyle(.bordered)
                         }
                     }
 
@@ -783,6 +800,47 @@ struct OnboardingFlowView: View {
         case .failed:
             return "Setup failed. Please retry to complete model preparation."
         }
+    }
+
+    private func engineRecoveryTips(for message: String) -> [String] {
+        let lower = message.lowercased()
+
+        if lower.contains("network") || lower.contains("internet") || lower.contains("timed out") {
+            return [
+                "Check your internet connection, then retry setup.",
+                "Use a stable network until both models finish downloading.",
+                "If it keeps failing, open Settings > Local Models and run Repair All."
+            ]
+        }
+
+        if lower.contains("space") || lower.contains("disk") || lower.contains("no space") {
+            return [
+                "Free at least 10 GB of disk space.",
+                "Retry setup after storage is available.",
+                "You can also run Repair All in Settings > Local Models."
+            ]
+        }
+
+        if lower.contains("permission denied") || lower.contains("operation not permitted") || lower.contains("read-only") {
+            return [
+                "Confirm the app can write to your user Library folder.",
+                "Restart MacParakeet, then retry setup.",
+                "If needed, run Repair All in Settings > Local Models."
+            ]
+        }
+
+        if lower.contains("unsupported") || lower.contains("apple silicon") {
+            return [
+                "MacParakeet local models require Apple Silicon.",
+                "Use an Apple Silicon Mac, then retry setup."
+            ]
+        }
+
+        return [
+            "Retry setup first (temporary failures are common).",
+            "If it keeps failing, open Settings > Local Models and run Repair All.",
+            "If the error persists, restart the app and retry once."
+        ]
     }
 
     private func openPrivacySettings(anchor: String) {

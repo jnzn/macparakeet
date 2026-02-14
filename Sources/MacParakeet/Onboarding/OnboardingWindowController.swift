@@ -15,6 +15,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
         llmService: any LLMServiceProtocol,
         onFinish: @escaping () -> Void,
         onOpenMainApp: @escaping () -> Void,
+        onOpenSettings: @escaping () -> Void,
         onIncompleteDismiss: @escaping () -> Void
     ) {
         if let window {
@@ -36,7 +37,8 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
                 self?.close()
                 onFinish()
             },
-            onOpenMainApp: onOpenMainApp
+            onOpenMainApp: onOpenMainApp,
+            onOpenSettings: onOpenSettings
         )
 
         let hosting = NSHostingView(rootView: view)
