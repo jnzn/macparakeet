@@ -76,10 +76,10 @@ swift run macparakeet-cli models status
 swift run macparakeet-cli models status --target stt
 swift run macparakeet-cli models status --target llm
 
-# Warm-up (single attempt by default)
+# Warm-up (single attempt by default; `--target all` attempts both models before returning)
 swift run macparakeet-cli models warm-up --target all
 
-# Repair (best-effort retry; default 3 attempts)
+# Repair (best-effort retry; default 3 attempts, sequential for `--target all`)
 swift run macparakeet-cli models repair --target all
 swift run macparakeet-cli models repair --target llm --attempts 5
 ```

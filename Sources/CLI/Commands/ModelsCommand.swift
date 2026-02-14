@@ -148,8 +148,34 @@ func warmUpModels(
     case .llm:
         try await warmUpLLM(attempts: attempts, llmService: llmService, log: log)
     case .all:
-        try await warmUpSTT(attempts: attempts, sttClient: sttClient, log: log)
-        try await warmUpLLM(attempts: attempts, llmService: llmService, log: log)
+        var failures: [(model: String, error: Error)] = []
+
+        do {
+            try await warmUpSTT(attempts: attempts, sttClient: sttClient, log: log)
+        } catch {
+            failures.append(("Parakeet (STT)", error))
+            log("Parakeet (STT): failed — \(error.localizedDescription)")
+        }
+
+        do {
+            try await warmUpLLM(attempts: attempts, llmService: llmService, log: log)
+        } catch {
+            failures.append(("Qwen (LLM)", error))
+            log("Qwen (LLM): failed — \(error.localizedDescription)")
+        }
+
+        if !failures.isEmpty {
+            throw MultiModelWarmUpError(failures: failures)
+        }
+    }
+}
+
+private struct MultiModelWarmUpError: LocalizedError {
+    let failures: [(model: String, error: Error)]
+
+    var errorDescription: String? {
+        let summary = failures.map { "\($0.model): \($0.error.localizedDescription)" }.joined(separator: " | ")
+        return "One or more model warm-up operations failed. \(summary)"
     }
 }
 
