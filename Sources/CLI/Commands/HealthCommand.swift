@@ -15,7 +15,12 @@ struct HealthCommand: AsyncParsableCommand {
     var repairAttempts: Int = 3
 
     func run() async throws {
-        let repairAttempts = try validatedAttempts(repairAttempts)
+        let validatedRepairAttempts: Int?
+        if repairModels {
+            validatedRepairAttempts = try validatedAttempts(repairAttempts)
+        } else {
+            validatedRepairAttempts = nil
+        }
 
         print("MacParakeet Health Check")
         print("========================")
@@ -72,7 +77,7 @@ struct HealthCommand: AsyncParsableCommand {
         print()
         await printLLMStatus(llmService: llmService)
 
-        if repairModels {
+        if let repairAttempts = validatedRepairAttempts {
             print()
             print("Model repair requested...")
             do {
