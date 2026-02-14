@@ -4,6 +4,16 @@ import MacParakeetCore
 @MainActor
 @Observable
 public final class SettingsViewModel {
+    public enum LocalModelStatus: Equatable {
+        case unknown
+        case checking
+        case ready
+        case notLoaded
+        case notDownloaded
+        case repairing
+        case failed
+    }
+
     // General
     public var launchAtLogin: Bool {
         didSet { defaults.set(launchAtLogin, forKey: "launchAtLogin") }
@@ -59,6 +69,15 @@ public final class SettingsViewModel {
     public var youtubeDownloadCount = 0
     public var youtubeDownloadStorageMB: Double = 0
 
+    // Local model status / repair
+    public var parakeetStatus: LocalModelStatus = .unknown
+    public var parakeetStatusDetail: String = "Not checked yet."
+    public var qwenStatus: LocalModelStatus = .unknown
+    public var qwenStatusDetail: String = "Not checked yet."
+    public var parakeetRepairing = false
+    public var qwenRepairing = false
+    public var modelStatusUpdatedAt: Date?
+
     // Licensing / entitlements
     public var entitlementsSummary: String = ""
     public var entitlementsDetail: String = ""
@@ -74,15 +93,20 @@ public final class SettingsViewModel {
     private var customWordRepo: CustomWordRepositoryProtocol?
     private var snippetRepo: TextSnippetRepositoryProtocol?
     private var entitlementsService: EntitlementsService?
+    private var sttClient: STTClientProtocol?
+    private var llmService: (any LLMServiceProtocol)?
     private let defaults: UserDefaults
     private let youtubeDownloadsDirPath: @Sendable () -> String
+    private let isSpeechModelCached: @Sendable () -> Bool
 
     public init(
         defaults: UserDefaults = .standard,
-        youtubeDownloadsDirPath: @escaping @Sendable () -> String = { AppPaths.youtubeDownloadsDir }
+        youtubeDownloadsDirPath: @escaping @Sendable () -> String = { AppPaths.youtubeDownloadsDir },
+        isSpeechModelCached: @escaping @Sendable () -> Bool = { STTClient.isModelCached() }
     ) {
         self.defaults = defaults
         self.youtubeDownloadsDirPath = youtubeDownloadsDirPath
+        self.isSpeechModelCached = isSpeechModelCached
         launchAtLogin = defaults.bool(forKey: "launchAtLogin")
         menuBarOnlyMode = AppPreferences.isMenuBarOnlyModeEnabled(defaults: defaults)
         hotkeyTrigger = defaults.string(forKey: "hotkeyTrigger") ?? "fn"
@@ -101,7 +125,9 @@ public final class SettingsViewModel {
         entitlementsService: EntitlementsService,
         checkoutURL: URL?,
         customWordRepo: CustomWordRepositoryProtocol? = nil,
-        snippetRepo: TextSnippetRepositoryProtocol? = nil
+        snippetRepo: TextSnippetRepositoryProtocol? = nil,
+        sttClient: STTClientProtocol? = nil,
+        llmService: (any LLMServiceProtocol)? = nil
     ) {
         self.permissionService = permissionService
         self.dictationRepo = dictationRepo
@@ -110,9 +136,12 @@ public final class SettingsViewModel {
         self.checkoutURL = checkoutURL
         self.customWordRepo = customWordRepo
         self.snippetRepo = snippetRepo
+        self.sttClient = sttClient
+        self.llmService = llmService
         refreshPermissions()
         refreshStats()
         refreshEntitlements()
+        refreshModelStatus()
     }
 
     public func refreshPermissions() {
@@ -146,6 +175,177 @@ public final class SettingsViewModel {
             let state = await service.currentState(now: Date())
             await MainActor.run {
                 self.applyEntitlementsState(state)
+            }
+        }
+    }
+
+    public func refreshModelStatus() {
+        guard let sttClient, let llmService else {
+            parakeetStatus = .unknown
+            parakeetStatusDetail = "Unavailable in this runtime."
+            qwenStatus = .unknown
+            qwenStatusDetail = "Unavailable in this runtime."
+            modelStatusUpdatedAt = nil
+            return
+        }
+
+        parakeetStatus = .checking
+        parakeetStatusDetail = "Checking model state..."
+        qwenStatus = .checking
+        qwenStatusDetail = "Checking model state..."
+
+        Task {
+            let parakeetReady = await sttClient.isReady()
+            let parakeetCached = isSpeechModelCached()
+            let qwenReady = await llmService.isReady()
+
+            await MainActor.run {
+                if parakeetReady {
+                    self.parakeetStatus = .ready
+                    self.parakeetStatusDetail = "Loaded in memory and ready."
+                } else if parakeetCached {
+                    self.parakeetStatus = .notLoaded
+                    self.parakeetStatusDetail = "Downloaded. Loads automatically when needed."
+                } else {
+                    self.parakeetStatus = .notDownloaded
+                    self.parakeetStatusDetail = "Not downloaded yet."
+                }
+
+                if qwenReady {
+                    self.qwenStatus = .ready
+                    self.qwenStatusDetail = "Loaded in memory and ready."
+                } else {
+                    self.qwenStatus = .notLoaded
+                    self.qwenStatusDetail = "Not loaded. It will load on first AI use."
+                }
+
+                self.modelStatusUpdatedAt = Date()
+            }
+        }
+    }
+
+    public func repairParakeetModel() {
+        guard let sttClient else { return }
+        guard !parakeetRepairing else { return }
+        parakeetRepairing = true
+        parakeetStatus = .repairing
+        parakeetStatusDetail = "Preparing speech model..."
+
+        Task {
+            do {
+                try await runWithRetry(maxAttempts: 3, onRetry: { [weak self] attempt in
+                    guard let self else { return }
+                    self.parakeetStatusDetail = "Retrying speech model setup (attempt \(attempt)/3)..."
+                }) {
+                    try await sttClient.warmUp { [weak self] progressMessage in
+                        Task { @MainActor [weak self] in
+                            guard let self else { return }
+                            self.parakeetStatusDetail = progressMessage
+                        }
+                    }
+                }
+
+                await MainActor.run {
+                    self.parakeetRepairing = false
+                    self.refreshModelStatus()
+                }
+            } catch {
+                await MainActor.run {
+                    self.parakeetRepairing = false
+                    self.parakeetStatus = .failed
+                    self.parakeetStatusDetail = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    public func repairQwenModel() {
+        guard let llmService else { return }
+        guard !qwenRepairing else { return }
+        qwenRepairing = true
+        qwenStatus = .repairing
+        qwenStatusDetail = "Preparing local AI model..."
+
+        Task {
+            do {
+                try await runWithRetry(maxAttempts: 3, onRetry: { [weak self] attempt in
+                    guard let self else { return }
+                    self.qwenStatusDetail = "Retrying AI model setup (attempt \(attempt)/3)..."
+                }) {
+                    try await llmService.warmUp()
+                }
+
+                await MainActor.run {
+                    self.qwenRepairing = false
+                    self.refreshModelStatus()
+                }
+            } catch {
+                await MainActor.run {
+                    self.qwenRepairing = false
+                    self.qwenStatus = .failed
+                    self.qwenStatusDetail = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    public func repairAllModels() {
+        guard let sttClient, let llmService else { return }
+        guard !parakeetRepairing, !qwenRepairing else { return }
+
+        parakeetRepairing = true
+        qwenRepairing = true
+        parakeetStatus = .repairing
+        qwenStatus = .repairing
+        parakeetStatusDetail = "Preparing speech model..."
+        qwenStatusDetail = "Queued. Repair starts after speech model completes."
+
+        Task {
+            do {
+                try await runWithRetry(maxAttempts: 3, onRetry: { [weak self] attempt in
+                    guard let self else { return }
+                    self.parakeetStatusDetail = "Retrying speech model setup (attempt \(attempt)/3)..."
+                }) {
+                    try await sttClient.warmUp { [weak self] progressMessage in
+                        Task { @MainActor [weak self] in
+                            guard let self else { return }
+                            self.parakeetStatusDetail = progressMessage
+                        }
+                    }
+                }
+
+                await MainActor.run {
+                    self.parakeetRepairing = false
+                    self.parakeetStatus = .ready
+                    self.parakeetStatusDetail = "Speech model ready."
+                    self.qwenStatusDetail = "Preparing local AI model..."
+                }
+
+                try await runWithRetry(maxAttempts: 3, onRetry: { [weak self] attempt in
+                    guard let self else { return }
+                    self.qwenStatusDetail = "Retrying AI model setup (attempt \(attempt)/3)..."
+                }) {
+                    try await llmService.warmUp()
+                }
+
+                await MainActor.run {
+                    self.qwenRepairing = false
+                    self.refreshModelStatus()
+                }
+            } catch {
+                await MainActor.run {
+                    self.parakeetRepairing = false
+                    self.qwenRepairing = false
+
+                    if case .repairing = self.parakeetStatus {
+                        self.parakeetStatus = .failed
+                        self.parakeetStatusDetail = error.localizedDescription
+                    }
+                    if case .repairing = self.qwenStatus {
+                        self.qwenStatus = .failed
+                        self.qwenStatusDetail = error.localizedDescription
+                    }
+                }
             }
         }
     }
@@ -276,5 +476,29 @@ public final class SettingsViewModel {
             return Dictation.ProcessingMode.clean.rawValue
         }
         return rawValue
+    }
+
+    private func runWithRetry(
+        maxAttempts: Int,
+        onRetry: @escaping @MainActor (_ nextAttempt: Int) -> Void,
+        operation: @escaping @Sendable () async throws -> Void
+    ) async throws {
+        var delayNs: UInt64 = 250_000_000
+        var lastError: Error?
+
+        for attempt in 1...maxAttempts {
+            do {
+                try await operation()
+                return
+            } catch {
+                lastError = error
+                guard attempt < maxAttempts else { break }
+                onRetry(attempt + 1)
+                try await Task.sleep(nanoseconds: delayNs)
+                delayNs *= 2
+            }
+        }
+
+        throw lastError ?? LLMServiceError.generationFailed("Model setup failed.")
     }
 }

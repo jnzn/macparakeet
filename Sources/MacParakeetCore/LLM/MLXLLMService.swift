@@ -27,6 +27,16 @@ public actor MLXLLMService: LLMServiceProtocol {
         modelContainer = nil
     }
 
+    public func warmUp() async throws {
+        cancelIdleUnloadTask()
+        _ = try await ensureModelLoaded()
+        scheduleIdleUnloadIfNeeded()
+    }
+
+    public func isReady() async -> Bool {
+        modelContainer != nil
+    }
+
     public func generate(request: LLMRequest) async throws -> LLMResponse {
         let trimmedPrompt = request.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedPrompt.isEmpty else {

@@ -16,6 +16,7 @@ struct SettingsView: View {
                 generalCard
                 dictationCard
                 storageCard
+                localModelsCard
                 permissionsCard
                 onboardingCard
                 aboutCard
@@ -43,6 +44,7 @@ struct SettingsView: View {
             viewModel.refreshPermissions()
             viewModel.refreshStats()
             viewModel.refreshEntitlements()
+            viewModel.refreshModelStatus()
         }
     }
 
@@ -237,6 +239,61 @@ struct SettingsView: View {
 
     // MARK: - Permissions
 
+    private var localModelsCard: some View {
+        settingsCard(
+            title: "Local Models",
+            subtitle: "Parakeet speech + Qwen AI status and repair.",
+            icon: "cpu"
+        ) {
+            VStack(spacing: DesignSystem.Spacing.md) {
+                modelStatusRow(
+                    title: "Parakeet (Speech)",
+                    detail: viewModel.parakeetStatusDetail,
+                    status: viewModel.parakeetStatus,
+                    isRepairing: viewModel.parakeetRepairing
+                ) {
+                    viewModel.repairParakeetModel()
+                }
+
+                Divider()
+
+                modelStatusRow(
+                    title: "Qwen (AI)",
+                    detail: viewModel.qwenStatusDetail,
+                    status: viewModel.qwenStatus,
+                    isRepairing: viewModel.qwenRepairing
+                ) {
+                    viewModel.repairQwenModel()
+                }
+
+                Divider()
+
+                HStack {
+                    if let updatedAt = viewModel.modelStatusUpdatedAt {
+                        Text("Updated \(updatedAt.formatted(date: .omitted, time: .shortened))")
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Button("Check Now") {
+                        viewModel.refreshModelStatus()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(viewModel.parakeetRepairing || viewModel.qwenRepairing)
+
+                    Button("Repair All") {
+                        viewModel.repairAllModels()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(DesignSystem.Colors.accent)
+                    .disabled(viewModel.parakeetRepairing || viewModel.qwenRepairing)
+                }
+            }
+        }
+    }
+
     private var permissionsCard: some View {
         settingsCard(
             title: "Permissions",
@@ -420,6 +477,34 @@ struct SettingsView: View {
         )
     }
 
+    private func modelStatusRow(
+        title: String,
+        detail: String,
+        status: SettingsViewModel.LocalModelStatus,
+        isRepairing: Bool,
+        onRepair: @escaping () -> Void
+    ) -> some View {
+        HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(DesignSystem.Typography.body)
+                Text(detail)
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: DesignSystem.Spacing.sm)
+
+            modelStatusPill(status)
+
+            Button(isRepairing ? "Repairing..." : "Repair") {
+                onRepair()
+            }
+            .buttonStyle(.bordered)
+            .disabled(isRepairing)
+        }
+    }
+
     // MARK: - Helpers
 
     private var appVersion: String {
@@ -444,6 +529,40 @@ struct SettingsView: View {
         .background(
             Capsule()
                 .fill(granted ? DesignSystem.Colors.successGreen.opacity(0.1) : DesignSystem.Colors.errorRed.opacity(0.1))
+        )
+    }
+
+    @ViewBuilder
+    private func modelStatusPill(_ status: SettingsViewModel.LocalModelStatus) -> some View {
+        let (icon, text, color): (String, String, Color) = switch status {
+        case .unknown:
+            ("questionmark.circle.fill", "Unknown", .secondary)
+        case .checking:
+            ("clock.fill", "Checking", DesignSystem.Colors.warningAmber)
+        case .ready:
+            ("checkmark.circle.fill", "Ready", DesignSystem.Colors.successGreen)
+        case .notLoaded:
+            ("pause.circle.fill", "Not Loaded", .secondary)
+        case .notDownloaded:
+            ("arrow.down.circle.fill", "Not Downloaded", DesignSystem.Colors.errorRed)
+        case .repairing:
+            ("wrench.and.screwdriver.fill", "Repairing", DesignSystem.Colors.warningAmber)
+        case .failed:
+            ("xmark.circle.fill", "Failed", DesignSystem.Colors.errorRed)
+        }
+
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 10))
+            Text(text)
+                .font(.caption2)
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            Capsule()
+                .fill(color.opacity(0.12))
         )
     }
 

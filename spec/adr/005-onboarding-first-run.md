@@ -22,7 +22,7 @@ The onboarding flow is linear and step-based:
 2. Microphone permission
 3. Accessibility permission
 4. Hotkey instructions
-5. Speech engine warm-up (best effort; retry or defer)
+5. Local model setup (Parakeet + Qwen, required to continue; retry available)
 6. Ready
 
 The onboarding can also be launched manually from Settings.
@@ -38,4 +38,3 @@ The onboarding can also be launched manually from Settings.
 
 - Inline onboarding inside the main window: rejected because the app is menu-bar-first and may never open the main window on first launch.
 - No onboarding: rejected due to permission and warm-up failures appearing as unexplained errors.
-

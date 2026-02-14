@@ -219,7 +219,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 entitlementsService: env.entitlementsService,
                 checkoutURL: env.checkoutURL,
                 customWordRepo: env.customWordRepo,
-                snippetRepo: env.snippetRepo
+                snippetRepo: env.snippetRepo,
+                sttClient: env.sttClient,
+                llmService: env.llmService
             )
             customWordsViewModel.configure(repo: env.customWordRepo)
             textSnippetsViewModel.configure(repo: env.snippetRepo)
