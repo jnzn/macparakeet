@@ -40,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let mainWindowState = MainWindowState()
     private let onboardingWindowController = OnboardingWindowController()
     private var onboardingObserver: Any?
+    private var settingsObserver: Any?
     private var hotkeyTriggerObserver: Any?
     private var menuBarOnlyModeObserver: Any?
     private var hotkeyMenuItem: NSMenuItem?
@@ -53,6 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         setupEnvironment()
         setupHotkey()
         observeOpenOnboarding()
+        observeOpenSettings()
         observeHotkeyTriggerChange()
         observeMenuBarOnlyModeChange()
         applyActivationPolicyFromSettings()
@@ -63,6 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         hideIdlePill()
         hotkeyManager?.stop()
         if let onboardingObserver { NotificationCenter.default.removeObserver(onboardingObserver) }
+        if let settingsObserver { NotificationCenter.default.removeObserver(settingsObserver) }
         if let hotkeyTriggerObserver { NotificationCenter.default.removeObserver(hotkeyTriggerObserver) }
         if let menuBarOnlyModeObserver { NotificationCenter.default.removeObserver(menuBarOnlyModeObserver) }
         Task {
@@ -338,6 +341,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    private func observeOpenSettings() {
+        settingsObserver = NotificationCenter.default.addObserver(
+            forName: .macParakeetOpenSettings,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.openMainWindowToSettings()
+            }
+        }
+    }
+
     func applicationDidBecomeActive(_ notification: Notification) {
         guard reopenOnboardingOnNextActivate else { return }
         maybeShowOnboarding()
@@ -372,6 +387,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             },
             onOpenMainApp: { [weak self] in
                 self?.openMainWindow()
+            },
+            onOpenSettings: {
+                NotificationCenter.default.post(name: .macParakeetOpenSettings, object: nil)
             },
             onIncompleteDismiss: { [weak self] in
                 self?.reopenOnboardingOnNextActivate = true

@@ -79,6 +79,14 @@ Errors in the dictation overlay use a wider rounded-rectangle card (not the comp
 - Auto-dismiss after 5 seconds, Dismiss button for immediate close
 - Red icon in tinted circle
 - Technical errors mapped to 6 friendly categories with contextual hints
+- Speech-engine failures explicitly direct users to onboarding or `Settings > Local Models > Repair`
+
+### Onboarding Model Failure
+
+When first-run local model setup fails:
+- Show the raw error detail (selectable text) plus user-friendly recovery tips.
+- Provide direct CTAs: `Retry` and `Open Settings` (opens `Settings > Local Models`).
+- Keep onboarding blocked until model setup succeeds (or user explicitly dismisses onboarding).
 
 ### Error Display Hierarchy
 

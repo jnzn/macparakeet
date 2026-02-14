@@ -90,6 +90,10 @@ See [00-vision.md](./00-vision.md) for positioning and market context.
 5. Local model setup (Parakeet + Qwen, retry required)
 6. Ready
 
+**Model failure recovery:**
+- If local model setup fails, onboarding shows explicit recovery tips based on failure type.
+- Users get direct CTAs: `Retry` and `Open Settings` (to `Settings > Local Models > Repair`).
+
 **Dismiss behavior:**
 - Closing onboarding before completion shows a confirmation prompt.
 - If dismissed anyway, onboarding is re-opened on next app activation until setup is completed.
