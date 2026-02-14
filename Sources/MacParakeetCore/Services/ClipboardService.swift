@@ -6,6 +6,23 @@ public protocol ClipboardServiceProtocol: Sendable {
     func copyToClipboard(_ text: String) async
 }
 
+public enum ClipboardServiceError: LocalizedError {
+    case accessibilityPermissionRequired
+    case eventSourceUnavailable
+    case eventCreationFailed
+
+    public var errorDescription: String? {
+        switch self {
+        case .accessibilityPermissionRequired:
+            return "Accessibility permission is required for auto-paste."
+        case .eventSourceUnavailable:
+            return "Paste automation unavailable (event source creation failed)."
+        case .eventCreationFailed:
+            return "Paste automation unavailable (could not create keyboard events)."
+        }
+    }
+}
+
 /// Handles clipboard save/restore and paste simulation via Cmd+V.
 @MainActor
 public final class ClipboardService: ClipboardServiceProtocol {
@@ -35,21 +52,24 @@ public final class ClipboardService: ClipboardServiceProtocol {
         pasteboard.setString(text, forType: .string)
         let ourChangeCount = pasteboard.changeCount
 
-        // 3. Simulate Cmd+V
-        simulatePaste()
+        // Always attempt to restore the previous clipboard contents after a short delay.
+        // If caller intentionally rewrites clipboard on error, changeCount guard prevents clobbering.
+        defer {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                // If the user changed the clipboard after we wrote, do not clobber it.
+                guard pasteboard.changeCount == ourChangeCount else {
+                    return
+                }
 
-        // 4. Restore clipboard after delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            // If the user changed the clipboard after we wrote, do not clobber it.
-            guard pasteboard.changeCount == ourChangeCount else {
-                return
-            }
-
-            pasteboard.clearContents()
-            if let savedItems, !savedItems.isEmpty {
-                pasteboard.writeObjects(savedItems)
+                pasteboard.clearContents()
+                if let savedItems, !savedItems.isEmpty {
+                    pasteboard.writeObjects(savedItems)
+                }
             }
         }
+
+        // 3. Simulate Cmd+V
+        try simulatePaste()
     }
 
     /// Copy text to clipboard without paste simulation
@@ -61,16 +81,25 @@ public final class ClipboardService: ClipboardServiceProtocol {
 
     // MARK: - Private
 
-    private func simulatePaste() {
+    private func simulatePaste() throws {
+        guard AXIsProcessTrusted() else {
+            throw ClipboardServiceError.accessibilityPermissionRequired
+        }
+
         // Cmd+V: virtual key 0x09 = 'v'
-        let source = CGEventSource(stateID: .hidSystemState)
+        guard let source = CGEventSource(stateID: .hidSystemState) else {
+            throw ClipboardServiceError.eventSourceUnavailable
+        }
 
-        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true)
-        keyDown?.flags = .maskCommand
-        keyDown?.post(tap: .cghidEventTap)
+        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false) else {
+            throw ClipboardServiceError.eventCreationFailed
+        }
 
-        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false)
-        keyUp?.flags = .maskCommand
-        keyUp?.post(tap: .cghidEventTap)
+        keyDown.flags = .maskCommand
+        keyDown.post(tap: .cghidEventTap)
+
+        keyUp.flags = .maskCommand
+        keyUp.post(tap: .cghidEventTap)
     }
 }

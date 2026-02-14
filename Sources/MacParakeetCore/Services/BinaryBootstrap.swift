@@ -102,6 +102,49 @@ public actor BinaryBootstrap {
         return ffmpegPath
     }
 
+    /// Resolve FFmpeg for current runtime:
+    /// - App bundle path in production.
+    /// - Development fallback (`swift run` / tests) via env override or PATH.
+    public nonisolated static func requireRuntimeFFmpegPath() throws -> String {
+        guard let ffmpegPath = resolveRuntimeFFmpegPath() else {
+            throw BinaryBootstrapError.bundledFFmpegMissing
+        }
+        return ffmpegPath
+    }
+
+    public nonisolated static func resolveRuntimeFFmpegPath(
+        bundledFFmpegPath: String? = AppPaths.bundledFFmpegPath(),
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        bundlePath: String = Bundle.main.bundlePath,
+        fileManager: FileManager = .default
+    ) -> String? {
+        if let bundledFFmpegPath,
+           fileManager.isExecutableFile(atPath: bundledFFmpegPath)
+        {
+            return bundledFFmpegPath
+        }
+
+        guard isLikelySwiftPMRun(bundlePath: bundlePath) else {
+            return nil
+        }
+
+        if let override = environment["MACPARAKEET_FFMPEG_PATH"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !override.isEmpty,
+           fileManager.isExecutableFile(atPath: override)
+        {
+            return override
+        }
+
+        if let path = environment["PATH"],
+           let discovered = findExecutable(named: "ffmpeg", inPATH: path, fileManager: fileManager)
+        {
+            return discovered
+        }
+
+        return nil
+    }
+
     // MARK: - Private
 
     private func shouldRunYtDlpUpdateCheck() -> Bool {
@@ -236,6 +279,28 @@ public actor BinaryBootstrap {
         #else
         return ytDlpAssetX86
         #endif
+    }
+
+    private nonisolated static func isLikelySwiftPMRun(bundlePath: String) -> Bool {
+        bundlePath.contains("/.build/") || bundlePath.hasSuffix("/debug") || bundlePath.hasSuffix(".xctest")
+    }
+
+    private nonisolated static func findExecutable(
+        named binaryName: String,
+        inPATH path: String,
+        fileManager: FileManager
+    ) -> String? {
+        for rawComponent in path.split(separator: ":") {
+            let component = String(rawComponent)
+            guard !component.isEmpty else { continue }
+            let candidate = URL(fileURLWithPath: component, isDirectory: true)
+                .appendingPathComponent(binaryName)
+                .path
+            if fileManager.isExecutableFile(atPath: candidate) {
+                return candidate
+            }
+        }
+        return nil
     }
 
     private nonisolated static func extractChecksum(for assetName: String, from checksums: String) throws -> String {
