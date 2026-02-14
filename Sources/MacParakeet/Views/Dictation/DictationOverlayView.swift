@@ -388,6 +388,9 @@ struct DictationOverlayView: View {
         if lower.contains("microphone") || lower.contains("audio input") {
             return ("Microphone Unavailable", "Check your mic connection or select a different input.")
         }
+        if lower.contains("copied to clipboard") || lower.contains("cmd+v") {
+            return ("Copied to Clipboard", "Auto-paste wasn't available. Press Cmd+V where you want the text.")
+        }
         if lower.contains("permission") || lower.contains("access") {
             return ("Permission Required", "Grant access in System Settings > Privacy & Security.")
         }

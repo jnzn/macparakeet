@@ -100,10 +100,10 @@ public final class AudioFileConverter: Sendable {
 
     private func findFFmpeg() throws -> String {
         do {
-            return try BinaryBootstrap.requireBundledFFmpegPath()
+            return try BinaryBootstrap.requireRuntimeFFmpegPath()
         } catch {
             throw AudioProcessorError.conversionFailed(
-                "Bundled FFmpeg is missing. Reinstall MacParakeet."
+                "FFmpeg is unavailable for this runtime. Reinstall MacParakeet, or for `swift run` set `MACPARAKEET_FFMPEG_PATH` or ensure `ffmpeg` is in PATH."
             )
         }
     }

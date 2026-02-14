@@ -237,6 +237,36 @@ final class OnboardingViewModelTests: XCTestCase {
         XCTAssertEqual(llmCalls, 0)
     }
 
+    func testEngineWarmUpFailsPreflightWhenSpeechCachedButOnboardingIncompleteAndOffline() async throws {
+        let perms = MockPermissionService()
+        let stt = MockSTTClient()
+        let llm = MockLLMService()
+        let defaults = UserDefaults(suiteName: "com.macparakeet.tests.\(UUID().uuidString)")!
+
+        let vm = makeViewModel(
+            permissionService: perms,
+            sttClient: stt,
+            llmService: llm,
+            defaults: defaults,
+            isNetworkReachable: { false },
+            isSpeechModelCached: { true }
+        )
+        vm.jump(to: .engine)
+        vm.startEngineWarmUp()
+        try await Task.sleep(for: .milliseconds(120))
+
+        if case .failed(let message) = vm.engineState {
+            XCTAssertTrue(message.lowercased().contains("internet connection is required"))
+        } else {
+            XCTFail("Expected preflight failure when onboarding is incomplete and offline")
+        }
+
+        let sttCalls = await stt.warmUpCallCount
+        let llmCalls = await llm.warmUpCallCount()
+        XCTAssertEqual(sttCalls, 0)
+        XCTAssertEqual(llmCalls, 0)
+    }
+
     func testEngineWarmUpFailsPreflightWhenDiskTooLowOnFirstSetup() async throws {
         let perms = MockPermissionService()
         let stt = MockSTTClient()

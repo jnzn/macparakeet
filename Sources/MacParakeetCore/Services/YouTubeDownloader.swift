@@ -103,7 +103,7 @@ public actor YouTubeDownloader {
     }
 
     private func ffmpegDirectory() throws -> String {
-        let ffmpegPath = try BinaryBootstrap.requireBundledFFmpegPath()
+        let ffmpegPath = try BinaryBootstrap.requireRuntimeFFmpegPath()
         return (ffmpegPath as NSString).deletingLastPathComponent
     }
 
@@ -396,7 +396,7 @@ public actor YouTubeDownloader {
         }
 
         if normalized.contains("ffmpeg") && normalized.contains("not found") {
-            return "Bundled FFmpeg is missing or inaccessible. Reinstall MacParakeet."
+            return "FFmpeg is missing or inaccessible for this runtime."
         }
 
         let lines = trimmed

@@ -97,11 +97,15 @@ struct HealthCommand: AsyncParsableCommand {
         print()
 
         // 5. Bundled FFmpeg
-        print("Bundled FFmpeg:")
-        if let ffmpegPath = AppPaths.bundledFFmpegPath() {
-            print("  Status: Found at \(ffmpegPath)")
+        print("FFmpeg:")
+        if let ffmpegPath = BinaryBootstrap.resolveRuntimeFFmpegPath() {
+            if ffmpegPath == AppPaths.bundledFFmpegPath() {
+                print("  Status: Found bundled binary at \(ffmpegPath)")
+            } else {
+                print("  Status: Found development fallback at \(ffmpegPath)")
+            }
         } else {
-            print("  Status: Missing from app resources")
+            print("  Status: Missing (bundle + development fallback)")
         }
         print()
 
