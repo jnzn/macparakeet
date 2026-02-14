@@ -8,17 +8,20 @@ public actor MLXLLMService: LLMServiceProtocol {
     private let modelID: String
     private let revision: String
     private let idleUnloadSeconds: TimeInterval?
+    private let preflightCheck: () throws -> Void
     private var modelContainer: ModelContainer?
     private var idleUnloadTask: Task<Void, Never>?
 
     public init(
         modelID: String = MLXLLMService.defaultModelID,
         revision: String = "main",
-        idleUnloadSeconds: TimeInterval? = 300
+        idleUnloadSeconds: TimeInterval? = 300,
+        preflightCheck: (() throws -> Void)? = nil
     ) {
         self.modelID = modelID
         self.revision = revision
         self.idleUnloadSeconds = idleUnloadSeconds
+        self.preflightCheck = preflightCheck ?? { try LLMRuntimePreflight.validate() }
     }
 
     public func unload() {
@@ -65,8 +68,15 @@ public actor MLXLLMService: LLMServiceProtocol {
             additionalContext: ["enable_thinking": false]
         )
 
-        let output = try await withTimeout(seconds: request.options.timeoutSeconds) {
-            try await session.respond(to: trimmedPrompt)
+        let output: String
+        do {
+            output = try await withTimeout(seconds: request.options.timeoutSeconds) {
+                try await session.respond(to: trimmedPrompt)
+            }
+        } catch let error as LLMServiceError {
+            throw error
+        } catch {
+            throw Self.mapRuntimeError(error)
         }
 
         let text = output.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -86,7 +96,23 @@ public actor MLXLLMService: LLMServiceProtocol {
             return modelContainer
         }
 
-        let loaded = try await loadModelContainer(id: modelID, revision: revision)
+        do {
+            try preflightCheck()
+        } catch let error as LLMServiceError {
+            throw error
+        } catch {
+            throw LLMServiceError.runtimeUnavailable(error.localizedDescription)
+        }
+
+        let loaded: ModelContainer
+        do {
+            loaded = try await loadModelContainer(id: modelID, revision: revision)
+        } catch let error as LLMServiceError {
+            throw error
+        } catch {
+            throw Self.mapRuntimeError(error)
+        }
+
         modelContainer = loaded
         return loaded
     }
@@ -141,5 +167,16 @@ public actor MLXLLMService: LLMServiceProtocol {
             }
             return result
         }
+    }
+
+    private nonisolated static func mapRuntimeError(_ error: Error) -> LLMServiceError {
+        let message = error.localizedDescription
+        if message.localizedCaseInsensitiveContains("metallib") {
+            return .runtimeUnavailable(
+                LLMRuntimePreflight.missingMetalLibraryMessage(detail: message)
+            )
+        }
+
+        return .generationFailed(message)
     }
 }

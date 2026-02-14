@@ -51,6 +51,7 @@ public enum LLMServiceError: Error, LocalizedError, Sendable {
     case invalidPrompt
     case timedOut(seconds: TimeInterval)
     case emptyResponse
+    case runtimeUnavailable(String)
     case generationFailed(String)
 
     public var errorDescription: String? {
@@ -61,6 +62,8 @@ public enum LLMServiceError: Error, LocalizedError, Sendable {
             return "Local model generation timed out after \(Int(seconds))s."
         case .emptyResponse:
             return "Local model returned an empty response."
+        case .runtimeUnavailable(let message):
+            return "Local AI runtime unavailable: \(message)"
         case .generationFailed(let message):
             return "Local model generation failed: \(message)"
         }

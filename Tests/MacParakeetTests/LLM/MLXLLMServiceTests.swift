@@ -18,4 +18,25 @@ final class MLXLLMServiceTests: XCTestCase {
             XCTFail("Expected LLMServiceError.invalidPrompt, got \(error)")
         }
     }
+
+    func testWarmUpFailsWhenPreflightFails() async {
+        let service = MLXLLMService(
+            preflightCheck: {
+                throw LLMServiceError.runtimeUnavailable("default.metallib missing")
+            }
+        )
+
+        do {
+            try await service.warmUp()
+            XCTFail("Expected runtimeUnavailable error")
+        } catch let error as LLMServiceError {
+            guard case .runtimeUnavailable(let message) = error else {
+                XCTFail("Expected runtimeUnavailable, got \(error)")
+                return
+            }
+            XCTAssertTrue(message.contains("default.metallib"))
+        } catch {
+            XCTFail("Expected LLMServiceError.runtimeUnavailable, got \(error)")
+        }
+    }
 }

@@ -119,6 +119,8 @@ swift run macparakeet-cli llm chat "What blockers were mentioned?" \
   --stats
 ```
 
+- If LLM commands report `Local AI runtime unavailable` with `default.metallib`, MLX shader resources are missing. Build/run with Xcode or `xcodebuild`, or run the packaged app so `mlx-swift_Cmlx.bundle` is present.
+
 ## Notes
 
 - CLI validates core service behavior (STT, conversion, pipeline, persistence) but does **not** validate GUI-only flows (windowing/menu bar, hotkey overlay, accessibility-driven paste UX).
