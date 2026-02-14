@@ -7,7 +7,9 @@ public actor MockSTTClient: STTClientProtocol {
     public var transcribeCallCount = 0
     public var lastAudioPath: String?
     public var warmUpCalled = false
+    public var warmUpCallCount = 0
     public var warmUpError: Error?
+    public var warmUpFailuresBeforeSuccess: Int = 0
     public var warmUpProgressPhases: [String]?
     public var shutdownCalled = false
 
@@ -28,6 +30,10 @@ public actor MockSTTClient: STTClientProtocol {
         self.warmUpProgressPhases = progressPhases
     }
 
+    public func configureWarmUpFailuresBeforeSuccess(_ count: Int) {
+        self.warmUpFailuresBeforeSuccess = max(0, count)
+    }
+
     public func transcribe(audioPath: String, onProgress: (@Sendable (Int, Int) -> Void)? = nil) async throws -> STTResult {
         transcribeCallCount += 1
         lastAudioPath = audioPath
@@ -41,6 +47,7 @@ public actor MockSTTClient: STTClientProtocol {
 
     public func warmUp(onProgress: (@Sendable (String) -> Void)?) async throws {
         warmUpCalled = true
+        warmUpCallCount += 1
 
         if let phases = warmUpProgressPhases {
             for phase in phases {
@@ -48,9 +55,16 @@ public actor MockSTTClient: STTClientProtocol {
             }
         }
 
+        if warmUpFailuresBeforeSuccess > 0 {
+            warmUpFailuresBeforeSuccess -= 1
+            throw STTError.engineStartFailed("warm-up failed")
+        }
+
         if let error = warmUpError {
             throw error
         }
+
+        ready = true
     }
 
     public func wasWarmUpCalled() -> Bool {
@@ -59,8 +73,12 @@ public actor MockSTTClient: STTClientProtocol {
 
     public var ready = true
 
+    public func setReady(_ value: Bool) {
+        ready = value
+    }
+
     public func isReady() async -> Bool {
-        return ready
+        ready
     }
 
     public func shutdown() async {

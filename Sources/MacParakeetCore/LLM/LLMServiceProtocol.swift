@@ -69,4 +69,27 @@ public enum LLMServiceError: Error, LocalizedError, Sendable {
 
 public protocol LLMServiceProtocol: Sendable {
     func generate(request: LLMRequest) async throws -> LLMResponse
+    func warmUp() async throws
+    func isReady() async -> Bool
+}
+
+extension LLMServiceProtocol {
+    public func warmUp() async throws {
+        _ = try await generate(
+            request: LLMRequest(
+                prompt: "Reply with exactly: OK",
+                systemPrompt: "Return exactly one token: OK",
+                options: LLMGenerationOptions(
+                    temperature: 0.0,
+                    topP: 1.0,
+                    maxTokens: 8,
+                    timeoutSeconds: nil
+                )
+            )
+        )
+    }
+
+    public func isReady() async -> Bool {
+        false
+    }
 }

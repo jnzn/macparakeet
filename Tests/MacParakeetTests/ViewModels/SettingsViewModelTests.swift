@@ -316,6 +316,90 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(mockTranscriptionRepo.transcriptions.first?.filePath, nil)
     }
 
+    // MARK: - Local Models
+
+    func testRefreshModelStatusMarksSpeechNotDownloadedWhenCacheMissing() async throws {
+        let vm = SettingsViewModel(
+            defaults: testDefaults,
+            youtubeDownloadsDirPath: { [youtubeDownloadsTestDir] in
+                youtubeDownloadsTestDir?.path ?? AppPaths.youtubeDownloadsDir
+            },
+            isSpeechModelCached: { false }
+        )
+        let stt = MockSTTClient()
+        await stt.setReady(false)
+        let llm = MockLLMService()
+        await llm.setReady(false)
+
+        vm.configure(
+            permissionService: mockPermissions,
+            dictationRepo: mockRepo,
+            entitlementsService: entitlements,
+            checkoutURL: nil,
+            sttClient: stt,
+            llmService: llm
+        )
+
+        try await Task.sleep(for: .milliseconds(120))
+        XCTAssertEqual(vm.parakeetStatus, .notDownloaded)
+        XCTAssertEqual(vm.qwenStatus, .notLoaded)
+    }
+
+    func testRepairParakeetModelUsesRetryAndEndsReady() async throws {
+        let vm = SettingsViewModel(
+            defaults: testDefaults,
+            youtubeDownloadsDirPath: { [youtubeDownloadsTestDir] in
+                youtubeDownloadsTestDir?.path ?? AppPaths.youtubeDownloadsDir
+            },
+            isSpeechModelCached: { true }
+        )
+        let stt = MockSTTClient()
+        await stt.setReady(false)
+        await stt.configureWarmUpFailuresBeforeSuccess(2)
+        let llm = MockLLMService()
+
+        vm.configure(
+            permissionService: mockPermissions,
+            dictationRepo: mockRepo,
+            entitlementsService: entitlements,
+            checkoutURL: nil,
+            sttClient: stt,
+            llmService: llm
+        )
+
+        vm.repairParakeetModel()
+        try await Task.sleep(for: .milliseconds(1300))
+
+        let warmUpCallCount = await stt.warmUpCallCount
+        XCTAssertEqual(warmUpCallCount, 3)
+        XCTAssertFalse(vm.parakeetRepairing)
+        XCTAssertEqual(vm.parakeetStatus, .ready)
+    }
+
+    func testRepairQwenModelUsesRetryAndEndsReady() async throws {
+        let stt = MockSTTClient()
+        let llm = MockLLMService()
+        await llm.configureWarmUp(failuresBeforeSuccess: 2)
+        await llm.setReady(false)
+
+        viewModel.configure(
+            permissionService: mockPermissions,
+            dictationRepo: mockRepo,
+            entitlementsService: entitlements,
+            checkoutURL: nil,
+            sttClient: stt,
+            llmService: llm
+        )
+
+        viewModel.repairQwenModel()
+        try await Task.sleep(for: .milliseconds(1300))
+
+        let warmUpCallCount = await llm.warmUpCallCount()
+        XCTAssertEqual(warmUpCallCount, 3)
+        XCTAssertFalse(viewModel.qwenRepairing)
+        XCTAssertEqual(viewModel.qwenStatus, .ready)
+    }
+
     // MARK: - Round-trip
 
     func testSettingsRoundTrip() {

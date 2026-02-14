@@ -578,6 +578,13 @@ Audio path is computed from ID by default. Files stored as WAV (16kHz mono). Use
 │ │ [Clear All Dictations...]                                    │ │
 │ └──────────────────────────────────────────────────────────────┘ │
 │                                                                  │
+│ LOCAL MODELS                                                     │
+│ ┌──────────────────────────────────────────────────────────────┐ │
+│ │ Parakeet (Speech)        Ready                 [Repair]      │ │
+│ │ Qwen (AI)                Not Loaded            [Repair]      │ │
+│ │ [Check Now]                                   [Repair All]   │ │
+│ └──────────────────────────────────────────────────────────────┘ │
+│                                                                  │
 │ PERMISSIONS                                                      │
 │ ┌──────────────────────────────────────────────────────────────┐ │
 │ │ Microphone           ✓ Granted                               │ │
@@ -597,6 +604,7 @@ Audio path is computed from ID by default. Files stored as WAV (16kHz mono). Use
 | Silence delay | 1s, 1.5s, 2s, 3s, 5s | 2s |
 | Save audio recordings | On / Off | On |
 | Keep downloaded YouTube audio | On / Off | On |
+| Local model controls | Check status / Repair / Repair All | Available |
 
 **Acceptance criteria:**
 - [x] All settings persist across app restarts (UserDefaults or GRDB)
@@ -606,6 +614,7 @@ Audio path is computed from ID by default. Files stored as WAV (16kHz mono). Use
 - [x] YouTube storage toggle controls whether downloaded URL audio is kept after transcription
 - [x] "Clear All" requires confirmation, deletes audio files and database entries
 - [x] Permission status shown with current grant state
+- [x] Local model panel shows status for Parakeet + Qwen and allows repair with retry
 
 ---
 
