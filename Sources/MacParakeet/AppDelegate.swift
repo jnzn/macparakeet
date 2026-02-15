@@ -370,7 +370,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self.hotkeyManager?.setCommandModeActive(true)
 
             let vm = DictationOverlayViewModel()
+            vm.sessionKind = .command
             vm.recordingMode = .persistent
+            vm.commandPromptText = "Speak your command..."
+            vm.commandSelectedText = selectedText
             vm.onCancel = { [weak self] in self?.cancelCommandModeFromHotkey() }
             vm.onStop = { [weak self] in self?.stopCommandMode() }
             vm.onDismiss = { [weak self] in self?.cancelCommandModeFromHotkey() }

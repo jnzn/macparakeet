@@ -121,7 +121,13 @@ struct DictationOverlayView: View {
                     holdToTalkContent
                         .transition(.opacity.animation(.easeInOut(duration: 0.15)))
                 } else {
-                    recordingContent
+                    Group {
+                        if viewModel.sessionKind == .command {
+                            commandRecordingContent
+                        } else {
+                            recordingContent
+                        }
+                    }
                         .transition(.opacity.animation(.easeInOut(duration: 0.2)))
                 }
 
@@ -221,6 +227,29 @@ struct DictationOverlayView: View {
         }
     }
 
+    private var commandRecordingContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(viewModel.commandPromptText)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.92))
+
+            HStack(spacing: 4) {
+                Text("Selected:")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.45))
+                Text("\"\(viewModel.commandSelectedPreview)\"")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.72))
+                    .lineLimit(1)
+                Text("(\(viewModel.commandSelectedCharacterCount)c)")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.45))
+            }
+
+            recordingContent
+        }
+    }
+
     // MARK: - Cancelled State
 
     private var cancelledContent: some View {
@@ -267,8 +296,18 @@ struct DictationOverlayView: View {
     // MARK: - Processing State
 
     private var processingContent: some View {
+        if viewModel.sessionKind == .command {
+            return AnyView(
+                HStack(spacing: 8) {
+                    SpinnerRingView()
+                    Text("Applying command...")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.75))
+                }
+            )
+        }
         // Circular spinner that matches the checkmark ring size for seamless morphing
-        SpinnerRingView()
+        return AnyView(SpinnerRingView())
     }
 
     // MARK: - Success State
@@ -286,7 +325,7 @@ struct DictationOverlayView: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.white.opacity(0.5))
 
-                Text("No speech detected")
+                Text(viewModel.sessionKind == .command ? "No command detected" : "No speech detected")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(.white.opacity(0.7))
             }
