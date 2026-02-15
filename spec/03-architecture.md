@@ -732,7 +732,7 @@ Runs in the Swift process via MLX-Swift framework. Not a separate daemon.
        │                       │
 ```
 
-### 3. Command Mode Flow: Select Text -> Hotkey -> Record -> LLM -> Replace
+### 3. Command Mode Core Flow (F10a): Select Text -> Hotkey -> Record -> LLM -> Replace
 
 ```
 ┌──────┐   ┌──────────────────┐   ┌────────────────┐   ┌───────────┐
@@ -775,6 +775,8 @@ Runs in the Swift process via MLX-Swift framework. Not a separate daemon.
    │ <───────────── │                                         │
    │                │                                         │
 ```
+
+F10b (quick commands + saved templates) reuses this same execution path and only changes command input UX.
 
 ### 4. Export Flow: Transcription -> Format -> File
 
