@@ -145,7 +145,11 @@ final class DictationOverlayController {
         if x >= pillLeft && x < pillLeft + 45 {
             overlayViewModel.hoverTooltip = "Cancel (Esc)"
         } else if x > pillRight - 45 && x <= pillRight {
-            overlayViewModel.hoverTooltip = "Stop & paste (\(TriggerKey.current.displayName))"
+            if overlayViewModel.sessionKind == .command {
+                overlayViewModel.hoverTooltip = "Stop & apply (Fn+Control)"
+            } else {
+                overlayViewModel.hoverTooltip = "Stop & paste (\(TriggerKey.current.displayName))"
+            }
         } else {
             overlayViewModel.hoverTooltip = nil
         }
@@ -164,6 +168,11 @@ final class DictationOverlayController {
 /// ViewModel for the dictation overlay
 @Observable
 final class DictationOverlayViewModel {
+    enum SessionKind {
+        case dictation
+        case command
+    }
+
     enum OverlayState {
         case ready
         case recording
@@ -175,11 +184,14 @@ final class DictationOverlayViewModel {
     }
 
     var state: OverlayState = .recording
+    var sessionKind: SessionKind = .dictation
     var recordingMode: FnKeyStateMachine.RecordingMode = .persistent
     var audioLevel: Float = 0.0
     var recordingElapsedSeconds: Int = 0
     var isHovered: Bool = false
     var hoverTooltip: String?
+    var commandPromptText: String = "Speak your command..."
+    var commandSelectedText: String = ""
 
     var onCancel: (() -> Void)?
     var onStop: (() -> Void)?
@@ -229,15 +241,30 @@ final class DictationOverlayViewModel {
         return String(format: "%d:%02d", minutes, seconds)
     }
 
+    var commandSelectedCharacterCount: Int {
+        commandSelectedText.count
+    }
+
+    var commandSelectedPreview: String {
+        let compact = commandSelectedText.replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if compact.count <= 50 { return compact }
+        return String(compact.prefix(47)) + "..."
+    }
+
     /// Stable key for animating pill size transitions between states
     var pillStateKey: String {
         switch state {
         case .ready: return "ready"
-        case .recording: return recordingMode == .holdToTalk ? "holdToTalk" : "recording"
+        case .recording:
+            if sessionKind == .command { return "commandRecording" }
+            return recordingMode == .holdToTalk ? "holdToTalk" : "recording"
         case .cancelled: return "cancelled"
-        case .processing: return "processing"
+        case .processing:
+            return sessionKind == .command ? "commandProcessing" : "processing"
         case .success: return "success"
-        case .noSpeech: return "noSpeech"
+        case .noSpeech:
+            return sessionKind == .command ? "commandNoSpeech" : "noSpeech"
         case .error: return "error"
         }
     }
