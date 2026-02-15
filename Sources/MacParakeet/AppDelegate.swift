@@ -265,6 +265,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self?.cancelDictation()
         }
 
+        manager.onStartCommandMode = { [weak self] in
+            self?.startCommandModeFromHotkey()
+        }
+
+        manager.onCancelCommandMode = { [weak self] in
+            self?.cancelCommandModeFromHotkey()
+        }
+
         manager.onReadyForSecondTap = { [weak self] in
             self?.showReadyPill()
         }
@@ -282,6 +290,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         hotkeyManager?.stop()
         hotkeyManager = nil
         setupHotkey()
+    }
+
+    /// Phase 1 command-mode hotkey wiring only.
+    /// Full command-mode start/stop/cancel flow is implemented in F10a core slices.
+    private func startCommandModeFromHotkey() {
+        dictationLog.debug("command hotkey start detected (phase1 wiring)")
+    }
+
+    /// Phase 1 command-mode hotkey wiring only.
+    private func cancelCommandModeFromHotkey() {
+        dictationLog.debug("command hotkey cancel detected (phase1 wiring)")
     }
 
     private func observeOpenOnboarding() {
