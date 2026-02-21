@@ -1,8 +1,8 @@
 # Qwen3-8B Integration Checklist (Execution Order)
 
-Status: In Progress
+Status: **COMPLETED** — 2026-02-20 (5/6 slices shipped; remaining command mode GUI tracked in F10a plan)
 Owner: Core app team
-Updated: 2026-02-13
+Updated: 2026-02-20
 
 ## Objective
 

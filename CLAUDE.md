@@ -122,7 +122,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 
 ## Current Phase
 
-**v0.2 In Progress** -- Clean pipeline + management UI implemented (test suite passing, `swift test` green)
+**v0.2 Complete, v0.3 In Progress** -- 98 source files, 52 test files, 449 tests passing (`swift test` green)
 
 ### v0.1 MVP (Implemented)
 - [x] System-wide dictation: Configurable hotkey (Fn default), double-tap (persistent) + hold-to-talk
@@ -148,7 +148,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 
 ### v0.3 Command Mode + Chat + Export
 - [ ] Command Mode (highlight text + voice command -> LLM edits in-place, like WisprFlow Pro)
-- [ ] Chat with transcript (ask questions about YouTube/file transcriptions via Qwen3-8B)
+- [x] Chat with transcript (ask questions about the selected transcript via Qwen3-8B, GUI MVP)
 - [x] YouTube URL transcription (yt-dlp + Parakeet, single video)
 - [x] Export formats (TXT, Markdown, SRT, VTT)
 - [ ] Export formats (DOCX, PDF, JSON)
