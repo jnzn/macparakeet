@@ -134,6 +134,7 @@ v0.2 adds Qwen3-8B to the GPU — the exact moment GPU contention becomes real. 
 - **No crash isolation**: CoreML runs in-process. A CoreML crash takes down the app (vs the Python daemon crashing independently). Mitigated by CoreML's maturity and proper error handling.
 - **Third-party dependency**: FluidAudio is maintained by a small independent team (FluidInference). Mitigated by Apache 2.0 license (forkable), CoreML models hosted independently on HuggingFace, and 20+ production apps providing ecosystem validation.
 - **Swift 6.0 required**: FluidAudio's Package.swift specifies swift-tools-version: 6.0. Our project needs to compile under Swift 6's stricter concurrency model.
+- **Packaging guardrail**: Distribution builds must bundle a portable FFmpeg binary. Homebrew-linked FFmpeg is rejected by build validation because it is not portable across user machines.
 
 ### Migration Scope
 
@@ -142,7 +143,7 @@ v0.2 adds Qwen3-8B to the GPU — the exact moment GPU contention becomes real. 
 | Add dependency | FluidAudio via SwiftPM (`FluidAudio` product only — NOT `FluidAudioEspeak` which is GPL-3.0) |
 | Rewrite | `STTClient` — FluidAudio wrapper conforming to existing `STTClientProtocol` |
 | Rewrite | `YouTubeDownloader` — standalone yt-dlp binary instead of venv |
-| Rewrite | `AudioFileConverter` — bundled FFmpeg instead of imageio-ffmpeg |
+| Rewrite | `AudioFileConverter` — bundled FFmpeg instead of imageio-ffmpeg (portable binary, no Homebrew Cellar dylib dependencies) |
 | Delete | `python/` directory, `PythonBootstrap.swift`, `JSONRPCTypes.swift`, all uv/venv code |
 | Add | Binary bootstrap (download yt-dlp on first run; validate bundled FFmpeg availability) |
 | Update | Onboarding (CoreML model download replaces Python venv setup) |

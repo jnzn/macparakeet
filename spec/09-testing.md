@@ -19,6 +19,7 @@ Tests exist to catch regressions and validate behavior at service boundaries. We
 **Examples:**
 - Transcript word merging logic
 - Text processing pipeline stages (capitalization, punctuation, custom words)
+- Dictation stop-decision logic (`proceed` / `defer` / `reject`)
 - Model encoding/decoding
 - Time formatting utilities
 
@@ -267,6 +268,7 @@ These flows must be tested manually after any overlay or hotkey changes. Automat
 | 11 | Recording → Processing | Fn+Fn → speak → Fn | Pill smoothly transitions from waveform to spinner |
 | 12 | Processing → Success | (after transcription completes) | Animated checkmark appears, then text pastes |
 | 13 | Error display | (trigger STT error) | Error card (rounded rect, icon, title+subtitle, dismiss button) |
+| 13a | Delayed first-stop race | Fn+Fn, then immediately Fn while first start is still spinning up | Stop is deferred, then processing/paste completes once recording is active (no silent drop) |
 
 ### Hover Tooltips
 

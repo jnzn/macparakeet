@@ -123,6 +123,8 @@ Both modes coexist with no configuration required. The 400ms threshold distingui
 - On modifier-down: schedule a 400ms `DispatchWorkItem`. If a second tap arrives before it fires, enter double-tap (persistent mode). If the timer fires with the key still held, enter hold-mode and begin recording.
 - On modifier-up: if hold timer still pending, cancel it (was a quick tap). If recording in hold-mode, auto-stop and process.
 - Requires Accessibility permission (prompted on first activation).
+- Stop orchestration is state-driven (proceed, defer-until-recording, reject-not-recording) to avoid first-start races when stop arrives before `startRecording()` fully transitions to `.recording`.
+- Duplicate stop requests are ignored while a stop/cancel/undo overlay action is already in-flight (idempotent stop behavior).
 
 **Recording flow:**
 
@@ -145,6 +147,8 @@ Both modes coexist with no configuration required. The 400ms threshold distingui
 │    - Press Fn again (persistent mode), OR                        │
 │    - Press Escape (soft cancel with undo window), OR             │
 │    - Silence auto-stop (2s default, if enabled in settings)      │
+│    - If stop is requested while startup is in-flight, stop is     │
+│      deferred and executed immediately once recording is active    │
 ├─────────────────────────────────────────────────────────────────┤
 │ 5. Processing                                                    │
 │    - Overlay transitions to processing state                     │
