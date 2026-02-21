@@ -83,6 +83,7 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 - [x] Custom words & snippets management UI
 - [ ] Personal dictionary (auto-learns vocabulary)
 - [x] CLI commands (`macparakeet-cli flow process/words/snippets` + `macparakeet-cli llm generate/refine/command/chat/smoke-test` + `macparakeet-cli models status/warm-up/repair`)
+- [x] In-app feedback form (Settings → Help & Feedback → Cloudflare Worker → GitHub Issues on `macparakeet-community`)
 
 ### v0.3 Command Mode, Chat & Export (In Progress)
 
