@@ -144,6 +144,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 - [x] CLI commands: `macparakeet-cli flow process/words/snippets` + `macparakeet-cli llm generate/refine/command/chat/smoke-test`
 - [x] Context modes (raw, clean, formal, email, code)
 - [x] AI text refinement via Qwen3-8B with deterministic fallback
+- [x] In-app feedback form (Settings → Help & Feedback → Cloudflare Worker → GitHub Issues)
 
 ### v0.3 Command Mode + Chat + Export
 - [ ] Command Mode (highlight text + voice command -> LLM edits in-place, like WisprFlow Pro)
@@ -259,6 +260,7 @@ Menu Bar Icon (always visible)
     |   +-- Hotkey configuration
     |   +-- Storage management
     |   +-- Permissions
+    |   +-- Help & Feedback (bug reports, feature requests via Cloudflare Worker → GitHub Issues)
     |
     +-- History Panel
         +-- Dictation history with search
@@ -270,7 +272,7 @@ View files organized by feature in `Sources/MacParakeet/Views/`:
 - `Transcription/` -- Main window, drop zone, transcript display, export
 - `Dictation/` -- Overlay, waveform, recording state
 - `Vocabulary/` -- Processing mode, custom words, text snippets
-- `Settings/` -- License, dictation prefs, storage, permissions
+- `Settings/` -- License, dictation prefs, storage, permissions, help & feedback
 - `History/` -- Dictation history, search, playback
 - `Components/` -- Reusable components (status badge, waveform view)
 

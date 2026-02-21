@@ -144,16 +144,15 @@ File dropped → MainWindowView → TranscriptionService.transcribe(fileURL:)
 
 #### Settings View
 
-**Responsibility:** User preferences. Dictation hotkey, processing mode, custom words, text snippets, general preferences.
+**Responsibility:** User preferences, diagnostics, and feedback. Dictation hotkey, processing mode, custom words, text snippets, general preferences, help & feedback.
 
 **Key Types:**
-- `SettingsView` — TabView container
-- `GeneralSettingsView` — Launch at login, menu bar mode, default language
-- `DictationSettingsView` — Hotkey config, stop mode, processing mode
-- `CustomWordsManageView` — CRUD for vocabulary corrections
-- `TextSnippetsManageView` — CRUD for trigger/expansion pairs
+- `SettingsView` — Card-based scrollable container
+- `SettingsViewModel` — Manages all settings state, permissions, model status, licensing
+- `FeedbackViewModel` — Form state, submission lifecycle, screenshot attachment
+- `FeedbackService` — POSTs feedback JSON to `macparakeet.com/api/feedback` (Cloudflare Worker → GitHub Issues)
 
-**Dependencies:** `UserDefaults`, `CustomWordRepository`, `TextSnippetRepository`
+**Dependencies:** `UserDefaults`, `CustomWordRepository`, `TextSnippetRepository`, `FeedbackService`
 
 ---
 
