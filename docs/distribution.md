@@ -16,6 +16,20 @@ This creates `dist/MacParakeet.app` and bundles:
 - Standalone helper binaries (yt-dlp and FFmpeg) into `Contents/Resources/` when configured by the build scripts
 - No Python runtime or `uv` bootstrap is bundled (FluidAudio/CoreML STT is native Swift)
 
+`build_app_bundle.sh` enforces a **portable** FFmpeg binary (no non-system dylib dependencies). If your default Homebrew FFmpeg is Cellar-linked, set `FFMPEG_PATH` explicitly:
+
+```bash
+FFMPEG_PATH=/absolute/path/to/portable-ffmpeg scripts/dist/build_app_bundle.sh
+```
+
+Quick portability check:
+
+```bash
+otool -L /absolute/path/to/portable-ffmpeg | grep -Ev '^/System/Library/|^/usr/lib/' || true
+```
+
+Expected: no output from the command above.
+
 Optional licensing config (recommended for production):
 
 ```bash
@@ -80,6 +94,14 @@ Verify:
 curl -sI https://downloads.macparakeet.com/MacParakeet.dmg | head -5
 ```
 
+Because Cloudflare may serve a cached object briefly, also verify with a cache-busting query:
+
+```bash
+curl -sI "https://downloads.macparakeet.com/MacParakeet.dmg?ts=$(date +%s)" | head -10
+```
+
+Confirm `content-length`, `last-modified`, and `etag` match the newly uploaded DMG.
+
 ## Full release workflow
 
 ```bash
@@ -95,7 +117,10 @@ npx wrangler r2 object put macparakeet-downloads/MacParakeet.dmg \
   --content-type "application/x-apple-diskimage" \
   --remote
 
-# 4. Website download buttons already point to:
+# 4. Verify fresh object metadata (cache-busted HEAD)
+curl -sI "https://downloads.macparakeet.com/MacParakeet.dmg?ts=$(date +%s)" | head -10
+
+# 5. Website download buttons already point to:
 #    https://downloads.macparakeet.com/MacParakeet.dmg
 ```
 

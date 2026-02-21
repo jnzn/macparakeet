@@ -38,6 +38,13 @@
 | LLM inference failed | MLX model error or OOM | Skip AI features, show raw transcript |
 | LLM runtime unavailable | Missing MLX shaders (`default.metallib`) or Metal runtime issue | Rebuild/reinstall to restore `mlx-swift_Cmlx.bundle`; retry |
 
+### Dictation Control Errors
+
+| Error | Cause | User Action |
+|-------|-------|-------------|
+| Stop requested before recording active | Stop key pressed while start flow is still in-flight and recorder has not reached `.recording` | Stop request is deferred until recording is active; no user action needed |
+| Recording was not active | Stop requested while service is not recording and startup is not in-flight (invalid transition) | Show explicit overlay error and ask user to start dictation again |
+
 ### Export / Storage Errors
 
 | Error | Cause | User Action |
@@ -76,10 +83,17 @@ During active recording, audio is continuously written to a temporary ring buffe
 Errors in the dictation overlay use a wider rounded-rectangle card (not the compact pill). See `04-ui-patterns.md` for full visual spec.
 
 - Two-line text: bold title + actionable subtitle (no truncation needed)
-- Auto-dismiss after 5 seconds, Dismiss button for immediate close
+- Auto-dismiss after 2-5 seconds depending on error path, with Dismiss affordance where available
 - Red icon in tinted circle
 - Technical errors mapped to 6 friendly categories with contextual hints
 - Speech-engine failures explicitly direct users to onboarding or `Settings > Local Models > Repair`
+
+### Dictation Stop/Start Race Handling
+
+- Stop decisions are explicit and deterministic: `proceed`, `defer-until-recording`, or `reject-not-recording`.
+- Deferred stop is applied immediately once `startRecording()` completes and the service reaches recording.
+- Duplicate stop taps during in-flight stop/cancel/undo actions are ignored (idempotent stop).
+- If startup never reaches recording, users get an explicit error card instead of silent teardown.
 
 ### Onboarding Model Failure
 
@@ -90,7 +104,7 @@ When first-run local model setup fails:
 
 ### Error Display Hierarchy
 
-1. **Overlay toast** -- Transient errors during recording/dictation (3s auto-dismiss)
+1. **Overlay error card** -- Dictation/recording errors with actionable text (2-5s auto-dismiss depending on error path)
 2. **Inline alert** -- Errors within a specific view (e.g., import failed)
 3. **Modal alert** -- Blocking errors that need user decision (e.g., crash recovery)
 4. **Status bar icon change** -- Persistent issues (e.g., mic disconnected)
