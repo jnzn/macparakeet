@@ -36,6 +36,15 @@ public final class DictationHistoryViewModel {
         return groupedDictations.flatMap(\.1).first { $0.id == id }
     }
 
+    // MARK: - Stats
+
+    public var stats: DictationStats = .empty
+    public var isStatsExpanded: Bool = false
+
+    public func toggleStatsPanel() {
+        isStatsExpanded.toggle()
+    }
+
     // MARK: - Copy Confirmation
 
     public var copiedDictationId: UUID?
@@ -87,6 +96,8 @@ public final class DictationHistoryViewModel {
         groupedDictations = grouped.sorted { $0.key > $1.key }.map { (key, value) in
             (formatDateHeader(key), value.sorted { $0.createdAt > $1.createdAt })
         }
+
+        stats = (try? repo.stats()) ?? .empty
     }
 
     public func deleteDictation(_ dictation: Dictation) {

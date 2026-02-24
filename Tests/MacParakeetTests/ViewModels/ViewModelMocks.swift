@@ -61,9 +61,27 @@ final class MockDictationRepository: DictationRepositoryProtocol, @unchecked Sen
     }
 
     func stats() throws -> DictationStats {
-        DictationStats(
-            totalCount: dictations.count,
-            totalDurationMs: dictations.reduce(0) { $0 + $1.durationMs }
+        let completed = dictations.filter { $0.status == .completed }
+        let totalDuration = completed.reduce(0) { $0 + $1.durationMs }
+        let totalWords = completed.reduce(0) { total, d in
+            let text = (d.cleanTranscript ?? d.rawTranscript).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return total }
+            return total + text.split(separator: " ").count
+        }
+        let maxDuration = completed.map(\.durationMs).max() ?? 0
+        let avgDuration = completed.isEmpty ? 0 : totalDuration / completed.count
+
+        let dates = completed.map(\.createdAt)
+        let (streak, thisWeek) = DictationRepository.computeWeeklyStreak(from: dates)
+
+        return DictationStats(
+            totalCount: completed.count,
+            totalDurationMs: totalDuration,
+            totalWords: totalWords,
+            longestDurationMs: maxDuration,
+            averageDurationMs: avgDuration,
+            weeklyStreak: streak,
+            dictationsThisWeek: thisWeek
         )
     }
 }

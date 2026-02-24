@@ -272,6 +272,48 @@ final class DictationHistoryViewModelTests: XCTestCase {
         XCTAssertTrue(viewModel.groupedDictations.isEmpty, "Dictation should be removed from list")
     }
 
+    // MARK: - Stats
+
+    func testStatsLoadedOnConfigure() {
+        mockRepo.dictations = [
+            Dictation(durationMs: 5000, rawTranscript: "Hello world test")
+        ]
+
+        viewModel.configure(dictationRepo: mockRepo)
+
+        XCTAssertFalse(viewModel.stats.isEmpty)
+        XCTAssertEqual(viewModel.stats.totalCount, 1)
+        XCTAssertEqual(viewModel.stats.totalWords, 3) // "Hello world test"
+    }
+
+    func testStatsRefreshOnDelete() {
+        let d1 = Dictation(durationMs: 1000, rawTranscript: "First dictation")
+        let d2 = Dictation(durationMs: 2000, rawTranscript: "Second")
+        mockRepo.dictations = [d1, d2]
+
+        viewModel.configure(dictationRepo: mockRepo)
+        XCTAssertEqual(viewModel.stats.totalCount, 2)
+
+        viewModel.deleteDictation(d1)
+        XCTAssertEqual(viewModel.stats.totalCount, 1)
+    }
+
+    func testStatsEmptyWhenNoDictations() {
+        viewModel.configure(dictationRepo: mockRepo)
+        XCTAssertTrue(viewModel.stats.isEmpty)
+    }
+
+    func testToggleStatsPanel() {
+        viewModel.configure(dictationRepo: mockRepo)
+        XCTAssertFalse(viewModel.isStatsExpanded)
+
+        viewModel.toggleStatsPanel()
+        XCTAssertTrue(viewModel.isStatsExpanded)
+
+        viewModel.toggleStatsPanel()
+        XCTAssertFalse(viewModel.isStatsExpanded)
+    }
+
     // MARK: - Helpers
 
     private func totalDictationCount() -> Int {
