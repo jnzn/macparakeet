@@ -168,8 +168,12 @@ public final class DictationRepository: DictationRepositoryProtocol {
 
     public func stats() throws -> DictationStats {
         try dbQueue.read { db in
-            // Subquery normalizes text (collapses multiple spaces) before word counting.
-            // Three nested REPLACEs handle up to 8 consecutive spaces — sufficient for real transcripts.
+            // Subquery normalizes text before word counting:
+            // 1. COALESCE prefers cleanTranscript over rawTranscript
+            // 2. Replace non-space whitespace (newline, tab, CR) with spaces
+            // 3. TRIM outer whitespace
+            // 4. Collapse runs of multiple spaces (5 rounds handles up to 32 consecutive)
+            // 5. Count words as (single-space count + 1)
             let row = try Row.fetchOne(db, sql: """
                 SELECT
                     COUNT(*) AS cnt,
@@ -187,9 +191,11 @@ public final class DictationRepository: DictationRepositoryProtocol {
                     ), 0) AS wordCount
                 FROM (
                     SELECT durationMs,
-                        REPLACE(REPLACE(REPLACE(
-                            TRIM(COALESCE(cleanTranscript, rawTranscript)),
-                        '  ', ' '), '  ', ' '), '  ', ' ') AS normalized
+                        REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                            TRIM(REPLACE(REPLACE(REPLACE(
+                                COALESCE(cleanTranscript, rawTranscript),
+                            char(10), ' '), char(13), ' '), char(9), ' ')),
+                        '  ', ' '), '  ', ' '), '  ', ' '), '  ', ' '), '  ', ' ') AS normalized
                     FROM dictations
                     WHERE status = 'completed'
                 )
@@ -234,8 +240,8 @@ public final class DictationRepository: DictationRepositoryProtocol {
         // Find the start of the current week
         let currentWeekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? now
 
-        // Count how many dates fall in the current week
-        let thisWeek = dates.filter { $0 >= currentWeekStart }.count
+        // Count how many dates fall in the current week (cap at now to exclude future-dated rows)
+        let thisWeek = dates.filter { $0 >= currentWeekStart && $0 <= now }.count
 
         // Build a set of week-start dates
         var weekStarts = Set<Date>()
