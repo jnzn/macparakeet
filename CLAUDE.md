@@ -118,7 +118,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 
 ## Current Phase
 
-**v0.2 Complete, v0.3 In Progress** -- ~89 source files, ~49 test files, 456 tests passing (`swift test` green)
+**v0.2 Complete, v0.3 In Progress** -- ~89 source files, ~49 test files, 461 tests passing (`swift test` green)
 
 ### v0.1 MVP (Implemented)
 - [x] System-wide dictation: Configurable hotkey (Fn default), double-tap (persistent) + hold-to-talk

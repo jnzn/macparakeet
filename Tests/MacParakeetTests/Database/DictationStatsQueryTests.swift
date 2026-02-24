@@ -89,6 +89,35 @@ final class DictationStatsQueryTests: XCTestCase {
         XCTAssertEqual(stats.totalWords, 2)
     }
 
+    func testStatsLongWhitespaceRunCountsCorrectly() throws {
+        // 10 consecutive spaces — needs more than 3 REPLACE rounds
+        try repo.save(Dictation(durationMs: 1000, rawTranscript: "hello          world"))
+
+        let stats = try repo.stats()
+        XCTAssertEqual(stats.totalWords, 2)
+    }
+
+    func testStatsNewlinesCountAsWordBoundaries() throws {
+        try repo.save(Dictation(durationMs: 1000, rawTranscript: "hello\nworld"))
+
+        let stats = try repo.stats()
+        XCTAssertEqual(stats.totalWords, 2)
+    }
+
+    func testStatsTabsCountAsWordBoundaries() throws {
+        try repo.save(Dictation(durationMs: 1000, rawTranscript: "hello\tworld\tfoo"))
+
+        let stats = try repo.stats()
+        XCTAssertEqual(stats.totalWords, 3)
+    }
+
+    func testStatsMixedWhitespaceCountsCorrectly() throws {
+        try repo.save(Dictation(durationMs: 1000, rawTranscript: "hello \n\t  world"))
+
+        let stats = try repo.stats()
+        XCTAssertEqual(stats.totalWords, 2)
+    }
+
     // MARK: - Weekly Streak
 
     func testWeeklyStreakEmpty() {
@@ -141,5 +170,17 @@ final class DictationStatsQueryTests: XCTestCase {
 
         let stats = try repo.stats()
         XCTAssertGreaterThanOrEqual(stats.dictationsThisWeek, 1)
+    }
+
+    func testWeeklyStreakExcludesFutureDates() {
+        let now = Date()
+        let futureDate = now.addingTimeInterval(86400 * 30) // 30 days from now
+
+        let (streak, thisWeek) = DictationRepository.computeWeeklyStreak(
+            from: [now, futureDate],
+            now: now
+        )
+        XCTAssertEqual(streak, 1)
+        XCTAssertEqual(thisWeek, 1, "Future-dated row should not count in this week")
     }
 }

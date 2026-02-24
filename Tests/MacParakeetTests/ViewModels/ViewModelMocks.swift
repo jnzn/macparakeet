@@ -66,7 +66,8 @@ final class MockDictationRepository: DictationRepositoryProtocol, @unchecked Sen
         let totalWords = completed.reduce(0) { total, d in
             let text = (d.cleanTranscript ?? d.rawTranscript).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { return total }
-            return total + text.split(separator: " ").count
+            // Split on any whitespace run (matches SQL normalization: \n\r\t → space, then collapse)
+            return total + text.split(whereSeparator: \.isWhitespace).count
         }
         let maxDuration = completed.map(\.durationMs).max() ?? 0
         let avgDuration = completed.isEmpty ? 0 : totalDuration / completed.count
