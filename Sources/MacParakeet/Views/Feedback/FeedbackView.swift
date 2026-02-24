@@ -130,7 +130,7 @@ struct FeedbackView: View {
 
     private var formContent: some View {
         VStack(spacing: DesignSystem.Spacing.md) {
-            // Message
+            // Message (hero — the only required field)
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
                 Text("Message")
                     .font(DesignSystem.Typography.body)
@@ -151,51 +151,51 @@ struct FeedbackView: View {
 
             Divider()
 
-            // Email (optional)
-            HStack(alignment: .center) {
-                rowText(
-                    title: "Email (optional)",
-                    detail: "Only if you'd like a reply."
-                )
-                Spacer(minLength: DesignSystem.Spacing.md)
-                TextField("you@example.com", text: $viewModel.email)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 220)
-            }
+            // Email + Screenshot side-by-side (both optional, visually secondary)
+            HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
+                // Email
+                VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
+                    Text("Email (optional)")
+                        .font(DesignSystem.Typography.body)
+                    TextField("you@example.com", text: $viewModel.email)
+                        .textFieldStyle(.roundedBorder)
+                    Text("Only if you'd like a reply.")
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
 
-            Divider()
+                // Screenshot
+                VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
+                    Text("Screenshot (optional)")
+                        .font(DesignSystem.Typography.body)
 
-            // Screenshot
-            VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
-                Text("Screenshot (optional)")
-                    .font(DesignSystem.Typography.body)
-
-                if let filename = viewModel.screenshotFilename {
-                    HStack(spacing: DesignSystem.Spacing.sm) {
-                        Image(systemName: "photo")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                        Text(filename)
-                            .font(DesignSystem.Typography.caption)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Spacer()
-                        Button {
-                            viewModel.removeScreenshot()
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 14))
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
+                    if let filename = viewModel.screenshotFilename {
+                        screenshotAttachedPill(filename)
+                    } else {
+                        screenshotAttachButton
                     }
-                    .padding(DesignSystem.Spacing.sm)
-                    .background(
-                        RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
-                            .fill(DesignSystem.Colors.surfaceElevated)
-                    )
-                } else {
-                    screenshotDropZone
+
+                    Text(viewModel.screenshotFilename != nil
+                         ? "PNG, JPEG, TIFF, or HEIC"
+                         : "or drop an image here")
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .onDrop(of: [.image], isTargeted: $isDraggingScreenshot) { providers in
+                    guard let provider = providers.first else { return false }
+                    _ = provider.loadFileRepresentation(for: .image) { url, _, error in
+                        guard let url, error == nil else { return }
+                        let tmp = FileManager.default.temporaryDirectory
+                            .appendingPathComponent(url.lastPathComponent)
+                        try? FileManager.default.removeItem(at: tmp)
+                        try? FileManager.default.copyItem(at: url, to: tmp)
+                        Task { @MainActor in
+                            viewModel.handleScreenshotDrop(url: tmp)
+                        }
+                    }
+                    return true
                 }
             }
 
@@ -262,54 +262,67 @@ struct FeedbackView: View {
         )
     }
 
-    // MARK: - Screenshot Drop Zone
+    // MARK: - Screenshot Components
 
-    private var screenshotDropZone: some View {
+    private var screenshotAttachButton: some View {
         Button {
             viewModel.attachScreenshot()
         } label: {
-            VStack(spacing: DesignSystem.Spacing.xs) {
+            HStack(spacing: DesignSystem.Spacing.xs) {
                 Image(systemName: isDraggingScreenshot ? "arrow.down.doc.fill" : "photo.on.rectangle.angled")
-                    .font(.system(size: 20))
+                    .font(.system(size: 13))
                     .foregroundStyle(isDraggingScreenshot ? DesignSystem.Colors.accent : .secondary)
                     .contentTransition(.symbolEffect(.replace))
-                Text("Drop an image or click to browse")
-                    .font(DesignSystem.Typography.caption)
+                Text("Attach...")
+                    .font(DesignSystem.Typography.body)
                     .foregroundStyle(.secondary)
-                Text("PNG, JPEG, TIFF, or HEIC. Max 5 MB.")
-                    .font(DesignSystem.Typography.micro)
-                    .foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, DesignSystem.Spacing.lg)
+            .padding(.vertical, 5)
             .background(
-                RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                RoundedRectangle(cornerRadius: 6)
                     .fill(isDraggingScreenshot ? DesignSystem.Colors.accent.opacity(0.06) : DesignSystem.Colors.surfaceElevated)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                RoundedRectangle(cornerRadius: 6)
                     .strokeBorder(
                         isDraggingScreenshot ? DesignSystem.Colors.accent : DesignSystem.Colors.border,
-                        style: StrokeStyle(lineWidth: 1, dash: [6, 4])
+                        lineWidth: 0.5
                     )
             )
         }
         .buttonStyle(.plain)
-        .onDrop(of: [.image], isTargeted: $isDraggingScreenshot) { providers in
-            guard let provider = providers.first else { return false }
-            _ = provider.loadFileRepresentation(for: .image) { url, _, error in
-                guard let url, error == nil else { return }
-                // Copy to temp to survive provider cleanup
-                let tmp = FileManager.default.temporaryDirectory
-                    .appendingPathComponent(url.lastPathComponent)
-                try? FileManager.default.removeItem(at: tmp)
-                try? FileManager.default.copyItem(at: url, to: tmp)
-                Task { @MainActor in
-                    viewModel.handleScreenshotDrop(url: tmp)
-                }
+    }
+
+    private func screenshotAttachedPill(_ filename: String) -> some View {
+        HStack(spacing: DesignSystem.Spacing.xs) {
+            Image(systemName: "photo")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            Text(filename)
+                .font(DesignSystem.Typography.caption)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer()
+            Button {
+                viewModel.removeScreenshot()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
             }
-            return true
+            .buttonStyle(.plain)
         }
+        .padding(.horizontal, DesignSystem.Spacing.sm)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(DesignSystem.Colors.surfaceElevated)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .strokeBorder(DesignSystem.Colors.border, lineWidth: 0.5)
+        )
     }
 
     // MARK: - Community
@@ -385,16 +398,6 @@ struct FeedbackView: View {
             withAnimation(DesignSystem.Animation.hoverTransition) {
                 hoveredCardTitle = hovering ? title : nil
             }
-        }
-    }
-
-    private func rowText(title: String, detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(DesignSystem.Typography.body)
-            Text(detail)
-                .font(DesignSystem.Typography.caption)
-                .foregroundStyle(.secondary)
         }
     }
 
