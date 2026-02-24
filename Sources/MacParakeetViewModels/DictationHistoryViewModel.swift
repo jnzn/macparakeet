@@ -75,6 +75,7 @@ public final class DictationHistoryViewModel {
     public func configure(dictationRepo: DictationRepositoryProtocol) {
         self.dictationRepo = dictationRepo
         loadDictations()
+        refreshStats()
     }
 
     public func loadDictations() {
@@ -96,8 +97,6 @@ public final class DictationHistoryViewModel {
         groupedDictations = grouped.sorted { $0.key > $1.key }.map { (key, value) in
             (formatDateHeader(key), value.sorted { $0.createdAt > $1.createdAt })
         }
-
-        stats = (try? repo.stats()) ?? .empty
     }
 
     public func deleteDictation(_ dictation: Dictation) {
@@ -110,6 +109,12 @@ public final class DictationHistoryViewModel {
         }
         _ = try? repo.delete(id: dictation.id)
         loadDictations()
+        refreshStats()
+    }
+
+    private func refreshStats() {
+        guard let repo = dictationRepo else { return }
+        stats = (try? repo.stats()) ?? .empty
     }
 
     public func downloadAudio(for dictation: Dictation) {
