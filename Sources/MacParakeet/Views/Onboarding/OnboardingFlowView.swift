@@ -732,7 +732,7 @@ struct OnboardingFlowView: View {
         case .microphone: return "Enable Microphone Access"
         case .accessibility: return "Enable Accessibility"
         case .hotkey: return "Learn the Hotkey"
-        case .engine: return "Prepare Local Models"
+        case .engine: return "Prepare Speech Model"
         case .done: return "All Set"
         }
     }
@@ -748,7 +748,7 @@ struct OnboardingFlowView: View {
         case .hotkey:
             return "You can start dictating from any app without switching context."
         case .engine:
-            return "Download and warm up Parakeet + Qwen so all app features are ready. First setup needs internet once."
+            return "Download and warm up the Parakeet speech model so all features are ready. First setup needs internet once."
         case .done:
             return "You're ready to dictate and transcribe locally on your Mac."
         }
@@ -792,11 +792,11 @@ struct OnboardingFlowView: View {
     private func engineDetail(_ state: OnboardingViewModel.EngineState) -> String {
         switch state {
         case .idle:
-            return "We'll prepare both the speech and AI models now. Internet is required once to download them."
+            return "We'll prepare the speech model now. Internet is required once to download it."
         case .working(_, _):
-            return "This can take several minutes on first run while local models download and initialize. Keep MacParakeet online until setup completes."
+            return "This can take several minutes on first run while the speech model downloads. Keep MacParakeet online until setup completes."
         case .ready:
-            return "Parakeet speech and Qwen AI models are ready."
+            return "Parakeet speech model is ready."
         case .failed:
             return "Setup failed. Please retry to complete model preparation."
         }
@@ -808,16 +808,16 @@ struct OnboardingFlowView: View {
         if lower.contains("network") || lower.contains("internet") || lower.contains("timed out") {
             return [
                 "Check your internet connection, then retry setup.",
-                "Use a stable network until both models finish downloading.",
-                "If it keeps failing, open Settings > Local Models and run Repair All."
+                "Use a stable network until the speech model finishes downloading.",
+                "If it keeps failing, open Settings > Speech Model and run Repair."
             ]
         }
 
         if lower.contains("space") || lower.contains("disk") || lower.contains("no space") {
             return [
-                "Free at least 10 GB of disk space.",
+                "Free at least 7 GB of disk space.",
                 "Retry setup after storage is available.",
-                "You can also run Repair All in Settings > Local Models."
+                "You can also run Repair in Settings > Speech Model."
             ]
         }
 
@@ -825,7 +825,7 @@ struct OnboardingFlowView: View {
             return [
                 "Confirm the app can write to your user Library folder.",
                 "Restart MacParakeet, then retry setup.",
-                "If needed, run Repair All in Settings > Local Models."
+                "If needed, run Repair in Settings > Speech Model."
             ]
         }
 
@@ -838,7 +838,7 @@ struct OnboardingFlowView: View {
 
         return [
             "Retry setup first (temporary failures are common).",
-            "If it keeps failing, open Settings > Local Models and run Repair All.",
+            "If it keeps failing, open Settings > Speech Model and run Repair.",
             "If the error persists, restart the app and retry once."
         ]
     }

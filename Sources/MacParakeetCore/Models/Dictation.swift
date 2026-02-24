@@ -17,9 +17,22 @@ public struct Dictation: Codable, Identifiable, Sendable {
     public enum ProcessingMode: String, Codable, Sendable {
         case raw
         case clean
-        case formal
-        case email
-        case code
+
+        /// Override default RawRepresentable init to handle deprecated mode values.
+        /// Without this, `ProcessingMode(rawValue: "formal")` returns nil and callers
+        /// fall back to `.raw`, silently disabling processing for upgraded users.
+        public init?(rawValue: String) {
+            switch rawValue {
+            case "raw": self = .raw
+            case "clean", "formal", "email", "code": self = .clean
+            default: return nil
+            }
+        }
+
+        public init(from decoder: Decoder) throws {
+            let rawValue = try decoder.singleValueContainer().decode(String.self)
+            self = Self(rawValue: rawValue) ?? .raw
+        }
     }
 
     public enum DictationStatus: String, Codable, Sendable {
@@ -61,42 +74,15 @@ public extension Dictation.ProcessingMode {
         self != .raw
     }
 
-    var usesLLMRefinement: Bool {
-        switch self {
-        case .formal, .email, .code:
-            return true
-        case .raw, .clean:
-            return false
-        }
-    }
-
-    var llmRefinementMode: LLMRefinementMode? {
-        switch self {
-        case .formal:
-            return .formal
-        case .email:
-            return .email
-        case .code:
-            return .code
-        case .raw, .clean:
-            return nil
-        }
-    }
-
     var displayName: String {
         switch self {
         case .raw:
             return "Raw"
         case .clean:
             return "Clean"
-        case .formal:
-            return "Formal"
-        case .email:
-            return "Email"
-        case .code:
-            return "Code"
         }
     }
+
 }
 
 extension Dictation: FetchableRecord, PersistableRecord {
