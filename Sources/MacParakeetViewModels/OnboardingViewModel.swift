@@ -23,7 +23,7 @@ public final class OnboardingViewModel {
             case .microphone: return "Microphone"
             case .accessibility: return "Accessibility"
             case .hotkey: return "Hotkey"
-            case .engine: return "Local Models"
+            case .engine: return "Speech Model"
             case .done: return "Ready"
             }
         }
@@ -49,7 +49,6 @@ public final class OnboardingViewModel {
 
     private let permissionService: PermissionServiceProtocol
     private let sttClient: STTClientProtocol
-    private let llmService: any LLMServiceProtocol
     private let isRuntimeSupported: @Sendable () -> Bool
     private let availableDiskBytes: @Sendable () -> Int64?
     private let isNetworkReachable: @Sendable () async -> Bool
@@ -60,14 +59,13 @@ public final class OnboardingViewModel {
     private var refreshTask: Task<Void, Never>?
     private static let progressPercentRegex = try! NSRegularExpression(pattern: #"(\d{1,3})(?:\.\d+)?\s*%"#)
     private let engineWarmUpAttempts = 3
-    private let requiredFirstSetupDiskBytes: Int64 = 10 * 1_024 * 1_024 * 1_024
+    private let requiredFirstSetupDiskBytes: Int64 = 7 * 1_024 * 1_024 * 1_024
 
     public static let onboardingCompletedKey = "onboarding.completedAtISO"
 
     public init(
         permissionService: PermissionServiceProtocol,
         sttClient: STTClientProtocol,
-        llmService: any LLMServiceProtocol,
         isRuntimeSupported: (@Sendable () -> Bool)? = nil,
         availableDiskBytes: (@Sendable () -> Int64?)? = nil,
         isNetworkReachable: (@Sendable () async -> Bool)? = nil,
@@ -77,7 +75,6 @@ public final class OnboardingViewModel {
     ) {
         self.permissionService = permissionService
         self.sttClient = sttClient
-        self.llmService = llmService
         self.isRuntimeSupported = isRuntimeSupported ?? { Self.defaultRuntimeSupportedCheck() }
         self.availableDiskBytes = availableDiskBytes ?? { Self.defaultAvailableDiskBytes() }
         self.isNetworkReachable = isNetworkReachable ?? { await Self.defaultNetworkReachabilityCheck() }
@@ -192,7 +189,7 @@ public final class OnboardingViewModel {
                 await MainActor.run {
                     guard self.engineGeneration == generation else { return }
                     self.engineState = .working(
-                        message: "Setting up local models (Parakeet + Qwen). This may take a few minutes...",
+                        message: "Setting up speech model (Parakeet). This may take a few minutes...",
                         progress: nil
                     )
                 }
@@ -214,22 +211,6 @@ public final class OnboardingViewModel {
                             self.engineState = .working(message: message, progress: fraction)
                         }
                     }
-                }
-
-                await MainActor.run {
-                    guard self.engineGeneration == generation else { return }
-                    self.engineState = .working(message: "Preparing local AI model (Qwen)...", progress: nil)
-                }
-
-                try await runWithRetry(maxAttempts: engineWarmUpAttempts, onRetry: { [weak self] attempt in
-                    guard let self, self.engineGeneration == generation else { return }
-                    self.engineState = .working(
-                        message: "Retrying local AI model setup (attempt \(attempt)/\(self.engineWarmUpAttempts))...",
-                        progress: nil
-                    )
-                }) {
-                    guard self.engineGeneration == generation else { throw CancellationError() }
-                    try await self.llmService.warmUp()
                 }
 
                 await MainActor.run {
@@ -300,10 +281,10 @@ public final class OnboardingViewModel {
             throw STTError.engineStartFailed("Local model runtime requires Apple Silicon with Metal support.")
         }
 
-        // First setup requires download capacity and network. Treat onboarding-incomplete state
-        // as first-setup even when speech model cache exists (partial setup may still need Qwen).
-        let requiresFirstSetupPrereqs = !hasCompletedOnboarding || !isSpeechModelCached()
-        guard requiresFirstSetupPrereqs else { return }
+        // Only gate on network/disk if the model still needs downloading.
+        // If the model is already cached, skip preflight regardless of onboarding state
+        // (e.g. user reset onboarding while offline — no download needed).
+        guard !isSpeechModelCached() else { return }
 
         guard let freeBytes = availableDiskBytes() else {
             throw STTError.engineStartFailed("Unable to determine free disk space. Verify at least \(Self.formatGiB(requiredFirstSetupDiskBytes)) is available, then retry.")
