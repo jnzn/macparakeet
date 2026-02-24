@@ -184,7 +184,7 @@ struct TranscribeView: View {
                 .accessibilityHint("Starts transcribing the YouTube link")
             }
 
-            Text("Uses bundled yt-dlp and FFmpeg, then transcribes fully on-device.")
+            Text("Downloads from YouTube, then transcribes entirely on your Mac.")
                 .font(DesignSystem.Typography.caption)
                 .foregroundStyle(.secondary)
         }
