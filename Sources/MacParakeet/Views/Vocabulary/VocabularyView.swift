@@ -52,8 +52,8 @@ struct VocabularyView: View {
 
     private var policyHeaderCard: some View {
         vocabularyCard(
-            title: "Text Processing Policy",
-            subtitle: "Choose how dictation text should be delivered to downstream apps.",
+            title: "Text Processing",
+            subtitle: "Choose how your dictation text gets polished before it's pasted.",
             icon: "text.quote"
         ) {
             LazyVGrid(
@@ -81,7 +81,7 @@ struct VocabularyView: View {
     private var modeSelectionCard: some View {
         vocabularyCard(
             title: "Mode Selection",
-            subtitle: "Switch policy instantly. Changes apply to the next dictation.",
+            subtitle: "Switch anytime. Takes effect on your next dictation.",
             icon: "slider.horizontal.3"
         ) {
             LazyVGrid(
@@ -91,7 +91,7 @@ struct VocabularyView: View {
                 modeCard(
                     title: "Raw",
                     subtitle: "As spoken",
-                    detail: "No deterministic cleanup. Useful for verbatim capture.",
+                    detail: "Exactly as you spoke it. No corrections applied.",
                     icon: "waveform",
                     isSelected: selectedMode == .raw
                 ) {
@@ -101,7 +101,7 @@ struct VocabularyView: View {
                 modeCard(
                     title: "Clean",
                     subtitle: "Polished",
-                    detail: "Applies deterministic pipeline rules before output.",
+                    detail: "Polishes your text — removes fillers, fixes words, expands snippets.",
                     icon: "sparkles",
                     isSelected: selectedMode == .clean
                 ) {
@@ -115,12 +115,12 @@ struct VocabularyView: View {
     private var capabilityCard: some View {
         vocabularyCard(
             title: "What Processing Does",
-            subtitle: "Deterministic transforms, no cloud calls.",
+            subtitle: "Everything runs locally on your Mac.",
             icon: "checkmark.shield"
         ) {
             VStack(spacing: DesignSystem.Spacing.sm) {
                 capabilityRow(icon: "wind", text: "Removes common filler words.")
-                capabilityRow(icon: "character.book.closed", text: "Applies custom word corrections and casing anchors.")
+                capabilityRow(icon: "character.book.closed", text: "Fixes custom word corrections and capitalization.")
                 capabilityRow(icon: "text.insert", text: "Expands phrase snippets into full text.")
                 capabilityRow(icon: "textformat", text: "Normalizes whitespace and punctuation spacing.")
             }
@@ -132,7 +132,7 @@ struct VocabularyView: View {
     private var pipelineCard: some View {
         vocabularyCard(
             title: "Clean Pipeline",
-            subtitle: "Ordered deterministic stages applied to every Clean dictation.",
+            subtitle: "These steps run in order on every Clean dictation.",
             icon: "list.number"
         ) {
             VStack(spacing: 0) {
@@ -187,7 +187,7 @@ struct VocabularyView: View {
     private var rawModeCard: some View {
         vocabularyCard(
             title: "Raw Mode Active",
-            subtitle: "Pipeline transforms are bypassed.",
+            subtitle: "Text processing is off.",
             icon: "waveform.badge.exclamationmark"
         ) {
             Text("Switch to Clean mode when you want post-processing before paste/export.")

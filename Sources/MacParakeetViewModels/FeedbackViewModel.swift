@@ -79,6 +79,27 @@ public final class FeedbackViewModel {
         #endif
     }
 
+    public func handleScreenshotDrop(url: URL) {
+        do {
+            if let fileSize = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+               fileSize > Self.maxScreenshotSizeBytes {
+                submissionState = .error("Screenshot must be 5 MB or smaller.")
+                return
+            }
+
+            let data = try Data(contentsOf: url, options: .mappedIfSafe)
+            guard data.count <= Self.maxScreenshotSizeBytes else {
+                submissionState = .error("Screenshot must be 5 MB or smaller.")
+                return
+            }
+
+            screenshotData = data
+            screenshotFilename = url.lastPathComponent
+        } catch {
+            submissionState = .error("Failed to read screenshot: \(error.localizedDescription)")
+        }
+    }
+
     public func removeScreenshot() {
         screenshotData = nil
         screenshotFilename = nil

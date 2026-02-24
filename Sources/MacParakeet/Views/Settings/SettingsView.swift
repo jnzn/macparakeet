@@ -175,7 +175,7 @@ struct SettingsView: View {
     private var storageCard: some View {
         settingsCard(
             title: "Storage",
-            subtitle: "Retention and local helper runtime policy.",
+            subtitle: "Manage recordings and storage.",
             icon: "internaldrive"
         ) {
             VStack(spacing: DesignSystem.Spacing.md) {

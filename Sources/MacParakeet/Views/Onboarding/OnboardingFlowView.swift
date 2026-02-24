@@ -356,7 +356,7 @@ struct OnboardingFlowView: View {
                 )
                 featureRow(
                     icon: "bolt.fill",
-                    title: "155x realtime",
+                    title: "Blazing fast",
                     detail: "60 minutes of audio transcribed in ~23 seconds on Apple Silicon."
                 )
                 featureRow(
@@ -831,8 +831,8 @@ struct OnboardingFlowView: View {
 
         if lower.contains("unsupported") || lower.contains("apple silicon") {
             return [
-                "MacParakeet local models require Apple Silicon.",
-                "Use an Apple Silicon Mac, then retry setup."
+                "MacParakeet requires an Apple Silicon Mac (M1 or newer).",
+                "Unfortunately, Intel-based Macs aren't supported."
             ]
         }
 

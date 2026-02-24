@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 import MacParakeetCore
 import MacParakeetViewModels
 
@@ -8,6 +9,7 @@ struct FeedbackView: View {
 
     @State private var hoveredCardTitle: String?
     @State private var hoveredCategory: FeedbackCategory?
+    @State private var isDraggingScreenshot = false
 
     var body: some View {
         ScrollView {
@@ -164,32 +166,36 @@ struct FeedbackView: View {
             Divider()
 
             // Screenshot
-            HStack(alignment: .center) {
-                rowText(
-                    title: "Screenshot (optional)",
-                    detail: "PNG, JPEG, TIFF, or HEIC. Max 5 MB."
-                )
-                Spacer(minLength: DesignSystem.Spacing.md)
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
+                Text("Screenshot (optional)")
+                    .font(DesignSystem.Typography.body)
+
                 if let filename = viewModel.screenshotFilename {
-                    HStack(spacing: DesignSystem.Spacing.xs) {
+                    HStack(spacing: DesignSystem.Spacing.sm) {
                         Image(systemName: "photo")
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                         Text(filename)
                             .font(DesignSystem.Typography.caption)
                             .lineLimit(1)
                             .truncationMode(.middle)
-                        Button("Remove") {
+                        Spacer()
+                        Button {
                             viewModel.removeScreenshot()
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 14))
+                                .foregroundStyle(.secondary)
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                        .buttonStyle(.plain)
                     }
+                    .padding(DesignSystem.Spacing.sm)
+                    .background(
+                        RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                            .fill(DesignSystem.Colors.surfaceElevated)
+                    )
                 } else {
-                    Button("Attach Screenshot") {
-                        viewModel.attachScreenshot()
-                    }
-                    .buttonStyle(.bordered)
+                    screenshotDropZone
                 }
             }
 
@@ -254,6 +260,56 @@ struct FeedbackView: View {
             RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
                 .fill(DesignSystem.Colors.errorRed.opacity(0.08))
         )
+    }
+
+    // MARK: - Screenshot Drop Zone
+
+    private var screenshotDropZone: some View {
+        Button {
+            viewModel.attachScreenshot()
+        } label: {
+            VStack(spacing: DesignSystem.Spacing.xs) {
+                Image(systemName: isDraggingScreenshot ? "arrow.down.doc.fill" : "photo.on.rectangle.angled")
+                    .font(.system(size: 20))
+                    .foregroundStyle(isDraggingScreenshot ? DesignSystem.Colors.accent : .secondary)
+                    .contentTransition(.symbolEffect(.replace))
+                Text("Drop an image or click to browse")
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(.secondary)
+                Text("PNG, JPEG, TIFF, or HEIC. Max 5 MB.")
+                    .font(DesignSystem.Typography.micro)
+                    .foregroundStyle(.tertiary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, DesignSystem.Spacing.lg)
+            .background(
+                RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                    .fill(isDraggingScreenshot ? DesignSystem.Colors.accent.opacity(0.06) : DesignSystem.Colors.surfaceElevated)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                    .strokeBorder(
+                        isDraggingScreenshot ? DesignSystem.Colors.accent : DesignSystem.Colors.border,
+                        style: StrokeStyle(lineWidth: 1, dash: [6, 4])
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .onDrop(of: [.image], isTargeted: $isDraggingScreenshot) { providers in
+            guard let provider = providers.first else { return false }
+            _ = provider.loadFileRepresentation(for: .image) { url, _, error in
+                guard let url, error == nil else { return }
+                // Copy to temp to survive provider cleanup
+                let tmp = FileManager.default.temporaryDirectory
+                    .appendingPathComponent(url.lastPathComponent)
+                try? FileManager.default.removeItem(at: tmp)
+                try? FileManager.default.copyItem(at: url, to: tmp)
+                Task { @MainActor in
+                    viewModel.handleScreenshotDrop(url: tmp)
+                }
+            }
+            return true
+        }
     }
 
     // MARK: - Community
