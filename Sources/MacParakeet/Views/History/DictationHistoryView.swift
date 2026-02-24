@@ -8,12 +8,11 @@ struct DictationHistoryView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            historyHeader
-                .padding(.horizontal, DesignSystem.Spacing.lg)
-                .padding(.top, DesignSystem.Spacing.md)
-                .padding(.bottom, DesignSystem.Spacing.sm)
-
             if viewModel.groupedDictations.isEmpty {
+                historyHeader
+                    .padding(.horizontal, DesignSystem.Spacing.lg)
+                    .padding(.top, DesignSystem.Spacing.md)
+                    .padding(.bottom, DesignSystem.Spacing.sm)
                 emptyState
             } else {
                 dictationList
@@ -270,6 +269,11 @@ struct DictationHistoryView: View {
 
     private var dictationList: some View {
         ScrollView {
+            historyHeader
+                .padding(.horizontal, DesignSystem.Spacing.lg)
+                .padding(.top, DesignSystem.Spacing.md)
+                .padding(.bottom, DesignSystem.Spacing.sm)
+
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(viewModel.groupedDictations, id: \.0) { dateHeader, dictations in
                     HStack(alignment: .firstTextBaseline, spacing: DesignSystem.Spacing.sm) {
