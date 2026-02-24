@@ -8,6 +8,7 @@ final class MockDictationRepository: DictationRepositoryProtocol, @unchecked Sen
     var deleteCalledWith: [UUID] = []
     var deleteAllCalled = false
     var savedDictations: [Dictation] = []
+    var statsCallCount = 0
 
     func save(_ dictation: Dictation) throws {
         savedDictations.append(dictation)
@@ -61,6 +62,7 @@ final class MockDictationRepository: DictationRepositoryProtocol, @unchecked Sen
     }
 
     func stats() throws -> DictationStats {
+        statsCallCount += 1
         let completed = dictations.filter { $0.status == .completed }
         let totalDuration = completed.reduce(0) { $0 + $1.durationMs }
         let totalWords = completed.reduce(0) { total, d in
