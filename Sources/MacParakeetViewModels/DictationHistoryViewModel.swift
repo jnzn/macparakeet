@@ -39,11 +39,6 @@ public final class DictationHistoryViewModel {
     // MARK: - Stats
 
     public var stats: DictationStats = .empty
-    public var isStatsExpanded: Bool = false
-
-    public func toggleStatsPanel() {
-        isStatsExpanded.toggle()
-    }
 
     // MARK: - Copy Confirmation
 

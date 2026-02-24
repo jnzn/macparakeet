@@ -5,7 +5,6 @@ import MacParakeetViewModels
 struct DictationHistoryView: View {
     @Bindable var viewModel: DictationHistoryViewModel
     @State private var isHistoryHeaderHovered = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
@@ -33,7 +32,6 @@ struct DictationHistoryView: View {
         .searchable(text: $viewModel.searchText, prompt: "Search dictations...")
         .animation(DesignSystem.Animation.contentSwap, value: viewModel.playingDictationId)
         .animation(DesignSystem.Animation.contentSwap, value: viewModel.playbackError != nil)
-        .animation(reduceMotion ? nil : DesignSystem.Animation.contentSwap, value: viewModel.isStatsExpanded)
         .alert(
             "Delete Dictation?",
             isPresented: Binding(
@@ -80,32 +78,11 @@ struct DictationHistoryView: View {
                 }
 
                 Spacer()
-
-                if !stats.isEmpty {
-                    Button {
-                        withAnimation(reduceMotion ? nil : DesignSystem.Animation.contentSwap) {
-                            viewModel.toggleStatsPanel()
-                        }
-                    } label: {
-                        Text(viewModel.isStatsExpanded ? "Less" : "More")
-                            .font(DesignSystem.Typography.caption.weight(.medium))
-                            .foregroundStyle(DesignSystem.Colors.accent)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(viewModel.isStatsExpanded ? "Collapse stats" : "Expand stats")
-                }
             }
 
-            // Compact stat pills (only when stats exist)
+            // Stat cards
             if !stats.isEmpty {
-                compactStatsPills(stats)
-                    .padding(.top, DesignSystem.Spacing.md)
-            }
-
-            // Expanded panel
-            if viewModel.isStatsExpanded && !stats.isEmpty {
                 expandedStatsPanel(stats)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding(DesignSystem.Spacing.md)
@@ -128,54 +105,10 @@ struct DictationHistoryView: View {
         }
     }
 
-    // MARK: - Compact Pills
-
-    private func compactStatsPills(_ stats: DictationStats) -> some View {
-        HStack(spacing: DesignSystem.Spacing.sm) {
-            statPill(label: "Words", value: stats.totalWords.compactFormatted)
-            statPill(label: "Speaking", value: stats.totalDurationMs.friendlyDuration)
-            statPill(label: "Speed", value: stats.averageWPM.formattedWPM)
-            if stats.weeklyStreak > 1 {
-                statPill(
-                    label: "Streak",
-                    value: "\(stats.weeklyStreak)w",
-                    icon: "flame.fill"
-                )
-            }
-        }
-    }
-
-    private func statPill(label: String, value: String, icon: String? = nil) -> some View {
-        HStack(spacing: 4) {
-            if let icon {
-                Image(systemName: icon)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(DesignSystem.Colors.accent)
-            }
-            VStack(alignment: .leading, spacing: 1) {
-                Text(label.uppercased())
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-                Text(value)
-                    .font(DesignSystem.Typography.caption.weight(.semibold))
-                    .contentTransition(.numericText())
-            }
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(DesignSystem.Colors.surfaceElevated)
-        )
-    }
-
-    // MARK: - Expanded Panel
+    // MARK: - Stats Panel
 
     private func expandedStatsPanel(_ stats: DictationStats) -> some View {
         VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
-            Divider()
-                .padding(.top, DesignSystem.Spacing.sm)
-
             // 2x2 grid of stat cards
             LazyVGrid(
                 columns: [
