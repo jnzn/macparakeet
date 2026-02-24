@@ -1,20 +1,21 @@
 # MEMORY
 
-Last updated: 2026-02-13
+Last updated: 2026-02-24
 
 ## Current Baseline
 - Branch strategy: direct commits to `main` are in use; keep commits small and reversible.
 - STT runtime is FluidAudio/CoreML/ANE (native Swift). Python runtime is fully removed from tracked files.
 - CLI executable name is `macparakeet-cli` (not `macparakeet`).
 
-## Locked Decisions (Operational)
-- `mlx-swift-lm` is pinned to `2.29.2` in `Package.swift`.
-  - Reason: avoids known upstream compile windows on CI toolchains:
-    - `2.29.3` Jamba parser break (#67)
-    - `2.30.3` Swift 6.1 LoRA regression (#94)
+## Runtime Guardrails
 - Onboarding performance copy is aligned to FluidAudio numbers:
   - `155x realtime`
   - `~23 seconds for 60 minutes`
+- Do not allow normal startup from a mounted DMG (`/Volumes/...`) in production app runs; macOS TCC may not register microphone/accessibility permissions correctly from translocated/DMG launches, leading to silent dictation failure despite onboarding success. (2026-02-24)
+- FFmpeg portability validation for bundled release binaries should reject both:
+  - non-system absolute dylib paths, and
+  - `@rpath` / `@loader_path` / `@executable_path` references.
+  This prevents Homebrew-linked or otherwise non-portable FFmpeg builds from slipping into the app bundle. (2026-02-24)
 
 ## CI / Verification
 - CI workflow now prints toolchain versions (`xcodebuild -version`, `swift --version`).
