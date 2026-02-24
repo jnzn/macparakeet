@@ -13,13 +13,63 @@ public protocol DictationRepositoryProtocol: Sendable {
     func stats() throws -> DictationStats
 }
 
-public struct DictationStats: Sendable {
+public struct DictationStats: Sendable, Equatable {
     public let totalCount: Int
     public let totalDurationMs: Int
+    public let totalWords: Int
+    public let longestDurationMs: Int
+    public let averageDurationMs: Int
+    public let weeklyStreak: Int
+    public let dictationsThisWeek: Int
 
-    public init(totalCount: Int, totalDurationMs: Int) {
+    public static let empty = DictationStats(totalCount: 0, totalDurationMs: 0)
+
+    public init(
+        totalCount: Int,
+        totalDurationMs: Int,
+        totalWords: Int = 0,
+        longestDurationMs: Int = 0,
+        averageDurationMs: Int = 0,
+        weeklyStreak: Int = 0,
+        dictationsThisWeek: Int = 0
+    ) {
         self.totalCount = totalCount
         self.totalDurationMs = totalDurationMs
+        self.totalWords = totalWords
+        self.longestDurationMs = longestDurationMs
+        self.averageDurationMs = averageDurationMs
+        self.weeklyStreak = weeklyStreak
+        self.dictationsThisWeek = dictationsThisWeek
+    }
+}
+
+// MARK: - DictationStats Computed Properties
+
+public extension DictationStats {
+    var isEmpty: Bool { totalCount == 0 }
+
+    /// Average words per minute based on total words and total speaking time.
+    var averageWPM: Double {
+        let minutes = Double(totalDurationMs) / 60_000
+        guard minutes > 0 else { return 0 }
+        return Double(totalWords) / minutes
+    }
+
+    /// Estimated time saved in milliseconds (typing at 40 WPM vs speaking).
+    var timeSavedMs: Int {
+        guard totalWords > 0 else { return 0 }
+        let typingTimeMs = Int(Double(totalWords) / 40.0 * 60_000)
+        return max(0, typingTimeMs - totalDurationMs)
+    }
+
+    /// Approximate number of books equivalent (80,000 words per book).
+    var booksEquivalent: Double {
+        Double(totalWords) / 80_000
+    }
+
+    /// Approximate number of emails equivalent (200 words per email).
+    var emailsEquivalent: Double {
+        Double(totalWords) / 200
     }
 }
 
@@ -118,12 +168,92 @@ public final class DictationRepository: DictationRepositoryProtocol {
 
     public func stats() throws -> DictationStats {
         try dbQueue.read { db in
-            let count = try Dictation.fetchCount(db)
-            let totalDuration = try Int.fetchOne(
+            // Subquery normalizes text (collapses multiple spaces) before word counting.
+            // Three nested REPLACEs handle up to 8 consecutive spaces — sufficient for real transcripts.
+            let row = try Row.fetchOne(db, sql: """
+                SELECT
+                    COUNT(*) AS cnt,
+                    COALESCE(SUM(durationMs), 0) AS totalDur,
+                    COALESCE(MAX(durationMs), 0) AS maxDur,
+                    CASE WHEN COUNT(*) > 0
+                        THEN COALESCE(SUM(durationMs), 0) / COUNT(*)
+                        ELSE 0
+                    END AS avgDur,
+                    COALESCE(SUM(
+                        CASE WHEN LENGTH(normalized) > 0
+                            THEN LENGTH(normalized) - LENGTH(REPLACE(normalized, ' ', '')) + 1
+                            ELSE 0
+                        END
+                    ), 0) AS wordCount
+                FROM (
+                    SELECT durationMs,
+                        REPLACE(REPLACE(REPLACE(
+                            TRIM(COALESCE(cleanTranscript, rawTranscript)),
+                        '  ', ' '), '  ', ' '), '  ', ' ') AS normalized
+                    FROM dictations
+                    WHERE status = 'completed'
+                )
+                """)
+
+            let count: Int = row?["cnt"] ?? 0
+            let totalDuration: Int = row?["totalDur"] ?? 0
+            let maxDuration: Int = row?["maxDur"] ?? 0
+            let avgDuration: Int = row?["avgDur"] ?? 0
+            let totalWords: Int = row?["wordCount"] ?? 0
+
+            // Fetch raw createdAt dates for streak computation in Swift
+            // (GRDB stores Date as timeIntervalSinceReferenceDate, so SQL date() won't work)
+            let dates = try Date.fetchAll(
                 db,
-                sql: "SELECT COALESCE(SUM(durationMs), 0) FROM dictations"
-            ) ?? 0
-            return DictationStats(totalCount: count, totalDurationMs: totalDuration)
+                sql: "SELECT createdAt FROM dictations WHERE status = 'completed' ORDER BY createdAt DESC"
+            )
+
+            let (streak, thisWeek) = Self.computeWeeklyStreak(from: dates)
+
+            return DictationStats(
+                totalCount: count,
+                totalDurationMs: totalDuration,
+                totalWords: totalWords,
+                longestDurationMs: maxDuration,
+                averageDurationMs: avgDuration,
+                weeklyStreak: streak,
+                dictationsThisWeek: thisWeek
+            )
         }
+    }
+
+    /// Computes the weekly streak and this-week count from an array of distinct dates (descending).
+    /// Exposed as static for testability.
+    static func computeWeeklyStreak(
+        from dates: [Date],
+        calendar: Calendar = .current,
+        now: Date = Date()
+    ) -> (streak: Int, thisWeek: Int) {
+        guard !dates.isEmpty else { return (0, 0) }
+
+        // Find the start of the current week
+        let currentWeekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? now
+
+        // Count how many dates fall in the current week
+        let thisWeek = dates.filter { $0 >= currentWeekStart }.count
+
+        // Build a set of week-start dates
+        var weekStarts = Set<Date>()
+        for date in dates {
+            if let weekStart = calendar.dateInterval(of: .weekOfYear, for: date)?.start {
+                weekStarts.insert(weekStart)
+            }
+        }
+
+        // Walk backwards from current week, counting consecutive weeks
+        var streak = 0
+        var checkWeek = currentWeekStart
+        while weekStarts.contains(checkWeek) {
+            streak += 1
+            guard let prevWeek = calendar.date(byAdding: .weekOfYear, value: -1, to: checkWeek) else { break }
+            checkWeek = prevWeek
+        }
+
+        return (streak, thisWeek)
     }
 }
