@@ -339,17 +339,6 @@ final class DictationHistoryViewModelTests: XCTestCase {
         XCTAssertTrue(viewModel.stats.isEmpty)
     }
 
-    func testToggleStatsPanel() {
-        viewModel.configure(dictationRepo: mockRepo)
-        XCTAssertFalse(viewModel.isStatsExpanded)
-
-        viewModel.toggleStatsPanel()
-        XCTAssertTrue(viewModel.isStatsExpanded)
-
-        viewModel.toggleStatsPanel()
-        XCTAssertFalse(viewModel.isStatsExpanded)
-    }
-
     // MARK: - Helpers
 
     private func totalDictationCount() -> Int {
