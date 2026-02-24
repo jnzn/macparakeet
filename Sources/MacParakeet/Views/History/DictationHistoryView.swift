@@ -218,7 +218,6 @@ struct DictationHistoryView: View {
                             onTogglePlayback: { viewModel.togglePlayback(for: dictation) },
                             onCopy: {
                                 viewModel.copyToClipboard(dictation)
-                                SoundManager.shared.play(.copyClick)
                             },
                             onDelete: {
                                 viewModel.pendingDeleteDictation = dictation
@@ -357,19 +356,13 @@ struct DictationCardRow: View {
                         }
                     }
 
-                    HStack(spacing: 6) {
-                        Text("\(dictation.processingMode.displayName) mode")
+                    if isCopied {
+                        Text("Copied")
                             .font(DesignSystem.Typography.micro)
-                            .foregroundStyle(.secondary)
-
-                        if isCopied {
-                            Text("Copied")
-                                .font(DesignSystem.Typography.micro)
-                                .foregroundStyle(DesignSystem.Colors.successGreen)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 2)
-                                .background(Capsule().fill(DesignSystem.Colors.successGreen.opacity(0.12)))
-                        }
+                            .foregroundStyle(DesignSystem.Colors.successGreen)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(DesignSystem.Colors.successGreen.opacity(0.12)))
                     }
                 }
 
@@ -504,7 +497,7 @@ private struct CardMenuButton: View {
 
         if hasAudio {
             let downloadAction = onDownloadAudio
-            menu.addItem(CallbackMenuItem(title: "Download Audio", icon: "arrow.down.circle", action: downloadAction))
+            menu.addItem(CallbackMenuItem(title: "Export Audio", icon: "square.and.arrow.up", action: downloadAction))
             menu.addItem(.separator())
         }
 

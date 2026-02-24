@@ -65,7 +65,6 @@ enum AppSound: String, CaseIterable {
     case transcriptionComplete = "transcription_complete"
     case fileDropped = "file_dropped"
     case errorSoft = "error_soft"
-    case copyClick = "copy_click"
 
     /// macOS system sound fallback when custom asset isn't bundled.
     var systemSoundFallback: NSSound.Name? {
@@ -75,7 +74,6 @@ enum AppSound: String, CaseIterable {
         case .transcriptionComplete: return "Glass"
         case .fileDropped: return "Pop"
         case .errorSoft: return "Basso"
-        case .copyClick: return "Tink"
         }
     }
 }
