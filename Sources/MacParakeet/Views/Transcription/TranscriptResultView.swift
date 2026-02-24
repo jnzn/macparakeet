@@ -305,8 +305,6 @@ struct TranscriptResultView: View {
         let text = transcription.cleanTranscript ?? transcription.rawTranscript ?? ""
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
-        SoundManager.shared.play(.copyClick)
-
         copiedResetTask?.cancel()
         withAnimation(DesignSystem.Animation.hoverTransition) { copied = true }
         copiedResetTask = Task { @MainActor in
