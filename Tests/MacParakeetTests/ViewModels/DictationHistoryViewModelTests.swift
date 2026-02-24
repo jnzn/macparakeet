@@ -286,6 +286,16 @@ final class DictationHistoryViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.stats.totalWords, 3) // "Hello world test"
     }
 
+    func testConfigureRefreshesStatsOnce() {
+        mockRepo.dictations = [
+            Dictation(durationMs: 1000, rawTranscript: "One")
+        ]
+
+        viewModel.configure(dictationRepo: mockRepo)
+
+        XCTAssertEqual(mockRepo.statsCallCount, 1)
+    }
+
     func testStatsRefreshOnDelete() {
         let d1 = Dictation(durationMs: 1000, rawTranscript: "First dictation")
         let d2 = Dictation(durationMs: 2000, rawTranscript: "Second")
@@ -296,6 +306,32 @@ final class DictationHistoryViewModelTests: XCTestCase {
 
         viewModel.deleteDictation(d1)
         XCTAssertEqual(viewModel.stats.totalCount, 1)
+    }
+
+    func testDeleteRefreshesStatsOncePerDelete() {
+        let d1 = Dictation(durationMs: 1000, rawTranscript: "First")
+        let d2 = Dictation(durationMs: 2000, rawTranscript: "Second")
+        mockRepo.dictations = [d1, d2]
+
+        viewModel.configure(dictationRepo: mockRepo)
+        XCTAssertEqual(mockRepo.statsCallCount, 1)
+
+        viewModel.deleteDictation(d1)
+        XCTAssertEqual(mockRepo.statsCallCount, 2)
+    }
+
+    func testSearchReloadSkipsStatsRefresh() {
+        mockRepo.dictations = [
+            Dictation(durationMs: 1000, rawTranscript: "Hello world"),
+            Dictation(durationMs: 1000, rawTranscript: "Goodbye world"),
+        ]
+        viewModel.configure(dictationRepo: mockRepo)
+        let initialStatsCalls = mockRepo.statsCallCount
+
+        viewModel.searchText = "world"
+        viewModel.loadDictations(shouldRefreshStats: false)
+
+        XCTAssertEqual(mockRepo.statsCallCount, initialStatsCalls)
     }
 
     func testStatsEmptyWhenNoDictations() {

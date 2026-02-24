@@ -75,10 +75,9 @@ public final class DictationHistoryViewModel {
     public func configure(dictationRepo: DictationRepositoryProtocol) {
         self.dictationRepo = dictationRepo
         loadDictations()
-        refreshStats()
     }
 
-    public func loadDictations() {
+    public func loadDictations(shouldRefreshStats: Bool = true) {
         guard let repo = dictationRepo else { return }
 
         let dictations: [Dictation]
@@ -97,6 +96,10 @@ public final class DictationHistoryViewModel {
         groupedDictations = grouped.sorted { $0.key > $1.key }.map { (key, value) in
             (formatDateHeader(key), value.sorted { $0.createdAt > $1.createdAt })
         }
+
+        if shouldRefreshStats {
+            refreshStats()
+        }
     }
 
     public func deleteDictation(_ dictation: Dictation) {
@@ -109,7 +112,6 @@ public final class DictationHistoryViewModel {
         }
         _ = try? repo.delete(id: dictation.id)
         loadDictations()
-        refreshStats()
     }
 
     private func refreshStats() {
@@ -217,13 +219,13 @@ public final class DictationHistoryViewModel {
         searchDebounceTask?.cancel()
         if searchText.isEmpty {
             // Clear immediately so the full list restores without lag
-            loadDictations()
+            loadDictations(shouldRefreshStats: false)
             return
         }
         searchDebounceTask = Task {
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
-            loadDictations()
+            loadDictations(shouldRefreshStats: false)
         }
     }
 
