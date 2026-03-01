@@ -55,7 +55,7 @@ struct SettingsView: View {
     private var headerCard: some View {
         settingsCard(
             title: "Workspace Controls",
-            subtitle: "Local-first settings for dictation and transcription.",
+            subtitle: "Everything runs locally on your Mac.",
             icon: "slider.horizontal.3"
         ) {
             LazyVGrid(
@@ -69,7 +69,7 @@ struct SettingsView: View {
 
                 statChip(
                     title: "YouTube Cache",
-                    value: "\(formattedYouTubeStorageMB) MB"
+                    value: formattedYouTubeStorage
                 )
 
                 statChip(
@@ -92,7 +92,7 @@ struct SettingsView: View {
     private var generalCard: some View {
         settingsCard(
             title: "General",
-            subtitle: "App behavior and shell presence.",
+            subtitle: "How MacParakeet shows up on your Mac.",
             icon: "gearshape"
         ) {
             VStack(spacing: DesignSystem.Spacing.md) {
@@ -175,13 +175,13 @@ struct SettingsView: View {
     private var storageCard: some View {
         settingsCard(
             title: "Storage",
-            subtitle: "Manage recordings and storage.",
+            subtitle: "Manage recordings and disk usage.",
             icon: "internaldrive"
         ) {
             VStack(spacing: DesignSystem.Spacing.md) {
                 settingsToggleRow(
                     title: "Save audio recordings",
-                    detail: "Keeps dictation audio alongside transcript history.",
+                    detail: "Keep audio alongside your dictation history.",
                     isOn: $viewModel.saveAudioRecordings
                 )
 
@@ -189,7 +189,7 @@ struct SettingsView: View {
 
                 settingsToggleRow(
                     title: "Keep downloaded YouTube audio",
-                    detail: "Enabled by default. Turn off to auto-delete downloaded audio after transcription.",
+                    detail: "Turn off to auto-delete downloaded audio after transcription.",
                     isOn: $viewModel.saveTranscriptionAudio
                 )
 
@@ -208,7 +208,7 @@ struct SettingsView: View {
                     metricTile(
                         title: "YouTube Downloads",
                         value: "\(viewModel.youtubeDownloadCount)",
-                        detail: "\(formattedYouTubeStorageMB) MB"
+                        detail: formattedYouTubeStorage
                     )
                 }
 
@@ -244,7 +244,7 @@ struct SettingsView: View {
     private var localModelsCard: some View {
         settingsCard(
             title: "Speech Model",
-            subtitle: "Parakeet speech recognition status and repair.",
+            subtitle: "Parakeet powers all speech recognition on your Mac.",
             icon: "cpu"
         ) {
             VStack(spacing: DesignSystem.Spacing.md) {
@@ -288,7 +288,7 @@ struct SettingsView: View {
     private var permissionsCard: some View {
         settingsCard(
             title: "Permissions",
-            subtitle: "Required for recording and global paste automation.",
+            subtitle: "Required for dictation and pasting text into apps.",
             icon: "lock.shield"
         ) {
             VStack(spacing: DesignSystem.Spacing.md) {
@@ -322,14 +322,14 @@ struct SettingsView: View {
 
     private var onboardingCard: some View {
         settingsCard(
-            title: "Onboarding",
-            subtitle: "Re-run setup flow for permissions and local model warm-up.",
-            icon: "list.number"
+            title: "Setup",
+            subtitle: "Re-run the guided setup if something isn't working.",
+            icon: "arrow.counterclockwise"
         ) {
             HStack {
                 rowText(
-                    title: "Run onboarding again",
-                    detail: "Opens first-run setup with guided steps."
+                    title: "Run setup again",
+                    detail: "Re-opens guided setup for permissions and model download."
                 )
                 Spacer()
                 Button("Open Setup...") {
@@ -347,7 +347,7 @@ struct SettingsView: View {
         let identity = BuildIdentity.current
         return settingsCard(
             title: "About",
-            subtitle: "Build identity and runtime posture.",
+            subtitle: "Version info and diagnostics.",
             icon: "info.circle"
         ) {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
@@ -358,7 +358,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("MacParakeet \(identity.version) (\(identity.buildNumber))")
                             .font(DesignSystem.Typography.body)
-                        Text("Local-first transcription stack")
+                        Text("Fast, private voice for Mac")
                             .font(DesignSystem.Typography.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -389,45 +389,14 @@ struct SettingsView: View {
 
     // MARK: - Reusable UI
 
+    @ViewBuilder
     private func settingsCard<Content: View>(
         title: String,
         subtitle: String,
         icon: String,
-        @ViewBuilder content: () -> Content
+        @ViewBuilder content: @escaping () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
-            HStack(alignment: .top, spacing: DesignSystem.Spacing.sm) {
-                Image(systemName: icon)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(DesignSystem.Colors.accent)
-                    .frame(width: 30, height: 30)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(DesignSystem.Colors.accent.opacity(0.12))
-                    )
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(DesignSystem.Typography.sectionTitle)
-                    Text(subtitle)
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            content()
-        }
-        .padding(DesignSystem.Spacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
-                .fill(DesignSystem.Colors.cardBackground)
-                .cardShadow(DesignSystem.Shadows.cardRest)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
-                .strokeBorder(DesignSystem.Colors.border.opacity(0.6), lineWidth: 0.5)
-        )
+        SettingsCardContainer(title: title, subtitle: subtitle, icon: icon, content: content)
     }
 
     private func settingsToggleRow(
@@ -519,8 +488,12 @@ struct SettingsView: View {
 
     // MARK: - Helpers
 
-    private var formattedYouTubeStorageMB: String {
-        String(format: "%.1f", viewModel.youtubeDownloadStorageMB)
+    private var formattedYouTubeStorage: String {
+        let mb = viewModel.youtubeDownloadStorageMB
+        if mb >= 1024 {
+            return String(format: "%.1f GB", mb / 1024)
+        }
+        return String(format: "%.0f MB", mb)
     }
 
     private func aboutRow(label: String, value: String) -> some View {
@@ -556,7 +529,7 @@ struct SettingsView: View {
             Image(systemName: granted ? "checkmark.circle.fill" : "xmark.circle.fill")
                 .font(.system(size: 10))
             Text(granted ? "Granted" : "Not Granted")
-                .font(.caption2)
+                .font(DesignSystem.Typography.micro)
         }
         .foregroundStyle(granted ? DesignSystem.Colors.successGreen : DesignSystem.Colors.errorRed)
         .padding(.horizontal, 8)
@@ -590,7 +563,7 @@ struct SettingsView: View {
             Image(systemName: icon)
                 .font(.system(size: 10))
             Text(text)
-                .font(.caption2)
+                .font(DesignSystem.Typography.micro)
         }
         .foregroundStyle(color)
         .padding(.horizontal, 8)
@@ -604,6 +577,61 @@ struct SettingsView: View {
     private func openAccessibilitySettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
             NSWorkspace.shared.open(url)
+        }
+    }
+}
+
+// MARK: - Settings Card with Hover
+
+private struct SettingsCardContainer<Content: View>: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    @ViewBuilder let content: () -> Content
+
+    @State private var isHovered = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+            HStack(alignment: .top, spacing: DesignSystem.Spacing.sm) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(DesignSystem.Colors.accent)
+                    .frame(width: 30, height: 30)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(DesignSystem.Colors.accent.opacity(0.12))
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(DesignSystem.Typography.sectionTitle)
+                    Text(subtitle)
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            content()
+        }
+        .padding(DesignSystem.Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
+                .fill(DesignSystem.Colors.cardBackground)
+                .cardShadow(isHovered ? DesignSystem.Shadows.cardHover : DesignSystem.Shadows.cardRest)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
+                .strokeBorder(
+                    isHovered ? DesignSystem.Colors.accent.opacity(0.2) : DesignSystem.Colors.border.opacity(0.6),
+                    lineWidth: 0.5
+                )
+        )
+        .onHover { hovering in
+            withAnimation(DesignSystem.Animation.hoverTransition) {
+                isHovered = hovering
+            }
         }
     }
 }

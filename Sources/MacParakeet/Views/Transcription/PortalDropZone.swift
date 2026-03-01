@@ -79,6 +79,11 @@ struct PortalDropZone: View {
                     browseHovered = hovering
                     if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
                 }
+
+                // Supported formats
+                Text("MP3, WAV, M4A, MP4, MOV, FLAC, and more")
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(.tertiary)
             }
             .padding(.vertical, DesignSystem.Spacing.xl)
         }

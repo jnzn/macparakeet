@@ -53,7 +53,7 @@ struct VocabularyView: View {
     private var policyHeaderCard: some View {
         vocabularyCard(
             title: "Text Processing",
-            subtitle: "Choose how your dictation text gets polished before it's pasted.",
+            subtitle: "How your voice becomes text.",
             icon: "text.quote"
         ) {
             LazyVGrid(
@@ -80,7 +80,7 @@ struct VocabularyView: View {
 
     private var modeSelectionCard: some View {
         vocabularyCard(
-            title: "Mode Selection",
+            title: "Mode",
             subtitle: "Switch anytime. Takes effect on your next dictation.",
             icon: "slider.horizontal.3"
         ) {
@@ -115,14 +115,14 @@ struct VocabularyView: View {
     private var capabilityCard: some View {
         vocabularyCard(
             title: "What Processing Does",
-            subtitle: "Everything runs locally on your Mac.",
+            subtitle: "All processing happens locally. Nothing leaves your Mac.",
             icon: "checkmark.shield"
         ) {
             VStack(spacing: DesignSystem.Spacing.sm) {
-                capabilityRow(icon: "wind", text: "Removes common filler words.")
-                capabilityRow(icon: "character.book.closed", text: "Fixes custom word corrections and capitalization.")
-                capabilityRow(icon: "text.insert", text: "Expands phrase snippets into full text.")
-                capabilityRow(icon: "textformat", text: "Normalizes whitespace and punctuation spacing.")
+                capabilityRow(icon: "wind", text: "Removes filler words like \"um\", \"uh\", and \"you know\"")
+                capabilityRow(icon: "character.book.closed", text: "Applies your custom word corrections and capitalization")
+                capabilityRow(icon: "text.insert", text: "Expands shortcuts into full phrases")
+                capabilityRow(icon: "textformat", text: "Cleans up spacing and punctuation")
             }
         }
     }

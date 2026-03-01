@@ -419,22 +419,27 @@ struct DictationCardRow: View {
                 )
 
                 VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 0) {
                         Text(formatTime(dictation.createdAt))
-                            .font(DesignSystem.Typography.timestamp)
+                            .font(DesignSystem.Typography.caption)
                             .foregroundStyle(.secondary)
+
+                        Text("\u{2009}\u{00B7}\u{2009}")
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(.quaternary)
 
                         Text(dictation.durationMs.formattedDuration)
                             .font(DesignSystem.Typography.duration)
                             .foregroundStyle(.tertiary)
 
                         if dictation.audioPath != nil {
-                            Text("Audio")
-                                .font(DesignSystem.Typography.micro)
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 2)
-                                .background(Capsule().fill(DesignSystem.Colors.surfaceElevated))
+                            Text("\u{2009}\u{00B7}\u{2009}")
+                                .font(DesignSystem.Typography.caption)
+                                .foregroundStyle(.quaternary)
+
+                            Image(systemName: "mic.fill")
+                                .font(.system(size: 8))
+                                .foregroundStyle(.tertiary)
                         }
                     }
 
@@ -551,7 +556,7 @@ private struct CardActionButton: View {
                 .frame(width: 28, height: 28)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(isHovered ? Color.white.opacity(0.08) : .clear)
+                        .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
                 )
                 .contentShape(Rectangle())
         }
