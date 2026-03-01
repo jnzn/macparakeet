@@ -72,6 +72,7 @@ struct TranscriptResultView: View {
                     Text(transcription.fileName)
                         .font(DesignSystem.Typography.headline)
                         .multilineTextAlignment(.center)
+                        .lineLimit(3)
 
                     if let sourceURL = transcription.sourceURL,
                        let url = URL(string: sourceURL) {
@@ -82,9 +83,10 @@ struct TranscriptResultView: View {
                                 Image(systemName: "play.rectangle.fill")
                                     .font(.system(size: 10))
                                     .foregroundStyle(DesignSystem.Colors.youtubeRed.opacity(0.7))
-                                Text(sourceURL.count > 50 ? String(sourceURL.prefix(47)) + "..." : sourceURL)
+                                Text(sourceURL)
                                     .font(DesignSystem.Typography.caption)
                                     .lineLimit(1)
+                                    .truncationMode(.middle)
                                 Image(systemName: "arrow.up.right")
                                     .font(.system(size: 8, weight: .semibold))
                             }

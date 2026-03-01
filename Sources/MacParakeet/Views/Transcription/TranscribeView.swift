@@ -326,10 +326,11 @@ struct TranscribeView: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(Capsule().fill(Color.primary.opacity(0.05)))
+                Spacer()
             }
             .padding(.horizontal, DesignSystem.Spacing.lg)
             .padding(.top, DesignSystem.Spacing.md)
-            .padding(.bottom, DesignSystem.Spacing.xs)
+            .padding(.bottom, DesignSystem.Spacing.sm)
 
             List(viewModel.transcriptions) { transcription in
                 Button {
@@ -341,7 +342,7 @@ struct TranscribeView: View {
                 .listRowSeparator(.hidden)
             }
             .listStyle(.plain)
-            .frame(maxHeight: 280)
+            .frame(maxHeight: 320)
         }
     }
 
@@ -493,7 +494,7 @@ private struct RecentTranscriptionRow: View {
             transcriptionIcon
 
             // Content: filename + metadata
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(displayName)
                         .font(DesignSystem.Typography.body)
@@ -513,18 +514,20 @@ private struct RecentTranscriptionRow: View {
                     }
                 }
 
-                HStack(spacing: DesignSystem.Spacing.sm) {
+                HStack(spacing: 0) {
                     Text(relativeTime(transcription.createdAt))
-                        .font(DesignSystem.Typography.timestamp)
+                        .font(DesignSystem.Typography.caption)
                         .foregroundStyle(.tertiary)
 
                     if let bytes = transcription.fileSizeBytes {
+                        metadataDot
                         Text(formatFileSize(bytes))
-                            .font(DesignSystem.Typography.duration)
+                            .font(DesignSystem.Typography.caption)
                             .foregroundStyle(.tertiary)
                     }
 
                     if let duration = transcription.durationMs {
+                        metadataDot
                         Text(duration.formattedDuration)
                             .font(DesignSystem.Typography.duration)
                             .foregroundStyle(.tertiary)
@@ -550,6 +553,12 @@ private struct RecentTranscriptionRow: View {
         }
     }
 
+    private var metadataDot: some View {
+        Text("\u{2009}\u{00B7}\u{2009}")
+            .font(DesignSystem.Typography.caption)
+            .foregroundStyle(.quaternary)
+    }
+
     // MARK: - Display Name
 
     private var displayName: String {
@@ -571,13 +580,13 @@ private struct RecentTranscriptionRow: View {
     private var transcriptionIcon: some View {
         let iconColor = isYouTube ? DesignSystem.Colors.youtubeRed : DesignSystem.Colors.accent
         ZStack {
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: 10)
                 .fill(iconColor.opacity(0.1))
             Image(systemName: isYouTube ? "play.rectangle.fill" : "waveform")
-                .font(.system(size: 14, weight: .medium))
+                .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(iconColor.opacity(0.7))
         }
-        .frame(width: 36, height: 36)
+        .frame(width: 40, height: 40)
     }
 
     // MARK: - Status Pill
@@ -591,7 +600,7 @@ private struct RecentTranscriptionRow: View {
             HStack(spacing: 4) {
                 SpinnerRingView(size: 10, revolutionDuration: 2.0, tintColor: DesignSystem.Colors.accent)
                 Text("Processing")
-                    .font(.caption2)
+                    .font(DesignSystem.Typography.micro)
                     .foregroundStyle(DesignSystem.Colors.accent)
             }
             .padding(.horizontal, 8)
@@ -617,7 +626,7 @@ private struct RecentTranscriptionRow: View {
             Image(systemName: icon)
                 .font(.system(size: 8, weight: .bold))
             Text(text)
-                .font(.caption2)
+                .font(DesignSystem.Typography.micro)
         }
         .foregroundStyle(color)
         .padding(.horizontal, 8)

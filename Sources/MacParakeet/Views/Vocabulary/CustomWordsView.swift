@@ -44,7 +44,7 @@ struct CustomWordsView: View {
     private var headerCard: some View {
         managementCard(
             title: "Custom Words",
-            subtitle: "Vocabulary anchors and deterministic correction rules.",
+            subtitle: "Teach MacParakeet how you say things.",
             icon: "character.book.closed"
         ) {
             LazyVGrid(
@@ -98,7 +98,7 @@ struct CustomWordsView: View {
     private var addWordCard: some View {
         managementCard(
             title: "Add Rule",
-            subtitle: "Use replacement for correction, or leave blank to enforce exact casing.",
+            subtitle: "Add a word to correct, or leave replacement blank to enforce its spelling.",
             icon: "plus.circle"
         ) {
             VStack(spacing: DesignSystem.Spacing.sm) {
@@ -148,7 +148,7 @@ struct CustomWordsView: View {
                         .font(DesignSystem.Typography.caption)
                         .foregroundStyle(.secondary)
                 } else {
-                    Text("Vocabulary anchor")
+                    Text("Enforces exact spelling")
                         .font(DesignSystem.Typography.caption)
                         .foregroundStyle(.tertiary)
                 }
@@ -186,7 +186,7 @@ struct CustomWordsView: View {
                 .font(DesignSystem.Typography.body)
                 .foregroundStyle(.secondary)
             if viewModel.words.isEmpty {
-                Text("Add vocabulary anchors to enforce casing, or corrections to fix common STT errors.")
+                Text("Add words to fix spelling or capitalization that the speech engine gets wrong.")
                     .font(DesignSystem.Typography.caption)
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)

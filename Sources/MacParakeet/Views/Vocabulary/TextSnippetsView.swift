@@ -45,7 +45,7 @@ struct TextSnippetsView: View {
     private var headerCard: some View {
         managementCard(
             title: "Text Snippets",
-            subtitle: "Phrase-triggered deterministic expansion rules.",
+            subtitle: "Say a short phrase, paste a longer one.",
             icon: "text.insert"
         ) {
             LazyVGrid(
@@ -70,7 +70,7 @@ struct TextSnippetsView: View {
     private var guidanceCard: some View {
         managementCard(
             title: "Guidance",
-            subtitle: "Best practice for robust trigger detection.",
+            subtitle: "Tips for reliable phrase detection.",
             icon: "lightbulb.fill"
         ) {
             HStack(alignment: .top, spacing: DesignSystem.Spacing.sm) {
@@ -116,7 +116,7 @@ struct TextSnippetsView: View {
     private var addSnippetCard: some View {
         managementCard(
             title: "Add Snippet",
-            subtitle: "Define a trigger phrase and expansion output.",
+            subtitle: "Define a trigger phrase and what it expands to.",
             icon: "plus.circle"
         ) {
             VStack(spacing: DesignSystem.Spacing.sm) {

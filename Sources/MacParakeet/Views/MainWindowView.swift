@@ -19,6 +19,12 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         case .settings: return "gearshape"
         }
     }
+
+    /// Primary features — the core things users do
+    static let primaryItems: [SidebarItem] = [.transcribe, .dictations]
+
+    /// Configuration and support items
+    static let configItems: [SidebarItem] = [.vocabulary, .feedback, .settings]
 }
 
 struct MainWindowView: View {
@@ -33,9 +39,20 @@ struct MainWindowView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(SidebarItem.allCases, selection: $state.selectedItem) { item in
-                Label(item.rawValue, systemImage: item.icon)
-                    .tag(item)
+            List(selection: $state.selectedItem) {
+                Section {
+                    ForEach(SidebarItem.primaryItems) { item in
+                        Label(item.rawValue, systemImage: item.icon)
+                            .tag(item)
+                    }
+                }
+
+                Section {
+                    ForEach(SidebarItem.configItems) { item in
+                        Label(item.rawValue, systemImage: item.icon)
+                            .tag(item)
+                    }
+                }
             }
             .listStyle(.sidebar)
             .tint(DesignSystem.Colors.accent)
