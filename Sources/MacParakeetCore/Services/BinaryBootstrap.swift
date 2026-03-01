@@ -136,9 +136,8 @@ public actor BinaryBootstrap {
             return override
         }
 
-        if let path = environment["PATH"],
-           let discovered = findExecutable(named: "ffmpeg", inPATH: path, fileManager: fileManager)
-        {
+        let extendedPATH = Self.extendedPATH(from: environment["PATH"])
+        if let discovered = findExecutable(named: "ffmpeg", inPATH: extendedPATH, fileManager: fileManager) {
             return discovered
         }
 
@@ -279,6 +278,19 @@ public actor BinaryBootstrap {
         #else
         return ytDlpAssetX86
         #endif
+    }
+
+    /// Extend PATH with common binary locations that macOS GUI apps don't inherit.
+    private nonisolated static func extendedPATH(from basePATH: String?) -> String {
+        let current = basePATH ?? "/usr/bin:/bin"
+        let extras = [
+            AppPaths.binDir,
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+        ]
+        let existing = Set(current.split(separator: ":").map(String.init))
+        let missing = extras.filter { !existing.contains($0) }
+        return ([current] + missing).joined(separator: ":")
     }
 
     private nonisolated static func isLikelySwiftPMRun(bundlePath: String) -> Bool {
