@@ -49,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var settingsObserver: Any?
     private var hotkeyTriggerObserver: Any?
     private var menuBarOnlyModeObserver: Any?
+    private var showIdlePillObserver: Any?
     private var hotkeyMenuItem: NSMenuItem?
     private var reopenOnboardingOnNextActivate = false
     private let dictationLog = Logger(subsystem: "com.macparakeet.app", category: "DictationFlow")
@@ -68,6 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         observeOpenSettings()
         observeHotkeyTriggerChange()
         observeMenuBarOnlyModeChange()
+        observeShowIdlePillChange()
         applyActivationPolicyFromSettings()
         showIdlePill()
     }
@@ -79,6 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let settingsObserver { NotificationCenter.default.removeObserver(settingsObserver) }
         if let hotkeyTriggerObserver { NotificationCenter.default.removeObserver(hotkeyTriggerObserver) }
         if let menuBarOnlyModeObserver { NotificationCenter.default.removeObserver(menuBarOnlyModeObserver) }
+        if let showIdlePillObserver { NotificationCenter.default.removeObserver(showIdlePillObserver) }
         Task {
             await appEnvironment?.sttClient.shutdown()
         }
@@ -349,6 +352,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    private func observeShowIdlePillChange() {
+        showIdlePillObserver = NotificationCenter.default.addObserver(
+            forName: .macParakeetShowIdlePillDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                if self.settingsViewModel.showIdlePill {
+                    self.showIdlePill()
+                } else {
+                    self.hideIdlePill()
+                }
+            }
+        }
+    }
+
     private func applyActivationPolicyFromSettings() {
         let mode = settingsViewModel.menuBarOnlyMode ? NSApplication.ActivationPolicy.accessory : .regular
         NSApp.setActivationPolicy(mode)
@@ -425,7 +445,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // MARK: - Idle Pill
 
     private func showIdlePill() {
+        guard settingsViewModel.showIdlePill else { return }
         guard idlePillController == nil else { return }
+        guard overlayController == nil else { return }
         let vm = IdlePillViewModel()
         vm.onStartDictation = { [weak self] in
             self?.startDictation(mode: .persistent)

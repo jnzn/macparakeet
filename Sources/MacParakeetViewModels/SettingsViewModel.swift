@@ -24,6 +24,12 @@ public final class SettingsViewModel {
             NotificationCenter.default.post(name: Notification.Name("macparakeet.menuBarOnlyModeDidChange"), object: nil)
         }
     }
+    public var showIdlePill: Bool {
+        didSet {
+            defaults.set(showIdlePill, forKey: "showIdlePill")
+            NotificationCenter.default.post(name: Notification.Name("macparakeet.showIdlePillDidChange"), object: nil)
+        }
+    }
 
     // Dictation
     public var hotkeyTrigger: HotkeyTrigger {
@@ -105,6 +111,7 @@ public final class SettingsViewModel {
         self.isSpeechModelCached = isSpeechModelCached
         launchAtLogin = defaults.bool(forKey: "launchAtLogin")
         menuBarOnlyMode = AppPreferences.isMenuBarOnlyModeEnabled(defaults: defaults)
+        showIdlePill = defaults.object(forKey: "showIdlePill") as? Bool ?? true
         hotkeyTrigger = HotkeyTrigger.current(defaults: defaults)
         silenceAutoStop = defaults.bool(forKey: "silenceAutoStop")
         let delay = defaults.double(forKey: "silenceDelay")

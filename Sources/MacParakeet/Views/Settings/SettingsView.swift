@@ -109,6 +109,14 @@ struct SettingsView: View {
                     detail: "Start MacParakeet automatically when you sign in.",
                     isOn: $viewModel.launchAtLogin
                 )
+
+                Divider()
+
+                settingsToggleRow(
+                    title: "Show dictation pill at all times",
+                    detail: "When off, the pill hides until you press the hotkey.",
+                    isOn: $viewModel.showIdlePill
+                )
             }
         }
     }

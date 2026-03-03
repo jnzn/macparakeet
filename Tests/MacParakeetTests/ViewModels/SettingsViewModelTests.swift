@@ -54,6 +54,7 @@ final class SettingsViewModelTests: XCTestCase {
     func testDefaultValues() {
         XCTAssertFalse(viewModel.launchAtLogin, "launchAtLogin should default to false")
         XCTAssertFalse(viewModel.menuBarOnlyMode, "menuBarOnlyMode should default to false")
+        XCTAssertTrue(viewModel.showIdlePill, "showIdlePill should default to true")
         XCTAssertFalse(viewModel.silenceAutoStop, "silenceAutoStop should default to false")
         XCTAssertEqual(viewModel.silenceDelay, 2.0, "silenceDelay should default to 2.0")
         XCTAssertTrue(viewModel.saveAudioRecordings, "saveAudioRecordings should default to true")
@@ -64,6 +65,7 @@ final class SettingsViewModelTests: XCTestCase {
         // Set values in defaults before creating ViewModel
         testDefaults.set(true, forKey: "launchAtLogin")
         testDefaults.set(true, forKey: AppPreferences.menuBarOnlyModeKey)
+        testDefaults.set(false, forKey: "showIdlePill")
         testDefaults.set(true, forKey: "silenceAutoStop")
         testDefaults.set(3.0, forKey: "silenceDelay")
         testDefaults.set(false, forKey: "saveAudioRecordings")
@@ -73,6 +75,7 @@ final class SettingsViewModelTests: XCTestCase {
 
         XCTAssertTrue(vm.launchAtLogin)
         XCTAssertTrue(vm.menuBarOnlyMode)
+        XCTAssertFalse(vm.showIdlePill)
         XCTAssertTrue(vm.silenceAutoStop)
         XCTAssertEqual(vm.silenceDelay, 3.0)
         XCTAssertFalse(vm.saveAudioRecordings)
@@ -121,6 +124,26 @@ final class SettingsViewModelTests: XCTestCase {
         viewModel.saveTranscriptionAudio = false
 
         XCTAssertFalse(testDefaults.bool(forKey: "saveTranscriptionAudio"))
+    }
+
+    func testShowIdlePillDefaultsToTrue() {
+        // Fresh defaults with no key set — should default to true (existing users keep pill visible)
+        let vm = SettingsViewModel(defaults: testDefaults)
+        XCTAssertTrue(vm.showIdlePill)
+    }
+
+    func testShowIdlePillPersistsToUserDefaults() {
+        viewModel.showIdlePill = false
+        XCTAssertFalse(testDefaults.bool(forKey: "showIdlePill"))
+
+        viewModel.showIdlePill = true
+        XCTAssertTrue(testDefaults.bool(forKey: "showIdlePill"))
+    }
+
+    func testShowIdlePillPostsNotificationOnChange() {
+        let expectation = expectation(forNotification: Notification.Name("macparakeet.showIdlePillDidChange"), object: nil)
+        viewModel.showIdlePill = false
+        wait(for: [expectation], timeout: 1.0)
     }
 
     func testProcessingModePersists() {
@@ -407,6 +430,7 @@ final class SettingsViewModelTests: XCTestCase {
         // Set everything to non-default values
         viewModel.launchAtLogin = true
         viewModel.menuBarOnlyMode = true
+        viewModel.showIdlePill = false
         viewModel.silenceAutoStop = true
         viewModel.silenceDelay = 5.0
         viewModel.saveAudioRecordings = false
@@ -417,6 +441,7 @@ final class SettingsViewModelTests: XCTestCase {
 
         XCTAssertTrue(vm2.launchAtLogin)
         XCTAssertTrue(vm2.menuBarOnlyMode)
+        XCTAssertFalse(vm2.showIdlePill)
         XCTAssertTrue(vm2.silenceAutoStop)
         XCTAssertEqual(vm2.silenceDelay, 5.0)
         XCTAssertFalse(vm2.saveAudioRecordings)
