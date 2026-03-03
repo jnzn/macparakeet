@@ -59,8 +59,8 @@ struct SettingsView: View {
             icon: "slider.horizontal.3"
         ) {
             LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 130), spacing: DesignSystem.Spacing.sm)],
-                spacing: DesignSystem.Spacing.sm
+                columns: Array(repeating: GridItem(.flexible(), spacing: DesignSystem.Spacing.md), count: 4),
+                spacing: DesignSystem.Spacing.md
             ) {
                 statChip(
                     title: "Dictations",
@@ -425,18 +425,19 @@ struct SettingsView: View {
     }
 
     private func statChip(title: String, value: String, isHealthy: Bool = true) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(DesignSystem.Typography.micro)
+                .font(DesignSystem.Typography.caption)
                 .foregroundStyle(.secondary)
             Text(value)
-                .font(DesignSystem.Typography.body.weight(.semibold))
+                .font(DesignSystem.Typography.sectionTitle)
                 .foregroundStyle(isHealthy ? .primary : DesignSystem.Colors.errorRed)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, DesignSystem.Spacing.md)
+        .padding(.vertical, DesignSystem.Spacing.sm)
         .background(
-            RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
                 .fill(DesignSystem.Colors.surfaceElevated)
         )
     }
