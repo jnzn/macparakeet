@@ -457,13 +457,13 @@ struct OnboardingFlowView: View {
         HStack(spacing: 4) {
             keyCap(HotkeyTrigger.current.shortSymbol)
                 .scaleEffect(doubleTapPhase == 1 ? 0.9 : 1.0)
-                .opacity(doubleTapPhase == 1 ? 1.0 : 0.5)
+                .opacity(reduceMotion || doubleTapPhase == 1 ? 1.0 : 0.5)
             Text("·")
                 .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(.tertiary)
             keyCap(HotkeyTrigger.current.shortSymbol)
                 .scaleEffect(doubleTapPhase == 2 ? 0.9 : 1.0)
-                .opacity(doubleTapPhase == 2 ? 1.0 : 0.5)
+                .opacity(reduceMotion || doubleTapPhase == 2 ? 1.0 : 0.5)
         }
         .animation(.easeInOut(duration: 0.15), value: doubleTapPhase)
     }
@@ -472,7 +472,7 @@ struct OnboardingFlowView: View {
         VStack(spacing: 6) {
             keyCap(HotkeyTrigger.current.shortSymbol)
                 .scaleEffect(holdPhase > 0 ? 0.93 : 1.0)
-                .opacity(holdPhase > 0 ? 1.0 : 0.5)
+                .opacity(reduceMotion || holdPhase > 0 ? 1.0 : 0.5)
                 .animation(.easeInOut(duration: 0.15), value: holdPhase > 0)
 
             // Hold bar that grows
