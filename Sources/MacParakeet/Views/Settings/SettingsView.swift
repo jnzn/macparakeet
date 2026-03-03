@@ -472,7 +472,7 @@ struct SettingsView: View {
         VStack(spacing: 0) {
             modeShortcutRow(
                 keys: [viewModel.hotkeyTrigger.shortSymbol, viewModel.hotkeyTrigger.shortSymbol],
-                separator: "+",
+                separator: "·",
                 action: "Persistent dictation",
                 detail: "Tap again to stop"
             )
