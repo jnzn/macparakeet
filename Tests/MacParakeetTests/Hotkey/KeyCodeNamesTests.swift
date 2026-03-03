@@ -49,17 +49,35 @@ final class KeyCodeNamesTests: XCTestCase {
         XCTAssertEqual(KeyCodeNames.name(for: 57).displayName, "Caps Lock")
     }
 
+    // MARK: - Letters
+
+    func testLetterKeys() {
+        XCTAssertEqual(KeyCodeNames.name(for: 0).displayName, "A")
+        XCTAssertEqual(KeyCodeNames.name(for: 32).displayName, "U")
+        XCTAssertEqual(KeyCodeNames.name(for: 6).displayName, "Z")
+        XCTAssertEqual(KeyCodeNames.name(for: 0).shortSymbol, "A")
+    }
+
+    // MARK: - Numbers
+
+    func testNumberKeys() {
+        XCTAssertEqual(KeyCodeNames.name(for: 18).displayName, "1")
+        XCTAssertEqual(KeyCodeNames.name(for: 29).displayName, "0")
+    }
+
+    // MARK: - Punctuation
+
+    func testPunctuationKeys() {
+        XCTAssertEqual(KeyCodeNames.name(for: 27).displayName, "-")
+        XCTAssertEqual(KeyCodeNames.name(for: 24).displayName, "=")
+        XCTAssertEqual(KeyCodeNames.name(for: 47).displayName, ".")
+    }
+
     // MARK: - Unknown Key Codes
 
     func testUnknownKeyCodeReturnsFallback() {
         let result = KeyCodeNames.name(for: 255)
         XCTAssertEqual(result.displayName, "Key 255")
         XCTAssertEqual(result.shortSymbol, "Key 255")
-    }
-
-    func testUnknownKeyCodeZero() {
-        let result = KeyCodeNames.name(for: 0)
-        XCTAssertEqual(result.displayName, "Key 0")
-        XCTAssertEqual(result.shortSymbol, "Key 0")
     }
 }
