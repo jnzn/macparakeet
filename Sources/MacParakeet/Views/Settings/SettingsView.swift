@@ -410,6 +410,7 @@ struct SettingsView: View {
             Spacer(minLength: DesignSystem.Spacing.md)
             Toggle("", isOn: isOn)
                 .labelsHidden()
+                .toggleStyle(.switch)
         }
     }
 
