@@ -35,7 +35,7 @@ struct FeedbackView: View {
             icon: "tray.2"
         ) {
             LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 180), spacing: DesignSystem.Spacing.md)],
+                columns: Array(repeating: GridItem(.flexible(), spacing: DesignSystem.Spacing.md), count: 3),
                 spacing: DesignSystem.Spacing.md
             ) {
                 ForEach(FeedbackCategory.allCases, id: \.rawValue) { category in
