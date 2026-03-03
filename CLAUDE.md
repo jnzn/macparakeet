@@ -316,7 +316,49 @@ Code (Sources/)
 ### Related Repos
 
 - [macparakeet-website](https://github.com/moona3k/macparakeet-website) -- Marketing website (Astro + Tailwind), macparakeet.com
+- [macparakeet-community](https://github.com/moona3k/macparakeet-community) -- Community hub (issues, changelog, screenshots)
 - [oatmeal](https://github.com/moona3k/oatmeal) -- Sibling product (meeting memory app, shares no code)
+
+### Feedback & Community Infrastructure
+
+In-app feedback flows through a Cloudflare Pages Function to GitHub Issues with private email storage.
+
+```
+User submits feedback (MacParakeet app)
+    |
+    v
+Cloudflare Worker (macparakeet-website/functions/api/feedback.ts)
+    |
+    +-- GitHub Issue created in moona3k/macparakeet-community (PUBLIC)
+    |   - Message, screenshot, system info
+    |   - Labels: bug / enhancement / feedback
+    |   - Email is NOT included in the issue body
+    |
+    +-- Email stored in Cloudflare KV namespace "FEEDBACK_EMAILS" (PRIVATE)
+        - Key: "issue-{number}"
+        - Value: { email, message, category, created_at }
+```
+
+**Privacy rules:**
+- User emails are **never** posted in public GitHub issues
+- Screenshots are uploaded to the community repo's `screenshots/` dir (public) -- most are app screenshots, which is fine
+- If a screenshot contains sensitive content (e.g., user's work screen), delete it from the repo and edit the issue body to remove the reference
+
+**Looking up a user's email:**
+```bash
+cd macparakeet-website
+npx wrangler kv key get --namespace-id=23a8b00f4925487cb5f94304359e8230 "issue-6"
+```
+
+**KV namespace:** `FEEDBACK_EMAILS` (ID: `23a8b00f4925487cb5f94304359e8230`), bound to `macparakeet-website` Pages project (production + preview).
+
+**Changelog:** Lives at `macparakeet-community/CHANGELOG.md`. Update it when shipping features. Keep it developer-friendly and concise -- signal over noise.
+
+**Responding to community issues:**
+- Be concise, genuine, no fluff
+- If a feature request is already shipped, say so and close the issue
+- If partially addressed, explain what's done and what's still open
+- Cross-reference related issues (e.g., #5 and #6)
 
 ## Implementation Guidelines
 
