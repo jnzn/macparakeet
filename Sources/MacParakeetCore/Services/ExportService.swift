@@ -9,8 +9,8 @@ public protocol ExportServiceProtocol: Sendable {
     func exportToJSON(transcription: Transcription, url: URL) throws
     func exportToPDF(transcription: Transcription, url: URL) throws
     func exportToDocx(transcription: Transcription, url: URL) throws
-    func formatSRT(words: [WordTimestamp]) -> String
-    func formatVTT(words: [WordTimestamp]) -> String
+    func formatSRT(words: [WordTimestamp], speakers: [SpeakerInfo]?) -> String
+    func formatVTT(words: [WordTimestamp], speakers: [SpeakerInfo]?) -> String
     func formatMarkdown(transcription: Transcription) -> String
     func formatForClipboard(transcription: Transcription) -> String
 }
@@ -39,7 +39,7 @@ public final class ExportService: ExportServiceProtocol, Sendable {
             try content.write(to: url, atomically: true, encoding: .utf8)
             return
         }
-        let content = formatSRT(words: words)
+        let content = formatSRT(words: words, speakers: transcription.speakers)
         try content.write(to: url, atomically: true, encoding: .utf8)
     }
 
@@ -52,7 +52,7 @@ public final class ExportService: ExportServiceProtocol, Sendable {
             try content.write(to: url, atomically: true, encoding: .utf8)
             return
         }
-        let content = formatVTT(words: words)
+        let content = formatVTT(words: words, speakers: transcription.speakers)
         try content.write(to: url, atomically: true, encoding: .utf8)
     }
 
@@ -104,25 +104,33 @@ public final class ExportService: ExportServiceProtocol, Sendable {
     }
 
     /// Format word timestamps as SRT subtitle string
-    public func formatSRT(words: [WordTimestamp]) -> String {
+    public func formatSRT(words: [WordTimestamp], speakers: [SpeakerInfo]? = nil) -> String {
         let cues = buildSubtitleCues(from: words)
         var lines: [String] = []
         for (i, cue) in cues.enumerated() {
             lines.append("\(i + 1)")
             lines.append("\(srtTimestamp(ms: cue.startMs)) --> \(srtTimestamp(ms: cue.endMs))")
-            lines.append(cue.text)
+            if let label = speakerLabel(for: cue.speakerId, in: speakers) {
+                lines.append("\(label): \(cue.text)")
+            } else {
+                lines.append(cue.text)
+            }
             lines.append("")
         }
         return lines.joined(separator: "\n")
     }
 
     /// Format word timestamps as WebVTT subtitle string
-    public func formatVTT(words: [WordTimestamp]) -> String {
+    public func formatVTT(words: [WordTimestamp], speakers: [SpeakerInfo]? = nil) -> String {
         let cues = buildSubtitleCues(from: words)
         var lines: [String] = ["WEBVTT", ""]
         for cue in cues {
             lines.append("\(vttTimestamp(ms: cue.startMs)) --> \(vttTimestamp(ms: cue.endMs))")
-            lines.append(cue.text)
+            if let label = speakerLabel(for: cue.speakerId, in: speakers) {
+                lines.append("<v \(label)>\(cue.text)</v>")
+            } else {
+                lines.append(cue.text)
+            }
             lines.append("")
         }
         return lines.joined(separator: "\n")
@@ -169,8 +177,15 @@ public final class ExportService: ExportServiceProtocol, Sendable {
         // Transcript body
         if let timestamps = transcription.wordTimestamps, !timestamps.isEmpty {
             let cues = buildSubtitleCues(from: timestamps)
+            var lastSpeakerId: String? = nil
             for cue in cues {
                 let ts = formatReadableTimestamp(ms: cue.startMs)
+                if let label = speakerLabel(for: cue.speakerId, in: transcription.speakers),
+                   cue.speakerId != lastSpeakerId {
+                    lines.append("**\(label)**")
+                    lines.append("")
+                }
+                lastSpeakerId = cue.speakerId
                 lines.append("**[\(ts)]** \(cue.text)")
                 lines.append("")
             }
@@ -196,11 +211,12 @@ public final class ExportService: ExportServiceProtocol, Sendable {
         let startMs: Int
         let endMs: Int
         let text: String
+        let speakerId: String?
     }
 
     /// Groups word timestamps into subtitle cues suitable for SRT/VTT.
     /// Rules: max ~12 words per cue, break on sentence-ending punctuation,
-    /// break on long pauses (>800ms), max ~7 seconds per cue.
+    /// break on long pauses (>800ms), max ~7 seconds per cue, break on speaker change.
     func buildSubtitleCues(from words: [WordTimestamp]) -> [SubtitleCue] {
         guard !words.isEmpty else { return [] }
 
@@ -208,8 +224,23 @@ public final class ExportService: ExportServiceProtocol, Sendable {
         var currentWords: [String] = []
         var cueStartMs = words[0].startMs
         var cueEndMs = words[0].endMs
+        var cueSpeakerId = words[0].speakerId
 
         for (i, word) in words.enumerated() {
+            // Break on speaker change before adding the word
+            let speakerChanged = !currentWords.isEmpty && word.speakerId != cueSpeakerId
+            if speakerChanged {
+                cues.append(SubtitleCue(
+                    startMs: cueStartMs,
+                    endMs: cueEndMs,
+                    text: currentWords.joined(separator: " "),
+                    speakerId: cueSpeakerId
+                ))
+                currentWords = []
+                cueStartMs = word.startMs
+                cueSpeakerId = word.speakerId
+            }
+
             currentWords.append(word.word)
             cueEndMs = word.endMs
 
@@ -223,16 +254,24 @@ public final class ExportService: ExportServiceProtocol, Sendable {
                 cues.append(SubtitleCue(
                     startMs: cueStartMs,
                     endMs: cueEndMs,
-                    text: currentWords.joined(separator: " ")
+                    text: currentWords.joined(separator: " "),
+                    speakerId: cueSpeakerId
                 ))
                 currentWords = []
                 if !isLast {
                     cueStartMs = words[i + 1].startMs
+                    cueSpeakerId = words[i + 1].speakerId
                 }
             }
         }
 
         return cues
+    }
+
+    /// Resolve a speakerId to a display label using the speakers mapping.
+    func speakerLabel(for speakerId: String?, in speakers: [SpeakerInfo]?) -> String? {
+        guard let speakerId else { return nil }
+        return speakers?.first(where: { $0.id == speakerId })?.label ?? speakerId
     }
 
     // MARK: - Timestamp Formatting
@@ -279,10 +318,25 @@ public final class ExportService: ExportServiceProtocol, Sendable {
         }
         lines.append("")
 
-        // Transcript
-        let text = preferredText(transcription: transcription)
-        if !text.isEmpty {
-            lines.append(text)
+        // Transcript with speaker labels at turn changes
+        if let timestamps = transcription.wordTimestamps, !timestamps.isEmpty,
+           transcription.speakers != nil {
+            let cues = buildSubtitleCues(from: timestamps)
+            var lastSpeakerId: String? = nil
+            for cue in cues {
+                if let label = speakerLabel(for: cue.speakerId, in: transcription.speakers),
+                   cue.speakerId != lastSpeakerId {
+                    lines.append("")
+                    lines.append("\(label):")
+                }
+                lastSpeakerId = cue.speakerId
+                lines.append(cue.text)
+            }
+        } else {
+            let text = preferredText(transcription: transcription)
+            if !text.isEmpty {
+                lines.append(text)
+            }
         }
 
         return lines.joined(separator: "\n")
@@ -325,11 +379,19 @@ public final class ExportService: ExportServiceProtocol, Sendable {
         // Content
         if let timestamps = transcription.wordTimestamps, !timestamps.isEmpty {
             let cues = buildSubtitleCues(from: timestamps)
+            var lastSpeakerId: String? = nil
             for cue in cues {
+                if let label = speakerLabel(for: cue.speakerId, in: transcription.speakers),
+                   cue.speakerId != lastSpeakerId {
+                    let speakerAttr = NSAttributedString(string: "\(label)\n", attributes: [.font: headerFont, .foregroundColor: NSColor.labelColor])
+                    result.append(speakerAttr)
+                }
+                lastSpeakerId = cue.speakerId
+
                 let ts = "[" + formatReadableTimestamp(ms: cue.startMs) + "] "
                 let attrTs = NSAttributedString(string: ts, attributes: [.font: timestampFont, .foregroundColor: NSColor.secondaryLabelColor])
                 result.append(attrTs)
-                
+
                 let attrText = NSAttributedString(string: cue.text + "\n\n", attributes: [.font: bodyFont])
                 result.append(attrText)
             }

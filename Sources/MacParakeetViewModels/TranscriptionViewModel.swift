@@ -15,6 +15,7 @@ public final class TranscriptionViewModel {
         case downloading
         case converting
         case transcribing
+        case identifyingSpeakers
         case finalizing
     }
 
@@ -248,6 +249,9 @@ public final class TranscriptionViewModel {
         if normalized.contains("convert") {
             return .converting
         }
+        if normalized.contains("identifying") || normalized.contains("speaker") {
+            return .identifyingSpeakers
+        }
         if normalized.contains("transcrib") {
             return .transcribing
         }
@@ -270,6 +274,8 @@ public final class TranscriptionViewModel {
             return "Normalizing audio stream"
         case .transcribing:
             return "Running speech recognition"
+        case .identifyingSpeakers:
+            return "Identifying speakers..."
         case .finalizing:
             return "Finalizing transcript"
         }

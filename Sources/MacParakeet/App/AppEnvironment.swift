@@ -14,6 +14,7 @@ final class AppEnvironment {
     let dictationService: DictationService
     let transcriptionService: TranscriptionService
     let youtubeDownloader: YouTubeDownloader
+    let diarizationService: DiarizationService
     let clipboardService: ClipboardService
     let exportService: ExportService
     let permissionService: PermissionService
@@ -85,6 +86,7 @@ final class AppEnvironment {
         }
 
         youtubeDownloader = YouTubeDownloader()
+        diarizationService = DiarizationService()
 
         dictationService = DictationService(
             audioProcessor: audioProcessor,
@@ -113,7 +115,8 @@ final class AppEnvironment {
                 // Defaults to true if unset (matches Settings UI default).
                 UserDefaults.standard.object(forKey: "saveTranscriptionAudio") as? Bool ?? true
             },
-            youtubeDownloader: youtubeDownloader
+            youtubeDownloader: youtubeDownloader,
+            diarizationService: diarizationService
         )
     }
 }
