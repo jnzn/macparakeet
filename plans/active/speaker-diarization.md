@@ -61,9 +61,9 @@ public struct DiarizationSegmentRecord: Codable, Sendable {
 }
 ```
 
-No database migration needed — `wordTimestamps`, `speakers`, and the new `diarizationSegments` are all JSON text columns. Nullable fields + Codable handles backward compatibility automatically (missing key = nil).
+**Database migration:** `diarizationSegments` requires a new column (v0.4 migration in `spec/01-data-model.md`). `wordTimestamps` and `speakers` are existing JSON columns — new/changed fields are nullable and Codable handles backward compatibility automatically (missing key = nil).
 
-**Migration note:** The `speakers` column changes from `["Speaker 1","Speaker 2"]` to `[{"id":"S1","label":"Speaker 1"},...]`. Since no production transcriptions have diarization data yet (v0.4 feature), this is safe. Add a custom `Decodable` init that handles both formats defensively.
+**Backward compatibility for `speakers` field:** The column changes from `["Speaker 1","Speaker 2"]` to `[{"id":"S1","label":"Speaker 1"},...]`. Since no production transcriptions have diarization data yet (v0.4 feature), this is safe. Add a custom `Decodable` init that handles both formats defensively — try `[SpeakerInfo]` first, fall back to `[String]` and convert to `SpeakerInfo` with generated IDs.
 
 #### 1.2 Create DiarizationService
 
@@ -97,9 +97,10 @@ struct DiarizationResult: Sendable {
 
 Implementation:
 - Lazy-init `OfflineDiarizerManager` on first call
-- Map FluidAudio's `TimedSpeakerSegment` → our `SpeakerSegment`, preserving raw IDs (`"S1"`, `"S2"`)
-- Build `SpeakerInfo` array with default display labels (`"Speaker 1"`, `"Speaker 2"`, ...) derived from raw IDs
-- Convert `startTimeSeconds`/`endTimeSeconds` (Float, seconds) to `startMs`/`endMs` (Int, milliseconds) to match `WordTimestamp` format
+- Map FluidAudio's `TimedSpeakerSegment` → our `SpeakerSegment`
+- **Speaker ID normalization:** FluidAudio returns `"speaker_0"`, `"speaker_1"`, etc. Normalize to `"S1"`, `"S2"` via simple mapping: `"speaker_\(i)" → "S\(i+1)"`
+- Build `SpeakerInfo` array with default display labels (`"Speaker 1"`, `"Speaker 2"`, ...) derived from normalized IDs
+- Convert `startTimeSeconds`/`endTimeSeconds` (Float, seconds) to `startMs`/`endMs` (Int, milliseconds): `Int(seconds * 1000)`
 - **Handle `noSpeechDetected` error** — catch and return empty result (not a fatal error)
 
 #### 1.3 Create timestamp merger
@@ -271,6 +272,15 @@ When `speakerCount > 0`, include speaker labels. Resolve display labels from `sp
 
 **Critical:** SRT/VTT cues that span a speaker boundary must be **split at the speaker change**. Do not simply prefix a single speaker label onto a multi-speaker cue — that produces incorrect output.
 
+**Implementation:** Add `speakerChanged` as a split condition in `buildSubtitleCues()` alongside existing conditions (punctuation, long gap, word count, duration):
+
+```swift
+let speakerChanged = (i > 0 && words[i].speakerId != words[i-1].speakerId)
+if isLast || endsWithPunctuation || hasLongGap || tooManyWords || tooLong || speakerChanged {
+    emitCue()
+}
+```
+
 | Format | Speaker format |
 |--------|---------------|
 | TXT | `Sarah:\n` before each turn |
@@ -292,7 +302,10 @@ When `speakerCount > 0`, include speaker labels. Resolve display labels from `sp
 #### 5.2 Integration tests
 
 - `TranscriptionServiceTests`: Test full pipeline (ASR + diarization + merge) with mock services
+- `TranscriptionServiceTests`: Test diarization failure is non-fatal (ASR result persisted, speaker fields nil)
 - Verify `WordTimestamp` JSON encoding/decoding with and without `speakerId`
+- Verify `speakers` backward compatibility: old `["Speaker 1"]` format decodes correctly alongside new `[{"id":"S1","label":"Speaker 1"}]` format
+- Verify `ExportService` SRT/VTT cue splitting at speaker boundaries (speaker change mid-cue, at punctuation, at gap)
 
 ## Files Changed (Expected)
 

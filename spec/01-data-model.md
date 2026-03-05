@@ -437,6 +437,13 @@ migrator.registerMigration("v0.3-transcription-source-url") { db in
         t.add(column: "sourceURL", .text)
     }
 }
+
+// v0.4 — Speaker diarization segments
+migrator.registerMigration("v0.4-transcription-diarization-segments") { db in
+    try db.alter(table: "transcriptions") { t in
+        t.add(column: "diarizationSegments", .text)  // JSON: [{"speakerId":"S1","startMs":0,"endMs":5000}]
+    }
+}
 ```
 
 ### Migration Rules
