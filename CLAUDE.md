@@ -116,6 +116,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 | ADR-007 | FluidAudio CoreML migration (Python elimination) | `spec/adr/007-fluidaudio-coreml-migration.md` |
 | ADR-008 | Local LLM runtime baseline (historical — removed) | `spec/adr/008-local-llm-runtime-and-model.md` |
 | ADR-009 | Custom hotkey support (any single key) | `spec/adr/009-custom-hotkey.md` |
+| ADR-010 | Speaker diarization via FluidAudio offline pipeline | `spec/adr/010-speaker-diarization.md` |
 
 ## Current Phase
 
@@ -150,7 +151,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 - [ ] Drag-and-drop enhancements (hover states, visual feedback)
 
 ### v0.4 Polish + Launch
-- [ ] Speaker diarization
+- [ ] Speaker diarization (FluidAudio offline pipeline: pyannote community-1 + WeSpeaker + VBx, file transcription only, ADR-010)
 - [ ] Batch file processing
 - [ ] Whisper Mode (quiet/whispered speech recognition)
 - [ ] App Store submission

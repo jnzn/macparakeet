@@ -1179,7 +1179,9 @@ new scheduling architecture.
 
 ### F13: Speaker Diarization
 
-**What:** Automatically detect and label different speakers in recordings.
+**What:** Automatically detect and label different speakers in file transcriptions.
+
+**Scope:** File transcription and YouTube transcription only. Dictation is single-speaker by design.
 
 **Features:**
 - Automatic speaker segmentation (detect speaker changes)
@@ -1187,6 +1189,7 @@ new scheduling architecture.
 - Manual renaming: click speaker label to assign real name
 - Speaker colors in transcript view (visual differentiation)
 - Per-speaker analytics: speaking time, word count
+- Always-on for file transcription (no toggle needed)
 
 **Transcript with speakers:**
 
@@ -1218,12 +1221,18 @@ new scheduling architecture.
 **Export with speakers:**
 - All export formats (F12) support speaker labels when diarization is available
 - SRT/VTT: speaker name prefix per subtitle
-- JSON: `speaker` field per segment and per word
+- TXT/Markdown: speaker label before each turn
+- DOCX/PDF: speaker name in bold before each turn
+- JSON: `speakerId` field per word in `wordTimestamps`
 
 **Technical notes:**
-- Parakeet TDT includes diarization capability
-- May require post-processing for accuracy improvement
-- Speaker embedding comparison for cross-file consistency (future)
+- Uses FluidAudio's offline diarization pipeline (separate from ASR, see ADR-010)
+- Three-stage pipeline: pyannote community-1 (segmentation) + WeSpeaker v2 (embeddings) + VBx (clustering)
+- ~15% DER on VoxConverse, ~17.7% on AMI — competitive with commercial APIs
+- ~100 MB additional model download (one-time, cached alongside ASR models)
+- Runs after ASR completes, merges speaker segments with word-level timestamps by time overlap
+- No cross-file speaker identity (Speaker 1 in file A is not linked to Speaker 1 in file B)
+- Single-speaker files correctly return one speaker label with no overhead
 
 **Acceptance criteria:**
 - [ ] Speakers automatically detected and separated in transcript
@@ -1231,7 +1240,9 @@ new scheduling architecture.
 - [ ] Click speaker label to rename with real name
 - [ ] Speaking time and word count per speaker
 - [ ] Export includes speaker information in all formats
-- [ ] Works with 2-10 speakers
+- [ ] Works with 2+ speakers (no artificial upper limit)
+- [ ] Diarization models downloaded during onboarding (~100 MB)
+- [ ] Single-speaker files handled gracefully (one speaker label)
 
 ---
 
