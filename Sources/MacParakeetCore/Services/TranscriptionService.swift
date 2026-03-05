@@ -25,6 +25,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
     private let textRefinementService: TextRefinementService
     private let shouldKeepDownloadedAudio: @Sendable () -> Bool
     private let youtubeDownloader: YouTubeDownloading?
+    private let diarizationService: DiarizationServiceProtocol?
 
     public init(
         audioProcessor: AudioProcessorProtocol,
@@ -35,7 +36,8 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         snippetRepo: TextSnippetRepositoryProtocol? = nil,
         processingMode: (@Sendable () -> Dictation.ProcessingMode)? = nil,
         shouldKeepDownloadedAudio: (@Sendable () -> Bool)? = nil,
-        youtubeDownloader: YouTubeDownloading? = nil
+        youtubeDownloader: YouTubeDownloading? = nil,
+        diarizationService: DiarizationServiceProtocol? = nil
     ) {
         self.audioProcessor = audioProcessor
         self.sttClient = sttClient
@@ -47,6 +49,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         self.textRefinementService = TextRefinementService()
         self.shouldKeepDownloadedAudio = shouldKeepDownloadedAudio ?? { true }
         self.youtubeDownloader = youtubeDownloader
+        self.diarizationService = diarizationService
     }
 
     public func transcribe(fileURL: URL, onProgress: (@Sendable (String) -> Void)? = nil) async throws -> Transcription {
@@ -141,6 +144,28 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             transcription.rawTranscript = result.text
             transcription.wordTimestamps = words
             transcription.durationMs = result.words.last?.endMs
+
+            // Speaker diarization (non-fatal)
+            if let diarizationService {
+                do {
+                    onProgress?("Identifying speakers...")
+                    let diarResult = try await diarizationService.diarize(audioURL: wavURL)
+                    if !diarResult.segments.isEmpty {
+                        let mergedWords = SpeakerMerger.mergeWordTimestampsWithSpeakers(
+                            words: words,
+                            segments: diarResult.segments
+                        )
+                        transcription.wordTimestamps = mergedWords
+                        transcription.speakerCount = diarResult.speakerCount
+                        transcription.speakers = diarResult.speakers
+                        transcription.diarizationSegments = diarResult.segments.map {
+                            DiarizationSegmentRecord(speakerId: $0.speakerId, startMs: $0.startMs, endMs: $0.endMs)
+                        }
+                    }
+                } catch {
+                    // Diarization failure is non-fatal — transcript is still usable
+                }
+            }
 
             let mode = processingMode()
             let customWords = mode.usesDeterministicPipeline ? ((try? customWordRepo?.fetchEnabled()) ?? []) : []

@@ -395,7 +395,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if !completed {
             showOnboarding(
                 permissionService: env.permissionService,
-                sttClient: env.sttClient
+                sttClient: env.sttClient,
+                diarizationService: env.diarizationService
             )
         }
     }
@@ -421,17 +422,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard let env = appEnvironment else { return }
         showOnboarding(
             permissionService: env.permissionService,
-            sttClient: env.sttClient
+            sttClient: env.sttClient,
+            diarizationService: env.diarizationService
         )
     }
 
     private func showOnboarding(
         permissionService: PermissionServiceProtocol,
-        sttClient: STTClientProtocol
+        sttClient: STTClientProtocol,
+        diarizationService: DiarizationServiceProtocol? = nil
     ) {
         onboardingWindowController.show(
             permissionService: permissionService,
             sttClient: sttClient,
+            diarizationService: diarizationService,
             onFinish: { [weak self] in
                 self?.reopenOnboardingOnNextActivate = false
                 self?.refreshHotkeyAfterPermissions()

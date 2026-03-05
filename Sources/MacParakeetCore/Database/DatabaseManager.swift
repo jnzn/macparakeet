@@ -148,6 +148,13 @@ public final class DatabaseManager: Sendable {
             }
         }
 
+        // v0.4 — Add diarizationSegments to transcriptions (speaker diarization)
+        migrator.registerMigration("v0.4-transcription-diarization-segments") { db in
+            try db.alter(table: "transcriptions") { t in
+                t.add(column: "diarizationSegments", .text)
+            }
+        }
+
         try migrator.migrate(dbQueue)
     }
 }

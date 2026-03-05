@@ -408,4 +408,89 @@ final class ExportServiceTests: XCTestCase {
 
         try? FileManager.default.removeItem(at: tempURL)
     }
+
+    // MARK: - Speaker Labels
+
+    func testFormatSRTWithSpeakers() {
+        let words = [
+            WordTimestamp(word: "Hello.", startMs: 0, endMs: 500, confidence: 0.99, speakerId: "S1"),
+            WordTimestamp(word: "Hi.", startMs: 600, endMs: 1000, confidence: 0.98, speakerId: "S1"),
+            WordTimestamp(word: "Goodbye.", startMs: 2000, endMs: 2500, confidence: 0.97, speakerId: "S2"),
+            WordTimestamp(word: "Bye.", startMs: 2600, endMs: 3000, confidence: 0.96, speakerId: "S2"),
+        ]
+        let speakers = [
+            SpeakerInfo(id: "S1", label: "Alice"),
+            SpeakerInfo(id: "S2", label: "Bob"),
+        ]
+
+        let srt = exportService.formatSRT(words: words, speakers: speakers)
+        XCTAssertTrue(srt.contains("Alice: Hello. Hi."))
+        XCTAssertTrue(srt.contains("Bob: Goodbye. Bye."))
+    }
+
+    func testFormatVTTWithSpeakers() {
+        let words = [
+            WordTimestamp(word: "Hello.", startMs: 0, endMs: 500, confidence: 0.99, speakerId: "S1"),
+            WordTimestamp(word: "Hi.", startMs: 600, endMs: 1000, confidence: 0.98, speakerId: "S1"),
+            WordTimestamp(word: "Goodbye.", startMs: 2000, endMs: 2500, confidence: 0.97, speakerId: "S2"),
+            WordTimestamp(word: "Bye.", startMs: 2600, endMs: 3000, confidence: 0.96, speakerId: "S2"),
+        ]
+        let speakers = [
+            SpeakerInfo(id: "S1", label: "Alice"),
+            SpeakerInfo(id: "S2", label: "Bob"),
+        ]
+
+        let vtt = exportService.formatVTT(words: words, speakers: speakers)
+        XCTAssertTrue(vtt.hasPrefix("WEBVTT\n"))
+        XCTAssertTrue(vtt.contains("<v Alice>Hello. Hi.</v>"))
+        XCTAssertTrue(vtt.contains("<v Bob>Goodbye. Bye.</v>"))
+    }
+
+    func testCueSplitsOnSpeakerChange() {
+        let words = [
+            WordTimestamp(word: "Hi", startMs: 0, endMs: 500, confidence: 0.99, speakerId: "S1"),
+            WordTimestamp(word: "there", startMs: 500, endMs: 1000, confidence: 0.98, speakerId: "S2"),
+        ]
+
+        let cues = exportService.buildSubtitleCues(from: words)
+        XCTAssertEqual(cues.count, 2)
+        XCTAssertEqual(cues[0].speakerId, "S1")
+        XCTAssertEqual(cues[0].text, "Hi")
+        XCTAssertEqual(cues[1].speakerId, "S2")
+        XCTAssertEqual(cues[1].text, "there")
+    }
+
+    func testFormatMarkdownWithSpeakers() {
+        let transcription = Transcription(
+            fileName: "interview.mp3",
+            durationMs: 5000,
+            wordTimestamps: [
+                WordTimestamp(word: "Hello.", startMs: 0, endMs: 500, confidence: 0.99, speakerId: "S1"),
+                WordTimestamp(word: "Hi.", startMs: 600, endMs: 1000, confidence: 0.98, speakerId: "S1"),
+                WordTimestamp(word: "Goodbye.", startMs: 2000, endMs: 2500, confidence: 0.97, speakerId: "S2"),
+                WordTimestamp(word: "Bye.", startMs: 2600, endMs: 3000, confidence: 0.96, speakerId: "S2"),
+            ],
+            language: "en",
+            speakers: [
+                SpeakerInfo(id: "S1", label: "Alice"),
+                SpeakerInfo(id: "S2", label: "Bob"),
+            ],
+            status: .completed
+        )
+
+        let md = exportService.formatMarkdown(transcription: transcription)
+        XCTAssertTrue(md.contains("**Alice**"))
+        XCTAssertTrue(md.contains("**Bob**"))
+    }
+
+    func testSRTWithoutSpeakersHasNoLabels() {
+        let words = [
+            WordTimestamp(word: "Hello", startMs: 0, endMs: 500, confidence: 0.99),
+            WordTimestamp(word: "world.", startMs: 600, endMs: 1000, confidence: 0.98),
+        ]
+
+        let srt = exportService.formatSRT(words: words)
+        // Cue text should not have "Speaker:" prefix — just the text directly
+        XCTAssertTrue(srt.contains("\nHello world.\n"))
+    }
 }
