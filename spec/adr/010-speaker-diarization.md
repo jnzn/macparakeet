@@ -112,6 +112,8 @@ If diarization fails (e.g. `noSpeechDetected`, model error, timeout), the ASR re
 - Speaker rename (click label to assign real name)
 - Per-speaker analytics (speaking time, word count)
 - All export formats include speaker labels when available
+- Progress: "Identifying speakers..." sublabel with time estimate during diarization phase
+- Option-key alternate to skip diarization for power users (per-run, not a global toggle)
 
 ### Always-on vs opt-in
 
@@ -119,9 +121,11 @@ Diarization adds ~30-56 seconds of processing per hour of audio (at 64-122x RTF)
 
 For file transcription, always run it — users transcribing files almost always want to know who said what. If a file has only one speaker, diarization correctly returns a single speaker label with no user-visible overhead.
 
-**Important:** Progress reporting and time estimates must account for both ASR and diarization phases. Show "Transcribing..." during ASR and "Identifying speakers..." during diarization as separate progress indicators.
+**Progress UX:** Show "Transcribing..." during ASR, then "Identifying speakers..." with sublabel *"Adds ~30-60s per hour of audio"* during diarization. No tooltip or info icon needed — the sublabel sets expectations.
 
-Skip diarization only for dictation (single speaker by design).
+**No global toggle.** Adding a settings toggle introduces UI complexity, conditional logic, and "why don't I see speakers?" confusion. Instead, provide a **per-run Option-key alternate** — hold ⌥ when dropping a file to skip diarization ("Transcribe (Fast, No Speakers)"). This follows macOS convention for alternate actions and keeps the default UX clean.
+
+Skip diarization only for: dictation (single speaker by design) or explicit user opt-out via Option-key.
 
 ## Rationale
 

@@ -1189,7 +1189,7 @@ new scheduling architecture.
 - Manual renaming: click speaker label to assign real name
 - Speaker colors in transcript view (visual differentiation)
 - Per-speaker analytics: speaking time, word count
-- Always-on for file transcription (no toggle needed)
+- Always-on for file transcription (Option-key alternate to skip for power users)
 
 **Transcript with speakers:**
 
@@ -1249,6 +1249,8 @@ new scheduling architecture.
 - [ ] Diarization models downloaded during onboarding (~130 MB)
 - [ ] Single-speaker files handled gracefully (one speaker label)
 - [ ] Diarization failure is non-fatal (ASR result preserved, notice shown)
+- [ ] Progress shows "Identifying speakers..." with time estimate sublabel
+- [ ] Option-key (⌥) alternate skips diarization for per-run fast transcription
 
 ---
 
