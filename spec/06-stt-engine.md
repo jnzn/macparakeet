@@ -322,7 +322,7 @@ try await manager.prepareModels()
 
 let result = try await manager.process(url)
 for segment in result.segments {
-    // segment.speakerId — e.g. "S1", "S2" (offline pipeline format)
+    // segment.speakerId — e.g. "speaker_0", "speaker_1" (FluidAudio format; DiarizationService normalizes to "S1", "S2")
     // segment.startTimeSeconds, segment.endTimeSeconds
 }
 ```
