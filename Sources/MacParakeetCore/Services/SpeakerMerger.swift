@@ -12,6 +12,10 @@ public enum SpeakerMerger {
     ) -> [WordTimestamp] {
         guard !words.isEmpty, !segments.isEmpty else { return words }
 
+        // Defensive sort — FluidAudio returns chronological segments, but
+        // the algorithm requires sorted input for correctness.
+        let sortedSegments = segments.sorted { $0.startMs < $1.startMs }
+
         var result = words
         var segIdx = 0
 
@@ -19,7 +23,7 @@ public enum SpeakerMerger {
             // Advance segIdx past segments that end before this word starts.
             // Since words are sorted by startMs, segments before segIdx can never
             // overlap any future word either, making this amortized O(W+S).
-            while segIdx < segments.count && segments[segIdx].endMs <= word.startMs {
+            while segIdx < sortedSegments.count && sortedSegments[segIdx].endMs <= word.startMs {
                 segIdx += 1
             }
 
@@ -28,8 +32,8 @@ public enum SpeakerMerger {
 
             // Scan forward from segIdx to find the segment with most overlap
             var s = segIdx
-            while s < segments.count {
-                let seg = segments[s]
+            while s < sortedSegments.count {
+                let seg = sortedSegments[s]
                 if seg.startMs >= word.endMs {
                     break // No more segments can overlap this word
                 }

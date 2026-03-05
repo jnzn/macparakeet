@@ -319,9 +319,8 @@ public final class ExportService: ExportServiceProtocol, Sendable {
         }
         lines.append("")
 
-        // Transcript with speaker labels at turn changes
-        if let timestamps = transcription.wordTimestamps, !timestamps.isEmpty,
-           transcription.speakers != nil {
+        // Transcript with timestamps and speaker labels at turn changes
+        if let timestamps = transcription.wordTimestamps, !timestamps.isEmpty {
             let cues = buildSubtitleCues(from: timestamps)
             var lastSpeakerId: String? = nil
             for cue in cues {
