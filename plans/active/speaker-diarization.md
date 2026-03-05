@@ -14,7 +14,7 @@ Add speaker diarization to file transcription and YouTube transcription using Fl
 | Scope | File + YouTube transcription only | Dictation is single-speaker |
 | Speaker data storage | Stable IDs (`"S1"`) on `WordTimestamp.speakerId`, structured `speakers` mapping + `diarizationSegments` on `Transcription` | Stable IDs avoid O(n) rewrite on rename; segments enable accurate analytics |
 | Diarization failure | Non-fatal — ASR result persisted even if diarization fails | Never lose transcription due to diarization error |
-| Always-on | Yes for file transcription | Users transcribing files almost always want speaker attribution |
+| Always-on | Yes for file transcription (Option-key alternate to skip) | Users transcribing files almost always want speaker attribution; power users get per-run escape hatch |
 | Cross-file identity | Not supported | Per-transcription speaker IDs only |
 | ASR + diarization ordering | Sequential (ASR first, then diarization) | Simpler, correctness over speed. Optimize to parallel later if needed. |
 
@@ -166,7 +166,7 @@ do {
 
 **Critical:** Both ASR and diarization must run on the **same audio file path** to ensure timestamp alignment. Do not re-convert or trim audio between the two calls.
 
-**Progress reporting:** Show "Transcribing..." during ASR, then "Identifying speakers..." during diarization. These are separate visible phases in the UI.
+**Progress reporting:** Show "Transcribing..." during ASR, then "Identifying speakers..." during diarization. These are separate visible phases in the UI. During the diarization phase, show a sublabel: *"Adds ~30-60s per hour of audio"* to set expectations (indeterminate progress, no callback from FluidAudio).
 
 ### Phase 2: Onboarding
 
@@ -186,6 +186,40 @@ Step 4: Verify / warm-up
 Use `OfflineDiarizerManager.prepareModels()` which handles download + CoreML compilation.
 
 ### Phase 3: UI
+
+#### 3.0 Progress UX and skip-diarization alternate
+
+**Progress during file transcription:**
+
+Two visible phases with clear labels:
+
+```
+Phase 1: "Transcribing..."              ← determinate progress (ASR)
+Phase 2: "Identifying speakers..."      ← indeterminate spinner
+          Adds ~30-60s per hour of audio   ← sublabel (secondary text, muted color)
+```
+
+The sublabel during phase 2 sets expectations without being alarming. No tooltip or info icon needed — the sublabel is sufficient.
+
+**Option-key alternate (skip diarization):**
+
+Power users who want maximum speed can hold Option (⌥) to get a "fast, no speakers" transcription. This is a per-run escape hatch, not a global setting.
+
+| Surface | Default action | Option-key alternate |
+|---------|---------------|---------------------|
+| Drop zone | "Transcribe" | "Transcribe (No Speakers)" |
+| Menu bar drop | Transcribe with diarization | Transcribe without diarization |
+| Context menu | "Transcribe File..." | "Transcribe File (Fast, No Speakers)" |
+
+Implementation:
+- Check `NSEvent.modifierFlags.contains(.option)` at transcription start
+- If Option held, skip the `diarizationService.diarize()` call entirely
+- All speaker fields remain nil — transcript displays without speaker attribution
+- No UI change needed for the result view (already handles nil speaker data gracefully)
+
+**No global toggle in Settings.** This keeps the settings surface clean and avoids the "why don't I see speakers?" support burden.
+
+**Future (F14 Batch):** Batch processing can expose a per-batch "Skip speaker detection" checkbox in the queue header, since batch is already an advanced context.
 
 #### 3.1 Speaker labels in transcript view
 
