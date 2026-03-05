@@ -231,6 +231,7 @@ public final class OnboardingViewModel {
                         })
                     } catch {
                         // Diarization model prep failure is non-fatal
+                        print("[MacParakeet] Diarization model prep failed: \(error.localizedDescription)")
                     }
                 }
 

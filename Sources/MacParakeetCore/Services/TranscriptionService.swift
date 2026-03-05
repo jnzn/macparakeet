@@ -164,6 +164,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                     }
                 } catch {
                     // Diarization failure is non-fatal — transcript is still usable
+                    print("[MacParakeet] Diarization failed: \(error.localizedDescription)")
                 }
             }
 
