@@ -249,7 +249,7 @@ public final class TranscriptionViewModel {
         if normalized.contains("convert") {
             return .converting
         }
-        if normalized.contains("identifying") || normalized.contains("speaker") {
+        if normalized.contains("identifying speaker") {
             return .identifyingSpeakers
         }
         if normalized.contains("transcrib") {

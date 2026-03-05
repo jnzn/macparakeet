@@ -493,4 +493,52 @@ final class ExportServiceTests: XCTestCase {
         // Cue text should not have "Speaker:" prefix — just the text directly
         XCTAssertTrue(srt.contains("\nHello world.\n"))
     }
+
+    func testExportToTxtWithSpeakers() throws {
+        let transcription = Transcription(
+            fileName: "interview.mp3",
+            durationMs: 5000,
+            wordTimestamps: [
+                WordTimestamp(word: "Hello.", startMs: 0, endMs: 500, confidence: 0.99, speakerId: "S1"),
+                WordTimestamp(word: "Hi.", startMs: 600, endMs: 1000, confidence: 0.98, speakerId: "S1"),
+                WordTimestamp(word: "Goodbye.", startMs: 2000, endMs: 2500, confidence: 0.97, speakerId: "S2"),
+            ],
+            speakers: [
+                SpeakerInfo(id: "S1", label: "Alice"),
+                SpeakerInfo(id: "S2", label: "Bob"),
+            ],
+            status: .completed
+        )
+
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("test-speakers.txt")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try exportService.exportToTxt(transcription: transcription, url: url)
+        let content = try String(contentsOf: url, encoding: .utf8)
+
+        XCTAssertTrue(content.contains("Alice:"))
+        XCTAssertTrue(content.contains("Bob:"))
+        XCTAssertTrue(content.contains("Hello. Hi."))
+        XCTAssertTrue(content.contains("Goodbye."))
+    }
+
+    func testExportToTxtWithTimestampsNoSpeakers() throws {
+        let transcription = Transcription(
+            fileName: "mono.mp3",
+            durationMs: 2000,
+            wordTimestamps: [
+                WordTimestamp(word: "Hello", startMs: 0, endMs: 500, confidence: 0.99),
+                WordTimestamp(word: "world.", startMs: 600, endMs: 1000, confidence: 0.98),
+            ],
+            status: .completed
+        )
+
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("test-no-speakers.txt")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try exportService.exportToTxt(transcription: transcription, url: url)
+        let content = try String(contentsOf: url, encoding: .utf8)
+
+        // Should still use word timestamps path (no speaker labels)
+        XCTAssertTrue(content.contains("Hello world."))
+        XCTAssertFalse(content.contains("Speaker"))
+    }
 }
