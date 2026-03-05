@@ -66,8 +66,8 @@ public actor DiarizationService: DiarizationServiceProtocol {
 
         let segments: [SpeakerSegment] = fluidResult.segments.map { seg in
             let mappedId = idMapping[seg.speakerId] ?? seg.speakerId
-            let startMs = Int((seg.startTimeSeconds * 1000).rounded())
-            let endMs = Int((seg.endTimeSeconds * 1000).rounded())
+            let startMs = max(0, Int((seg.startTimeSeconds * 1000).rounded()))
+            let endMs = max(0, Int((seg.endTimeSeconds * 1000).rounded()))
             return SpeakerSegment(speakerId: mappedId, startMs: startMs, endMs: endMs)
         }
 
