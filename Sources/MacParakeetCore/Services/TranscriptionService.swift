@@ -162,6 +162,8 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                             DiarizationSegmentRecord(speakerId: $0.speakerId, startMs: $0.startMs, endMs: $0.endMs)
                         }
                     }
+                } catch is CancellationError {
+                    throw CancellationError()
                 } catch {
                     // Diarization failure is non-fatal — transcript is still usable
                     print("[MacParakeet] Diarization failed: \(error.localizedDescription)")
