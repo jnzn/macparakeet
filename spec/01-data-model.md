@@ -108,7 +108,7 @@ CREATE TABLE transcriptions (
     durationMs INTEGER,                                -- Audio/video duration in milliseconds
     rawTranscript TEXT,                                 -- Unprocessed STT output (nullable while processing)
     cleanTranscript TEXT,                               -- Post-processed text
-    wordTimestamps TEXT,                                -- JSON: [{"word":"Hello","startMs":0,"endMs":500,"confidence":0.98}]
+    wordTimestamps TEXT,                                -- JSON: [{"word":"Hello","startMs":0,"endMs":500,"confidence":0.98,"speakerId":"Speaker 1"}]
     language TEXT DEFAULT 'en',                         -- Detected or specified language code
     speakerCount INTEGER,                              -- Number of detected speakers (v0.4 diarization)
     speakers TEXT,                                      -- JSON: ["Speaker 1","Speaker 2"] (v0.4 diarization)
@@ -128,6 +128,11 @@ CREATE INDEX idx_transcriptions_created_at ON transcriptions(createdAt DESC);
 - `filePath` is nullable because the original file may be moved or deleted after transcription.
 - `sourceURL` distinguishes URL-sourced transcriptions (YouTube) from local file transcriptions. Added in v0.3.
 - No FTS on transcriptions in v0.1. Search by filename or scroll the list. Revisit if the list grows large.
+
+**Diarization data (v0.4):**
+- `speakerCount`: Number of detected speakers (e.g., 2)
+- `speakers`: JSON array of speaker display names (e.g., `["Speaker 1","Speaker 2"]`). Updated when user renames a speaker.
+- Speaker assignment per word is stored via `speakerId` on each `WordTimestamp` entry (see Swift model below). This is the merge of ASR word timestamps with diarization speaker segments by time overlap.
 
 ---
 
@@ -256,6 +261,7 @@ struct Transcription: Codable, Identifiable {
         var startMs: Int
         var endMs: Int
         var confidence: Double
+        var speakerId: String?    // v0.4 diarization — e.g. "Speaker 1" (nullable for pre-diarization transcriptions)
     }
 
     enum TranscriptionStatus: String, Codable {
@@ -444,7 +450,7 @@ These might be needed someday but are explicitly deferred:
 
 - **`settings`** -- Use `UserDefaults` / plist. No need for a settings table.
 - **`exports`** -- Track via `exportPath` on `transcriptions`. No separate table.
-- **`speakers`** -- Speaker labels live as JSON on `transcriptions`. Normalize only if diarization becomes a first-class feature.
+- **`speakers`** -- Speaker labels and per-word speaker IDs live as JSON on `transcriptions` (v0.4 diarization). No separate table needed — speaker identity is per-transcription, not cross-file. Revisit only if cross-file speaker recognition is added.
 - **`usage_stats`** -- Derive from existing tables via queries. No separate tracking table.
 
 ---
@@ -520,4 +526,4 @@ let processing = try dbQueue.read { db in
 
 ---
 
-*Last updated: 2026-02-10*
+*Last updated: 2026-03-04*

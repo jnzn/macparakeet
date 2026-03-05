@@ -47,6 +47,8 @@ All ADRs live in `spec/adr/`. These are locked -- they record decisions already 
 | [ADR-006](adr/006-trial-and-license-activation.md) | Trial + license key activation |
 | [ADR-007](adr/007-fluidaudio-coreml-migration.md) | FluidAudio CoreML migration (Python elimination) |
 | [ADR-008](adr/008-local-llm-runtime-and-model.md) | Local LLM runtime baseline (historical — removed) |
+| [ADR-009](adr/009-custom-hotkey.md) | Custom hotkey support (any single key) |
+| [ADR-010](adr/010-speaker-diarization.md) | Speaker diarization via FluidAudio offline pipeline |
 
 ## Version Roadmap
 
