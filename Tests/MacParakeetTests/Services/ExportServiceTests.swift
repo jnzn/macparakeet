@@ -348,15 +348,69 @@ final class ExportServiceTests: XCTestCase {
         let tempURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("test_export_\(UUID().uuidString).pdf")
 
-        // PDF export uses NSPrintOperation which must be on MainActor
-        try MainActor.assumeIsolated {
-            try exportService.exportToPDF(transcription: transcription, url: tempURL)
-        }
+        try exportService.exportToPDF(transcription: transcription, url: tempURL)
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: tempURL.path))
-        let attributes = try FileManager.default.attributesOfItem(atPath: tempURL.path)
-        let fileSize = attributes[.size] as? Int64 ?? 0
-        XCTAssertGreaterThan(fileSize, 0)
+        let data = try Data(contentsOf: tempURL)
+        XCTAssertGreaterThan(data.count, 0)
+        // Verify it's a valid PDF (starts with %PDF magic bytes)
+        let header = String(data: data.prefix(5), encoding: .ascii)
+        XCTAssertEqual(header, "%PDF-")
+
+        try? FileManager.default.removeItem(at: tempURL)
+    }
+
+    func testExportToPDFWithTimestamps() throws {
+        let transcription = Transcription(
+            fileName: "timestamped.mp3",
+            rawTranscript: "Hello world this is a test",
+            wordTimestamps: [
+                WordTimestamp(word: "Hello", startMs: 0, endMs: 500, confidence: 0.99),
+                WordTimestamp(word: "world", startMs: 500, endMs: 1000, confidence: 0.98),
+                WordTimestamp(word: "this", startMs: 1000, endMs: 1500, confidence: 0.97),
+                WordTimestamp(word: "is", startMs: 1500, endMs: 1800, confidence: 0.99),
+                WordTimestamp(word: "a", startMs: 1800, endMs: 2000, confidence: 0.99),
+                WordTimestamp(word: "test.", startMs: 2000, endMs: 2500, confidence: 0.95),
+            ],
+            status: .completed
+        )
+
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("test_export_ts_\(UUID().uuidString).pdf")
+
+        try exportService.exportToPDF(transcription: transcription, url: tempURL)
+
+        let data = try Data(contentsOf: tempURL)
+        let header = String(data: data.prefix(5), encoding: .ascii)
+        XCTAssertEqual(header, "%PDF-")
+
+        try? FileManager.default.removeItem(at: tempURL)
+    }
+
+    func testExportToPDFWithSpeakers() throws {
+        let transcription = Transcription(
+            fileName: "interview.mp3",
+            rawTranscript: "Hello. Hi there.",
+            wordTimestamps: [
+                WordTimestamp(word: "Hello.", startMs: 0, endMs: 500, confidence: 0.99, speakerId: "spk_0"),
+                WordTimestamp(word: "Hi", startMs: 1000, endMs: 1300, confidence: 0.98, speakerId: "spk_1"),
+                WordTimestamp(word: "there.", startMs: 1300, endMs: 1800, confidence: 0.97, speakerId: "spk_1"),
+            ],
+            speakers: [
+                SpeakerInfo(id: "spk_0", label: "Speaker 1"),
+                SpeakerInfo(id: "spk_1", label: "Speaker 2"),
+            ],
+            status: .completed
+        )
+
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("test_export_spk_\(UUID().uuidString).pdf")
+
+        try exportService.exportToPDF(transcription: transcription, url: tempURL)
+
+        let data = try Data(contentsOf: tempURL)
+        let header = String(data: data.prefix(5), encoding: .ascii)
+        XCTAssertEqual(header, "%PDF-")
 
         try? FileManager.default.removeItem(at: tempURL)
     }
