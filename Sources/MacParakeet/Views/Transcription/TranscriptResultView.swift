@@ -430,7 +430,14 @@ struct TranscriptResultView: View {
 
         lastExportedURL = fileURL
         lastExportedFormat = format.rawValue
-        showExportConfirmation = true
+
+        // Delay popover presentation by one render cycle so SwiftUI
+        // commits the URL/format state before creating the popover view.
+        // Without this, the first-ever export shows a blank popover
+        // because .popover(isPresented:) can capture stale nil values.
+        Task { @MainActor in
+            showExportConfirmation = true
+        }
 
         // Auto-dismiss after 5 seconds
         dismissTask = Task { @MainActor in

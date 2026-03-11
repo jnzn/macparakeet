@@ -65,30 +65,69 @@ public final class ExportService: ExportServiceProtocol, Sendable {
         try data.write(to: url)
     }
 
-    /// Export transcription as PDF file
+    /// Export transcription as PDF file using Core Graphics PDF context.
+    /// Avoids NSPrintOperation which spins a modal run loop and deadlocks
+    /// when called from SwiftUI button actions on MainActor.
     public func exportToPDF(transcription: Transcription, url: URL) throws {
         let attrString = try buildRichTranscript(transcription: transcription)
-        
-        // On macOS, the easiest way to generate a PDF from an attributed string 
-        // without a visible window is using a print operation to a PDF destination.
-        // This must be run on the main thread because of AppKit.
-        try MainActor.assumeIsolated {
-            let printInfo = NSPrintInfo.shared
-            printInfo.jobDisposition = .save
-            printInfo.dictionary().setObject(url, forKey: NSPrintInfo.AttributeKey.jobSavingURL as NSCopying)
-            
-            // Create a view to host the text for printing
-            let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 500, height: 700))
-            textView.textStorage?.setAttributedString(attrString)
-            
-            let printOp = NSPrintOperation(view: textView, printInfo: printInfo)
-            printOp.showsPrintPanel = false
-            printOp.showsProgressPanel = false
-            
-            if !printOp.run() {
-                throw NSError(domain: "MacParakeetError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to generate PDF"])
-            }
+
+        // US Letter with 1-inch margins
+        let pageWidth: CGFloat = 612
+        let pageHeight: CGFloat = 792
+        let margin: CGFloat = 72
+        let textWidth = pageWidth - margin * 2
+        let textHeight = pageHeight - margin * 2
+
+        // Layout the attributed string using NSTextLayoutManager via a temporary text container
+        let textStorage = NSTextStorage(attributedString: attrString)
+        let layoutManager = NSLayoutManager()
+        textStorage.addLayoutManager(layoutManager)
+
+        let textContainer = NSTextContainer(size: NSSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude))
+        textContainer.lineFragmentPadding = 0
+        layoutManager.addTextContainer(textContainer)
+
+        // Force full layout
+        layoutManager.ensureLayout(for: textContainer)
+        let totalHeight = layoutManager.usedRect(for: textContainer).height
+
+        // Create PDF context
+        var mediaBox = CGRect(x: 0, y: 0, width: pageWidth, height: pageHeight)
+        guard let context = CGContext(url as CFURL, mediaBox: &mediaBox, nil) else {
+            throw NSError(domain: "MacParakeetError", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Failed to create PDF context"])
         }
+
+        // Draw pages
+        var yOffset: CGFloat = 0
+        while yOffset < totalHeight {
+            context.beginPage(mediaBox: &mediaBox)
+
+            // Determine the glyph range that fits this page
+            let pageRect = NSRect(x: 0, y: yOffset, width: textWidth, height: textHeight)
+            let glyphRange = layoutManager.glyphRange(forBoundingRect: pageRect, in: textContainer)
+
+            // Save graphics state, set up coordinate system for this page
+            let nsContext = NSGraphicsContext(cgContext: context, flipped: false)
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = nsContext
+
+            // Core Graphics origin is bottom-left; translate to draw top-down
+            context.translateBy(x: margin, y: pageHeight - margin)
+            context.scaleBy(x: 1, y: -1)
+
+            // Offset for current page slice
+            let drawOrigin = NSPoint(x: 0, y: -yOffset)
+            layoutManager.drawBackground(forGlyphRange: glyphRange, at: drawOrigin)
+            layoutManager.drawGlyphs(forGlyphRange: glyphRange, at: drawOrigin)
+
+            NSGraphicsContext.restoreGraphicsState()
+            context.endPage()
+
+            yOffset += textHeight
+        }
+
+        context.closePDF()
     }
 
     /// Export transcription as DOCX file
