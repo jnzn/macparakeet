@@ -42,7 +42,7 @@ All providers use the OpenAI-compatible chat completions API (`POST /v1/chat/com
 | Anthropic (Claude) | Cloud | `https://api.anthropic.com/v1/` | API key (`Authorization: Bearer`) |
 | OpenAI (GPT) | Cloud | `https://api.openai.com/v1` | API key (`Authorization: Bearer`) |
 | Google (Gemini) | Cloud | `https://generativelanguage.googleapis.com/v1beta/openai` | API key (`Authorization: Bearer`) |
-| Ollama | Local | `http://localhost:11434/v1` | Placeholder (`Authorization: Bearer ollama`) |
+| Ollama | Local | `http://localhost:11434/v1` | `apiKey: nil` in config; client injects `Bearer ollama` |
 | LM Studio | Local | `http://localhost:1234/v1` | Optional (`Authorization: Bearer`) |
 | Custom | Either | User-provided | Optional API key |
 
@@ -158,7 +158,7 @@ Users who want local-only LLM can install Ollama (`brew install ollama && ollama
 public struct LLMProviderConfig: Codable, Sendable, Equatable {
     public let id: LLMProviderID       // .anthropic, .openai, .ollama, etc.
     public let baseURL: URL
-    public let apiKey: String?         // nil for local providers (Ollama: "ollama")
+    public let apiKey: String?         // nil for local providers; client injects Bearer ollama for Ollama
     public let modelName: String       // "claude-sonnet-4-20250514", "gpt-4o", "llama3.2"
     public let isLocal: Bool           // true for Ollama/LM Studio/local custom
 }
