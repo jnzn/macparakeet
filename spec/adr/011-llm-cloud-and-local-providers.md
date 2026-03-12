@@ -138,7 +138,7 @@ Users who want local-only LLM can install Ollama (`brew install ollama && ollama
 │  │  (URLSession)    │    │  - baseURL                │   │
 │  │                  │    │  - apiKey (optional)       │   │
 │  │  POST /v1/chat/  │    │  - model name             │   │
-│  │  completions     │    │  - custom headers          │   │
+│  │  completions     │    │  - isLocal                 │   │
 │  └──────────────────┘    └──────────────────────────┘   │
 │           │                                              │
 └───────────┼──────────────────────────────────────────────┘
@@ -158,17 +158,16 @@ Users who want local-only LLM can install Ollama (`brew install ollama && ollama
 public struct LLMProviderConfig: Codable, Sendable, Equatable {
     public let id: LLMProviderID       // .anthropic, .openai, .ollama, etc.
     public let baseURL: URL
-    public let apiKey: String?         // nil for local providers (except Ollama: "ollama")
+    public let apiKey: String?         // nil for local providers (Ollama: "ollama")
     public let modelName: String       // "claude-sonnet-4-20250514", "gpt-4o", "llama3.2"
-
-    public var isLocal: Bool { id == .ollama || id == .lmstudio }
+    public let isLocal: Bool           // true for Ollama/LM Studio/local custom
 }
 
 public enum LLMProviderID: String, Codable, Sendable, CaseIterable {
     case anthropic, openai, gemini, ollama, lmstudio, custom
 }
 
-/// Client — handles HTTP for both Anthropic native + OpenAI-compatible protocols
+/// Client — handles HTTP via OpenAI-compatible protocol
 public protocol LLMClientProtocol: Sendable {
     func chatCompletion(
         messages: [ChatMessage],
@@ -185,7 +184,7 @@ public protocol LLMClientProtocol: Sendable {
     func testConnection(config: LLMProviderConfig) async throws
 }
 
-/// High-level service — domain-specific operations (abstracts protocol differences)
+/// High-level service — domain-specific operations
 public protocol LLMServiceProtocol: Sendable {
     func summarize(transcript: String) async throws -> String
     func summarizeStream(transcript: String) -> AsyncThrowingStream<String, Error>
