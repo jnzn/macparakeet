@@ -10,11 +10,11 @@ Add LLM-powered features (Summary, Chat, Custom Transforms) via external provide
 
 ## Design Decisions
 
-1. **One HTTP client, all providers.** All providers use the OpenAI-compatible `/v1/chat/completions` endpoint. One `LLMClient` implementation covers everything.
-2. **Streaming by default.** All LLM responses stream via Server-Sent Events (SSE). Better UX for long responses.
+1. **Two API protocols, one service layer.** Anthropic uses its native Messages API (different SSE format, required `max_tokens`, access to prompt caching). All other providers use OpenAI-compatible `/v1/chat/completions`. The `LLMService` protocol abstracts both.
+2. **Streaming by default.** All LLM responses stream via Server-Sent Events (SSE). OpenAI format: `data: {"choices":[{"delta":{"content":"..."}}]}`. Anthropic format: `event: content_block_delta` + `data: {"delta":{"type":"text_delta","text":"..."}}`.
 3. **API keys in Keychain.** Via existing `KeychainKeyValueStore` pattern. Provider config (ID, base URL, model) in UserDefaults.
 4. **LLM features are transcript-level actions.** No dictation-time processing. Summary/Chat/Transform appear on transcript detail views.
-5. **Anthropic Messages API.** Anthropic's OpenAI-compatible endpoint has limitations (no streaming in some configurations). Use the native Messages API for Anthropic, OpenAI-compatible for everything else.
+5. **Ollama auth quirk.** Ollama requires an `Authorization` header but ignores the value. Send `Bearer ollama` as placeholder to avoid rejected requests.
 
 ## Implementation Phases
 
@@ -105,11 +105,21 @@ public protocol LLMClientProtocol: Sendable {
 }
 ```
 
-Implementation uses URLSession. Key details:
-- **OpenAI-compatible path:** `POST {baseURL}/chat/completions` with `Authorization: Bearer {apiKey}`
-- **Anthropic native path:** `POST https://api.anthropic.com/v1/messages` with `x-api-key` header and `anthropic-version` header
-- **SSE parsing:** Parse `data: {...}` lines for streaming. Handle `data: [DONE]` terminator.
-- **Error mapping:** HTTP 401 → `.authenticationFailed`, 429 → `.rateLimited`, 404 → `.modelNotFound`, etc.
+Implementation uses URLSession with two internal code paths:
+
+**OpenAI-compatible path** (OpenAI, Gemini, Ollama, LM Studio, Custom):
+- `POST {baseURL}/chat/completions` with `Authorization: Bearer {apiKey}`
+- System prompt in messages array: `{"role": "system", "content": "..."}`
+- `max_tokens` optional
+- SSE: parse `data: {"choices":[{"delta":{"content":"token"}}]}` lines. Terminate on `data: [DONE]`.
+
+**Anthropic native path** (Claude):
+- `POST https://api.anthropic.com/v1/messages` with `x-api-key` and `anthropic-version: 2023-06-01` headers
+- System prompt as top-level `"system"` field (not in messages array)
+- `max_tokens` required (default 4096 for summary/transform, 1024 for chat)
+- SSE: parse `event: content_block_delta` + `data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"token"}}`. Terminate on `event: message_stop`.
+
+**Error mapping** (both paths): HTTP 401 → `.authenticationFailed`, 429 → `.rateLimited`, 404 → `.modelNotFound`, etc.
 
 #### Step 1.4: LLM Error Types
 

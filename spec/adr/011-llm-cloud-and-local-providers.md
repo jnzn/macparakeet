@@ -35,21 +35,21 @@ Char (fastrepl/char, ~8K GitHub stars) — a meeting transcription app — suppo
 
 ### Supported Providers
 
-All providers use the OpenAI-compatible chat completions API (`/v1/chat/completions`):
+Cloud providers use native APIs where beneficial; local providers use the OpenAI-compatible chat completions API (`/v1/chat/completions`):
 
-| Provider | Type | Base URL | Auth |
-|----------|------|----------|------|
-| Anthropic (Claude) | Cloud | `https://api.anthropic.com/v1` | API key |
-| OpenAI (GPT) | Cloud | `https://api.openai.com/v1` | API key |
-| Google (Gemini) | Cloud | `https://generativelanguage.googleapis.com/v1beta/openai` | API key |
-| Ollama | Local | `http://localhost:11434/v1` | None |
-| LM Studio | Local | `http://localhost:1234/v1` | None |
-| Custom | Either | User-provided | Optional API key |
+| Provider | Type | Base URL | Auth | Protocol |
+|----------|------|----------|------|----------|
+| Anthropic (Claude) | Cloud | `https://api.anthropic.com/v1/messages` | API key (`x-api-key` header) | Native Messages API |
+| OpenAI (GPT) | Cloud | `https://api.openai.com/v1` | API key (`Authorization: Bearer`) | OpenAI |
+| Google (Gemini) | Cloud | `https://generativelanguage.googleapis.com/v1beta/openai` | API key (`Authorization: Bearer`) | OpenAI-compatible |
+| Ollama | Local | `http://localhost:11434/v1` | Placeholder (`Authorization: Bearer ollama`) | OpenAI-compatible |
+| LM Studio | Local | `http://localhost:1234/v1` | Optional (`Authorization: Bearer`) | OpenAI-compatible |
+| Custom | Either | User-provided | Optional API key | OpenAI-compatible |
 
 ### Locked Decisions
 
 1. **No bundled LLM runtime.** No mlx-swift-lm, no llama.cpp, no Cactus, no model downloads. Zero GPU/memory impact from LLM.
-2. **OpenAI-compatible API only.** One protocol, one client implementation. Anthropic's Messages API is accessed via their OpenAI-compatible endpoint.
+2. **Two API protocols, one service layer.** Anthropic uses its native Messages API (required `max_tokens`, different SSE format, access to prompt caching). All other providers use OpenAI-compatible `/v1/chat/completions`. The `LLMService` layer abstracts both behind one protocol. Anthropic's OpenAI-compatible endpoint exists but is officially "not production-ready" and lacks prompt caching and extended thinking.
 3. **LLM features are optional.** The app is fully functional without any provider configured. Transcription, dictation, export — all work without LLM.
 4. **No default provider.** User must explicitly choose and configure. No "sign up for our cloud" upsell.
 5. **Transcription stays 100% local.** Audio never leaves the device. Only transcript text is sent to cloud providers (when the user explicitly triggers an LLM feature). This distinction must be clear in the UI.
@@ -152,36 +152,45 @@ Users who want local-only LLM can install Ollama (`brew install ollama && ollama
 ### Key Types
 
 ```swift
-/// Provider configuration — stored in UserDefaults or Keychain (API keys)
-public struct LLMProviderConfig: Codable, Sendable {
-    public let id: String              // "anthropic", "openai", "ollama", "custom"
-    public let displayName: String
+/// Provider configuration — provider ID + model in UserDefaults, API key in Keychain
+public struct LLMProviderConfig: Codable, Sendable, Equatable {
+    public let id: LLMProviderID       // .anthropic, .openai, .ollama, etc.
     public let baseURL: URL
-    public let apiKey: String?         // nil for local providers
+    public let apiKey: String?         // nil for local providers (except Ollama: "ollama")
     public let modelName: String       // "claude-sonnet-4-20250514", "gpt-4o", "llama3.2"
-    public let isLocal: Bool
+
+    public var isLocal: Bool { id == .ollama || id == .lmstudio }
 }
 
-/// Unified client — one implementation for all providers
+public enum LLMProviderID: String, Codable, Sendable, CaseIterable {
+    case anthropic, openai, gemini, ollama, lmstudio, custom
+}
+
+/// Client — handles HTTP for both Anthropic native + OpenAI-compatible protocols
 public protocol LLMClientProtocol: Sendable {
     func chatCompletion(
-        messages: [LLMMessage],
-        model: String,
-        options: LLMRequestOptions
-    ) async throws -> LLMResponse
+        messages: [ChatMessage],
+        config: LLMProviderConfig,
+        options: ChatCompletionOptions
+    ) async throws -> ChatCompletionResponse
 
     func chatCompletionStream(
-        messages: [LLMMessage],
-        model: String,
-        options: LLMRequestOptions
+        messages: [ChatMessage],
+        config: LLMProviderConfig,
+        options: ChatCompletionOptions
     ) -> AsyncThrowingStream<String, Error>
+
+    func testConnection(config: LLMProviderConfig) async throws
 }
 
-/// High-level service — domain-specific operations
+/// High-level service — domain-specific operations (abstracts protocol differences)
 public protocol LLMServiceProtocol: Sendable {
     func summarize(transcript: String) async throws -> String
-    func chat(question: String, transcript: String) async throws -> String
+    func summarizeStream(transcript: String) -> AsyncThrowingStream<String, Error>
+    func chat(question: String, transcript: String, history: [ChatMessage]) async throws -> String
+    func chatStream(question: String, transcript: String, history: [ChatMessage]) -> AsyncThrowingStream<String, Error>
     func transform(text: String, prompt: String) async throws -> String
+    func transformStream(text: String, prompt: String) -> AsyncThrowingStream<String, Error>
 }
 ```
 
@@ -210,9 +219,9 @@ Rejected. Spawning an external daemon violates App Store sandboxing, adds distri
 
 Rejected. Adds server costs (requiring subscription pricing — conflicts with ADR-003), adds a reliability dependency, and adds a privacy concern (we'd see transcript text). Users bringing their own keys is simpler, cheaper, and more private.
 
-### Anthropic Messages API natively (not OpenAI-compatible)
+### OpenAI-compatible endpoint for Anthropic (single protocol)
 
-Considered but deferred. Anthropic offers an OpenAI-compatible endpoint, so one client implementation covers all providers including Claude. If Anthropic-specific features (extended thinking, prompt caching) prove valuable later, we can add a native Anthropic client as an optimization.
+Considered. Anthropic offers an OpenAI-compatible endpoint at `https://api.anthropic.com/v1/`, which would allow one client for all providers. However, Anthropic's own docs state this is "not considered a long-term or production-ready solution" and lacks prompt caching, extended thinking, and structured outputs. Using the native Messages API for Anthropic adds one extra code path but gives access to the full feature set and production-grade reliability.
 
 ## References
 
