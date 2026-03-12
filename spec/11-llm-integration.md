@@ -34,32 +34,60 @@ User triggers LLM action (Summary / Chat / Transform)
     → Response streamed back to UI
 ```
 
-### Provider Protocol
+### Provider Protocols
 
-All providers use the OpenAI-compatible chat completions API:
+Two API protocols, one service layer:
 
+**OpenAI-compatible** (OpenAI, Gemini, Ollama, LM Studio, Custom):
 ```
 POST {baseURL}/chat/completions
 Content-Type: application/json
-Authorization: Bearer {apiKey}  // omitted for local providers
+Authorization: Bearer {apiKey}
 
 {
   "model": "{modelName}",
-  "messages": [...],
+  "messages": [{"role": "user", "content": "..."}],
   "stream": true
 }
+
+SSE format: data: {"choices": [{"delta": {"content": "token"}}]}
 ```
+
+**Anthropic native Messages API** (Claude):
+```
+POST https://api.anthropic.com/v1/messages
+Content-Type: application/json
+x-api-key: {apiKey}
+anthropic-version: 2023-06-01
+
+{
+  "model": "{modelName}",
+  "max_tokens": 4096,
+  "messages": [{"role": "user", "content": "..."}],
+  "system": "...",
+  "stream": true
+}
+
+SSE format: event: content_block_delta
+            data: {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "token"}}
+```
+
+Anthropic uses its native API because the OpenAI-compatible endpoint is officially "not production-ready" and lacks prompt caching, extended thinking, and structured outputs. The `LLMService` layer abstracts both protocols behind one Swift interface.
 
 ### Supported Providers
 
-| Provider | Type | Default Base URL | Auth | Notes |
-|----------|------|-----------------|------|-------|
-| Anthropic | Cloud | `https://api.anthropic.com/v1` | API key | Via OpenAI-compatible endpoint |
-| OpenAI | Cloud | `https://api.openai.com/v1` | API key | |
-| Google Gemini | Cloud | `https://generativelanguage.googleapis.com/v1beta/openai` | API key | OpenAI-compatible mode |
-| Ollama | Local | `http://localhost:11434/v1` | None | User installs separately |
-| LM Studio | Local | `http://localhost:1234/v1` | None | User installs separately |
-| Custom | Either | User-provided | Optional | Any OpenAI-compatible endpoint |
+| Provider | Type | Default Base URL | Auth | Protocol |
+|----------|------|-----------------|------|----------|
+| Anthropic | Cloud | `https://api.anthropic.com/v1/messages` | `x-api-key` header | Native Messages API |
+| OpenAI | Cloud | `https://api.openai.com/v1` | `Authorization: Bearer` | OpenAI |
+| Google Gemini | Cloud | `https://generativelanguage.googleapis.com/v1beta/openai` | `Authorization: Bearer` | OpenAI-compatible |
+| Ollama | Local | `http://localhost:11434/v1` | `Authorization: Bearer ollama` (ignored) | OpenAI-compatible |
+| LM Studio | Local | `http://localhost:1234/v1` | Optional `Authorization: Bearer` | OpenAI-compatible |
+| Custom | Either | User-provided | Optional | OpenAI-compatible |
+
+**Note on Ollama auth:** Ollama requires an `Authorization` header but ignores the value. Use `"ollama"` as a placeholder to avoid rejected requests.
+
+**Note on Anthropic `max_tokens`:** Unlike OpenAI, Anthropic requires `max_tokens` in every request. Default to 4096 for summaries/transforms, 1024 for chat responses.
 
 ---
 
@@ -91,19 +119,22 @@ API keys are stored in Keychain (via existing `KeychainKeyValueStore`), not User
 
 ```swift
 public protocol LLMClientProtocol: Sendable {
-    /// Single response
+    /// Single response (routes to Anthropic native or OpenAI-compatible based on config.id)
     func chatCompletion(
         messages: [ChatMessage],
-        model: String,
+        config: LLMProviderConfig,
         options: ChatCompletionOptions
     ) async throws -> ChatCompletionResponse
 
     /// Streaming response
     func chatCompletionStream(
         messages: [ChatMessage],
-        model: String,
+        config: LLMProviderConfig,
         options: ChatCompletionOptions
     ) -> AsyncThrowingStream<String, Error>
+
+    /// Verify provider is reachable and auth is valid
+    func testConnection(config: LLMProviderConfig) async throws
 }
 
 public struct ChatMessage: Codable, Sendable {
@@ -163,7 +194,7 @@ public protocol LLMServiceProtocol: Sendable {
 ### Error Types
 
 ```swift
-public enum LLMError: Error, LocalizedError {
+public enum LLMError: Error, LocalizedError, Sendable {
     case notConfigured             // No provider set up
     case connectionFailed(Error)   // Network/localhost unreachable
     case authenticationFailed      // Invalid API key
