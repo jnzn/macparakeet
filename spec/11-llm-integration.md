@@ -34,11 +34,10 @@ User triggers LLM action (Summary / Chat / Transform)
     → Response streamed back to UI
 ```
 
-### Provider Protocols
+### Provider Protocol
 
-Two API protocols, one service layer:
+All providers use the OpenAI-compatible chat completions API:
 
-**OpenAI-compatible** (OpenAI, Gemini, Ollama, LM Studio, Custom):
 ```
 POST {baseURL}/chat/completions
 Content-Type: application/json
@@ -46,48 +45,29 @@ Authorization: Bearer {apiKey}
 
 {
   "model": "{modelName}",
-  "messages": [{"role": "user", "content": "..."}],
+  "messages": [
+    {"role": "system", "content": "..."},
+    {"role": "user", "content": "..."}
+  ],
   "stream": true
 }
 
 SSE format: data: {"choices": [{"delta": {"content": "token"}}]}
+Terminator: data: [DONE]
 ```
 
-**Anthropic native Messages API** (Claude):
-```
-POST https://api.anthropic.com/v1/messages
-Content-Type: application/json
-x-api-key: {apiKey}
-anthropic-version: 2023-06-01
-
-{
-  "model": "{modelName}",
-  "max_tokens": 4096,
-  "messages": [{"role": "user", "content": "..."}],
-  "system": "...",
-  "stream": true
-}
-
-SSE format: event: content_block_delta
-            data: {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "token"}}
-```
-
-Anthropic uses its native API because the OpenAI-compatible endpoint is officially "not production-ready" and lacks prompt caching, extended thinking, and structured outputs. The `LLMService` layer abstracts both protocols behind one Swift interface.
+One protocol, one SSE parser, one code path. If Anthropic-specific features (prompt caching, extended thinking) are needed later, the client can branch on `config.id == .anthropic` internally with zero API change for consumers.
 
 ### Supported Providers
 
-| Provider | Type | Default Base URL | Auth | Protocol |
-|----------|------|-----------------|------|----------|
-| Anthropic | Cloud | `https://api.anthropic.com/v1/messages` | `x-api-key` header | Native Messages API |
-| OpenAI | Cloud | `https://api.openai.com/v1` | `Authorization: Bearer` | OpenAI |
-| Google Gemini | Cloud | `https://generativelanguage.googleapis.com/v1beta/openai` | `Authorization: Bearer` | OpenAI-compatible |
-| Ollama | Local | `http://localhost:11434/v1` | `Authorization: Bearer ollama` (ignored) | OpenAI-compatible |
-| LM Studio | Local | `http://localhost:1234/v1` | Optional `Authorization: Bearer` | OpenAI-compatible |
-| Custom | Either | User-provided | Optional | OpenAI-compatible |
-
-**Note on Ollama auth:** Ollama requires an `Authorization` header but ignores the value. Use `"ollama"` as a placeholder to avoid rejected requests.
-
-**Note on Anthropic `max_tokens`:** Unlike OpenAI, Anthropic requires `max_tokens` in every request. Default to 4096 for summaries/transforms, 1024 for chat responses.
+| Provider | Type | Default Base URL | Auth |
+|----------|------|-----------------|------|
+| Anthropic | Cloud | `https://api.anthropic.com/v1/` | `Authorization: Bearer` |
+| OpenAI | Cloud | `https://api.openai.com/v1` | `Authorization: Bearer` |
+| Google Gemini | Cloud | `https://generativelanguage.googleapis.com/v1beta/openai` | `Authorization: Bearer` |
+| Ollama | Local | `http://localhost:11434/v1` | `Authorization: Bearer ollama` (required but ignored) |
+| LM Studio | Local | `http://localhost:1234/v1` | Optional `Authorization: Bearer` |
+| Custom | Either | User-provided | Optional |
 
 ---
 
