@@ -2,6 +2,16 @@ import ArgumentParser
 import Foundation
 import MacParakeetCore
 
+func validateCustomBaseURL(_ value: String) throws -> URL {
+    guard let url = URL(string: value),
+          let scheme = url.scheme?.lowercased(),
+          ["http", "https"].contains(scheme),
+          url.host != nil else {
+        throw ValidationError("--base-url must be an absolute http:// or https:// URL")
+    }
+    return url
+}
+
 struct LLMConfigCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "config",
@@ -60,9 +70,10 @@ struct LLMConfigCommand: AsyncParsableCommand {
             guard let modelName = model else { throw ValidationError("--model is required for LM Studio") }
             config = .lmstudio(model: modelName, apiKey: apiKey)
         case .custom:
-            guard let urlStr = baseURL, let url = URL(string: urlStr) else {
+            guard let urlStr = baseURL else {
                 throw ValidationError("--base-url is required for custom provider")
             }
+            let url = try validateCustomBaseURL(urlStr)
             guard let modelName = model else { throw ValidationError("--model is required for custom provider") }
             config = .custom(baseURL: url, model: modelName, apiKey: apiKey, isLocal: local)
         }
