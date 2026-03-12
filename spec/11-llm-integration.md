@@ -54,6 +54,9 @@ Authorization: Bearer {apiKey}
 
 SSE format: data: {"choices": [{"delta": {"content": "token"}}]}
 Terminator: data: [DONE]
+
+Parser must handle: empty delta objects, role-only frames,
+finish_reason frames, and blank data: lines between events.
 ```
 
 One protocol, one SSE parser, one code path. If Anthropic-specific features (prompt caching, extended thinking) are needed later, the client can branch on `config.id == .anthropic` internally with zero API change for consumers.
@@ -65,7 +68,7 @@ One protocol, one SSE parser, one code path. If Anthropic-specific features (pro
 | Anthropic | Cloud | `https://api.anthropic.com/v1/` | `Authorization: Bearer` |
 | OpenAI | Cloud | `https://api.openai.com/v1` | `Authorization: Bearer` |
 | Google Gemini | Cloud | `https://generativelanguage.googleapis.com/v1beta/openai` | `Authorization: Bearer` |
-| Ollama | Local | `http://localhost:11434/v1` | `Authorization: Bearer ollama` (required but ignored) |
+| Ollama | Local | `http://localhost:11434/v1` | `apiKey: nil` in config; client injects `Bearer ollama` |
 | LM Studio | Local | `http://localhost:1234/v1` | Optional `Authorization: Bearer` |
 | Custom | Either | User-provided | Optional |
 
@@ -79,7 +82,7 @@ One protocol, one SSE parser, one code path. If Anthropic-specific features (pro
 public struct LLMProviderConfig: Codable, Sendable, Equatable {
     public let id: LLMProviderID
     public let baseURL: URL
-    public let apiKey: String?         // nil for local providers (Ollama: "ollama")
+    public let apiKey: String?         // nil for local providers; client injects Bearer ollama for Ollama
     public let modelName: String       // e.g. "claude-sonnet-4-20250514", "llama3.2"
     public let isLocal: Bool           // true for Ollama/LM Studio/local custom
 }
@@ -183,6 +186,7 @@ public enum LLMError: Error, LocalizedError, Sendable {
     case modelNotFound(String)     // Model name invalid
     case contextTooLong            // Transcript exceeds model context
     case providerError(String)     // Provider-specific error message
+    case streamingError(String)    // SSE parse failure or stream interruption
 }
 ```
 
@@ -207,7 +211,7 @@ concise summary that captures the key points, decisions, and action items.
 Use bullet points for clarity. Keep the summary under 500 words.
 ```
 
-**Context assembly:** Full transcript text. If transcript exceeds model context window, truncate from the middle (keep beginning and end, which typically contain introductions and conclusions).
+**Context assembly:** Full transcript text. If transcript exceeds **100,000 characters** (~25K tokens), truncate from the middle — keep first 45K chars + last 45K chars with an ellipsis marker. This fixed budget works across all providers (even small local models have 8K+ context).
 
 ### 2. Chat with Transcript
 
@@ -230,7 +234,7 @@ the transcript, say so. Be concise and specific, citing relevant parts when help
 </transcript>
 ```
 
-**Context assembly:** System prompt with full transcript + conversation history. If total context exceeds limits, truncate oldest conversation turns (keep system prompt + transcript + recent turns).
+**Context assembly:** System prompt with full transcript + conversation history. Same 100K character budget as summary. If total context exceeds the budget, drop oldest conversation turns first (keep system prompt + transcript + recent turns).
 
 ### 3. Custom Transforms
 
@@ -268,7 +272,7 @@ Respond with only the transformed text. Do not add explanations or preamble.
 │                                              │
 │  API Key:  [••••••••••••••••]  [Test ✓]     │
 │                                              │
-│  Model:    [claude-sonnet-4-20250514 ▾]      │
+│  Model:    [claude-sonnet-4-20250514    ]      │
 │                                              │
 │  ┌─────────────────────────────────────────┐ │
 │  │ ℹ Transcription is always local.        │ │
@@ -340,7 +344,7 @@ Respond with only the transformed text. Do not add explanations or preamble.
 ### Transcription table (existing, add column)
 
 ```sql
-ALTER TABLE transcription ADD COLUMN summary TEXT;
+ALTER TABLE transcriptions ADD COLUMN summary TEXT;
 ```
 
 ### Custom transforms (new, UserDefaults — not DB)
@@ -386,7 +390,7 @@ CLI reads provider config from the same UserDefaults/Keychain as the GUI app.
 2. **LLMService**: Mock LLMClient, verify prompt assembly for summarize/chat/transform.
 3. **Context assembly**: Verify truncation behavior when transcript exceeds limits.
 4. **Provider config**: Verify Keychain storage/retrieval of API keys. Verify UserDefaults storage of provider config.
-5. **Error mapping**: Verify HTTP status codes map to correct LLMError cases.
+5. **Error mapping**: Verify error mapping inspects response body JSON first (providers return `{"error": {"message": "...", "type": "..."}}`), then falls back to HTTP status codes.
 6. **Streaming**: Verify SSE parsing for streamed responses.
 
 ### Integration Tests

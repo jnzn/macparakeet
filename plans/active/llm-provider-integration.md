@@ -47,7 +47,7 @@ public struct LLMProviderConfig: Codable, Sendable, Equatable {
     public static func anthropic(apiKey: String, model: String = "claude-sonnet-4-20250514") -> Self
     public static func openai(apiKey: String, model: String = "gpt-4o") -> Self
     public static func gemini(apiKey: String, model: String = "gemini-2.5-flash") -> Self
-    public static func ollama(model: String = "llama3.2") -> Self
+    public static func ollama(model: String = "llama3.2") -> Self  // apiKey: nil — client injects Bearer ollama
     public static func lmstudio(model: String) -> Self
     public static func custom(baseURL: URL, apiKey: String?, model: String, isLocal: Bool) -> Self
 }
@@ -108,9 +108,10 @@ Implementation uses URLSession. One code path for all providers (OpenAI-compatib
 
 - `POST {baseURL}/chat/completions` with `Authorization: Bearer {apiKey}`
 - System prompt in messages array: `{"role": "system", "content": "..."}`
-- SSE streaming: parse `data: {"choices":[{"delta":{"content":"token"}}]}` lines. Terminate on `data: [DONE]`.
+- SSE streaming: parse `data: {"choices":[{"delta":{"content":"token"}}]}` lines. Terminate on `data: [DONE]`. Parser must handle edge cases: empty `delta` objects, `role`-only frames, `finish_reason` frames, and blank `data:` lines between events.
+- Ollama requires an `Authorization` header but ignores the value. The client injects `Authorization: Bearer ollama` when `config.id == .ollama && config.apiKey == nil`. Ollama's `apiKey` stays `nil` in `LLMProviderConfig` — the placeholder is a client-level concern.
 - Anthropic uses their OpenAI-compatible endpoint at `https://api.anthropic.com/v1/`. If native Messages API is needed later, branch on `config.id == .anthropic` internally — zero API change for consumers.
-- **Error mapping:** HTTP 401 → `.authenticationFailed`, 429 → `.rateLimited`, 404 → `.modelNotFound`, etc.
+- **Error mapping:** Map errors by inspecting response body JSON first (providers return `{"error": {"message": "...", "type": "..."}}`), then fall back to HTTP status codes: 401 → `.authenticationFailed`, 429 → `.rateLimited`, 404 → `.modelNotFound`, 5xx → `.providerError(message)`.
 
 #### Step 1.4: LLM Error Types
 
@@ -124,8 +125,8 @@ public enum LLMError: Error, LocalizedError, Sendable {
     case rateLimited
     case modelNotFound(String)
     case contextTooLong
-    case providerError(String)
-    case streamingError(String)
+    case providerError(String)     // Provider-specific error from response body
+    case streamingError(String)    // SSE parse failure or stream interruption
 }
 ```
 
@@ -147,7 +148,7 @@ public protocol LLMServiceProtocol: Sendable {
 Implementation:
 - Builds system prompts per feature (summary, chat, transform)
 - Assembles messages array (system + transcript context + user input)
-- Context truncation: if transcript is too long, truncate middle (keep beginning + end)
+- Context truncation: if transcript exceeds **100,000 characters** (~25K tokens), truncate from the middle (keep first 45K chars + last 45K chars + ellipsis marker). For chat, if conversation history causes overflow, drop oldest turns first (keep system prompt + transcript + recent turns).
 - Delegates to `LLMClientProtocol`
 
 #### Step 1.6: Provider Config Storage
@@ -262,6 +263,7 @@ Add:
 - `summaryState: LoadingState` (idle/loading/loaded/error)
 - `summarize()` method — calls LLMService.summarizeStream(), persists result
 - `llmAvailable: Bool` (checks if provider is configured)
+- `summaryTask: Task<Void, Never>?` — stored handle for streaming task, cancelled on re-summarize or view dismissal
 
 #### Step 3.4: Tests
 
@@ -287,7 +289,8 @@ Chat panel alongside transcript. Message list + input field. Streaming responses
 - `messages: [ChatMessage]` (in-memory conversation history)
 - `streamingResponse: String` (current streaming response)
 - `isStreaming: Bool`
-- `sendMessage(_ text: String)` — appends user message, calls LLMService.chatStream()
+- `streamingTask: Task<Void, Never>?` — stored handle for streaming task, cancelled on new message or view dismissal
+- `sendMessage(_ text: String)` — cancels any in-flight streaming task, appends user message, calls LLMService.chatStream()
 - `clearHistory()`
 
 Conversation is in-memory only (not persisted). Scoped to one transcript.
