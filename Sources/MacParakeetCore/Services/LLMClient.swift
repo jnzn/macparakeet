@@ -99,17 +99,37 @@ public final class LLMClient: LLMClientProtocol, Sendable {
                         throw mapError(statusCode: http.statusCode, data: errorData)
                     }
 
+                    var eventLines: [String] = []
+
                     for try await line in bytes.lines {
                         try Task.checkCancellation()
 
-                        switch parseSSELine(line) {
+                        if line.isEmpty {
+                            switch parseSSEEvent(eventLines) {
+                            case .content(let text):
+                                continuation.yield(text)
+                            case .done:
+                                continuation.finish()
+                                return
+                            case .skip:
+                                break
+                            }
+                            eventLines.removeAll(keepingCapacity: true)
+                            continue
+                        }
+
+                        eventLines.append(line)
+                    }
+
+                    if !eventLines.isEmpty {
+                        switch parseSSEEvent(eventLines) {
                         case .content(let text):
                             continuation.yield(text)
                         case .done:
                             continuation.finish()
                             return
                         case .skip:
-                            continue
+                            break
                         }
                     }
 
@@ -205,6 +225,22 @@ public final class LLMClient: LLMClientProtocol, Sendable {
         }
 
         return .content(content)
+    }
+
+    internal func parseSSEEvent(_ lines: [String]) -> SSEResult {
+        guard !lines.isEmpty else { return .skip }
+
+        let payloadLines = lines.compactMap { line -> String? in
+            guard line.hasPrefix("data: ") || line.hasPrefix("data:") else { return nil }
+            return line.hasPrefix("data: ")
+                ? String(line.dropFirst(6))
+                : String(line.dropFirst(5))
+        }
+
+        guard !payloadLines.isEmpty else { return .skip }
+
+        let payload = payloadLines.joined(separator: "\n")
+        return parseSSELine("data: \(payload)")
     }
 
     private func mapError(statusCode: Int, data: Data) -> LLMError {

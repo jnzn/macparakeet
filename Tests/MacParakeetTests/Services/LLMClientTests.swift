@@ -440,6 +440,40 @@ final class LLMClientTests: XCTestCase {
         }
     }
 
+    func testParseSSEEventCombinesMultilineDataPayload() {
+        let result = llmClient.parseSSEEvent([
+            "data: {\"choices\":[{\"delta\":",
+            "data: {\"content\":\"Hello\"}}]}",
+        ])
+        if case .content(let text) = result {
+            XCTAssertEqual(text, "Hello")
+        } else {
+            XCTFail("Expected .content, got \(result)")
+        }
+    }
+
+    func testParseSSEEventIgnoresNonDataLines() {
+        let result = llmClient.parseSSEEvent([
+            "event: message",
+            "id: 123",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}",
+        ])
+        if case .content(let text) = result {
+            XCTAssertEqual(text, "Hello")
+        } else {
+            XCTFail("Expected .content, got \(result)")
+        }
+    }
+
+    func testParseSSEEventDoneReturnsDone() {
+        let result = llmClient.parseSSEEvent([
+            "data: [DONE]",
+        ])
+        if case .done = result {} else {
+            XCTFail("Expected .done, got \(result)")
+        }
+    }
+
     // MARK: - Helpers
 
     private func okResponse(for request: URLRequest) -> HTTPURLResponse {
