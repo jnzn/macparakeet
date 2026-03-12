@@ -79,8 +79,9 @@ One protocol, one SSE parser, one code path. If Anthropic-specific features (pro
 public struct LLMProviderConfig: Codable, Sendable, Equatable {
     public let id: LLMProviderID
     public let baseURL: URL
-    public let apiKey: String?         // nil for local providers
+    public let apiKey: String?         // nil for local providers (Ollama: "ollama")
     public let modelName: String       // e.g. "claude-sonnet-4-20250514", "llama3.2"
+    public let isLocal: Bool           // true for Ollama/LM Studio/local custom
 }
 
 public enum LLMProviderID: String, Codable, Sendable, CaseIterable {
@@ -99,7 +100,7 @@ API keys are stored in Keychain (via existing `KeychainKeyValueStore`), not User
 
 ```swift
 public protocol LLMClientProtocol: Sendable {
-    /// Single response (routes to Anthropic native or OpenAI-compatible based on config.id)
+    /// Single response
     func chatCompletion(
         messages: [ChatMessage],
         config: LLMProviderConfig,
@@ -176,7 +177,7 @@ public protocol LLMServiceProtocol: Sendable {
 ```swift
 public enum LLMError: Error, LocalizedError, Sendable {
     case notConfigured             // No provider set up
-    case connectionFailed(Error)   // Network/localhost unreachable
+    case connectionFailed(String)  // Network/localhost unreachable
     case authenticationFailed      // Invalid API key
     case rateLimited               // Provider rate limit
     case modelNotFound(String)     // Model name invalid

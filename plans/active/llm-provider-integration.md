@@ -49,7 +49,7 @@ public struct LLMProviderConfig: Codable, Sendable, Equatable {
     public static func gemini(apiKey: String, model: String = "gemini-2.5-flash") -> Self
     public static func ollama(model: String = "llama3.2") -> Self
     public static func lmstudio(model: String) -> Self
-    public static func custom(baseURL: URL, apiKey: String?, model: String) -> Self
+    public static func custom(baseURL: URL, apiKey: String?, model: String, isLocal: Bool) -> Self
 }
 ```
 
@@ -67,7 +67,6 @@ public struct ChatMessage: Codable, Sendable {
 public struct ChatCompletionOptions: Sendable {
     public let temperature: Double?
     public let maxTokens: Int?
-    public let stream: Bool
 }
 
 public struct ChatCompletionResponse: Sendable {
