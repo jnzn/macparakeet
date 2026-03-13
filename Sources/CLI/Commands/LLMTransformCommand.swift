@@ -28,21 +28,16 @@ struct LLMTransformCommand: AsyncParsableCommand {
         }
 
         let config = try llm.buildConfig()
-        let client = LLMClient()
-        let messages = [
-            ChatMessage(role: .system, content: "You are a helpful assistant that transforms text according to user instructions. Apply the requested transformation to the provided text. Return only the transformed text without explanation."),
-            ChatMessage(role: .user, content: "Transform the following text according to this instruction: \(prompt)\n\n---\n\n\(text)"),
-        ]
+        let service = LLMService(configStore: InlineLLMConfigStore(config: config))
 
         if stream {
-            let tokenStream = client.chatCompletionStream(messages: messages, config: config, options: .default)
+            let tokenStream = service.transformStream(text: text, prompt: prompt)
             for try await token in tokenStream {
                 print(token, terminator: "")
             }
             print()
         } else {
-            let response = try await client.chatCompletion(messages: messages, config: config, options: .default)
-            print(response.content)
+            print(try await service.transform(text: text, prompt: prompt))
         }
     }
 }

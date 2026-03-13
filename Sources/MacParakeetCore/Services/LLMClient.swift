@@ -100,6 +100,7 @@ public final class LLMClient: LLMClientProtocol, Sendable {
                     }
 
                     var eventLines: [String] = []
+                    var sawDone = false
 
                     for try await line in bytes.lines {
                         try Task.checkCancellation()
@@ -109,6 +110,7 @@ public final class LLMClient: LLMClientProtocol, Sendable {
                             case .content(let text):
                                 continuation.yield(text)
                             case .done:
+                                sawDone = true
                                 continuation.finish()
                                 return
                             case .skip:
@@ -126,6 +128,7 @@ public final class LLMClient: LLMClientProtocol, Sendable {
                         case .content(let text):
                             continuation.yield(text)
                         case .done:
+                            sawDone = true
                             continuation.finish()
                             return
                         case .skip:
@@ -133,6 +136,7 @@ public final class LLMClient: LLMClientProtocol, Sendable {
                         }
                     }
 
+                    try validateStreamCompletion(sawDone: sawDone)
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -243,6 +247,12 @@ public final class LLMClient: LLMClientProtocol, Sendable {
         return parseSSELine("data: \(payload)")
     }
 
+    internal func validateStreamCompletion(sawDone: Bool) throws {
+        guard sawDone else {
+            throw LLMError.streamingError("Stream ended before [DONE].")
+        }
+    }
+
     private func mapError(statusCode: Int, data: Data) -> LLMError {
         // Try to extract error message from response body
         let message: String
@@ -258,7 +268,10 @@ public final class LLMClient: LLMClientProtocol, Sendable {
         case 429:
             return .rateLimited
         case 404:
-            return .modelNotFound(message)
+            if message.lowercased().contains("model") {
+                return .modelNotFound(message)
+            }
+            return .providerError(message)
         case 400:
             if message.lowercased().contains("context") || message.lowercased().contains("token") {
                 return .contextTooLong

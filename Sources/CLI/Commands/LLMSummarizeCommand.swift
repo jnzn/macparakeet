@@ -25,25 +25,16 @@ struct LLMSummarizeCommand: AsyncParsableCommand {
         }
 
         let config = try llm.buildConfig()
-        let client = LLMClient()
+        let service = LLMService(configStore: InlineLLMConfigStore(config: config))
 
         if stream {
-            let messages = [
-                ChatMessage(role: .system, content: "You are a helpful assistant that summarizes transcripts. Provide a clear, concise summary that captures the key points, decisions, and action items. Use bullet points for clarity. Keep the summary under 500 words."),
-                ChatMessage(role: .user, content: text),
-            ]
-            let tokenStream = client.chatCompletionStream(messages: messages, config: config, options: .default)
+            let tokenStream = service.summarizeStream(transcript: text)
             for try await token in tokenStream {
                 print(token, terminator: "")
             }
             print()
         } else {
-            let messages = [
-                ChatMessage(role: .system, content: "You are a helpful assistant that summarizes transcripts. Provide a clear, concise summary that captures the key points, decisions, and action items. Use bullet points for clarity. Keep the summary under 500 words."),
-                ChatMessage(role: .user, content: text),
-            ]
-            let response = try await client.chatCompletion(messages: messages, config: config, options: .default)
-            print(response.content)
+            print(try await service.summarize(transcript: text))
         }
     }
 }
