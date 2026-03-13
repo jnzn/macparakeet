@@ -115,6 +115,8 @@ public final class LLMClient: LLMClientProtocol, Sendable {
                         case .done:
                             continuation.finish()
                             return
+                        case .error(let message):
+                            throw LLMError.streamingError(message)
                         case .skip:
                             break
                         }
@@ -198,7 +200,16 @@ public final class LLMClient: LLMClientProtocol, Sendable {
         stream: Bool
     ) throws -> URLRequest {
         let url = config.baseURL.appendingPathComponent("chat/completions")
-        var request = URLRequest(url: url, timeoutInterval: stream ? 120 : 30)
+
+        // Local models need longer timeouts for cold starts (model loading from disk)
+        let timeout: TimeInterval
+        if config.isLocal {
+            timeout = stream ? 600 : 300
+        } else {
+            timeout = stream ? 120 : 30
+        }
+
+        var request = URLRequest(url: url, timeoutInterval: timeout)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
@@ -216,22 +227,47 @@ public final class LLMClient: LLMClientProtocol, Sendable {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
 
+        // OpenAI reasoning models (o1, o3, o4-mini) reject temperature and max_tokens.
+        // They require max_completion_tokens instead.
+        let isReasoningModel = config.id == .openai && Self.isOpenAIReasoningModel(config.modelName)
+        let temperature = isReasoningModel ? nil : options.temperature
+        let maxTokens = isReasoningModel ? nil : options.maxTokens
+        let maxCompletionTokens = isReasoningModel ? options.maxTokens : nil
+
+        // Ollama defaults to 2048-token context regardless of model capability.
+        // Inject num_ctx to use the model's actual context window.
+        let ollamaOptions: OllamaRequestOptions?
+        if config.id == .ollama {
+            ollamaOptions = OllamaRequestOptions(num_ctx: 8192)
+        } else {
+            ollamaOptions = nil
+        }
+
         let body = OpenAIRequestBody(
             model: config.modelName,
             messages: messages.map { OpenAIMessage(role: $0.role.rawValue, content: $0.content) },
             stream: stream,
-            temperature: options.temperature,
-            max_tokens: options.maxTokens
+            temperature: temperature,
+            max_tokens: maxTokens,
+            max_completion_tokens: maxCompletionTokens,
+            options: ollamaOptions
         )
 
         request.httpBody = try JSONEncoder().encode(body)
         return request
     }
 
+    /// OpenAI reasoning models that reject temperature and max_tokens parameters.
+    private static func isOpenAIReasoningModel(_ model: String) -> Bool {
+        let lowered = model.lowercased()
+        return lowered.hasPrefix("o1") || lowered.hasPrefix("o3") || lowered.hasPrefix("o4")
+    }
+
     internal enum SSEResult {
         case content(String)
         case done
         case skip
+        case error(String)
     }
 
     internal func parseSSELine(_ line: String) -> SSEResult {
@@ -250,8 +286,16 @@ public final class LLMClient: LLMClientProtocol, Sendable {
         // Stream terminator
         if trimmed == "[DONE]" { return .done }
 
-        guard let data = trimmed.data(using: .utf8),
-              let chunk = try? JSONDecoder().decode(OpenAIStreamChunk.self, from: data) else {
+        guard let data = trimmed.data(using: .utf8) else { return .skip }
+
+        // Ollama can emit {"error": "..."} mid-stream on OOM or model failure.
+        // Detect and surface as a streaming error instead of silently dropping.
+        if let streamError = try? JSONDecoder().decode(StreamErrorResponse.self, from: data),
+           streamError.error != nil {
+            return .error(streamError.error!)
+        }
+
+        guard let chunk = try? JSONDecoder().decode(OpenAIStreamChunk.self, from: data) else {
             return .skip
         }
 
@@ -287,12 +331,16 @@ public final class LLMClient: LLMClientProtocol, Sendable {
     }
 
     private func mapError(statusCode: Int, data: Data) -> LLMError {
-        // Try to extract error message from response body (OpenAI and Anthropic formats)
+        // Try to extract error message from response body.
+        // Providers use different formats:
+        //   OpenAI/Anthropic: {"error": {"message": "..."}}
+        //   Gemini:           [{"error": {"code": 404, "message": "...", "status": "NOT_FOUND"}}]
         let message: String
         if let errorBody = try? JSONDecoder().decode(OpenAIErrorResponse.self, from: data) {
             message = errorBody.error.message
-        } else if let anthropicError = try? JSONDecoder().decode(AnthropicErrorResponse.self, from: data) {
-            message = anthropicError.error.message
+        } else if let geminiArray = try? JSONDecoder().decode([GeminiErrorWrapper].self, from: data),
+                  let first = geminiArray.first {
+            message = first.error.message
         } else {
             message = String(data: data, encoding: .utf8) ?? "Unknown error"
         }
@@ -326,6 +374,13 @@ struct OpenAIRequestBody: Encodable {
     let stream: Bool
     let temperature: Double?
     let max_tokens: Int?
+    let max_completion_tokens: Int?
+    let options: OllamaRequestOptions? // Ollama-specific: num_ctx etc.
+}
+
+/// Ollama-specific request options to override defaults (e.g., context window size).
+struct OllamaRequestOptions: Encodable {
+    let num_ctx: Int
 }
 
 struct OpenAIMessage: Encodable {
@@ -374,12 +429,18 @@ struct OpenAIErrorResponse: Decodable {
     }
 }
 
-struct AnthropicErrorResponse: Decodable {
+/// Gemini wraps errors in a JSON array: [{"error": {"code": 404, "message": "...", "status": "NOT_FOUND"}}]
+struct GeminiErrorWrapper: Decodable {
     let error: ErrorDetail
 
     struct ErrorDetail: Decodable {
         let message: String
     }
+}
+
+/// Ollama can emit {"error": "..."} mid-stream on OOM or model failure.
+struct StreamErrorResponse: Decodable {
+    let error: String?
 }
 
 struct ModelsListResponse: Decodable {

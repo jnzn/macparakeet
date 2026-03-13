@@ -532,6 +532,178 @@ final class LLMClientTests: XCTestCase {
         XCTAssertNoThrow(try llmClient.validateStreamCompletion(sawDone: true))
     }
 
+    // MARK: - OpenAI Reasoning Model Handling
+
+    func testReasoningModelUsesMaxCompletionTokens() async throws {
+        var capturedBody: [String: Any]?
+
+        MockURLProtocol.handler = { request in
+            if let body = self.extractBody(from: request) {
+                capturedBody = body
+            }
+            return (self.okResponse(for: request), self.validResponseData())
+        }
+
+        let config = LLMProviderConfig.openai(apiKey: "sk-test", model: "o3-mini")
+        _ = try await llmClient.chatCompletion(
+            messages: [ChatMessage(role: .user, content: "Hi")],
+            config: config,
+            options: ChatCompletionOptions(temperature: 0.7, maxTokens: 500)
+        )
+
+        // Reasoning models must use max_completion_tokens, not max_tokens
+        XCTAssertNil(capturedBody?["max_tokens"])
+        XCTAssertEqual(capturedBody?["max_completion_tokens"] as? Int, 500)
+        // Reasoning models must not send temperature
+        XCTAssertNil(capturedBody?["temperature"])
+    }
+
+    func testNonReasoningModelUsesMaxTokens() async throws {
+        var capturedBody: [String: Any]?
+
+        MockURLProtocol.handler = { request in
+            if let body = self.extractBody(from: request) {
+                capturedBody = body
+            }
+            return (self.okResponse(for: request), self.validResponseData())
+        }
+
+        let config = LLMProviderConfig.openai(apiKey: "sk-test", model: "gpt-4o")
+        _ = try await llmClient.chatCompletion(
+            messages: [ChatMessage(role: .user, content: "Hi")],
+            config: config,
+            options: ChatCompletionOptions(temperature: 0.7, maxTokens: 500)
+        )
+
+        XCTAssertEqual(capturedBody?["max_tokens"] as? Int, 500)
+        XCTAssertNil(capturedBody?["max_completion_tokens"])
+        XCTAssertEqual(capturedBody?["temperature"] as? Double, 0.7)
+    }
+
+    // MARK: - Ollama Context Window
+
+    func testOllamaRequestIncludesNumCtx() async throws {
+        var capturedBody: [String: Any]?
+
+        MockURLProtocol.handler = { request in
+            if let body = self.extractBody(from: request) {
+                capturedBody = body
+            }
+            return (self.okResponse(for: request), self.validResponseData())
+        }
+
+        let config = LLMProviderConfig.ollama(model: "llama3.2")
+        _ = try await llmClient.chatCompletion(
+            messages: [ChatMessage(role: .user, content: "Hi")],
+            config: config,
+            options: .default
+        )
+
+        let options = capturedBody?["options"] as? [String: Any]
+        XCTAssertEqual(options?["num_ctx"] as? Int, 8192)
+    }
+
+    func testNonOllamaRequestOmitsOptions() async throws {
+        var capturedBody: [String: Any]?
+
+        MockURLProtocol.handler = { request in
+            if let body = self.extractBody(from: request) {
+                capturedBody = body
+            }
+            return (self.okResponse(for: request), self.validResponseData())
+        }
+
+        let config = LLMProviderConfig.openai(apiKey: "sk-test")
+        _ = try await llmClient.chatCompletion(
+            messages: [ChatMessage(role: .user, content: "Hi")],
+            config: config,
+            options: .default
+        )
+
+        XCTAssertNil(capturedBody?["options"])
+    }
+
+    // MARK: - Gemini Error Array Format
+
+    func testGeminiErrorArrayParsedCorrectly() async {
+        MockURLProtocol.handler = { request in
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil
+            )!
+            let json = """
+            [{"error":{"code":404,"message":"models/fake-model is not found","status":"NOT_FOUND"}}]
+            """
+            return (response, Data(json.utf8))
+        }
+
+        let config = LLMProviderConfig.gemini(apiKey: "test-key", model: "fake-model")
+        do {
+            _ = try await llmClient.chatCompletion(
+                messages: [ChatMessage(role: .user, content: "Hi")],
+                config: config,
+                options: .default
+            )
+            XCTFail("Expected LLMError.modelNotFound")
+        } catch let error as LLMError {
+            if case .modelNotFound(let msg) = error {
+                XCTAssert(msg.contains("fake-model"), "Error should mention model name")
+            } else {
+                XCTFail("Expected modelNotFound, got \(error)")
+            }
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
+    }
+
+    // MARK: - Stream Error Detection
+
+    func testParseSSELineDetectsOllamaStreamError() {
+        let result = llmClient.parseSSELine("data: {\"error\":\"out of memory\"}")
+        if case .error(let msg) = result {
+            XCTAssertEqual(msg, "out of memory")
+        } else {
+            XCTFail("Expected .error, got \(result)")
+        }
+    }
+
+    // MARK: - Local Provider Timeouts
+
+    func testLocalProviderUsesLongerTimeout() async throws {
+        var capturedRequest: URLRequest?
+
+        MockURLProtocol.handler = { request in
+            capturedRequest = request
+            return (self.okResponse(for: request), self.validResponseData())
+        }
+
+        let config = LLMProviderConfig.ollama(model: "llama3.2")
+        _ = try await llmClient.chatCompletion(
+            messages: [ChatMessage(role: .user, content: "Hi")],
+            config: config,
+            options: .default
+        )
+
+        XCTAssertEqual(capturedRequest?.timeoutInterval, 300)
+    }
+
+    func testCloudProviderUsesStandardTimeout() async throws {
+        var capturedRequest: URLRequest?
+
+        MockURLProtocol.handler = { request in
+            capturedRequest = request
+            return (self.okResponse(for: request), self.validResponseData())
+        }
+
+        let config = LLMProviderConfig.openai(apiKey: "sk-test")
+        _ = try await llmClient.chatCompletion(
+            messages: [ChatMessage(role: .user, content: "Hi")],
+            config: config,
+            options: .default
+        )
+
+        XCTAssertEqual(capturedRequest?.timeoutInterval, 30)
+    }
+
     // MARK: - Helpers
 
     private func okResponse(for request: URLRequest) -> HTTPURLResponse {
