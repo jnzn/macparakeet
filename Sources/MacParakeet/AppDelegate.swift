@@ -1096,7 +1096,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     ) async -> Bool {
         do {
             dictationLog.notice("dictation_paste_started generation=\(generation) length=\(transcript.count)")
-            try await clipboardService.pasteText(transcript)
+            try await clipboardService.pasteText(transcript + " ")
             return true
         } catch {
             let bucket = commandFailureBucket(for: error)
