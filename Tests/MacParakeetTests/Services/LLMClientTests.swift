@@ -474,6 +474,28 @@ final class LLMClientTests: XCTestCase {
         }
     }
 
+    func testParseSSEEventEmptyLinesReturnsSkip() {
+        let result = llmClient.parseSSEEvent([])
+        if case .skip = result {} else {
+            XCTFail("Expected .skip, got \(result)")
+        }
+    }
+
+    func testParseSSELineTruncatedJSONSkips() {
+        // Provider sends incomplete JSON (e.g. network cut mid-frame)
+        let result = llmClient.parseSSELine("data: {\"choices\":[{\"delta\":{\"content\":\"Hel")
+        if case .skip = result {} else {
+            XCTFail("Expected .skip for truncated JSON, got \(result)")
+        }
+    }
+
+    func testParseSSELineEmptyChoicesSkips() {
+        let result = llmClient.parseSSELine("data: {\"choices\":[]}")
+        if case .skip = result {} else {
+            XCTFail("Expected .skip for empty choices, got \(result)")
+        }
+    }
+
     // MARK: - Helpers
 
     private func okResponse(for request: URLRequest) -> HTTPURLResponse {
