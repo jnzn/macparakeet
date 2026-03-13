@@ -468,4 +468,134 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertNil(viewModel.errorMessage)
         XCTAssertFalse(viewModel.isDragging)
     }
+
+    // MARK: - LLM Integration
+
+    func testLLMAvailableReflectsConfigState() {
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+        XCTAssertFalse(viewModel.llmAvailable, "No LLM service = not available")
+
+        let llm = MockLLMService()
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo, llmService: llm)
+        XCTAssertTrue(viewModel.llmAvailable, "With LLM service = available")
+    }
+
+    func testGenerateSummaryStreamsTokens() async throws {
+        let llm = MockLLMService()
+        llm.streamTokens = ["Key ", "points ", "here."]
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo, llmService: llm)
+
+        viewModel.generateSummary(text: "Some long transcript text")
+
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertEqual(viewModel.summaryState, .complete)
+        XCTAssertEqual(viewModel.summary, "Key points here.")
+    }
+
+    func testGenerateSummaryError() async throws {
+        let llm = MockLLMService()
+        llm.errorToThrow = LLMError.authenticationFailed
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo, llmService: llm)
+
+        viewModel.generateSummary(text: "Some text")
+
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        if case .error = viewModel.summaryState {
+            // Expected
+        } else {
+            XCTFail("Expected error state, got \(viewModel.summaryState)")
+        }
+    }
+
+    func testCancelSummary() {
+        let llm = MockLLMService()
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo, llmService: llm)
+
+        viewModel.generateSummary(text: "Text")
+        viewModel.cancelSummary()
+
+        XCTAssertNotEqual(viewModel.summaryState, .streaming)
+    }
+
+    func testDismissSummaryResetsState() async throws {
+        let llm = MockLLMService()
+        llm.streamTokens = ["Summary"]
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo, llmService: llm)
+
+        viewModel.generateSummary(text: "Text")
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        viewModel.dismissSummary()
+
+        XCTAssertEqual(viewModel.summary, "")
+        XCTAssertEqual(viewModel.summaryState, .idle)
+        XCTAssertFalse(viewModel.summaryBadge)
+    }
+
+    func testAutoSummarizeTriggersForLongTranscript() async throws {
+        let llm = MockLLMService()
+        llm.streamTokens = ["Auto ", "summary"]
+        let longText = String(repeating: "word ", count: 200) // > 500 chars
+
+        let expectedResult = Transcription(
+            fileName: "audio.mp3",
+            rawTranscript: longText,
+            status: .completed
+        )
+        await mockService.configure(result: expectedResult)
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo, llmService: llm)
+
+        let url = URL(fileURLWithPath: "/tmp/audio.mp3")
+        viewModel.transcribeFile(url: url)
+
+        try await Task.sleep(nanoseconds: 400_000_000)
+
+        XCTAssertEqual(llm.summarizeCallCount, 1)
+        XCTAssertEqual(viewModel.summary, "Auto summary")
+    }
+
+    func testAutoSummarizeSkipsShortTranscript() async throws {
+        let llm = MockLLMService()
+
+        let expectedResult = Transcription(
+            fileName: "audio.mp3",
+            rawTranscript: "Short",
+            status: .completed
+        )
+        await mockService.configure(result: expectedResult)
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo, llmService: llm)
+
+        let url = URL(fileURLWithPath: "/tmp/audio.mp3")
+        viewModel.transcribeFile(url: url)
+
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertEqual(llm.summarizeCallCount, 0)
+    }
+
+    func testSummaryBadgeSetWhenNotOnSummaryTab() async throws {
+        let llm = MockLLMService()
+        llm.streamTokens = ["Done"]
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo, llmService: llm)
+        viewModel.selectedTab = .transcript
+
+        viewModel.generateSummary(text: "Some text to summarize for testing badge behavior")
+
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertTrue(viewModel.summaryBadge)
+    }
+
+    func testUpdateLLMAvailability() {
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+        XCTAssertFalse(viewModel.llmAvailable)
+
+        let llm = MockLLMService()
+        viewModel.updateLLMAvailability(true, llmService: llm)
+        XCTAssertTrue(viewModel.llmAvailable)
+    }
 }

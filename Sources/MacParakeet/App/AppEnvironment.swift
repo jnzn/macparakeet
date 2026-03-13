@@ -22,6 +22,9 @@ final class AppEnvironment {
     let entitlementsService: EntitlementsService
     let launchAtLoginService: LaunchAtLoginService
     let checkoutURL: URL?
+    let llmClient: LLMClient
+    let llmConfigStore: LLMConfigStore
+    let llmService: LLMService
 
     init() throws {
         // Ensure required runtime directories exist (db, dictations, temp).
@@ -104,6 +107,10 @@ final class AppEnvironment {
             snippetRepo: snippetRepo,
             processingMode: processingModeClosure
         )
+
+        llmClient = LLMClient()
+        llmConfigStore = LLMConfigStore()
+        llmService = LLMService(client: llmClient, configStore: llmConfigStore)
 
         transcriptionService = TranscriptionService(
             audioProcessor: audioProcessor,

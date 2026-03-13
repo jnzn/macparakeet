@@ -6,6 +6,7 @@ import MacParakeetViewModels
 
 struct SettingsView: View {
     @Bindable var viewModel: SettingsViewModel
+    @Bindable var llmSettingsViewModel: LLMSettingsViewModel
 
     @State private var showClearAllAlert = false
     @State private var showClearYouTubeAudioAlert = false
@@ -17,6 +18,7 @@ struct SettingsView: View {
                 headerCard
                 generalCard
                 dictationCard
+                aiProviderCard
                 storageCard
                 localModelsCard
                 permissionsCard
@@ -190,6 +192,18 @@ struct SettingsView: View {
                     }
                 }
             }
+        }
+    }
+
+    // MARK: - AI Provider
+
+    private var aiProviderCard: some View {
+        settingsCard(
+            title: "AI Provider",
+            subtitle: "Optional. Powers transcript summaries and chat.",
+            icon: "brain"
+        ) {
+            LLMSettingsView(viewModel: llmSettingsViewModel)
         }
     }
 

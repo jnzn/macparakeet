@@ -15,6 +15,7 @@ private struct ExportConfirmation: Identifiable {
 struct TranscriptResultView: View {
     let transcription: Transcription
     @Bindable var viewModel: TranscriptionViewModel
+    var chatViewModel: TranscriptChatViewModel?
     var onBack: (() -> Void)?
     var onRetranscribe: ((Transcription) -> Void)?
 
@@ -122,6 +123,12 @@ struct TranscriptResultView: View {
             SacredGeometryDivider()
                 .padding(.horizontal, DesignSystem.Spacing.lg)
 
+            if viewModel.llmAvailable {
+                tabBar
+                    .padding(.horizontal, DesignSystem.Spacing.lg)
+                    .padding(.top, DesignSystem.Spacing.sm)
+            }
+
             GeometryReader { proxy in
                 contentArea(availableWidth: proxy.size.width)
             }
@@ -215,12 +222,40 @@ struct TranscriptResultView: View {
             dismissTask?.cancel()
             dismissTask = nil
         }
+        .onAppear {
+            let text = transcription.cleanTranscript ?? transcription.rawTranscript ?? ""
+            chatViewModel?.updateTranscript(text)
+        }
+        .onChange(of: transcription.id) {
+            let text = transcription.cleanTranscript ?? transcription.rawTranscript ?? ""
+            chatViewModel?.updateTranscript(text)
+            viewModel.selectedTab = .transcript
+            viewModel.dismissSummary()
+        }
     }
 
     @ViewBuilder
     private func contentArea(availableWidth: CGFloat) -> some View {
-        transcriptPane
-            .padding(DesignSystem.Spacing.lg)
+        Group {
+            if viewModel.llmAvailable {
+                switch viewModel.selectedTab {
+                case .transcript:
+                    transcriptPane
+                case .summary:
+                    summaryPane
+                case .chat:
+                    if let chatViewModel {
+                        chatPane(viewModel: chatViewModel)
+                    } else {
+                        Text("Chat unavailable")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                transcriptPane
+            }
+        }
+        .padding(DesignSystem.Spacing.lg)
     }
 
     private var transcriptPane: some View {
@@ -248,6 +283,215 @@ struct TranscriptResultView: View {
             RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
                 .strokeBorder(DesignSystem.Colors.border.opacity(0.75), lineWidth: 0.5)
         )
+    }
+
+    // MARK: - Tab Bar
+
+    private var tabBar: some View {
+        HStack(spacing: 0) {
+            ForEach(TranscriptionViewModel.TranscriptTab.allCases, id: \.self) { tab in
+                Button {
+                    viewModel.selectedTab = tab
+                    if tab == .summary { viewModel.summaryBadge = false }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(tab.rawValue.capitalized)
+                            .font(DesignSystem.Typography.bodySmall.weight(
+                                viewModel.selectedTab == tab ? .semibold : .regular
+                            ))
+
+                        if tab == .summary && viewModel.summaryBadge {
+                            Circle()
+                                .fill(DesignSystem.Colors.accent)
+                                .frame(width: 6, height: 6)
+                        }
+                    }
+                    .padding(.horizontal, DesignSystem.Spacing.md)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(viewModel.selectedTab == tab
+                                  ? DesignSystem.Colors.accent.opacity(0.12)
+                                  : .clear)
+                    )
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(viewModel.selectedTab == tab ? DesignSystem.Colors.accent : .secondary)
+            }
+            Spacer()
+        }
+    }
+
+    // MARK: - Summary Pane
+
+    private var summaryPane: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+                switch viewModel.summaryState {
+                case .idle:
+                    Text("No summary yet.")
+                        .foregroundStyle(.secondary)
+                        .font(DesignSystem.Typography.body)
+                case .streaming:
+                    HStack(alignment: .firstTextBaseline, spacing: 0) {
+                        Text(viewModel.summary)
+                            .font(DesignSystem.Typography.bodyLarge)
+                            .textSelection(.enabled)
+                            .lineSpacing(4)
+                        PulsingCursor()
+                    }
+                case .complete:
+                    Text(viewModel.summary)
+                        .font(DesignSystem.Typography.bodyLarge)
+                        .textSelection(.enabled)
+                        .lineSpacing(4)
+                case .error(let message):
+                    VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(DesignSystem.Colors.errorRed)
+                            Text(message)
+                                .font(DesignSystem.Typography.body)
+                                .foregroundStyle(DesignSystem.Colors.errorRed)
+                        }
+                        Button("Retry") {
+                            let text = transcription.cleanTranscript ?? transcription.rawTranscript ?? ""
+                            viewModel.generateSummary(text: text)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+            }
+            .padding(DesignSystem.Spacing.lg)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
+                .fill(DesignSystem.Colors.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
+                .strokeBorder(DesignSystem.Colors.border.opacity(0.75), lineWidth: 0.5)
+        )
+    }
+
+    // MARK: - Chat Pane
+
+    @ViewBuilder
+    private func chatPane(viewModel chatVM: TranscriptChatViewModel) -> some View {
+        VStack(spacing: 0) {
+            // Messages
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+                        if chatVM.messages.isEmpty {
+                            Text("Ask a question about this transcript.")
+                                .foregroundStyle(.secondary)
+                                .font(DesignSystem.Typography.body)
+                                .padding(DesignSystem.Spacing.lg)
+                        }
+
+                        ForEach(chatVM.messages) { message in
+                            chatBubble(message)
+                                .id(message.id)
+                        }
+
+                        if let error = chatVM.errorMessage {
+                            HStack(spacing: 6) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(DesignSystem.Colors.errorRed)
+                                Text(error)
+                                    .font(DesignSystem.Typography.caption)
+                                    .foregroundStyle(DesignSystem.Colors.errorRed)
+                            }
+                            .padding(.horizontal, DesignSystem.Spacing.md)
+                        }
+                    }
+                    .padding(DesignSystem.Spacing.md)
+                }
+                .onChange(of: chatVM.messages.count) {
+                    if let lastID = chatVM.messages.last?.id {
+                        withAnimation { proxy.scrollTo(lastID, anchor: .bottom) }
+                    }
+                }
+            }
+            .background(
+                RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
+                    .fill(DesignSystem.Colors.surface)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
+                    .strokeBorder(DesignSystem.Colors.border.opacity(0.75), lineWidth: 0.5)
+            )
+
+            // Input bar
+            HStack(spacing: DesignSystem.Spacing.sm) {
+                TextField("Ask about this transcript...", text: Bindable(chatVM).inputText)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { chatVM.sendMessage() }
+                    .disabled(chatVM.isStreaming)
+
+                if chatVM.isStreaming {
+                    Button {
+                        chatVM.cancelStreaming()
+                    } label: {
+                        Image(systemName: "stop.circle.fill")
+                            .font(.system(size: 16))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(DesignSystem.Colors.errorRed)
+                } else {
+                    Button {
+                        chatVM.sendMessage()
+                    } label: {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 16))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(DesignSystem.Colors.accent)
+                    .disabled(chatVM.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+
+                if !chatVM.messages.isEmpty {
+                    Button {
+                        chatVM.clearHistory()
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 12))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+            .padding(.top, DesignSystem.Spacing.sm)
+        }
+    }
+
+    @ViewBuilder
+    private func chatBubble(_ message: ChatDisplayMessage) -> some View {
+        HStack {
+            if message.role == .user { Spacer(minLength: 60) }
+
+            VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    Text(message.content)
+                        .font(DesignSystem.Typography.body)
+                        .textSelection(.enabled)
+                    if message.isStreaming {
+                        PulsingCursor()
+                    }
+                }
+            }
+            .padding(.horizontal, DesignSystem.Spacing.md)
+            .padding(.vertical, DesignSystem.Spacing.sm)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(message.role == .user
+                          ? DesignSystem.Colors.accent.opacity(0.12)
+                          : DesignSystem.Colors.surfaceElevated)
+            )
+
+            if message.role == .assistant { Spacer(minLength: 60) }
+        }
     }
 
     // MARK: - Mandala Data
