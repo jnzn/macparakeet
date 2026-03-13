@@ -15,6 +15,8 @@ public struct Transcription: Codable, Identifiable, Sendable {
     public var speakerCount: Int?
     public var speakers: [SpeakerInfo]?
     public var diarizationSegments: [DiarizationSegmentRecord]?
+    public var summary: String?
+    public var chatMessages: [ChatMessage]?
     public var status: TranscriptionStatus
     public var errorMessage: String?
     public var exportPath: String?
@@ -42,6 +44,8 @@ public struct Transcription: Codable, Identifiable, Sendable {
         speakerCount: Int? = nil,
         speakers: [SpeakerInfo]? = nil,
         diarizationSegments: [DiarizationSegmentRecord]? = nil,
+        summary: String? = nil,
+        chatMessages: [ChatMessage]? = nil,
         status: TranscriptionStatus = .processing,
         errorMessage: String? = nil,
         exportPath: String? = nil,
@@ -61,6 +65,8 @@ public struct Transcription: Codable, Identifiable, Sendable {
         self.speakerCount = speakerCount
         self.speakers = speakers
         self.diarizationSegments = diarizationSegments
+        self.summary = summary
+        self.chatMessages = chatMessages
         self.status = status
         self.errorMessage = errorMessage
         self.exportPath = exportPath
@@ -113,7 +119,8 @@ extension Transcription: FetchableRecord, PersistableRecord {
     public enum Columns: String, ColumnExpression {
         case id, createdAt, fileName, filePath, fileSizeBytes, durationMs
         case rawTranscript, cleanTranscript, wordTimestamps, language
-        case speakerCount, speakers, diarizationSegments, status, errorMessage, exportPath, sourceURL, updatedAt
+        case speakerCount, speakers, diarizationSegments, summary, chatMessages
+        case status, errorMessage, exportPath, sourceURL, updatedAt
     }
 
     /// Backward-compatible decoding: `speakers` column may contain old `[String]` JSON
@@ -144,6 +151,8 @@ extension Transcription: FetchableRecord, PersistableRecord {
         }
 
         diarizationSegments = try container.decodeIfPresent([DiarizationSegmentRecord].self, forKey: .diarizationSegments)
+        summary = try container.decodeIfPresent(String.self, forKey: .summary)
+        chatMessages = try container.decodeIfPresent([ChatMessage].self, forKey: .chatMessages)
         status = try container.decode(TranscriptionStatus.self, forKey: .status)
         errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)
         exportPath = try container.decodeIfPresent(String.self, forKey: .exportPath)

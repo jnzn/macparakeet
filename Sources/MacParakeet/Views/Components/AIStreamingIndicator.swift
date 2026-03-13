@@ -67,14 +67,14 @@ extension View {
 /// Shows a meditative merkaba spinner with subtle status text.
 struct SummarySkeletonView: View {
     var body: some View {
-        VStack(spacing: DesignSystem.Spacing.lg) {
+        VStack(spacing: DesignSystem.Spacing.md) {
             MeditativeMerkabaView(
                 size: 96,
                 revolutionDuration: 4.0,
                 tintColor: DesignSystem.Colors.accent
             )
 
-            VStack(spacing: DesignSystem.Spacing.xs) {
+            VStack(spacing: DesignSystem.Spacing.sm) {
                 Text("Generating summary")
                     .font(DesignSystem.Typography.bodySmall.weight(.medium))
                     .foregroundStyle(.secondary)
@@ -113,7 +113,8 @@ struct ChatLoadingSweep: View {
     var body: some View {
         RoundedRectangle(cornerRadius: 6)
             .fill(DesignSystem.Colors.surfaceElevated.opacity(0.25))
-            .frame(width: 200, height: 6)
+            .frame(maxWidth: .infinity)
+            .frame(height: 6)
             .overlay(
                 GeometryReader { geo in
                     let beamWidth = geo.size.width * 0.6
@@ -155,7 +156,7 @@ struct ChatLoadingSweep: View {
             .clipShape(Capsule())
             .padding(.vertical, 14)
             .onAppear {
-                withAnimation(.linear(duration: 3.0).repeatForever(autoreverses: false)) {
+                withAnimation(.linear(duration: 6.0).repeatForever(autoreverses: false)) {
                     phase = 1.2
                 }
                 withAnimation(.linear(duration: 6.0).repeatForever(autoreverses: false)) {

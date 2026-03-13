@@ -205,15 +205,15 @@ public final class LLMSettingsViewModel {
             "google/gemini-2.5-flash",
         ]
         case .ollama: return [
-            "llama3.2",
-            "llama3.3",
+            "qwen3.5:4b",
+            "qwen3.5:9b",
+            "llama4:8b",
+            "gemma3:4b",
+            "deepseek-v3.2",
+            "qwen3:8b",
             "mistral",
-            "qwen3",
-            "gemma3",
-            "phi-4",
-            "deepseek-r1",
         ]
-        case .lmstudio, .custom: return []
+        case .custom: return []
         }
     }
 
@@ -228,7 +228,6 @@ public final class LLMSettingsViewModel {
         case .gemini: return "https://generativelanguage.googleapis.com/v1beta/openai"
         case .openrouter: return "https://openrouter.ai/api/v1"
         case .ollama: return "http://localhost:11434/v1"
-        case .lmstudio: return "http://localhost:1234/v1"
         case .custom: return ""
         }
     }

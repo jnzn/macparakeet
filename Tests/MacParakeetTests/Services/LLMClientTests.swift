@@ -85,22 +85,25 @@ final class LLMClientTests: XCTestCase {
         XCTAssertEqual(capturedRequest?.value(forHTTPHeaderField: "Content-Type"), "application/json")
     }
 
-    func testOllamaInjectsDefaultAuth() async throws {
+    func testOllamaUsesNativeAPI() async throws {
         var capturedRequest: URLRequest?
 
         MockURLProtocol.handler = { request in
             capturedRequest = request
-            return (self.okResponse(for: request), self.validResponseData())
+            return (self.okResponse(for: request), self.validOllamaResponseData())
         }
 
-        let config = LLMProviderConfig.ollama(model: "llama3.2")
+        let config = LLMProviderConfig.ollama(model: "qwen3.5:4b")
         _ = try await llmClient.chatCompletion(
             messages: [ChatMessage(role: .user, content: "Hi")],
             config: config,
             options: .default
         )
 
-        XCTAssertEqual(capturedRequest?.value(forHTTPHeaderField: "Authorization"), "Bearer ollama")
+        // Should hit native /api/chat, not /v1/chat/completions
+        XCTAssertTrue(capturedRequest?.url?.path.contains("/api/chat") == true)
+        // No auth header for native API
+        XCTAssertNil(capturedRequest?.value(forHTTPHeaderField: "Authorization"))
     }
 
     func testCustomProviderWithNoAPIKeyOmitsAuthHeader() async throws {
@@ -606,17 +609,17 @@ final class LLMClientTests: XCTestCase {
 
     // MARK: - Ollama Context Window
 
-    func testOllamaRequestIncludesNumCtx() async throws {
+    func testOllamaRequestIncludesNumCtxAndThinkFalse() async throws {
         var capturedBody: [String: Any]?
 
         MockURLProtocol.handler = { request in
             if let body = self.extractBody(from: request) {
                 capturedBody = body
             }
-            return (self.okResponse(for: request), self.validResponseData())
+            return (self.okResponse(for: request), self.validOllamaResponseData())
         }
 
-        let config = LLMProviderConfig.ollama(model: "llama3.2")
+        let config = LLMProviderConfig.ollama(model: "qwen3.5:4b")
         _ = try await llmClient.chatCompletion(
             messages: [ChatMessage(role: .user, content: "Hi")],
             config: config,
@@ -625,6 +628,7 @@ final class LLMClientTests: XCTestCase {
 
         let options = capturedBody?["options"] as? [String: Any]
         XCTAssertEqual(options?["num_ctx"] as? Int, 8192)
+        XCTAssertEqual(capturedBody?["think"] as? Bool, false)
     }
 
     func testNonOllamaRequestOmitsOptions() async throws {
@@ -697,10 +701,10 @@ final class LLMClientTests: XCTestCase {
 
         MockURLProtocol.handler = { request in
             capturedRequest = request
-            return (self.okResponse(for: request), self.validResponseData())
+            return (self.okResponse(for: request), self.validOllamaResponseData())
         }
 
-        let config = LLMProviderConfig.ollama(model: "llama3.2")
+        let config = LLMProviderConfig.ollama(model: "qwen3.5:4b")
         _ = try await llmClient.chatCompletion(
             messages: [ChatMessage(role: .user, content: "Hi")],
             config: config,
@@ -737,6 +741,12 @@ final class LLMClientTests: XCTestCase {
     private func validResponseData() -> Data {
         Data("""
         {"model":"gpt-4o","choices":[{"message":{"content":"OK"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}
+        """.utf8)
+    }
+
+    private func validOllamaResponseData() -> Data {
+        Data("""
+        {"model":"qwen3.5:4b","message":{"role":"assistant","content":"OK"},"done":true,"prompt_eval_count":5,"eval_count":1}
         """.utf8)
     }
 

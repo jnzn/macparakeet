@@ -35,6 +35,11 @@ public final class LLMClient: LLMClientProtocol, Sendable {
         config: LLMProviderConfig,
         options: ChatCompletionOptions
     ) async throws -> ChatCompletionResponse {
+        // Ollama: use native /api/chat to disable thinking mode (not supported via /v1 compat)
+        if config.id == .ollama {
+            return try await ollamaChatCompletion(messages: messages, config: config, options: options)
+        }
+
         let request = try buildRequest(messages: messages, config: config, options: options, stream: false)
 
         let data: Data
@@ -74,6 +79,19 @@ public final class LLMClient: LLMClientProtocol, Sendable {
     }
 
     public func chatCompletionStream(
+        messages: [ChatMessage],
+        config: LLMProviderConfig,
+        options: ChatCompletionOptions
+    ) -> AsyncThrowingStream<String, Error> {
+        // Ollama: use native /api/chat to disable thinking mode
+        if config.id == .ollama {
+            return ollamaChatCompletionStream(messages: messages, config: config, options: options)
+        }
+
+        return openAIChatCompletionStream(messages: messages, config: config, options: options)
+    }
+
+    private func openAIChatCompletionStream(
         messages: [ChatMessage],
         config: LLMProviderConfig,
         options: ChatCompletionOptions
@@ -132,6 +150,147 @@ public final class LLMClient: LLMClientProtocol, Sendable {
                 task.cancel()
             }
         }
+    }
+
+    // MARK: - Ollama Native API
+
+    /// Uses Ollama's native /api/chat with think:false to disable extended thinking.
+    /// The OpenAI-compatible /v1 endpoint doesn't support disabling thinking mode.
+    private func ollamaChatCompletion(
+        messages: [ChatMessage],
+        config: LLMProviderConfig,
+        options: ChatCompletionOptions
+    ) async throws -> ChatCompletionResponse {
+        let request = try buildOllamaRequest(messages: messages, config: config, stream: false)
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            throw LLMError.connectionFailed(error.localizedDescription)
+        }
+
+        guard let http = response as? HTTPURLResponse else {
+            throw LLMError.connectionFailed("Invalid response.")
+        }
+
+        guard (200...299).contains(http.statusCode) else {
+            throw mapError(statusCode: http.statusCode, data: data)
+        }
+
+        guard let ollamaResponse = try? JSONDecoder().decode(OllamaChatResponse.self, from: data) else {
+            throw LLMError.invalidResponse
+        }
+
+        let usage = TokenUsage(
+            promptTokens: ollamaResponse.prompt_eval_count ?? 0,
+            completionTokens: ollamaResponse.eval_count ?? 0
+        )
+
+        return ChatCompletionResponse(
+            content: ollamaResponse.message.content,
+            model: ollamaResponse.model,
+            usage: usage
+        )
+    }
+
+    private func ollamaChatCompletionStream(
+        messages: [ChatMessage],
+        config: LLMProviderConfig,
+        options: ChatCompletionOptions
+    ) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    let request = try buildOllamaRequest(messages: messages, config: config, stream: true)
+
+                    let (bytes, response): (URLSession.AsyncBytes, URLResponse)
+                    do {
+                        (bytes, response) = try await session.bytes(for: request)
+                    } catch {
+                        throw LLMError.connectionFailed(error.localizedDescription)
+                    }
+
+                    guard let http = response as? HTTPURLResponse else {
+                        throw LLMError.connectionFailed("Invalid response.")
+                    }
+
+                    guard (200...299).contains(http.statusCode) else {
+                        var errorData = Data()
+                        for try await byte in bytes {
+                            errorData.append(byte)
+                        }
+                        throw mapError(statusCode: http.statusCode, data: errorData)
+                    }
+
+                    // Ollama streams NDJSON: one JSON object per line
+                    for try await line in bytes.lines {
+                        try Task.checkCancellation()
+
+                        guard !line.isEmpty,
+                              let data = line.data(using: .utf8),
+                              let chunk = try? JSONDecoder().decode(OllamaChatResponse.self, from: data) else {
+                            continue
+                        }
+
+                        // Check for errors
+                        if let error = chunk.error {
+                            throw LLMError.streamingError(error)
+                        }
+
+                        let content = chunk.message.content
+                        if !content.isEmpty {
+                            continuation.yield(content)
+                        }
+
+                        // done:true means stream is complete
+                        if chunk.done == true {
+                            continuation.finish()
+                            return
+                        }
+                    }
+
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+
+            continuation.onTermination = { _ in
+                task.cancel()
+            }
+        }
+    }
+
+    private func buildOllamaRequest(
+        messages: [ChatMessage],
+        config: LLMProviderConfig,
+        stream: Bool
+    ) throws -> URLRequest {
+        // Use native /api/chat endpoint (strip /v1 suffix if present)
+        var baseStr = config.baseURL.absoluteString
+        if baseStr.hasSuffix("/v1") {
+            baseStr = String(baseStr.dropLast(3))
+        } else if baseStr.hasSuffix("/v1/") {
+            baseStr = String(baseStr.dropLast(4))
+        }
+        let url = URL(string: baseStr)!.appendingPathComponent("api/chat")
+
+        var request = URLRequest(url: url, timeoutInterval: stream ? 600 : 300)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body = OllamaChatRequest(
+            model: config.modelName,
+            messages: messages.map { OllamaMessage(role: $0.role.rawValue, content: $0.content) },
+            stream: stream,
+            think: false,
+            options: OllamaRequestOptions(num_ctx: 8192)
+        )
+
+        request.httpBody = try JSONEncoder().encode(body)
+        return request
     }
 
     public func testConnection(config: LLMProviderConfig) async throws {
@@ -466,5 +625,34 @@ struct ModelsListResponse: Decodable {
 
     struct ModelEntry: Decodable {
         let id: String
+    }
+}
+
+// MARK: - Ollama Native API Types
+
+struct OllamaChatRequest: Encodable {
+    let model: String
+    let messages: [OllamaMessage]
+    let stream: Bool
+    let think: Bool
+    let options: OllamaRequestOptions
+}
+
+struct OllamaMessage: Encodable {
+    let role: String
+    let content: String
+}
+
+struct OllamaChatResponse: Decodable {
+    let model: String
+    let message: OllamaResponseMessage
+    let done: Bool?
+    let error: String?
+    let prompt_eval_count: Int?
+    let eval_count: Int?
+
+    struct OllamaResponseMessage: Decodable {
+        let role: String
+        let content: String
     }
 }

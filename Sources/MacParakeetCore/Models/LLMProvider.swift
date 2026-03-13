@@ -8,7 +8,6 @@ public enum LLMProviderID: String, Codable, Sendable, CaseIterable {
     case gemini
     case openrouter
     case ollama
-    case lmstudio
     case custom
 
     public var displayName: String {
@@ -18,14 +17,13 @@ public enum LLMProviderID: String, Codable, Sendable, CaseIterable {
         case .gemini: return "Google Gemini"
         case .openrouter: return "OpenRouter"
         case .ollama: return "Ollama"
-        case .lmstudio: return "LM Studio"
         case .custom: return "Custom"
         }
     }
 
     public var isLocal: Bool {
         switch self {
-        case .ollama, .lmstudio: return true
+        case .ollama: return true
         case .anthropic, .openai, .gemini, .openrouter, .custom: return false
         }
     }
@@ -104,21 +102,11 @@ public struct LLMProviderConfig: Codable, Sendable, Equatable {
         )
     }
 
-    public static func ollama(model: String = "llama3.2", baseURL: URL? = nil) -> LLMProviderConfig {
+    public static func ollama(model: String = "qwen3.5:4b", baseURL: URL? = nil) -> LLMProviderConfig {
         LLMProviderConfig(
             id: .ollama,
             baseURL: baseURL ?? URL(string: "http://localhost:11434/v1")!,
             apiKey: nil,
-            modelName: model,
-            isLocal: true
-        )
-    }
-
-    public static func lmstudio(model: String, apiKey: String? = nil, baseURL: URL? = nil) -> LLMProviderConfig {
-        LLMProviderConfig(
-            id: .lmstudio,
-            baseURL: baseURL ?? URL(string: "http://localhost:1234/v1")!,
-            apiKey: apiKey,
             modelName: model,
             isLocal: true
         )
