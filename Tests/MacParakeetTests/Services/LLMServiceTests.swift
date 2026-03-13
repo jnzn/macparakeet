@@ -44,6 +44,14 @@ final class MockLLMClient: LLMClientProtocol, @unchecked Sendable {
         capturedConfig = config
         if let error = testConnectionError { throw error }
     }
+
+    var modelsList: [String] = ["mock-model-1", "mock-model-2"]
+    var listModelsError: Error?
+
+    func listModels(config: LLMProviderConfig) async throws -> [String] {
+        if let error = listModelsError { throw error }
+        return modelsList
+    }
 }
 
 final class MockLLMConfigStore: LLMConfigStoreProtocol, @unchecked Sendable {

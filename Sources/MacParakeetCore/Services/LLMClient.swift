@@ -16,6 +16,9 @@ public protocol LLMClientProtocol: Sendable {
     ) -> AsyncThrowingStream<String, Error>
 
     func testConnection(config: LLMProviderConfig) async throws
+
+    /// Fetches available model IDs from the provider's /models endpoint.
+    func listModels(config: LLMProviderConfig) async throws -> [String]
 }
 
 // MARK: - Implementation
@@ -50,10 +53,11 @@ public final class LLMClient: LLMClientProtocol, Sendable {
             throw mapError(statusCode: http.statusCode, data: data)
         }
 
-        guard let openAIResponse = try? JSONDecoder().decode(OpenAIResponse.self, from: data),
-              let content = openAIResponse.choices.first?.message.content else {
+        guard let openAIResponse = try? JSONDecoder().decode(OpenAIResponse.self, from: data) else {
             throw LLMError.invalidResponse
         }
+
+        let content = openAIResponse.choices.first?.message.content ?? ""
 
         let usage: TokenUsage?
         if let u = openAIResponse.usage {
@@ -99,36 +103,16 @@ public final class LLMClient: LLMClientProtocol, Sendable {
                         throw mapError(statusCode: http.statusCode, data: errorData)
                     }
 
-                    var eventLines: [String] = []
-                    var sawDone = false
-
+                    // Process each line individually. Some providers (Gemini)
+                    // don't send blank line separators between SSE events,
+                    // so we parse each `data:` line as it arrives.
                     for try await line in bytes.lines {
                         try Task.checkCancellation()
 
-                        if line.isEmpty {
-                            switch parseSSEEvent(eventLines) {
-                            case .content(let text):
-                                continuation.yield(text)
-                            case .done:
-                                sawDone = true
-                                continuation.finish()
-                                return
-                            case .skip:
-                                break
-                            }
-                            eventLines.removeAll(keepingCapacity: true)
-                            continue
-                        }
-
-                        eventLines.append(line)
-                    }
-
-                    if !eventLines.isEmpty {
-                        switch parseSSEEvent(eventLines) {
+                        switch parseSSELine(line) {
                         case .content(let text):
                             continuation.yield(text)
                         case .done:
-                            sawDone = true
                             continuation.finish()
                             return
                         case .skip:
@@ -136,7 +120,6 @@ public final class LLMClient: LLMClientProtocol, Sendable {
                         }
                     }
 
-                    try validateStreamCompletion(sawDone: sawDone)
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -155,6 +138,57 @@ public final class LLMClient: LLMClientProtocol, Sendable {
         _ = try await chatCompletion(messages: messages, config: config, options: options)
     }
 
+    public func listModels(config: LLMProviderConfig) async throws -> [String] {
+        let url = config.baseURL.appendingPathComponent("models")
+        var request = URLRequest(url: url, timeoutInterval: 15)
+        request.httpMethod = "GET"
+
+        switch config.id {
+        case .anthropic:
+            // Anthropic uses x-api-key header and anthropic-version
+            if let key = config.apiKey {
+                request.setValue(key, forHTTPHeaderField: "x-api-key")
+                request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+            }
+        case .gemini:
+            // Gemini uses ?key= query parameter on their native endpoint
+            // But since we use the OpenAI-compatible endpoint, Bearer works
+            if let key = config.apiKey {
+                request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+            }
+        case .ollama:
+            request.setValue("Bearer ollama", forHTTPHeaderField: "Authorization")
+        default:
+            if let key = config.apiKey {
+                request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+            }
+        }
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            throw LLMError.connectionFailed("Failed to fetch models.")
+        }
+
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw LLMError.connectionFailed("Failed to fetch models.")
+        }
+
+        // Try OpenAI-compatible format: { "data": [{ "id": "..." }] }
+        if let modelsResponse = try? JSONDecoder().decode(ModelsListResponse.self, from: data) {
+            return modelsResponse.data
+                .map { id in
+                    // Gemini returns "models/gemini-2.5-flash" — strip prefix
+                    id.id.hasPrefix("models/") ? String(id.id.dropFirst(7)) : id.id
+                }
+                .sorted()
+        }
+
+        throw LLMError.invalidResponse
+    }
+
     // MARK: - Private Helpers
 
     private func buildRequest(
@@ -164,7 +198,7 @@ public final class LLMClient: LLMClientProtocol, Sendable {
         stream: Bool
     ) throws -> URLRequest {
         let url = config.baseURL.appendingPathComponent("chat/completions")
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: url, timeoutInterval: stream ? 120 : 30)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
@@ -248,23 +282,24 @@ public final class LLMClient: LLMClientProtocol, Sendable {
     }
 
     internal func validateStreamCompletion(sawDone: Bool) throws {
-        guard sawDone else {
-            throw LLMError.streamingError("Stream ended before [DONE].")
-        }
+        // Many OpenAI-compatible providers (Gemini, Ollama) don't send [DONE].
+        // A clean stream end without [DONE] is acceptable.
     }
 
     private func mapError(statusCode: Int, data: Data) -> LLMError {
-        // Try to extract error message from response body
+        // Try to extract error message from response body (OpenAI and Anthropic formats)
         let message: String
         if let errorBody = try? JSONDecoder().decode(OpenAIErrorResponse.self, from: data) {
             message = errorBody.error.message
+        } else if let anthropicError = try? JSONDecoder().decode(AnthropicErrorResponse.self, from: data) {
+            message = anthropicError.error.message
         } else {
             message = String(data: data, encoding: .utf8) ?? "Unknown error"
         }
 
         switch statusCode {
         case 401:
-            return .authenticationFailed
+            return .authenticationFailed(message)
         case 429:
             return .rateLimited
         case 404:
@@ -308,7 +343,7 @@ struct OpenAIResponse: Decodable {
     }
 
     struct OpenAIChoiceMessage: Decodable {
-        let content: String
+        let content: String?
     }
 
     struct OpenAIUsage: Decodable {
@@ -336,5 +371,21 @@ struct OpenAIErrorResponse: Decodable {
 
     struct ErrorDetail: Decodable {
         let message: String
+    }
+}
+
+struct AnthropicErrorResponse: Decodable {
+    let error: ErrorDetail
+
+    struct ErrorDetail: Decodable {
+        let message: String
+    }
+}
+
+struct ModelsListResponse: Decodable {
+    let data: [ModelEntry]
+
+    struct ModelEntry: Decodable {
+        let id: String
     }
 }

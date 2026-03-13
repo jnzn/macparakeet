@@ -19,7 +19,7 @@ final class LLMSettingsViewModelTests: XCTestCase {
     func testDefaultValuesAfterInit() {
         XCTAssertEqual(viewModel.selectedProviderID, .openai)
         XCTAssertEqual(viewModel.apiKeyInput, "")
-        XCTAssertEqual(viewModel.modelName, "gpt-4o")
+        XCTAssertEqual(viewModel.modelName, "gpt-4.1")
         XCTAssertEqual(viewModel.baseURLOverride, "")
         XCTAssertEqual(viewModel.connectionTestState, .idle)
         XCTAssertFalse(viewModel.isConfigured)
@@ -32,10 +32,10 @@ final class LLMSettingsViewModelTests: XCTestCase {
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
 
         viewModel.selectedProviderID = .anthropic
-        XCTAssertEqual(viewModel.modelName, "claude-sonnet-4-20250514")
+        XCTAssertEqual(viewModel.modelName, "claude-sonnet-4-6")
 
         viewModel.selectedProviderID = .gemini
-        XCTAssertEqual(viewModel.modelName, "gemini-2.0-flash")
+        XCTAssertEqual(viewModel.modelName, "gemini-2.5-flash")
 
         viewModel.selectedProviderID = .ollama
         XCTAssertEqual(viewModel.modelName, "llama3.2")
@@ -135,7 +135,7 @@ final class LLMSettingsViewModelTests: XCTestCase {
     }
 
     func testConnectionFailure() async throws {
-        mockClient.testConnectionError = LLMError.authenticationFailed
+        mockClient.testConnectionError = LLMError.authenticationFailed(nil)
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
         viewModel.apiKeyInput = "sk-bad"
 
@@ -177,5 +177,44 @@ final class LLMSettingsViewModelTests: XCTestCase {
 
         viewModel.selectedProviderID = .ollama
         XCTAssertEqual(viewModel.apiKeyInput, "")
+    }
+
+    // MARK: - Fetch Models
+
+    func testFetchModelsPopulatesAvailableModels() async throws {
+        mockClient.modelsList = ["gpt-5.4", "gpt-5.4-pro", "gpt-5-mini"]
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+
+        viewModel.fetchModels()
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertEqual(viewModel.fetchedModels, ["gpt-5.4", "gpt-5.4-pro", "gpt-5-mini"])
+        XCTAssertEqual(viewModel.availableModels, ["gpt-5.4", "gpt-5.4-pro", "gpt-5-mini"])
+        XCTAssertFalse(viewModel.isFetchingModels)
+    }
+
+    func testAvailableModelsFallsBackToSuggested() {
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        XCTAssertEqual(viewModel.availableModels, LLMSettingsViewModel.suggestedModels(for: .openai))
+    }
+
+    func testProviderChangeClearsFetchedModels() async throws {
+        mockClient.modelsList = ["model-a"]
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.fetchModels()
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertFalse(viewModel.fetchedModels.isEmpty)
+
+        viewModel.selectedProviderID = .anthropic
+        XCTAssertTrue(viewModel.fetchedModels.isEmpty)
+    }
+
+    // MARK: - OpenRouter
+
+    func testOpenRouterRequiresAPIKey() {
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.selectedProviderID = .openrouter
+        XCTAssertTrue(viewModel.requiresAPIKey)
+        XCTAssertEqual(viewModel.modelName, "anthropic/claude-sonnet-4")
     }
 }

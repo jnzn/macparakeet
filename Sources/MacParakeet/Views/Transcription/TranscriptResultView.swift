@@ -326,16 +326,50 @@ struct TranscriptResultView: View {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
                 switch viewModel.summaryState {
                 case .idle:
-                    Text("No summary yet.")
-                        .foregroundStyle(.secondary)
-                        .font(DesignSystem.Typography.body)
+                    VStack(spacing: DesignSystem.Spacing.md) {
+                        Image(systemName: "text.document")
+                            .font(.system(size: 28))
+                            .foregroundStyle(.quaternary)
+                        Text("No summary yet")
+                            .foregroundStyle(.secondary)
+                            .font(DesignSystem.Typography.body)
+                        Text("Summaries are generated automatically after transcription, or you can generate one manually.")
+                            .foregroundStyle(.tertiary)
+                            .font(DesignSystem.Typography.caption)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 280)
+
+                        Button {
+                            let text = transcription.cleanTranscript ?? transcription.rawTranscript ?? ""
+                            viewModel.generateSummary(text: text)
+                        } label: {
+                            Label("Generate Summary", systemImage: "sparkles")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.regular)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, DesignSystem.Spacing.xl)
                 case .streaming:
-                    HStack(alignment: .firstTextBaseline, spacing: 0) {
-                        Text(viewModel.summary)
-                            .font(DesignSystem.Typography.bodyLarge)
-                            .textSelection(.enabled)
-                            .lineSpacing(4)
-                        PulsingCursor()
+                    if viewModel.summary.isEmpty {
+                        SummarySkeletonView()
+                    } else {
+                        VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
+                            HStack(spacing: DesignSystem.Spacing.sm) {
+                                Image(systemName: "sparkles")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(DesignSystem.Colors.accent.opacity(0.6))
+                                AIStreamingIndicator()
+                            }
+
+                            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                                Text(viewModel.summary)
+                                    .font(DesignSystem.Typography.bodyLarge)
+                                    .textSelection(.enabled)
+                                    .lineSpacing(4)
+                                PulsingCursor()
+                            }
+                        }
                     }
                 case .complete:
                     Text(viewModel.summary)
@@ -343,22 +377,27 @@ struct TranscriptResultView: View {
                         .textSelection(.enabled)
                         .lineSpacing(4)
                 case .error(let message):
-                    VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(DesignSystem.Colors.errorRed)
-                            Text(message)
-                                .font(DesignSystem.Typography.body)
-                                .foregroundStyle(DesignSystem.Colors.errorRed)
-                        }
-                        Button("Retry") {
+                    VStack(spacing: DesignSystem.Spacing.md) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 28))
+                            .foregroundStyle(DesignSystem.Colors.errorRed.opacity(0.6))
+                        Text(message)
+                            .font(DesignSystem.Typography.body)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                        Button {
                             let text = transcription.cleanTranscript ?? transcription.rawTranscript ?? ""
                             viewModel.generateSummary(text: text)
+                        } label: {
+                            Label("Retry", systemImage: "arrow.clockwise")
                         }
                         .buttonStyle(.bordered)
                     }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, DesignSystem.Spacing.xl)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(DesignSystem.Spacing.lg)
         }
         .background(
@@ -381,10 +420,21 @@ struct TranscriptResultView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
                         if chatVM.messages.isEmpty {
-                            Text("Ask a question about this transcript.")
-                                .foregroundStyle(.secondary)
-                                .font(DesignSystem.Typography.body)
-                                .padding(DesignSystem.Spacing.lg)
+                            VStack(spacing: DesignSystem.Spacing.md) {
+                                Image(systemName: "bubble.left.and.text.bubble.right")
+                                    .font(.system(size: 28))
+                                    .foregroundStyle(.quaternary)
+                                Text("Ask a question about this transcript")
+                                    .foregroundStyle(.secondary)
+                                    .font(DesignSystem.Typography.body)
+                                Text("The AI can answer questions, extract key points, or explain parts of the transcript.")
+                                    .foregroundStyle(.tertiary)
+                                    .font(DesignSystem.Typography.caption)
+                                    .multilineTextAlignment(.center)
+                                    .frame(maxWidth: 280)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, DesignSystem.Spacing.xl)
                         }
 
                         ForEach(chatVM.messages) { message in
@@ -469,12 +519,17 @@ struct TranscriptResultView: View {
             if message.role == .user { Spacer(minLength: 60) }
 
             VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline, spacing: 0) {
-                    Text(message.content)
-                        .font(DesignSystem.Typography.body)
-                        .textSelection(.enabled)
-                    if message.isStreaming {
-                        PulsingCursor()
+                if message.content.isEmpty && message.isStreaming {
+                    // Show premium streaming indicator for empty assistant messages
+                    ChatStreamingPlaceholder()
+                } else {
+                    HStack(alignment: .firstTextBaseline, spacing: 0) {
+                        Text(message.content)
+                            .font(DesignSystem.Typography.body)
+                            .textSelection(.enabled)
+                        if message.isStreaming {
+                            PulsingCursor()
+                        }
                     }
                 }
             }

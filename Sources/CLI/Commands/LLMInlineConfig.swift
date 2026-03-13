@@ -46,7 +46,7 @@ final class InlineLLMConfigStore: LLMConfigStoreProtocol, @unchecked Sendable {
 
 /// Shared options for CLI commands that call an LLM provider directly (no Keychain).
 struct LLMInlineOptions: ParsableArguments {
-    @Option(name: .long, help: "Provider: anthropic, openai, gemini, ollama, lmstudio, custom.")
+    @Option(name: .long, help: "Provider: anthropic, openai, gemini, openrouter, ollama, lmstudio, custom.")
     var provider: String
 
     @Option(name: .long, help: "API key.")
@@ -63,7 +63,7 @@ struct LLMInlineOptions: ParsableArguments {
 
     func buildConfig() throws -> LLMProviderConfig {
         guard let providerID = LLMProviderID(rawValue: provider) else {
-            throw ValidationError("Unknown provider '\(provider)'. Options: anthropic, openai, gemini, ollama, lmstudio, custom")
+            throw ValidationError("Unknown provider '\(provider)'. Options: anthropic, openai, gemini, openrouter, ollama, lmstudio, custom")
         }
 
         let overrideURL: URL? = if let urlStr = baseURL {
@@ -75,13 +75,16 @@ struct LLMInlineOptions: ParsableArguments {
         switch providerID {
         case .anthropic:
             guard let key = apiKey else { throw ValidationError("--api-key is required for Anthropic") }
-            return .anthropic(apiKey: key, model: model ?? "claude-sonnet-4-20250514", baseURL: overrideURL)
+            return .anthropic(apiKey: key, model: model ?? "claude-sonnet-4-6", baseURL: overrideURL)
         case .openai:
             guard let key = apiKey else { throw ValidationError("--api-key is required for OpenAI") }
-            return .openai(apiKey: key, model: model ?? "gpt-4o", baseURL: overrideURL)
+            return .openai(apiKey: key, model: model ?? "gpt-4.1", baseURL: overrideURL)
         case .gemini:
             guard let key = apiKey else { throw ValidationError("--api-key is required for Gemini") }
-            return .gemini(apiKey: key, model: model ?? "gemini-2.0-flash", baseURL: overrideURL)
+            return .gemini(apiKey: key, model: model ?? "gemini-2.5-flash", baseURL: overrideURL)
+        case .openrouter:
+            guard let key = apiKey else { throw ValidationError("--api-key is required for OpenRouter") }
+            return .openrouter(apiKey: key, model: model ?? "anthropic/claude-sonnet-4", baseURL: overrideURL)
         case .ollama:
             return .ollama(model: model ?? "llama3.2", baseURL: overrideURL)
         case .lmstudio:

@@ -3,7 +3,7 @@ import Foundation
 public enum LLMError: Error, LocalizedError, Sendable {
     case notConfigured
     case connectionFailed(String)
-    case authenticationFailed
+    case authenticationFailed(String?)
     case rateLimited
     case modelNotFound(String)
     case contextTooLong
@@ -17,7 +17,10 @@ public enum LLMError: Error, LocalizedError, Sendable {
             return "No LLM provider configured. Set up a provider in Settings."
         case .connectionFailed(let detail):
             return "Connection failed: \(detail)"
-        case .authenticationFailed:
+        case .authenticationFailed(let detail):
+            if let detail, !detail.isEmpty {
+                return "Authentication failed: \(detail)"
+            }
             return "Authentication failed. Check your API key."
         case .rateLimited:
             return "Rate limited by provider. Please wait and try again."
