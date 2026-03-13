@@ -64,6 +64,9 @@ public final class TranscriptChatViewModel {
 
         let userMessage = ChatDisplayMessage(role: .user, content: text)
         messages.append(userMessage)
+
+        // Capture history BEFORE appending user message — buildChatMessages() adds question separately
+        let historyForRequest = chatHistory
         chatHistory.append(ChatMessage(role: .user, content: text))
         persistChatMessages()
 
@@ -73,7 +76,6 @@ public final class TranscriptChatViewModel {
         isStreaming = true
         streamingAssistantID = assistantID
 
-        let history = chatHistory
         let transcript = transcriptText
 
         streamingTask = Task {
@@ -82,7 +84,7 @@ public final class TranscriptChatViewModel {
                 let stream = llmService.chatStream(
                     question: text,
                     transcript: transcript,
-                    history: history
+                    history: historyForRequest
                 )
                 for try await token in stream {
                     accumulated += token

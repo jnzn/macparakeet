@@ -267,4 +267,45 @@ final class TranscriptChatViewModelTests: XCTestCase {
     func testCanSendMessageTrueWhenServiceAvailable() {
         XCTAssertTrue(viewModel.canSendMessage)
     }
+
+    // MARK: - Duplicate Question Regression
+
+    func testChatHistoryDoesNotDuplicateQuestion() async throws {
+        // Regression: chatHistory was capturing the user message before passing to chatStream,
+        // which then appends the question again via buildChatMessages → double question.
+        mockService.streamTokens = ["answer"]
+        viewModel.inputText = "What happened?"
+        viewModel.sendMessage()
+
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        // The history passed to chatStream should NOT contain the current question
+        // (buildChatMessages appends it separately)
+        let historyUserMessages = mockService.lastChatHistory?.filter { $0.role == .user } ?? []
+        XCTAssertTrue(historyUserMessages.isEmpty, "First message history should be empty — question is passed separately")
+        XCTAssertEqual(mockService.lastChatQuestion, "What happened?")
+    }
+
+    func testMultiTurnHistoryDoesNotDuplicateLatestQuestion() async throws {
+        // First turn
+        mockService.streamTokens = ["first answer"]
+        viewModel.inputText = "First question"
+        viewModel.sendMessage()
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        // Second turn
+        mockService.streamTokens = ["second answer"]
+        viewModel.inputText = "Second question"
+        viewModel.sendMessage()
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        // History should contain turn 1 (user + assistant) but NOT "Second question"
+        let history = mockService.lastChatHistory ?? []
+        XCTAssertEqual(history.count, 2, "History should have first user + first assistant")
+        XCTAssertEqual(history[0].role, .user)
+        XCTAssertEqual(history[0].content, "First question")
+        XCTAssertEqual(history[1].role, .assistant)
+        XCTAssertEqual(history[1].content, "first answer")
+        XCTAssertEqual(mockService.lastChatQuestion, "Second question")
+    }
 }

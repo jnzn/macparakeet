@@ -160,8 +160,12 @@ public final class LLMSettingsViewModel {
         if !baseURLOverride.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
            let override = URL(string: baseURLOverride.trimmingCharacters(in: .whitespacesAndNewlines)) {
             baseURL = override
+        } else if let defaultURL = URL(string: Self.defaultBaseURL(for: selectedProviderID)), !Self.defaultBaseURL(for: selectedProviderID).isEmpty {
+            baseURL = defaultURL
         } else {
-            baseURL = URL(string: Self.defaultBaseURL(for: selectedProviderID))!
+            // .custom provider with no URL — use a placeholder that will fail at request time
+            // rather than crash here
+            baseURL = URL(string: "http://localhost")!
         }
 
         let apiKey = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
