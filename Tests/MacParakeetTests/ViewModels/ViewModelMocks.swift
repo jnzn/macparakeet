@@ -357,6 +357,8 @@ final class MockLLMService: LLMServiceProtocol, @unchecked Sendable {
     var errorToThrow: Error?
     var summarizeCallCount = 0
     var chatCallCount = 0
+    var lastChatQuestion: String?
+    var lastChatHistory: [ChatMessage]?
 
     func summarize(transcript: String) async throws -> String {
         summarizeCallCount += 1
@@ -401,6 +403,8 @@ final class MockLLMService: LLMServiceProtocol, @unchecked Sendable {
 
     func chatStream(question: String, transcript: String, history: [ChatMessage]) -> AsyncThrowingStream<String, Error> {
         chatCallCount += 1
+        lastChatQuestion = question
+        lastChatHistory = history
         let tokens = streamTokens
         let error = errorToThrow
         let delay = streamDelayNs
