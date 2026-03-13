@@ -130,6 +130,31 @@ final class TranscriptChatViewModelTests: XCTestCase {
         XCTAssertFalse(viewModel.isStreaming)
     }
 
+    func testCancelStreamingDoesNotSurfaceError() async throws {
+        mockService.streamTokens = ["slow"]
+        viewModel.inputText = "Question"
+        viewModel.sendMessage()
+
+        viewModel.cancelStreaming()
+
+        // Wait for cancelled task to settle
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertNil(viewModel.errorMessage, "CancellationError should not surface in UI")
+    }
+
+    func testUpdateLLMServiceClearsHistory() async throws {
+        mockService.streamTokens = ["response"]
+        viewModel.inputText = "Question"
+        viewModel.sendMessage()
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(viewModel.messages.count, 2)
+
+        let newService = MockLLMService()
+        viewModel.updateLLMService(newService)
+
+        XCTAssertTrue(viewModel.messages.isEmpty, "Provider swap should clear chat history")
+    }
+
     // MARK: - Update LLM Service
 
     func testUpdateLLMServiceNilDisablesChat() {

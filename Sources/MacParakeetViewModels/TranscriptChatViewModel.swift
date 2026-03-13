@@ -40,6 +40,7 @@ public final class TranscriptChatViewModel {
     public func updateLLMService(_ service: LLMServiceProtocol?) {
         cancelStreaming()
         self.llmService = service
+        clearHistory()
     }
 
     public func sendMessage() {
@@ -75,12 +76,17 @@ public final class TranscriptChatViewModel {
                     }
                 }
 
+                guard !Task.isCancelled else { return }
+
                 if let idx = messages.firstIndex(where: { $0.id == assistantID }) {
                     messages[idx].isStreaming = false
                 }
 
                 chatHistory.append(ChatMessage(role: .user, content: text))
                 chatHistory.append(ChatMessage(role: .assistant, content: accumulated))
+            } catch is CancellationError {
+                // Cancellation is expected (navigation, provider change) — don't surface as error
+                return
             } catch {
                 if let idx = messages.firstIndex(where: { $0.id == assistantID }) {
                     messages[idx].isStreaming = false
