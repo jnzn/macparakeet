@@ -1,3 +1,4 @@
+import Sparkle
 import SwiftUI
 import MacParakeetViewModels
 
@@ -38,6 +39,7 @@ struct MainWindowView: View {
     let customWordsViewModel: CustomWordsViewModel
     let textSnippetsViewModel: TextSnippetsViewModel
     let feedbackViewModel: FeedbackViewModel
+    let updater: SPUUpdater
 
     var body: some View {
         NavigationSplitView {
@@ -75,7 +77,7 @@ struct MainWindowView: View {
                 case .feedback:
                     FeedbackView(viewModel: feedbackViewModel)
                 case .settings:
-                    SettingsView(viewModel: settingsViewModel, llmSettingsViewModel: llmSettingsViewModel)
+                    SettingsView(viewModel: settingsViewModel, llmSettingsViewModel: llmSettingsViewModel, updater: updater)
                 }
             }
             .animation(DesignSystem.Animation.contentSwap, value: state.selectedItem)

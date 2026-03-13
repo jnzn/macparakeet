@@ -34,7 +34,7 @@ A **fast, private, local-first voice app** for macOS with two co-equal modes: sy
 | Competitive research | `docs/competitive-analysis.md` |
 | Brand identity | `docs/brand-identity.md` |
 | UI/UX design overhaul | `docs/design-overhaul.md` |
-| Distribution & signing | `docs/distribution.md` |
+| Distribution, signing & auto-updates | `docs/distribution.md` |
 | Implementation plans | `plans/` -> active and completed plans |
 
 ## Tech Stack (Locked Decisions)
@@ -47,6 +47,7 @@ A **fast, private, local-first voice app** for macOS with two co-equal modes: sy
 | STT | Parakeet TDT 0.6B-v3 | Via FluidAudio CoreML/ANE (~2.5% WER, 155x realtime, 25 European languages) |
 | Audio | AVAudioEngine + Core Audio | Mic capture for dictation; FFmpeg (bundled) for video file conversion |
 | YouTube | yt-dlp | Standalone macOS binary, weekly non-blocking auto-update via `--update` |
+| Auto-Update | Sparkle 2 | In-app updates via EdDSA-signed appcast (non-App Store) |
 | Licensing | LemonSqueezy | License key activation, validation API |
 
 ## Product Context
@@ -285,7 +286,7 @@ macparakeet/
 │   ├── competitive-analysis.md
 │   ├── brand-identity.md   # Logo, colors, typography, brand voice
 │   ├── design-overhaul.md  # UI/UX redesign spec (warm magical direction)
-│   ├── distribution.md     # Developer ID signing + notarization guide
+│   ├── distribution.md     # Signing, notarization, auto-updates (Sparkle)
 │   └── research/           # Deep dives on competitors, user sentiment
 ├── plans/              # Implementation plans (version controlled)
 │   ├── active/         # Currently being implemented
