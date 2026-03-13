@@ -27,7 +27,7 @@ struct LLMConfigCommand: AsyncParsableCommand {
     @Option(name: .long, help: "Model name (e.g. gpt-4o, claude-sonnet-4-20250514, llama3.2).")
     var model: String?
 
-    @Option(name: .long, help: "Base URL (required for custom provider, optional for others).")
+    @Option(name: .long, help: "Base URL override (required for custom, optional for others; e.g. https://us.api.openai.com/v1).")
     var baseURL: String?
 
     @Flag(name: .long, help: "Mark custom provider as local (uses smaller context budget).")
@@ -53,17 +53,23 @@ struct LLMConfigCommand: AsyncParsableCommand {
             throw ValidationError("Unknown provider '\(providerName)'. Options: anthropic, openai, gemini, ollama, lmstudio, custom")
         }
 
+        let overrideURL: URL? = if let urlStr = baseURL {
+            try validateCustomBaseURL(urlStr)
+        } else {
+            nil
+        }
+
         let config: LLMProviderConfig
         switch providerID {
         case .anthropic:
             guard let key = apiKey else { throw ValidationError("--api-key is required for Anthropic") }
-            config = .anthropic(apiKey: key, model: model ?? "claude-sonnet-4-20250514")
+            config = .anthropic(apiKey: key, model: model ?? "claude-sonnet-4-20250514", baseURL: overrideURL)
         case .openai:
             guard let key = apiKey else { throw ValidationError("--api-key is required for OpenAI") }
-            config = .openai(apiKey: key, model: model ?? "gpt-4o")
+            config = .openai(apiKey: key, model: model ?? "gpt-4o", baseURL: overrideURL)
         case .gemini:
             guard let key = apiKey else { throw ValidationError("--api-key is required for Gemini") }
-            config = .gemini(apiKey: key, model: model ?? "gemini-2.0-flash")
+            config = .gemini(apiKey: key, model: model ?? "gemini-2.0-flash", baseURL: overrideURL)
         case .ollama:
             config = .ollama(model: model ?? "llama3.2")
         case .lmstudio:

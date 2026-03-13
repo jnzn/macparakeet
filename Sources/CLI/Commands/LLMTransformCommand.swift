@@ -8,6 +8,8 @@ struct LLMTransformCommand: AsyncParsableCommand {
         abstract: "Apply a custom LLM transform to text from a file or stdin."
     )
 
+    @OptionGroup var llm: LLMInlineOptions
+
     @Argument(help: "Path to text file to transform. Use '-' for stdin.")
     var input: String
 
@@ -25,17 +27,22 @@ struct LLMTransformCommand: AsyncParsableCommand {
             throw ExitCode.failure
         }
 
-        let service = LLMService()
+        let config = try llm.buildConfig()
+        let client = LLMClient()
+        let messages = [
+            ChatMessage(role: .system, content: "You are a helpful assistant that transforms text according to user instructions. Apply the requested transformation to the provided text. Return only the transformed text without explanation."),
+            ChatMessage(role: .user, content: "Transform the following text according to this instruction: \(prompt)\n\n---\n\n\(text)"),
+        ]
 
         if stream {
-            let tokenStream = service.transformStream(text: text, prompt: prompt)
+            let tokenStream = client.chatCompletionStream(messages: messages, config: config, options: .default)
             for try await token in tokenStream {
                 print(token, terminator: "")
             }
             print()
         } else {
-            let result = try await service.transform(text: text, prompt: prompt)
-            print(result)
+            let response = try await client.chatCompletion(messages: messages, config: config, options: .default)
+            print(response.content)
         }
     }
 }
