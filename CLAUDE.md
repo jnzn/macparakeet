@@ -509,15 +509,20 @@ Step-by-step guides for frequent development tasks.
 
 ### Release a new build (build → sign → notarize → deploy → auto-update)
 
+This pipeline serves **two audiences** with the same DMG:
+- **New users** download from `downloads.macparakeet.com/MacParakeet.dmg`
+- **Existing users** get prompted via Sparkle auto-update (checks `appcast.xml`)
+
 Full guide: `docs/distribution.md`. Quick steps:
 
-1. **Build:** `scripts/dist/build_app_bundle.sh` — creates `dist/MacParakeet.app` with Sparkle.framework embedded
-2. **Sign + notarize:** `scripts/dist/sign_notarize.sh` — signs app + DMG, submits to Apple, staples tickets. Uses Keychain profile `AC_PASSWORD` by default.
+0. **Pre-flight:** Run `swift test` (all must pass). Check current deployed version: `curl -s "https://macparakeet.com/appcast.xml" | grep sparkle:shortVersionString`. Decide version bump — patch (0.1.x) for fixes/UX tweaks, minor (0.x.0) for new features.
+1. **Build:** `VERSION=X.Y.Z scripts/dist/build_app_bundle.sh` — creates `dist/MacParakeet.app` with Sparkle.framework embedded
+2. **Sign + notarize:** `scripts/dist/sign_notarize.sh` — signs app + DMG, submits to Apple, staples tickets. Defaults to Keychain profile `AC_PASSWORD`.
 3. **Upload DMG to R2:** `npx wrangler r2 object put macparakeet-downloads/MacParakeet.dmg --file dist/MacParakeet.dmg --content-type "application/x-apple-diskimage" --remote`
 4. **Verify R2 file size matches local:** `curl -sI "https://downloads.macparakeet.com/MacParakeet.dmg?ts=$(date +%s)" | grep content-length` — must equal `stat -f%z dist/MacParakeet.dmg`. If mismatched, re-upload (another process may have overwritten).
 5. **Sign for Sparkle:** `.build/artifacts/sparkle/Sparkle/bin/sign_update dist/MacParakeet.dmg` — outputs `sparkle:edSignature` and `length` for the appcast
-6. **Update appcast:** Edit `~/code/macparakeet-website/public/appcast.xml` — add `<item>` with build number (`CFBundleVersion` from Info.plist), version, signature, length, and release notes
-7. **Deploy website:** `cd ~/code/macparakeet-website && git add public/appcast.xml && git commit -m "Update appcast" && git push && npx astro build && npx wrangler pages deploy dist --project-name macparakeet-website --branch main`
+6. **Update appcast:** Edit `~/code/macparakeet-website/public/appcast.xml` — **replace** the existing `<item>` (single DMG URL = single item) with build number (`CFBundleVersion` from Info.plist via `plutil -p dist/MacParakeet.app/Contents/Info.plist`), version, signature, length, `pubDate` (`date -R`), and user-facing release notes
+7. **Deploy website:** `cd ~/code/macparakeet-website && git add public/appcast.xml && git commit -m "Update appcast.xml with vX.Y.Z build BUILDNUMBER" && git push && npx astro build && npx wrangler pages deploy dist --project-name macparakeet-website --branch main`
 8. **Verify:** `curl -s "https://macparakeet.com/appcast.xml?ts=$(date +%s)" | grep sparkle:version`
 
 **Critical:** The DMG uploaded to R2 must be the **exact same file** you ran `sign_update` on. If the file sizes don't match, Sparkle will reject the update with "improperly signed".

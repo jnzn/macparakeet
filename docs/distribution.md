@@ -58,8 +58,10 @@ xcrun notarytool history --keychain-profile "AC_PASSWORD"
 Then:
 
 ```bash
-NOTARYTOOL_PROFILE="AC_PASSWORD" scripts/dist/sign_notarize.sh
+scripts/dist/sign_notarize.sh
 ```
+
+The script defaults `NOTARYTOOL_PROFILE` to `AC_PASSWORD`. Override with `NOTARYTOOL_PROFILE="other" scripts/dist/sign_notarize.sh` if needed.
 
 Outputs:
 - `dist/MacParakeet.app` (signed + stapled)
@@ -100,10 +102,42 @@ Confirm `content-length`, `last-modified`, and `etag` match the newly uploaded D
 
 **IMPORTANT:** Follow these steps in exact order. Do NOT re-upload the DMG after signing for Sparkle — the file size must match the appcast signature. If another agent is running a parallel build, coordinate to avoid overwriting the R2 object.
 
+This pipeline serves **two audiences** with the same DMG:
+- **New users** download from `downloads.macparakeet.com/MacParakeet.dmg`
+- **Existing users** get prompted via Sparkle auto-update (checks `appcast.xml`)
+
+### Pre-flight
+
+Before building, verify the codebase is ready:
+
+```bash
+# All tests must pass
+swift test
+
+# Check currently deployed version
+curl -s "https://macparakeet.com/appcast.xml" | grep -E "sparkle:version|sparkle:shortVersionString"
+```
+
+Decide on the version number (see Version bumping below).
+
+### Version bumping
+
+The build script accepts `VERSION` and `BUILD_NUMBER` env vars:
+
+```bash
+VERSION=0.1.1 scripts/dist/build_app_bundle.sh   # set version explicitly
+scripts/dist/build_app_bundle.sh                   # defaults: VERSION=0.1.0, BUILD_NUMBER=UTC timestamp
+```
+
+- **Patch bump** (0.1.x): Bug fixes, UX improvements to existing features
+- **Minor bump** (0.x.0): New user-facing features (e.g., speaker diarization GUI, batch processing)
+- **Build number**: Auto-generated UTC timestamp — always increases, which is what Sparkle uses to detect updates
+- Both new downloads (R2 DMG) and existing users (Sparkle appcast) get the same DMG
+
 ### Step 1: Build
 
 ```bash
-scripts/dist/build_app_bundle.sh
+VERSION=X.Y.Z scripts/dist/build_app_bundle.sh
 ```
 
 Verify: Look for `Embedded Sparkle.framework` and `Adding @executable_path/../Frameworks to rpath` in the output. The script will `exit 1` if Sparkle is missing.
@@ -154,7 +188,7 @@ sparkle:edSignature="..." length="..."
 
 ### Step 5: Update appcast.xml
 
-Edit `~/code/macparakeet-website/public/appcast.xml`. Add a new `<item>` (or update existing) with:
+Edit `~/code/macparakeet-website/public/appcast.xml`. **Replace** the existing `<item>` (single DMG URL = single item, not multiple) with:
 - `sparkle:version` = build number from `dist/MacParakeet.app/Contents/Info.plist` (`CFBundleVersion`)
 - `sparkle:shortVersionString` = version from Info.plist (`CFBundleShortVersionString`)
 - `sparkle:edSignature` and `length` from Step 4
@@ -192,7 +226,8 @@ curl -s "https://macparakeet.com/appcast.xml?ts=$(date +%s)" | grep "sparkle:ver
 
 ```bash
 # Full pipeline — run from macparakeet repo root
-scripts/dist/build_app_bundle.sh
+swift test                                         # pre-flight: all tests must pass
+VERSION=X.Y.Z scripts/dist/build_app_bundle.sh     # set version explicitly
 scripts/dist/sign_notarize.sh
 npx wrangler r2 object put macparakeet-downloads/MacParakeet.dmg \
   --file dist/MacParakeet.dmg --content-type "application/x-apple-diskimage" --remote
