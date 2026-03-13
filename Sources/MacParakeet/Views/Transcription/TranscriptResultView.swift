@@ -735,31 +735,137 @@ struct TranscriptResultView: View {
 
     @ViewBuilder
     private func timestampedView(words: [WordTimestamp]) -> some View {
+        let hasSpeakers = words.contains { $0.speakerId != nil }
+        let speakerColorMap = buildSpeakerColorMap()
         let segments = groupIntoSegments(words: words)
-        ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
-            HStack(alignment: .top, spacing: DesignSystem.Spacing.sm) {
-                Text("[\(formatTimestamp(ms: segment.startMs))]")
-                    .font(DesignSystem.Typography.timestamp)
-                    .foregroundStyle(.tertiary)
-                    .frame(width: 60, alignment: .leading)
-                    .padding(.vertical, 2)
-                    .padding(.horizontal, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(Color.primary.opacity(0.03))
-                    )
 
-                Text(segment.text)
-                    .font(DesignSystem.Typography.bodyLarge)
-                    .textSelection(.enabled)
-                    .lineSpacing(4)
+        if hasSpeakers {
+            // Speaker-aware layout: group segments into speaker turns
+            let turns = groupIntoSpeakerTurns(segments: segments)
+            ForEach(Array(turns.enumerated()), id: \.offset) { _, turn in
+                VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
+                    // Speaker label
+                    HStack(spacing: DesignSystem.Spacing.xs) {
+                        Circle()
+                            .fill(speakerColorMap[turn.speakerId] ?? DesignSystem.Colors.textTertiary)
+                            .frame(width: 8, height: 8)
+                        Text(turn.speakerLabel)
+                            .font(DesignSystem.Typography.caption.weight(.semibold))
+                            .foregroundStyle(speakerColorMap[turn.speakerId] ?? DesignSystem.Colors.textSecondary)
+                    }
+                    .padding(.top, DesignSystem.Spacing.sm)
+
+                    // Segments within this turn
+                    ForEach(Array(turn.segments.enumerated()), id: \.offset) { _, segment in
+                        HStack(alignment: .top, spacing: DesignSystem.Spacing.sm) {
+                            Text("[\(formatTimestamp(ms: segment.startMs))]")
+                                .font(DesignSystem.Typography.timestamp)
+                                .foregroundStyle(.tertiary)
+                                .frame(width: 60, alignment: .leading)
+                                .padding(.vertical, 2)
+                                .padding(.horizontal, 4)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(Color.primary.opacity(0.03))
+                                )
+
+                            Text(segment.text)
+                                .font(DesignSystem.Typography.bodyLarge)
+                                .textSelection(.enabled)
+                                .lineSpacing(4)
+                        }
+                    }
+                }
+            }
+        } else {
+            // No speakers — original layout
+            ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
+                HStack(alignment: .top, spacing: DesignSystem.Spacing.sm) {
+                    Text("[\(formatTimestamp(ms: segment.startMs))]")
+                        .font(DesignSystem.Typography.timestamp)
+                        .foregroundStyle(.tertiary)
+                        .frame(width: 60, alignment: .leading)
+                        .padding(.vertical, 2)
+                        .padding(.horizontal, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color.primary.opacity(0.03))
+                        )
+
+                    Text(segment.text)
+                        .font(DesignSystem.Typography.bodyLarge)
+                        .textSelection(.enabled)
+                        .lineSpacing(4)
+                }
             }
         }
     }
 
+    // MARK: - Speaker Helpers
+
+    private func buildSpeakerColorMap() -> [String: Color] {
+        guard let speakers = transcription.speakers else { return [:] }
+        var map: [String: Color] = [:]
+        for (i, speaker) in speakers.enumerated() {
+            map[speaker.id] = DesignSystem.Colors.speakerColor(for: i)
+        }
+        return map
+    }
+
+    private func speakerLabel(for speakerId: String?) -> String {
+        guard let id = speakerId,
+              let speakers = transcription.speakers,
+              let info = speakers.first(where: { $0.id == id }) else {
+            return "Unknown"
+        }
+        return info.label
+    }
+
+    private struct SpeakerTurn {
+        let speakerId: String
+        let speakerLabel: String
+        let segments: [Segment]
+    }
+
+    private func groupIntoSpeakerTurns(segments: [Segment]) -> [SpeakerTurn] {
+        guard !segments.isEmpty else { return [] }
+
+        var turns: [SpeakerTurn] = []
+        var currentSpeaker = segments[0].speakerId ?? ""
+        var currentSegments: [Segment] = []
+
+        for segment in segments {
+            let segSpeaker = segment.speakerId ?? currentSpeaker
+            if segSpeaker != currentSpeaker && !currentSegments.isEmpty {
+                turns.append(SpeakerTurn(
+                    speakerId: currentSpeaker,
+                    speakerLabel: speakerLabel(for: currentSpeaker),
+                    segments: currentSegments
+                ))
+                currentSegments = []
+                currentSpeaker = segSpeaker
+            }
+            currentSpeaker = segSpeaker
+            currentSegments.append(segment)
+        }
+
+        if !currentSegments.isEmpty {
+            turns.append(SpeakerTurn(
+                speakerId: currentSpeaker,
+                speakerLabel: speakerLabel(for: currentSpeaker),
+                segments: currentSegments
+            ))
+        }
+
+        return turns
+    }
+
+    // MARK: - Segment Grouping
+
     private struct Segment {
         let startMs: Int
         let text: String
+        let speakerId: String?
     }
 
     private func groupIntoSegments(words: [WordTimestamp]) -> [Segment] {
@@ -768,11 +874,30 @@ struct TranscriptResultView: View {
         var segments: [Segment] = []
         var currentWords: [String] = []
         var segmentStart = words[0].startMs
+        var segmentSpeaker = words[0].speakerId
 
         for (i, word) in words.enumerated() {
-            currentWords.append(word.word)
-
             let isLast = i == words.count - 1
+            let speakerChanged = word.speakerId != nil && word.speakerId != segmentSpeaker
+
+            // Flush current segment on speaker change before adding this word
+            if speakerChanged && !currentWords.isEmpty {
+                segments.append(Segment(
+                    startMs: segmentStart,
+                    text: currentWords.joined(separator: " "),
+                    speakerId: segmentSpeaker
+                ))
+                currentWords = []
+                segmentStart = word.startMs
+                segmentSpeaker = word.speakerId
+            }
+
+            currentWords.append(word.word)
+            // Track speaker (nil words inherit current speaker)
+            if word.speakerId != nil {
+                segmentSpeaker = word.speakerId
+            }
+
             let endsWithPunctuation = word.word.last.map { ".!?".contains($0) } ?? false
             let hasLongGap = i + 1 < words.count && (words[i + 1].startMs - word.endMs) > 1500
             let tooLong = currentWords.count >= 40
@@ -780,11 +905,13 @@ struct TranscriptResultView: View {
             if isLast || (endsWithPunctuation && currentWords.count >= 3) || hasLongGap || tooLong {
                 segments.append(Segment(
                     startMs: segmentStart,
-                    text: currentWords.joined(separator: " ")
+                    text: currentWords.joined(separator: " "),
+                    speakerId: segmentSpeaker
                 ))
                 currentWords = []
                 if !isLast {
                     segmentStart = words[i + 1].startMs
+                    segmentSpeaker = words[i + 1].speakerId
                 }
             }
         }
