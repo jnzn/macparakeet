@@ -99,10 +99,10 @@ Confirm `content-length`, `last-modified`, and `etag` match the newly uploaded D
 ## Full release workflow
 
 ```bash
-# 1. Build app bundle (auto-downloads static FFmpeg)
+# 1. Build app bundle (auto-downloads static FFmpeg, embeds Sparkle.framework)
 scripts/dist/build_app_bundle.sh
 
-# 2. Sign + notarize (creates .app and .dmg)
+# 2. Sign + notarize (signs Sparkle.framework, helper binaries, then app; creates .dmg)
 NOTARYTOOL_PROFILE="AC_PASSWORD" scripts/dist/sign_notarize.sh
 
 # 3. Upload DMG to R2
@@ -111,12 +111,109 @@ npx wrangler r2 object put macparakeet-downloads/MacParakeet.dmg \
   --content-type "application/x-apple-diskimage" \
   --remote
 
-# 4. Verify fresh object metadata (cache-busted HEAD)
+# 4. Sign the DMG for Sparkle and update the appcast
+.build/artifacts/sparkle/Sparkle/bin/sign_update dist/MacParakeet.dmg
+# Copy the sparkle:edSignature and length values into appcast.xml
+
+# 5. Upload updated appcast.xml to macparakeet-website repo
+# (deployed automatically via Cloudflare Pages)
+
+# 6. Verify fresh object metadata (cache-busted HEAD)
 curl -sI "https://downloads.macparakeet.com/MacParakeet.dmg?ts=$(date +%s)" | head -10
 
-# 5. Website download buttons already point to:
+# 7. Website download buttons already point to:
 #    https://downloads.macparakeet.com/MacParakeet.dmg
 ```
+
+## Auto-Updates (Sparkle)
+
+MacParakeet uses [Sparkle 2](https://sparkle-project.org/) for in-app auto-updates. Users are prompted when a new version is available — no manual DMG download needed.
+
+### How it works
+
+1. On launch, Sparkle checks `https://macparakeet.com/appcast.xml` for new versions
+2. If a newer version exists, a native update dialog appears
+3. User clicks "Install Update" → Sparkle downloads the DMG, replaces the app, relaunches
+
+### EdDSA signing keys
+
+The private key is stored in the developer's macOS Keychain (generated once via `generate_keys`). The public key is embedded in `Info.plist` as `SUPublicEDKey`.
+
+To retrieve the public key or verify the Keychain entry:
+
+```bash
+.build/artifacts/sparkle/Sparkle/bin/generate_keys
+```
+
+### Appcast
+
+The appcast XML lives in the [macparakeet-website](https://github.com/moona3k/macparakeet-website) repo at `public/appcast.xml` and is served at `https://macparakeet.com/appcast.xml`.
+
+Template for a new release:
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>MacParakeet Updates</title>
+    <item>
+      <title>Version X.Y.Z</title>
+      <link>https://macparakeet.com</link>
+      <sparkle:version>BUILD_NUMBER</sparkle:version>
+      <sparkle:shortVersionString>X.Y.Z</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.2</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>What's New</h2>
+        <ul>
+          <li>Feature or fix description</li>
+        </ul>
+      ]]></description>
+      <pubDate>DATE_RFC2822</pubDate>
+      <enclosure
+        url="https://downloads.macparakeet.com/MacParakeet.dmg"
+        sparkle:edSignature="SIGNATURE_FROM_SIGN_UPDATE"
+        length="FILE_SIZE_BYTES"
+        type="application/octet-stream" />
+    </item>
+  </channel>
+</rss>
+```
+
+### Signing an update
+
+```bash
+# Sign the DMG and get the signature + length for appcast.xml
+.build/artifacts/sparkle/Sparkle/bin/sign_update dist/MacParakeet.dmg
+```
+
+This outputs `sparkle:edSignature="..."` and `length="..."` — paste both into the appcast `<enclosure>` element.
+
+### Auto-generate appcast from a directory of releases
+
+```bash
+# Place all versioned DMGs in a directory, then:
+.build/artifacts/sparkle/Sparkle/bin/generate_appcast /path/to/releases/
+```
+
+This generates/updates `appcast.xml` with signatures and optional delta updates.
+
+### Info.plist keys
+
+These are set automatically by `build_app_bundle.sh`:
+
+| Key | Value |
+|-----|-------|
+| `SUFeedURL` | `https://macparakeet.com/appcast.xml` |
+| `SUPublicEDKey` | `2aqRU0Agz+xxZwt0kLybmKz/SAvZUsyn+z9fU0I6ynY=` |
+
+### Settings UI
+
+Users can control auto-update behavior in Settings > Updates:
+- Toggle automatic update checks
+- Toggle automatic update downloads
+- Manual "Check for Updates..." button
+
+"Check for Updates..." is also available in the app menu and menu bar dropdown.
 
 ## Notes
 
