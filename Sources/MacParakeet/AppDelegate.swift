@@ -1,5 +1,6 @@
 import AppKit
 import OSLog
+import Sparkle
 import SwiftUI
 import MacParakeetCore
 import MacParakeetViewModels
@@ -9,6 +10,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // MARK: - Menu Bar
 
     private var statusItem: NSStatusItem?
+
+    // MARK: - Auto-Update
+
+    private let updaterController = SPUStandardUpdaterController(
+        startingUpdater: true,
+        updaterDelegate: nil,
+        userDriverDelegate: nil
+    )
 
     // MARK: - Windows
 
@@ -164,6 +173,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // App menu
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
+
+        let checkForUpdatesItem = NSMenuItem(
+            title: "Check for Updates...",
+            action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
+            keyEquivalent: ""
+        )
+        checkForUpdatesItem.target = updaterController
+        appMenu.addItem(checkForUpdatesItem)
+        appMenu.addItem(NSMenuItem.separator())
+
         appMenu.addItem(NSMenuItem(title: "Quit MacParakeet", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
@@ -230,6 +249,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             action: #selector(openMainWindowToSettings),
             keyEquivalent: ","
         ))
+
+        let checkForUpdatesItem = NSMenuItem(
+            title: "Check for Updates...",
+            action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
+            keyEquivalent: ""
+        )
+        checkForUpdatesItem.target = updaterController
+        menu.addItem(checkForUpdatesItem)
+
+        menu.addItem(NSMenuItem.separator())
 
         menu.addItem(NSMenuItem(
             title: "Quit MacParakeet",
@@ -1296,7 +1325,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             chatViewModel: chatViewModel,
             customWordsViewModel: customWordsViewModel,
             textSnippetsViewModel: textSnippetsViewModel,
-            feedbackViewModel: feedbackViewModel
+            feedbackViewModel: feedbackViewModel,
+            updater: updaterController.updater
         )
 
         let window = NSWindow(

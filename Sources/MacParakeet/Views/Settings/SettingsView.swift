@@ -1,4 +1,5 @@
 import Foundation
+import Sparkle
 import SwiftUI
 import AppKit
 import MacParakeetCore
@@ -7,10 +8,21 @@ import MacParakeetViewModels
 struct SettingsView: View {
     @Bindable var viewModel: SettingsViewModel
     @Bindable var llmSettingsViewModel: LLMSettingsViewModel
+    let updater: SPUUpdater
 
+    @State private var automaticallyChecksForUpdates: Bool
+    @State private var automaticallyDownloadsUpdates: Bool
     @State private var showClearAllAlert = false
     @State private var showClearYouTubeAudioAlert = false
     @State private var copiedBuildIdentity = false
+
+    init(viewModel: SettingsViewModel, llmSettingsViewModel: LLMSettingsViewModel, updater: SPUUpdater) {
+        self.viewModel = viewModel
+        self.llmSettingsViewModel = llmSettingsViewModel
+        self.updater = updater
+        self._automaticallyChecksForUpdates = State(initialValue: updater.automaticallyChecksForUpdates)
+        self._automaticallyDownloadsUpdates = State(initialValue: updater.automaticallyDownloadsUpdates)
+    }
 
     var body: some View {
         ScrollView {
@@ -22,6 +34,7 @@ struct SettingsView: View {
                 storageCard
                 localModelsCard
                 permissionsCard
+                updatesCard
                 onboardingCard
                 aboutCard
             }
@@ -323,6 +336,51 @@ struct SettingsView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(DesignSystem.Colors.accent)
+                }
+            }
+        }
+    }
+
+    // MARK: - Updates
+
+    private var updatesCard: some View {
+        settingsCard(
+            title: "Updates",
+            subtitle: "Keep MacParakeet up to date.",
+            icon: "arrow.triangle.2.circlepath"
+        ) {
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
+                HStack {
+                    Toggle("Automatically check for updates", isOn: $automaticallyChecksForUpdates)
+                        .onChange(of: automaticallyChecksForUpdates) { _, newValue in
+                            updater.automaticallyChecksForUpdates = newValue
+                        }
+                        .font(DesignSystem.Typography.body)
+                }
+
+                HStack {
+                    Toggle("Automatically download updates", isOn: $automaticallyDownloadsUpdates)
+                        .onChange(of: automaticallyDownloadsUpdates) { _, newValue in
+                            updater.automaticallyDownloadsUpdates = newValue
+                        }
+                        .font(DesignSystem.Typography.body)
+                        .disabled(!automaticallyChecksForUpdates)
+                }
+
+                Divider()
+
+                HStack {
+                    rowText(
+                        title: "Manual check",
+                        detail: "Check for a new version right now."
+                    )
+                    Spacer()
+                    Button("Check for Updates...") {
+                        updater.checkForUpdates()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(DesignSystem.Colors.accent)
+                    .disabled(!updater.canCheckForUpdates)
                 }
             }
         }
