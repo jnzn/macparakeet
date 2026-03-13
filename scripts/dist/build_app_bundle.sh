@@ -322,8 +322,22 @@ if [[ -d "$SPARKLE_FW" ]]; then
   rm -rf "$FRAMEWORKS_DIR/Sparkle.framework"
   cp -R "$SPARKLE_FW" "$FRAMEWORKS_DIR/"
   echo "Embedded Sparkle.framework from: $SPARKLE_FW"
+
+  # Ensure the binary's rpath includes Contents/Frameworks/ (standard macOS location).
+  # xcodebuild may set @executable_path/../lib instead.
+  BINARY="$MACOS_DIR/$APP_NAME"
+  if ! otool -l "$BINARY" | grep -q '@executable_path/../Frameworks'; then
+    echo "Adding @executable_path/../Frameworks to rpath…"
+    install_name_tool -add_rpath @executable_path/../Frameworks "$BINARY"
+  fi
 else
-  echo "Warning: Sparkle.framework not found — auto-update will not work at runtime." >&2
+  echo "Error: Sparkle.framework not found — app will crash at launch without it." >&2
+  echo "Searched:" >&2
+  echo "  $XCODE_DERIVED_DATA/Build/Products/Release/PackageFrameworks/Sparkle.framework" >&2
+  echo "  $XCODE_DERIVED_DATA (find)" >&2
+  echo "  $ROOT_DIR/.build (find)" >&2
+  echo "  $ROOT_DIR/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework" >&2
+  exit 1
 fi
 
 # Copy app icon into Resources.

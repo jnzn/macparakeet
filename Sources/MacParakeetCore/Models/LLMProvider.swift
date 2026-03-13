@@ -26,18 +26,7 @@ public enum LLMProviderID: String, Codable, Sendable, CaseIterable {
         }
     }
 
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        let raw = try container.decode(String.self)
-        // Migrate legacy "custom" → "openai" (closest OpenAI-compatible fallback)
-        if raw == "custom" {
-            self = .openai
-        } else if let valid = LLMProviderID(rawValue: raw) {
-            self = valid
-        } else {
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unknown provider: \(raw)")
-        }
-    }
+
 }
 
 // MARK: - Provider Configuration

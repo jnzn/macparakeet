@@ -183,7 +183,7 @@ public final class SettingsViewModel {
     public func refreshStats() {
         guard let repo = dictationRepo else { return }
         if let stats = try? repo.stats() {
-            dictationCount = stats.totalCount
+            dictationCount = stats.visibleCount
         }
         customWordCount = (try? customWordRepo?.fetchAll().count) ?? 0
         snippetCount = (try? snippetRepo?.fetchAll().count) ?? 0

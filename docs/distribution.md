@@ -217,6 +217,7 @@ Users can control auto-update behavior in Settings > Updates:
 
 ## Notes
 
+- **Sparkle.framework must be embedded in the .app bundle.** The `build_app_bundle.sh` script copies it to `Contents/Frameworks/`. If the framework is missing, the app will crash immediately at launch with a dyld `Library not loaded: @rpath/Sparkle.framework` error. The script now fails the build if Sparkle.framework cannot be found — do not bypass this check.
 - The scripts default to a single-arch Release build. For a universal binary:
 
 ```bash
