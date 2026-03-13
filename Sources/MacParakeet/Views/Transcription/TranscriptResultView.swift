@@ -123,7 +123,7 @@ struct TranscriptResultView: View {
             SacredGeometryDivider()
                 .padding(.horizontal, DesignSystem.Spacing.lg)
 
-            if viewModel.llmAvailable {
+            if viewModel.showTabs {
                 tabBar
                     .padding(.horizontal, DesignSystem.Spacing.lg)
                     .padding(.top, DesignSystem.Spacing.sm)
@@ -223,23 +223,24 @@ struct TranscriptResultView: View {
             dismissTask = nil
         }
         .onAppear {
-            let text = transcription.cleanTranscript ?? transcription.rawTranscript ?? ""
-            chatViewModel.cancelStreaming()
-            chatViewModel.updateTranscript(text)
+            viewModel.resetSummaryState()
+            viewModel.loadPersistedContent()
+            let text = viewModel.currentTranscription?.cleanTranscript ?? viewModel.currentTranscription?.rawTranscript ?? ""
+            chatViewModel.loadTranscript(text, transcriptionId: viewModel.currentTranscription?.id, chatMessages: viewModel.currentTranscription?.chatMessages)
         }
         .onChange(of: transcription.id) {
-            let text = transcription.cleanTranscript ?? transcription.rawTranscript ?? ""
-            chatViewModel.cancelStreaming()
-            chatViewModel.updateTranscript(text)
             viewModel.selectedTab = .transcript
-            viewModel.dismissSummary()
+            viewModel.resetSummaryState()
+            viewModel.loadPersistedContent()
+            let text = viewModel.currentTranscription?.cleanTranscript ?? viewModel.currentTranscription?.rawTranscript ?? ""
+            chatViewModel.loadTranscript(text, transcriptionId: viewModel.currentTranscription?.id, chatMessages: viewModel.currentTranscription?.chatMessages)
         }
     }
 
     @ViewBuilder
     private func contentArea(availableWidth: CGFloat) -> some View {
         Group {
-            if viewModel.llmAvailable {
+            if viewModel.showTabs {
                 switch viewModel.selectedTab {
                 case .transcript:
                     transcriptPane
@@ -333,20 +334,29 @@ struct TranscriptResultView: View {
                         Text("No summary yet")
                             .foregroundStyle(.secondary)
                             .font(DesignSystem.Typography.body)
-                        Text("Summaries are generated automatically after transcription, or you can generate one manually.")
-                            .foregroundStyle(.tertiary)
-                            .font(DesignSystem.Typography.caption)
-                            .multilineTextAlignment(.center)
-                            .frame(maxWidth: 280)
 
-                        Button {
-                            let text = transcription.cleanTranscript ?? transcription.rawTranscript ?? ""
-                            viewModel.generateSummary(text: text)
-                        } label: {
-                            Label("Generate Summary", systemImage: "sparkles")
+                        if viewModel.canGenerateSummary {
+                            Text("Summaries are generated automatically after transcription, or you can generate one manually.")
+                                .foregroundStyle(.tertiary)
+                                .font(DesignSystem.Typography.caption)
+                                .multilineTextAlignment(.center)
+                                .frame(maxWidth: 280)
+
+                            Button {
+                                let text = transcription.cleanTranscript ?? transcription.rawTranscript ?? ""
+                                viewModel.generateSummary(text: text)
+                            } label: {
+                                Label("Generate Summary", systemImage: "sparkles")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.regular)
+                        } else {
+                            Text("Configure an LLM provider in Settings to generate summaries.")
+                                .foregroundStyle(.tertiary)
+                                .font(DesignSystem.Typography.caption)
+                                .multilineTextAlignment(.center)
+                                .frame(maxWidth: 280)
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.regular)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.top, DesignSystem.Spacing.xl)
@@ -363,19 +373,38 @@ struct TranscriptResultView: View {
                             }
 
                             HStack(alignment: .firstTextBaseline, spacing: 0) {
-                                Text(viewModel.summary)
-                                    .font(DesignSystem.Typography.bodyLarge)
-                                    .textSelection(.enabled)
-                                    .lineSpacing(4)
+                                MarkdownText(viewModel.summary, font: DesignSystem.Typography.bodyLarge)
                                 PulsingCursor()
                             }
                         }
                     }
                 case .complete:
-                    Text(viewModel.summary)
-                        .font(DesignSystem.Typography.bodyLarge)
-                        .textSelection(.enabled)
-                        .lineSpacing(4)
+                    VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+                        MarkdownText(viewModel.summary, font: DesignSystem.Typography.bodyLarge)
+
+                        if viewModel.canGenerateSummary {
+                            HStack(spacing: DesignSystem.Spacing.sm) {
+                                Button {
+                                    let text = transcription.cleanTranscript ?? transcription.rawTranscript ?? ""
+                                    viewModel.generateSummary(text: text)
+                                } label: {
+                                    Label("Regenerate", systemImage: "arrow.clockwise")
+                                        .font(DesignSystem.Typography.caption)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+
+                                Button {
+                                    viewModel.dismissSummary()
+                                } label: {
+                                    Label("Dismiss", systemImage: "trash")
+                                        .font(DesignSystem.Typography.caption)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+                        }
+                    }
                 case .error(let message):
                     VStack(spacing: DesignSystem.Spacing.md) {
                         Image(systemName: "exclamationmark.triangle")
@@ -475,7 +504,7 @@ struct TranscriptResultView: View {
                 TextField("Ask about this transcript...", text: Bindable(chatVM).inputText)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { chatVM.sendMessage() }
-                    .disabled(chatVM.isStreaming)
+                    .disabled(chatVM.isStreaming || !chatVM.canSendMessage)
 
                 if chatVM.isStreaming {
                     Button {
@@ -495,7 +524,7 @@ struct TranscriptResultView: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(DesignSystem.Colors.accent)
-                    .disabled(chatVM.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(chatVM.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !chatVM.canSendMessage)
                 }
 
                 if !chatVM.messages.isEmpty {
@@ -524,9 +553,13 @@ struct TranscriptResultView: View {
                     ChatStreamingPlaceholder()
                 } else {
                     HStack(alignment: .firstTextBaseline, spacing: 0) {
-                        Text(message.content)
-                            .font(DesignSystem.Typography.body)
-                            .textSelection(.enabled)
+                        if message.role == .assistant {
+                            MarkdownText(message.content)
+                        } else {
+                            Text(message.content)
+                                .font(DesignSystem.Typography.body)
+                                .textSelection(.enabled)
+                        }
                         if message.isStreaming {
                             PulsingCursor()
                         }
