@@ -62,30 +62,30 @@ public struct LLMProviderConfig: Codable, Sendable, Equatable {
 
     // MARK: - Factory Methods
 
-    public static func anthropic(apiKey: String, model: String = "claude-sonnet-4-20250514") -> LLMProviderConfig {
+    public static func anthropic(apiKey: String, model: String = "claude-sonnet-4-20250514", baseURL: URL? = nil) -> LLMProviderConfig {
         LLMProviderConfig(
             id: .anthropic,
-            baseURL: URL(string: "https://api.anthropic.com/v1")!,
+            baseURL: baseURL ?? URL(string: "https://api.anthropic.com/v1")!,
             apiKey: apiKey,
             modelName: model,
             isLocal: false
         )
     }
 
-    public static func openai(apiKey: String, model: String = "gpt-4o") -> LLMProviderConfig {
+    public static func openai(apiKey: String, model: String = "gpt-4o", baseURL: URL? = nil) -> LLMProviderConfig {
         LLMProviderConfig(
             id: .openai,
-            baseURL: URL(string: "https://api.openai.com/v1")!,
+            baseURL: baseURL ?? URL(string: "https://api.openai.com/v1")!,
             apiKey: apiKey,
             modelName: model,
             isLocal: false
         )
     }
 
-    public static func gemini(apiKey: String, model: String = "gemini-2.0-flash") -> LLMProviderConfig {
+    public static func gemini(apiKey: String, model: String = "gemini-2.0-flash", baseURL: URL? = nil) -> LLMProviderConfig {
         LLMProviderConfig(
             id: .gemini,
-            baseURL: URL(string: "https://generativelanguage.googleapis.com/v1beta/openai")!,
+            baseURL: baseURL ?? URL(string: "https://generativelanguage.googleapis.com/v1beta/openai")!,
             apiKey: apiKey,
             modelName: model,
             isLocal: false

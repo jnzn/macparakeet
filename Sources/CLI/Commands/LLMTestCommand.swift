@@ -5,16 +5,13 @@ import MacParakeetCore
 struct LLMTestCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "test-connection",
-        abstract: "Test connectivity to the configured LLM provider."
+        abstract: "Test connectivity to an LLM provider."
     )
 
-    func run() async throws {
-        let store = LLMConfigStore()
+    @OptionGroup var llm: LLMInlineOptions
 
-        guard let config = try store.loadConfig() else {
-            print("No LLM provider configured. Run 'macparakeet-cli llm config' first.")
-            throw ExitCode.failure
-        }
+    func run() async throws {
+        let config = try llm.buildConfig()
 
         print("Testing connection to \(config.id.displayName) (\(config.modelName))...")
 
