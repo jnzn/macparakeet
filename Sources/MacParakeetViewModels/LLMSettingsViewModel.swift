@@ -163,8 +163,7 @@ public final class LLMSettingsViewModel {
         } else if let defaultURL = URL(string: Self.defaultBaseURL(for: selectedProviderID)), !Self.defaultBaseURL(for: selectedProviderID).isEmpty {
             baseURL = defaultURL
         } else {
-            // .custom provider with no URL — use a placeholder that will fail at request time
-            // rather than crash here
+            // No URL available — use a placeholder that will fail at request time rather than crash
             baseURL = URL(string: "http://localhost")!
         }
 
@@ -217,7 +216,6 @@ public final class LLMSettingsViewModel {
             "qwen3:8b",
             "mistral",
         ]
-        case .custom: return []
         }
     }
 
@@ -232,7 +230,6 @@ public final class LLMSettingsViewModel {
         case .gemini: return "https://generativelanguage.googleapis.com/v1beta/openai"
         case .openrouter: return "https://openrouter.ai/api/v1"
         case .ollama: return "http://localhost:11434/v1"
-        case .custom: return ""
         }
     }
 }

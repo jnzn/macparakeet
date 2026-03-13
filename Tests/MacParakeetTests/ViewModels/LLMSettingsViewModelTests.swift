@@ -72,7 +72,7 @@ final class LLMSettingsViewModelTests: XCTestCase {
 
     func testSaveWithBaseURLOverride() {
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
-        viewModel.selectedProviderID = .custom
+        viewModel.selectedProviderID = .openai
         viewModel.modelName = "my-model"
         viewModel.baseURLOverride = "https://my-server.com/v1"
 
