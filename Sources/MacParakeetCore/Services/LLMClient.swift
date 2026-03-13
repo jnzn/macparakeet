@@ -280,7 +280,10 @@ public final class LLMClient: LLMClientProtocol, Sendable {
         } else if baseStr.hasSuffix("/v1/") {
             baseStr = String(baseStr.dropLast(4))
         }
-        let url = URL(string: baseStr)!.appendingPathComponent("api/chat")
+        guard let base = URL(string: baseStr) else {
+            throw LLMError.connectionFailed("Invalid Ollama base URL: \(baseStr)")
+        }
+        let url = base.appendingPathComponent("api/chat")
 
         var request = URLRequest(url: url, timeoutInterval: stream ? 600 : 300)
         request.httpMethod = "POST"
