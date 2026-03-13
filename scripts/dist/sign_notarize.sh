@@ -25,7 +25,7 @@ DIST_DIR="${DIST_DIR:-$ROOT_DIR/dist}"
 APP_PATH="$DIST_DIR/${APP_NAME}.app"
 
 SIGN_IDENTITY="${SIGN_IDENTITY:-Developer ID Application: Daniel Moon (FYAF2ZD7RM)}"
-NOTARYTOOL_PROFILE="${NOTARYTOOL_PROFILE:-}"
+NOTARYTOOL_PROFILE="${NOTARYTOOL_PROFILE:-AC_PASSWORD}"
 CREATE_DMG="${CREATE_DMG:-1}"
 
 if [[ ! -d "$APP_PATH" ]]; then
@@ -96,8 +96,8 @@ rm -f "$ZIP_PATH"
 echo "[5/8] Creating notarization zip…"
 ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
 
-if [[ -z "$NOTARYTOOL_PROFILE" ]]; then
-  echo "NOTARYTOOL_PROFILE not set; skipping notarization."
+if [[ "${SKIP_NOTARIZE:-0}" == "1" ]]; then
+  echo "SKIP_NOTARIZE=1; skipping notarization."
   exit 0
 fi
 
