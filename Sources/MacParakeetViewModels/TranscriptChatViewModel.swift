@@ -35,6 +35,13 @@ public final class TranscriptChatViewModel {
         self.transcriptText = transcriptText
     }
 
+    /// Updates the LLM service reference (e.g., when provider config changes).
+    /// Passes `nil` to disable chat when LLM is unconfigured.
+    public func updateLLMService(_ service: LLMServiceProtocol?) {
+        cancelStreaming()
+        self.llmService = service
+    }
+
     public func sendMessage() {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isStreaming, let llmService else { return }
