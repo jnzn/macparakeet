@@ -129,4 +129,25 @@ final class TranscriptChatViewModelTests: XCTestCase {
 
         XCTAssertFalse(viewModel.isStreaming)
     }
+
+    // MARK: - Update LLM Service
+
+    func testUpdateLLMServiceNilDisablesChat() {
+        viewModel.updateLLMService(nil)
+        viewModel.inputText = "Should not send"
+        viewModel.sendMessage()
+        XCTAssertTrue(viewModel.messages.isEmpty)
+    }
+
+    func testUpdateLLMServiceSwapsProvider() async throws {
+        let newService = MockLLMService()
+        newService.streamTokens = ["new", " provider"]
+        viewModel.updateLLMService(newService)
+
+        viewModel.inputText = "Hello"
+        viewModel.sendMessage()
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertEqual(viewModel.messages[1].content, "new provider")
+    }
 }

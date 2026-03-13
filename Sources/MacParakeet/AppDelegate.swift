@@ -305,7 +305,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func refreshLLMAvailability() {
         guard let env = appEnvironment else { return }
         let hasConfig = (try? env.llmConfigStore.loadConfig()) != nil
-        transcriptionViewModel.updateLLMAvailability(hasConfig, llmService: hasConfig ? env.llmService : nil)
+        let service: LLMService? = hasConfig ? env.llmService : nil
+        transcriptionViewModel.updateLLMAvailability(hasConfig, llmService: service)
+        chatViewModel.updateLLMService(service)
     }
 
     // MARK: - Hotkey
