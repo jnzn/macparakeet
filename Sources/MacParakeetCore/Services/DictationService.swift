@@ -29,6 +29,7 @@ public actor DictationService: DictationServiceProtocol {
     private let dictationRepo: DictationRepositoryProtocol
     private let clipboardService: ClipboardServiceProtocol
     private let shouldSaveAudio: (@Sendable () -> Bool)?
+    private let shouldSaveDictationHistory: (@Sendable () -> Bool)?
     private let entitlements: EntitlementsChecking?
     private let customWordRepo: CustomWordRepositoryProtocol?
     private let snippetRepo: TextSnippetRepositoryProtocol?
@@ -55,6 +56,7 @@ public actor DictationService: DictationServiceProtocol {
         dictationRepo: DictationRepositoryProtocol,
         clipboardService: ClipboardServiceProtocol,
         shouldSaveAudio: (@Sendable () -> Bool)? = nil,
+        shouldSaveDictationHistory: (@Sendable () -> Bool)? = nil,
         entitlements: EntitlementsChecking? = nil,
         customWordRepo: CustomWordRepositoryProtocol? = nil,
         snippetRepo: TextSnippetRepositoryProtocol? = nil,
@@ -66,6 +68,7 @@ public actor DictationService: DictationServiceProtocol {
         self.dictationRepo = dictationRepo
         self.clipboardService = clipboardService
         self.shouldSaveAudio = shouldSaveAudio
+        self.shouldSaveDictationHistory = shouldSaveDictationHistory
         self.entitlements = entitlements
         self.customWordRepo = customWordRepo
         self.snippetRepo = snippetRepo
@@ -230,17 +233,36 @@ public actor DictationService: DictationServiceProtocol {
         let cleanTranscript = refinement.text
         let expandedSnippetIDs = refinement.expandedSnippetIDs
 
-        // Create dictation record
-        var dictation = Dictation(
-            durationMs: computeDurationMs(from: result),
-            rawTranscript: result.text,
-            cleanTranscript: cleanTranscript,
-            processingMode: mode,
-            status: .completed
-        )
+        let finalText = cleanTranscript ?? result.text
+        let wc = finalText.split(whereSeparator: \.isWhitespace).count
+        let saveHistory = shouldSaveDictationHistory?() ?? true
 
-        // Persist audio if enabled; otherwise delete it.
-        if shouldSaveAudio?() ?? false {
+        // Create dictation record
+        var dictation: Dictation
+        if saveHistory {
+            dictation = Dictation(
+                durationMs: computeDurationMs(from: result),
+                rawTranscript: result.text,
+                cleanTranscript: cleanTranscript,
+                processingMode: mode,
+                status: .completed,
+                wordCount: wc
+            )
+        } else {
+            // Private mode: save metadata only (no transcript text, no audio)
+            dictation = Dictation(
+                durationMs: computeDurationMs(from: result),
+                rawTranscript: "",
+                cleanTranscript: nil,
+                processingMode: mode,
+                status: .completed,
+                hidden: true,
+                wordCount: wc
+            )
+        }
+
+        // Persist audio if enabled and not private; otherwise delete it.
+        if saveHistory, shouldSaveAudio?() ?? false {
             try? AppPaths.ensureDirectories()
             let destURL = URL(fileURLWithPath: AppPaths.dictationsDir, isDirectory: true)
                 .appendingPathComponent("\(dictation.id.uuidString).wav")

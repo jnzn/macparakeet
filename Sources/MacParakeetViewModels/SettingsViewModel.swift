@@ -64,6 +64,9 @@ public final class SettingsViewModel {
     public var snippetCount: Int = 0
 
     // Storage
+    public var saveDictationHistory: Bool {
+        didSet { defaults.set(saveDictationHistory, forKey: "saveDictationHistory") }
+    }
     public var saveAudioRecordings: Bool {
         didSet { defaults.set(saveAudioRecordings, forKey: "saveAudioRecordings") }
     }
@@ -123,6 +126,7 @@ public final class SettingsViewModel {
         let delay = defaults.double(forKey: "silenceDelay")
         silenceDelay = delay == 0 ? 2.0 : delay
         processingMode = Self.normalizedProcessingMode(defaults.string(forKey: "processingMode"))
+        saveDictationHistory = defaults.object(forKey: "saveDictationHistory") as? Bool ?? true
         saveAudioRecordings = defaults.object(forKey: "saveAudioRecordings") as? Bool ?? true
         saveTranscriptionAudio = defaults.object(forKey: "saveTranscriptionAudio") as? Bool ?? true
     }
@@ -343,6 +347,12 @@ public final class SettingsViewModel {
             try? FileManager.default.removeItem(atPath: dir)
             try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         }
+        refreshStats()
+    }
+
+    public func resetPrivateStatistics() {
+        guard let repo = dictationRepo else { return }
+        try? repo.deleteHidden()
         refreshStats()
     }
 
