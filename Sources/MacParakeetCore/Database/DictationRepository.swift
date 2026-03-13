@@ -16,6 +16,8 @@ public protocol DictationRepositoryProtocol: Sendable {
 
 public struct DictationStats: Sendable, Equatable {
     public let totalCount: Int
+    /// Count of non-hidden (visible) dictations only. Use for UI that operates on visible rows (e.g. "Clear All").
+    public let visibleCount: Int
     public let totalDurationMs: Int
     public let totalWords: Int
     public let longestDurationMs: Int
@@ -23,10 +25,11 @@ public struct DictationStats: Sendable, Equatable {
     public let weeklyStreak: Int
     public let dictationsThisWeek: Int
 
-    public static let empty = DictationStats(totalCount: 0, totalDurationMs: 0)
+    public static let empty = DictationStats(totalCount: 0, visibleCount: 0, totalDurationMs: 0)
 
     public init(
         totalCount: Int,
+        visibleCount: Int = 0,
         totalDurationMs: Int,
         totalWords: Int = 0,
         longestDurationMs: Int = 0,
@@ -35,6 +38,7 @@ public struct DictationStats: Sendable, Equatable {
         dictationsThisWeek: Int = 0
     ) {
         self.totalCount = totalCount
+        self.visibleCount = visibleCount
         self.totalDurationMs = totalDurationMs
         self.totalWords = totalWords
         self.longestDurationMs = longestDurationMs
@@ -148,6 +152,7 @@ public final class DictationRepository: DictationRepositoryProtocol {
         try dbQueue.write { db in
             let dictations = try Dictation
                 .filter(Dictation.Columns.audioPath != nil)
+                .filter(Dictation.Columns.hidden == false)
                 .fetchAll(db)
 
             for var dictation in dictations {
@@ -180,6 +185,7 @@ public final class DictationRepository: DictationRepositoryProtocol {
             let row = try Row.fetchOne(db, sql: """
                 SELECT
                     COUNT(*) AS cnt,
+                    SUM(CASE WHEN hidden = 0 THEN 1 ELSE 0 END) AS visibleCnt,
                     COALESCE(SUM(durationMs), 0) AS totalDur,
                     COALESCE(MAX(durationMs), 0) AS maxDur,
                     CASE WHEN COUNT(*) > 0
@@ -192,6 +198,7 @@ public final class DictationRepository: DictationRepositoryProtocol {
                 """)
 
             let count: Int = row?["cnt"] ?? 0
+            let visibleCount: Int = row?["visibleCnt"] ?? 0
             let totalDuration: Int = row?["totalDur"] ?? 0
             let maxDuration: Int = row?["maxDur"] ?? 0
             let avgDuration: Int = row?["avgDur"] ?? 0
@@ -206,6 +213,7 @@ public final class DictationRepository: DictationRepositoryProtocol {
 
             return DictationStats(
                 totalCount: count,
+                visibleCount: visibleCount,
                 totalDurationMs: totalDuration,
                 totalWords: totalWords,
                 longestDurationMs: maxDuration,

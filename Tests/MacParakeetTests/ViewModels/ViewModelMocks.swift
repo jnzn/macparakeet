@@ -82,8 +82,10 @@ final class MockDictationRepository: DictationRepositoryProtocol, @unchecked Sen
         let dates = completed.map(\.createdAt)
         let (streak, thisWeek) = DictationRepository.computeWeeklyStreak(from: dates)
 
+        let visible = completed.filter { !$0.hidden }
         return DictationStats(
             totalCount: completed.count,
+            visibleCount: visible.count,
             totalDurationMs: totalDuration,
             totalWords: totalWords,
             longestDurationMs: maxDuration,

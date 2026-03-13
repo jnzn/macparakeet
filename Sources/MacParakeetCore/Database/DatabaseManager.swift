@@ -169,14 +169,15 @@ public final class DatabaseManager: Sendable {
                 t.add(column: "hidden", .boolean).notNull().defaults(to: false)
                 t.add(column: "wordCount", .integer).notNull().defaults(to: 0)
             }
-            // Backfill wordCount for existing completed rows
+            // Backfill wordCount for existing completed rows.
+            // Use DatabaseValue to safely skip rows with corrupt/non-UUID ids.
             let rows = try Row.fetchAll(db, sql: """
                 SELECT id, COALESCE(cleanTranscript, rawTranscript) AS text
                 FROM dictations WHERE status = 'completed'
             """)
             for row in rows {
-                let id: String = row["id"]
-                let text: String = row["text"]
+                guard let id = UUID.fromDatabaseValue(row["id"] as DatabaseValue) else { continue }
+                let text: String = row["text"] ?? ""
                 let wc = text.split(whereSeparator: \.isWhitespace).count
                 try db.execute(sql: "UPDATE dictations SET wordCount = ? WHERE id = ?", arguments: [wc, id])
             }
