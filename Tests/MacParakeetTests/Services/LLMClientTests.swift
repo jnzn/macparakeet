@@ -206,9 +206,12 @@ final class LLMClientTests: XCTestCase {
             return (self.okResponse(for: request), self.validResponseData())
         }
 
-        let config = LLMProviderConfig.custom(
+        let config = LLMProviderConfig(
+            id: .openai,
             baseURL: URL(string: "http://localhost:8080/v1")!,
-            model: "test-model"
+            apiKey: nil,
+            modelName: "test-model",
+            isLocal: false
         )
         _ = try await llmClient.chatCompletion(
             messages: [ChatMessage(role: .user, content: "Hi")],

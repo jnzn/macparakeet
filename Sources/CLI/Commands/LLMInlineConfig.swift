@@ -46,7 +46,7 @@ final class InlineLLMConfigStore: LLMConfigStoreProtocol, @unchecked Sendable {
 
 /// Shared options for CLI commands that call an LLM provider directly (no Keychain).
 struct LLMInlineOptions: ParsableArguments {
-    @Option(name: .long, help: "Provider: anthropic, openai, gemini, openrouter, ollama, custom.")
+    @Option(name: .long, help: "Provider: anthropic, openai, gemini, openrouter, ollama.")
     var provider: String
 
     @Option(name: .long, help: "API key.")
@@ -63,7 +63,7 @@ struct LLMInlineOptions: ParsableArguments {
 
     func buildConfig() throws -> LLMProviderConfig {
         guard let providerID = LLMProviderID(rawValue: provider) else {
-            throw ValidationError("Unknown provider '\(provider)'. Options: anthropic, openai, gemini, openrouter, ollama, custom")
+            throw ValidationError("Unknown provider '\(provider)'. Options: anthropic, openai, gemini, openrouter, ollama")
         }
 
         let overrideURL: URL? = if let urlStr = baseURL {
@@ -87,10 +87,6 @@ struct LLMInlineOptions: ParsableArguments {
             return .openrouter(apiKey: key, model: model ?? "anthropic/claude-sonnet-4", baseURL: overrideURL)
         case .ollama:
             return .ollama(model: model ?? "qwen3.5:4b", baseURL: overrideURL)
-        case .custom:
-            guard let url = overrideURL else { throw ValidationError("--base-url is required for custom provider") }
-            guard let modelName = model else { throw ValidationError("--model is required for custom provider") }
-            return .custom(baseURL: url, model: modelName, apiKey: apiKey, isLocal: local)
         }
     }
 }

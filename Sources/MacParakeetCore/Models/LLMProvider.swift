@@ -8,7 +8,6 @@ public enum LLMProviderID: String, Codable, Sendable, CaseIterable {
     case gemini
     case openrouter
     case ollama
-    case custom
 
     public var displayName: String {
         switch self {
@@ -17,14 +16,26 @@ public enum LLMProviderID: String, Codable, Sendable, CaseIterable {
         case .gemini: return "Google Gemini"
         case .openrouter: return "OpenRouter"
         case .ollama: return "Ollama"
-        case .custom: return "Custom"
         }
     }
 
     public var isLocal: Bool {
         switch self {
         case .ollama: return true
-        case .anthropic, .openai, .gemini, .openrouter, .custom: return false
+        case .anthropic, .openai, .gemini, .openrouter: return false
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        // Migrate legacy "custom" → "openai" (closest OpenAI-compatible fallback)
+        if raw == "custom" {
+            self = .openai
+        } else if let valid = LLMProviderID(rawValue: raw) {
+            self = valid
+        } else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unknown provider: \(raw)")
         }
     }
 }
@@ -112,13 +123,4 @@ public struct LLMProviderConfig: Codable, Sendable, Equatable {
         )
     }
 
-    public static func custom(baseURL: URL, model: String, apiKey: String? = nil, isLocal: Bool = false) -> LLMProviderConfig {
-        LLMProviderConfig(
-            id: .custom,
-            baseURL: baseURL,
-            apiKey: apiKey,
-            modelName: model,
-            isLocal: isLocal
-        )
-    }
 }
