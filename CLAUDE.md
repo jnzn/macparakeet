@@ -579,8 +579,8 @@ swift test --parallel
 xcodebuild build -scheme MacParakeet -destination 'platform=OS X' -derivedDataPath .build/xcode \
   CODE_SIGN_IDENTITY="Apple Development" DEVELOPMENT_TEAM=FYAF2ZD7RM
 
-# Run GUI app
-.build/xcode/Build/Products/Debug/MacParakeet
+# Run GUI app (recommended: use the dev script which handles framework symlinks)
+scripts/dev/run_app.sh
 
 # Build and run CLI
 swift build --target CLI
@@ -604,7 +604,7 @@ After building, quick smoke test:
 
 ```bash
 # Run the app
-.build/xcode/Build/Products/Debug/MacParakeet
+scripts/dev/run_app.sh
 
 # Run tests
 swift test
