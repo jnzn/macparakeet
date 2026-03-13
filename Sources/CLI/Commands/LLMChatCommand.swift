@@ -28,23 +28,16 @@ struct LLMChatCommand: AsyncParsableCommand {
         }
 
         let config = try llm.buildConfig()
-        let client = LLMClient()
-        let systemPrompt = "You are a helpful assistant. The user will ask questions about the following transcript. Answer based on the transcript content. If the answer isn't in the transcript, say so.\n\n---\nTranscript:\n\(text)"
-
-        let messages = [
-            ChatMessage(role: .system, content: systemPrompt),
-            ChatMessage(role: .user, content: question),
-        ]
+        let service = LLMService(configStore: InlineLLMConfigStore(config: config))
 
         if stream {
-            let tokenStream = client.chatCompletionStream(messages: messages, config: config, options: .default)
+            let tokenStream = service.chatStream(question: question, transcript: text, history: [])
             for try await token in tokenStream {
                 print(token, terminator: "")
             }
             print()
         } else {
-            let response = try await client.chatCompletion(messages: messages, config: config, options: .default)
-            print(response.content)
+            print(try await service.chat(question: question, transcript: text, history: []))
         }
     }
 }

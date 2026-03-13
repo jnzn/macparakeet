@@ -285,6 +285,33 @@ final class LLMClientTests: XCTestCase {
         }
     }
 
+    func testGenericNotFoundReturnsProviderError() async {
+        MockURLProtocol.handler = { request in
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil
+            )!
+            return (response, Data("{\"error\":{\"message\":\"Route not found\"}}".utf8))
+        }
+
+        let config = LLMProviderConfig.openai(apiKey: "sk-test")
+        do {
+            _ = try await llmClient.chatCompletion(
+                messages: [ChatMessage(role: .user, content: "Hi")],
+                config: config,
+                options: .default
+            )
+            XCTFail("Expected LLMError.providerError")
+        } catch let error as LLMError {
+            if case .providerError(let msg) = error {
+                XCTAssertEqual(msg, "Route not found")
+            } else {
+                XCTFail("Expected providerError, got \(error)")
+            }
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
+    }
+
     func testContextLengthErrorMappedCorrectly() async {
         MockURLProtocol.handler = { request in
             let response = HTTPURLResponse(
@@ -494,6 +521,19 @@ final class LLMClientTests: XCTestCase {
         if case .skip = result {} else {
             XCTFail("Expected .skip for empty choices, got \(result)")
         }
+    }
+
+    func testValidateStreamCompletionRequiresDoneMarker() {
+        XCTAssertThrowsError(try llmClient.validateStreamCompletion(sawDone: false)) { error in
+            guard case LLMError.streamingError(let detail) = error else {
+                return XCTFail("Expected streamingError, got \(error)")
+            }
+            XCTAssertEqual(detail, "Stream ended before [DONE].")
+        }
+    }
+
+    func testValidateStreamCompletionAcceptsDoneMarker() throws {
+        XCTAssertNoThrow(try llmClient.validateStreamCompletion(sawDone: true))
     }
 
     // MARK: - Helpers

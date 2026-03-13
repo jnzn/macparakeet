@@ -92,20 +92,20 @@ public struct LLMProviderConfig: Codable, Sendable, Equatable {
         )
     }
 
-    public static func ollama(model: String = "llama3.2") -> LLMProviderConfig {
+    public static func ollama(model: String = "llama3.2", baseURL: URL? = nil) -> LLMProviderConfig {
         LLMProviderConfig(
             id: .ollama,
-            baseURL: URL(string: "http://localhost:11434/v1")!,
+            baseURL: baseURL ?? URL(string: "http://localhost:11434/v1")!,
             apiKey: nil,
             modelName: model,
             isLocal: true
         )
     }
 
-    public static func lmstudio(model: String, apiKey: String? = nil) -> LLMProviderConfig {
+    public static func lmstudio(model: String, apiKey: String? = nil, baseURL: URL? = nil) -> LLMProviderConfig {
         LLMProviderConfig(
             id: .lmstudio,
-            baseURL: URL(string: "http://localhost:1234/v1")!,
+            baseURL: baseURL ?? URL(string: "http://localhost:1234/v1")!,
             apiKey: apiKey,
             modelName: model,
             isLocal: true

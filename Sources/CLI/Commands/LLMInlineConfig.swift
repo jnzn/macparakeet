@@ -27,6 +27,21 @@ func readInput(_ path: String) throws -> String {
     }
 }
 
+final class InlineLLMConfigStore: LLMConfigStoreProtocol, @unchecked Sendable {
+    private let config: LLMProviderConfig
+
+    init(config: LLMProviderConfig) {
+        self.config = config
+    }
+
+    func loadConfig() throws -> LLMProviderConfig? { config }
+    func saveConfig(_ config: LLMProviderConfig) throws { throw KeyValueStoreError.unsupported }
+    func deleteConfig() throws { throw KeyValueStoreError.unsupported }
+    func loadAPIKey() throws -> String? { config.apiKey }
+    func saveAPIKey(_ key: String) throws { throw KeyValueStoreError.unsupported }
+    func deleteAPIKey() throws { throw KeyValueStoreError.unsupported }
+}
+
 // MARK: - Inline Options
 
 /// Shared options for CLI commands that call an LLM provider directly (no Keychain).
@@ -68,10 +83,10 @@ struct LLMInlineOptions: ParsableArguments {
             guard let key = apiKey else { throw ValidationError("--api-key is required for Gemini") }
             return .gemini(apiKey: key, model: model ?? "gemini-2.0-flash", baseURL: overrideURL)
         case .ollama:
-            return .ollama(model: model ?? "llama3.2")
+            return .ollama(model: model ?? "llama3.2", baseURL: overrideURL)
         case .lmstudio:
             guard let modelName = model else { throw ValidationError("--model is required for LM Studio") }
-            return .lmstudio(model: modelName, apiKey: apiKey)
+            return .lmstudio(model: modelName, apiKey: apiKey, baseURL: overrideURL)
         case .custom:
             guard let url = overrideURL else { throw ValidationError("--base-url is required for custom provider") }
             guard let modelName = model else { throw ValidationError("--model is required for custom provider") }
