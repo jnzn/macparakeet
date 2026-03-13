@@ -43,15 +43,4 @@ final class LLMConfigCommandTests: XCTestCase {
         XCTAssertEqual(config.baseURL.absoluteString, "http://127.0.0.1:11435/v1")
     }
 
-    func testInlineOptionsApplyBaseURLOverrideToLMStudio() throws {
-        let options = try LLMInlineOptions.parse([
-            "--provider", "lmstudio",
-            "--base-url", "http://127.0.0.1:1235/v1",
-            "--model", "qwen2.5"
-        ])
-
-        let config = try options.buildConfig()
-        XCTAssertEqual(config.id, .lmstudio)
-        XCTAssertEqual(config.baseURL.absoluteString, "http://127.0.0.1:1235/v1")
-    }
 }

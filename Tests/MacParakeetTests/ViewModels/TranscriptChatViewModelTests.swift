@@ -6,11 +6,13 @@ import XCTest
 final class TranscriptChatViewModelTests: XCTestCase {
     var viewModel: TranscriptChatViewModel!
     var mockService: MockLLMService!
+    var mockRepo: MockTranscriptionRepository!
 
     override func setUp() {
         viewModel = TranscriptChatViewModel()
         mockService = MockLLMService()
-        viewModel.configure(llmService: mockService, transcriptText: "Test transcript content here.")
+        mockRepo = MockTranscriptionRepository()
+        viewModel.configure(llmService: mockService, transcriptText: "Test transcript content here.", transcriptionRepo: mockRepo)
     }
 
     // MARK: - Initial State
@@ -132,6 +134,7 @@ final class TranscriptChatViewModelTests: XCTestCase {
 
     func testCancelStreamingDoesNotSurfaceError() async throws {
         mockService.streamTokens = ["slow"]
+        mockService.streamDelayNs = 200_000_000
         viewModel.inputText = "Question"
         viewModel.sendMessage()
 
@@ -142,7 +145,7 @@ final class TranscriptChatViewModelTests: XCTestCase {
         XCTAssertNil(viewModel.errorMessage, "CancellationError should not surface in UI")
     }
 
-    func testUpdateLLMServiceClearsHistory() async throws {
+    func testUpdateLLMServiceDoesNotClearHistory() async throws {
         mockService.streamTokens = ["response"]
         viewModel.inputText = "Question"
         viewModel.sendMessage()
@@ -152,7 +155,7 @@ final class TranscriptChatViewModelTests: XCTestCase {
         let newService = MockLLMService()
         viewModel.updateLLMService(newService)
 
-        XCTAssertTrue(viewModel.messages.isEmpty, "Provider swap should clear chat history")
+        XCTAssertEqual(viewModel.messages.count, 2, "Provider swap should NOT clear chat history")
     }
 
     // MARK: - Update LLM Service
@@ -162,6 +165,12 @@ final class TranscriptChatViewModelTests: XCTestCase {
         viewModel.inputText = "Should not send"
         viewModel.sendMessage()
         XCTAssertTrue(viewModel.messages.isEmpty)
+    }
+
+    func testConfigureWithNilServiceStartsDisabled() {
+        let vm = TranscriptChatViewModel()
+        vm.configure(llmService: nil, transcriptText: "Transcript", transcriptionRepo: mockRepo)
+        XCTAssertFalse(vm.canSendMessage)
     }
 
     func testUpdateLLMServiceSwapsProvider() async throws {
@@ -174,5 +183,88 @@ final class TranscriptChatViewModelTests: XCTestCase {
         try await Task.sleep(nanoseconds: 200_000_000)
 
         XCTAssertEqual(viewModel.messages[1].content, "new provider")
+    }
+
+    // MARK: - Persistence
+
+    func testLoadTranscriptRestoresPersistedChat() {
+        let messages = [
+            ChatMessage(role: .user, content: "Question"),
+            ChatMessage(role: .assistant, content: "Answer")
+        ]
+        let id = UUID()
+
+        viewModel.loadTranscript("Transcript text", transcriptionId: id, chatMessages: messages)
+
+        XCTAssertEqual(viewModel.messages.count, 2)
+        XCTAssertEqual(viewModel.messages[0].role, .user)
+        XCTAssertEqual(viewModel.messages[0].content, "Question")
+        XCTAssertEqual(viewModel.messages[1].role, .assistant)
+        XCTAssertEqual(viewModel.messages[1].content, "Answer")
+    }
+
+    func testSendMessagePersistsChatHistory() async throws {
+        let transcriptionId = UUID()
+        let t = Transcription(id: transcriptionId, fileName: "test.mp3", status: .completed)
+        mockRepo.transcriptions = [t]
+
+        viewModel.loadTranscript("Transcript", transcriptionId: transcriptionId, chatMessages: nil)
+
+        mockService.streamTokens = ["response"]
+        viewModel.inputText = "Question"
+        viewModel.sendMessage()
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertEqual(mockRepo.updateChatMessagesCalls.count, 2)
+        XCTAssertEqual(mockRepo.updateChatMessagesCalls[0].chatMessages?.count, 1)
+        XCTAssertEqual(mockRepo.updateChatMessagesCalls[0].chatMessages?.first?.role, .user)
+        XCTAssertEqual(mockRepo.updateChatMessagesCalls[1].chatMessages?.count, 2)
+    }
+
+    func testUpdateLLMServiceDuringStreamingRemovesPendingAssistantMessage() async throws {
+        let transcriptionId = UUID()
+        let t = Transcription(id: transcriptionId, fileName: "test.mp3", status: .completed)
+        mockRepo.transcriptions = [t]
+
+        viewModel.loadTranscript("Transcript", transcriptionId: transcriptionId, chatMessages: nil)
+        mockService.streamTokens = ["partial", " response"]
+        mockService.streamDelayNs = 200_000_000
+        viewModel.inputText = "Question"
+        viewModel.sendMessage()
+
+        try await Task.sleep(nanoseconds: 50_000_000)
+        viewModel.updateLLMService(MockLLMService())
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertEqual(viewModel.messages.count, 1)
+        XCTAssertEqual(viewModel.messages[0].role, .user)
+        XCTAssertEqual(viewModel.messages[0].content, "Question")
+        XCTAssertEqual(mockRepo.updateChatMessagesCalls.last?.chatMessages?.count, 1)
+        XCTAssertEqual(mockRepo.updateChatMessagesCalls.last?.chatMessages?.first?.role, .user)
+    }
+
+    func testClearHistoryPersistsEmptyArray() async throws {
+        let transcriptionId = UUID()
+        let t = Transcription(id: transcriptionId, fileName: "test.mp3", status: .completed)
+        mockRepo.transcriptions = [t]
+
+        viewModel.loadTranscript("Transcript", transcriptionId: transcriptionId, chatMessages: [
+            ChatMessage(role: .user, content: "Hi")
+        ])
+
+        viewModel.clearHistory()
+
+        // Should persist nil (empty history)
+        XCTAssertEqual(mockRepo.updateChatMessagesCalls.count, 1)
+        XCTAssertNil(mockRepo.updateChatMessagesCalls[0].chatMessages)
+    }
+
+    func testCanSendMessageFalseWhenNoService() {
+        viewModel.updateLLMService(nil)
+        XCTAssertFalse(viewModel.canSendMessage)
+    }
+
+    func testCanSendMessageTrueWhenServiceAvailable() {
+        XCTAssertTrue(viewModel.canSendMessage)
     }
 }

@@ -55,6 +55,16 @@ public final class TranscriptionViewModel {
         YouTubeURLValidator.isYouTubeURL(urlInput)
     }
 
+    public var showTabs: Bool {
+        llmAvailable
+            || currentTranscription?.summary != nil
+            || currentTranscription?.chatMessages?.isEmpty == false
+    }
+
+    public var canGenerateSummary: Bool {
+        llmAvailable && summaryState != .streaming
+    }
+
     private var transcriptionService: TranscriptionServiceProtocol?
     private var transcriptionRepo: TranscriptionRepositoryProtocol?
     private var llmService: LLMServiceProtocol?
@@ -251,7 +261,7 @@ public final class TranscriptionViewModel {
         progressPhase = .preparing
         progressHeadline = Self.headline(for: .preparing)
         errorMessage = nil
-        dismissSummary()
+        resetSummaryState()
         selectedTab = .transcript
     }
 
@@ -345,6 +355,10 @@ public final class TranscriptionViewModel {
                 }
                 guard !Task.isCancelled else { return }
                 summaryState = .complete
+                if let id = currentTranscription?.id {
+                    currentTranscription?.summary = summary
+                    try? transcriptionRepo?.updateSummary(id: id, summary: summary)
+                }
                 if selectedTab != .summary {
                     summaryBadge = true
                 }
@@ -364,11 +378,44 @@ public final class TranscriptionViewModel {
         }
     }
 
+    /// Clears in-memory summary state without touching the database.
+    /// Used when switching between transcriptions to avoid destroying saved summaries.
+    public func resetSummaryState() {
+        cancelSummary()
+        summary = ""
+        summaryState = .idle
+        summaryBadge = false
+    }
+
+    /// Clears the summary and persists the removal to the database.
+    /// Used when the user explicitly dismisses a summary.
     public func dismissSummary() {
         cancelSummary()
         summary = ""
         summaryState = .idle
         summaryBadge = false
+        if let id = currentTranscription?.id {
+            currentTranscription?.summary = nil
+            try? transcriptionRepo?.updateSummary(id: id, summary: nil)
+        }
+    }
+
+    public func loadPersistedContent() {
+        // Refresh from DB to pick up persisted summary/chat that may not be
+        // reflected in the stale list copy of the transcription.
+        if let id = currentTranscription?.id,
+           let fresh = try? transcriptionRepo?.fetch(id: id) {
+            currentTranscription = fresh
+        }
+        if let saved = currentTranscription?.summary, !saved.isEmpty {
+            summary = saved
+            summaryState = .complete
+        }
+    }
+
+    public func updateCurrentTranscriptionChatMessages(id: UUID, chatMessages: [ChatMessage]?) {
+        guard currentTranscription?.id == id else { return }
+        currentTranscription?.chatMessages = chatMessages
     }
 
     public func updateLLMAvailability(_ available: Bool, llmService: LLMServiceProtocol? = nil) {

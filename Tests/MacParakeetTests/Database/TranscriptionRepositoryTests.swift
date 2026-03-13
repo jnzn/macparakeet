@@ -122,6 +122,73 @@ final class TranscriptionRepositoryTests: XCTestCase {
         XCTAssertEqual(try repo.fetch(id: transcription.id)?.status, .cancelled)
     }
 
+    // MARK: - Summary Persistence
+
+    func testUpdateSummary() throws {
+        let transcription = Transcription(fileName: "test.mp3", status: .completed)
+        try repo.save(transcription)
+
+        try repo.updateSummary(id: transcription.id, summary: "This is a summary.")
+        let fetched = try repo.fetch(id: transcription.id)
+        XCTAssertEqual(fetched?.summary, "This is a summary.")
+    }
+
+    func testUpdateSummaryToNil() throws {
+        let transcription = Transcription(fileName: "test.mp3", summary: "Old summary", status: .completed)
+        try repo.save(transcription)
+
+        try repo.updateSummary(id: transcription.id, summary: nil)
+        let fetched = try repo.fetch(id: transcription.id)
+        XCTAssertNil(fetched?.summary)
+    }
+
+    // MARK: - Chat Messages Persistence
+
+    func testUpdateChatMessages() throws {
+        let transcription = Transcription(fileName: "test.mp3", status: .completed)
+        try repo.save(transcription)
+
+        let messages = [
+            ChatMessage(role: .user, content: "What is this about?"),
+            ChatMessage(role: .assistant, content: "This is about testing.")
+        ]
+        try repo.updateChatMessages(id: transcription.id, chatMessages: messages)
+
+        let fetched = try repo.fetch(id: transcription.id)
+        XCTAssertEqual(fetched?.chatMessages?.count, 2)
+        XCTAssertEqual(fetched?.chatMessages?[0].role, .user)
+        XCTAssertEqual(fetched?.chatMessages?[0].content, "What is this about?")
+        XCTAssertEqual(fetched?.chatMessages?[1].role, .assistant)
+    }
+
+    func testUpdateChatMessagesToNil() throws {
+        let messages = [ChatMessage(role: .user, content: "Hello")]
+        let transcription = Transcription(fileName: "test.mp3", chatMessages: messages, status: .completed)
+        try repo.save(transcription)
+
+        try repo.updateChatMessages(id: transcription.id, chatMessages: nil)
+        let fetched = try repo.fetch(id: transcription.id)
+        XCTAssertNil(fetched?.chatMessages)
+    }
+
+    func testChatMessagesRoundTrip() throws {
+        let transcription = Transcription(fileName: "test.mp3", status: .completed)
+        try repo.save(transcription)
+
+        let messages = [
+            ChatMessage(role: .user, content: "First question"),
+            ChatMessage(role: .assistant, content: "First answer"),
+            ChatMessage(role: .user, content: "Second question"),
+            ChatMessage(role: .assistant, content: "Second answer")
+        ]
+        try repo.updateChatMessages(id: transcription.id, chatMessages: messages)
+
+        let fetched = try repo.fetch(id: transcription.id)
+        XCTAssertEqual(fetched?.chatMessages?.count, 4)
+        XCTAssertEqual(fetched?.chatMessages?[2].content, "Second question")
+        XCTAssertEqual(fetched?.chatMessages?[3].content, "Second answer")
+    }
+
     // MARK: - Word Timestamps (JSON)
 
     func testWordTimestampsSaveAndFetch() throws {

@@ -155,6 +155,14 @@ public final class DatabaseManager: Sendable {
             }
         }
 
+        // v0.4 — Add LLM content columns to transcriptions (summary + chat persistence)
+        migrator.registerMigration("v0.4-transcription-llm-content") { db in
+            try db.alter(table: "transcriptions") { t in
+                t.add(column: "summary", .text)
+                t.add(column: "chatMessages", .text)
+            }
+        }
+
         try migrator.migrate(dbQueue)
     }
 }

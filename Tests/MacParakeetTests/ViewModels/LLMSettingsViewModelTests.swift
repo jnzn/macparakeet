@@ -38,7 +38,7 @@ final class LLMSettingsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.modelName, "gemini-2.5-flash")
 
         viewModel.selectedProviderID = .ollama
-        XCTAssertEqual(viewModel.modelName, "llama3.2")
+        XCTAssertEqual(viewModel.modelName, "qwen3.5:4b")
     }
 
     func testOllamaDoesNotRequireAPIKey() {

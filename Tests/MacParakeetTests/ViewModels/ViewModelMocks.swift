@@ -95,6 +95,8 @@ final class MockTranscriptionRepository: TranscriptionRepositoryProtocol, @unche
     var transcriptions: [Transcription] = []
     var deleteCalledWith: [UUID] = []
     var deleteAllCalled = false
+    var updateSummaryCalls: [(id: UUID, summary: String?)] = []
+    var updateChatMessagesCalls: [(id: UUID, chatMessages: [ChatMessage]?)] = []
 
     func save(_ transcription: Transcription) throws {
         if let idx = transcriptions.firstIndex(where: { $0.id == transcription.id }) {
@@ -137,6 +139,22 @@ final class MockTranscriptionRepository: TranscriptionRepositoryProtocol, @unche
         if let idx = transcriptions.firstIndex(where: { $0.id == id }) {
             transcriptions[idx].status = status
             transcriptions[idx].errorMessage = errorMessage
+        }
+    }
+
+    func updateSummary(id: UUID, summary: String?) throws {
+        updateSummaryCalls.append((id: id, summary: summary))
+        if let idx = transcriptions.firstIndex(where: { $0.id == id }) {
+            transcriptions[idx].summary = summary
+            transcriptions[idx].updatedAt = Date()
+        }
+    }
+
+    func updateChatMessages(id: UUID, chatMessages: [ChatMessage]?) throws {
+        updateChatMessagesCalls.append((id: id, chatMessages: chatMessages))
+        if let idx = transcriptions.firstIndex(where: { $0.id == id }) {
+            transcriptions[idx].chatMessages = chatMessages
+            transcriptions[idx].updatedAt = Date()
         }
     }
 
@@ -335,6 +353,7 @@ final class MockLLMService: LLMServiceProtocol, @unchecked Sendable {
     var summarizeResult = "Mock summary"
     var chatResult = "Mock chat response"
     var streamTokens: [String] = ["Hello", " world"]
+    var streamDelayNs: UInt64 = 0
     var errorToThrow: Error?
     var summarizeCallCount = 0
     var chatCallCount = 0
@@ -360,15 +379,23 @@ final class MockLLMService: LLMServiceProtocol, @unchecked Sendable {
         summarizeCallCount += 1
         let tokens = streamTokens
         let error = errorToThrow
+        let delay = streamDelayNs
         return AsyncThrowingStream { continuation in
-            if let error {
-                continuation.finish(throwing: error)
-                return
+            let task = Task {
+                if let error {
+                    continuation.finish(throwing: error)
+                    return
+                }
+                for token in tokens {
+                    if delay > 0 {
+                        try? await Task.sleep(nanoseconds: delay)
+                    }
+                    guard !Task.isCancelled else { return }
+                    continuation.yield(token)
+                }
+                continuation.finish()
             }
-            for token in tokens {
-                continuation.yield(token)
-            }
-            continuation.finish()
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 
@@ -376,25 +403,40 @@ final class MockLLMService: LLMServiceProtocol, @unchecked Sendable {
         chatCallCount += 1
         let tokens = streamTokens
         let error = errorToThrow
+        let delay = streamDelayNs
         return AsyncThrowingStream { continuation in
-            if let error {
-                continuation.finish(throwing: error)
-                return
+            let task = Task {
+                if let error {
+                    continuation.finish(throwing: error)
+                    return
+                }
+                for token in tokens {
+                    if delay > 0 {
+                        try? await Task.sleep(nanoseconds: delay)
+                    }
+                    guard !Task.isCancelled else { return }
+                    continuation.yield(token)
+                }
+                continuation.finish()
             }
-            for token in tokens {
-                continuation.yield(token)
-            }
-            continuation.finish()
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 
     func transformStream(text: String, prompt: String) -> AsyncThrowingStream<String, Error> {
         let tokens = streamTokens
         return AsyncThrowingStream { continuation in
-            for token in tokens {
-                continuation.yield(token)
+            let task = Task {
+                for token in tokens {
+                    if streamDelayNs > 0 {
+                        try? await Task.sleep(nanoseconds: streamDelayNs)
+                    }
+                    guard !Task.isCancelled else { return }
+                    continuation.yield(token)
+                }
+                continuation.finish()
             }
-            continuation.finish()
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 }
