@@ -285,7 +285,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             llmSettingsViewModel.onConfigurationChanged = { [weak self] in
                 self?.refreshLLMAvailability()
             }
-            chatViewModel.configure(llmService: env.llmService, transcriptText: "")
+            chatViewModel.configure(
+                llmService: hasLLMConfig ? env.llmService : nil,
+                transcriptText: "",
+                transcriptionRepo: env.transcriptionRepo
+            )
+            chatViewModel.onChatMessagesChanged = { [weak self] transcriptionID, chatMessages in
+                self?.transcriptionViewModel.updateCurrentTranscriptionChatMessages(
+                    id: transcriptionID,
+                    chatMessages: chatMessages
+                )
+            }
 
             maybeShowOnboarding()
         } catch {
@@ -407,8 +417,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func applyActivationPolicyFromSettings() {
-        let mode = settingsViewModel.menuBarOnlyMode ? NSApplication.ActivationPolicy.accessory : .regular
+        let menuBarOnly = settingsViewModel.menuBarOnlyMode
+        let wasMainWindowVisible = mainWindow?.isVisible ?? false
+        let mode: NSApplication.ActivationPolicy = menuBarOnly ? .accessory : .regular
         NSApp.setActivationPolicy(mode)
+
+        // macOS hides all windows when switching to .accessory policy.
+        // Re-show the main window so the user isn't surprised by it disappearing.
+        if menuBarOnly && wasMainWindowVisible {
+            mainWindow?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 
     private var hotkeyMenuTitle: String {
