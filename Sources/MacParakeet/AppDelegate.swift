@@ -43,6 +43,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let customWordsViewModel = CustomWordsViewModel()
     private let textSnippetsViewModel = TextSnippetsViewModel()
     private let feedbackViewModel = FeedbackViewModel()
+    private let llmSettingsViewModel = LLMSettingsViewModel()
+    private var chatViewModel: TranscriptChatViewModel?
     private let mainWindowState = MainWindowState()
     private let onboardingWindowController = OnboardingWindowController()
     private var onboardingObserver: Any?
@@ -256,9 +258,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
 
             // Configure view models
+            let hasLLMConfig = (try? env.llmConfigStore.loadConfig()) != nil
             transcriptionViewModel.configure(
                 transcriptionService: env.transcriptionService,
-                transcriptionRepo: env.transcriptionRepo
+                transcriptionRepo: env.transcriptionRepo,
+                llmService: hasLLMConfig ? env.llmService : nil
             )
             historyViewModel.configure(dictationRepo: env.dictationRepo)
             settingsViewModel.configure(
@@ -274,6 +278,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             )
             customWordsViewModel.configure(repo: env.customWordRepo)
             textSnippetsViewModel.configure(repo: env.snippetRepo)
+            llmSettingsViewModel.configure(
+                configStore: env.llmConfigStore,
+                llmClient: env.llmClient
+            )
+            llmSettingsViewModel.onConfigurationChanged = { [weak self] in
+                self?.refreshLLMAvailability()
+            }
+
+            if hasLLMConfig {
+                let cvm = TranscriptChatViewModel()
+                cvm.configure(llmService: env.llmService, transcriptText: "")
+                chatViewModel = cvm
+            }
 
             maybeShowOnboarding()
         } catch {
@@ -287,6 +304,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             alert.addButton(withTitle: "Quit")
             _ = alert.runModal()
             NSApp.terminate(nil)
+        }
+    }
+
+    private func refreshLLMAvailability() {
+        guard let env = appEnvironment else { return }
+        let hasConfig = (try? env.llmConfigStore.loadConfig()) != nil
+
+        if hasConfig {
+            transcriptionViewModel.updateLLMAvailability(true, llmService: env.llmService)
+            if chatViewModel == nil {
+                let cvm = TranscriptChatViewModel()
+                cvm.configure(llmService: env.llmService, transcriptText: "")
+                chatViewModel = cvm
+                // Recreate main window to pick up new chatViewModel
+                if mainWindow != nil {
+                    mainWindow?.contentView = nil
+                    createMainWindow()
+                    mainWindow?.makeKeyAndOrderFront(nil)
+                }
+            }
+        } else {
+            transcriptionViewModel.updateLLMAvailability(false)
+            chatViewModel = nil
         }
     }
 
@@ -1253,6 +1293,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             transcriptionViewModel: transcriptionViewModel,
             historyViewModel: historyViewModel,
             settingsViewModel: settingsViewModel,
+            llmSettingsViewModel: llmSettingsViewModel,
+            chatViewModel: chatViewModel,
             customWordsViewModel: customWordsViewModel,
             textSnippetsViewModel: textSnippetsViewModel,
             feedbackViewModel: feedbackViewModel

@@ -19,6 +19,19 @@ public final class TranscriptionViewModel {
         case finalizing
     }
 
+    public enum TranscriptTab: String, CaseIterable, Sendable {
+        case transcript
+        case summary
+        case chat
+    }
+
+    public enum LLMActionState: Equatable {
+        case idle
+        case streaming
+        case complete
+        case error(String)
+    }
+
     public var transcriptions: [Transcription] = []
     public var currentTranscription: Transcription?
     public var isTranscribing = false
@@ -31,12 +44,21 @@ public final class TranscriptionViewModel {
     public var isDragging = false
     public var urlInput: String = ""
 
+    // LLM state
+    public var llmAvailable: Bool = false
+    public var summary: String = ""
+    public var summaryState: LLMActionState = .idle
+    public var selectedTab: TranscriptTab = .transcript
+    public var summaryBadge: Bool = false
+
     public var isValidURL: Bool {
         YouTubeURLValidator.isYouTubeURL(urlInput)
     }
 
     private var transcriptionService: TranscriptionServiceProtocol?
     private var transcriptionRepo: TranscriptionRepositoryProtocol?
+    private var llmService: LLMServiceProtocol?
+    private var summaryTask: Task<Void, Never>?
     private var activeDropRequestID: UUID?
     private var dropPendingCount = 0
     private var dropAccepted = false
@@ -46,10 +68,13 @@ public final class TranscriptionViewModel {
 
     public func configure(
         transcriptionService: TranscriptionServiceProtocol,
-        transcriptionRepo: TranscriptionRepositoryProtocol
+        transcriptionRepo: TranscriptionRepositoryProtocol,
+        llmService: LLMServiceProtocol? = nil
     ) {
         self.transcriptionService = transcriptionService
         self.transcriptionRepo = transcriptionRepo
+        self.llmService = llmService
+        self.llmAvailable = llmService != nil
         loadTranscriptions()
     }
 
@@ -72,6 +97,7 @@ public final class TranscriptionViewModel {
                 currentTranscription = result
                 endTranscription()
                 loadTranscriptions()
+                autoSummarizeIfNeeded(result)
             } catch {
                 errorMessage = error.localizedDescription
                 endTranscription()
@@ -105,6 +131,7 @@ public final class TranscriptionViewModel {
                 currentTranscription = result
                 endTranscription()
                 loadTranscriptions()
+                autoSummarizeIfNeeded(result)
             } catch {
                 errorMessage = error.localizedDescription
                 endTranscription()
@@ -224,6 +251,8 @@ public final class TranscriptionViewModel {
         progressPhase = .preparing
         progressHeadline = Self.headline(for: .preparing)
         errorMessage = nil
+        dismissSummary()
+        selectedTab = .transcript
     }
 
     private func endTranscription() {
@@ -292,5 +321,57 @@ public final class TranscriptionViewModel {
         }
 
         return min(percent, 100) / 100
+    }
+
+    // MARK: - LLM Summary
+
+    private func autoSummarizeIfNeeded(_ transcription: Transcription) {
+        let text = transcription.cleanTranscript ?? transcription.rawTranscript ?? ""
+        guard llmAvailable, text.count > 500 else { return }
+        generateSummary(text: text)
+    }
+
+    public func generateSummary(text: String) {
+        guard let llmService, summaryState != .streaming else { return }
+        summary = ""
+        summaryState = .streaming
+        summaryBadge = false
+
+        summaryTask = Task {
+            do {
+                let stream = llmService.summarizeStream(transcript: text)
+                for try await token in stream {
+                    summary += token
+                }
+                summaryState = .complete
+                if selectedTab != .summary {
+                    summaryBadge = true
+                }
+            } catch {
+                summaryState = .error(error.localizedDescription)
+            }
+        }
+    }
+
+    public func cancelSummary() {
+        summaryTask?.cancel()
+        summaryTask = nil
+        if summaryState == .streaming {
+            summaryState = summary.isEmpty ? .idle : .complete
+        }
+    }
+
+    public func dismissSummary() {
+        cancelSummary()
+        summary = ""
+        summaryState = .idle
+        summaryBadge = false
+    }
+
+    public func updateLLMAvailability(_ available: Bool, llmService: LLMServiceProtocol? = nil) {
+        self.llmAvailable = available
+        if let llmService {
+            self.llmService = llmService
+        }
     }
 }

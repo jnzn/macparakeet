@@ -33,6 +33,8 @@ struct MainWindowView: View {
     let transcriptionViewModel: TranscriptionViewModel
     let historyViewModel: DictationHistoryViewModel
     let settingsViewModel: SettingsViewModel
+    let llmSettingsViewModel: LLMSettingsViewModel
+    let chatViewModel: TranscriptChatViewModel?
     let customWordsViewModel: CustomWordsViewModel
     let textSnippetsViewModel: TextSnippetsViewModel
     let feedbackViewModel: FeedbackViewModel
@@ -61,7 +63,7 @@ struct MainWindowView: View {
             Group {
                 switch state.selectedItem {
                 case .transcribe:
-                    TranscribeView(viewModel: transcriptionViewModel)
+                    TranscribeView(viewModel: transcriptionViewModel, chatViewModel: chatViewModel)
                 case .dictations:
                     DictationHistoryView(viewModel: historyViewModel)
                 case .vocabulary:
@@ -73,7 +75,7 @@ struct MainWindowView: View {
                 case .feedback:
                     FeedbackView(viewModel: feedbackViewModel)
                 case .settings:
-                    SettingsView(viewModel: settingsViewModel)
+                    SettingsView(viewModel: settingsViewModel, llmSettingsViewModel: llmSettingsViewModel)
                 }
             }
             .animation(DesignSystem.Animation.contentSwap, value: state.selectedItem)

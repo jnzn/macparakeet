@@ -1,0 +1,187 @@
+import SwiftUI
+import MacParakeetCore
+import MacParakeetViewModels
+
+struct LLMSettingsView: View {
+    @Bindable var viewModel: LLMSettingsViewModel
+
+    @State private var showAdvanced = false
+
+    var body: some View {
+        VStack(spacing: DesignSystem.Spacing.md) {
+            // Provider picker
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Provider")
+                        .font(DesignSystem.Typography.body)
+                    Text("Choose your AI provider for summaries and chat.")
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: DesignSystem.Spacing.md)
+                Picker("Provider", selection: $viewModel.selectedProviderID) {
+                    ForEach(LLMProviderID.allCases, id: \.self) { provider in
+                        Text(provider.displayName).tag(provider)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(width: 160)
+            }
+
+            Divider()
+
+            // API key (hidden for local providers)
+            if viewModel.requiresAPIKey {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("API Key")
+                            .font(DesignSystem.Typography.body)
+                        Text("Your key is stored securely in the macOS Keychain.")
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: DesignSystem.Spacing.md)
+                    SecureField("sk-...", text: $viewModel.apiKeyInput)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 220)
+                }
+
+                Divider()
+            }
+
+            // Model name
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Model")
+                        .font(DesignSystem.Typography.body)
+                    Text("The model to use for AI features.")
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: DesignSystem.Spacing.md)
+                TextField("Model name", text: $viewModel.modelName)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 220)
+            }
+
+            // Advanced: Base URL override
+            DisclosureGroup("Advanced", isExpanded: $showAdvanced) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Base URL")
+                            .font(DesignSystem.Typography.body)
+                        Text("Override the default API endpoint.")
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: DesignSystem.Spacing.md)
+                    TextField("https://...", text: $viewModel.baseURLOverride)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 220)
+                }
+                .padding(.top, DesignSystem.Spacing.sm)
+            }
+            .font(DesignSystem.Typography.caption)
+
+            Divider()
+
+            // Privacy info
+            privacyInfo
+
+            Divider()
+
+            // Test connection + status
+            HStack(spacing: DesignSystem.Spacing.sm) {
+                Button("Test Connection") {
+                    viewModel.testConnection()
+                }
+                .buttonStyle(.bordered)
+                .disabled(viewModel.connectionTestState == .testing)
+
+                connectionStatusIndicator
+
+                Spacer()
+            }
+
+            Divider()
+
+            // Save / Clear
+            HStack(spacing: DesignSystem.Spacing.sm) {
+                Button("Save") {
+                    viewModel.saveConfiguration()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(DesignSystem.Colors.accent)
+
+                if viewModel.isConfigured {
+                    Button("Clear", role: .destructive) {
+                        viewModel.clearConfiguration()
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                Spacer()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var privacyInfo: some View {
+        let isLocal = viewModel.selectedProviderID.isLocal
+        HStack(spacing: DesignSystem.Spacing.sm) {
+            Image(systemName: isLocal ? "lock.fill" : "arrow.up.right.circle")
+                .font(.system(size: 12))
+                .foregroundStyle(isLocal ? DesignSystem.Colors.successGreen : DesignSystem.Colors.warningAmber)
+
+            Text(isLocal
+                 ? "Everything stays on your device."
+                 : "Transcription is always local. AI features send transcript text to your chosen provider.")
+                .font(DesignSystem.Typography.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(DesignSystem.Spacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                .fill(isLocal
+                      ? DesignSystem.Colors.successGreen.opacity(0.06)
+                      : DesignSystem.Colors.warningAmber.opacity(0.06))
+        )
+    }
+
+    @ViewBuilder
+    private var connectionStatusIndicator: some View {
+        switch viewModel.connectionTestState {
+        case .idle:
+            EmptyView()
+        case .testing:
+            HStack(spacing: 4) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Testing...")
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(.secondary)
+            }
+        case .success:
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(DesignSystem.Colors.successGreen)
+                Text("Connected")
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(DesignSystem.Colors.successGreen)
+            }
+        case .error(let message):
+            HStack(spacing: 4) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(DesignSystem.Colors.errorRed)
+                Text(message)
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(DesignSystem.Colors.errorRed)
+                    .lineLimit(2)
+            }
+        }
+    }
+}

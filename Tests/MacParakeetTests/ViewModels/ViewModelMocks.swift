@@ -329,6 +329,76 @@ final class MockTextSnippetRepository: TextSnippetRepositoryProtocol, @unchecked
     }
 }
 
+// MARK: - MockLLMService
+
+final class MockLLMService: LLMServiceProtocol, @unchecked Sendable {
+    var summarizeResult = "Mock summary"
+    var chatResult = "Mock chat response"
+    var streamTokens: [String] = ["Hello", " world"]
+    var errorToThrow: Error?
+    var summarizeCallCount = 0
+    var chatCallCount = 0
+
+    func summarize(transcript: String) async throws -> String {
+        summarizeCallCount += 1
+        if let error = errorToThrow { throw error }
+        return summarizeResult
+    }
+
+    func chat(question: String, transcript: String, history: [ChatMessage]) async throws -> String {
+        chatCallCount += 1
+        if let error = errorToThrow { throw error }
+        return chatResult
+    }
+
+    func transform(text: String, prompt: String) async throws -> String {
+        if let error = errorToThrow { throw error }
+        return "Mock transform"
+    }
+
+    func summarizeStream(transcript: String) -> AsyncThrowingStream<String, Error> {
+        summarizeCallCount += 1
+        let tokens = streamTokens
+        let error = errorToThrow
+        return AsyncThrowingStream { continuation in
+            if let error {
+                continuation.finish(throwing: error)
+                return
+            }
+            for token in tokens {
+                continuation.yield(token)
+            }
+            continuation.finish()
+        }
+    }
+
+    func chatStream(question: String, transcript: String, history: [ChatMessage]) -> AsyncThrowingStream<String, Error> {
+        chatCallCount += 1
+        let tokens = streamTokens
+        let error = errorToThrow
+        return AsyncThrowingStream { continuation in
+            if let error {
+                continuation.finish(throwing: error)
+                return
+            }
+            for token in tokens {
+                continuation.yield(token)
+            }
+            continuation.finish()
+        }
+    }
+
+    func transformStream(text: String, prompt: String) -> AsyncThrowingStream<String, Error> {
+        let tokens = streamTokens
+        return AsyncThrowingStream { continuation in
+            for token in tokens {
+                continuation.yield(token)
+            }
+            continuation.finish()
+        }
+    }
+}
+
 // MARK: - MockPermissionService
 
 final class MockPermissionService: PermissionServiceProtocol, @unchecked Sendable {

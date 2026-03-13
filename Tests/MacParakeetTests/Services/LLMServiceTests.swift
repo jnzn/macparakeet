@@ -10,6 +10,7 @@ final class MockLLMClient: LLMClientProtocol, @unchecked Sendable {
     var responseContent = "Mock response"
     var responseModel = "mock-model"
     var streamTokens: [String]?
+    var testConnectionError: Error?
 
     func chatCompletion(
         messages: [ChatMessage],
@@ -41,6 +42,7 @@ final class MockLLMClient: LLMClientProtocol, @unchecked Sendable {
 
     func testConnection(config: LLMProviderConfig) async throws {
         capturedConfig = config
+        if let error = testConnectionError { throw error }
     }
 }
 
