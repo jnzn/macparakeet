@@ -598,4 +598,18 @@ final class TranscriptionViewModelTests: XCTestCase {
         viewModel.updateLLMAvailability(true, llmService: llm)
         XCTAssertTrue(viewModel.llmAvailable)
     }
+
+    func testUpdateLLMAvailabilityClearsServiceWhenDisabled() {
+        let llm = MockLLMService()
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo, llmService: llm)
+        XCTAssertTrue(viewModel.llmAvailable)
+
+        // Clearing config should nil out the service so summary can't trigger
+        viewModel.updateLLMAvailability(false)
+        XCTAssertFalse(viewModel.llmAvailable)
+
+        // generateSummary should be a no-op now (guards on llmService)
+        viewModel.generateSummary(text: String(repeating: "x", count: 600))
+        XCTAssertEqual(viewModel.summaryState, .idle)
+    }
 }

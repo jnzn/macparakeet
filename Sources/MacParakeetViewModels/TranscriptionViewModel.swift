@@ -343,10 +343,13 @@ public final class TranscriptionViewModel {
                 for try await token in stream {
                     summary += token
                 }
+                guard !Task.isCancelled else { return }
                 summaryState = .complete
                 if selectedTab != .summary {
                     summaryBadge = true
                 }
+            } catch is CancellationError {
+                // Cancellation is expected (navigation, config change) — handled by cancelSummary()
             } catch {
                 summaryState = .error(error.localizedDescription)
             }
@@ -370,8 +373,6 @@ public final class TranscriptionViewModel {
 
     public func updateLLMAvailability(_ available: Bool, llmService: LLMServiceProtocol? = nil) {
         self.llmAvailable = available
-        if let llmService {
-            self.llmService = llmService
-        }
+        self.llmService = llmService
     }
 }
