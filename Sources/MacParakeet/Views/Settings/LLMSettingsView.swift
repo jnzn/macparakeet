@@ -60,9 +60,7 @@ struct LLMSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: DesignSystem.Spacing.md)
-                TextField("Model name", text: $viewModel.modelName)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 220)
+                modelPicker
             }
 
             // Advanced: Base URL override
@@ -121,7 +119,55 @@ struct LLMSettingsView: View {
                     .buttonStyle(.bordered)
                 }
 
+                if let error = viewModel.saveError {
+                    HStack(spacing: 4) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 12))
+                            .foregroundStyle(DesignSystem.Colors.errorRed)
+                        Text(error)
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(DesignSystem.Colors.errorRed)
+                            .lineLimit(2)
+                    }
+                }
+
                 Spacer()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var modelPicker: some View {
+        let models = viewModel.availableModels
+        if models.isEmpty {
+            TextField("Model name", text: $viewModel.modelName)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 220)
+        } else {
+            HStack(spacing: 6) {
+                Picker("Model", selection: $viewModel.modelName) {
+                    ForEach(models, id: \.self) { model in
+                        Text(model).tag(model)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(minWidth: 180)
+
+                Button {
+                    viewModel.fetchModels()
+                } label: {
+                    if viewModel.isFetchingModels {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 11))
+                    }
+                }
+                .buttonStyle(.borderless)
+                .help("Fetch models from provider")
+                .disabled(viewModel.isFetchingModels)
             }
         }
     }

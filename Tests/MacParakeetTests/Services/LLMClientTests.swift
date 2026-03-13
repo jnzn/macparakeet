@@ -523,13 +523,9 @@ final class LLMClientTests: XCTestCase {
         }
     }
 
-    func testValidateStreamCompletionRequiresDoneMarker() {
-        XCTAssertThrowsError(try llmClient.validateStreamCompletion(sawDone: false)) { error in
-            guard case LLMError.streamingError(let detail) = error else {
-                return XCTFail("Expected streamingError, got \(error)")
-            }
-            XCTAssertEqual(detail, "Stream ended before [DONE].")
-        }
+    func testValidateStreamCompletionAcceptsMissingDoneMarker() {
+        // Many providers (Gemini, Ollama) don't send [DONE] — this should not throw
+        XCTAssertNoThrow(try llmClient.validateStreamCompletion(sawDone: false))
     }
 
     func testValidateStreamCompletionAcceptsDoneMarker() throws {

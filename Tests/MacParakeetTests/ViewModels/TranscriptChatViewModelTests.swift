@@ -72,7 +72,7 @@ final class TranscriptChatViewModelTests: XCTestCase {
     // MARK: - Error Handling
 
     func testSendMessageWithError() async throws {
-        mockService.errorToThrow = LLMError.authenticationFailed
+        mockService.errorToThrow = LLMError.authenticationFailed(nil)
         viewModel.inputText = "Will fail"
 
         viewModel.sendMessage()

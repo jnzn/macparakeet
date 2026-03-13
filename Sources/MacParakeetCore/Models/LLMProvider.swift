@@ -6,6 +6,7 @@ public enum LLMProviderID: String, Codable, Sendable, CaseIterable {
     case anthropic
     case openai
     case gemini
+    case openrouter
     case ollama
     case lmstudio
     case custom
@@ -15,6 +16,7 @@ public enum LLMProviderID: String, Codable, Sendable, CaseIterable {
         case .anthropic: return "Anthropic"
         case .openai: return "OpenAI"
         case .gemini: return "Google Gemini"
+        case .openrouter: return "OpenRouter"
         case .ollama: return "Ollama"
         case .lmstudio: return "LM Studio"
         case .custom: return "Custom"
@@ -24,7 +26,7 @@ public enum LLMProviderID: String, Codable, Sendable, CaseIterable {
     public var isLocal: Bool {
         switch self {
         case .ollama, .lmstudio: return true
-        case .anthropic, .openai, .gemini, .custom: return false
+        case .anthropic, .openai, .gemini, .openrouter, .custom: return false
         }
     }
 }
@@ -62,7 +64,7 @@ public struct LLMProviderConfig: Codable, Sendable, Equatable {
 
     // MARK: - Factory Methods
 
-    public static func anthropic(apiKey: String, model: String = "claude-sonnet-4-20250514", baseURL: URL? = nil) -> LLMProviderConfig {
+    public static func anthropic(apiKey: String, model: String = "claude-sonnet-4-6", baseURL: URL? = nil) -> LLMProviderConfig {
         LLMProviderConfig(
             id: .anthropic,
             baseURL: baseURL ?? URL(string: "https://api.anthropic.com/v1")!,
@@ -72,7 +74,7 @@ public struct LLMProviderConfig: Codable, Sendable, Equatable {
         )
     }
 
-    public static func openai(apiKey: String, model: String = "gpt-4o", baseURL: URL? = nil) -> LLMProviderConfig {
+    public static func openai(apiKey: String, model: String = "gpt-4.1", baseURL: URL? = nil) -> LLMProviderConfig {
         LLMProviderConfig(
             id: .openai,
             baseURL: baseURL ?? URL(string: "https://api.openai.com/v1")!,
@@ -82,10 +84,20 @@ public struct LLMProviderConfig: Codable, Sendable, Equatable {
         )
     }
 
-    public static func gemini(apiKey: String, model: String = "gemini-2.0-flash", baseURL: URL? = nil) -> LLMProviderConfig {
+    public static func gemini(apiKey: String, model: String = "gemini-2.5-flash", baseURL: URL? = nil) -> LLMProviderConfig {
         LLMProviderConfig(
             id: .gemini,
             baseURL: baseURL ?? URL(string: "https://generativelanguage.googleapis.com/v1beta/openai")!,
+            apiKey: apiKey,
+            modelName: model,
+            isLocal: false
+        )
+    }
+
+    public static func openrouter(apiKey: String, model: String = "anthropic/claude-sonnet-4", baseURL: URL? = nil) -> LLMProviderConfig {
+        LLMProviderConfig(
+            id: .openrouter,
+            baseURL: baseURL ?? URL(string: "https://openrouter.ai/api/v1")!,
             apiKey: apiKey,
             modelName: model,
             isLocal: false

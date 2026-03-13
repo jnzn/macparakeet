@@ -495,7 +495,7 @@ final class TranscriptionViewModelTests: XCTestCase {
 
     func testGenerateSummaryError() async throws {
         let llm = MockLLMService()
-        llm.errorToThrow = LLMError.authenticationFailed
+        llm.errorToThrow = LLMError.authenticationFailed(nil)
         viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo, llmService: llm)
 
         viewModel.generateSummary(text: "Some text")
