@@ -347,6 +347,9 @@ public final class TranscriptionViewModel {
         summaryState = .streaming
         summaryBadge = false
 
+        // Capture ID before async work — currentTranscription may change mid-stream
+        let targetID = currentTranscription?.id
+
         summaryTask = Task {
             do {
                 let stream = llmService.summarizeStream(transcript: text)
@@ -354,10 +357,12 @@ public final class TranscriptionViewModel {
                     summary += token
                 }
                 guard !Task.isCancelled else { return }
+                // Discard if user navigated to a different transcription mid-stream
+                guard currentTranscription?.id == targetID else { return }
                 summaryState = .complete
-                if let id = currentTranscription?.id {
+                if let targetID {
                     currentTranscription?.summary = summary
-                    try? transcriptionRepo?.updateSummary(id: id, summary: summary)
+                    try? transcriptionRepo?.updateSummary(id: targetID, summary: summary)
                 }
                 if selectedTab != .summary {
                     summaryBadge = true
@@ -365,6 +370,7 @@ public final class TranscriptionViewModel {
             } catch is CancellationError {
                 // Cancellation is expected (navigation, config change) — handled by cancelSummary()
             } catch {
+                guard currentTranscription?.id == targetID else { return }
                 summaryState = .error(error.localizedDescription)
             }
         }
