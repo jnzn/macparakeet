@@ -7,6 +7,7 @@ final class MockDictationRepository: DictationRepositoryProtocol, @unchecked Sen
     var dictations: [Dictation] = []
     var deleteCalledWith: [UUID] = []
     var deleteAllCalled = false
+    var deleteHiddenCalled = false
     var savedDictations: [Dictation] = []
     var statsCallCount = 0
 
@@ -25,15 +26,17 @@ final class MockDictationRepository: DictationRepositoryProtocol, @unchecked Sen
     }
 
     func fetchAll(limit: Int?) throws -> [Dictation] {
-        let sorted = dictations.sorted { $0.createdAt > $1.createdAt }
+        let sorted = dictations.filter { !$0.hidden }.sorted { $0.createdAt > $1.createdAt }
         if let limit { return Array(sorted.prefix(limit)) }
         return sorted
     }
 
     func search(query: String, limit: Int?) throws -> [Dictation] {
         let filtered = dictations.filter {
-            $0.rawTranscript.localizedCaseInsensitiveContains(query)
+            !$0.hidden && (
+                $0.rawTranscript.localizedCaseInsensitiveContains(query)
                 || ($0.cleanTranscript?.localizedCaseInsensitiveContains(query) ?? false)
+            )
         }
         let sorted = filtered.sorted { $0.createdAt > $1.createdAt }
         if let limit { return Array(sorted.prefix(limit)) }
@@ -48,7 +51,7 @@ final class MockDictationRepository: DictationRepositoryProtocol, @unchecked Sen
 
     func deleteAll() throws {
         deleteAllCalled = true
-        dictations.removeAll()
+        dictations.removeAll { !$0.hidden }
     }
 
     func clearMissingAudioPaths() throws {
@@ -57,20 +60,22 @@ final class MockDictationRepository: DictationRepositoryProtocol, @unchecked Sen
 
     func deleteEmpty() throws -> Int {
         let before = dictations.count
-        dictations.removeAll { $0.rawTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        dictations.removeAll {
+            !$0.hidden && $0.rawTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
         return before - dictations.count
+    }
+
+    func deleteHidden() throws {
+        deleteHiddenCalled = true
+        dictations.removeAll { $0.hidden }
     }
 
     func stats() throws -> DictationStats {
         statsCallCount += 1
         let completed = dictations.filter { $0.status == .completed }
         let totalDuration = completed.reduce(0) { $0 + $1.durationMs }
-        let totalWords = completed.reduce(0) { total, d in
-            let text = (d.cleanTranscript ?? d.rawTranscript).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { return total }
-            // Split on any whitespace run (matches SQL normalization: \n\r\t → space, then collapse)
-            return total + text.split(whereSeparator: \.isWhitespace).count
-        }
+        let totalWords = completed.reduce(0) { $0 + $1.wordCount }
         let maxDuration = completed.map(\.durationMs).max() ?? 0
         let avgDuration = completed.isEmpty ? 0 : totalDuration / completed.count
 

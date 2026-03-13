@@ -14,6 +14,7 @@ struct SettingsView: View {
     @State private var automaticallyDownloadsUpdates: Bool
     @State private var showClearAllAlert = false
     @State private var showClearYouTubeAudioAlert = false
+    @State private var showResetPrivateStatsAlert = false
     @State private var copiedBuildIdentity = false
 
     init(viewModel: SettingsViewModel, llmSettingsViewModel: LLMSettingsViewModel, updater: SPUUpdater) {
@@ -48,6 +49,14 @@ struct SettingsView: View {
             }
         } message: {
             Text("This will permanently delete all \(viewModel.dictationCount) dictation\(viewModel.dictationCount == 1 ? "" : "s") and their audio files. This cannot be undone.")
+        }
+        .alert("Reset Private Statistics?", isPresented: $showResetPrivateStatsAlert) {
+            Button("Cancel", role: .cancel) {}
+            Button("Reset", role: .destructive) {
+                viewModel.resetPrivateStatistics()
+            }
+        } message: {
+            Text("This will delete all accumulated statistics from private dictations. This cannot be undone.")
         }
         .alert("Clear Downloaded YouTube Audio?", isPresented: $showClearYouTubeAudioAlert) {
             Button("Cancel", role: .cancel) {}
@@ -230,6 +239,14 @@ struct SettingsView: View {
         ) {
             VStack(spacing: DesignSystem.Spacing.md) {
                 settingsToggleRow(
+                    title: "Save dictation history",
+                    detail: "When off, dictations are transcribed and pasted but not saved. Voice stats still tracked.",
+                    isOn: $viewModel.saveDictationHistory
+                )
+
+                Divider()
+
+                settingsToggleRow(
                     title: "Save audio recordings",
                     detail: "Keep audio alongside your dictation history.",
                     isOn: $viewModel.saveAudioRecordings
@@ -275,6 +292,11 @@ struct SettingsView: View {
 
                         Button("Clear Downloaded YouTube Audio...", role: .destructive) {
                             showClearYouTubeAudioAlert = true
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button("Reset Private Statistics...", role: .destructive) {
+                            showResetPrivateStatsAlert = true
                         }
                         .buttonStyle(.bordered)
                     }

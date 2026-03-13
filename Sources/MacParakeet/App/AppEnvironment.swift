@@ -102,6 +102,9 @@ final class AppEnvironment {
                 // Defaults to true if unset (matches Settings UI default).
                 UserDefaults.standard.object(forKey: "saveAudioRecordings") as? Bool ?? true
             },
+            shouldSaveDictationHistory: {
+                UserDefaults.standard.object(forKey: "saveDictationHistory") as? Bool ?? true
+            },
             entitlements: entitlementsService,
             customWordRepo: customWordRepo,
             snippetRepo: snippetRepo,
