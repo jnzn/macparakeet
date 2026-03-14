@@ -104,6 +104,7 @@ final class MockTranscriptionRepository: TranscriptionRepositoryProtocol, @unche
     var deleteAllCalled = false
     var updateSummaryCalls: [(id: UUID, summary: String?)] = []
     var updateChatMessagesCalls: [(id: UUID, chatMessages: [ChatMessage]?)] = []
+    var updateSpeakersCalls: [(id: UUID, speakers: [SpeakerInfo]?)] = []
 
     func save(_ transcription: Transcription) throws {
         if let idx = transcriptions.firstIndex(where: { $0.id == transcription.id }) {
@@ -161,6 +162,14 @@ final class MockTranscriptionRepository: TranscriptionRepositoryProtocol, @unche
         updateChatMessagesCalls.append((id: id, chatMessages: chatMessages))
         if let idx = transcriptions.firstIndex(where: { $0.id == id }) {
             transcriptions[idx].chatMessages = chatMessages
+            transcriptions[idx].updatedAt = Date()
+        }
+    }
+
+    func updateSpeakers(id: UUID, speakers: [SpeakerInfo]?) throws {
+        updateSpeakersCalls.append((id: id, speakers: speakers))
+        if let idx = transcriptions.firstIndex(where: { $0.id == id }) {
+            transcriptions[idx].speakers = speakers
             transcriptions[idx].updatedAt = Date()
         }
     }

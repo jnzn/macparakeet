@@ -428,4 +428,18 @@ public final class TranscriptionViewModel {
         self.llmAvailable = available
         self.llmService = llmService
     }
+
+    // MARK: - Speaker Rename
+
+    public func renameSpeaker(id speakerId: String, to newLabel: String) {
+        guard var transcription = currentTranscription,
+              var speakers = transcription.speakers else { return }
+        guard let index = speakers.firstIndex(where: { $0.id == speakerId }) else { return }
+        let trimmed = newLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        speakers[index].label = trimmed
+        transcription.speakers = speakers
+        currentTranscription = transcription
+        try? transcriptionRepo?.updateSpeakers(id: transcription.id, speakers: speakers)
+    }
 }

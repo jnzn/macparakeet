@@ -213,6 +213,55 @@ final class TranscriptionRepositoryTests: XCTestCase {
         XCTAssertEqual(fetched?.wordTimestamps?[1].word, "world")
     }
 
+    // MARK: - Speakers Persistence
+
+    func testUpdateSpeakers() throws {
+        let transcription = Transcription(fileName: "test.mp3", status: .completed)
+        try repo.save(transcription)
+
+        let speakers = [
+            SpeakerInfo(id: "S1", label: "Alice"),
+            SpeakerInfo(id: "S2", label: "Bob")
+        ]
+        try repo.updateSpeakers(id: transcription.id, speakers: speakers)
+
+        let fetched = try repo.fetch(id: transcription.id)
+        XCTAssertEqual(fetched?.speakers?.count, 2)
+        XCTAssertEqual(fetched?.speakers?[0].id, "S1")
+        XCTAssertEqual(fetched?.speakers?[0].label, "Alice")
+        XCTAssertEqual(fetched?.speakers?[1].label, "Bob")
+    }
+
+    func testUpdateSpeakersToNil() throws {
+        let speakers = [SpeakerInfo(id: "S1", label: "Speaker 1")]
+        let transcription = Transcription(fileName: "test.mp3", speakers: speakers, status: .completed)
+        try repo.save(transcription)
+
+        try repo.updateSpeakers(id: transcription.id, speakers: nil)
+        let fetched = try repo.fetch(id: transcription.id)
+        XCTAssertNil(fetched?.speakers)
+    }
+
+    func testUpdateSpeakersRoundTrip() throws {
+        let transcription = Transcription(fileName: "test.mp3", status: .completed)
+        try repo.save(transcription)
+
+        let speakers = [
+            SpeakerInfo(id: "S1", label: "Speaker 1"),
+            SpeakerInfo(id: "S2", label: "Speaker 2")
+        ]
+        try repo.updateSpeakers(id: transcription.id, speakers: speakers)
+
+        // Rename one speaker
+        var updated = speakers
+        updated[0].label = "Sarah"
+        try repo.updateSpeakers(id: transcription.id, speakers: updated)
+
+        let fetched = try repo.fetch(id: transcription.id)
+        XCTAssertEqual(fetched?.speakers?[0].label, "Sarah")
+        XCTAssertEqual(fetched?.speakers?[1].label, "Speaker 2")
+    }
+
     // MARK: - Update (save existing)
 
     func testUpdateTranscription() throws {
