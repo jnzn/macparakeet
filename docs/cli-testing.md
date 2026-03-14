@@ -1,5 +1,7 @@
 # CLI Testing Guide
 
+> Status: **ACTIVE** - CLI testing guide for core services
+
 Use `macparakeet-cli` for fast, repeatable testing of core transcription and text-processing flows.
 
 ## Build Once

@@ -42,9 +42,10 @@ All providers use the OpenAI-compatible chat completions API (`POST /v1/chat/com
 | Anthropic (Claude) | Cloud | `https://api.anthropic.com/v1/` | API key (`Authorization: Bearer`) |
 | OpenAI (GPT) | Cloud | `https://api.openai.com/v1` | API key (`Authorization: Bearer`) |
 | Google (Gemini) | Cloud | `https://generativelanguage.googleapis.com/v1beta/openai` | API key (`Authorization: Bearer`) |
+| OpenRouter | Cloud | `https://openrouter.ai/api/v1` | API key (`Authorization: Bearer`) |
 | Ollama | Local | `http://localhost:11434/v1` | `apiKey: nil` in config; client injects `Bearer ollama` |
-| LM Studio | Local | `http://localhost:1234/v1` | Optional (`Authorization: Bearer`) |
-| Custom | Either | User-provided | Optional API key |
+
+> Note: LM Studio is accessible via Ollama or any OpenAI-compatible endpoint configuration — no dedicated provider needed.
 
 **Note:** Anthropic offers both a native Messages API and an OpenAI-compatible endpoint. We use the OpenAI-compatible endpoint for simplicity — one protocol for all providers. If Anthropic-specific features (prompt caching, extended thinking) are needed later, the client can branch on `config.id == .anthropic` internally with zero API change for consumers.
 
@@ -164,7 +165,8 @@ public struct LLMProviderConfig: Codable, Sendable, Equatable {
 }
 
 public enum LLMProviderID: String, Codable, Sendable, CaseIterable {
-    case anthropic, openai, gemini, ollama, lmstudio, custom
+    case anthropic, openai, gemini, openrouter, ollama
+    // Note: LM Studio is accessible via Ollama or any OpenAI-compatible endpoint configuration.
 }
 
 /// Client — handles HTTP via OpenAI-compatible protocol

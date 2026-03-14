@@ -33,12 +33,12 @@ Community sentiment -- particularly on Reddit, Hacker News, and Mac-focused foru
 | Tier | Price | Limits |
 |------|-------|--------|
 | Free | $0 | 15 min/day dictation, basic clean mode only |
-| Pro | $49 (one-time) | Unlimited dictation, all modes, command mode, file transcription, custom words, text snippets |
+| Pro | $49 (one-time) | Unlimited dictation, all modes, file transcription, export formats, custom words, text snippets |
 
 ### Why $49
 
-- **Above MacWhisper** ($30): Reflects more features -- command mode, LLM modes, dictation-first design
-- **Above VoiceInk** ($39.99): Reflects file transcription, command mode, more processing modes
+- **Above MacWhisper** ($30): Reflects more features -- unlimited usage, export formats, custom words, text snippets, dictation-first design
+- **Above VoiceInk** ($39.99): Reflects file transcription, export formats, custom words, text snippets
 - **3-4 months of WisprFlow**: Users break even in 3-4 months vs WisprFlow's $12-15/mo. Easy value proposition.
 - **Sweet spot for impulse purchase**: $49 is low enough for an impulse buy for professionals, high enough to signal quality
 
@@ -116,7 +116,7 @@ Rejected. Low monthly price still triggers subscription aversion. Users would wa
 Rejected. Superwhisper's $250 lifetime / $5.41/mo model confuses users and signals that the subscription is the "real" price. Simplicity wins.
 
 ### Higher one-time ($69-79)
-Rejected. MacWhisper has dropped to $30 for Pro. At $49, MacParakeet is already priced above competitors -- the premium is justified by command mode, LLM integration, and dictation-first design, but going higher would reduce the impulse purchase appeal.
+Rejected. MacWhisper has dropped to $30 for Pro. At $49, MacParakeet is already priced above competitors -- the premium is justified by unlimited usage, export formats, custom words, text snippets, and dictation-first design, but going higher would reduce the impulse purchase appeal.
 
 ## References
 

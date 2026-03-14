@@ -290,10 +290,9 @@ MacParakeet's opportunity is to be the first app that nails all four. WisprFlow 
 | **Context awareness** | Future | Yes (cloud, screen reading) | No | No | No | No | No | No |
 | **Styles / tone modes** | 2 modes (raw, clean) | Yes (Pro, English only) | No | Yes (4+ modes) | Limited | Limited | No | No |
 | **Course correction** | No (deferred) | Yes (cloud LLM) | No | No | No | No | No | No |
-| **Whisper mode** | Planned (v0.4) | Yes | No | No | No | No | No | No |
 | **Custom words** | Yes | Yes (auto-learn) | Yes | Yes | Yes | Yes | No | No |
 | **Text snippets** | Yes | Yes | No | No | No | No | No | No |
-| **Speaker diarization** | v0.4 | No | Poor | No | No | No | No | No |
+| **Speaker diarization** | Yes | No | Poor | No | No | No | No | No |
 | **Multi-language** | 10+ European | 104+ | 100+ | 20+ | 10+ | 10+ | 10+ | 10+ |
 | **Offline capable** | Yes (fully) | No | Yes | Yes | Yes | Partial | Partial | Yes |
 | **Session limit** | None | 6 min | None | None | None | None | None | None |

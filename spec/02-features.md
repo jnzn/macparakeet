@@ -1258,6 +1258,8 @@ new scheduling architecture.
 
 ### F14: Non-Blocking Transcription Progress
 
+> Status: **IMPLEMENTED**
+
 **What:** Replace the full-screen progress takeover with a compact bottom bar so users can browse old transcripts while a transcription runs.
 
 **Problem:** Currently, starting a transcription replaces the entire Transcribe tab with a progress card. Users can't view previous transcriptions, and the drop zone disappears. The tab feels "stuck" until processing completes.
@@ -1280,12 +1282,12 @@ new scheduling architecture.
 ```
 
 **Acceptance criteria:**
-- [ ] Progress shown as compact bottom bar during transcription
-- [ ] Drop zone and recent transcriptions list remain visible
-- [ ] Drop zone visually disabled (no new drops accepted while transcribing)
-- [ ] "View" button on progress bar shows full progress detail view
-- [ ] Clicking a recent transcription still opens it during transcription
-- [ ] When transcription completes, bottom bar disappears, result is shown
+- [x] Progress shown as compact bottom bar during transcription
+- [x] Drop zone and recent transcriptions list remain visible
+- [x] Drop zone visually disabled (no new drops accepted while transcribing)
+- [x] "View" button on progress bar shows full progress detail view
+- [x] Clicking a recent transcription still opens it during transcription
+- [x] When transcription completes, bottom bar disappears, result is shown
 
 ---
 
