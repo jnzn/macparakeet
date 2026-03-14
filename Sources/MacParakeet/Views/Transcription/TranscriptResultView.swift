@@ -23,6 +23,7 @@ struct TranscriptResultView: View {
     @State private var copied = false
     @State private var summaryCopied = false
     @State private var copiedMessageId: UUID?
+    @State private var hoveredMessageId: UUID?
     @State private var exportConfirmation: ExportConfirmation?
     @State private var exportErrorMessage: String?
     @State private var copiedResetTask: Task<Void, Never>?
@@ -682,37 +683,46 @@ struct TranscriptResultView: View {
                                   : DesignSystem.Colors.surfaceElevated.opacity(0.7))
                             .shadow(color: .black.opacity(message.role == .user ? 0.15 : 0.05), radius: 4, y: 2)
                     )
-
-                    // Copy button for assistant messages
-                    if message.role == .assistant && !message.isStreaming && !message.content.isEmpty {
-                        Button {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(message.content, forType: .string)
-                            copiedMessageId = message.id
-                            copiedResetTask?.cancel()
-                            copiedResetTask = Task {
-                                try? await Task.sleep(for: .seconds(2))
-                                copiedMessageId = nil
-                            }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: copiedMessageId == message.id ? "checkmark" : "doc.on.doc")
-                                    .font(.system(size: 10))
-                                if copiedMessageId == message.id {
-                                    Text("Copied")
-                                        .font(DesignSystem.Typography.micro)
+                    .overlay(alignment: .bottomTrailing) {
+                        // Copy button for assistant messages — appears on hover
+                        if message.role == .assistant && !message.isStreaming && !message.content.isEmpty {
+                            if hoveredMessageId == message.id || copiedMessageId == message.id {
+                                Button {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(message.content, forType: .string)
+                                    copiedMessageId = message.id
+                                    copiedResetTask?.cancel()
+                                    copiedResetTask = Task {
+                                        try? await Task.sleep(for: .seconds(2))
+                                        copiedMessageId = nil
+                                    }
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: copiedMessageId == message.id ? "checkmark" : "doc.on.doc")
+                                            .font(.system(size: 10))
+                                        if copiedMessageId == message.id {
+                                            Text("Copied")
+                                                .font(DesignSystem.Typography.micro)
+                                        }
+                                    }
+                                    .foregroundStyle(copiedMessageId == message.id ? DesignSystem.Colors.successGreen : DesignSystem.Colors.textTertiary)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 3)
+                                    .background(
+                                        Capsule()
+                                            .fill(DesignSystem.Colors.surfaceElevated.opacity(0.8))
+                                    )
                                 }
+                                .buttonStyle(.plain)
+                                .transition(.opacity)
+                                .padding(4)
                             }
-                            .foregroundStyle(copiedMessageId == message.id ? DesignSystem.Colors.successGreen : DesignSystem.Colors.textTertiary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(
-                                Capsule()
-                                    .fill(DesignSystem.Colors.surfaceElevated.opacity(0.5))
-                            )
                         }
-                        .buttonStyle(.plain)
-                        .transition(.opacity)
+                    }
+                    .onHover { hovering in
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            hoveredMessageId = hovering ? message.id : nil
+                        }
                     }
                 }
             }
