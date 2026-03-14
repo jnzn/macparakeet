@@ -890,6 +890,10 @@ struct TranscriptResultView: View {
                 .font(DesignSystem.Typography.caption.weight(.semibold))
                 .foregroundStyle(color)
                 .onTapGesture {
+                    // Commit any in-flight rename before switching
+                    if editingSpeakerId != nil {
+                        commitSpeakerRename()
+                    }
                     editingSpeakerId = speaker.id
                     editingSpeakerLabel = speaker.label
                 }
@@ -1134,7 +1138,9 @@ struct TranscriptResultView: View {
     }
 
     private func exportToDownloads(format: ExportFormat) {
-        let stem = sanitizedExportStem(from: transcription.fileName)
+        // Use the ViewModel's copy which reflects any in-flight renames
+        let source = viewModel.currentTranscription ?? transcription
+        let stem = sanitizedExportStem(from: source.fileName)
         guard let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first else {
             exportErrorMessage = "Your Downloads folder could not be found."
             SoundManager.shared.play(.errorSoft)
@@ -1152,13 +1158,13 @@ struct TranscriptResultView: View {
         let exportService = ExportService()
         do {
             switch format {
-            case .txt: try exportService.exportToTxt(transcription: transcription, url: fileURL)
-            case .md: try exportService.exportToMarkdown(transcription: transcription, url: fileURL)
-            case .srt: try exportService.exportToSRT(transcription: transcription, url: fileURL)
-            case .vtt: try exportService.exportToVTT(transcription: transcription, url: fileURL)
-            case .docx: try exportService.exportToDocx(transcription: transcription, url: fileURL)
-            case .pdf: try exportService.exportToPDF(transcription: transcription, url: fileURL)
-            case .json: try exportService.exportToJSON(transcription: transcription, url: fileURL)
+            case .txt: try exportService.exportToTxt(transcription: source, url: fileURL)
+            case .md: try exportService.exportToMarkdown(transcription: source, url: fileURL)
+            case .srt: try exportService.exportToSRT(transcription: source, url: fileURL)
+            case .vtt: try exportService.exportToVTT(transcription: source, url: fileURL)
+            case .docx: try exportService.exportToDocx(transcription: source, url: fileURL)
+            case .pdf: try exportService.exportToPDF(transcription: source, url: fileURL)
+            case .json: try exportService.exportToJSON(transcription: source, url: fileURL)
             }
             Telemetry.send(.exportUsed(format: format.rawValue))
         } catch {

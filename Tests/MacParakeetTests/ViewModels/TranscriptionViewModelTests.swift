@@ -682,6 +682,19 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertTrue(mockRepo.updateSpeakersCalls.isEmpty)
     }
 
+    func testRenameSpeakerEmptySpeakersArrayIsNoOp() {
+        let t = Transcription(fileName: "test.mp3", speakers: [], status: .completed)
+        mockRepo.transcriptions = [t]
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+        viewModel.currentTranscription = t
+
+        viewModel.renameSpeaker(id: "S1", to: "Alice")
+
+        XCTAssertTrue(mockRepo.updateSpeakersCalls.isEmpty)
+        XCTAssertEqual(viewModel.currentTranscription?.speakers?.count, 0)
+    }
+
     func testRenameSpeakerSameLabelIsNoOp() {
         let speakers = [SpeakerInfo(id: "S1", label: "Alice")]
         let t = Transcription(fileName: "test.mp3", speakers: speakers, status: .completed)
