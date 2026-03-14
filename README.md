@@ -16,7 +16,7 @@ Press `Fn` anywhere on your Mac → speak → polished text appears. Like WisprF
 - **Double-tap Fn** — Persistent recording (press Fn again to stop)
 - **Hold Fn** — Push-to-talk (release to auto-stop and paste)
 
-Trigger key configurable in Settings (Fn, Control, Option, Shift, or Command).
+Trigger key configurable in Settings — bare modifiers (Fn, Control, etc.), standalone keys (F5, Tab), or chord combos (Cmd+9, Ctrl+Shift+D).
 
 ### File Transcription
 Drag any audio or video file → get a transcript in seconds.
@@ -43,7 +43,7 @@ Drag any audio or video file → get a transcript in seconds.
 - **Blazing Fast** — Parakeet TDT STT, fully local
 - **Multilingual** — 10+ European languages including Spanish, French, German, Italian, Portuguese, and Russian
 - **100% Private** — Audio never leaves your Mac. No accounts. No tracking.
-- **System-Wide Dictation** — Configurable hotkey (any single key), double-tap (persistent) + hold-to-talk
+- **System-Wide Dictation** — Configurable hotkey (bare keys, modifiers, or chord combos), double-tap (persistent) + hold-to-talk
 - **File Transcription** — Drag-drop audio/video files, word timestamps
 - **Smart Cleanup** — Deterministic 4-step pipeline (filler removal, custom words, snippets, whitespace)
 - **Custom Words** — Domain vocabulary corrections and proper noun casing
@@ -53,14 +53,13 @@ Drag any audio or video file → get a transcript in seconds.
 - **YouTube Transcription** — Paste a YouTube URL, auto-download audio via yt-dlp, transcribe with Parakeet
 - **Private Dictation Mode** — Optionally skip saving dictations to history
 - **AI Summary & Chat** — Summarize transcriptions and ask questions via cloud LLM providers (OpenAI, Anthropic, Ollama, OpenRouter)
-- **Speaker Diarization** — Auto-detect and label speakers in file transcriptions (CLI preview, GUI coming)
+- **Speaker Diarization** — Auto-detect and label speakers in file transcriptions (summary panel + inline rename)
 - **Auto-Updates** — Automatic background updates via Sparkle
 - **In-App Feedback** — Report bugs, request features, or share feedback (routes to [macparakeet-community](https://github.com/moona3k/macparakeet-community))
 
 ### Planned
 
-- **Speaker Diarization GUI** — Visual speaker labels in the transcript view
-- **Batch Processing** — Queue multiple files for transcription
+- **App Store Submission** — Sandbox, notarize, privacy policy
 
 ## Requirements
 
