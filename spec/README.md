@@ -95,7 +95,6 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 
 - [ ] Speaker diarization (auto-detect, label, name)
 - [ ] Batch file processing (queue, progress, batch export)
-- [ ] Whisper mode (optimized for quiet speech)
 - [ ] App Store submission (sandbox, notarize, privacy policy)
 
 ## For AI Coding Assistants

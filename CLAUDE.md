@@ -35,6 +35,7 @@ A **fast, private, local-first voice app** for macOS with two co-equal modes: sy
 | Brand identity | `docs/brand-identity.md` |
 | UI/UX design overhaul | `docs/design-overhaul.md` |
 | Distribution, signing & auto-updates | `docs/distribution.md` |
+| Telemetry system | `docs/telemetry.md` |
 | Implementation plans | `plans/` -> active and completed plans |
 
 ## Tech Stack (Locked Decisions)
@@ -119,6 +120,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 | ADR-009 | Custom hotkey support (any single key) | `spec/adr/009-custom-hotkey.md` |
 | ADR-010 | Speaker diarization via FluidAudio offline pipeline | `spec/adr/010-speaker-diarization.md` |
 | ADR-011 | LLM via cloud API keys + optional local providers | `spec/adr/011-llm-cloud-and-local-providers.md` |
+| ADR-012 | Self-hosted telemetry via Cloudflare (Worker + D1) | `spec/adr/012-telemetry-system.md` |
 
 ## Current Phase
 
@@ -164,7 +166,6 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 - [x] UI polish (toggles, sidebar sections, copy improvements)
 - [ ] Speaker diarization GUI
 - [ ] Batch file processing
-- [ ] Whisper Mode (quiet/whispered speech recognition)
 - [ ] App Store submission
 
 ## Key Patterns
@@ -639,9 +640,9 @@ swift test
 
 ### Privacy Guarantees
 
-1. **Offline-first** -- Dictation and file transcription work fully offline. Network is used only for user-initiated YouTube downloads and optional license activation/validation.
+1. **Offline-first** -- Dictation and file transcription work fully offline. Network is used only for user-initiated YouTube downloads, optional license activation/validation, and anonymous telemetry.
 2. **Temp files deleted** -- Audio removed after transcription (unless user saves)
-3. **No analytics** -- Zero telemetry
+3. **Non-identifying telemetry** -- Anonymous, session-scoped usage analytics (opt-out in Settings). No persistent IDs, no IP storage, no content transmitted. See `docs/telemetry.md` and ADR-012.
 4. **No accounts** -- No login, no email, no tracking
 
 ---

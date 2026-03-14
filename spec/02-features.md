@@ -50,7 +50,6 @@ See [00-vision.md](./00-vision.md) for positioning and market context.
 ├─────────────────────────────────────────────────────────────────┤
 │  • Speaker diarization (auto-detect, label, name)               │
 │  • Batch file processing (queue, progress, batch export)        │
-│  • Whisper mode (optimized for quiet speech)                    │
 │  • App Store submission (sandbox, notarize, privacy policy)     │
 └─────────────────────────────────────────────────────────────────┘
                               │
@@ -1296,28 +1295,9 @@ new scheduling architecture.
 
 ---
 
-### F15: Whisper Mode
+### F15: Whisper Mode — REMOVED
 
-**What:** Optimized dictation mode for whispered or quiet speech, designed for open offices, libraries, and shared spaces.
-
-**How it works:**
-- Activated via settings toggle or overlay mode switcher
-- Increases microphone sensitivity / gain
-- Adjusts Parakeet parameters for low-energy speech
-- Tuned for close-to-mouth microphone use (laptop mic, AirPods, headset)
-
-**Use cases:**
-- Open office dictation without disturbing colleagues
-- Library or quiet workspace
-- Shared hotel room or coffee shop
-- Podium microphone close to mouth
-
-**Acceptance criteria:**
-- [ ] Whisper mode activatable from settings or overlay
-- [ ] Noticeably better accuracy for whispered/quiet speech
-- [ ] Works with built-in Mac mic, AirPods, and headset mics
-- [ ] No significant accuracy loss for normal volume speech
-- [ ] Visual indicator in overlay when whisper mode is active
+> **Removed:** Parakeet TDT is a fixed CoreML model with no tunable parameters for low-energy speech. "Whisper Mode" would amount to a mic gain preset — not a real STT feature. Users can adjust mic sensitivity in macOS System Settings. Removed to avoid shipping marketing fluff as a feature.
 
 ---
 
@@ -1502,11 +1482,6 @@ v0.4 Polish & Launch:
       └──────────────────┘
 
       ┌──────────────────┐
-      │ F15: Whisper     │ ← Extends F1 (dictation audio capture)
-      │ Mode             │
-      └──────────────────┘
-
-      ┌──────────────────┐
       │ F16: App Store   │ ← Requires all v0.1-v0.3 features
       │ Submission       │
       └──────────────────┘
@@ -1514,7 +1489,7 @@ v0.4 Polish & Launch:
 
 Cross-cutting dependency:
 
-      Parakeet STT ──► F1, F2, F11, F13, F14, F15
+      Parakeet STT ──► F1, F2, F11, F13, F14
       Accessibility ──► F1 (hotkey + paste)
       FFmpeg ──────────► F2, F11, F14
       yt-dlp ──────────► F11
