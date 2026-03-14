@@ -172,11 +172,6 @@ struct MainWindowView: View {
 
             Spacer()
 
-            Button("Cancel", role: .destructive) {
-                transcriptionViewModel.cancelTranscription()
-            }
-            .buttonStyle(.bordered)
-
             Button {
                 transcriptionViewModel.currentTranscription = nil
                 state.selectedItem = .transcribe

@@ -215,7 +215,8 @@ struct DiscoverView: View {
                             Text("A topic, a correction, a quote, a feeling...")
                                 .font(DesignSystem.Typography.body)
                                 .foregroundStyle(DesignSystem.Colors.textTertiary)
-                                .padding(DesignSystem.Spacing.md + 5)
+                                .padding(.horizontal, DesignSystem.Spacing.md + 5)
+                                .padding(.vertical, DesignSystem.Spacing.md + 8)
                                 .allowsHitTesting(false)
                         }
                     }

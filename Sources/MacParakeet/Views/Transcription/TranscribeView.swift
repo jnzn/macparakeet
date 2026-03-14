@@ -103,26 +103,24 @@ struct TranscribeView: View {
                         .padding(.top, DesignSystem.Spacing.lg)
                 }
 
-                // Portal drop zone — the hero
-                PortalDropZone(
-                    isDragging: $viewModel.isDragging,
-                    onDrop: { providers in
-                        viewModel.handleFileDrop(providers: providers) {
-                            SoundManager.shared.play(.fileDropped)
-                        }
-                    },
-                    onBrowse: { openFilePicker() }
-                )
-                .padding(.horizontal, DesignSystem.Spacing.lg)
-                .padding(.top, viewModel.isTranscribing ? 0 : DesignSystem.Spacing.lg)
-                .opacity(viewModel.isTranscribing ? 0.5 : 1.0)
-                .allowsHitTesting(!viewModel.isTranscribing)
-
-                // YouTube URL card — separate warm card below
-                youTubeCard
+                if !viewModel.isTranscribing {
+                    // Portal drop zone — the hero
+                    PortalDropZone(
+                        isDragging: $viewModel.isDragging,
+                        onDrop: { providers in
+                            viewModel.handleFileDrop(providers: providers) {
+                                SoundManager.shared.play(.fileDropped)
+                            }
+                        },
+                        onBrowse: { openFilePicker() }
+                    )
                     .padding(.horizontal, DesignSystem.Spacing.lg)
-                    .opacity(viewModel.isTranscribing ? 0.5 : 1.0)
-                    .allowsHitTesting(!viewModel.isTranscribing)
+                    .padding(.top, DesignSystem.Spacing.lg)
+
+                    // YouTube URL card — separate warm card below
+                    youTubeCard
+                        .padding(.horizontal, DesignSystem.Spacing.lg)
+                }
 
                 // Error banner
                 if let error = viewModel.errorMessage {
@@ -185,17 +183,10 @@ struct TranscribeView: View {
                             .foregroundStyle(.secondary)
                     }
 
-                    HStack(spacing: DesignSystem.Spacing.sm) {
-                        Button("View Details") {
-                            showingProgressDetail = true
-                        }
-                        .buttonStyle(.bordered)
-
-                        Button("Cancel", role: .destructive) {
-                            viewModel.cancelTranscription()
-                        }
-                        .buttonStyle(.bordered)
+                    Button("View Details") {
+                        showingProgressDetail = true
                     }
+                    .buttonStyle(.bordered)
                 }
             }
 
