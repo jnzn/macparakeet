@@ -119,7 +119,7 @@ struct VocabularyView: View {
             icon: "checkmark.shield"
         ) {
             VStack(spacing: DesignSystem.Spacing.sm) {
-                capabilityRow(icon: "wind", text: "Removes filler words like \"um\", \"uh\", and \"you know\"")
+                capabilityRow(icon: "wind", text: "Removes hesitation sounds like \"um\" and \"uh\"")
                 capabilityRow(icon: "character.book.closed", text: "Applies your custom word corrections and capitalization")
                 capabilityRow(icon: "text.insert", text: "Expands shortcuts into full phrases")
                 capabilityRow(icon: "textformat", text: "Cleans up spacing and punctuation")
@@ -139,7 +139,7 @@ struct VocabularyView: View {
                 pipelineStep(
                     number: 1,
                     title: "Remove fillers",
-                    detail: "um, uh, like, you know",
+                    detail: "um, uh, umm, uhh",
                     actionTitle: nil,
                     action: nil
                 )

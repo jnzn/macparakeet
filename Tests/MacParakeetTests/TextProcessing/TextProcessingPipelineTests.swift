@@ -21,7 +21,7 @@ final class TextProcessingPipelineTests: XCTestCase {
         ]
 
         let result = pipeline.process(
-            text: "um kubernetes is great you know my signature",
+            text: "um kubernetes is great my signature",
             customWords: words,
             snippets: snippets
         )
@@ -37,11 +37,6 @@ final class TextProcessingPipelineTests: XCTestCase {
 
     // MARK: - Step 1: Filler Removal
 
-    func testMultiWordFillerRemoval() {
-        let result = pipeline.removeFillers(from: "I think you know that is great")
-        XCTAssertTrue(!result.contains("you know"))
-    }
-
     func testAlwaysSafeFillerRemoval() {
         let result = pipeline.removeFillers(from: "um hello uh world")
         // After filler removal, we get "  hello  world" — whitespace cleanup is separate
@@ -56,37 +51,10 @@ final class TextProcessingPipelineTests: XCTestCase {
         XCTAssertTrue(result.contains("humble"))
     }
 
-    func testSentenceStartFillerAtStart() {
-        let result = pipeline.removeFillers(from: "So I went to the store")
-        XCTAssertFalse(result.trimmingCharacters(in: .whitespaces).hasPrefix("So"))
-    }
-
-    func testSentenceStartFillerMidSentence() {
-        // "so" mid-sentence should NOT be removed
-        let result = pipeline.removeFillers(from: "I was so happy about it")
-        XCTAssertTrue(result.contains("so"))
-    }
-
-    func testSentenceStartFillerAfterPunctuation() {
-        let result = pipeline.removeFillers(from: "That was great. So I decided to go")
-        XCTAssertFalse(result.contains("So"))
-    }
-
     func testFillerRemovalCaseInsensitive() {
         let result = pipeline.removeFillers(from: "UM hello UHH world")
         XCTAssertFalse(result.lowercased().contains("um"))
         XCTAssertFalse(result.lowercased().contains("uhh"))
-    }
-
-    func testIMeanFiller() {
-        let result = pipeline.removeFillers(from: "I mean it was a good day")
-        XCTAssertFalse(result.contains("I mean"))
-    }
-
-    func testSortOfKindOfFillers() {
-        let result = pipeline.removeFillers(from: "it was sort of good and kind of nice")
-        XCTAssertFalse(result.contains("sort of"))
-        XCTAssertFalse(result.contains("kind of"))
     }
 
     func testHesitationVariants() {

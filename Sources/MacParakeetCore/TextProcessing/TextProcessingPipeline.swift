@@ -38,38 +38,15 @@ public struct TextProcessingPipeline: Sendable {
 
     // MARK: - Step 1: Filler Removal
 
-    /// Multi-word fillers (always removed)
-    private static let multiWordFillers = [
-        "you know", "I mean", "sort of", "kind of"
-    ]
-
-    /// Always-safe single-word fillers (always removed)
+    /// Always-safe fillers (always removed)
     /// Only pure hesitation sounds — words that never carry meaning.
     private static let alwaysSafeFillers = [
         "um", "uh", "umm", "uhh"
     ]
 
-    /// Sentence-start-only fillers (removed only at sentence start)
-    private static let sentenceStartFillers = [
-        "so", "well", "like", "right"
-    ]
-
     func removeFillers(from text: String) -> String {
         var result = text
 
-        // 1a: Multi-word fillers (always removed, case-insensitive)
-        for filler in Self.multiWordFillers {
-            let pattern = "\\b\(NSRegularExpression.escapedPattern(for: filler))\\b"
-            if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
-                result = regex.stringByReplacingMatches(
-                    in: result,
-                    range: NSRange(result.startIndex..., in: result),
-                    withTemplate: ""
-                )
-            }
-        }
-
-        // 1b: Always-safe single-word fillers (always removed)
         for filler in Self.alwaysSafeFillers {
             let pattern = "\\b\(NSRegularExpression.escapedPattern(for: filler))\\b"
             if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
@@ -77,30 +54,6 @@ public struct TextProcessingPipeline: Sendable {
                     in: result,
                     range: NSRange(result.startIndex..., in: result),
                     withTemplate: ""
-                )
-            }
-        }
-
-        // 1c: Sentence-start-only fillers
-        for filler in Self.sentenceStartFillers {
-            // Match at start of string or after sentence-ending punctuation + space
-            let escaped = NSRegularExpression.escapedPattern(for: filler)
-            // Start of string
-            let startPattern = "^\\s*\(escaped)\\b"
-            if let regex = try? NSRegularExpression(pattern: startPattern, options: .caseInsensitive) {
-                result = regex.stringByReplacingMatches(
-                    in: result,
-                    range: NSRange(result.startIndex..., in: result),
-                    withTemplate: ""
-                )
-            }
-            // After sentence-ending punctuation
-            let sentencePattern = "([.!?])\\s+\(escaped)\\b"
-            if let regex = try? NSRegularExpression(pattern: sentencePattern, options: .caseInsensitive) {
-                result = regex.stringByReplacingMatches(
-                    in: result,
-                    range: NSRange(result.startIndex..., in: result),
-                    withTemplate: "$1"
                 )
             }
         }
