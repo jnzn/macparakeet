@@ -19,7 +19,7 @@ final class LLMSettingsViewModelTests: XCTestCase {
     func testDefaultValuesAfterInit() {
         XCTAssertEqual(viewModel.selectedProviderID, .openai)
         XCTAssertEqual(viewModel.apiKeyInput, "")
-        XCTAssertEqual(viewModel.modelName, "gpt-4.1")
+        XCTAssertEqual(viewModel.modelName, "gpt-5.4")
         XCTAssertEqual(viewModel.baseURLOverride, "")
         XCTAssertEqual(viewModel.connectionTestState, .idle)
         XCTAssertFalse(viewModel.isConfigured)
@@ -35,7 +35,7 @@ final class LLMSettingsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.modelName, "claude-sonnet-4-6")
 
         viewModel.selectedProviderID = .gemini
-        XCTAssertEqual(viewModel.modelName, "gemini-2.5-flash")
+        XCTAssertEqual(viewModel.modelName, "gemini-3.1-pro-preview")
 
         viewModel.selectedProviderID = .ollama
         XCTAssertEqual(viewModel.modelName, "qwen3.5:4b")
@@ -84,14 +84,27 @@ final class LLMSettingsViewModelTests: XCTestCase {
 
     // MARK: - Load Existing
 
-    func testLoadsExistingConfigOnConfigure() {
+    func testLoadsExistingConfigWithSuggestedModel() {
+        mockConfigStore.config = .openai(apiKey: "sk-existing", model: "gpt-4.1")
+
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+
+        XCTAssertEqual(viewModel.selectedProviderID, .openai)
+        XCTAssertEqual(viewModel.apiKeyInput, "sk-existing")
+        XCTAssertEqual(viewModel.modelName, "gpt-4.1")
+        XCTAssertFalse(viewModel.useCustomModel)
+    }
+
+    func testLoadsExistingConfigWithCustomModel() {
         mockConfigStore.config = .openai(apiKey: "sk-existing", model: "gpt-4")
 
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
 
         XCTAssertEqual(viewModel.selectedProviderID, .openai)
         XCTAssertEqual(viewModel.apiKeyInput, "sk-existing")
-        XCTAssertEqual(viewModel.modelName, "gpt-4")
+        XCTAssertTrue(viewModel.useCustomModel)
+        XCTAssertEqual(viewModel.customModelName, "gpt-4")
+        XCTAssertEqual(viewModel.effectiveModelName, "gpt-4")
     }
 
     // MARK: - isConfigured
@@ -235,34 +248,51 @@ final class LLMSettingsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.connectionTestState, .idle)
     }
 
-    // MARK: - Fetch Models
+    // MARK: - Model Selection
 
-    func testFetchModelsPopulatesAvailableModels() async throws {
-        mockClient.modelsList = ["gpt-5.4", "gpt-5.4-pro", "gpt-5-mini"]
-        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
-
-        viewModel.fetchModels()
-        try await Task.sleep(nanoseconds: 200_000_000)
-
-        XCTAssertEqual(viewModel.fetchedModels, ["gpt-5.4", "gpt-5.4-pro", "gpt-5-mini"])
-        XCTAssertEqual(viewModel.availableModels, ["gpt-5.4", "gpt-5.4-pro", "gpt-5-mini"])
-        XCTAssertFalse(viewModel.isFetchingModels)
-    }
-
-    func testAvailableModelsFallsBackToSuggested() {
+    func testAvailableModelsReturnsSuggestedModels() {
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
         XCTAssertEqual(viewModel.availableModels, LLMSettingsViewModel.suggestedModels(for: .openai))
     }
 
-    func testProviderChangeClearsFetchedModels() async throws {
-        mockClient.modelsList = ["model-a"]
+    func testCustomModelUsesCustomModelName() {
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
-        viewModel.fetchModels()
-        try await Task.sleep(nanoseconds: 200_000_000)
-        XCTAssertFalse(viewModel.fetchedModels.isEmpty)
+        viewModel.useCustomModel = true
+        viewModel.customModelName = "my-fine-tuned-model"
+        XCTAssertEqual(viewModel.effectiveModelName, "my-fine-tuned-model")
+    }
+
+    func testPickerModelUsesModelName() {
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.useCustomModel = false
+        viewModel.modelName = "gpt-4o"
+        XCTAssertEqual(viewModel.effectiveModelName, "gpt-4o")
+    }
+
+    func testProviderChangeResetsCustomModel() {
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.useCustomModel = true
+        viewModel.customModelName = "custom-model"
 
         viewModel.selectedProviderID = .anthropic
-        XCTAssertTrue(viewModel.fetchedModels.isEmpty)
+        XCTAssertFalse(viewModel.useCustomModel)
+        XCTAssertEqual(viewModel.customModelName, "")
+    }
+
+    func testLoadExistingConfigDetectsCustomModel() {
+        mockConfigStore.config = .openai(apiKey: "sk-test", model: "ft:gpt-4o:my-org:custom:id")
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+
+        XCTAssertTrue(viewModel.useCustomModel)
+        XCTAssertEqual(viewModel.customModelName, "ft:gpt-4o:my-org:custom:id")
+    }
+
+    func testLoadExistingConfigDetectsSuggestedModel() {
+        mockConfigStore.config = .openai(apiKey: "sk-test", model: "gpt-4.1")
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+
+        XCTAssertFalse(viewModel.useCustomModel)
+        XCTAssertEqual(viewModel.modelName, "gpt-4.1")
     }
 
     // MARK: - OpenRouter
@@ -271,6 +301,6 @@ final class LLMSettingsViewModelTests: XCTestCase {
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
         viewModel.selectedProviderID = .openrouter
         XCTAssertTrue(viewModel.requiresAPIKey)
-        XCTAssertEqual(viewModel.modelName, "anthropic/claude-sonnet-4")
+        XCTAssertEqual(viewModel.modelName, "anthropic/claude-opus-4-6")
     }
 }
