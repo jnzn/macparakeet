@@ -51,6 +51,9 @@ pnpm-debug.log*
 .env
 .env.local
 
+# Private keys
+*.pem
+
 # Logs
 *.log
 logs/
