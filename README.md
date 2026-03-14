@@ -61,7 +61,6 @@ Drag any audio or video file → get a transcript in seconds.
 
 - **Speaker Diarization GUI** — Visual speaker labels in the transcript view
 - **Batch Processing** — Queue multiple files for transcription
-- **Whisper Mode** — Optimized for quiet/whispered speech
 
 ## Requirements
 
