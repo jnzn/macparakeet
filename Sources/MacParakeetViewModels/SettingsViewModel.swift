@@ -27,21 +27,21 @@ public final class SettingsViewModel {
         didSet {
             defaults.set(menuBarOnlyMode, forKey: AppPreferences.menuBarOnlyModeKey)
             NotificationCenter.default.post(name: Notification.Name("macparakeet.menuBarOnlyModeDidChange"), object: nil)
-            Telemetry.send("setting_changed", ["setting": "menu_bar_only"])
+            Telemetry.send(.settingChanged(setting: .menuBarOnly))
         }
     }
     public var showIdlePill: Bool {
         didSet {
             defaults.set(showIdlePill, forKey: "showIdlePill")
             NotificationCenter.default.post(name: Notification.Name("macparakeet.showIdlePillDidChange"), object: nil)
-            Telemetry.send("setting_changed", ["setting": "hide_pill"])
+            Telemetry.send(.settingChanged(setting: .hidePill))
         }
     }
     public var telemetryEnabled: Bool {
         didSet {
             defaults.set(telemetryEnabled, forKey: AppPreferences.telemetryEnabledKey)
             if !telemetryEnabled {
-                Telemetry.send("telemetry_opted_out")
+                Telemetry.send(.telemetryOptedOut)
             }
         }
     }
@@ -51,7 +51,7 @@ public final class SettingsViewModel {
         didSet {
             hotkeyTrigger.save(to: defaults)
             NotificationCenter.default.post(name: Notification.Name("macparakeet.hotkeyTriggerDidChange"), object: nil)
-            Telemetry.send("hotkey_customized")
+            Telemetry.send(.hotkeyCustomized)
         }
     }
     public var silenceAutoStop: Bool {
@@ -69,7 +69,7 @@ public final class SettingsViewModel {
                 return
             }
             defaults.set(processingMode, forKey: "processingMode")
-            Telemetry.send("processing_mode_changed", ["mode": processingMode])
+            Telemetry.send(.processingModeChanged(mode: processingMode))
         }
     }
     public var customWordCount: Int = 0
@@ -79,19 +79,19 @@ public final class SettingsViewModel {
     public var saveDictationHistory: Bool {
         didSet {
             defaults.set(saveDictationHistory, forKey: "saveDictationHistory")
-            Telemetry.send("setting_changed", ["setting": "save_history"])
+            Telemetry.send(.settingChanged(setting: .saveHistory))
         }
     }
     public var saveAudioRecordings: Bool {
         didSet {
             defaults.set(saveAudioRecordings, forKey: "saveAudioRecordings")
-            Telemetry.send("setting_changed", ["setting": "audio_retention"])
+            Telemetry.send(.settingChanged(setting: .audioRetention))
         }
     }
     public var saveTranscriptionAudio: Bool {
         didSet {
             defaults.set(saveTranscriptionAudio, forKey: "saveTranscriptionAudio")
-            Telemetry.send("setting_changed", ["setting": "save_transcription_audio"])
+            Telemetry.send(.settingChanged(setting: .saveTranscriptionAudio))
         }
     }
 

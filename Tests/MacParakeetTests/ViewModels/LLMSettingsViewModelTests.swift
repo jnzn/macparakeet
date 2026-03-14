@@ -73,6 +73,7 @@ final class LLMSettingsViewModelTests: XCTestCase {
     func testSaveWithBaseURLOverride() {
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
         viewModel.selectedProviderID = .openai
+        viewModel.apiKeyInput = "sk-test-123"
         viewModel.modelName = "my-model"
         viewModel.baseURLOverride = "https://my-server.com/v1"
 
@@ -134,6 +135,17 @@ final class LLMSettingsViewModelTests: XCTestCase {
         XCTAssertFalse(viewModel.isConfigured)
     }
 
+    func testClearResetsCustomModelDraft() {
+        mockConfigStore.config = .openai(apiKey: "sk-test", model: "custom-model")
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+
+        viewModel.clearConfiguration()
+
+        XCTAssertFalse(viewModel.useCustomModel)
+        XCTAssertEqual(viewModel.customModelName, "")
+        XCTAssertEqual(viewModel.modelName, "gpt-5.4")
+    }
+
     // MARK: - Test Connection
 
     func testConnectionSuccess() async throws {
@@ -160,6 +172,32 @@ final class LLMSettingsViewModelTests: XCTestCase {
         } else {
             XCTFail("Expected error state, got \(viewModel.connectionTestState)")
         }
+    }
+
+    func testStaleConnectionSuccessIsIgnoredAfterFieldChange() async throws {
+        mockClient.testConnectionDelayNs = 200_000_000
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.apiKeyInput = "sk-test"
+
+        viewModel.testConnection()
+        viewModel.apiKeyInput = "sk-updated"
+
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(viewModel.connectionTestState, .idle)
+    }
+
+    func testStaleConnectionResultIsIgnoredAfterProviderChange() async throws {
+        mockClient.testConnectionDelayNs = 200_000_000
+        mockClient.testConnectionError = LLMError.authenticationFailed(nil)
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.apiKeyInput = "sk-test"
+
+        viewModel.testConnection()
+        viewModel.selectedProviderID = .anthropic
+        viewModel.apiKeyInput = "sk-anthropic"
+
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(viewModel.connectionTestState, .idle)
     }
 
     // MARK: - Configuration Changed Callback
@@ -277,6 +315,25 @@ final class LLMSettingsViewModelTests: XCTestCase {
         viewModel.selectedProviderID = .anthropic
         XCTAssertFalse(viewModel.useCustomModel)
         XCTAssertEqual(viewModel.customModelName, "")
+    }
+
+    func testEmptyCustomModelIsInvalid() {
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.apiKeyInput = "sk-test"
+        viewModel.useCustomModel = true
+        viewModel.customModelName = "   "
+
+        XCTAssertFalse(viewModel.canSave)
+        XCTAssertEqual(viewModel.validationMessage, "Enter a custom model ID.")
+
+        viewModel.saveConfiguration()
+
+        XCTAssertNil(mockConfigStore.config)
+        if case .error(let message) = viewModel.saveState {
+            XCTAssertEqual(message, "Enter a custom model ID.")
+        } else {
+            XCTFail("Expected save error for invalid custom model")
+        }
     }
 
     func testLoadExistingConfigDetectsCustomModel() {

@@ -358,7 +358,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let manager = HotkeyManager(trigger: HotkeyTrigger.current)
 
         manager.onStartRecording = { [weak self] mode in
-            self?.startDictation(mode: mode)
+            self?.startDictation(mode: mode, trigger: .hotkey)
         }
 
         manager.onStopRecording = { [weak self] in
@@ -366,7 +366,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
 
         manager.onCancelRecording = { [weak self] in
-            self?.cancelDictation()
+            self?.cancelDictation(reason: .escape)
         }
 
         manager.onReadyForSecondTap = { [weak self] in
@@ -542,7 +542,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard overlayController == nil else { return }
         let vm = IdlePillViewModel()
         vm.onStartDictation = { [weak self] in
-            self?.startDictation(mode: .persistent)
+            self?.startDictation(mode: .persistent, trigger: .pillClick)
         }
         idlePillViewModel = vm
 
@@ -632,7 +632,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     // MARK: - Dictation Flow
 
-    private func startDictation(mode: FnKeyStateMachine.RecordingMode) {
+    private func startDictation(
+        mode: FnKeyStateMachine.RecordingMode,
+        trigger: TelemetryDictationTrigger = .hotkey
+    ) {
         guard let env = appEnvironment else { return }
 
         // Cancel any pending ready dismiss timer
@@ -715,7 +718,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             do {
                 self.isStartRecordingInFlight = true
                 self.dictationLog.debug("dictationService.startRecording begin generation=\(gen)")
-                try await env.dictationService.startRecording()
+                let telemetryMode: TelemetryDictationMode = switch mode {
+                case .persistent: .persistent
+                case .holdToTalk: .hold
+                }
+                try await env.dictationService.startRecording(
+                    context: DictationTelemetryContext(trigger: trigger, mode: telemetryMode)
+                )
                 self.isStartRecordingInFlight = false
                 let stateAfterStart = await env.dictationService.state
                 self.dictationLog.debug(
@@ -923,7 +932,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private var cancelTask: Task<Void, Never>?
 
-    private func cancelDictation() {
+    private func cancelDictation(reason: TelemetryDictationCancelReason = .ui) {
         recordingTask?.cancel()
         recordingTask = nil
         isStartRecordingInFlight = false
@@ -996,7 +1005,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             guard self.overlayGeneration == gen else { return }
 
             // Soft cancel immediately: stop capture but keep audio briefly so Undo can proceed.
-            await env.dictationService.cancelRecording()
+            await env.dictationService.cancelRecording(reason: reason)
 
             // Sync state machine — may have been triggered via UI button, not Esc
             // (Esc path already transitions the state machine to cancelWindow.)

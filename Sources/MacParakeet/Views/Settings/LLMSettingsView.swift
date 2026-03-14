@@ -95,11 +95,23 @@ struct LLMSettingsView: View {
                     viewModel.testConnection()
                 }
                 .buttonStyle(.bordered)
-                .disabled(viewModel.connectionTestState == .testing)
+                .disabled(viewModel.connectionTestState == .testing || !viewModel.canTestConnection)
 
                 connectionStatusIndicator
 
                 Spacer()
+            }
+
+            if let validationMessage = viewModel.validationMessage {
+                HStack(spacing: 4) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(DesignSystem.Colors.warningAmber)
+                    Text(validationMessage)
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(DesignSystem.Colors.warningAmber)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             Divider()
@@ -111,6 +123,7 @@ struct LLMSettingsView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(DesignSystem.Colors.accent)
+                .disabled(!viewModel.canSave)
                 .disabled(!viewModel.canSave)
 
                 if viewModel.isConfigured {
