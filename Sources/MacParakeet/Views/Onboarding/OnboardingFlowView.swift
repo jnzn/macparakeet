@@ -250,14 +250,14 @@ struct OnboardingFlowView: View {
                 Spacer()
 
                 if viewModel.step == .done {
-                    accentButton("Open MacParakeet", icon: "arrow.right", large: true, disabled: false) {
+                    accentButton("Open MacParakeet", icon: "arrow.right", large: true, disabled: false, isDefault: true) {
                         _ = viewModel.markOnboardingCompleted()
                         onFinish()
                         onOpenMainApp()
                     }
                 } else {
                     let disabled = !viewModel.canContinueFromCurrentStep() || viewModel.isBusy
-                    accentButton(primaryButtonTitle(for: viewModel.step), icon: "arrow.right", large: false, disabled: disabled) {
+                    accentButton(primaryButtonTitle(for: viewModel.step), icon: "arrow.right", large: false, disabled: disabled, isDefault: true) {
                         viewModel.goNext()
                     }
                 }
@@ -675,7 +675,7 @@ struct OnboardingFlowView: View {
             )
     }
 
-    private func accentButton(_ title: String, icon: String? = nil, large: Bool = false, disabled: Bool, action: @escaping () -> Void) -> some View {
+    private func accentButton(_ title: String, icon: String? = nil, large: Bool = false, disabled: Bool, isDefault: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Text(title)
@@ -695,6 +695,7 @@ struct OnboardingFlowView: View {
         }
         .buttonStyle(.plain)
         .disabled(disabled)
+        .keyboardShortcut(isDefault ? .defaultAction : nil)
     }
 
     private func featureRow(icon: String, title: String, detail: String) -> some View {
@@ -807,7 +808,7 @@ struct OnboardingFlowView: View {
     private func subtitleForStep(_ step: OnboardingViewModel.Step) -> String {
         switch step {
         case .welcome:
-            return "A premium, local-first dictation tool that stays out of your way."
+            return "A premium, local-first dictation tool. Try it free for 7 days."
         case .microphone:
             return "MacParakeet needs microphone permission to record your voice."
         case .accessibility:
@@ -817,7 +818,7 @@ struct OnboardingFlowView: View {
         case .engine:
             return "Download and warm up the Parakeet speech model so all features are ready. First setup needs internet once."
         case .done:
-            return "You're ready to dictate and transcribe locally on your Mac."
+            return "Your 7-day full-feature trial starts now. Transcribe without limits."
         }
     }
 

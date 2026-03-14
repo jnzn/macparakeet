@@ -112,6 +112,7 @@ struct CustomWordsView: View {
                 HStack(spacing: DesignSystem.Spacing.sm) {
                     TextField("Word or phrase", text: $viewModel.newWord)
                         .textFieldStyle(.roundedBorder)
+                        .focused($wordFieldFocused)
                     TextField("Replacement (optional)", text: $viewModel.newReplacement)
                         .textFieldStyle(.roundedBorder)
                     Button("Add") {
@@ -168,7 +169,7 @@ struct CustomWordsView: View {
         .padding(DesignSystem.Spacing.sm)
         .background(
             RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
-                .fill(isHovered ? DesignSystem.Colors.accent.opacity(0.10) : DesignSystem.Colors.surfaceElevated)
+                .fill(isHovered ? DesignSystem.Colors.rowHoverBackground : DesignSystem.Colors.surfaceElevated)
         )
         .onHover { hovering in
             withAnimation(DesignSystem.Animation.hoverTransition) {
@@ -176,6 +177,8 @@ struct CustomWordsView: View {
             }
         }
     }
+
+    @FocusState private var wordFieldFocused: Bool
 
     private var emptyWordsState: some View {
         VStack(spacing: DesignSystem.Spacing.sm) {
@@ -190,6 +193,12 @@ struct CustomWordsView: View {
                     .font(DesignSystem.Typography.caption)
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)
+                Button("Add Your First Rule") {
+                    wordFieldFocused = true
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(DesignSystem.Colors.accent)
+                .controlSize(.small)
             }
         }
         .frame(maxWidth: .infinity)

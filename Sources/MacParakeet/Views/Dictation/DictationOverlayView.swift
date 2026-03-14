@@ -97,10 +97,10 @@ struct DictationOverlayView: View {
                 .padding(.vertical, isReady ? 4 : 7)
                 .background(
                     Capsule()
-                        .fill(Color.black.opacity(0.9))
+                        .fill(DesignSystem.Colors.pillBackground)
                         .overlay(
                             Capsule()
-                                .strokeBorder(Color.white.opacity(0.15), lineWidth: 1)
+                                .strokeBorder(DesignSystem.Colors.pillBorder, lineWidth: 1)
                         )
                         .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
                 )
@@ -167,7 +167,7 @@ struct DictationOverlayView: View {
         HStack(spacing: 10) {
             // Recording indicator dot
             Circle()
-                .fill(Color.red)
+                .fill(DesignSystem.Colors.recordingRed)
                 .frame(width: 5, height: 5)
 
             // Live waveform — fewer bars than full recording pill
@@ -359,12 +359,12 @@ struct DictationOverlayView: View {
                 // Icon in tinted circle
                 ZStack {
                     Circle()
-                        .fill(Color.red.opacity(0.12))
+                        .fill(DesignSystem.Colors.recordingRed.opacity(0.12))
                         .frame(width: 32, height: 32)
 
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 13))
-                        .foregroundStyle(.red)
+                        .foregroundStyle(DesignSystem.Colors.recordingRed)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -401,11 +401,11 @@ struct DictationOverlayView: View {
         .padding(16)
         .frame(width: 260)
         .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color.black.opacity(0.85))
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
+                .fill(DesignSystem.Colors.pillBackground)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
+                    RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
+                        .strokeBorder(DesignSystem.Colors.pillBorder.opacity(0.5), lineWidth: 0.5)
                 )
                 .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
         )
@@ -477,27 +477,16 @@ struct DictationOverlayView: View {
             .padding(.vertical, 10)
             .background(
                 Capsule()
-                    .fill(Color.black.opacity(0.9))
+                    .fill(DesignSystem.Colors.pillBackground)
                     .overlay(
                         Capsule()
-                            .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5)
+                            .strokeBorder(DesignSystem.Colors.pillBorder.opacity(0.67), lineWidth: 0.5)
                     )
                     .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
             )
         }
     }
 
-    private var tooltipText: String {
-        switch viewModel.state {
-        case .ready: return ""
-        case .recording: return "" // Per-button tooltips via hoverTooltip
-        case .cancelled: return ""
-        case .processing: return ""
-        case .success: return ""
-        case .noSpeech: return ""
-        case .error: return ""
-        }
-    }
 }
 
 #Preview {

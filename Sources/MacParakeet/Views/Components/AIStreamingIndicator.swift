@@ -30,39 +30,6 @@ struct AIStreamingIndicator: View {
     }
 }
 
-/// A shimmer overlay for skeleton loading states.
-/// Draws a subtle gradient that sweeps across the content.
-struct ShimmerEffect: ViewModifier {
-    @State private var phase: CGFloat = -1
-
-    func body(content: Content) -> some View {
-        content
-            .overlay(
-                LinearGradient(
-                    stops: [
-                        .init(color: .clear, location: max(0, phase - 0.3)),
-                        .init(color: DesignSystem.Colors.accent.opacity(0.08), location: phase),
-                        .init(color: .clear, location: min(1, phase + 0.3)),
-                    ],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-                .clipped()
-            )
-            .onAppear {
-                withAnimation(.easeInOut(duration: 1.8).repeatForever(autoreverses: false)) {
-                    phase = 2
-                }
-            }
-    }
-}
-
-extension View {
-    func shimmer() -> some View {
-        modifier(ShimmerEffect())
-    }
-}
-
 /// Merkaba-centered skeleton for the summary loading state.
 /// Shows a meditative merkaba spinner with subtle status text.
 struct SummarySkeletonView: View {
@@ -84,22 +51,6 @@ struct SummarySkeletonView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.top, DesignSystem.Spacing.xl)
-    }
-}
-
-/// Placeholder view for empty chat assistant messages during streaming.
-/// Shows a compact merkaba spinner with streaming dots.
-struct ChatStreamingPlaceholder: View {
-    var body: some View {
-        HStack(spacing: DesignSystem.Spacing.md) {
-            SpinnerRingView(
-                size: 22,
-                revolutionDuration: 3.0,
-                tintColor: DesignSystem.Colors.accent
-            )
-            AIStreamingIndicator()
-        }
-        .padding(.vertical, DesignSystem.Spacing.xs)
     }
 }
 

@@ -80,19 +80,11 @@ enum DesignSystem {
 
         // Legacy aliases — pill/overlay (UNTOUCHED, these stay as-is for the pill)
         static let pillBackground = Color.black.opacity(0.9)
-        static let pillBorder = Color.white.opacity(0.1)
+        static let pillBorder = Color.white.opacity(0.15)
         static let recordingRed = Color.red
 
-        // Legacy semantic aliases (kept for views not yet migrated)
-        static let warningOrange = warningAmber
-        static let warningYellow = warningAmber
-        static let statusGranted = successGreen
-        static let statusDenied = errorRed
-
         // Sidebar
-        static let sidebarBackground = Color(nsColor: .controlBackgroundColor)
         static let contentBackground = Color(nsColor: .textBackgroundColor)
-        static let subtleBorder = Color.primary.opacity(0.08)
     }
 
     // MARK: - Spacing

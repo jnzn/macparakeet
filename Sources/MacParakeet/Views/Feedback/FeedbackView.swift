@@ -170,7 +170,7 @@ struct FeedbackView: View {
                         .fontWeight(.medium)
                     TextField("you@example.com", text: $viewModel.email)
                         .textFieldStyle(.roundedBorder)
-                    Text("Only if you'd like a reply.")
+                    Text("Provide your email if you need a direct response.")
                         .font(DesignSystem.Typography.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -238,6 +238,7 @@ struct FeedbackView: View {
                     viewModel.resetForm()
                 }
                 .buttonStyle(.bordered)
+                .keyboardShortcut(.cancelAction)
 
                 Button(viewModel.submissionState == .submitting ? "Sending..." : "Send Feedback") {
                     viewModel.submit()
@@ -245,6 +246,7 @@ struct FeedbackView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(DesignSystem.Colors.accent)
                 .disabled(!viewModel.canSubmit)
+                .keyboardShortcut(.defaultAction)
             }
             .padding(.top, DesignSystem.Spacing.sm)
         }
