@@ -8,6 +8,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
     case vocabulary = "Vocabulary"
     case feedback = "Feedback"
     case settings = "Settings"
+    case discover = "Discover"
 
     var id: String { rawValue }
 
@@ -18,6 +19,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         case .vocabulary: return "book.fill"
         case .feedback: return "bubble.left.and.text.bubble.right"
         case .settings: return "gearshape"
+        case .discover: return "sparkles"
         }
     }
 
@@ -26,6 +28,9 @@ enum SidebarItem: String, CaseIterable, Identifiable {
 
     /// Configuration and support items
     static let configItems: [SidebarItem] = [.vocabulary, .feedback, .settings]
+
+    /// Note: `.discover` is intentionally excluded from the arrays above.
+    /// It renders as a pinned card below the sidebar list via `safeAreaInset`.
 }
 
 struct MainWindowView: View {
@@ -39,6 +44,7 @@ struct MainWindowView: View {
     let customWordsViewModel: CustomWordsViewModel
     let textSnippetsViewModel: TextSnippetsViewModel
     let feedbackViewModel: FeedbackViewModel
+    let discoverViewModel: DiscoverViewModel
     let updater: SPUUpdater
 
     var body: some View {
@@ -61,6 +67,13 @@ struct MainWindowView: View {
                 }
                 .listStyle(.sidebar)
                 .tint(DesignSystem.Colors.accent)
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    DiscoverSidebarCard(
+                        viewModel: discoverViewModel,
+                        isSelected: state.selectedItem == .discover,
+                        onTap: { state.selectedItem = .discover }
+                    )
+                }
                 .navigationSplitViewColumnWidth(min: 170, ideal: DesignSystem.Layout.sidebarMinWidth, max: 240)
             } detail: {
                 Group {
@@ -79,6 +92,8 @@ struct MainWindowView: View {
                         FeedbackView(viewModel: feedbackViewModel)
                     case .settings:
                         SettingsView(viewModel: settingsViewModel, llmSettingsViewModel: llmSettingsViewModel, updater: updater)
+                    case .discover:
+                        DiscoverView(viewModel: discoverViewModel)
                     }
                 }
                 .animation(DesignSystem.Animation.contentSwap, value: state.selectedItem)
@@ -102,34 +117,64 @@ struct MainWindowView: View {
     /// Show the global bottom bar when transcribing, except when on Transcribe tab with detail expanded
     private var showGlobalProgressBar: Bool {
         transcriptionViewModel.isTranscribing
-            && transcriptionViewModel.currentTranscription == nil
             && !(state.selectedItem == .transcribe && state.showingProgressDetail)
     }
 
     private var globalTranscriptionBottomBar: some View {
-        HStack(spacing: DesignSystem.Spacing.sm) {
+        HStack(spacing: DesignSystem.Spacing.md) {
             SpinnerRingView(size: 18, revolutionDuration: 2.0, tintColor: DesignSystem.Colors.accent)
 
-            Text(transcriptionViewModel.transcribingFileName)
-                .font(DesignSystem.Typography.caption)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(transcriptionViewModel.transcribingFileName)
+                        .font(DesignSystem.Typography.caption.weight(.semibold))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
 
-            Text("\u{00B7}")
-                .foregroundStyle(.tertiary)
+                    Text("LOCAL")
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .foregroundStyle(DesignSystem.Colors.successGreen)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(DesignSystem.Colors.successGreen.opacity(0.12)))
+                }
 
-            Text(transcriptionViewModel.progressHeadline)
-                .font(DesignSystem.Typography.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(transcriptionViewModel.progressHeadline)
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+
+                    Text("\u{00B7}")
+                        .foregroundStyle(.tertiary)
+
+                    Text("Safe to browse elsewhere")
+                        .font(DesignSystem.Typography.micro)
+                        .foregroundStyle(.tertiary)
+                }
+            }
 
             if let fraction = transcriptionViewModel.transcriptionProgress {
-                Text("\(Int((fraction * 100).rounded()))%")
-                    .font(DesignSystem.Typography.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                Spacer(minLength: DesignSystem.Spacing.sm)
+
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("\(Int((fraction * 100).rounded()))%")
+                        .font(DesignSystem.Typography.caption.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.secondary)
+
+                    ProgressView(value: fraction)
+                        .progressViewStyle(.linear)
+                        .tint(DesignSystem.Colors.accent)
+                        .frame(width: 96)
+                }
             }
 
             Spacer()
+
+            Button("Cancel", role: .destructive) {
+                transcriptionViewModel.cancelTranscription()
+            }
+            .buttonStyle(.bordered)
 
             Button {
                 state.selectedItem = .transcribe
