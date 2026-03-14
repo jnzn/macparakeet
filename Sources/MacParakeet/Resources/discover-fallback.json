@@ -1,0 +1,122 @@
+{
+  "version": 1,
+  "featuredIndex": 0,
+  "items": [
+    {
+      "id": "tip-hotkey",
+      "type": "tip",
+      "title": "Double-tap for hands-free",
+      "body": "Double-tap your hotkey to start persistent dictation — it keeps recording until you tap again. Perfect for long thoughts.",
+      "icon": "keyboard"
+    },
+    {
+      "id": "quote-voice",
+      "type": "quote",
+      "title": "The human voice",
+      "body": "The human voice is the most perfect instrument of all.",
+      "icon": "quote.bubble",
+      "attribution": "Arvo Pärt"
+    },
+    {
+      "id": "tip-snippets",
+      "type": "tip",
+      "title": "Text snippets save time",
+      "body": "Create snippets in Vocabulary to auto-expand shortcodes. Type 'addr' and have it expand to your full address.",
+      "icon": "text.badge.plus"
+    },
+    {
+      "id": "affirmation-flow",
+      "type": "affirmation",
+      "title": "You're in the flow",
+      "body": "Speaking your thoughts is one of the fastest ways to capture ideas. You're building a habit that compounds.",
+      "icon": "sparkles"
+    },
+    {
+      "id": "tip-drag-drop",
+      "type": "tip",
+      "title": "Drag files anywhere",
+      "body": "Drop audio or video files onto the menu bar icon or the main window. MacParakeet handles MP3, WAV, M4A, MP4, and more.",
+      "icon": "arrow.down.doc"
+    },
+    {
+      "id": "quote-listen",
+      "type": "quote",
+      "title": "Listening well",
+      "body": "Most people do not listen with the intent to understand; they listen with the intent to reply.",
+      "icon": "quote.bubble",
+      "attribution": "Stephen R. Covey"
+    },
+    {
+      "id": "tip-export",
+      "type": "tip",
+      "title": "Export in any format",
+      "body": "Transcriptions can be exported as TXT, Markdown, SRT, VTT, DOCX, PDF, or JSON. Right-click any transcription to see options.",
+      "icon": "square.and.arrow.up"
+    },
+    {
+      "id": "affirmation-privacy",
+      "type": "affirmation",
+      "title": "Your words stay yours",
+      "body": "Everything runs on your Mac. No cloud, no accounts, no tracking. Your voice never leaves your device.",
+      "icon": "lock.shield"
+    },
+    {
+      "id": "tip-youtube",
+      "type": "tip",
+      "title": "Transcribe YouTube videos",
+      "body": "Paste a YouTube URL into the Transcribe tab. MacParakeet downloads the audio and transcribes it locally.",
+      "icon": "play.rectangle"
+    },
+    {
+      "id": "quote-words",
+      "type": "quote",
+      "title": "Words matter",
+      "body": "One good word is worth a thousand pictures.",
+      "icon": "quote.bubble",
+      "attribution": "Sapir-Whorf (inverted)"
+    },
+    {
+      "id": "tip-custom-words",
+      "type": "tip",
+      "title": "Teach it your words",
+      "body": "Add custom words in Vocabulary to fix recurring misrecognitions. Great for names, jargon, and technical terms.",
+      "icon": "character.textbox"
+    },
+    {
+      "id": "affirmation-speed",
+      "type": "affirmation",
+      "title": "Faster than typing",
+      "body": "Most people speak 3-4x faster than they type. You're choosing the most efficient input method.",
+      "icon": "bolt"
+    },
+    {
+      "id": "tip-clean-mode",
+      "type": "tip",
+      "title": "Clean up your speech",
+      "body": "Switch to Clean mode in Vocabulary to automatically remove filler words like 'um', 'uh', and 'you know'.",
+      "icon": "wand.and.stars"
+    },
+    {
+      "id": "quote-courage",
+      "type": "quote",
+      "title": "Speaking up",
+      "body": "Speak your mind even if your voice shakes.",
+      "icon": "quote.bubble",
+      "attribution": "Maggie Kuhn"
+    },
+    {
+      "id": "tip-history",
+      "type": "tip",
+      "title": "Search your history",
+      "body": "Every dictation is saved. Use the search bar in Dictations to find past entries by content.",
+      "icon": "clock.arrow.circlepath"
+    },
+    {
+      "id": "affirmation-consistent",
+      "type": "affirmation",
+      "title": "Building momentum",
+      "body": "Every dictation trains your voice-first workflow. Small consistent use beats occasional marathons.",
+      "icon": "chart.line.uptrend.xyaxis"
+    }
+  ]
+}

@@ -37,6 +37,11 @@ public enum AppPaths {
         "\(binDir)/yt-dlp"
     }
 
+    /// Cached discover feed
+    public static var discoverCachePath: String {
+        "\(appSupportDir)/discover-cache.json"
+    }
+
     /// Temp directory for audio processing
     public static var tempDir: String {
         "\(NSTemporaryDirectory())macparakeet"

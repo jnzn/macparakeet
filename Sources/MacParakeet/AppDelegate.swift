@@ -52,6 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let customWordsViewModel = CustomWordsViewModel()
     private let textSnippetsViewModel = TextSnippetsViewModel()
     private let feedbackViewModel = FeedbackViewModel()
+    private let discoverViewModel = DiscoverViewModel()
     private let llmSettingsViewModel = LLMSettingsViewModel()
     private let chatViewModel = TranscriptChatViewModel()
     private let mainWindowState = MainWindowState()
@@ -84,6 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         observeShowIdlePillChange()
         applyActivationPolicyFromSettings()
         showIdlePill()
+        setupDiscoverContent()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -342,6 +344,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             _ = alert.runModal()
             NSApp.terminate(nil)
         }
+    }
+
+    private func setupDiscoverContent() {
+        guard let fallbackURL = Bundle.main.url(forResource: "discover-fallback", withExtension: "json"),
+              let data = try? Data(contentsOf: fallbackURL) else { return }
+        let service = DiscoverService(fallbackData: data)
+        discoverViewModel.configure(service: service)
+        discoverViewModel.loadCached()
+        discoverViewModel.refreshInBackground()
     }
 
     private func refreshLLMAvailability() {
@@ -1338,6 +1349,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             customWordsViewModel: customWordsViewModel,
             textSnippetsViewModel: textSnippetsViewModel,
             feedbackViewModel: feedbackViewModel,
+            discoverViewModel: discoverViewModel,
             updater: updaterController.updater
         )
 
