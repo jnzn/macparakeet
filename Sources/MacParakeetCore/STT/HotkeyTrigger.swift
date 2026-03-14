@@ -45,9 +45,10 @@ public struct HotkeyTrigger: Sendable {
             return KeyCodeNames.name(for: code).displayName
         case .chord:
             guard let code = keyCode else { return "Unknown" }
-            let modifierPart = Self.sortedModifierDisplayNames(chordModifiers).joined(separator: "+")
+            let modifierNames = Self.sortedModifierDisplayNames(chordModifiers)
             let keyPart = KeyCodeNames.name(for: code).displayName
-            return "\(modifierPart)+\(keyPart)"
+            if modifierNames.isEmpty { return keyPart }
+            return modifierNames.joined(separator: "+") + "+\(keyPart)"
         }
     }
 
@@ -63,6 +64,7 @@ public struct HotkeyTrigger: Sendable {
             guard let code = keyCode else { return "?" }
             let modifierPart = Self.sortedModifierSymbols(chordModifiers)
             let keyPart = KeyCodeNames.name(for: code).shortSymbol
+            if modifierPart.isEmpty { return keyPart }
             return "\(modifierPart)\(keyPart)"
         }
     }
