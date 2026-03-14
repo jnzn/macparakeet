@@ -111,6 +111,7 @@ struct LLMSettingsView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(DesignSystem.Colors.accent)
+                .disabled(!viewModel.canSave)
 
                 if viewModel.isConfigured {
                     Button("Clear", role: .destructive) {

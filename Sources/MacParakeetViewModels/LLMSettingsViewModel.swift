@@ -84,6 +84,16 @@ public final class LLMSettingsViewModel {
         useCustomModel ? customModelName : modelName
     }
 
+    public var canSave: Bool {
+        if useCustomModel && customModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return false
+        }
+        if requiresAPIKey && apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return false
+        }
+        return true
+    }
+
     public var onConfigurationChanged: (() -> Void)?
 
     private var configStore: LLMConfigStoreProtocol?
@@ -132,9 +142,13 @@ public final class LLMSettingsViewModel {
     public func clearConfiguration() {
         guard let configStore else { return }
         try? configStore.deleteConfig()
+        suppressStatusReset = true
         apiKeyInput = ""
         modelName = Self.defaultModelName(for: selectedProviderID)
         baseURLOverride = ""
+        useCustomModel = false
+        customModelName = ""
+        suppressStatusReset = false
         connectionTestState = .idle
         saveState = .idle
         onConfigurationChanged?()
