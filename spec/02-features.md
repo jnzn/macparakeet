@@ -101,7 +101,7 @@ See [00-vision.md](./00-vision.md) for positioning and market context.
 
 **Activation — Configurable Hotkey:**
 
-The hotkey (default: `Fn`, configurable to any single key via a "record a shortcut" UI in Settings) serves as the universal activation trigger with two coexisting modes:
+The hotkey (default: `Fn`, configurable via a "record a shortcut" UI in Settings) serves as the universal activation trigger with two coexisting modes. Supports three trigger kinds: bare modifiers (Fn, Control, etc.), standalone keys (F5, Tab, etc.), and chord combos (modifier+key like Cmd+9 or Ctrl+Shift+D). See ADR-009 for full details.
 
 | Mode | Gesture | Behavior |
 |------|---------|----------|
@@ -112,12 +112,14 @@ Both modes coexist with no configuration required. The 400ms threshold distingui
 
 **Implementation:**
 - `CGEvent` tap for system-wide key event interception
-- `HotkeyTrigger` struct with `.modifier` / `.keyCode` kind discriminator (see ADR-009)
+- `HotkeyTrigger` struct with `.modifier` / `.keyCode` / `.chord` kind discriminator (see ADR-009)
 - Modifier triggers: `flagsChanged` events with `CGEventFlags` mask, bare-tap filtering
 - KeyCode triggers: `keyDown`/`keyUp` events with event swallowing, edge detection via `triggerKeyIsPressed` boolean
+- Chord triggers: require ALL modifier flags present on `keyDown` of the trigger key. Release-any-part behavior: releasing either the trigger key or any required modifier stops dictation. `chordModifierReleased` flag prevents double-fire when modifier is released while trigger key is still held.
 - Edge detection: only fire on actual transitions of the target key state
 - Bare-tap filtering (modifiers only): if a regular key is pressed while the modifier is held (e.g., Ctrl+C), the release is not counted as a tap — prevents keyboard shortcuts from triggering dictation
 - Gesture interruption: if a non-Escape key is pressed during `waitingForSecondTap`, the state machine resets — prevents double-tap detection across typing
+- Chord validation: Escape blocked for all kinds. Chords containing Command warn about system shortcut conflicts (Cmd+Tab, Cmd+Space, Cmd+Q/W/H/M). Fn is bare-modifier-only — not allowed in chords.
 - On key-down: schedule a 400ms `DispatchWorkItem`. If a second tap arrives before it fires, enter double-tap (persistent mode). If the timer fires with the key still held, enter hold-mode and begin recording.
 - On key-up: if hold timer still pending, cancel it (was a quick tap). If recording in hold-mode, auto-stop and process.
 - Escape is permanently reserved for cancel-dictation and cannot be assigned as hotkey

@@ -47,8 +47,10 @@ All ADRs live in `spec/adr/`. These are locked -- they record decisions already 
 | [ADR-006](adr/006-trial-and-license-activation.md) | Trial + license key activation |
 | [ADR-007](adr/007-fluidaudio-coreml-migration.md) | FluidAudio CoreML migration (Python elimination) |
 | [ADR-008](adr/008-local-llm-runtime-and-model.md) | Local LLM runtime baseline (historical — removed) |
-| [ADR-009](adr/009-custom-hotkey.md) | Custom hotkey support (any single key) |
+| [ADR-009](adr/009-custom-hotkey.md) | Custom hotkey support (any single key + chord combos) |
 | [ADR-010](adr/010-speaker-diarization.md) | Speaker diarization via FluidAudio offline pipeline |
+| [ADR-011](adr/011-llm-cloud-and-local-providers.md) | LLM via cloud API keys + optional local providers |
+| [ADR-012](adr/012-telemetry-system.md) | Self-hosted telemetry via Cloudflare (Worker + D1) |
 
 ## Version Roadmap
 
@@ -56,8 +58,8 @@ All ADRs live in `spec/adr/`. These are locked -- they record decisions already 
 |---------|------|-------|--------|
 | v0.1 | Core MVP | Dictation + transcription + history + settings | **Implemented** |
 | v0.2 | Clean Pipeline | Deterministic text processing, custom words, snippets | **Implemented** |
-| v0.3 | YouTube & Export | YouTube transcription, export formats | **In Progress** |
-| v0.4 | Polish & Launch | Diarization, batch processing, App Store | Planned |
+| v0.3 | YouTube & Export | YouTube transcription, export formats | **Implemented** |
+| v0.4 | Polish & Launch | Diarization, custom hotkey, non-blocking progress, App Store | **In Progress** |
 
 ## Version Progress
 
@@ -85,16 +87,26 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 - [x] CLI commands (`macparakeet-cli flow process/words/snippets` + `macparakeet-cli models status/warm-up/repair`)
 - [x] In-app feedback form (Feedback sidebar item → Cloudflare Worker → GitHub Issues on `macparakeet-community`)
 
-### v0.3 YouTube & Export (In Progress)
+### v0.3 YouTube & Export (Implemented)
 
 - [x] YouTube URL transcription (yt-dlp + Parakeet)
 - [x] Exports: TXT, Markdown, SRT, VTT (one-click to Downloads)
 - [x] Full export (.docx, .pdf, .json)
 
-### v0.4 Polish & Launch (Planned)
+### v0.4 Polish & Launch (In Progress)
 
-- [ ] Speaker diarization (auto-detect, label, name)
-- [ ] Batch file processing (queue, progress, batch export)
+- [x] Speaker diarization CLI preview (FluidAudio offline pipeline, ADR-010)
+- [x] Speaker diarization GUI (summary panel + inline rename)
+- [x] Custom hotkey support (any single key + chord combos, ADR-009)
+- [x] Sparkle auto-updates
+- [x] LLM provider integration (cloud API keys, summary + chat, ADR-011)
+- [x] Private dictation mode
+- [x] Newline escape in text snippets
+- [x] Menu bar drag-and-drop
+- [x] Hide dictation pill toggle
+- [x] Voice stats dashboard
+- [x] UI polish (toggles, sidebar sections, copy improvements)
+- [x] Non-blocking transcription progress (bottom bar UX)
 - [ ] App Store submission (sandbox, notarize, privacy policy)
 
 ## For AI Coding Assistants
