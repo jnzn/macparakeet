@@ -318,11 +318,6 @@ struct TranscribeView: View {
                     }
 
                     Spacer()
-
-                    Button("Cancel", role: .destructive) {
-                        viewModel.cancelTranscription()
-                    }
-                    .buttonStyle(.bordered)
                 }
 
                 phaseTimeline
@@ -416,11 +411,6 @@ struct TranscribeView: View {
                     )
             }
             .buttonStyle(.plain)
-
-            Button("Cancel", role: .destructive) {
-                viewModel.cancelTranscription()
-            }
-            .buttonStyle(.bordered)
         }
         .padding(.horizontal, DesignSystem.Spacing.lg)
         .padding(.vertical, DesignSystem.Spacing.sm)
