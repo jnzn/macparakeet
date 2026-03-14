@@ -55,6 +55,7 @@ public final class TextSnippetsViewModel {
 
         do {
             try repo.save(snippet)
+            Telemetry.send("snippet_added")
             newTrigger = ""
             newExpansion = ""
             errorMessage = nil

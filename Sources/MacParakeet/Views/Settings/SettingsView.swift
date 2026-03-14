@@ -35,6 +35,7 @@ struct SettingsView: View {
                 storageCard
                 localModelsCard
                 permissionsCard
+                privacyCard
                 updatesCard
                 onboardingCard
                 aboutCard
@@ -360,6 +361,22 @@ struct SettingsView: View {
                     .tint(DesignSystem.Colors.accent)
                 }
             }
+        }
+    }
+
+    // MARK: - Privacy
+
+    private var privacyCard: some View {
+        settingsCard(
+            title: "Privacy",
+            subtitle: "Your audio and transcriptions never leave your device.",
+            icon: "hand.raised"
+        ) {
+            settingsToggleRow(
+                title: "Help improve MacParakeet",
+                detail: "Send non-identifying usage statistics like feature popularity and performance metrics. No personal data is collected.",
+                isOn: $viewModel.telemetryEnabled
+            )
         }
     }
 

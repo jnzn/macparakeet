@@ -39,15 +39,27 @@ public final class LLMService: LLMServiceProtocol, Sendable {
             ChatMessage(role: .system, content: Prompts.summary),
             ChatMessage(role: .user, content: truncated),
         ]
-        let response = try await client.chatCompletion(messages: messages, config: config, options: .default)
-        return response.content
+        do {
+            let response = try await client.chatCompletion(messages: messages, config: config, options: .default)
+            Telemetry.send("llm_summary_used", ["provider": config.id.rawValue])
+            return response.content
+        } catch {
+            Telemetry.send("llm_summary_failed", ["provider": config.id.rawValue, "error_type": String(describing: type(of: error))])
+            throw error
+        }
     }
 
     public func chat(question: String, transcript: String, history: [ChatMessage]) async throws -> String {
         let config = try loadConfig()
         let messages = buildChatMessages(question: question, transcript: transcript, history: history, config: config)
-        let response = try await client.chatCompletion(messages: messages, config: config, options: .default)
-        return response.content
+        do {
+            let response = try await client.chatCompletion(messages: messages, config: config, options: .default)
+            Telemetry.send("llm_chat_used", ["provider": config.id.rawValue, "message_count": "\(history.count + 1)"])
+            return response.content
+        } catch {
+            Telemetry.send("llm_chat_failed", ["provider": config.id.rawValue, "error_type": String(describing: type(of: error))])
+            throw error
+        }
     }
 
     public func transform(text: String, prompt: String) async throws -> String {
@@ -77,8 +89,10 @@ public final class LLMService: LLMServiceProtocol, Sendable {
                     for try await token in stream {
                         continuation.yield(token)
                     }
+                    Telemetry.send("llm_summary_used", ["provider": config.id.rawValue])
                     continuation.finish()
                 } catch {
+                    Telemetry.send("llm_summary_failed", ["provider": (try? self.loadConfig())?.id.rawValue ?? "unknown", "error_type": String(describing: type(of: error))])
                     continuation.finish(throwing: error)
                 }
             }
@@ -96,8 +110,10 @@ public final class LLMService: LLMServiceProtocol, Sendable {
                     for try await token in stream {
                         continuation.yield(token)
                     }
+                    Telemetry.send("llm_chat_used", ["provider": config.id.rawValue, "message_count": "\(history.count + 1)"])
                     continuation.finish()
                 } catch {
+                    Telemetry.send("llm_chat_failed", ["provider": (try? self.loadConfig())?.id.rawValue ?? "unknown", "error_type": String(describing: type(of: error))])
                     continuation.finish(throwing: error)
                 }
             }
