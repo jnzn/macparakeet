@@ -2,14 +2,26 @@ import Foundation
 import OSLog
 
 public protocol TranscriptionServiceProtocol: Sendable {
-    func transcribe(fileURL: URL, onProgress: (@Sendable (String) -> Void)?) async throws -> Transcription
+    func transcribe(
+        fileURL: URL,
+        source: TelemetryTranscriptionSource,
+        onProgress: (@Sendable (String) -> Void)?
+    ) async throws -> Transcription
     func transcribeURL(urlString: String, onProgress: (@Sendable (String) -> Void)?) async throws -> Transcription
 }
 
 extension TranscriptionServiceProtocol {
     public func transcribe(fileURL: URL) async throws -> Transcription {
-        try await transcribe(fileURL: fileURL, onProgress: nil)
+        try await transcribe(fileURL: fileURL, source: .file, onProgress: nil)
     }
+
+    public func transcribe(
+        fileURL: URL,
+        source: TelemetryTranscriptionSource
+    ) async throws -> Transcription {
+        try await transcribe(fileURL: fileURL, source: source, onProgress: nil)
+    }
+
     public func transcribeURL(urlString: String) async throws -> Transcription {
         try await transcribeURL(urlString: urlString, onProgress: nil)
     }
@@ -54,7 +66,11 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         self.diarizationService = diarizationService
     }
 
-    public func transcribe(fileURL: URL, onProgress: (@Sendable (String) -> Void)? = nil) async throws -> Transcription {
+    public func transcribe(
+        fileURL: URL,
+        source: TelemetryTranscriptionSource = .file,
+        onProgress: (@Sendable (String) -> Void)? = nil
+    ) async throws -> Transcription {
         if let entitlements {
             try await entitlements.assertCanTranscribe(now: Date())
         }
@@ -69,9 +85,15 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             status: .processing
         )
         try transcriptionRepo.save(transcription)
-        Telemetry.send("transcription_started", ["source": "file"])
+        Telemetry.send(.transcriptionStarted(source: source, audioDurationSeconds: nil))
 
-        return try await transcribeAudio(fileURL: fileURL, transcription: &transcription, tempFiles: [], onProgress: onProgress)
+        return try await transcribeAudio(
+            fileURL: fileURL,
+            source: source,
+            transcription: &transcription,
+            tempFiles: [],
+            onProgress: onProgress
+        )
     }
 
     public func transcribeURL(urlString: String, onProgress: (@Sendable (String) -> Void)? = nil) async throws -> Transcription {
@@ -97,11 +119,12 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             sourceURL: urlString
         )
         try transcriptionRepo.save(transcription)
-        Telemetry.send("transcription_started", ["source": "youtube"])
+        Telemetry.send(.transcriptionStarted(source: .youtube, audioDurationSeconds: nil))
 
         onProgress?("Transcribing...")
         return try await transcribeAudio(
             fileURL: downloadResult.audioFileURL,
+            source: .youtube,
             transcription: &transcription,
             tempFiles: [downloadResult.audioFileURL],
             cleanUpDownloadedFiles: !keepDownloadedAudio,
@@ -113,12 +136,14 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
 
     private func transcribeAudio(
         fileURL: URL,
+        source: TelemetryTranscriptionSource,
         transcription: inout Transcription,
         tempFiles: [URL],
         cleanUpDownloadedFiles: Bool = true,
         onProgress: (@Sendable (String) -> Void)? = nil
     ) async throws -> Transcription {
         var wavURL: URL?
+        let processingStartedAt = Date()
         do {
             onProgress?("Converting audio...")
             wavURL = try await audioProcessor.convert(fileURL: fileURL)
@@ -149,7 +174,6 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             transcription.wordTimestamps = words
             transcription.durationMs = result.words.last?.endMs
 
-            // Speaker diarization (non-fatal)
             if let diarizationService {
                 do {
                     onProgress?("Identifying speakers...")
@@ -169,7 +193,6 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
-                    // Diarization failure is non-fatal — transcript is still usable
                     logger.error("diarization_failed error=\(error.localizedDescription, privacy: .public)")
                 }
             }
@@ -193,14 +216,16 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             transcription.updatedAt = Date()
             try transcriptionRepo.save(transcription)
 
-            let durationSec = transcription.durationMs.map { String(format: "%.1f", Double($0) / 1000.0) }
-            var completedProps: [String: String] = [:]
-            if let d = durationSec { completedProps["audio_duration_seconds"] = d }
             let wordCount = transcription.rawTranscript?.split(whereSeparator: \.isWhitespace).count ?? 0
-            completedProps["word_count"] = "\(wordCount)"
-            Telemetry.send("transcription_completed", completedProps)
+            let audioDurationSeconds = transcription.durationMs.map { Double($0) / 1000.0 }
+            let processingSeconds = Date().timeIntervalSince(processingStartedAt)
+            Telemetry.send(.transcriptionCompleted(
+                source: source,
+                audioDurationSeconds: audioDurationSeconds,
+                processingSeconds: processingSeconds,
+                wordCount: wordCount
+            ))
 
-            // Clean up temp files
             try? FileManager.default.removeItem(at: wavURL)
             if cleanUpDownloadedFiles {
                 for tempFile in tempFiles {
@@ -217,10 +242,17 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                 }
             }
 
+            let audioDurationSeconds = transcription.durationMs.map { Double($0) / 1000.0 }
             if error is CancellationError {
-                Telemetry.send("transcription_cancelled")
+                Telemetry.send(.transcriptionCancelled(
+                    source: source,
+                    audioDurationSeconds: audioDurationSeconds
+                ))
             } else {
-                Telemetry.send("transcription_failed", ["error_type": String(describing: type(of: error))])
+                Telemetry.send(.transcriptionFailed(
+                    source: source,
+                    errorType: Self.errorType(for: error)
+                ))
             }
 
             try? transcriptionRepo.updateStatus(
@@ -230,5 +262,9 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             )
             throw error
         }
+    }
+
+    private static func errorType(for error: Error) -> String {
+        String(describing: type(of: error))
     }
 }

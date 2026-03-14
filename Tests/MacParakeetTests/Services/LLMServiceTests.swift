@@ -11,6 +11,7 @@ final class MockLLMClient: LLMClientProtocol, @unchecked Sendable {
     var responseModel = "mock-model"
     var streamTokens: [String]?
     var testConnectionError: Error?
+    var testConnectionDelayNs: UInt64 = 0
 
     func chatCompletion(
         messages: [ChatMessage],
@@ -42,6 +43,9 @@ final class MockLLMClient: LLMClientProtocol, @unchecked Sendable {
 
     func testConnection(config: LLMProviderConfig) async throws {
         capturedConfig = config
+        if testConnectionDelayNs > 0 {
+            try await Task.sleep(nanoseconds: testConnectionDelayNs)
+        }
         if let error = testConnectionError { throw error }
     }
 

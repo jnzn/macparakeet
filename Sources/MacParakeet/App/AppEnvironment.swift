@@ -114,7 +114,7 @@ final class AppEnvironment {
 
         telemetryService = TelemetryService()
         Telemetry.configure(telemetryService)
-        Telemetry.send("app_launched")
+        Telemetry.send(.appLaunched)
 
         llmClient = LLMClient()
         llmConfigStore = LLMConfigStore()

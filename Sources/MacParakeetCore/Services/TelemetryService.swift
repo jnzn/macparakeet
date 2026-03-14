@@ -4,14 +4,8 @@ import OSLog
 // MARK: - Protocol
 
 public protocol TelemetryServiceProtocol: Sendable {
-    func send(_ event: String, props: [String: String]?)
+    func send(_ event: TelemetryEventSpec)
     func flush() async
-}
-
-extension TelemetryServiceProtocol {
-    public func send(_ event: String) {
-        send(event, props: nil)
-    }
 }
 
 // MARK: - Implementation
@@ -25,6 +19,7 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
     private let baseURL: URL
     private let session: URLSession
     private let sessionId: String
+    private let sessionStartedAt: Date
     private let appVer: String
     private let osVer: String
     private let locale: String?
@@ -34,18 +29,20 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
     static let maxQueueSize = 200
     static let flushThreshold = 50
     static let flushInterval: TimeInterval = 60
+    static let maxBatchSize = 100
 
-    /// Events that must be flushed immediately (not batched).
-    private static let immediateEvents: Set<String> = [
-        "telemetry_opted_out",
-        "onboarding_completed",
-        "license_activated",
-        "trial_started",
-        "trial_expired",
-        "purchase_started",
-        "restore_attempted",
-        "restore_succeeded",
-        "restore_failed",
+    /// Events that must be flushed immediately (not batched in memory).
+    private static let immediateEvents: Set<TelemetryEventName> = [
+        .telemetryOptedOut,
+        .onboardingCompleted,
+        .licenseActivated,
+        .trialStarted,
+        .trialExpired,
+        .purchaseStarted,
+        .restoreAttempted,
+        .restoreSucceeded,
+        .restoreFailed,
+        .appQuit,
     ]
 
     public init(
@@ -66,8 +63,8 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
         self.session = session
         self.isEnabled = isEnabled
         self.sessionId = UUID().uuidString
+        self.sessionStartedAt = Date()
 
-        // Collect device context once at init
         let info = SystemInfo.current
         self.appVer = info.appVersion
         let osVersion = ProcessInfo.processInfo.operatingSystemVersion
@@ -83,26 +80,18 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
         flushTimer?.invalidate()
     }
 
-    public func send(_ event: String, props: [String: String]? = nil) {
-        guard isEnabled() || event == "telemetry_opted_out" else { return }
+    public func send(_ event: TelemetryEventSpec) {
+        guard isEnabled() || event.name == .telemetryOptedOut else { return }
 
-        let telemetryEvent = TelemetryEvent(
-            event: event,
-            props: props,
-            appVer: appVer,
-            osVer: osVer,
-            locale: locale,
-            chip: chip,
-            session: sessionId
-        )
+        let telemetryEvent = makeTelemetryEvent(from: event)
 
-        var shouldFlush = false
+        let shouldFlush: Bool
         lock.lock()
         queue.append(telemetryEvent)
         if queue.count > Self.maxQueueSize {
-            queue.removeFirst()
+            queue.removeFirst(queue.count - Self.maxQueueSize)
         }
-        shouldFlush = queue.count >= Self.flushThreshold || Self.immediateEvents.contains(event)
+        shouldFlush = queue.count >= Self.flushThreshold || Self.immediateEvents.contains(event.name)
         lock.unlock()
 
         if shouldFlush {
@@ -110,49 +99,10 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
         }
     }
 
-    /// Maximum events per HTTP request (must match server's MAX_BATCH_SIZE).
-    static let maxBatchSize = 100
-
     public func flush() async {
-        let events: [TelemetryEvent]
-        lock.lock()
-        events = queue
-        queue.removeAll()
-        lock.unlock()
-
+        let events = takeQueuedEvents()
         guard !events.isEmpty else { return }
-
-        // Chunk into batches of maxBatchSize to stay within server limits.
-        let encoder = JSONEncoder()
-        encoder.keyEncodingStrategy = .convertToSnakeCase
-        let url = baseURL.appendingPathComponent("telemetry")
-
-        for batchStart in stride(from: 0, to: events.count, by: Self.maxBatchSize) {
-            let batchEnd = min(batchStart + Self.maxBatchSize, events.count)
-            let batch = Array(events[batchStart..<batchEnd])
-            let payload = TelemetryPayload(events: batch)
-
-            guard let body = try? encoder.encode(payload) else {
-                logger.error("Failed to encode telemetry payload")
-                continue
-            }
-
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = body
-            request.timeoutInterval = 10
-
-            do {
-                let (_, response) = try await session.data(for: request)
-                if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                    logger.warning("Telemetry server returned \(http.statusCode)")
-                }
-            } catch {
-                // Fire-and-forget: silently drop on network failure
-                logger.debug("Telemetry flush failed: \(error.localizedDescription)")
-            }
-        }
+        await sendBatches(events, using: session, timeoutInterval: 10, waitTimeout: nil)
     }
 
     // MARK: - Internal (for testing)
@@ -164,6 +114,25 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
     }
 
     // MARK: - Private
+
+    private func takeQueuedEvents() -> [TelemetryEvent] {
+        lock.lock()
+        let events = queue
+        queue.removeAll()
+        lock.unlock()
+        return events
+    }
+
+    private func makeTelemetryEvent(from event: TelemetryEventSpec) -> TelemetryEvent {
+        TelemetryEvent(
+            spec: event,
+            appVer: appVer,
+            osVer: osVer,
+            locale: locale,
+            chip: chip,
+            session: sessionId
+        )
+    }
 
     private func startTimer() {
         DispatchQueue.main.async { [weak self] in
@@ -178,58 +147,124 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
     }
 
     private func registerLifecycleObservers() {
-        let nc = NotificationCenter.default
-
-        nc.addObserver(forName: NSNotification.Name("NSApplicationWillTerminateNotification"),
-                      object: nil, queue: .main) { [weak self] _ in
-            guard let self else { return }
-            // Synchronous flush on termination — best effort
-            self.flushSync()
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("NSApplicationWillTerminateNotification"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.flushSyncForTermination()
         }
-
-        // Note: NSWorkspace.willSleepNotification requires NSWorkspace.shared.notificationCenter
-        // which is AppKit-only. The termination observer above handles the primary flush-on-quit
-        // path. Sleep flush can be wired from the GUI layer if needed.
     }
 
-    /// Best-effort synchronous flush for app termination.
-    private func flushSync() {
-        let events: [TelemetryEvent]
+    private func flushSyncForTermination() {
         lock.lock()
-        events = queue
+        if isEnabled() {
+            queue.append(makeTelemetryEvent(
+                from: .appQuit(sessionDurationSeconds: Date().timeIntervalSince(sessionStartedAt))
+            ))
+        }
+        let events = queue
         queue.removeAll()
         lock.unlock()
 
         guard !events.isEmpty else { return }
 
+        let bgSession = URLSession(
+            configuration: .ephemeral,
+            delegate: nil,
+            delegateQueue: OperationQueue()
+        )
+        sendBatchesSynchronously(events, using: bgSession, timeoutInterval: 5, waitTimeout: 3)
+    }
+
+    private func sendBatches(
+        _ events: [TelemetryEvent],
+        using session: URLSession,
+        timeoutInterval: TimeInterval,
+        waitTimeout: TimeInterval?
+    ) async {
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
         let url = baseURL.appendingPathComponent("telemetry")
 
-        // Synchronous send on a background queue to avoid main thread deadlock.
-        let bgSession = URLSession(configuration: .ephemeral,
-                                   delegate: nil,
-                                   delegateQueue: OperationQueue())
-
         for batchStart in stride(from: 0, to: events.count, by: Self.maxBatchSize) {
             let batchEnd = min(batchStart + Self.maxBatchSize, events.count)
-            let batch = Array(events[batchStart..<batchEnd])
-            let payload = TelemetryPayload(events: batch)
+            let payload = TelemetryPayload(events: Array(events[batchStart..<batchEnd]))
 
-            guard let body = try? encoder.encode(payload) else { continue }
+            guard let body = try? encoder.encode(payload) else {
+                logger.error("Failed to encode telemetry payload")
+                continue
+            }
 
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = body
-            request.timeoutInterval = 5
+            request.timeoutInterval = timeoutInterval
 
-            let semaphore = DispatchSemaphore(value: 0)
-            let task = bgSession.dataTask(with: request) { _, _, _ in
-                semaphore.signal()
+            if let waitTimeout {
+                sendSynchronously(request, using: session, waitTimeout: waitTimeout)
+            } else {
+                await sendAsync(request, using: session)
             }
-            task.resume()
-            _ = semaphore.wait(timeout: .now() + 3)
+        }
+    }
+
+    private func sendAsync(_ request: URLRequest, using session: URLSession) async {
+        do {
+            let (_, response) = try await session.data(for: request)
+            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                logger.warning("Telemetry server returned \(http.statusCode)")
+            }
+        } catch {
+            logger.debug("Telemetry flush failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func sendSynchronously(
+        _ request: URLRequest,
+        using session: URLSession,
+        waitTimeout: TimeInterval
+    ) {
+        let semaphore = DispatchSemaphore(value: 0)
+        let task = session.dataTask(with: request) { _, response, error in
+            if let error {
+                self.logger.debug("Telemetry termination flush failed: \(error.localizedDescription)")
+            } else if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                self.logger.warning("Telemetry server returned \(http.statusCode)")
+            }
+            semaphore.signal()
+        }
+        task.resume()
+        _ = semaphore.wait(timeout: .now() + waitTimeout)
+    }
+
+    private func sendBatchesSynchronously(
+        _ events: [TelemetryEvent],
+        using session: URLSession,
+        timeoutInterval: TimeInterval,
+        waitTimeout: TimeInterval
+    ) {
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let url = baseURL.appendingPathComponent("telemetry")
+
+        for batchStart in stride(from: 0, to: events.count, by: Self.maxBatchSize) {
+            let batchEnd = min(batchStart + Self.maxBatchSize, events.count)
+            let payload = TelemetryPayload(events: Array(events[batchStart..<batchEnd]))
+
+            guard let body = try? encoder.encode(payload) else {
+                logger.error("Failed to encode telemetry payload")
+                continue
+            }
+
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = body
+            request.timeoutInterval = timeoutInterval
+
+            sendSynchronously(request, using: session, waitTimeout: waitTimeout)
         }
     }
 }
@@ -240,41 +275,38 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
 ///
 /// Usage:
 /// ```swift
-/// Telemetry.send("dictation_completed", ["duration_seconds": "12.5"])
-/// Telemetry.send("app_launched")
+/// Telemetry.send(.dictationCompleted(durationSeconds: 12.5, wordCount: 84, mode: .persistent))
+/// Telemetry.send(.appLaunched)
 /// ```
 public enum Telemetry {
     private static let lock = NSLock()
     private static var _service: TelemetryServiceProtocol?
 
-    /// Configure the shared telemetry instance. Call once at app startup.
+    private static func configuredService() -> TelemetryServiceProtocol? {
+        lock.lock()
+        defer { lock.unlock() }
+        return _service
+    }
+
     public static func configure(_ service: TelemetryServiceProtocol) {
         lock.lock()
         _service = service
         lock.unlock()
     }
 
-    /// Send a telemetry event. No-op if not configured.
-    public static func send(_ event: String, _ props: [String: String]? = nil) {
-        lock.lock()
-        let service = _service
-        lock.unlock()
-        service?.send(event, props: props)
+    public static func send(_ event: TelemetryEventSpec) {
+        configuredService()?.send(event)
     }
 
-    /// Flush pending events. No-op if not configured.
     public static func flush() async {
-        lock.lock()
-        let service = _service
-        lock.unlock()
-        await service?.flush()
+        await configuredService()?.flush()
     }
 }
 
-// MARK: - No-Op Implementation (for tests and CLI)
+// MARK: - No-Op Implementation
 
 public final class NoOpTelemetryService: TelemetryServiceProtocol {
     public init() {}
-    public func send(_ event: String, props: [String: String]?) {}
+    public func send(_ event: TelemetryEventSpec) {}
     public func flush() async {}
 }

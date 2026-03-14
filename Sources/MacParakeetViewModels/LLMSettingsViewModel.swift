@@ -17,81 +17,86 @@ public final class LLMSettingsViewModel {
         case error(String)
     }
 
-    public var selectedProviderID: LLMProviderID = .openai {
-        didSet {
-            if oldValue != selectedProviderID {
-                suppressStatusReset = true
-                modelName = Self.defaultModelName(for: selectedProviderID)
-                baseURLOverride = ""
-                useCustomModel = false
-                customModelName = ""
-                // Load stored key for the new provider (or clear for local)
-                if requiresAPIKey {
-                    apiKeyInput = (try? configStore?.loadAPIKey(for: selectedProviderID)) ?? ""
-                } else {
-                    apiKeyInput = ""
-                }
-                suppressStatusReset = false
-                connectionTestState = .idle
-                saveState = .idle
-            }
-        }
-    }
-    public var apiKeyInput: String = "" {
-        didSet { if !suppressStatusReset && oldValue != apiKeyInput { connectionTestState = .idle; saveState = .idle } }
-    }
-    public var modelName: String = "gpt-5.4" {
-        didSet { if !suppressStatusReset && oldValue != modelName { connectionTestState = .idle; saveState = .idle } }
-    }
-    public var baseURLOverride: String = "" {
-        didSet { if !suppressStatusReset && oldValue != baseURLOverride { connectionTestState = .idle; saveState = .idle } }
-    }
+    public private(set) var draft = LLMSettingsDraft()
     public var connectionTestState: ConnectionTestState = .idle
     public var saveState: SaveState = .idle
-    public var useCustomModel: Bool = false {
-        didSet {
-            if !suppressStatusReset && oldValue != useCustomModel {
-                connectionTestState = .idle
-                saveState = .idle
-                if useCustomModel {
-                    customModelName = ""
-                }
-            }
-        }
-    }
-    public var customModelName: String = "" {
-        didSet { if !suppressStatusReset && oldValue != customModelName { connectionTestState = .idle; saveState = .idle } }
+
+    public var selectedProviderID: LLMProviderID {
+        get { draft.providerID }
+        set { applyProviderChange(to: newValue) }
     }
 
-    /// Suppresses status resets in property didSet during programmatic updates.
-    private var suppressStatusReset = false
+    public var apiKeyInput: String {
+        get { draft.apiKeyInput }
+        set {
+            var nextDraft = draft
+            nextDraft.apiKeyInput = newValue
+            updateDraft(nextDraft)
+        }
+    }
+
+    public var modelName: String {
+        get { draft.suggestedModelName }
+        set {
+            var nextDraft = draft
+            nextDraft.suggestedModelName = newValue
+            updateDraft(nextDraft)
+        }
+    }
+
+    public var baseURLOverride: String {
+        get { draft.baseURLOverride }
+        set {
+            var nextDraft = draft
+            nextDraft.baseURLOverride = newValue
+            updateDraft(nextDraft)
+        }
+    }
+
+    public var useCustomModel: Bool {
+        get { draft.useCustomModel }
+        set {
+            var nextDraft = draft
+            nextDraft.useCustomModel = newValue
+            updateDraft(nextDraft)
+        }
+    }
+
+    public var customModelName: String {
+        get { draft.customModelName }
+        set {
+            var nextDraft = draft
+            nextDraft.customModelName = newValue
+            updateDraft(nextDraft)
+        }
+    }
 
     public var isConfigured: Bool {
         configStore != nil && (try? configStore?.loadConfig()) != nil
     }
 
     public var requiresAPIKey: Bool {
-        !selectedProviderID.isLocal
+        draft.requiresAPIKey
     }
 
-    /// Curated models shown in the picker.
     public var availableModels: [String] {
-        Self.suggestedModels(for: selectedProviderID)
+        Self.suggestedModels(for: draft.providerID)
     }
 
-    /// The effective model name used for configuration (picker selection or custom text).
     public var effectiveModelName: String {
-        useCustomModel ? customModelName : modelName
+        draft.effectiveModelName
     }
 
     public var canSave: Bool {
-        if useCustomModel && customModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return false
-        }
-        if requiresAPIKey && apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return false
-        }
-        return true
+        draft.isValid
+    }
+
+    public var canTestConnection: Bool {
+        draft.isValid
+    }
+
+    public var validationMessage: String? {
+        draft.validationError?.localizedDescription
     }
 
     public var onConfigurationChanged: (() -> Void)?
@@ -112,8 +117,8 @@ public final class LLMSettingsViewModel {
 
     public func saveConfiguration() {
         guard let configStore else { return }
-        let config = buildConfig()
         do {
+            let config = try buildConfig(from: draft)
             try configStore.saveConfig(config)
             saveState = .saved
             onConfigurationChanged?()
@@ -124,16 +129,24 @@ public final class LLMSettingsViewModel {
 
     public func testConnection() {
         guard let llmClient else { return }
+
+        let snapshot = draft
+        let config: LLMProviderConfig
+        do {
+            config = try buildConfig(from: snapshot)
+        } catch {
+            connectionTestState = .error(error.localizedDescription)
+            return
+        }
+
         connectionTestState = .testing
-        let config = buildConfig()
-        let capturedProvider = selectedProviderID
         Task {
             do {
                 try await llmClient.testConnection(config: config)
-                guard selectedProviderID == capturedProvider else { return }
+                guard draft == snapshot else { return }
                 connectionTestState = .success
             } catch {
-                guard selectedProviderID == capturedProvider else { return }
+                guard draft == snapshot else { return }
                 connectionTestState = .error(error.localizedDescription)
             }
         }
@@ -142,13 +155,12 @@ public final class LLMSettingsViewModel {
     public func clearConfiguration() {
         guard let configStore else { return }
         try? configStore.deleteConfig()
-        suppressStatusReset = true
-        apiKeyInput = ""
-        modelName = Self.defaultModelName(for: selectedProviderID)
-        baseURLOverride = ""
-        useCustomModel = false
-        customModelName = ""
-        suppressStatusReset = false
+        let apiKey = draft.providerID.isLocal ? "" : ((try? configStore.loadAPIKey(for: draft.providerID)) ?? "")
+        draft = .defaults(
+            for: draft.providerID,
+            apiKey: apiKey,
+            defaultModelName: Self.defaultModelName(for: draft.providerID)
+        )
         connectionTestState = .idle
         saveState = .idle
         onConfigurationChanged?()
@@ -156,50 +168,40 @@ public final class LLMSettingsViewModel {
 
     // MARK: - Private
 
-    private func loadExistingConfig() {
-        guard let configStore, let config = try? configStore.loadConfig() else { return }
-        suppressStatusReset = true
-        selectedProviderID = config.id
-        apiKeyInput = config.apiKey ?? ""
-
-        let suggested = Self.suggestedModels(for: config.id)
-        if suggested.contains(config.modelName) {
-            modelName = config.modelName
-            useCustomModel = false
-        } else {
-            modelName = Self.defaultModelName(for: config.id)
-            useCustomModel = true
-            customModelName = config.modelName
+    private func updateDraft(_ newDraft: LLMSettingsDraft) {
+        let didChange = draft != newDraft
+        draft = newDraft
+        if didChange {
+            connectionTestState = .idle
+            saveState = .idle
         }
-
-        let defaultURL = Self.defaultBaseURL(for: config.id)
-        if config.baseURL.absoluteString != defaultURL {
-            baseURLOverride = config.baseURL.absoluteString
-        }
-        suppressStatusReset = false
     }
 
-    private func buildConfig() -> LLMProviderConfig {
-        let baseURL: URL
-        if !baseURLOverride.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-           let override = URL(string: baseURLOverride.trimmingCharacters(in: .whitespacesAndNewlines)) {
-            baseURL = override
-        } else if let defaultURL = URL(string: Self.defaultBaseURL(for: selectedProviderID)), !Self.defaultBaseURL(for: selectedProviderID).isEmpty {
-            baseURL = defaultURL
-        } else {
-            // No URL available — use a placeholder that will fail at request time rather than crash
-            baseURL = URL(string: "http://localhost")!
-        }
-
-        let apiKey = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        return LLMProviderConfig(
-            id: selectedProviderID,
-            baseURL: baseURL,
-            apiKey: apiKey.isEmpty ? nil : apiKey,
-            modelName: effectiveModelName.trimmingCharacters(in: .whitespacesAndNewlines),
-            isLocal: selectedProviderID.isLocal
+    private func applyProviderChange(to providerID: LLMProviderID) {
+        guard draft.providerID != providerID else { return }
+        let apiKey = providerID.isLocal ? "" : ((try? configStore?.loadAPIKey(for: providerID)) ?? "")
+        let nextDraft = LLMSettingsDraft.defaults(
+            for: providerID,
+            apiKey: apiKey,
+            defaultModelName: Self.defaultModelName(for: providerID)
         )
+        updateDraft(nextDraft)
+    }
+
+    private func loadExistingConfig() {
+        guard let configStore, let config = try? configStore.loadConfig() else { return }
+        draft = .fromStoredConfig(
+            config,
+            suggestedModels: Self.suggestedModels(for: config.id),
+            defaultModelName: Self.defaultModelName(for: config.id),
+            defaultBaseURL: Self.defaultBaseURL(for: config.id)
+        )
+        connectionTestState = .idle
+        saveState = .idle
+    }
+
+    private func buildConfig(from draft: LLMSettingsDraft) throws -> LLMProviderConfig {
+        try draft.buildConfig(defaultBaseURL: Self.defaultBaseURL(for: draft.providerID))
     }
 
     /// Popular models for each provider. Empty means free-text input.
@@ -227,22 +229,18 @@ public final class LLMSettingsViewModel {
             "gemini-2.5-flash",
         ]
         case .openrouter: return [
-            // Anthropic
             "anthropic/claude-opus-4-6",
             "anthropic/claude-sonnet-4-6",
             "anthropic/claude-haiku-4-5",
-            // OpenAI
             "openai/gpt-5.4",
             "openai/gpt-5.4-pro",
             "openai/gpt-5-mini",
             "openai/gpt-5-nano",
             "openai/gpt-4.1",
             "openai/gpt-4.1-mini",
-            // Google
             "google/gemini-3.1-pro-preview",
             "google/gemini-3-flash-preview",
             "google/gemini-2.5-flash",
-            // Open-source / value
             "deepseek/deepseek-v3.2",
             "meta-llama/llama-4-scout",
             "qwen/qwen3.5-72b",
@@ -263,7 +261,7 @@ public final class LLMSettingsViewModel {
         suggestedModels(for: provider).first ?? ""
     }
 
-    private static func defaultBaseURL(for provider: LLMProviderID) -> String {
+    static func defaultBaseURL(for provider: LLMProviderID) -> String {
         switch provider {
         case .anthropic: return "https://api.anthropic.com/v1"
         case .openai: return "https://api.openai.com/v1"

@@ -216,6 +216,7 @@ actor MockTranscriptionService: TranscriptionServiceProtocol {
     var transcribeError: Error?
     var transcribeCallCount = 0
     var lastFileURL: URL?
+    var lastSource: TelemetryTranscriptionSource?
     var transcribeURLCallCount = 0
     var lastURLString: String?
     var transcribeURLProgressPhases: [String] = []
@@ -239,9 +240,14 @@ actor MockTranscriptionService: TranscriptionServiceProtocol {
         self.transcribeURLDelayMs = milliseconds
     }
 
-    func transcribe(fileURL: URL, onProgress: (@Sendable (String) -> Void)? = nil) async throws -> Transcription {
+    func transcribe(
+        fileURL: URL,
+        source: TelemetryTranscriptionSource,
+        onProgress: (@Sendable (String) -> Void)? = nil
+    ) async throws -> Transcription {
         transcribeCallCount += 1
         lastFileURL = fileURL
+        lastSource = source
 
         if let error = transcribeError {
             throw error
