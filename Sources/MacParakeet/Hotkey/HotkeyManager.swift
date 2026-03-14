@@ -25,6 +25,9 @@ public final class HotkeyManager {
     private var targetModifierWasPressed = false
     /// Edge detection for keyCode triggers: true while the trigger key is physically held.
     private var triggerKeyIsPressed = false
+    /// For chord triggers: true after a required modifier was released while the key was still held.
+    /// Prevents double fnUp when the key is subsequently released.
+    private var chordModifierReleased = false
 
     /// Bare-tap filtering: true until a non-Escape key is pressed while modifier is held.
     private var bareTap = true
@@ -95,6 +98,7 @@ public final class HotkeyManager {
         installedRunLoop = nil
         targetModifierWasPressed = false
         triggerKeyIsPressed = false
+        chordModifierReleased = false
         bareTap = true
         stateMachine.reset()
     }
@@ -297,6 +301,7 @@ public final class HotkeyManager {
                     return nil // Swallow repeated keyDown
                 }
                 triggerKeyIsPressed = true
+                chordModifierReleased = false
 
                 let action = stateMachine.fnDown(timestampMs: timestampMs)
                 handleAction(action)
@@ -334,23 +339,26 @@ public final class HotkeyManager {
             }
         } else if type == .keyUp {
             if keyCode == triggerCode {
-                guard triggerKeyIsPressed else {
-                    return nil // Swallow stale keyUp
+                if triggerKeyIsPressed {
+                    triggerKeyIsPressed = false
+                    if !chordModifierReleased {
+                        // Normal key release — end dictation
+                        holdTimer?.cancel()
+                        let action = stateMachine.fnUp(timestampMs: timestampMs)
+                        handleAction(action)
+                    }
+                    chordModifierReleased = false
                 }
-                triggerKeyIsPressed = false
-
-                holdTimer?.cancel()
-                let action = stateMachine.fnUp(timestampMs: timestampMs)
-                handleAction(action)
-
-                return nil // Swallow the trigger key
+                // Always swallow the trigger key's keyUp
+                return nil
             }
         } else if type == .flagsChanged {
-            // Release-any-part: if a required modifier is released while trigger key is held
-            if triggerKeyIsPressed {
+            // Release-any-part: if a required modifier is released while trigger key is held,
+            // end dictation and mark that we already sent fnUp.
+            if triggerKeyIsPressed && !chordModifierReleased {
                 let flags = event.flags.rawValue & Self.relevantModifierBits
                 if flags & requiredChordFlags != requiredChordFlags {
-                    triggerKeyIsPressed = false
+                    chordModifierReleased = true
                     holdTimer?.cancel()
                     let action = stateMachine.fnUp(timestampMs: timestampMs)
                     handleAction(action)

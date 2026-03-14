@@ -389,6 +389,93 @@ final class HotkeyTriggerTests: XCTestCase {
         XCTAssertEqual(trigger.chordEventFlags, 0)
     }
 
+    // MARK: - Chord Validation (Destructive Shortcuts)
+
+    func testChordCmdQWarned() {
+        let trigger = HotkeyTrigger.chord(modifiers: ["command"], keyCode: 12)
+        if case .warned(let msg) = trigger.validation {
+            XCTAssertTrue(msg.contains("system shortcut"))
+        } else {
+            XCTFail("Cmd+Q should produce a warning")
+        }
+    }
+
+    func testChordCmdWWarned() {
+        let trigger = HotkeyTrigger.chord(modifiers: ["command"], keyCode: 13)
+        if case .warned = trigger.validation {} else {
+            XCTFail("Cmd+W should produce a warning")
+        }
+    }
+
+    func testChordCmdHWarned() {
+        let trigger = HotkeyTrigger.chord(modifiers: ["command"], keyCode: 4)
+        if case .warned = trigger.validation {} else {
+            XCTFail("Cmd+H should produce a warning")
+        }
+    }
+
+    func testChordCmdMWarned() {
+        let trigger = HotkeyTrigger.chord(modifiers: ["command"], keyCode: 46)
+        if case .warned = trigger.validation {} else {
+            XCTFail("Cmd+M should produce a warning")
+        }
+    }
+
+    func testChordCmdQWithoutCommandIsAllowed() {
+        // Q with Shift only (no Cmd) — should not trigger the Cmd+Q warning
+        let trigger = HotkeyTrigger.chord(modifiers: ["shift"], keyCode: 12)
+        XCTAssertEqual(trigger.validation, .allowed)
+    }
+
+    // MARK: - Chord Display (Control/Shift Single Modifiers)
+
+    func testChordControlSingleModifier() {
+        let trigger = HotkeyTrigger.chord(modifiers: ["control"], keyCode: 25)
+        XCTAssertEqual(trigger.displayName, "Control+9")
+        XCTAssertEqual(trigger.shortSymbol, "⌃9")
+    }
+
+    func testChordShiftSingleModifier() {
+        let trigger = HotkeyTrigger.chord(modifiers: ["shift"], keyCode: 25)
+        XCTAssertEqual(trigger.displayName, "Shift+9")
+        XCTAssertEqual(trigger.shortSymbol, "⇧9")
+    }
+
+    // MARK: - Chord Event Flags (All Modifiers)
+
+    func testChordEventFlagsControl() {
+        let trigger = HotkeyTrigger.chord(modifiers: ["control"], keyCode: 25)
+        XCTAssertEqual(trigger.chordEventFlags, 0x00040000) // maskControl
+    }
+
+    func testChordEventFlagsOption() {
+        let trigger = HotkeyTrigger.chord(modifiers: ["option"], keyCode: 25)
+        XCTAssertEqual(trigger.chordEventFlags, 0x00080000) // maskAlternate
+    }
+
+    func testChordEventFlagsAllFour() {
+        let trigger = HotkeyTrigger.chord(
+            modifiers: ["control", "option", "shift", "command"], keyCode: 25
+        )
+        let expected: UInt64 = 0x00040000 | 0x00080000 | 0x00020000 | 0x00100000
+        XCTAssertEqual(trigger.chordEventFlags, expected)
+    }
+
+    // MARK: - Chord Edge Cases
+
+    func testChordEmptyModifiersDisplayName() {
+        // Edge case: chord with no valid modifiers degrades gracefully
+        let trigger = HotkeyTrigger(kind: .chord, modifierName: nil, keyCode: 25, chordModifiers: [])
+        XCTAssertEqual(trigger.displayName, "9")
+        XCTAssertEqual(trigger.shortSymbol, "9")
+    }
+
+    func testChordNilModifiersDisplayName() {
+        let trigger = HotkeyTrigger(kind: .chord, modifierName: nil, keyCode: 25, chordModifiers: nil)
+        XCTAssertEqual(trigger.displayName, "9")
+        XCTAssertEqual(trigger.shortSymbol, "9")
+    }
+
     // MARK: - Chord Persistence
 
     func testSaveAndLoadChord() throws {
