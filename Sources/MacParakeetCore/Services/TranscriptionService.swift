@@ -69,6 +69,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             status: .processing
         )
         try transcriptionRepo.save(transcription)
+        Telemetry.send("transcription_started", ["source": "file"])
 
         return try await transcribeAudio(fileURL: fileURL, transcription: &transcription, tempFiles: [], onProgress: onProgress)
     }
@@ -96,6 +97,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             sourceURL: urlString
         )
         try transcriptionRepo.save(transcription)
+        Telemetry.send("transcription_started", ["source": "youtube"])
 
         onProgress?("Transcribing...")
         return try await transcribeAudio(
@@ -191,6 +193,13 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             transcription.updatedAt = Date()
             try transcriptionRepo.save(transcription)
 
+            let durationSec = transcription.durationMs.map { String(format: "%.1f", Double($0) / 1000.0) }
+            var completedProps: [String: String] = [:]
+            if let d = durationSec { completedProps["audio_duration_seconds"] = d }
+            let wordCount = transcription.rawTranscript?.split(whereSeparator: \.isWhitespace).count ?? 0
+            completedProps["word_count"] = "\(wordCount)"
+            Telemetry.send("transcription_completed", completedProps)
+
             // Clean up temp files
             try? FileManager.default.removeItem(at: wavURL)
             if cleanUpDownloadedFiles {
@@ -206,6 +215,12 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                 for tempFile in tempFiles {
                     try? FileManager.default.removeItem(at: tempFile)
                 }
+            }
+
+            if error is CancellationError {
+                Telemetry.send("transcription_cancelled")
+            } else {
+                Telemetry.send("transcription_failed", ["error_type": String(describing: type(of: error))])
             }
 
             try? transcriptionRepo.updateStatus(

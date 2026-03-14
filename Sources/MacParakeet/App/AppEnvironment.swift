@@ -22,6 +22,7 @@ final class AppEnvironment {
     let entitlementsService: EntitlementsService
     let launchAtLoginService: LaunchAtLoginService
     let checkoutURL: URL?
+    let telemetryService: TelemetryService
     let llmClient: LLMClient
     let llmConfigStore: LLMConfigStore
     let llmService: LLMService
@@ -110,6 +111,10 @@ final class AppEnvironment {
             snippetRepo: snippetRepo,
             processingMode: processingModeClosure
         )
+
+        telemetryService = TelemetryService()
+        Telemetry.configure(telemetryService)
+        Telemetry.send("app_launched")
 
         llmClient = LLMClient()
         llmConfigStore = LLMConfigStore()

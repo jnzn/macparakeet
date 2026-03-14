@@ -1030,6 +1030,7 @@ struct TranscriptResultView: View {
             case .pdf: try exportService.exportToPDF(transcription: transcription, url: fileURL)
             case .json: try exportService.exportToJSON(transcription: transcription, url: fileURL)
             }
+            Telemetry.send("export_used", ["format": format.rawValue])
         } catch {
             exportErrorMessage = error.localizedDescription
             SoundManager.shared.play(.errorSoft)

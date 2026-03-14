@@ -100,9 +100,11 @@ public actor DictationService: DictationServiceProtocol {
         _state = .recording
         do {
             try await audioProcessor.startCapture()
+            Telemetry.send("dictation_started")
             logger.debug("startRecording capture started")
         } catch {
             _state = .idle
+            Telemetry.send("dictation_failed", ["error_type": String(describing: type(of: error))])
             logger.error("startRecording failed error=\(error.localizedDescription, privacy: .public)")
             throw error
         }
@@ -122,6 +124,10 @@ public actor DictationService: DictationServiceProtocol {
             logger.debug("stopRecording capture stopped url=\(audioURL.path, privacy: .public)")
             let dictation = try await processCapturedAudio(audioURL: audioURL)
             _state = .success(dictation)
+            Telemetry.send("dictation_completed", [
+                "duration_seconds": String(format: "%.1f", Double(dictation.durationMs) / 1000.0),
+                "word_count": "\(dictation.wordCount ?? 0)",
+            ])
             logger.debug("stopRecording success rawChars=\(dictation.rawTranscript.count) cleanChars=\(dictation.cleanTranscript?.count ?? 0)")
             try? await Task.sleep(for: .milliseconds(500))
             _state = .idle
@@ -130,6 +136,11 @@ public actor DictationService: DictationServiceProtocol {
             // Reset to idle so a new recording can be started.
             // The caller (AppDelegate) handles error display timing on the overlay.
             _state = .idle
+            if error is DictationServiceError, case DictationServiceError.emptyTranscript = error {
+                Telemetry.send("dictation_empty")
+            } else {
+                Telemetry.send("dictation_failed", ["error_type": String(describing: type(of: error))])
+            }
             logger.error("stopRecording failed error=\(error.localizedDescription, privacy: .public)")
             throw error
         }
@@ -145,6 +156,7 @@ public actor DictationService: DictationServiceProtocol {
         let audioURL = try? await audioProcessor.stopCapture()
         pendingCancelledAudioURL = audioURL
         _state = .cancelled
+        Telemetry.send("dictation_cancelled")
 
         cancelResetTask?.cancel()
         cancelResetTask = Task { [generation] in

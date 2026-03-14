@@ -27,12 +27,22 @@ public final class SettingsViewModel {
         didSet {
             defaults.set(menuBarOnlyMode, forKey: AppPreferences.menuBarOnlyModeKey)
             NotificationCenter.default.post(name: Notification.Name("macparakeet.menuBarOnlyModeDidChange"), object: nil)
+            Telemetry.send("setting_changed", ["setting": "menu_bar_only"])
         }
     }
     public var showIdlePill: Bool {
         didSet {
             defaults.set(showIdlePill, forKey: "showIdlePill")
             NotificationCenter.default.post(name: Notification.Name("macparakeet.showIdlePillDidChange"), object: nil)
+            Telemetry.send("setting_changed", ["setting": "hide_pill"])
+        }
+    }
+    public var telemetryEnabled: Bool {
+        didSet {
+            defaults.set(telemetryEnabled, forKey: AppPreferences.telemetryEnabledKey)
+            if !telemetryEnabled {
+                Telemetry.send("telemetry_opted_out")
+            }
         }
     }
 
@@ -41,6 +51,7 @@ public final class SettingsViewModel {
         didSet {
             hotkeyTrigger.save(to: defaults)
             NotificationCenter.default.post(name: Notification.Name("macparakeet.hotkeyTriggerDidChange"), object: nil)
+            Telemetry.send("hotkey_customized")
         }
     }
     public var silenceAutoStop: Bool {
@@ -58,6 +69,7 @@ public final class SettingsViewModel {
                 return
             }
             defaults.set(processingMode, forKey: "processingMode")
+            Telemetry.send("processing_mode_changed", ["mode": processingMode])
         }
     }
     public var customWordCount: Int = 0
@@ -65,13 +77,22 @@ public final class SettingsViewModel {
 
     // Storage
     public var saveDictationHistory: Bool {
-        didSet { defaults.set(saveDictationHistory, forKey: "saveDictationHistory") }
+        didSet {
+            defaults.set(saveDictationHistory, forKey: "saveDictationHistory")
+            Telemetry.send("setting_changed", ["setting": "save_history"])
+        }
     }
     public var saveAudioRecordings: Bool {
-        didSet { defaults.set(saveAudioRecordings, forKey: "saveAudioRecordings") }
+        didSet {
+            defaults.set(saveAudioRecordings, forKey: "saveAudioRecordings")
+            Telemetry.send("setting_changed", ["setting": "audio_retention"])
+        }
     }
     public var saveTranscriptionAudio: Bool {
-        didSet { defaults.set(saveTranscriptionAudio, forKey: "saveTranscriptionAudio") }
+        didSet {
+            defaults.set(saveTranscriptionAudio, forKey: "saveTranscriptionAudio")
+            Telemetry.send("setting_changed", ["setting": "save_transcription_audio"])
+        }
     }
 
     // Permission status
@@ -121,6 +142,7 @@ public final class SettingsViewModel {
         launchAtLogin = defaults.bool(forKey: "launchAtLogin")
         menuBarOnlyMode = AppPreferences.isMenuBarOnlyModeEnabled(defaults: defaults)
         showIdlePill = defaults.object(forKey: "showIdlePill") as? Bool ?? true
+        telemetryEnabled = AppPreferences.isTelemetryEnabled(defaults: defaults)
         hotkeyTrigger = HotkeyTrigger.current(defaults: defaults)
         silenceAutoStop = defaults.bool(forKey: "silenceAutoStop")
         let delay = defaults.double(forKey: "silenceDelay")
