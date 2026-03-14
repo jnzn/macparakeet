@@ -14,7 +14,6 @@ struct SettingsView: View {
     @State private var automaticallyDownloadsUpdates: Bool
     @State private var showClearAllAlert = false
     @State private var showClearYouTubeAudioAlert = false
-    @State private var showDeleteModelsAlert = false
     @State private var showResetPrivateStatsAlert = false
     @State private var copiedBuildIdentity = false
 
@@ -67,14 +66,6 @@ struct SettingsView: View {
             }
         } message: {
             Text("This will permanently delete all downloaded YouTube audio files and detach them from existing transcriptions.")
-        }
-        .alert("Delete Models?", isPresented: $showDeleteModelsAlert) {
-            Button("Cancel", role: .cancel) {}
-            Button("Delete Models", role: .destructive) {
-                viewModel.clearModelCache()
-            }
-        } message: {
-            Text("This will delete ~6 GB of speech and speaker models. You'll need to re-download them before transcribing.")
         }
         .onAppear {
             viewModel.refreshLaunchAtLoginStatus()
@@ -336,8 +327,6 @@ struct SettingsView: View {
                 isRepairing: viewModel.parakeetRepairing
             ) {
                 viewModel.repairParakeetModel()
-            } onDelete: {
-                showDeleteModelsAlert = true
             }
         }
     }
@@ -583,8 +572,7 @@ struct SettingsView: View {
         detail: String,
         status: SettingsViewModel.LocalModelStatus,
         isRepairing: Bool,
-        onRepair: @escaping () -> Void,
-        onDelete: @escaping () -> Void
+        onRepair: @escaping () -> Void
     ) -> some View {
         HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
             VStack(alignment: .leading, spacing: 2) {
@@ -603,13 +591,7 @@ struct SettingsView: View {
                 onRepair()
             }
             .buttonStyle(.bordered)
-            .disabled(isRepairing || viewModel.parakeetClearing)
-
-            Button(viewModel.parakeetClearing ? "Deleting..." : "Delete Models", role: .destructive) {
-                onDelete()
-            }
-            .buttonStyle(.bordered)
-            .disabled(!viewModel.canClearModelCache)
+            .disabled(isRepairing)
         }
     }
 
