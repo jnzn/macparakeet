@@ -202,28 +202,35 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
 
         guard !events.isEmpty else { return }
 
-        let payload = TelemetryPayload(events: events)
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
-        guard let body = try? encoder.encode(payload) else { return }
-
         let url = baseURL.appendingPathComponent("telemetry")
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = body
-        request.timeoutInterval = 5
 
         // Synchronous send on a background queue to avoid main thread deadlock.
         let bgSession = URLSession(configuration: .ephemeral,
                                    delegate: nil,
                                    delegateQueue: OperationQueue())
-        let semaphore = DispatchSemaphore(value: 0)
-        let task = bgSession.dataTask(with: request) { _, _, _ in
-            semaphore.signal()
+
+        for batchStart in stride(from: 0, to: events.count, by: Self.maxBatchSize) {
+            let batchEnd = min(batchStart + Self.maxBatchSize, events.count)
+            let batch = Array(events[batchStart..<batchEnd])
+            let payload = TelemetryPayload(events: batch)
+
+            guard let body = try? encoder.encode(payload) else { continue }
+
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = body
+            request.timeoutInterval = 5
+
+            let semaphore = DispatchSemaphore(value: 0)
+            let task = bgSession.dataTask(with: request) { _, _, _ in
+                semaphore.signal()
+            }
+            task.resume()
+            _ = semaphore.wait(timeout: .now() + 3)
         }
-        task.resume()
-        _ = semaphore.wait(timeout: .now() + 3)
     }
 }
 
