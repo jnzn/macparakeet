@@ -613,6 +613,88 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.summaryState, .idle)
     }
 
+    // MARK: - Speaker Rename
+
+    func testRenameSpeakerUpdatesInMemoryState() {
+        let speakers = [
+            SpeakerInfo(id: "S1", label: "Speaker 1"),
+            SpeakerInfo(id: "S2", label: "Speaker 2")
+        ]
+        let t = Transcription(fileName: "test.mp3", speakers: speakers, status: .completed)
+        mockRepo.transcriptions = [t]
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+        viewModel.currentTranscription = t
+
+        viewModel.renameSpeaker(id: "S1", to: "Sarah")
+
+        XCTAssertEqual(viewModel.currentTranscription?.speakers?[0].label, "Sarah")
+        XCTAssertEqual(viewModel.currentTranscription?.speakers?[1].label, "Speaker 2")
+    }
+
+    func testRenameSpeakerPersistsToRepo() {
+        let speakers = [SpeakerInfo(id: "S1", label: "Speaker 1")]
+        let t = Transcription(fileName: "test.mp3", speakers: speakers, status: .completed)
+        mockRepo.transcriptions = [t]
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+        viewModel.currentTranscription = t
+
+        viewModel.renameSpeaker(id: "S1", to: "Alice")
+
+        XCTAssertEqual(mockRepo.updateSpeakersCalls.count, 1)
+        XCTAssertEqual(mockRepo.updateSpeakersCalls[0].speakers?[0].label, "Alice")
+    }
+
+    func testRenameSpeakerIgnoresEmptyLabel() {
+        let speakers = [SpeakerInfo(id: "S1", label: "Speaker 1")]
+        let t = Transcription(fileName: "test.mp3", speakers: speakers, status: .completed)
+        mockRepo.transcriptions = [t]
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+        viewModel.currentTranscription = t
+
+        viewModel.renameSpeaker(id: "S1", to: "   ")
+
+        XCTAssertEqual(viewModel.currentTranscription?.speakers?[0].label, "Speaker 1")
+        XCTAssertTrue(mockRepo.updateSpeakersCalls.isEmpty)
+    }
+
+    func testRenameSpeakerIgnoresUnknownId() {
+        let speakers = [SpeakerInfo(id: "S1", label: "Speaker 1")]
+        let t = Transcription(fileName: "test.mp3", speakers: speakers, status: .completed)
+        mockRepo.transcriptions = [t]
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+        viewModel.currentTranscription = t
+
+        viewModel.renameSpeaker(id: "S999", to: "Nobody")
+
+        XCTAssertEqual(viewModel.currentTranscription?.speakers?[0].label, "Speaker 1")
+        XCTAssertTrue(mockRepo.updateSpeakersCalls.isEmpty)
+    }
+
+    func testRenameSpeakerNoOpWithoutCurrentTranscription() {
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+
+        viewModel.renameSpeaker(id: "S1", to: "Alice")
+
+        XCTAssertTrue(mockRepo.updateSpeakersCalls.isEmpty)
+    }
+
+    func testRenameSpeakerTrimsWhitespace() {
+        let speakers = [SpeakerInfo(id: "S1", label: "Speaker 1")]
+        let t = Transcription(fileName: "test.mp3", speakers: speakers, status: .completed)
+        mockRepo.transcriptions = [t]
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+        viewModel.currentTranscription = t
+
+        viewModel.renameSpeaker(id: "S1", to: "  Alice  ")
+
+        XCTAssertEqual(viewModel.currentTranscription?.speakers?[0].label, "Alice")
+    }
+
     // MARK: - Tab Visibility
 
     func testShowTabsTrueWhenLLMAvailable() {

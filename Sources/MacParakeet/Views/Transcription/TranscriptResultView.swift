@@ -28,7 +28,10 @@ struct TranscriptResultView: View {
     @State private var exportErrorMessage: String?
     @State private var copiedResetTask: Task<Void, Never>?
     @State private var dismissTask: Task<Void, Never>?
+    @State private var editingSpeakerId: String?
+    @State private var editingSpeakerLabel: String = ""
     @FocusState private var chatInputFocused: Bool
+    @FocusState private var speakerRenameFocused: Bool
 
     private let suggestedPrompts = [
         "Summarize the key points",
@@ -269,6 +272,10 @@ struct TranscriptResultView: View {
     private var transcriptPane: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+                if let speakers = transcription.speakers, !speakers.isEmpty {
+                    speakerSummaryPanel(speakers: speakers)
+                }
+
                 if let timestamps = transcription.wordTimestamps, !timestamps.isEmpty {
                     timestampedView(words: timestamps)
                 } else if let text = transcription.cleanTranscript ?? transcription.rawTranscript {
@@ -759,9 +766,17 @@ struct TranscriptResultView: View {
                         Circle()
                             .fill(speakerColorMap[turn.speakerId] ?? DesignSystem.Colors.textTertiary)
                             .frame(width: 8, height: 8)
-                        Text(turn.speakerLabel)
-                            .font(DesignSystem.Typography.caption.weight(.semibold))
-                            .foregroundStyle(speakerColorMap[turn.speakerId] ?? DesignSystem.Colors.textSecondary)
+
+                        if let speaker = transcription.speakers?.first(where: { $0.id == turn.speakerId }) {
+                            speakerLabelView(
+                                speaker: speaker,
+                                color: speakerColorMap[turn.speakerId] ?? DesignSystem.Colors.textSecondary
+                            )
+                        } else {
+                            Text(turn.speakerLabel)
+                                .font(DesignSystem.Typography.caption.weight(.semibold))
+                                .foregroundStyle(speakerColorMap[turn.speakerId] ?? DesignSystem.Colors.textSecondary)
+                        }
                     }
                     .padding(.top, DesignSystem.Spacing.sm)
 
@@ -809,6 +824,119 @@ struct TranscriptResultView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Speaker Summary Panel
+
+    @ViewBuilder
+    private func speakerSummaryPanel(speakers: [SpeakerInfo]) -> some View {
+        let colorMap = buildSpeakerColorMap()
+        let speakerStats = computeSpeakerStats()
+
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
+            ForEach(speakers, id: \.id) { speaker in
+                let stats = speakerStats[speaker.id]
+                HStack(spacing: DesignSystem.Spacing.sm) {
+                    Circle()
+                        .fill(colorMap[speaker.id] ?? DesignSystem.Colors.textTertiary)
+                        .frame(width: 8, height: 8)
+
+                    speakerLabelView(speaker: speaker, color: colorMap[speaker.id] ?? DesignSystem.Colors.textSecondary)
+
+                    if let stats {
+                        Text(formatSpeakingTime(ms: stats.speakingTimeMs))
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(.tertiary)
+
+                        Text("·")
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(.quaternary)
+
+                        Text("\(stats.wordCount) words")
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+
+                    Spacer()
+                }
+            }
+        }
+        .padding(DesignSystem.Spacing.md)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.primary.opacity(0.03))
+        )
+    }
+
+    @ViewBuilder
+    private func speakerLabelView(speaker: SpeakerInfo, color: Color) -> some View {
+        if editingSpeakerId == speaker.id {
+            TextField("Name", text: $editingSpeakerLabel)
+                .font(DesignSystem.Typography.caption.weight(.semibold))
+                .foregroundStyle(color)
+                .textFieldStyle(.plain)
+                .frame(width: 120)
+                .focused($speakerRenameFocused)
+                .onSubmit {
+                    commitSpeakerRename()
+                }
+                .onExitCommand {
+                    editingSpeakerId = nil
+                }
+        } else {
+            Text(speaker.label)
+                .font(DesignSystem.Typography.caption.weight(.semibold))
+                .foregroundStyle(color)
+                .onTapGesture {
+                    editingSpeakerId = speaker.id
+                    editingSpeakerLabel = speaker.label
+                    speakerRenameFocused = true
+                }
+                .help("Click to rename")
+        }
+    }
+
+    private func commitSpeakerRename() {
+        guard let speakerId = editingSpeakerId else { return }
+        viewModel.renameSpeaker(id: speakerId, to: editingSpeakerLabel)
+        editingSpeakerId = nil
+    }
+
+    private struct SpeakerStats {
+        var speakingTimeMs: Int = 0
+        var wordCount: Int = 0
+    }
+
+    private func computeSpeakerStats() -> [String: SpeakerStats] {
+        var stats: [String: SpeakerStats] = [:]
+
+        // Speaking time from diarization segments
+        if let segments = transcription.diarizationSegments {
+            for segment in segments {
+                stats[segment.speakerId, default: SpeakerStats()].speakingTimeMs += (segment.endMs - segment.startMs)
+            }
+        }
+
+        // Word count from word timestamps
+        if let words = transcription.wordTimestamps {
+            for word in words {
+                if let speakerId = word.speakerId {
+                    stats[speakerId, default: SpeakerStats()].wordCount += 1
+                }
+            }
+        }
+
+        return stats
+    }
+
+    private func formatSpeakingTime(ms: Int) -> String {
+        let totalSeconds = ms / 1000
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        if minutes > 0 {
+            return "\(minutes)m \(seconds)s"
+        }
+        return "\(seconds)s"
     }
 
     // MARK: - Speaker Helpers
