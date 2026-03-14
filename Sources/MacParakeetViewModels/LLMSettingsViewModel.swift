@@ -23,8 +23,8 @@ public final class LLMSettingsViewModel {
                 suppressStatusReset = true
                 modelName = Self.defaultModelName(for: selectedProviderID)
                 baseURLOverride = ""
-                fetchedModels = []
-                isFetchingModels = false
+                useCustomModel = false
+                customModelName = ""
                 // Load stored key for the new provider (or clear for local)
                 if requiresAPIKey {
                     apiKeyInput = (try? configStore?.loadAPIKey(for: selectedProviderID)) ?? ""
@@ -40,7 +40,7 @@ public final class LLMSettingsViewModel {
     public var apiKeyInput: String = "" {
         didSet { if !suppressStatusReset && oldValue != apiKeyInput { connectionTestState = .idle; saveState = .idle } }
     }
-    public var modelName: String = "gpt-4.1" {
+    public var modelName: String = "gpt-5.4" {
         didSet { if !suppressStatusReset && oldValue != modelName { connectionTestState = .idle; saveState = .idle } }
     }
     public var baseURLOverride: String = "" {
@@ -48,8 +48,20 @@ public final class LLMSettingsViewModel {
     }
     public var connectionTestState: ConnectionTestState = .idle
     public var saveState: SaveState = .idle
-    public var fetchedModels: [String] = []
-    public var isFetchingModels: Bool = false
+    public var useCustomModel: Bool = false {
+        didSet {
+            if !suppressStatusReset && oldValue != useCustomModel {
+                connectionTestState = .idle
+                saveState = .idle
+                if useCustomModel {
+                    customModelName = ""
+                }
+            }
+        }
+    }
+    public var customModelName: String = "" {
+        didSet { if !suppressStatusReset && oldValue != customModelName { connectionTestState = .idle; saveState = .idle } }
+    }
 
     /// Suppresses status resets in property didSet during programmatic updates.
     private var suppressStatusReset = false
@@ -62,9 +74,14 @@ public final class LLMSettingsViewModel {
         !selectedProviderID.isLocal
     }
 
-    /// Models to show in the picker: fetched from API if available, otherwise hardcoded suggestions.
+    /// Curated models shown in the picker.
     public var availableModels: [String] {
-        fetchedModels.isEmpty ? Self.suggestedModels(for: selectedProviderID) : fetchedModels
+        Self.suggestedModels(for: selectedProviderID)
+    }
+
+    /// The effective model name used for configuration (picker selection or custom text).
+    public var effectiveModelName: String {
+        useCustomModel ? customModelName : modelName
     }
 
     public var onConfigurationChanged: (() -> Void)?
@@ -105,60 +122,10 @@ public final class LLMSettingsViewModel {
                 try await llmClient.testConnection(config: config)
                 guard selectedProviderID == capturedProvider else { return }
                 connectionTestState = .success
-                // Also fetch models on successful connection
-                await fetchModelsQuietly(config: config, capturedProvider: capturedProvider)
             } catch {
                 guard selectedProviderID == capturedProvider else { return }
                 connectionTestState = .error(error.localizedDescription)
             }
-        }
-    }
-
-    public func fetchModels() {
-        guard let llmClient else { return }
-        isFetchingModels = true
-        let config = buildConfig()
-        let capturedProvider = selectedProviderID
-        Task {
-            await fetchModelsQuietly(config: config, capturedProvider: capturedProvider)
-        }
-    }
-
-    private func fetchModelsQuietly(config: LLMProviderConfig, capturedProvider: LLMProviderID) async {
-        guard let llmClient else { return }
-        isFetchingModels = true
-        let currentModel = modelName
-        do {
-            let allModels = try await llmClient.listModels(config: config)
-            guard selectedProviderID == capturedProvider else { return }
-            // Filter to chat-capable models (exclude embeddings, tts, image-only, etc.)
-            let chatModels = Self.filterChatModels(allModels, provider: config.id)
-            fetchedModels = chatModels
-            // Preserve current selection if it exists in fetched list;
-            // otherwise fall back to the provider's default model, then first in list
-            if !chatModels.contains(currentModel) {
-                suppressStatusReset = true
-                let defaultModel = Self.defaultModelName(for: config.id)
-                if chatModels.contains(defaultModel) {
-                    modelName = defaultModel
-                } else if let first = chatModels.first {
-                    modelName = first
-                }
-                suppressStatusReset = false
-            }
-        } catch {
-            guard selectedProviderID == capturedProvider else { return }
-            fetchedModels = []
-        }
-        isFetchingModels = false
-    }
-
-    private static func filterChatModels(_ models: [String], provider: LLMProviderID) -> [String] {
-        let excluded = ["embed", "tts", "whisper", "dall-e", "moderation", "aqa",
-                        "imagen", "veo", "chirp", "code-gecko", "-vision", "search"]
-        return models.filter { model in
-            let lower = model.lowercased()
-            return !excluded.contains(where: { lower.contains($0) })
         }
     }
 
@@ -180,7 +147,16 @@ public final class LLMSettingsViewModel {
         suppressStatusReset = true
         selectedProviderID = config.id
         apiKeyInput = config.apiKey ?? ""
-        modelName = config.modelName
+
+        let suggested = Self.suggestedModels(for: config.id)
+        if suggested.contains(config.modelName) {
+            modelName = config.modelName
+            useCustomModel = false
+        } else {
+            modelName = Self.defaultModelName(for: config.id)
+            useCustomModel = true
+            customModelName = config.modelName
+        }
 
         let defaultURL = Self.defaultBaseURL(for: config.id)
         if config.baseURL.absoluteString != defaultURL {
@@ -207,7 +183,7 @@ public final class LLMSettingsViewModel {
             id: selectedProviderID,
             baseURL: baseURL,
             apiKey: apiKey.isEmpty ? nil : apiKey,
-            modelName: modelName.trimmingCharacters(in: .whitespacesAndNewlines),
+            modelName: effectiveModelName.trimmingCharacters(in: .whitespacesAndNewlines),
             isLocal: selectedProviderID.isLocal
         )
     }
@@ -219,27 +195,43 @@ public final class LLMSettingsViewModel {
             "claude-sonnet-4-6",
             "claude-opus-4-6",
             "claude-haiku-4-5-20251001",
-            "claude-sonnet-4-5-20250929",
         ]
         case .openai: return [
+            "gpt-5.4",
+            "gpt-5.4-pro",
+            "gpt-5.3-chat-latest",
+            "gpt-5-mini",
+            "gpt-5-nano",
             "gpt-4.1",
             "gpt-4.1-mini",
-            "gpt-4.1-nano",
-            "gpt-4o",
-            "gpt-4o-mini",
-            "o3",
-            "o3-mini",
-            "o4-mini",
         ]
         case .gemini: return [
-            "gemini-2.5-flash",
+            "gemini-3.1-pro-preview",
+            "gemini-3-flash-preview",
+            "gemini-3.1-flash-lite-preview",
             "gemini-2.5-pro",
-            "gemini-2.0-flash",
+            "gemini-2.5-flash",
         ]
         case .openrouter: return [
-            "anthropic/claude-sonnet-4",
+            // Anthropic
+            "anthropic/claude-opus-4-6",
+            "anthropic/claude-sonnet-4-6",
+            "anthropic/claude-haiku-4-5",
+            // OpenAI
+            "openai/gpt-5.4",
+            "openai/gpt-5.4-pro",
+            "openai/gpt-5-mini",
+            "openai/gpt-5-nano",
             "openai/gpt-4.1",
+            "openai/gpt-4.1-mini",
+            // Google
+            "google/gemini-3.1-pro-preview",
+            "google/gemini-3-flash-preview",
             "google/gemini-2.5-flash",
+            // Open-source / value
+            "deepseek/deepseek-v3.2",
+            "meta-llama/llama-4-scout",
+            "qwen/qwen3.5-72b",
         ]
         case .ollama: return [
             "qwen3.5:4b",

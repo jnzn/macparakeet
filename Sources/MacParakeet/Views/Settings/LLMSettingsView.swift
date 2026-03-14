@@ -128,37 +128,28 @@ struct LLMSettingsView: View {
 
     @ViewBuilder
     private var modelPicker: some View {
-        let models = viewModel.availableModels
-        if models.isEmpty {
-            TextField("Model name", text: $viewModel.modelName)
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 220)
-        } else {
-            HStack(spacing: 6) {
+        VStack(alignment: .trailing, spacing: 4) {
+            if viewModel.useCustomModel {
+                TextField("Model ID (e.g. gpt-4o)", text: $viewModel.customModelName)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 220)
+            } else {
                 Picker("Model", selection: $viewModel.modelName) {
-                    ForEach(models, id: \.self) { model in
+                    ForEach(viewModel.availableModels, id: \.self) { model in
                         Text(model).tag(model)
                     }
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
                 .frame(minWidth: 180)
-
-                Button {
-                    viewModel.fetchModels()
-                } label: {
-                    if viewModel.isFetchingModels {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 11))
-                    }
-                }
-                .buttonStyle(.borderless)
-                .help("Fetch models from provider")
-                .disabled(viewModel.isFetchingModels)
             }
+
+            Button(viewModel.useCustomModel ? "Choose from list" : "Use custom model") {
+                viewModel.useCustomModel.toggle()
+            }
+            .buttonStyle(.plain)
+            .font(DesignSystem.Typography.caption)
+            .foregroundStyle(.secondary)
         }
     }
 
