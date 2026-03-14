@@ -138,6 +138,7 @@ struct TextSnippetsView: View {
                 HStack(spacing: DesignSystem.Spacing.sm) {
                     TextField("Trigger phrase", text: $viewModel.newTrigger)
                         .textFieldStyle(.roundedBorder)
+                        .focused($triggerFieldFocused)
                     TextField("Expansion", text: $viewModel.newExpansion)
                         .textFieldStyle(.roundedBorder)
                     Button("Add") {
@@ -206,7 +207,7 @@ struct TextSnippetsView: View {
         .padding(DesignSystem.Spacing.sm)
         .background(
             RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
-                .fill(isHovered ? DesignSystem.Colors.accent.opacity(0.10) : DesignSystem.Colors.surfaceElevated)
+                .fill(isHovered ? DesignSystem.Colors.rowHoverBackground : DesignSystem.Colors.surfaceElevated)
         )
         .onHover { hovering in
             withAnimation(DesignSystem.Animation.hoverTransition) {
@@ -214,6 +215,8 @@ struct TextSnippetsView: View {
             }
         }
     }
+
+    @FocusState private var triggerFieldFocused: Bool
 
     private var emptyState: some View {
         VStack(spacing: DesignSystem.Spacing.sm) {
@@ -228,6 +231,12 @@ struct TextSnippetsView: View {
                     .font(DesignSystem.Typography.caption)
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)
+                Button("Add Your First Snippet") {
+                    triggerFieldFocused = true
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(DesignSystem.Colors.accent)
+                .controlSize(.small)
             }
         }
         .frame(maxWidth: .infinity)

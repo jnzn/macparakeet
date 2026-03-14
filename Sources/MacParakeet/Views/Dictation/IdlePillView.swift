@@ -29,10 +29,10 @@ struct IdlePillView: View {
         ZStack {
             // Dark capsule background
             Capsule()
-                .fill(viewModel.isHovered ? Color.black.opacity(0.85) : Color(white: 0.25, opacity: 0.9))
+                .fill(viewModel.isHovered ? DesignSystem.Colors.pillBackground : Color(white: 0.25, opacity: 0.9))
                 .overlay(
                     Capsule()
-                        .strokeBorder(Color.white.opacity(viewModel.isHovered ? 0.1 : 0.06), lineWidth: 0.5)
+                        .strokeBorder(DesignSystem.Colors.pillBorder.opacity(viewModel.isHovered ? 0.67 : 0.4), lineWidth: 0.5)
                 )
         }
         .frame(
@@ -77,10 +77,10 @@ struct IdlePillView: View {
         .padding(.vertical, 10)
         .background(
             Capsule()
-                .fill(Color.black.opacity(0.9))
+                .fill(DesignSystem.Colors.pillBackground)
                 .overlay(
                     Capsule()
-                        .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5)
+                        .strokeBorder(DesignSystem.Colors.pillBorder.opacity(0.67), lineWidth: 0.5)
                 )
                 .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
         )
