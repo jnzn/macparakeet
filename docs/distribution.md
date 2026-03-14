@@ -1,5 +1,7 @@
 # Distribution (Developer ID + Notarization)
 
+> Status: **ACTIVE** - Build, sign, notarize, and auto-update workflow
+
 This repo is SwiftPM-based, so we assemble a `.app` bundle manually for Developer ID distribution.
 
 ## 1) Build the app bundle

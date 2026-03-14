@@ -1,6 +1,6 @@
 # MacParakeet UI/UX Design Overhaul
 
-> Status: **ACTIVE** — Design specification for v1.0 shipping UI
+> Status: **PROPOSAL** — Design specification for v1.0 shipping UI. Sound design is deferred post-v1.0.
 
 ## Locked Decisions
 

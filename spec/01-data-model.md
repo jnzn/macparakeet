@@ -50,6 +50,8 @@ CREATE TABLE dictations (
     processingMode TEXT NOT NULL DEFAULT 'raw',        -- 'raw' (v0.1) or 'clean' (v0.2 default)
     status TEXT NOT NULL DEFAULT 'completed',          -- 'recording', 'processing', 'completed', 'error'
     errorMessage TEXT,                                -- Error details if status='error'
+    hidden INTEGER NOT NULL DEFAULT 0,                -- v0.5: Private dictation mode (excluded from history)
+    wordCount INTEGER NOT NULL DEFAULT 0,             -- v0.5: Cached word count for voice stats
     updatedAt TEXT NOT NULL                           -- ISO 8601 timestamp
 );
 
@@ -113,6 +115,8 @@ CREATE TABLE transcriptions (
     speakerCount INTEGER,                              -- Number of detected speakers (v0.4 diarization)
     speakers TEXT,                                      -- JSON: [{"id":"S1","label":"Speaker 1"},{"id":"S2","label":"Sarah"}] (v0.4 diarization)
     diarizationSegments TEXT,                           -- JSON: [{"speakerId":"S1","startMs":0,"endMs":5000},...] (v0.4 diarization)
+    summary TEXT,                                       -- v0.4: LLM-generated transcript summary
+    chatMessages TEXT,                                  -- v0.4: JSON array of LLM chat messages
     status TEXT NOT NULL DEFAULT 'processing',          -- 'processing', 'completed', 'error', 'cancelled'
     errorMessage TEXT,                                  -- Error details if status='error'
     exportPath TEXT,                                    -- Path to last export (nullable)
@@ -208,6 +212,8 @@ struct Dictation: Codable, Identifiable {
     var pastedToApp: String?
     var processingMode: ProcessingMode
     var status: DictationStatus
+    var hidden: Bool                        // v0.5 — Private dictation mode (excluded from history)
+    var wordCount: Int                      // v0.5 — Cached word count for voice stats dashboard
     var errorMessage: String?
     var updatedAt: Date
 
@@ -229,7 +235,8 @@ extension Dictation: FetchableRecord, PersistableRecord {
 
     enum Columns: String, ColumnExpression {
         case id, createdAt, durationMs, rawTranscript, cleanTranscript
-        case audioPath, pastedToApp, processingMode, status, errorMessage, updatedAt
+        case audioPath, pastedToApp, processingMode, status, errorMessage
+        case hidden, wordCount, updatedAt
     }
 }
 ```
@@ -254,6 +261,8 @@ struct Transcription: Codable, Identifiable {
     var speakerCount: Int?
     var speakers: [SpeakerInfo]?
     var diarizationSegments: [DiarizationSegmentRecord]?
+    var summary: String?                    // v0.4 — LLM-generated transcript summary
+    var chatMessages: [ChatMessage]?        // v0.4 — LLM chat history for this transcription
     var status: TranscriptionStatus
     var errorMessage: String?
     var exportPath: String?
@@ -444,6 +453,24 @@ migrator.registerMigration("v0.4-transcription-diarization-segments") { db in
         t.add(column: "diarizationSegments", .text)  // JSON: [{"speakerId":"S1","startMs":0,"endMs":5000}]
     }
 }
+
+// v0.4 — LLM content columns (summary + chat persistence)
+migrator.registerMigration("v0.4-transcription-llm-content") { db in
+    try db.alter(table: "transcriptions") { t in
+        t.add(column: "summary", .text)
+        t.add(column: "chatMessages", .text)
+    }
+}
+
+// v0.5 — Private dictation mode + word count for voice stats
+migrator.registerMigration("v0.5-dictation-hidden-wordcount") { db in
+    try db.alter(table: "dictations") { t in
+        t.add(column: "hidden", .boolean).notNull().defaults(to: false)
+        t.add(column: "wordCount", .integer).notNull().defaults(to: 0)
+    }
+    // Backfill wordCount for existing completed rows
+    // (uses rawTranscript word count as approximation)
+}
 ```
 
 ### Migration Rules
@@ -465,6 +492,11 @@ migrator.registerMigration("v0.4-transcription-diarization-segments") { db in
 | `transcriptions` | v0.1 | File transcription records |
 | `custom_words` | v0.2 | Vocabulary anchors and corrections |
 | `text_snippets` | v0.2 | Trigger-based text expansion |
+| `transcriptions.summary` | v0.4 | LLM-generated transcript summary |
+| `transcriptions.chatMessages` | v0.4 | LLM chat history (JSON) |
+| `transcriptions.diarizationSegments` | v0.4 | Speaker diarization segments (JSON) |
+| `dictations.hidden` | v0.5 | Private dictation mode flag |
+| `dictations.wordCount` | v0.5 | Cached word count for voice stats |
 
 ### Tables NOT Planned (YAGNI)
 
@@ -548,4 +580,4 @@ let processing = try dbQueue.read { db in
 
 ---
 
-*Last updated: 2026-03-04*
+*Last updated: 2026-03-14*

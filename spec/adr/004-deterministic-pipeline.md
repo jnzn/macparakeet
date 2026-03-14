@@ -21,7 +21,7 @@ Two approaches exist for this cleanup:
 
 ## Decision
 
-Use a **deterministic 4-step pipeline** for the default "clean" processing mode. Reserve LLM processing for advanced modes (formal, email, code) and command mode, where users explicitly opt into LLM latency for higher-quality output.
+Use a **deterministic 4-step pipeline** for the default "clean" processing mode. Only two modes exist: raw (verbatim) and clean (4-step pipeline).
 
 ### Pipeline Steps (in order)
 
@@ -38,10 +38,8 @@ Use a **deterministic 4-step pipeline** for the default "clean" processing mode.
 |------|----------|-----|---------|----------|
 | Raw | None | No | 0ms | Verbatim transcription |
 | **Clean (default)** | **4-step** | **No** | **<5ms** | **General dictation** |
-| Formal | 4-step | Yes (Qwen3-8B) | 2-5s | Professional writing |
-| Email | 4-step | Yes (Qwen3-8B) | 2-5s | Email composition |
-| Code | 4-step | Yes (Qwen3-8B) | 2-5s | Code dictation |
-| Command | None | Yes (Qwen3-8B) | 2-5s | System commands, app control |
+
+> Note: Formal, Email, Code, and Command modes were removed 2026-02-23 when local LLM (Qwen3-8B) was eliminated. LLM features are now accessed via dedicated service methods (summarize, chat), not processing modes.
 
 ## Rationale
 
@@ -98,7 +96,7 @@ An LLM-based approach would require prompt engineering to respect user-defined w
 - Clean mode cannot handle complex transformations (e.g., "rewrite this more formally" requires LLM)
 - Custom words require manual setup by users (vs LLM learning from context)
 - Pipeline rules are English-optimized; STT supports 25 European languages but clean mode processing (filler removal, snippets) is English-only. Per-language filler lists and rules needed for clean mode in other languages.
-- Advanced modes (formal, email, code) still require LLM, with associated latency
+- LLM-based transforms (summarize, chat) are accessed via separate service methods, not processing modes
 
 ### Implementation Notes
 

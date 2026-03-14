@@ -124,7 +124,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 
 ## Current Phase
 
-**v0.3 Complete, v0.4 In Progress** -- ~116 source files, ~60 test files, 792 tests passing (`swift test` green)
+**v0.4 Complete** -- ~121 source files, ~62 test files, 794 tests passing (`swift test` green)
 
 ### v0.1 MVP (Implemented)
 - [x] System-wide dictation: Configurable hotkey (Fn default), double-tap (persistent) + hold-to-talk
@@ -165,7 +165,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 - [x] Voice stats dashboard
 - [x] UI polish (toggles, sidebar sections, copy improvements)
 - [x] Speaker diarization GUI
-- [ ] Non-blocking transcription progress (bottom bar UX)
+- [x] Non-blocking transcription progress (bottom bar UX)
 - [x] Distribution: Notarized DMG via macparakeet.com + LemonSqueezy, Sparkle auto-updates
 
 ## Key Patterns

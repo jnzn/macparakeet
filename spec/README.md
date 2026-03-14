@@ -59,7 +59,7 @@ All ADRs live in `spec/adr/`. These are locked -- they record decisions already 
 | v0.1 | Core MVP | Dictation + transcription + history + settings | **Implemented** |
 | v0.2 | Clean Pipeline | Deterministic text processing, custom words, snippets | **Implemented** |
 | v0.3 | YouTube & Export | YouTube transcription, export formats | **Implemented** |
-| v0.4 | Polish & Launch | Diarization, custom hotkey, non-blocking progress, direct distribution | **In Progress** |
+| v0.4 | Polish & Launch | Diarization, custom hotkey, non-blocking progress, direct distribution | **Implemented** |
 
 ## Version Progress
 
@@ -93,7 +93,7 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 - [x] Exports: TXT, Markdown, SRT, VTT (one-click to Downloads)
 - [x] Full export (.docx, .pdf, .json)
 
-### v0.4 Polish & Launch (In Progress)
+### v0.4 Polish & Launch (Implemented)
 
 - [x] Speaker diarization CLI preview (FluidAudio offline pipeline, ADR-010)
 - [x] Speaker diarization GUI (summary panel + inline rename)

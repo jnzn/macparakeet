@@ -11,7 +11,7 @@ The audio pipeline handles all audio input for MacParakeet: microphone recording
 ### Capture Chain
 
 ```
-Mic Input → AVAudioEngine tap → Sample Rate Conversion → Ring Buffer → WAV (temp) → M4A (final)
+Mic Input → AVAudioEngine tap → Sample Rate Conversion → Ring Buffer → WAV
 ```
 
 - **AVAudioEngine** with tap on input node
