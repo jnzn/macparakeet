@@ -453,8 +453,8 @@ The app lives primarily in the menu bar. Click the icon for quick actions, or op
 
 **Acceptance criteria:**
 - [x] App launches to menu bar only (no dock icon initially)
-- [ ] Dock icon appears when main window opens, hides when closed
-- [ ] Menu bar icon reflects current state (idle, recording, processing)
+- [x] Dock icon appears when main window opens, hides when closed
+- [x] Menu bar icon reflects current state (idle, recording, processing)
 - [x] Menu bar dropdown shows quick actions
 - [x] Main window opens on demand (menu bar click or Cmd+O)
 - [x] Sidebar navigation between Transcribe, Dictations, Vocabulary, Settings
@@ -1241,9 +1241,9 @@ new scheduling architecture.
 
 **Acceptance criteria:**
 - [x] Speakers automatically detected and separated in transcript
-- [ ] Speaker labels displayed in transcript view with colors (Step 8 — UI PR)
-- [ ] Click speaker label to rename with real name (Step 8 — UI PR)
-- [ ] Speaking time (from diarization segments) and word count per speaker (Step 8 — UI PR)
+- [x] Speaker labels displayed in transcript view with colors (Step 8 — UI PR)
+- [x] Click speaker label to rename with real name (Step 8 — UI PR)
+- [x] Speaking time (from diarization segments) and word count per speaker (Step 8 — UI PR)
 - [x] Export includes speaker information in all formats
 - [x] SRT/VTT cues split at speaker boundaries
 - [x] Works with 2+ speakers (no artificial upper limit)

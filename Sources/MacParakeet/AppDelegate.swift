@@ -725,6 +725,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             vm.recordingMode = mode
             vm.state = .recording
             vm.startTimer()
+            self.updateMenuBarIcon(state: .recording)
             self.dictationLog.debug("recording UI entered generation=\(gen) mode=\(String(describing: mode), privacy: .public)")
 
             do {
@@ -877,6 +878,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
             vm.stopTimer()
             vm.state = .processing
+            self.updateMenuBarIcon(state: .processing)
             let stateAfterWait = await env.dictationService.state
             self.dictationLog.debug(
                 "stopDictation begin generation=\(gen) overlayState=\(self.describeOverlayState(vm.state), privacy: .public) serviceState=\(self.describeDictationState(stateAfterWait), privacy: .public)"
@@ -936,6 +938,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self.historyViewModel.loadDictations()
             if self.overlayGeneration == gen, self.overlayController == nil {
                 self.hotkeyManager?.resetToIdle()
+                self.updateMenuBarIcon(state: .idle)
                 self.showIdlePill()
             }
             self.dictationLog.debug("stopDictation complete generation=\(gen)")
@@ -1005,6 +1008,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     self.overlayViewModel = nil
                 }
                 _ = self.bumpOverlayGeneration()
+                self.updateMenuBarIcon(state: .idle)
                 self.showIdlePill()
             }
             return
@@ -1027,6 +1031,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             vm.stopTimer()
             vm.cancelTimeRemaining = 5.0
             vm.state = .cancelled(timeRemaining: 5.0)
+            self.updateMenuBarIcon(state: .idle)
 
             // Simple 5-second countdown. Only update cancelTimeRemaining (not state
             // enum) to avoid SwiftUI view reconstruction that fights the ring animation.
@@ -1055,6 +1060,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self.overlayViewModel = nil
             }
             _ = self.bumpOverlayGeneration()
+            self.updateMenuBarIcon(state: .idle)
             self.showIdlePill()
         }
     }
@@ -1081,6 +1087,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
             vm.stopTimer()
             vm.state = .processing
+            self.updateMenuBarIcon(state: .processing)
 
             do {
                 var dictation = try await env.dictationService.undoCancel()
@@ -1132,6 +1139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
             self.historyViewModel.loadDictations()
             if self.overlayGeneration == gen, self.overlayController == nil {
+                self.updateMenuBarIcon(state: .idle)
                 self.showIdlePill()
             }
         }
@@ -1153,6 +1161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         overlayController = nil
         overlayViewModel = nil
         _ = bumpOverlayGeneration()
+        updateMenuBarIcon(state: .idle)
         showIdlePill()
     }
 
@@ -1176,6 +1185,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let e = error as? DictationServiceError, e == .emptyTranscript { return true }
         if let e = error as? AudioProcessorError, case .insufficientSamples = e { return true }
         return false
+    }
+
+    // MARK: - Menu Bar Icon State
+
+    private func updateMenuBarIcon(state: BreathWaveIcon.MenuBarState) {
+        statusItem?.button?.image = BreathWaveIcon.menuBarIcon(pointSize: 18, state: state)
+    }
+
+    // MARK: - Dynamic Dock Icon (Menu Bar Only Mode)
+
+    /// Show dock icon temporarily when the main window is open in menu-bar-only mode.
+    private func showDockIconIfNeeded() {
+        guard settingsViewModel.menuBarOnlyMode else { return }
+        NSApp.setActivationPolicy(.regular)
+    }
+
+    /// Hide dock icon when the main window closes in menu-bar-only mode.
+    private func hideDockIconIfNeeded() {
+        guard settingsViewModel.menuBarOnlyMode else { return }
+        // Only hide if no primary windows are visible
+        guard !hasVisiblePrimaryWindow else { return }
+        NSApp.setActivationPolicy(.accessory)
     }
 
     /// Best-effort paste with explicit fallback.
@@ -1381,6 +1412,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func quitApp() {
         NSApp.terminate(nil)
+    }
+
+    // MARK: - NSWindowDelegate
+
+    func windowDidBecomeMain(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === mainWindow else { return }
+        showDockIconIfNeeded()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === mainWindow else { return }
+        // Delay slightly so macOS finishes closing the window before we check visibility
+        DispatchQueue.main.async { [weak self] in
+            self?.hideDockIconIfNeeded()
+        }
     }
 
     // MARK: - Alerts
