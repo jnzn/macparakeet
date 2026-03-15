@@ -242,9 +242,6 @@ public actor YouTubeDownloader {
             throw error
         }
 
-        // If the task was cancelled (process was terminated), throw early
-        try Task.checkCancellation()
-
         stdoutHandle.readabilityHandler = nil
         stderrHandle.readabilityHandler = nil
 
@@ -552,6 +549,8 @@ public actor YouTubeDownloader {
         } onCancel: {
             process.terminate()
         }
+
+        try Task.checkCancellation()
     }
 }
 
