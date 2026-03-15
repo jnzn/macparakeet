@@ -21,10 +21,30 @@ enum BreathWaveIcon {
     //   M 42,34 L 42,82 C 42,100 30,110 18,112 C 6,114 2,106 8,98 C 14,90 30,88 42,92
     // Stroke width: 7 (large), 10 (small/menu bar)
 
+    /// Menu bar icon state variants.
+    enum MenuBarState {
+        case idle
+        case recording
+        case processing
+    }
+
     /// Load the parakeet silhouette as a **template** NSImage for menu bar use.
     /// The image is stored as a processed SwiftPM resource (menubar-icon.png / @2x).
     /// Template images adapt to light/dark mode automatically.
-    static func menuBarIcon(pointSize: CGFloat = 18) -> NSImage {
+    static func menuBarIcon(pointSize: CGFloat = 18, state: MenuBarState = .idle) -> NSImage {
+        let baseIcon = loadBaseMenuBarIcon(pointSize: pointSize)
+
+        switch state {
+        case .idle:
+            return baseIcon
+        case .recording:
+            return compositeIcon(base: baseIcon, pointSize: pointSize, badgeColor: .systemRed)
+        case .processing:
+            return compositeIcon(base: baseIcon, pointSize: pointSize, badgeColor: .systemOrange)
+        }
+    }
+
+    private static func loadBaseMenuBarIcon(pointSize: CGFloat) -> NSImage {
         // Try loading from SwiftPM resource bundle first, then fall back to main bundle.
         if let url = Bundle.module.url(forResource: "menubar-icon@2x", withExtension: "png"),
            let image = NSImage(contentsOf: url) {
@@ -47,6 +67,32 @@ enum BreathWaveIcon {
         fallback.size = NSSize(width: pointSize, height: pointSize)
         fallback.isTemplate = true
         return fallback
+    }
+
+    /// Composite the base icon with a colored status dot in the bottom-right corner.
+    /// The resulting image is NOT a template (so the dot renders in color).
+    private static func compositeIcon(base: NSImage, pointSize: CGFloat, badgeColor: NSColor) -> NSImage {
+        let size = NSSize(width: pointSize, height: pointSize)
+        let image = NSImage(size: size, flipped: false) { rect in
+            // Draw base icon as template (system appearance)
+            base.draw(in: rect)
+
+            // Draw colored dot (bottom-right, 5pt diameter)
+            let dotSize: CGFloat = 5
+            let dotRect = NSRect(
+                x: rect.maxX - dotSize - 0.5,
+                y: 0.5,
+                width: dotSize,
+                height: dotSize
+            )
+            badgeColor.setFill()
+            NSBezierPath(ovalIn: dotRect).fill()
+
+            return true
+        }
+        // NOT a template — the dot must render in color
+        image.isTemplate = false
+        return image
     }
 
     /// Create the Cursive P logo as a filled NSImage for app icon / dock use.
