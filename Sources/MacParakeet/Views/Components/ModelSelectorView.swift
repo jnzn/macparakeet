@@ -4,6 +4,7 @@ struct ModelSelectorView: View {
     let currentModel: String
     let displayName: String
     let availableModels: [String]
+    var disabled: Bool = false
     let onSelect: (String) -> Void
 
     var body: some View {
@@ -33,5 +34,7 @@ struct ModelSelectorView: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
+        .disabled(disabled)
+        .opacity(disabled ? 0.5 : 1.0)
     }
 }

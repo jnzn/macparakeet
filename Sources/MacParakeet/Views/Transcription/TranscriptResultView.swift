@@ -453,6 +453,7 @@ struct TranscriptResultView: View {
                                     currentModel: viewModel.currentModelName,
                                     displayName: viewModel.modelDisplayName,
                                     availableModels: viewModel.availableModels,
+                                    disabled: viewModel.summaryState == .streaming,
                                     onSelect: { viewModel.selectModel($0) }
                                 )
                             }
@@ -621,6 +622,7 @@ struct TranscriptResultView: View {
                         currentModel: chatVM.currentModelName,
                         displayName: chatVM.modelDisplayName,
                         availableModels: chatVM.availableModels,
+                        disabled: chatVM.isStreaming,
                         onSelect: { chatVM.selectModel($0) }
                     )
                 }
