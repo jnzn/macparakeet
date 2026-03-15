@@ -71,11 +71,24 @@ enum BreathWaveIcon {
 
     /// Composite the base icon with a colored status dot in the bottom-right corner.
     /// The resulting image is NOT a template (so the dot renders in color).
+    /// The base icon is drawn using the menu bar's label color so it matches
+    /// the idle template appearance in both light and dark mode.
     private static func compositeIcon(base: NSImage, pointSize: CGFloat, badgeColor: NSColor) -> NSImage {
         let size = NSSize(width: pointSize, height: pointSize)
         let image = NSImage(size: size, flipped: false) { rect in
-            // Draw base icon as template (system appearance)
-            base.draw(in: rect)
+            // Use the base icon alpha channel as a mask, filled with the menu bar
+            // foreground color. This replicates template-image rendering while keeping
+            // isTemplate=false so the colored dot isn't tinted by the system.
+            // NSStatusBar items use controlTextColor which is white on dark menu bars
+            // and black on light ones (pre-Sonoma or accessibility settings).
+            if let cgBase = base.cgImage(forProposedRect: nil, context: nil, hints: nil),
+               let ctx = NSGraphicsContext.current?.cgContext {
+                ctx.saveGState()
+                ctx.clip(to: rect, mask: cgBase)
+                NSColor.controlTextColor.setFill()
+                ctx.fill(rect)
+                ctx.restoreGState()
+            }
 
             // Draw colored dot (bottom-right, 5pt diameter)
             let dotSize: CGFloat = 5
