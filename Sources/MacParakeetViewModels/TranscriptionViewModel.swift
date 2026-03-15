@@ -58,6 +58,7 @@ public final class TranscriptionViewModel {
     public var currentProviderID: LLMProviderID?
     public var availableModels: [String] = []
     public var onModelChanged: (() -> Void)?
+    public var onTranscribingChanged: ((Bool) -> Void)?
 
     public var isValidURL: Bool {
         YouTubeURLValidator.isYouTubeURL(urlInput)
@@ -321,6 +322,7 @@ public final class TranscriptionViewModel {
     private func beginTranscription(source: SourceKind) {
         sourceKind = source
         isTranscribing = true
+        onTranscribingChanged?(true)
         progress = "Preparing..."
         transcriptionProgress = nil
         progressPhase = .preparing
@@ -332,6 +334,7 @@ public final class TranscriptionViewModel {
 
     private func endTranscription() {
         isTranscribing = false
+        onTranscribingChanged?(false)
         progress = ""
         transcriptionProgress = nil
         transcribingFileName = ""
