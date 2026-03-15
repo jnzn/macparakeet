@@ -339,6 +339,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             transcriptionViewModel.onModelChanged = { [weak self] in
                 self?.chatViewModel.refreshModelInfo()
             }
+            transcriptionViewModel.onTranscribingChanged = { [weak self] isTranscribing in
+                guard let self, self.overlayController == nil else { return }
+                // Only update icon if dictation isn't active (dictation states take priority)
+                self.updateMenuBarIcon(state: isTranscribing ? .processing : .idle)
+            }
 
             maybeShowOnboarding()
         } catch {
