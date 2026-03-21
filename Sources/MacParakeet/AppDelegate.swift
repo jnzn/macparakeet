@@ -2,6 +2,7 @@ import AppKit
 import OSLog
 import Sparkle
 import SwiftUI
+import UniformTypeIdentifiers
 import MacParakeetCore
 import MacParakeetViewModels
 
@@ -63,6 +64,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var menuBarOnlyModeObserver: Any?
     private var showIdlePillObserver: Any?
     private var hotkeyMenuItem: NSMenuItem?
+    private var pasteLastMenuItem: NSMenuItem?
+    private var recentDictationsMenuItem: NSMenuItem?
     private var reopenOnboardingOnNextActivate = false
     private var hasPresentedHotkeyUnavailableAlert = false
     private let dictationLog = Logger(subsystem: "com.macparakeet.app", category: "DictationFlow")
@@ -227,11 +230,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         button.addSubview(dropView)
 
         let menu = NSMenu()
+        menu.delegate = self
 
         menu.addItem(NSMenuItem(
             title: "Open MacParakeet",
             action: #selector(openMainWindow),
             keyEquivalent: "o"
+        ))
+
+        menu.addItem(NSMenuItem.separator())
+
+        // Paste Last Dictation
+        let pasteItem = NSMenuItem(
+            title: "Paste Last Dictation",
+            action: #selector(pasteLastDictation),
+            keyEquivalent: ""
+        )
+        pasteItem.isEnabled = false
+        menu.addItem(pasteItem)
+        pasteLastMenuItem = pasteItem
+
+        // Recent Dictations submenu
+        let recentItem = NSMenuItem(
+            title: "Recent Dictations",
+            action: nil,
+            keyEquivalent: ""
+        )
+        recentItem.submenu = NSMenu()
+        recentItem.isHidden = true
+        menu.addItem(recentItem)
+        recentDictationsMenuItem = recentItem
+
+        menu.addItem(NSMenuItem.separator())
+
+        // Transcribe actions
+        menu.addItem(NSMenuItem(
+            title: "Transcribe File...",
+            action: #selector(transcribeFileFromMenu),
+            keyEquivalent: ""
+        ))
+
+        menu.addItem(NSMenuItem(
+            title: "Transcribe from YouTube...",
+            action: #selector(transcribeFromYouTubeMenu),
+            keyEquivalent: ""
         ))
 
         menu.addItem(NSMenuItem.separator())
@@ -244,8 +286,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         hotkeyItem.isEnabled = false
         menu.addItem(hotkeyItem)
         hotkeyMenuItem = hotkeyItem
-
-        menu.addItem(NSMenuItem.separator())
 
         menu.addItem(NSMenuItem(
             title: "Settings...",
@@ -1382,6 +1422,78 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         openMainWindow()
     }
 
+    @objc private func pasteLastDictation() {
+        guard let env = appEnvironment else { return }
+        Task {
+            guard let dictation = (try? env.dictationRepo.fetchAll(limit: 1))?.first else { return }
+            let text = dictation.cleanTranscript ?? dictation.rawTranscript
+            await pasteFromMenu(text: text, clipboardService: env.clipboardService)
+        }
+    }
+
+    @objc private func pasteRecentDictation(_ sender: NSMenuItem) {
+        guard let env = appEnvironment,
+              let id = sender.representedObject as? UUID else { return }
+        Task {
+            guard let dictation = try? env.dictationRepo.fetch(id: id) else { return }
+            let text = dictation.cleanTranscript ?? dictation.rawTranscript
+            await pasteFromMenu(text: text, clipboardService: env.clipboardService)
+        }
+    }
+
+    /// Resign menu-bar focus, wait for the target app to regain focus, then paste.
+    private func pasteFromMenu(text: String, clipboardService: ClipboardServiceProtocol) async {
+        NSApp.deactivate()
+        try? await Task.sleep(for: .milliseconds(200))
+        do {
+            try await clipboardService.pasteText(text)
+        } catch {
+            await clipboardService.copyToClipboard(text)
+        }
+    }
+
+    @objc private func transcribeFileFromMenu() {
+        guard appEnvironment != nil else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = AudioFileConverter.supportedExtensions.compactMap {
+            UTType(filenameExtension: $0)
+        }
+
+        if panel.runModal() == .OK, let url = panel.url {
+            openMainWindow()
+            transcriptionViewModel.transcribeFile(url: url)
+            SoundManager.shared.play(.fileDropped)
+        }
+    }
+
+    @objc private func transcribeFromYouTubeMenu() {
+        guard appEnvironment != nil else { return }
+        mainWindowState.selectedItem = .transcribe
+        openMainWindow()
+    }
+
+    private func rebuildRecentDictationsSubmenu(with dictations: [Dictation]) {
+        guard let recentItem = recentDictationsMenuItem else { return }
+        recentItem.isHidden = dictations.isEmpty
+
+        let submenu = NSMenu()
+        for dictation in dictations {
+            let text = (dictation.cleanTranscript ?? dictation.rawTranscript)
+                .replacingOccurrences(of: "\n", with: " ")
+            let truncated = text.count > 40 ? String(text.prefix(40)) + "…" : text
+            let item = NSMenuItem(
+                title: truncated,
+                action: #selector(pasteRecentDictation(_:)),
+                keyEquivalent: ""
+            )
+            item.representedObject = dictation.id
+            submenu.addItem(item)
+        }
+        recentItem.submenu = submenu
+    }
 
     private func createMainWindow() {
         let contentView = MainWindowView(
@@ -1480,5 +1592,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if response == .alertFirstButtonReturn {
             openMainWindowToSettings()
         }
+    }
+}
+
+// MARK: - NSMenuDelegate
+
+extension AppDelegate: NSMenuDelegate {
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard let env = appEnvironment else {
+            pasteLastMenuItem?.isEnabled = false
+            recentDictationsMenuItem?.isHidden = true
+            return
+        }
+        let dictations = (try? env.dictationRepo.fetchAll(limit: 5)) ?? []
+        pasteLastMenuItem?.isEnabled = !dictations.isEmpty
+        rebuildRecentDictationsSubmenu(with: dictations)
     }
 }
