@@ -11,9 +11,20 @@ public enum TelemetryErrorClassifier {
             return "URLError.\(urlErrorCodeName(urlError.code))"
         }
 
-        // Swift-native error types (enums, structs, classes) — use the type name
+        // Swift-native error types (enums, structs, classes) — include case name for enums
         let typeName = String(describing: type(of: error))
         if typeName != "_SwiftNativeNSError" && typeName != "NSError" {
+            // For enum errors, extract the case name (e.g., "AudioProcessorError.insufficientSamples")
+            let mirror = Mirror(reflecting: error)
+            if let caseName = mirror.children.first?.label {
+                return "\(typeName).\(caseName)"
+            }
+            // Non-enum errors or cases without associated values (Mirror has no children
+            // for simple enum cases) — use String(describing:) which prints the case name
+            let described = String(describing: error)
+            if described != typeName && !described.contains("(") {
+                return "\(typeName).\(described)"
+            }
             return typeName
         }
 
