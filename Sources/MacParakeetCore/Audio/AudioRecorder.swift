@@ -4,6 +4,15 @@ import Foundation
 import os
 import OSLog
 
+/// Snapshot of the audio input device used for a recording.
+public struct RecordingDeviceInfo: Sendable, Equatable {
+    public let deviceName: String
+    public let transport: String
+    public let sampleRate: Double
+    public let channels: UInt32
+    public let fallbackUsed: Bool
+}
+
 /// Manages microphone recording via AVAudioEngine.
 /// Captures audio, converts to 16kHz mono, and writes to a temporary WAV file.
 ///
@@ -22,6 +31,7 @@ public actor AudioRecorder {
     private var currentAudioLevel: Float = 0.0
     private var outputURL: URL?
     private var recording = false
+    private var _deviceInfo: RecordingDeviceInfo?
 
     /// Minimum samples before sending to STT.
     /// FluidAudio requires at least 1 second of 16kHz audio (16,000 samples).
@@ -35,6 +45,11 @@ public actor AudioRecorder {
 
     public var isRecording: Bool {
         recording
+    }
+
+    /// Device info from the most recent recording (including fallback status).
+    public var deviceInfo: RecordingDeviceInfo? {
+        _deviceInfo
     }
 
     /// Start recording from the microphone.
@@ -136,6 +151,19 @@ public actor AudioRecorder {
         logger.info(
             "input_format sr=\(inputFormat.sampleRate, privacy: .public) ch=\(inputFormat.channelCount, privacy: .public) common_format=\(inputFormat.commonFormat.rawValue, privacy: .public)"
         )
+
+        // Capture device info for telemetry (before validation — we want info even on failure)
+        if let resolvedID = AudioDeviceManager.currentInputDevice(of: engine) {
+            let name = AudioDeviceManager.deviceName(resolvedID) ?? "unknown"
+            let transport = AudioDeviceManager.transportType(resolvedID)
+            _deviceInfo = RecordingDeviceInfo(
+                deviceName: name,
+                transport: AudioDeviceManager.InputDevice.label(for: transport),
+                sampleRate: inputFormat.sampleRate,
+                channels: inputFormat.channelCount,
+                fallbackUsed: overrideDeviceID != nil
+            )
+        }
 
         // Validate format — Bluetooth HFP can report 0 Hz or 0 channels
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {

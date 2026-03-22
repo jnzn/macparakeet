@@ -15,6 +15,9 @@ public protocol AudioProcessorProtocol: Sendable {
 
     /// Whether the microphone is currently recording
     var isRecording: Bool { get async }
+
+    /// Device info from the most recent recording (name, transport, format, fallback status).
+    var recordingDeviceInfo: RecordingDeviceInfo? { get async }
 }
 
 public enum AudioProcessorError: Error, LocalizedError {

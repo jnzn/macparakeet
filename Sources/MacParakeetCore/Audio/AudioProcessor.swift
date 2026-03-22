@@ -18,6 +18,10 @@ public actor AudioProcessor: AudioProcessorProtocol {
         get async { await recorder.isRecording }
     }
 
+    public var recordingDeviceInfo: RecordingDeviceInfo? {
+        get async { await recorder.deviceInfo }
+    }
+
     public func convert(fileURL: URL) async throws -> URL {
         try await converter.convert(fileURL: fileURL)
     }
