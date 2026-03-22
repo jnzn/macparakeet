@@ -45,6 +45,10 @@ public actor MockAudioProcessor: AudioProcessorProtocol {
         _isRecording
     }
 
+    public var recordingDeviceInfo: RecordingDeviceInfo? {
+        nil
+    }
+
     public func convert(fileURL: URL) async throws -> URL {
         convertCallCount += 1
         lastConvertURL = fileURL

@@ -127,7 +127,8 @@ public actor DictationService: DictationServiceProtocol {
         } catch {
             _state = .idle
             recordingStartedAt = nil
-            Telemetry.send(.dictationFailed(errorType: Self.errorType(for: error)))
+            let device = await audioProcessor.recordingDeviceInfo
+            Telemetry.send(.dictationFailed(errorType: Self.errorType(for: error), device: device))
             logger.error("startRecording failed error=\(error.localizedDescription, privacy: .public)")
             throw error
         }
@@ -144,13 +145,15 @@ public actor DictationService: DictationServiceProtocol {
 
         do {
             let audioURL = try await audioProcessor.stopCapture()
+            let device = await audioProcessor.recordingDeviceInfo
             logger.debug("stopRecording capture stopped url=\(audioURL.path, privacy: .public)")
             let dictation = try await processCapturedAudio(audioURL: audioURL)
             _state = .success(dictation)
             Telemetry.send(.dictationCompleted(
                 durationSeconds: Double(dictation.durationMs) / 1000.0,
                 wordCount: dictation.wordCount,
-                mode: currentTelemetryContext.mode
+                mode: currentTelemetryContext.mode,
+                device: device
             ))
             logger.debug("stopRecording success rawChars=\(dictation.rawTranscript.count) cleanChars=\(dictation.cleanTranscript?.count ?? 0)")
             try? await Task.sleep(for: .milliseconds(500))
@@ -159,10 +162,11 @@ public actor DictationService: DictationServiceProtocol {
             return dictation
         } catch {
             _state = .idle
+            let device = await audioProcessor.recordingDeviceInfo
             if error is DictationServiceError, case DictationServiceError.emptyTranscript = error {
-                Telemetry.send(.dictationEmpty(durationSeconds: currentRecordingDurationSeconds()))
+                Telemetry.send(.dictationEmpty(durationSeconds: currentRecordingDurationSeconds(), device: device))
             } else {
-                Telemetry.send(.dictationFailed(errorType: Self.errorType(for: error)))
+                Telemetry.send(.dictationFailed(errorType: Self.errorType(for: error), device: device))
             }
             recordingStartedAt = nil
             logger.error("stopRecording failed error=\(error.localizedDescription, privacy: .public)")
@@ -177,11 +181,13 @@ public actor DictationService: DictationServiceProtocol {
         let generation = cancelGeneration
 
         let audioURL = try? await audioProcessor.stopCapture()
+        let device = await audioProcessor.recordingDeviceInfo
         pendingCancelledAudioURL = audioURL
         _state = .cancelled
         Telemetry.send(.dictationCancelled(
             durationSeconds: currentRecordingDurationSeconds(),
-            reason: reason
+            reason: reason,
+            device: device
         ))
 
         cancelResetTask?.cancel()
@@ -224,11 +230,13 @@ public actor DictationService: DictationServiceProtocol {
         _state = .processing
         do {
             let dictation = try await processCapturedAudio(audioURL: audioURL)
+            let device = await audioProcessor.recordingDeviceInfo
             _state = .success(dictation)
             Telemetry.send(.dictationCompleted(
                 durationSeconds: Double(dictation.durationMs) / 1000.0,
                 wordCount: dictation.wordCount,
-                mode: currentTelemetryContext.mode
+                mode: currentTelemetryContext.mode,
+                device: device
             ))
             try? await Task.sleep(for: .milliseconds(500))
             _state = .idle

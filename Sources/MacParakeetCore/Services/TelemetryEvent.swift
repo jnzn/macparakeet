@@ -95,10 +95,10 @@ public enum TelemetryEventSpec: Sendable {
     case appLaunched
     case appQuit(sessionDurationSeconds: Double)
     case dictationStarted(trigger: TelemetryDictationTrigger?, mode: TelemetryDictationMode?)
-    case dictationCompleted(durationSeconds: Double, wordCount: Int, mode: TelemetryDictationMode?)
-    case dictationCancelled(durationSeconds: Double?, reason: TelemetryDictationCancelReason?)
-    case dictationEmpty(durationSeconds: Double?)
-    case dictationFailed(errorType: String)
+    case dictationCompleted(durationSeconds: Double, wordCount: Int, mode: TelemetryDictationMode?, device: RecordingDeviceInfo? = nil)
+    case dictationCancelled(durationSeconds: Double?, reason: TelemetryDictationCancelReason?, device: RecordingDeviceInfo? = nil)
+    case dictationEmpty(durationSeconds: Double?, device: RecordingDeviceInfo? = nil)
+    case dictationFailed(errorType: String, device: RecordingDeviceInfo? = nil)
     case transcriptionStarted(source: TelemetryTranscriptionSource, audioDurationSeconds: Double?)
     case transcriptionCompleted(
         source: TelemetryTranscriptionSource,
@@ -217,23 +217,23 @@ extension TelemetryEventSpec {
                 ("trigger", trigger?.rawValue),
                 ("mode", mode?.rawValue)
             )
-        case .dictationCompleted(let durationSeconds, let wordCount, let mode):
-            return Self.compactProps(
+        case .dictationCompleted(let durationSeconds, let wordCount, let mode, let device):
+            return Self.mergeDevice(Self.compactProps(
                 ("duration_seconds", Self.format(durationSeconds)),
                 ("word_count", "\(wordCount)"),
                 ("mode", mode?.rawValue)
-            )
-        case .dictationCancelled(let durationSeconds, let reason):
-            return Self.compactProps(
+            ), device)
+        case .dictationCancelled(let durationSeconds, let reason, let device):
+            return Self.mergeDevice(Self.compactProps(
                 ("duration_seconds", durationSeconds.map(Self.format)),
                 ("reason", reason?.rawValue)
-            )
-        case .dictationEmpty(let durationSeconds):
-            return Self.compactProps(
+            ), device)
+        case .dictationEmpty(let durationSeconds, let device):
+            return Self.mergeDevice(Self.compactProps(
                 ("duration_seconds", durationSeconds.map(Self.format))
-            )
-        case .dictationFailed(let errorType):
-            return ["error_type": errorType]
+            ), device)
+        case .dictationFailed(let errorType, let device):
+            return Self.mergeDevice(["error_type": errorType], device)
         case .transcriptionStarted(let source, let audioDurationSeconds):
             return Self.compactProps(
                 ("source", source.rawValue),
@@ -309,6 +309,17 @@ extension TelemetryEventSpec {
 
     private static func format(_ value: Double) -> String {
         String(format: "%.1f", value)
+    }
+
+    private static func mergeDevice(_ base: [String: String]?, _ device: RecordingDeviceInfo?) -> [String: String]? {
+        guard let device else { return base }
+        var merged = base ?? [:]
+        merged["device_name"] = device.deviceName
+        merged["device_transport"] = device.transport
+        merged["device_sample_rate"] = "\(Int(device.sampleRate))"
+        merged["device_channels"] = "\(device.channels)"
+        if device.fallbackUsed { merged["device_fallback"] = "true" }
+        return merged
     }
 }
 
