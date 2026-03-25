@@ -157,7 +157,7 @@ final class BinaryBootstrapTests: XCTestCase {
         XCTAssertEqual(tempBinaryArtifactCount(), 0)
     }
 
-    func testAutoUpdateRecordsLastCheckWhenDue() async {
+    func testAutoUpdateDoesNotRecordTimestampOnFailure() async {
         let bootstrap = makeBootstrap { request in
             guard let url = request.url else {
                 throw BinaryBootstrapError.downloadFailed("Missing URL")
@@ -170,7 +170,8 @@ final class BinaryBootstrapTests: XCTestCase {
 
         await bootstrap.autoUpdateYtDlpIfNeeded()
 
-        XCTAssertNotNil(defaults.object(forKey: "ytDlp.lastUpdateCheckAt"))
+        // Timestamp should NOT be written on failure — next launch will retry
+        XCTAssertNil(defaults.object(forKey: "ytDlp.lastUpdateCheckAt"))
     }
 
     func testAutoUpdateSkipsWhenCheckedRecently() async {
