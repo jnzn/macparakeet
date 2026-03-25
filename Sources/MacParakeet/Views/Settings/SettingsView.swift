@@ -95,7 +95,7 @@ struct SettingsView: View {
 
                 statChip(
                     title: "YouTube Cache",
-                    value: formattedYouTubeStorage
+                    value: viewModel.formattedYouTubeStorage
                 )
 
                 statChip(
@@ -276,7 +276,7 @@ struct SettingsView: View {
                     metricTile(
                         title: "YouTube Downloads",
                         value: "\(viewModel.youtubeDownloadCount)",
-                        detail: formattedYouTubeStorage
+                        detail: viewModel.formattedYouTubeStorage
                     )
                 }
 
@@ -670,14 +670,6 @@ struct SettingsView: View {
     }
 
     // MARK: - Helpers
-
-    private var formattedYouTubeStorage: String {
-        let mb = viewModel.youtubeDownloadStorageMB
-        if mb >= 1024 {
-            return String(format: "%.1f GB", mb / 1024)
-        }
-        return String(format: "%.0f MB", mb)
-    }
 
     private func aboutRow(label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 1) {

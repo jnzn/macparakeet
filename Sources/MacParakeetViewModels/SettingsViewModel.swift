@@ -108,6 +108,13 @@ public final class SettingsViewModel {
     public var dictationCount = 0
     public var youtubeDownloadCount = 0
     public var youtubeDownloadStorageMB: Double = 0
+    public var formattedYouTubeStorage: String {
+        let mb = youtubeDownloadStorageMB
+        if mb >= 1024 {
+            return String(format: "%.1f GB", mb / 1024)
+        }
+        return String(format: "%.0f MB", mb)
+    }
 
     // Local model status / repair
     public var parakeetStatus: LocalModelStatus = .unknown

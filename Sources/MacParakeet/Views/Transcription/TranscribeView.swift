@@ -3,20 +3,6 @@ import UniformTypeIdentifiers
 import MacParakeetCore
 import MacParakeetViewModels
 
-/// Extract a short, meaningful summary from a potentially long error message.
-/// For dyld/library errors shows "Library loading failed", for other errors
-/// takes the first line, truncated to fit the status pill.
-private func truncateErrorMessage(_ msg: String) -> String {
-    if msg.contains("dyld") || msg.contains("Library not loaded") {
-        return "Library loading failed"
-    }
-    let firstLine = msg.prefix(while: { $0 != "\n" })
-    if firstLine.count > 40 {
-        return String(firstLine.prefix(37)) + "..."
-    }
-    return String(firstLine)
-}
-
 struct TranscribeView: View {
     @Bindable var viewModel: TranscriptionViewModel
     var chatViewModel: TranscriptChatViewModel
