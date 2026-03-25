@@ -79,7 +79,6 @@ public actor BinaryBootstrap {
     /// Weekly non-blocking update. Failures are intentionally ignored.
     public func autoUpdateYtDlpIfNeeded() async {
         guard shouldRunYtDlpUpdateCheck() else { return }
-        defaults.set(now(), forKey: Self.ytDlpLastUpdateCheckKey)
 
         let binaryPath = ytDlpBinaryPath()
         guard fileManager.isExecutableFile(atPath: binaryPath) else { return }
@@ -88,8 +87,12 @@ public actor BinaryBootstrap {
             // Re-install from GitHub with checksum verification
             // (same download-verify-replace flow as fresh install)
             try await installYtDlp(at: binaryPath)
+            // Only record success — failed updates retry on next launch instead of
+            // waiting a full week.
+            defaults.set(now(), forKey: Self.ytDlpLastUpdateCheckKey)
         } catch {
             // Non-blocking by design — update failures are silently ignored.
+            // Next app launch will retry since we didn't update the timestamp.
         }
     }
 
@@ -216,15 +219,26 @@ public actor BinaryBootstrap {
         let targetDir = targetURL.deletingLastPathComponent()
         try fileManager.createDirectory(at: targetDir, withIntermediateDirectories: true)
 
-        if fileManager.fileExists(atPath: targetPath) {
-            try fileManager.removeItem(atPath: targetPath)
-        }
+        // Stage the new binary next to the target with permissions set BEFORE swapping.
+        // This ensures the old binary stays in place if anything fails.
+        let stagedURL = targetDir.appendingPathComponent(".\(targetURL.lastPathComponent).staged")
+        defer { try? fileManager.removeItem(at: stagedURL) }
 
         do {
-            try fileManager.copyItem(at: sourceURL, to: targetURL)
-            try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: targetPath)
+            if fileManager.fileExists(atPath: stagedURL.path) {
+                try fileManager.removeItem(at: stagedURL)
+            }
+            try fileManager.copyItem(at: sourceURL, to: stagedURL)
+            try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stagedURL.path)
         } catch {
             throw BinaryBootstrapError.installFailed(error.localizedDescription)
+        }
+
+        // Atomic swap: old binary is preserved until the new one is fully in place.
+        if fileManager.fileExists(atPath: targetPath) {
+            _ = try fileManager.replaceItemAt(targetURL, withItemAt: stagedURL)
+        } else {
+            try fileManager.moveItem(at: stagedURL, to: targetURL)
         }
     }
 
