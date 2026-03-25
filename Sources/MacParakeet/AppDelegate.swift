@@ -94,10 +94,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let menuBarOnlyModeObserver { NotificationCenter.default.removeObserver(menuBarOnlyModeObserver) }
         if let showIdlePillObserver { NotificationCenter.default.removeObserver(showIdlePillObserver) }
         // Block briefly for STT cleanup (ANE/CoreML resource release).
-        // Fire-and-forget Task would never complete — macOS kills the process first.
+        // Must use Task.detached — a plain Task inherits @MainActor context and would
+        // deadlock because the main thread is blocked by semaphore.wait below.
         let sttClient = appEnvironment?.sttClient
         let semaphore = DispatchSemaphore(value: 0)
-        Task {
+        Task.detached {
             await sttClient?.shutdown()
             semaphore.signal()
         }
