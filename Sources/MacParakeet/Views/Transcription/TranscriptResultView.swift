@@ -790,11 +790,11 @@ struct TranscriptResultView: View {
     private func timestampedView(words: [WordTimestamp]) -> some View {
         let hasSpeakers = words.contains { $0.speakerId != nil }
         let speakerColorMap = buildSpeakerColorMap()
-        let segments = groupIntoSegments(words: words)
+        let segments = TranscriptSegmenter.groupIntoSegments(words: words)
 
         if hasSpeakers {
             // Speaker-aware layout: group segments into speaker turns
-            let turns = groupIntoSpeakerTurns(segments: segments)
+            let turns = TranscriptSegmenter.groupIntoSpeakerTurns(segments: segments, speakerLabelProvider: speakerLabel(for:))
             ForEach(Array(turns.enumerated()), id: \.offset) { _, turn in
                 VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
                     // Speaker label
@@ -860,7 +860,10 @@ struct TranscriptResultView: View {
     @ViewBuilder
     private func speakerSummaryPanel(speakers: [SpeakerInfo]) -> some View {
         let colorMap = buildSpeakerColorMap()
-        let speakerStats = computeSpeakerStats()
+        let speakerStats = TranscriptSegmenter.computeSpeakerStats(
+            diarizationSegments: transcription.diarizationSegments,
+            wordTimestamps: transcription.wordTimestamps
+        )
 
         VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
             ForEach(speakers, id: \.id) { speaker in
@@ -940,32 +943,6 @@ struct TranscriptResultView: View {
         editingSpeakerId = nil
     }
 
-    private struct SpeakerStats {
-        var speakingTimeMs: Int = 0
-        var wordCount: Int = 0
-    }
-
-    private func computeSpeakerStats() -> [String: SpeakerStats] {
-        var stats: [String: SpeakerStats] = [:]
-
-        // Speaking time from diarization segments
-        if let segments = transcription.diarizationSegments {
-            for segment in segments {
-                stats[segment.speakerId, default: SpeakerStats()].speakingTimeMs += (segment.endMs - segment.startMs)
-            }
-        }
-
-        // Word count from word timestamps
-        if let words = transcription.wordTimestamps {
-            for word in words {
-                if let speakerId = word.speakerId {
-                    stats[speakerId, default: SpeakerStats()].wordCount += 1
-                }
-            }
-        }
-
-        return stats
-    }
 
     private func formatSpeakingTime(ms: Int) -> String {
         let totalSeconds = ms / 1000
@@ -997,103 +974,6 @@ struct TranscriptResultView: View {
         return info.label
     }
 
-    private struct SpeakerTurn {
-        let speakerId: String
-        let speakerLabel: String
-        let segments: [Segment]
-    }
-
-    private func groupIntoSpeakerTurns(segments: [Segment]) -> [SpeakerTurn] {
-        guard !segments.isEmpty else { return [] }
-
-        var turns: [SpeakerTurn] = []
-        var currentSpeaker = segments[0].speakerId ?? ""
-        var currentSegments: [Segment] = []
-
-        for segment in segments {
-            let segSpeaker = segment.speakerId ?? currentSpeaker
-            if segSpeaker != currentSpeaker && !currentSegments.isEmpty {
-                turns.append(SpeakerTurn(
-                    speakerId: currentSpeaker,
-                    speakerLabel: speakerLabel(for: currentSpeaker),
-                    segments: currentSegments
-                ))
-                currentSegments = []
-                currentSpeaker = segSpeaker
-            }
-            currentSpeaker = segSpeaker
-            currentSegments.append(segment)
-        }
-
-        if !currentSegments.isEmpty {
-            turns.append(SpeakerTurn(
-                speakerId: currentSpeaker,
-                speakerLabel: speakerLabel(for: currentSpeaker),
-                segments: currentSegments
-            ))
-        }
-
-        return turns
-    }
-
-    // MARK: - Segment Grouping
-
-    private struct Segment {
-        let startMs: Int
-        let text: String
-        let speakerId: String?
-    }
-
-    private func groupIntoSegments(words: [WordTimestamp]) -> [Segment] {
-        guard !words.isEmpty else { return [] }
-
-        var segments: [Segment] = []
-        var currentWords: [String] = []
-        var segmentStart = words[0].startMs
-        var segmentSpeaker = words[0].speakerId
-
-        for (i, word) in words.enumerated() {
-            let isLast = i == words.count - 1
-            let speakerChanged = word.speakerId != nil && word.speakerId != segmentSpeaker
-
-            // Flush current segment on speaker change before adding this word
-            if speakerChanged && !currentWords.isEmpty {
-                segments.append(Segment(
-                    startMs: segmentStart,
-                    text: currentWords.joined(separator: " "),
-                    speakerId: segmentSpeaker
-                ))
-                currentWords = []
-                segmentStart = word.startMs
-                segmentSpeaker = word.speakerId
-            }
-
-            currentWords.append(word.word)
-            // Track speaker (nil words inherit current speaker)
-            if word.speakerId != nil {
-                segmentSpeaker = word.speakerId
-            }
-
-            let endsWithPunctuation = word.word.last.map { ".!?".contains($0) } ?? false
-            let hasLongGap = i + 1 < words.count && (words[i + 1].startMs - word.endMs) > 1500
-            let tooLong = currentWords.count >= 40
-
-            if isLast || (endsWithPunctuation && currentWords.count >= 3) || hasLongGap || tooLong {
-                segments.append(Segment(
-                    startMs: segmentStart,
-                    text: currentWords.joined(separator: " "),
-                    speakerId: segmentSpeaker
-                ))
-                currentWords = []
-                if !isLast {
-                    segmentStart = words[i + 1].startMs
-                    segmentSpeaker = words[i + 1].speakerId
-                }
-            }
-        }
-
-        return segments
-    }
 
     // MARK: - Actions
 
@@ -1173,7 +1053,7 @@ struct TranscriptResultView: View {
     private func exportToDownloads(format: ExportFormat) {
         // Use the ViewModel's copy which reflects any in-flight renames
         let source = viewModel.currentTranscription ?? transcription
-        let stem = sanitizedExportStem(from: source.fileName)
+        let stem = TranscriptSegmenter.sanitizedExportStem(from: source.fileName)
         guard let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first else {
             exportErrorMessage = "Your Downloads folder could not be found."
             SoundManager.shared.play(.errorSoft)
@@ -1224,13 +1104,6 @@ struct TranscriptResultView: View {
         }
     }
 
-    private func sanitizedExportStem(from fileName: String) -> String {
-        let rawStem = (fileName as NSString).deletingPathExtension
-        let disallowed = CharacterSet(charactersIn: "/:\\\0")
-        let parts = rawStem.components(separatedBy: disallowed)
-        let normalized = parts.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-        return normalized.isEmpty ? "transcript" : normalized
-    }
 
     private func formatTimestamp(ms: Int) -> String {
         let totalSeconds = ms / 1000

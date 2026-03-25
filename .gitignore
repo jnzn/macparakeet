@@ -1,6 +1,9 @@
 # Auto-memory
 MEMORY.md
 
+# Claude Code
+.claude/
+
 # Xcode
 .build/
 DerivedData/
