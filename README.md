@@ -1,121 +1,170 @@
-# MacParakeet
+<p align="center">
+  <img src="Assets/AppIcon-1024x1024.png" width="128" height="128" alt="MacParakeet app icon">
+</p>
 
-**The fastest, most private voice app for Mac.**
+<h1 align="center">MacParakeet</h1>
 
-> Migration Note: FluidAudio CoreML is the active target architecture. Specs/docs reflect target runtime behavior while implementation work is in progress.
+<p align="center">
+  The fastest, most private voice app for Mac.
+</p>
 
-MacParakeet uses NVIDIA's Parakeet TDT model — running on Apple's Neural Engine via FluidAudio CoreML — to power system-wide voice dictation and file transcription. Entirely on your Mac, with zero cloud uploads.
-
-First-run onboarding downloads the Parakeet speech model so dictation and transcription are ready before you start using the app.
-
-## Two Modes
-
-### System-Wide Dictation
-Press `Fn` anywhere on your Mac → speak → polished text appears. Like WisprFlow, but 100% local.
-
-- **Double-tap Fn** — Persistent recording (press Fn again to stop)
-- **Hold Fn** — Push-to-talk (release to auto-stop and paste)
-
-Trigger key configurable in Settings — bare modifiers (Fn, Control, etc.), standalone keys (F5, Tab), or chord combos (Cmd+9, Ctrl+Shift+D).
-
-### File Transcription
-Drag any audio or video file → get a transcript in seconds.
-
-- Transcribe a 1-hour podcast in under 25 seconds (155x realtime)
-- Word-level timestamps with confidence scores
-- Export to TXT, Markdown, SRT, VTT, DOCX, PDF, and JSON
-
-## Why MacParakeet?
-
-| | MacParakeet | WisprFlow | MacWhisper | Superwhisper |
-|---|---|---|---|---|
-| **Processing** | 100% Local | Cloud | Local | Local |
-| **Speed** | 155x realtime | Varies (server) | 15-30x | 15-30x |
-| **Price** | $49 once | $12-15/month | $30 Pro | $250 lifetime |
-| **Privacy** | Zero cloud | Audio uploaded | Local | Local |
-| **Languages** | 10+ European | 104+ | 100+ | 20+ |
-| **STT Engine** | Parakeet | Whisper (cloud) | Whisper + Parakeet | Whisper |
-
-## Features
-
-### Implemented
-
-- **Blazing Fast** — Parakeet TDT STT, fully local
-- **Multilingual** — 10+ European languages including Spanish, French, German, Italian, Portuguese, and Russian
-- **100% Private** — Audio never leaves your Mac. No accounts. No tracking.
-- **System-Wide Dictation** — Configurable hotkey (bare keys, modifiers, or chord combos), double-tap (persistent) + hold-to-talk
-- **File Transcription** — Drag-drop audio/video files, word timestamps
-- **Smart Cleanup** — Deterministic 4-step pipeline (filler removal, custom words, snippets, whitespace)
-- **Custom Words** — Domain vocabulary corrections and proper noun casing
-- **Text Snippets** — Natural language triggers expand into longer text (supports `\n` for newlines)
-- **Export** — TXT, Markdown, SRT, VTT, DOCX, PDF, and JSON + copy to clipboard
-- **History** — Dictation + transcription history stored locally (SQLite, searchable)
-- **YouTube Transcription** — Paste a YouTube URL, auto-download audio via yt-dlp, transcribe with Parakeet
-- **Private Dictation Mode** — Optionally skip saving dictations to history
-- **AI Summary & Chat** — Summarize transcriptions and ask questions via cloud LLM providers (OpenAI, Anthropic, Ollama, OpenRouter)
-- **Speaker Diarization** — Auto-detect and label speakers in file transcriptions (summary panel + inline rename)
-- **Auto-Updates** — Automatic background updates via Sparkle
-- **In-App Feedback** — Report bugs, request features, or share feedback (routes to [macparakeet-community](https://github.com/moona3k/macparakeet-community))
-
-### Distribution
-
-- **Direct Download** — Notarized DMG via [macparakeet.com](https://macparakeet.com), LemonSqueezy licensing, Sparkle auto-updates
-
-## Requirements
-
-- macOS 14.2+ (Sonoma)
-- Apple Silicon Mac (M1 or later)
-- 8GB RAM minimum (16GB recommended)
-
-## Installation
-
-Download from [macparakeet.com](https://macparakeet.com)
-
-## Tech Stack
-
-- **STT Engine**: Parakeet TDT 0.6B-v3 via FluidAudio CoreML (Neural Engine)
-- **Framework**: Swift + SwiftUI
-- **Database**: SQLite via GRDB
-- **Platform**: macOS 14.2+ (Apple Silicon)
-
-## Privacy
-
-MacParakeet processes everything locally. Your audio is never:
-- Uploaded to any server
-- Stored outside your Mac
-- Used for training AI models
-- Accessible without your permission
-
-## Pricing
-
-| Tier | Price | Includes |
-|------|-------|----------|
-| **Free** | $0 | 7-day trial (full features) |
-| **Pro** | $49 (one-time) | License unlock after trial (activation UI + local gating implemented; production checkout/variant config is provided at build time) |
-
-## Development Philosophy
-
-MacParakeet is built for **fast feedback loops**. AI agents make mistakes — but they're good at fixing them if they can detect them. So every component is designed to be verifiable without manual interaction:
-
-- **Tests** — Unit and integration tests for all core logic (`swift test`)
-- **Internal CLI** — Headless interface to core services (transcribe files, test the pipeline) so changes can be verified without launching the GUI
-  - Tip: use `swift run macparakeet-cli transcribe ... --database /tmp/macparakeet-dev.db` to avoid writing into your real app database during dev.
-  - Canonical dev app launch: `scripts/dev/run_app.sh` (builds latest debug binary, kills stale `/Applications` instance, launches current repo build).
-  - Model lifecycle checks: `swift run macparakeet-cli models status`, `swift run macparakeet-cli models warm-up`, `swift run macparakeet-cli models repair`.
-- **Protocol-based services** — Mockable boundaries make isolated testing straightforward
-
-The faster the feedback loop, the faster the agent self-corrects. If you can't confirm a change works by running a command, the change isn't done.
-
-## Support
-
-- In-app: Feedback (sidebar)
-- Community: [github.com/moona3k/macparakeet-community](https://github.com/moona3k/macparakeet-community)
-- Website: [macparakeet.com](https://macparakeet.com)
-
-## License
-
-Proprietary. All rights reserved.
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="GPL-3.0 License"></a>
+  <img src="https://img.shields.io/badge/macOS-14.2%2B-000000.svg" alt="macOS 14.2+">
+  <img src="https://img.shields.io/badge/Swift-6.0-F05138.svg" alt="Swift 6">
+  <img src="https://img.shields.io/badge/tests-810%20passing-brightgreen.svg" alt="810 tests passing">
+  <img src="https://img.shields.io/badge/Apple%20Silicon-only-333333.svg" alt="Apple Silicon only">
+</p>
 
 ---
 
-Made for privacy-conscious Mac users who think faster than they type.
+MacParakeet runs NVIDIA's Parakeet TDT speech model on Apple's Neural Engine via FluidAudio CoreML. System-wide dictation and file transcription, entirely on your Mac. No cloud. No accounts.
+
+<!-- TODO: add hero screenshot -->
+
+## Features
+
+**System-Wide Dictation** -- Press a hotkey anywhere on macOS, speak, text appears.
+
+- Double-tap for persistent recording, hold for push-to-talk
+- Configurable trigger: bare keys, modifiers, or chord combos (Fn default)
+- Auto-paste with clipboard preservation
+- Private dictation mode (skip saving to history)
+
+**File Transcription** -- Drag audio or video files, get a transcript in seconds.
+
+- 155x realtime: ~60 minutes of audio in ~23 seconds
+- ~2.5% word error rate (Parakeet TDT 0.6B-v3)
+- Word-level timestamps with confidence scores
+- Speaker diarization (auto-detect and label speakers)
+- YouTube URL transcription via yt-dlp
+
+**Text Processing**
+
+- Deterministic 4-step cleanup pipeline: filler removal, custom words, snippets, whitespace normalization
+- Custom vocabulary for domain terms and proper nouns
+- Text snippets with natural language triggers (supports `\n` for newlines)
+
+**Export** -- TXT, Markdown, SRT, VTT, DOCX, PDF, JSON, or copy to clipboard.
+
+**AI Summary & Chat** -- Summarize transcriptions and ask follow-up questions via cloud LLM providers (OpenAI, Anthropic, Ollama, OpenRouter). Optional -- bring your own API keys.
+
+**Everything Else**
+
+- Searchable dictation and transcription history (SQLite)
+- Voice stats dashboard
+- Automatic background updates via Sparkle (pre-built DMG)
+- Menu bar app with drag-and-drop support
+- 25 European languages with automatic detection
+
+## Getting Started
+
+### Download
+
+Grab the latest notarized DMG from [macparakeet.com](https://macparakeet.com). Open it, drag to Applications, done.
+
+On first launch, MacParakeet downloads the Parakeet speech model (~6 GB). After that, everything runs offline.
+
+### Or Build from Source
+
+See [Building from Source](#building-from-source) below.
+
+## Requirements
+
+- macOS 14.2+ (Sonoma or later)
+- Apple Silicon (M1 or later)
+- ~6 GB disk space for the speech model
+
+## Building from Source
+
+MacParakeet is a Swift Package Manager project. No Xcode project file needed.
+
+```bash
+# Clone
+git clone https://github.com/moona3k/macparakeet.git
+cd macparakeet
+
+# Run tests
+swift test
+
+# Build the GUI app (code-signed for Keychain + permissions)
+xcodebuild build \
+  -scheme MacParakeet \
+  -destination 'platform=OS X' \
+  -derivedDataPath .build/xcode \
+  CODE_SIGN_IDENTITY="Apple Development" \
+  DEVELOPMENT_TEAM=YOUR_TEAM_ID
+
+# Launch the built app
+scripts/dev/run_app.sh
+
+# Or open in Xcode
+open Package.swift
+```
+
+Replace `YOUR_TEAM_ID` with your Apple Developer team identifier. Code signing is required for microphone access and accessibility permissions.
+
+### Build the CLI
+
+```bash
+swift build --target CLI
+swift run macparakeet-cli --help
+```
+
+## CLI
+
+MacParakeet includes an internal CLI for headless operation and development.
+
+```bash
+# Transcribe a file
+swift run macparakeet-cli transcribe /path/to/audio.mp3
+
+# Use a separate database for dev work
+swift run macparakeet-cli transcribe recording.wav --database /tmp/macparakeet-dev.db
+
+# Check STT model status
+swift run macparakeet-cli models status
+
+# View dictation history
+swift run macparakeet-cli history
+```
+
+## Tech Stack
+
+| Layer | Choice |
+|-------|--------|
+| STT Engine | Parakeet TDT 0.6B-v3 via FluidAudio CoreML (Neural Engine) |
+| Language | Swift 6.0 + SwiftUI |
+| Database | SQLite via GRDB |
+| Auto-Updates | Sparkle 2 |
+| YouTube | yt-dlp |
+| Platform | macOS 14.2+, Apple Silicon |
+
+## Privacy
+
+MacParakeet processes everything locally. Your audio never leaves your Mac.
+
+- **No cloud processing.** The speech model runs on the Neural Engine, not a server.
+- **No accounts.** No login, no email, no registration.
+- **Anonymous telemetry.** Non-identifying, session-scoped usage analytics help us improve the app. No persistent IDs, no IP storage, no audio or text content transmitted. Opt out anytime in Settings.
+- **Temp files cleaned up.** Audio files are deleted after transcription unless you explicitly save them.
+
+The optional AI Summary & Chat feature connects to external LLM providers only when you configure it with your own API keys and explicitly invoke it. Dictation and transcription never touch the network.
+
+## Contributing
+
+MacParakeet is open source and contributions are welcome.
+
+- **Report bugs or request features** -- [Open an issue](https://github.com/moona3k/macparakeet/issues)
+- **Submit a pull request** -- Fork the repo, make your changes, run `swift test`, and open a PR
+- **Read the specs** -- Architecture decisions and feature specs live in `spec/`. Start with `spec/README.md` for an overview.
+
+For larger changes, open an issue first to discuss the approach.
+
+## License
+
+MacParakeet is free software, released under the [GNU General Public License v3.0](LICENSE).
+
+---
+
+Made for people who think faster than they type.
