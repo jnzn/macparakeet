@@ -31,10 +31,11 @@ public actor AudioRecorder {
     /// Thread-safe audio level written from the real-time audio thread, read by the actor.
     /// Avoids Task allocation on the audio thread which causes priority inversion.
     nonisolated private let atomicAudioLevel = OSAllocatedUnfairLock<Float>(initialState: 0.0)
-    /// Thread-safe flag to prevent file writes after stop() has been called.
-    /// Prevents a data race where an in-flight audio tap callback writes to AVAudioFile
-    /// concurrently with stop() clearing audioFile.
-    nonisolated private let stopped = OSAllocatedUnfairLock(initialState: true)
+    /// Thread-safe generation counter incremented on each stop(). Tap callbacks capture
+    /// the generation at install time and bail out if it has changed. This prevents both
+    /// the stop() race (writes after audioFile is nilled) and the cross-session race
+    /// (stale callback from session A writing after session B has started).
+    nonisolated private let sessionGeneration = OSAllocatedUnfairLock(initialState: 0)
     private var outputURL: URL?
     private var recording = false
     private var _deviceInfo: RecordingDeviceInfo?
@@ -100,10 +101,9 @@ public actor AudioRecorder {
             throw AudioProcessorError.recordingFailed("Not recording")
         }
 
-        // Signal the audio tap to stop writing before removing it.
-        // This prevents the race where an in-flight callback writes to
-        // AVAudioFile after we nil it below.
-        stopped.withLock { $0 = true }
+        // Bump generation so any in-flight tap callbacks from this session bail out.
+        // This prevents both the stop() race and the cross-session race.
+        sessionGeneration.withLock { $0 += 1 }
 
         audioEngine?.inputNode.removeTap(onBus: 0)
         audioEngine?.stop()
@@ -217,13 +217,16 @@ public actor AudioRecorder {
 
         self.tapErrorLogged.withLock { $0 = false }
 
+        // Capture the current generation so stale callbacks from previous sessions bail out.
+        let tapGeneration = self.sessionGeneration.withLock { $0 }
+
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) {
             [weak self] buffer, _ in
             guard let self else { return }
 
-            // Check stopped flag before doing any work — prevents writes after stop()
-            let isStopped = self.stopped.withLock { $0 }
-            guard !isStopped else { return }
+            // Bail if stop() was called (generation bumped) or a new session started
+            let currentGen = self.sessionGeneration.withLock { $0 }
+            guard currentGen == tapGeneration else { return }
 
             // Calculate audio level (RMS) — written atomically, no Task allocation needed
             let channelData = buffer.floatChannelData?[0]
@@ -268,10 +271,9 @@ public actor AudioRecorder {
 
             switch status {
             case .haveData:
-                // Re-check stopped flag before writing — stop() may have been called
+                // Re-check generation before writing — stop() may have been called
                 // between the guard at the top and here.
-                let stillRunning = !self.stopped.withLock { $0 }
-                guard stillRunning else { return }
+                guard self.sessionGeneration.withLock({ $0 }) == tapGeneration else { return }
                 do {
                     try file.write(from: convertedBuffer)
                     self.sampleCounter.withLock { $0 += Int(convertedBuffer.frameLength) }
@@ -302,9 +304,8 @@ public actor AudioRecorder {
             }
         }
 
-        // Reset counter and clear stopped flag before engine.start() — the tap can fire immediately after start.
+        // Reset counter before engine.start() — the tap can fire immediately after start.
         self.sampleCounter.withLock { $0 = 0 }
-        self.stopped.withLock { $0 = false }
 
         do {
             try engine.start()

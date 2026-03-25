@@ -78,6 +78,10 @@ public final class HotkeyManager {
                 return retained.toOpaque()
             }()
         ) else {
+            // tapCreate failed — release the retained reference to avoid a permanent leak.
+            // Without this, deinit can never fire (the +1 prevents deallocation).
+            retainedSelf?.release()
+            retainedSelf = nil
             return false
         }
 
