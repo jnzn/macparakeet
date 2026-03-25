@@ -137,18 +137,7 @@ public final class AudioFileConverter: Sendable {
         let resumed = OSAllocatedUnfairLock(initialState: false)
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                process.terminationHandler = { _ in
-                    let shouldResume = resumed.withLock { done -> Bool in
-                        guard !done else { return false }
-                        done = true
-                        return true
-                    }
-                    if shouldResume {
-                        continuation.resume()
-                    }
-                }
-
-                DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+                let timeoutItem = DispatchWorkItem {
                     let shouldResume = resumed.withLock { done -> Bool in
                         guard !done else { return false }
                         done = true
@@ -162,6 +151,20 @@ public final class AudioFileConverter: Sendable {
                     }
                 }
 
+                process.terminationHandler = { _ in
+                    let shouldResume = resumed.withLock { done -> Bool in
+                        guard !done else { return false }
+                        done = true
+                        return true
+                    }
+                    if shouldResume {
+                        continuation.resume()
+                        timeoutItem.cancel()
+                    }
+                }
+
+                DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: timeoutItem)
+
                 if !process.isRunning {
                     let shouldResume = resumed.withLock { done -> Bool in
                         guard !done else { return false }
@@ -170,6 +173,7 @@ public final class AudioFileConverter: Sendable {
                     }
                     if shouldResume {
                         continuation.resume()
+                        timeoutItem.cancel()
                     }
                 }
             }

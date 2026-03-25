@@ -85,13 +85,11 @@ public actor BinaryBootstrap {
         guard fileManager.isExecutableFile(atPath: binaryPath) else { return }
 
         do {
-            try await runProcess(
-                executablePath: binaryPath,
-                arguments: ["--update"],
-                timeout: 120
-            )
+            // Re-install from GitHub with checksum verification
+            // (same download-verify-replace flow as fresh install)
+            try await installYtDlp(at: binaryPath)
         } catch {
-            // Non-blocking by design.
+            // Non-blocking by design — update failures are silently ignored.
         }
     }
 

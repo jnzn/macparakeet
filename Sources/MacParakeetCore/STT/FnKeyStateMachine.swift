@@ -79,10 +79,11 @@ public final class FnKeyStateMachine {
         case .waitingForSecondTap:
             let holdDuration = timestampMs - fnDownTimestamp
             if holdDuration >= Self.tapThresholdMs {
-                // Held too long — this was a hold, but released now
-                // Treat as a short press, wait for potential second tap
-                // Actually, if held > threshold, it should have been hold-to-talk
-                // But we only detect that via the timer callback
+                // Held past threshold but holdTimerFired() never ran (main thread was busy).
+                // Reset to idle to avoid misclassifying a long hold as the first tap
+                // of a double-tap, which would arm persistent dictation on the next press.
+                state = .idle
+                return .none
             }
             // Quick release = first tap of potential double-tap
             firstTapTimestamp = timestampMs
