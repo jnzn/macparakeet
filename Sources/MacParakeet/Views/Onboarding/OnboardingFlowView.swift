@@ -808,7 +808,7 @@ struct OnboardingFlowView: View {
     private func subtitleForStep(_ step: OnboardingViewModel.Step) -> String {
         switch step {
         case .welcome:
-            return "A premium, local-first dictation tool. Try it free for 7 days."
+            return "A fast, private voice app for Mac. Completely free."
         case .microphone:
             return "MacParakeet needs microphone permission to record your voice."
         case .accessibility:
@@ -818,7 +818,7 @@ struct OnboardingFlowView: View {
         case .engine:
             return "Download and warm up the Parakeet speech model so all features are ready. First setup needs internet once."
         case .done:
-            return "Your 7-day full-feature trial starts now. Transcribe without limits."
+            return "You're all set. Start dictating or transcribe your first file."
         }
     }
 
