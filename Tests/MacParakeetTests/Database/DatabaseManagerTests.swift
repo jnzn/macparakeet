@@ -14,7 +14,8 @@ final class DatabaseManagerTests: XCTestCase {
         try manager.dbQueue.read { db in
             XCTAssertTrue(try db.tableExists("dictations"))
             XCTAssertTrue(try db.tableExists("transcriptions"))
-            XCTAssertTrue(try db.tableExists("dictations_fts"))
+            // dictations_fts was dropped in v0.5-drop-unused-fts (never queried, wasted write overhead)
+            XCTAssertFalse(try db.tableExists("dictations_fts"))
         }
     }
 

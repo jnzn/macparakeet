@@ -261,18 +261,27 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                 ))
             }
 
+            let txID = transcription.id
             if error is CancellationError {
-                try? transcriptionRepo.updateStatus(
-                    id: transcription.id,
-                    status: .cancelled,
-                    errorMessage: nil
-                )
+                do {
+                    try transcriptionRepo.updateStatus(
+                        id: txID,
+                        status: .cancelled,
+                        errorMessage: nil
+                    )
+                } catch let dbError {
+                    logger.error("failed_to_update_cancelled_status id=\(txID) dbError=\(dbError.localizedDescription, privacy: .public)")
+                }
             } else {
-                try? transcriptionRepo.updateStatus(
-                    id: transcription.id,
-                    status: .error,
-                    errorMessage: error.localizedDescription
-                )
+                do {
+                    try transcriptionRepo.updateStatus(
+                        id: txID,
+                        status: .error,
+                        errorMessage: error.localizedDescription
+                    )
+                } catch let dbError {
+                    logger.error("failed_to_update_error_status id=\(txID) dbError=\(dbError.localizedDescription, privacy: .public)")
+                }
             }
             throw error
         }

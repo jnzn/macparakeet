@@ -93,9 +93,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let hotkeyTriggerObserver { NotificationCenter.default.removeObserver(hotkeyTriggerObserver) }
         if let menuBarOnlyModeObserver { NotificationCenter.default.removeObserver(menuBarOnlyModeObserver) }
         if let showIdlePillObserver { NotificationCenter.default.removeObserver(showIdlePillObserver) }
+        // Block briefly for STT cleanup (ANE/CoreML resource release).
+        // Fire-and-forget Task would never complete — macOS kills the process first.
+        let sttClient = appEnvironment?.sttClient
+        let semaphore = DispatchSemaphore(value: 0)
         Task {
-            await appEnvironment?.sttClient.shutdown()
+            await sttClient?.shutdown()
+            semaphore.signal()
         }
+        _ = semaphore.wait(timeout: .now() + 2.0)
     }
 
     // MARK: - Disk Image Guard

@@ -28,7 +28,13 @@ public actor AudioRecorder {
     nonisolated private let sampleCounter = OSAllocatedUnfairLock(initialState: 0)
     /// Thread-safe flag to throttle tap error logging (avoid flooding logs from audio thread).
     nonisolated private let tapErrorLogged = OSAllocatedUnfairLock(initialState: false)
-    private var currentAudioLevel: Float = 0.0
+    /// Thread-safe audio level written from the real-time audio thread, read by the actor.
+    /// Avoids Task allocation on the audio thread which causes priority inversion.
+    nonisolated private let atomicAudioLevel = OSAllocatedUnfairLock<Float>(initialState: 0.0)
+    /// Thread-safe flag to prevent file writes after stop() has been called.
+    /// Prevents a data race where an in-flight audio tap callback writes to AVAudioFile
+    /// concurrently with stop() clearing audioFile.
+    nonisolated private let stopped = OSAllocatedUnfairLock(initialState: true)
     private var outputURL: URL?
     private var recording = false
     private var _deviceInfo: RecordingDeviceInfo?
@@ -40,7 +46,8 @@ public actor AudioRecorder {
     public init() {}
 
     public var audioLevel: Float {
-        currentAudioLevel
+        // Read the latest value written by the audio tap thread
+        atomicAudioLevel.withLock { $0 }
     }
 
     public var isRecording: Bool {
@@ -93,12 +100,17 @@ public actor AudioRecorder {
             throw AudioProcessorError.recordingFailed("Not recording")
         }
 
+        // Signal the audio tap to stop writing before removing it.
+        // This prevents the race where an in-flight callback writes to
+        // AVAudioFile after we nil it below.
+        stopped.withLock { $0 = true }
+
         audioEngine?.inputNode.removeTap(onBus: 0)
         audioEngine?.stop()
         audioEngine = nil
         audioFile = nil
         recording = false
-        currentAudioLevel = 0.0
+        atomicAudioLevel.withLock { $0 = 0.0 }
 
         let url = outputURL
         outputURL = nil
@@ -207,7 +219,13 @@ public actor AudioRecorder {
 
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) {
             [weak self] buffer, _ in
-            // Calculate audio level (RMS)
+            guard let self else { return }
+
+            // Check stopped flag before doing any work — prevents writes after stop()
+            let isStopped = self.stopped.withLock { $0 }
+            guard !isStopped else { return }
+
+            // Calculate audio level (RMS) — written atomically, no Task allocation needed
             let channelData = buffer.floatChannelData?[0]
             let frameCount = Int(buffer.frameLength)
             if let data = channelData, frameCount > 0 {
@@ -216,7 +234,10 @@ public actor AudioRecorder {
                     rms += data[i] * data[i]
                 }
                 rms = sqrtf(rms / Float(frameCount))
-                Task { await self?.updateAudioLevel(rms) }
+                let normalized = min(rms * 5.0, 1.0)
+                self.atomicAudioLevel.withLock { level in
+                    level = level * 0.3 + normalized * 0.7
+                }
             }
 
             // Convert to output format
@@ -247,23 +268,27 @@ public actor AudioRecorder {
 
             switch status {
             case .haveData:
+                // Re-check stopped flag before writing — stop() may have been called
+                // between the guard at the top and here.
+                let stillRunning = !self.stopped.withLock { $0 }
+                guard stillRunning else { return }
                 do {
                     try file.write(from: convertedBuffer)
-                    self?.sampleCounter.withLock { $0 += Int(convertedBuffer.frameLength) }
+                    self.sampleCounter.withLock { $0 += Int(convertedBuffer.frameLength) }
                 } catch {
                     // Log but don't crash — we're on the audio thread
                 }
             case .error:
                 // Log converter errors (throttled — only first occurrence per recording)
-                let alreadyLogged = self?.tapErrorLogged.withLock { logged in
+                let alreadyLogged = self.tapErrorLogged.withLock { logged in
                     let was = logged
                     logged = true
                     return was
-                } ?? true
+                }
                 if !alreadyLogged {
                     let desc = error?.localizedDescription ?? "unknown"
                     Task {
-                        await self?.logTapError(
+                        await self.logTapError(
                             "converter_error: \(desc)"
                         )
                     }
@@ -277,8 +302,9 @@ public actor AudioRecorder {
             }
         }
 
-        // Reset counter before engine.start() — the tap can fire immediately after start.
+        // Reset counter and clear stopped flag before engine.start() — the tap can fire immediately after start.
         self.sampleCounter.withLock { $0 = 0 }
+        self.stopped.withLock { $0 = false }
 
         do {
             try engine.start()
@@ -308,12 +334,6 @@ public actor AudioRecorder {
                 "  device id=\(device.id, privacy: .public) name=\(device.name, privacy: .public) transport=\(device.transportLabel, privacy: .public)\(isDefault, privacy: .public)"
             )
         }
-    }
-
-    private func updateAudioLevel(_ level: Float) {
-        // Normalize to 0-1 range with some smoothing
-        let normalized = min(level * 5.0, 1.0)
-        currentAudioLevel = currentAudioLevel * 0.3 + normalized * 0.7
     }
 
     private func logTapError(_ message: String) {

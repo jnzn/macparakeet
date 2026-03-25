@@ -183,6 +183,16 @@ public final class DatabaseManager: Sendable {
             }
         }
 
+        // v0.5 — Remove unused FTS5 infrastructure
+        // The FTS5 virtual table + 3 sync triggers were created in v0.1 but never queried
+        // (search uses LIKE). This removes the write overhead on every INSERT/UPDATE/DELETE.
+        migrator.registerMigration("v0.5-drop-unused-fts") { db in
+            try db.execute(sql: "DROP TRIGGER IF EXISTS dictations_ai")
+            try db.execute(sql: "DROP TRIGGER IF EXISTS dictations_ad")
+            try db.execute(sql: "DROP TRIGGER IF EXISTS dictations_au")
+            try db.execute(sql: "DROP TABLE IF EXISTS dictations_fts")
+        }
+
         try migrator.migrate(dbQueue)
     }
 }

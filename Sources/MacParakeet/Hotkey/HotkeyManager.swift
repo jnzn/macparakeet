@@ -19,6 +19,9 @@ public final class HotkeyManager {
     private var eventTap: CFMachPort?
     private var holdTimer: DispatchWorkItem?
     private var runLoopSource: CFRunLoopSource?
+    /// Retained reference to self passed to the CGEvent tap callback.
+    /// Prevents use-after-free if the tap fires during deallocation.
+    private var retainedSelf: Unmanaged<HotkeyManager>?
     /// The run loop the source was installed on, so stop() removes from the correct one.
     private var installedRunLoop: CFRunLoop?
     /// Edge detection: was the target modifier pressed in the previous event?
@@ -69,7 +72,11 @@ public final class HotkeyManager {
                 let manager = Unmanaged<HotkeyManager>.fromOpaque(refcon).takeUnretainedValue()
                 return manager.handleEvent(type: type, event: event)
             },
-            userInfo: Unmanaged.passUnretained(self).toOpaque()
+            userInfo: {
+                let retained = Unmanaged.passRetained(self)
+                self.retainedSelf = retained
+                return retained.toOpaque()
+            }()
         ) else {
             return false
         }
@@ -92,6 +99,9 @@ public final class HotkeyManager {
         if let source = runLoopSource, let runLoop = installedRunLoop {
             CFRunLoopRemoveSource(runLoop, source, .commonModes)
         }
+        // Balance the passRetained from start() to avoid leaking self
+        retainedSelf?.release()
+        retainedSelf = nil
         holdTimer?.cancel()
         eventTap = nil
         runLoopSource = nil
