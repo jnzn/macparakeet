@@ -5,9 +5,9 @@ public protocol TranscriptionServiceProtocol: Sendable {
     func transcribe(
         fileURL: URL,
         source: TelemetryTranscriptionSource,
-        onProgress: (@Sendable (String) -> Void)?
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)?
     ) async throws -> Transcription
-    func transcribeURL(urlString: String, onProgress: (@Sendable (String) -> Void)?) async throws -> Transcription
+    func transcribeURL(urlString: String, onProgress: (@Sendable (TranscriptionProgress) -> Void)?) async throws -> Transcription
 }
 
 extension TranscriptionServiceProtocol {
@@ -69,7 +69,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
     public func transcribe(
         fileURL: URL,
         source: TelemetryTranscriptionSource = .file,
-        onProgress: (@Sendable (String) -> Void)? = nil
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
     ) async throws -> Transcription {
         if let entitlements {
             try await entitlements.assertCanTranscribe(now: Date())
@@ -96,7 +96,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         )
     }
 
-    public func transcribeURL(urlString: String, onProgress: (@Sendable (String) -> Void)? = nil) async throws -> Transcription {
+    public func transcribeURL(urlString: String, onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil) async throws -> Transcription {
         guard let downloader = youtubeDownloader else {
             throw YouTubeDownloadError.ytDlpNotFound
         }
@@ -105,11 +105,11 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             try await entitlements.assertCanTranscribe(now: Date())
         }
 
-        onProgress?("Downloading audio... 0%")
+        onProgress?(.downloading(percent: 0))
         let downloadResult = try await downloader.download(url: urlString) { percent in
-            onProgress?("Downloading audio... \(percent)%")
+            onProgress?(.downloading(percent: percent))
         }
-        onProgress?("Downloading audio... 100%")
+        onProgress?(.downloading(percent: 100))
         try Task.checkCancellation()
         let keepDownloadedAudio = shouldKeepDownloadedAudio()
 
@@ -122,7 +122,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         try transcriptionRepo.save(transcription)
         Telemetry.send(.transcriptionStarted(source: .youtube, audioDurationSeconds: nil))
 
-        onProgress?("Transcribing...")
+        onProgress?(.transcribing(percent: 0))
         return try await transcribeAudio(
             fileURL: downloadResult.audioFileURL,
             source: .youtube,
@@ -141,23 +141,23 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         transcription: inout Transcription,
         tempFiles: [URL],
         cleanUpDownloadedFiles: Bool = true,
-        onProgress: (@Sendable (String) -> Void)? = nil
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
     ) async throws -> Transcription {
         var wavURL: URL?
         let processingStartedAt = Date()
         do {
-            onProgress?("Converting audio...")
+            onProgress?(.converting)
             wavURL = try await audioProcessor.convert(fileURL: fileURL)
 
             guard let wavURL else {
                 throw AudioProcessorError.conversionFailed("Failed to produce WAV output")
             }
 
-            onProgress?("Transcribing... 0%")
+            onProgress?(.transcribing(percent: 0))
             let sttProgress: (@Sendable (Int, Int) -> Void)? = onProgress.map { callback in
                 { @Sendable current, total in
                     let pct = total > 0 ? Int(Double(current) / Double(total) * 100) : 0
-                    callback("Transcribing... \(min(pct, 99))%")
+                    callback(.transcribing(percent: min(pct, 99)))
                 }
             }
             let result = try await sttClient.transcribe(audioPath: wavURL.path, onProgress: sttProgress)
@@ -177,7 +177,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
 
             if let diarizationService {
                 do {
-                    onProgress?("Identifying speakers...")
+                    onProgress?(.identifyingSpeakers)
                     let diarResult = try await diarizationService.diarize(audioURL: wavURL)
                     if !diarResult.segments.isEmpty {
                         let mergedWords = SpeakerMerger.mergeWordTimestampsWithSpeakers(

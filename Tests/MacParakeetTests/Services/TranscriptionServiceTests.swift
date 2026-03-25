@@ -216,17 +216,17 @@ final class TranscriptionServiceTests: XCTestCase {
             youtubeDownloader: downloader
         )
 
-        let phasesLock = OSAllocatedUnfairLock(initialState: [String]())
-        _ = try await service.transcribeURL(urlString: "https://youtu.be/dQw4w9WgXcQ") { phase in
-            phasesLock.withLock { $0.append(phase) }
+        let phasesLock = OSAllocatedUnfairLock(initialState: [TranscriptionProgress]())
+        _ = try await service.transcribeURL(urlString: "https://youtu.be/dQw4w9WgXcQ") { progress in
+            phasesLock.withLock { $0.append(progress) }
         }
         let phases = phasesLock.withLock { $0 }
 
-        XCTAssertTrue(phases.contains("Downloading audio... 0%"))
-        XCTAssertTrue(phases.contains("Downloading audio... 7%"))
-        XCTAssertTrue(phases.contains("Downloading audio... 42%"))
-        XCTAssertTrue(phases.contains("Downloading audio... 100%"))
-        XCTAssertTrue(phases.contains("Transcribing..."))
+        XCTAssertTrue(phases.contains { if case .downloading(0) = $0 { true } else { false } })
+        XCTAssertTrue(phases.contains { if case .downloading(7) = $0 { true } else { false } })
+        XCTAssertTrue(phases.contains { if case .downloading(42) = $0 { true } else { false } })
+        XCTAssertTrue(phases.contains { if case .downloading(100) = $0 { true } else { false } })
+        XCTAssertTrue(phases.contains { if case .transcribing = $0 { true } else { false } })
     }
 
     private func makeTempDownloadedAudio() throws -> URL {
