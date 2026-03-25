@@ -222,7 +222,7 @@ final class TranscriptionViewModelTests: XCTestCase {
             sourceURL: "https://youtu.be/dQw4w9WgXcQ"
         )
         await mockService.configure(result: expectedResult)
-        await mockService.configureURLProgress(phases: ["Downloading audio... 42%"])
+        await mockService.configureURLProgress(phases: [.downloading(percent: 42)])
         await mockService.configureURLDelay(milliseconds: 200)
 
         viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
@@ -234,7 +234,7 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(progress, 0.42, accuracy: 0.0001)
     }
 
-    func testTranscribeURLProgressParsesPercentWithTrailingContext() async throws {
+    func testTranscribeURLProgressTracksTranscribingPercent() async throws {
         let expectedResult = Transcription(
             fileName: "YouTube Video",
             rawTranscript: "URL transcript",
@@ -242,7 +242,7 @@ final class TranscriptionViewModelTests: XCTestCase {
             sourceURL: "https://youtu.be/dQw4w9WgXcQ"
         )
         await mockService.configure(result: expectedResult)
-        await mockService.configureURLProgress(phases: ["Downloading audio... 42% (18 MB/s)"])
+        await mockService.configureURLProgress(phases: [.transcribing(percent: 42)])
         await mockService.configureURLDelay(milliseconds: 200)
 
         viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
@@ -254,7 +254,7 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(progress, 0.42, accuracy: 0.0001)
     }
 
-    func testTranscribeURLProgressResetsOnPhaseWithoutPercent() async throws {
+    func testTranscribeURLProgressClearsPercentOnNonPercentPhase() async throws {
         let expectedResult = Transcription(
             fileName: "YouTube Video",
             rawTranscript: "URL transcript",
@@ -263,8 +263,8 @@ final class TranscriptionViewModelTests: XCTestCase {
         )
         await mockService.configure(result: expectedResult)
         await mockService.configureURLProgress(phases: [
-            "Downloading audio... 42%",
-            "Transcribing..."
+            .downloading(percent: 42),
+            .converting
         ])
         await mockService.configureURLDelay(milliseconds: 200)
 
@@ -273,7 +273,7 @@ final class TranscriptionViewModelTests: XCTestCase {
         viewModel.transcribeURL()
 
         try await Task.sleep(for: .milliseconds(50))
-        XCTAssertEqual(viewModel.transcriptionProgress, nil, "Non-percent phase should clear stale progress values")
+        XCTAssertNil(viewModel.transcriptionProgress, "Non-percent phase should clear stale progress values")
     }
 
     func testTranscribeURLProgressTracksPhaseHeadlineAndSourceKind() async throws {
@@ -284,7 +284,7 @@ final class TranscriptionViewModelTests: XCTestCase {
             sourceURL: "https://youtu.be/dQw4w9WgXcQ"
         )
         await mockService.configure(result: expectedResult)
-        await mockService.configureURLProgress(phases: ["Converting audio...", "Transcribing... 12%"])
+        await mockService.configureURLProgress(phases: [.converting, .transcribing(percent: 12)])
         await mockService.configureURLDelay(milliseconds: 200)
 
         viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)

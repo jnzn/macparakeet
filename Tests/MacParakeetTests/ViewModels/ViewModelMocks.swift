@@ -217,11 +217,11 @@ actor MockTranscriptionService: TranscriptionServiceProtocol {
     var transcribeCallCount = 0
     var lastFileURL: URL?
     var lastSource: TelemetryTranscriptionSource?
-    var transcribeProgressPhases: [String] = []
+    var transcribeProgressPhases: [TranscriptionProgress] = []
     var transcribeDelayMs: UInt64 = 0
     var transcribeURLCallCount = 0
     var lastURLString: String?
-    var transcribeURLProgressPhases: [String] = []
+    var transcribeURLProgressPhases: [TranscriptionProgress] = []
     var transcribeURLDelayMs: UInt64 = 0
 
     func configure(result: Transcription) {
@@ -234,11 +234,11 @@ actor MockTranscriptionService: TranscriptionServiceProtocol {
         self.transcribeResult = nil
     }
 
-    func configureURLProgress(phases: [String]) {
+    func configureURLProgress(phases: [TranscriptionProgress]) {
         self.transcribeURLProgressPhases = phases
     }
 
-    func configureProgress(phases: [String]) {
+    func configureProgress(phases: [TranscriptionProgress]) {
         self.transcribeProgressPhases = phases
     }
 
@@ -253,7 +253,7 @@ actor MockTranscriptionService: TranscriptionServiceProtocol {
     func transcribe(
         fileURL: URL,
         source: TelemetryTranscriptionSource,
-        onProgress: (@Sendable (String) -> Void)? = nil
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
     ) async throws -> Transcription {
         transcribeCallCount += 1
         lastFileURL = fileURL
@@ -278,7 +278,7 @@ actor MockTranscriptionService: TranscriptionServiceProtocol {
         )
     }
 
-    func transcribeURL(urlString: String, onProgress: (@Sendable (String) -> Void)? = nil) async throws -> Transcription {
+    func transcribeURL(urlString: String, onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil) async throws -> Transcription {
         transcribeURLCallCount += 1
         lastURLString = urlString
 

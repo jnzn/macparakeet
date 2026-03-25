@@ -84,7 +84,6 @@ public final class TranscriptionViewModel {
     private var activeDropRequestID: UUID?
     private var dropPendingCount = 0
     private var dropAccepted = false
-    private static let progressPercentRegex = try! NSRegularExpression(pattern: #"(\d{1,3})(?:\.\d+)?\s*%"#)
 
     public init() {}
 
@@ -115,9 +114,9 @@ public final class TranscriptionViewModel {
         transcriptionTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                let result = try await service.transcribe(fileURL: url, source: source) { [weak self] phase in
+                let result = try await service.transcribe(fileURL: url, source: source) { [weak self] progress in
                     Task { @MainActor [weak self] in
-                        self?.updateProgress(with: phase, taskID: taskID)
+                        self?.updateProgress(with: progress, taskID: taskID)
                     }
                 }
                 completeSuccessfulTranscription(taskID: taskID, result: result)
@@ -147,9 +146,9 @@ public final class TranscriptionViewModel {
         transcriptionTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                let result = try await service.transcribeURL(urlString: url) { [weak self] phase in
+                let result = try await service.transcribeURL(urlString: url) { [weak self] progress in
                     Task { @MainActor [weak self] in
-                        self?.updateProgress(with: phase, taskID: taskID)
+                        self?.updateProgress(with: progress, taskID: taskID)
                     }
                 }
                 completeSuccessfulTranscription(taskID: taskID, result: result)
@@ -342,37 +341,40 @@ public final class TranscriptionViewModel {
         progressHeadline = Self.headline(for: .preparing)
     }
 
-    private func updateProgress(with phaseText: String, taskID: UUID? = nil) {
+    private func updateProgress(with progress: TranscriptionProgress, taskID: UUID? = nil) {
         if let taskID, activeTranscriptionTaskID != taskID {
             return
         }
-        progress = phaseText
-        transcriptionProgress = Self.parseProgressFraction(from: phaseText)
-        progressPhase = Self.parsePhase(from: phaseText)
-        progressHeadline = Self.headline(for: progressPhase)
+        let phase = Self.mapPhase(from: progress)
+        self.progress = Self.displayText(for: progress)
+        self.transcriptionProgress = progress.fraction
+        self.progressPhase = phase
+        self.progressHeadline = Self.headline(for: phase)
     }
 
-    private static func parsePhase(from phaseText: String) -> ProgressPhase {
-        let normalized = phaseText.lowercased()
-        if normalized.contains("download") {
-            return .downloading
+    private static func mapPhase(from progress: TranscriptionProgress) -> ProgressPhase {
+        switch progress {
+        case .converting: return .converting
+        case .downloading: return .downloading
+        case .transcribing: return .transcribing
+        case .identifyingSpeakers: return .identifyingSpeakers
+        case .finalizing: return .finalizing
         }
-        if normalized.contains("convert") {
-            return .converting
+    }
+
+    private static func displayText(for progress: TranscriptionProgress) -> String {
+        switch progress {
+        case .converting:
+            return "Converting audio..."
+        case .downloading(let percent):
+            return "Downloading audio... \(percent)%"
+        case .transcribing(let percent):
+            return "Transcribing... \(percent)%"
+        case .identifyingSpeakers:
+            return "Identifying speakers..."
+        case .finalizing:
+            return "Finalizing..."
         }
-        if normalized.contains("identifying speaker") {
-            return .identifyingSpeakers
-        }
-        if normalized.contains("transcrib") {
-            return .transcribing
-        }
-        if normalized.contains("saving") || normalized.contains("final") {
-            return .finalizing
-        }
-        if normalized.contains("prepar") {
-            return .preparing
-        }
-        return .transcribing
     }
 
     private static func headline(for phase: ProgressPhase) -> String {
@@ -390,19 +392,6 @@ public final class TranscriptionViewModel {
         case .finalizing:
             return "Finalizing transcript"
         }
-    }
-
-    private static func parseProgressFraction(from phaseText: String) -> Double? {
-        let range = NSRange(phaseText.startIndex..., in: phaseText)
-        guard let match = progressPercentRegex.firstMatch(in: phaseText, options: [], range: range),
-              match.numberOfRanges >= 2,
-              let numberRange = Range(match.range(at: 1), in: phaseText),
-              let percent = Double(phaseText[numberRange]),
-              percent >= 0 else {
-            return nil
-        }
-
-        return min(percent, 100) / 100
     }
 
     // MARK: - LLM Summary

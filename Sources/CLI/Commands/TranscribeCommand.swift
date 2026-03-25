@@ -107,8 +107,14 @@ struct TranscribeCommand: AsyncParsableCommand {
         let result: Transcription
 
         if YouTubeURLValidator.isYouTubeURL(trimmedInput) {
-            result = try await service.transcribeURL(urlString: trimmedInput) { phase in
-                print(phase)
+            result = try await service.transcribeURL(urlString: trimmedInput) { progress in
+                switch progress {
+                case .converting: print("Converting audio...")
+                case .downloading(let pct): print("Downloading audio... \(pct)%")
+                case .transcribing(let pct): print("Transcribing... \(pct)%")
+                case .identifyingSpeakers: print("Identifying speakers...")
+                case .finalizing: print("Finalizing...")
+                }
             }
         } else {
             let url = URL(fileURLWithPath: input)
