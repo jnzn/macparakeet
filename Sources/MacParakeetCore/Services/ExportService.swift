@@ -7,8 +7,8 @@ public protocol ExportServiceProtocol: Sendable {
     func exportToVTT(transcription: Transcription, url: URL) throws
     func exportToMarkdown(transcription: Transcription, url: URL) throws
     func exportToJSON(transcription: Transcription, url: URL) throws
-    func exportToPDF(transcription: Transcription, url: URL) throws
-    func exportToDocx(transcription: Transcription, url: URL) throws
+    @MainActor func exportToPDF(transcription: Transcription, url: URL) throws
+    @MainActor func exportToDocx(transcription: Transcription, url: URL) throws
     func formatSRT(words: [WordTimestamp], speakers: [SpeakerInfo]?) -> String
     func formatVTT(words: [WordTimestamp], speakers: [SpeakerInfo]?) -> String
     func formatMarkdown(transcription: Transcription) -> String
@@ -69,7 +69,7 @@ public final class ExportService: ExportServiceProtocol, Sendable {
     /// Avoids NSPrintOperation which spins a modal run loop and deadlocks
     /// when called from SwiftUI button actions on MainActor.
     /// Must be called on MainActor (uses NSTextStorage, NSLayoutManager, NSGraphicsContext).
-    public func exportToPDF(transcription: Transcription, url: URL) throws {
+    @MainActor public func exportToPDF(transcription: Transcription, url: URL) throws {
         let attrString = try buildRichTranscript(transcription: transcription)
 
         // US Letter with 1-inch margins
@@ -137,7 +137,7 @@ public final class ExportService: ExportServiceProtocol, Sendable {
     }
 
     /// Export transcription as DOCX file
-    public func exportToDocx(transcription: Transcription, url: URL) throws {
+    @MainActor public func exportToDocx(transcription: Transcription, url: URL) throws {
         let attrString = try buildRichTranscript(transcription: transcription)
         let range = NSRange(location: 0, length: attrString.length)
         
@@ -391,7 +391,7 @@ public final class ExportService: ExportServiceProtocol, Sendable {
 
     // MARK: - Rich Text (AppKit)
 
-    private func buildRichTranscript(transcription: Transcription) throws -> NSAttributedString {
+    @MainActor private func buildRichTranscript(transcription: Transcription) throws -> NSAttributedString {
         let result = NSMutableAttributedString()
 
         let titleFont = NSFont.boldSystemFont(ofSize: 24)

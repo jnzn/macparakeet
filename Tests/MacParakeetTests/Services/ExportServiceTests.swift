@@ -338,7 +338,7 @@ final class ExportServiceTests: XCTestCase {
         try? FileManager.default.removeItem(at: tempURL)
     }
 
-    func testExportToPDF() throws {
+    @MainActor func testExportToPDF() throws {
         let transcription = Transcription(
             fileName: "document.mp3",
             rawTranscript: "PDF export test content",
@@ -360,7 +360,7 @@ final class ExportServiceTests: XCTestCase {
         try? FileManager.default.removeItem(at: tempURL)
     }
 
-    func testExportToPDFWithTimestamps() throws {
+    @MainActor func testExportToPDFWithTimestamps() throws {
         let transcription = Transcription(
             fileName: "timestamped.mp3",
             rawTranscript: "Hello world this is a test",
@@ -387,7 +387,7 @@ final class ExportServiceTests: XCTestCase {
         try? FileManager.default.removeItem(at: tempURL)
     }
 
-    func testExportToPDFWithSpeakers() throws {
+    @MainActor func testExportToPDFWithSpeakers() throws {
         let transcription = Transcription(
             fileName: "interview.mp3",
             rawTranscript: "Hello. Hi there.",
@@ -415,7 +415,7 @@ final class ExportServiceTests: XCTestCase {
         try? FileManager.default.removeItem(at: tempURL)
     }
 
-    func testExportToDocx() throws {
+    @MainActor func testExportToDocx() throws {
         let transcription = Transcription(
             fileName: "word.mp3",
             rawTranscript: "DOCX export test content",

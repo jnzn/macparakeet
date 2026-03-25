@@ -120,6 +120,12 @@ public actor DictationService: DictationServiceProtocol {
         _state = .recording
         do {
             try await audioProcessor.startCapture()
+            // Guard against reentrancy: cancel may have run during the await above
+            guard case .recording = _state else {
+                let _ = try? await audioProcessor.stopCapture()
+                recordingStartedAt = nil
+                return
+            }
             currentTelemetryContext = context
             recordingStartedAt = Date()
             Telemetry.send(.dictationStarted(trigger: context.trigger, mode: context.mode))
