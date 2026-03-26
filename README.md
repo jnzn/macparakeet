@@ -5,7 +5,7 @@
 <h1 align="center">MacParakeet</h1>
 
 <p align="center">
-  The fastest, most private voice app for Mac.
+  Fast, local-first voice app for Mac.
 </p>
 
 <p align="center">
@@ -18,7 +18,7 @@
 
 ---
 
-MacParakeet runs NVIDIA's Parakeet TDT speech model on Apple's Neural Engine via FluidAudio CoreML. System-wide dictation and file transcription, entirely on your Mac. No cloud. No accounts.
+MacParakeet runs NVIDIA's Parakeet TDT speech model on Apple's Neural Engine via FluidAudio CoreML. System-wide dictation and file transcription — all speech recognition runs locally on your Mac. No accounts.
 
 ## Features
 
@@ -61,7 +61,7 @@ MacParakeet runs NVIDIA's Parakeet TDT speech model on Apple's Neural Engine via
 
 Grab the latest notarized DMG from [macparakeet.com](https://macparakeet.com). Open it, drag to Applications, done.
 
-On first launch, MacParakeet downloads the Parakeet speech model (~6 GB). After that, everything runs offline.
+On first launch, MacParakeet downloads the Parakeet speech model (~6 GB). After that, dictation and transcription work fully offline.
 
 ### Or Build from Source
 
@@ -132,14 +132,14 @@ swift run macparakeet-cli history
 
 ## Privacy
 
-MacParakeet processes everything locally. Your audio never leaves your Mac.
+All speech recognition runs locally on the Neural Engine. Your audio never leaves your Mac.
 
-- **No cloud processing.** The speech model runs on the Neural Engine, not a server.
+- **Local STT.** The speech model runs on-device, not a server. No audio is transmitted.
 - **No accounts.** No login, no email, no registration.
-- **Anonymous telemetry.** Non-identifying, session-scoped usage analytics help us improve the app. No persistent IDs, no IP storage, no audio or text content transmitted. Opt out anytime in Settings.
+- **Anonymous telemetry.** Non-identifying, session-scoped usage analytics (opt-out in Settings). No persistent IDs, no IP storage, no audio or text content transmitted.
 - **Temp files cleaned up.** Audio files are deleted after transcription unless you explicitly save them.
 
-The optional AI Summary & Chat feature connects to external LLM providers only when you configure it with your own API keys and explicitly invoke it. Dictation and transcription never touch the network.
+**What does use the network:** The optional AI Summary & Chat feature connects to external LLM providers when you configure it with your own API keys. YouTube transcription downloads video via yt-dlp. Anonymous telemetry pings our server unless you opt out. Core dictation and transcription are fully offline.
 
 ## Contributing
 
