@@ -29,7 +29,7 @@
 </p>
 
 <p align="center">
-  <img src="Assets/screenshots/dictations.png" width="720" alt="MacParakeet — Dictation history and voice stats">
+  <img src="Assets/screenshots/dictations.png?v=2" width="720" alt="MacParakeet — Dictation history and voice stats">
 </p>
 
 ---
