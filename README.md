@@ -9,6 +9,10 @@
 </p>
 
 <p align="center">
+  <a href="https://macparakeet.com">macparakeet.com</a>
+</p>
+
+<p align="center">
   <a href="https://downloads.macparakeet.com/MacParakeet.dmg"><img src="https://img.shields.io/badge/Download-DMG-E86B3B.svg?style=for-the-badge&logo=apple&logoColor=white" alt="Download DMG"></a>
 </p>
 
