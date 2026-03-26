@@ -34,6 +34,7 @@ public enum STTError: Error, LocalizedError {
     case transcriptionFailed(String)
     case timeout
     case modelNotLoaded
+    case modelDownloadFailed
     case outOfMemory
     case invalidResponse
 
@@ -44,6 +45,7 @@ public enum STTError: Error, LocalizedError {
         case .transcriptionFailed(let reason): return "Transcription failed: \(reason)"
         case .timeout: return "STT request timed out"
         case .modelNotLoaded: return "STT model not loaded"
+        case .modelDownloadFailed: return "Speech model isn't downloaded yet — check your internet connection and try again."
         case .outOfMemory: return "Out of memory during transcription"
         case .invalidResponse: return "Invalid response from speech engine"
         }
