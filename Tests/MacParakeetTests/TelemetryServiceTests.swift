@@ -173,11 +173,14 @@ final class TelemetryServiceTests: XCTestCase {
     }
 
     func testFlushSplitsRequestsIntoBatchesOf100() async throws {
+        let eventCount = 150
         let service = makeService()
-        for i in 0..<205 {
+        for i in 0..<eventCount {
             service.send(.dictationFailed(errorType: "error-\(i)"))
         }
 
+        // Allow auto-flush Tasks (triggered at flushThreshold) to complete,
+        // then drain any remaining events with an explicit flush.
         try await Task.sleep(nanoseconds: 200_000_000)
         await service.flush()
         try await Task.sleep(nanoseconds: 200_000_000)
@@ -186,8 +189,10 @@ final class TelemetryServiceTests: XCTestCase {
         XCTAssertFalse(payloads.isEmpty)
         XCTAssertTrue(payloads.allSatisfy { $0.events.count <= TelemetryService.maxBatchSize })
 
+        // Total must equal eventCount. Using a count under maxQueueSize (200)
+        // ensures no events are trimmed regardless of auto-flush timing.
         let totalEvents = payloads.reduce(0) { $0 + $1.events.count }
-        XCTAssertEqual(totalEvents, 205)
+        XCTAssertEqual(totalEvents, eventCount)
     }
 
     func testTerminationFlushDoesNotEmitAppQuitWhenTelemetryDisabled() async throws {
