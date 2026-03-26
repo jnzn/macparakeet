@@ -221,6 +221,19 @@ public actor STTClient: STTClientProtocol {
             return .engineStartFailed(modelError.localizedDescription)
         }
 
+        // Network errors during model download (ensureInitialized → downloadAndLoad)
+        // surface as URLError. Map to a clear "model not downloaded" message instead
+        // of the confusing "The Internet connection appears to be offline."
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .notConnectedToInternet, .networkConnectionLost, .timedOut,
+                 .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed:
+                return .modelDownloadFailed
+            default:
+                return .engineStartFailed(urlError.localizedDescription)
+            }
+        }
+
         return nil
     }
 
