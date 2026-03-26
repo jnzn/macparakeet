@@ -226,7 +226,7 @@ public struct DictationFlowStateMachine: Sendable, Equatable {
         case (.startingService, .startFailed(let gen, let message)):
             guard gen == generation else { return [] }
             state = .finishing(outcome: .error(message))
-            return [.showError(message), .startDisplayDismissTimer(seconds: 5)]
+            return [.showError(message), .updateMenuBar(.idle), .startDisplayDismissTimer(seconds: 5)]
 
         case (.startingService(let mode), .stopRequested):
             state = .pendingStop(mode: mode)
@@ -243,7 +243,7 @@ public struct DictationFlowStateMachine: Sendable, Equatable {
         case (.startingService, .dismissRequested):
             state = .idle
             return [
-                .cancelAllTimers, .cancelRecordingTask,
+                .cancelAllTimers, .cancelRecordingTask, .cancelRecording(reason: .ui),
                 .hideOverlay, .resetHotkeyStateMachine,
                 .updateMenuBar(.idle), .showIdlePill,
             ]
@@ -266,18 +266,18 @@ public struct DictationFlowStateMachine: Sendable, Equatable {
             ]
 
         case (.recording, .startRequested(let mode)):
-            // Rapid restart: tear down current, start new flow
+            // Rapid restart: tear down current recording, start new flow
             generation += 1
             state = .checkingEntitlements(mode: mode)
             return [
-                .cancelAllTimers, .cancelRecordingTask,
+                .cancelAllTimers, .cancelRecordingTask, .cancelRecording(reason: .ui),
                 .hideOverlay, .hideIdlePill, .checkEntitlements,
             ]
 
         case (.recording, .dismissRequested):
             state = .idle
             return [
-                .cancelAllTimers, .cancelRecordingTask,
+                .cancelAllTimers, .cancelRecordingTask, .cancelRecording(reason: .ui),
                 .hideOverlay, .resetHotkeyStateMachine,
                 .updateMenuBar(.idle), .showIdlePill,
             ]
@@ -287,12 +287,12 @@ public struct DictationFlowStateMachine: Sendable, Equatable {
         case (.pendingStop, .recordingStarted(let gen)):
             guard gen == generation else { return [] }
             state = .processing
-            return [.stopRecordingAndTranscribe, .showProcessingState, .updateMenuBar(.processing)]
+            return [.cancelRecordingTask, .stopRecordingAndTranscribe, .showProcessingState, .updateMenuBar(.processing)]
 
         case (.pendingStop, .startFailed(let gen, let message)):
             guard gen == generation else { return [] }
             state = .finishing(outcome: .error(message))
-            return [.showError(message), .startDisplayDismissTimer(seconds: 5)]
+            return [.showError(message), .updateMenuBar(.idle), .startDisplayDismissTimer(seconds: 5)]
 
         case (.pendingStop, .cancelRequested(let reason)):
             state = .idle
@@ -305,7 +305,7 @@ public struct DictationFlowStateMachine: Sendable, Equatable {
         case (.pendingStop, .dismissRequested):
             state = .idle
             return [
-                .cancelAllTimers, .cancelRecordingTask,
+                .cancelAllTimers, .cancelRecordingTask, .cancelRecording(reason: .ui),
                 .hideOverlay, .resetHotkeyStateMachine,
                 .updateMenuBar(.idle), .showIdlePill,
             ]
@@ -408,10 +408,10 @@ public struct DictationFlowStateMachine: Sendable, Equatable {
                 .resetHotkeyStateMachine, .updateMenuBar(.idle), .showIdlePill,
             ]
 
-        case (.finishing, .dismissRequested):
+        case (.finishing, .cancelRequested), (.finishing, .dismissRequested):
             state = .idle
             return [
-                .cancelAllTimers, .hideOverlay, .reloadHistory,
+                .cancelAllTimers, .cancelActionTask, .hideOverlay, .reloadHistory,
                 .resetHotkeyStateMachine, .updateMenuBar(.idle), .showIdlePill,
             ]
 
