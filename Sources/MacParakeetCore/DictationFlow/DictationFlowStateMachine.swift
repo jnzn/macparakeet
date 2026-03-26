@@ -228,10 +228,8 @@ public struct DictationFlowStateMachine: Sendable, Equatable {
             state = .finishing(outcome: .error(message))
             return [.showError(message), .startDisplayDismissTimer(seconds: 5)]
 
-        case (.startingService, .stopRequested):
-            if case .startingService(let mode) = state {
-                state = .pendingStop(mode: mode)
-            }
+        case (.startingService(let mode), .stopRequested):
+            state = .pendingStop(mode: mode)
             return []
 
         case (.startingService, .cancelRequested(let reason)):

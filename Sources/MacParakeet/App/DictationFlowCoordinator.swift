@@ -48,6 +48,8 @@ final class DictationFlowCoordinator {
     private var currentTrigger: TelemetryDictationTrigger = .hotkey
     /// The Dictation object from the most recent transcription, used for paste + DB save.
     private var currentDictation: Dictation?
+    /// Error from the most recent entitlements check failure, consumed by presentEntitlementsAlert effect.
+    private var lastEntitlementsError: Error?
 
     // MARK: - Init
 
@@ -255,7 +257,7 @@ final class DictationFlowCoordinator {
                     self.sendEvent(.entitlementsGranted(generation: gen))
                 } catch {
                     guard !Task.isCancelled else { return }
-                    self.onPresentEntitlementsAlert(error)
+                    self.lastEntitlementsError = error
                     self.sendEvent(.entitlementsDenied(generation: gen))
                 }
             }
@@ -431,8 +433,10 @@ final class DictationFlowCoordinator {
             hotkeyManager?.notifyCancelledByUI()
 
         case .presentEntitlementsAlert:
-            // Alert is presented in the checkEntitlements effect handler
-            break
+            if let error = lastEntitlementsError {
+                onPresentEntitlementsAlert(error)
+                lastEntitlementsError = nil
+            }
 
         // MARK: Timer management
 
