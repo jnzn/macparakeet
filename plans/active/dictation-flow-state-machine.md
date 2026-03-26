@@ -219,7 +219,7 @@ Key changes from v1:
 | startingService | cancelRequested | idle | cancelRecordingTask, cancelRecording(reason), hideOverlay, resetHotkeyStateMachine, updateMenuBar(.idle), showIdlePill |
 | **Recording** | | | |
 | recording | stopRequested | processing | cancelRecordingTask, stopRecordingAndTranscribe, showProcessingState, updateMenuBar(.processing) |
-| recording | cancelRequested(reason) | cancelCountdown | cancelRecordingTask, cancelRecording(reason), showCancelCountdown, updateMenuBar(.idle), startCancelCountdown, notifyHotkeyCancelledByUI *(if reason == .ui)* |
+| recording | cancelRequested(reason) | cancelCountdown | cancelRecordingTask, cancelRecording(reason), showCancelCountdown, updateMenuBar(.idle), startCancelCountdown, notifyHotkeyCancelledByUI |
 | recording | startRequested(mode) | checkingEntitlements(mode) | cancelAllTimers, cancelRecordingTask, hideOverlay, hideIdlePill, checkEntitlements *(rapid restart, Gemini + Codex)* |
 | recording | dismissRequested | idle | cancelAllTimers, cancelRecordingTask, hideOverlay, resetHotkeyStateMachine, updateMenuBar(.idle), showIdlePill |
 | **Pending Stop** | | | |
@@ -310,7 +310,7 @@ The `executeEffects` method loops through effects and dispatches each one. Synch
 4. **Timer ownership** — Coordinator creates timers on effect, timer fires → `sendEvent` → handle → effects. Safe because `@MainActor` serializes.
 5. **Async effect execution** — Sync effects execute inline. Async effects launch Tasks that call `sendEvent` on completion.
 6. **Generation storage** — Single `generation` property on the struct. Not per-state. Events carry generation for stale rejection.
-7. **`notifyHotkeyCancelledByUI`** — Separate effect from `resetHotkeyStateMachine`. Emitted only when cancel reason is `.ui`.
+7. **`notifyHotkeyCancelledByUI`** — Separate effect from `resetHotkeyStateMachine`. Always emitted when entering cancel countdown (matches old behavior where coordinator always called `notifyCancelledByUI()`).
 8. **Timer durations** — `startDisplayDismissTimer(seconds:)` with explicit duration: 0.8s (success+paste), 3s (noSpeech), 5s (errors).
 9. **Paste failure** — Modeled as `finishing(.success) + pasteFailed → finishing(.pasteFailedCopied)` transition.
 
