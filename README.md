@@ -173,4 +173,4 @@ MacParakeet is free software, released under the [GNU General Public License v3.
 
 ---
 
-Made for people who think faster than they type.
+There are many voice apps, but this one is mine.
