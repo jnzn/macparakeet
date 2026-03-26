@@ -1,6 +1,6 @@
 # Dictation Flow State Machine Extraction
 
-> Status: **ACTIVE**
+> Status: **COMPLETED** - 2026-03-26
 > Reviewed by: Gemini, Codex — findings incorporated below
 
 ## Overview
