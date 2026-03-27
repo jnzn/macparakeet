@@ -226,7 +226,7 @@ struct DiscoverView: View {
                                 .font(DesignSystem.Typography.body)
                                 .foregroundStyle(DesignSystem.Colors.textTertiary)
                                 .padding(.horizontal, DesignSystem.Spacing.md + 5)
-                                .padding(.vertical, DesignSystem.Spacing.md + 8)
+                                .padding(.vertical, DesignSystem.Spacing.md + 1)
                                 .allowsHitTesting(false)
                         }
                     }
