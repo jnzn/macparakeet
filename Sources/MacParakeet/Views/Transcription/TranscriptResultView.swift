@@ -53,10 +53,8 @@ struct TranscriptResultView: View {
                     .padding(.top, DesignSystem.Spacing.md)
             }
 
-            GeometryReader { proxy in
-                contentArea(availableWidth: proxy.size.width)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            contentArea
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             Divider()
 
@@ -319,7 +317,7 @@ struct TranscriptResultView: View {
     }
 
     @ViewBuilder
-    private func contentArea(availableWidth: CGFloat) -> some View {
+    private var contentArea: some View {
         Group {
             if viewModel.showTabs {
                 switch viewModel.selectedTab {
@@ -650,6 +648,7 @@ struct TranscriptResultView: View {
                         }
                         .padding(DesignSystem.Spacing.lg)
                     }
+                    .defaultScrollAnchor(.bottom)
                     .background(DesignSystem.Colors.surface)
 
                     Divider()
@@ -740,11 +739,6 @@ struct TranscriptResultView: View {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                             proxy.scrollTo(lastID, anchor: .bottom)
                         }
-                    }
-                }
-                .onChange(of: chatVM.messages.last?.content) {
-                    if let lastID = chatVM.messages.last?.id {
-                        proxy.scrollTo(lastID, anchor: .bottom)
                     }
                 }
             }
