@@ -6,6 +6,7 @@ public protocol ChatConversationRepositoryProtocol: Sendable {
     func fetch(id: UUID) throws -> ChatConversation?
     func fetchAll(transcriptionId: UUID) throws -> [ChatConversation]
     func delete(id: UUID) throws -> Bool
+    func deleteAll(transcriptionId: UUID) throws
     func deleteEmpty(transcriptionId: UUID) throws
     func updateMessages(id: UUID, messages: [ChatMessage]?) throws
     func updateTitle(id: UUID, title: String) throws
@@ -46,6 +47,14 @@ public final class ChatConversationRepository: ChatConversationRepositoryProtoco
         }
     }
 
+    public func deleteAll(transcriptionId: UUID) throws {
+        try dbQueue.write { db in
+            try ChatConversation
+                .filter(ChatConversation.Columns.transcriptionId == transcriptionId)
+                .deleteAll(db)
+        }
+    }
+
     public func deleteEmpty(transcriptionId: UUID) throws {
         try dbQueue.write { db in
             try ChatConversation
@@ -75,9 +84,9 @@ public final class ChatConversationRepository: ChatConversationRepositoryProtoco
 
     public func hasConversations(transcriptionId: UUID) throws -> Bool {
         try dbQueue.read { db in
-            try ChatConversation
+            try !ChatConversation
                 .filter(ChatConversation.Columns.transcriptionId == transcriptionId)
-                .fetchCount(db) > 0
+                .isEmpty(db)
         }
     }
 }

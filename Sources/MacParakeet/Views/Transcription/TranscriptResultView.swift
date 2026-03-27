@@ -831,7 +831,11 @@ struct TranscriptResultView: View {
                 )
                 .contentShape(Rectangle())
                 .onHover { isHovered in
-                    hoveredConversationId = isHovered ? conversation.id : nil
+                    if isHovered {
+                        hoveredConversationId = conversation.id
+                    } else if hoveredConversationId == conversation.id {
+                        hoveredConversationId = nil
+                    }
                 }
                 .onTapGesture {
                     chatVM.switchConversation(conversation)
