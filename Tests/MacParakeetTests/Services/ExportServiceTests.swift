@@ -359,13 +359,11 @@ final class ExportServiceTests: XCTestCase {
         XCTAssertEqual(header, "%PDF-")
 
         let stream = try firstPageContentStream(from: tempURL)
+        // The PDF must contain a Y-flip (scale y=-1) for correct pagination.
+        // NSGraphicsContext(flipped: true) ensures glyphs render upright despite the flip.
         XCTAssertNotNil(
-            stream.range(of: #"(?m)\b1 0 0 1 72 720 cm\b"#, options: .regularExpression),
-            "Expected PDF page transform to translate only without flipping Y"
-        )
-        XCTAssertNil(
-            stream.range(of: #"(?m)\b1 0 0 -1 [0-9.]+ [0-9.]+ cm\b"#, options: .regularExpression),
-            "PDF content stream should not contain an upside-down Y flip"
+            stream.range(of: #"(?m)\b1 0 0 -1 72 720 cm\b"#, options: .regularExpression),
+            "Expected PDF page transform to translate AND flip Y for correct pagination"
         )
 
         try? FileManager.default.removeItem(at: tempURL)
@@ -426,13 +424,13 @@ final class ExportServiceTests: XCTestCase {
         try? FileManager.default.removeItem(at: tempURL)
     }
 
-    func testPDFPageTextTransformDoesNotFlipGlyphs() {
+    func testPDFPageTextTransformFlipsYForPagination() {
         let transform = exportService.pdfPageTextTransform(pageHeight: 792, margin: 72)
 
         XCTAssertEqual(transform.a, 1, accuracy: 0.001)
         XCTAssertEqual(transform.b, 0, accuracy: 0.001)
         XCTAssertEqual(transform.c, 0, accuracy: 0.001)
-        XCTAssertEqual(transform.d, 1, accuracy: 0.001)
+        XCTAssertEqual(transform.d, -1, accuracy: 0.001)
         XCTAssertEqual(transform.tx, 72, accuracy: 0.001)
         XCTAssertEqual(transform.ty, 720, accuracy: 0.001)
     }
