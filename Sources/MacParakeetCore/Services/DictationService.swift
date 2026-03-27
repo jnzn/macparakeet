@@ -168,7 +168,7 @@ public actor DictationService: DictationServiceProtocol {
             // window where a new startRecording() could overwrite the device info.
             let device = await audioProcessor.recordingDeviceInfo
             _state = .idle
-            if error is DictationServiceError, case DictationServiceError.emptyTranscript = error {
+            if Self.isNoSpeechError(error) {
                 Telemetry.send(.dictationEmpty(durationSeconds: currentRecordingDurationSeconds(), device: device))
             } else {
                 Telemetry.send(.dictationFailed(errorType: Self.errorType(for: error), errorDetail: TelemetryErrorClassifier.errorDetail(error), device: device))
@@ -250,7 +250,7 @@ public actor DictationService: DictationServiceProtocol {
         } catch {
             let device = await audioProcessor.recordingDeviceInfo
             _state = .idle
-            if error is DictationServiceError, case DictationServiceError.emptyTranscript = error {
+            if Self.isNoSpeechError(error) {
                 Telemetry.send(.dictationEmpty(durationSeconds: currentRecordingDurationSeconds(), device: device))
             } else {
                 Telemetry.send(.dictationFailed(errorType: Self.errorType(for: error), errorDetail: TelemetryErrorClassifier.errorDetail(error), device: device))
@@ -261,6 +261,13 @@ public actor DictationService: DictationServiceProtocol {
     }
 
     // MARK: - Private
+
+    /// Whether the error represents "no speech" (empty transcript or recording too short).
+    private static func isNoSpeechError(_ error: Error) -> Bool {
+        if let e = error as? DictationServiceError, e == .emptyTranscript { return true }
+        if let e = error as? AudioProcessorError, case .insufficientSamples = e { return true }
+        return false
+    }
 
     private func discardPendingCancelledAudio() {
         if let url = pendingCancelledAudioURL {
