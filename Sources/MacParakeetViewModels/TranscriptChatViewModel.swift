@@ -295,9 +295,7 @@ public final class TranscriptChatViewModel {
 
         // Delete all conversations for this transcript
         if let transcriptionId {
-            for conv in conversations {
-                _ = try? conversationRepo?.delete(id: conv.id)
-            }
+            try? conversationRepo?.deleteAll(transcriptionId: transcriptionId)
             conversations.removeAll()
         }
         currentConversation = nil

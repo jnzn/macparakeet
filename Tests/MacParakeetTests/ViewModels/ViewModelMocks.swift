@@ -521,6 +521,10 @@ final class MockChatConversationRepository: ChatConversationRepositoryProtocol, 
         return conversations.count < before
     }
 
+    func deleteAll(transcriptionId: UUID) throws {
+        conversations.removeAll { $0.transcriptionId == transcriptionId }
+    }
+
     func deleteEmpty(transcriptionId: UUID) throws {
         deleteEmptyCalls.append(transcriptionId)
         conversations.removeAll {

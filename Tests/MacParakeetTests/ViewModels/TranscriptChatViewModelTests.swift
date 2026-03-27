@@ -294,7 +294,7 @@ final class TranscriptChatViewModelTests: XCTestCase {
 
         XCTAssertTrue(viewModel.conversations.isEmpty)
         XCTAssertNil(viewModel.currentConversation)
-        XCTAssertTrue(mockConversationRepo.deleteCalls.contains(conv.id))
+        XCTAssertTrue(mockConversationRepo.conversations.isEmpty)
     }
 
     func testCanSendMessageFalseWhenNoService() {
