@@ -415,6 +415,17 @@ final class ExportServiceTests: XCTestCase {
         try? FileManager.default.removeItem(at: tempURL)
     }
 
+    func testPDFPageTextTransformDoesNotFlipGlyphs() {
+        let transform = exportService.pdfPageTextTransform(pageHeight: 792, margin: 72)
+
+        XCTAssertEqual(transform.a, 1, accuracy: 0.001)
+        XCTAssertEqual(transform.b, 0, accuracy: 0.001)
+        XCTAssertEqual(transform.c, 0, accuracy: 0.001)
+        XCTAssertEqual(transform.d, 1, accuracy: 0.001)
+        XCTAssertEqual(transform.tx, 72, accuracy: 0.001)
+        XCTAssertEqual(transform.ty, 720, accuracy: 0.001)
+    }
+
     @MainActor func testExportToDocx() throws {
         let transcription = Transcription(
             fileName: "word.mp3",

@@ -115,14 +115,14 @@ public final class ExportService: ExportServiceProtocol, Sendable {
             let pageRect = NSRect(x: 0, y: yOffset, width: textWidth, height: textHeight)
             let glyphRange = layoutManager.glyphRange(forBoundingRect: pageRect, in: textContainer)
 
-            // Save graphics state, set up coordinate system for this page
+            // Save graphics state, set up coordinate system for this page.
+            // AppKit text drawing is already upright in PDF contexts; only translate
+            // to the top margin here. A manual Y-flip renders glyphs upside-down.
             let nsContext = NSGraphicsContext(cgContext: context, flipped: false)
             NSGraphicsContext.saveGraphicsState()
             NSGraphicsContext.current = nsContext
 
-            // Core Graphics origin is bottom-left; translate to draw top-down
-            context.translateBy(x: margin, y: pageHeight - margin)
-            context.scaleBy(x: 1, y: -1)
+            context.concatenate(pdfPageTextTransform(pageHeight: pageHeight, margin: margin))
 
             // Offset for current page slice
             let drawOrigin = NSPoint(x: 0, y: -yOffset)
@@ -448,5 +448,9 @@ public final class ExportService: ExportServiceProtocol, Sendable {
         }
 
         return result
+    }
+
+    func pdfPageTextTransform(pageHeight: CGFloat, margin: CGFloat) -> CGAffineTransform {
+        CGAffineTransform(translationX: margin, y: pageHeight - margin)
     }
 }
