@@ -126,11 +126,13 @@ public final class TranscriptChatViewModel {
             var conversation = ChatConversation(transcriptionId: transcriptionId, title: title)
             do {
                 try conversationRepo?.save(conversation)
+                currentConversation = conversation
+                conversations.insert(conversation, at: 0)
             } catch {
                 logger.error("Failed to save new conversation error=\(error.localizedDescription, privacy: .public)")
+                errorMessage = "Failed to create conversation"
+                return
             }
-            currentConversation = conversation
-            conversations.insert(conversation, at: 0)
         }
 
         let userMessage = ChatDisplayMessage(role: .user, content: text)
@@ -233,6 +235,8 @@ public final class TranscriptChatViewModel {
 
         errorMessage = nil
         inputText = ""
+
+        notifyConversationsChanged()
     }
 
     // MARK: - Multi-Conversation
@@ -270,6 +274,10 @@ public final class TranscriptChatViewModel {
     }
 
     public func deleteConversation(_ conversation: ChatConversation) {
+        if currentConversation?.id == conversation.id {
+            cancelStreaming()
+        }
+
         _ = try? conversationRepo?.delete(id: conversation.id)
         conversations.removeAll { $0.id == conversation.id }
 
@@ -288,6 +296,7 @@ public final class TranscriptChatViewModel {
 
     /// Clears all conversations for the current transcript (used when retranscribing).
     public func clearHistory() {
+        cancelStreaming()
         messages.removeAll()
         chatHistory.removeAll()
         errorMessage = nil
