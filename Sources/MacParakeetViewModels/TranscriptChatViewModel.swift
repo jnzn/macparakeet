@@ -248,12 +248,7 @@ public final class TranscriptChatViewModel {
 
     public func newChat() {
         cancelStreaming()
-
-        // If current conversation has no messages, delete it
-        if let current = currentConversation, current.messages == nil || current.messages?.isEmpty == true {
-            _ = try? conversationRepo?.delete(id: current.id)
-            conversations.removeAll { $0.id == current.id }
-        }
+        discardEmptyCurrentConversation()
 
         messages.removeAll()
         chatHistory.removeAll()
@@ -266,12 +261,7 @@ public final class TranscriptChatViewModel {
 
     public func switchConversation(_ conversation: ChatConversation) {
         cancelStreaming()
-
-        // Clean up empty current conversation
-        if let current = currentConversation, current.messages == nil || current.messages?.isEmpty == true {
-            _ = try? conversationRepo?.delete(id: current.id)
-            conversations.removeAll { $0.id == current.id }
-        }
+        discardEmptyCurrentConversation()
 
         loadConversationMessages(conversation)
         errorMessage = nil
@@ -330,6 +320,13 @@ public final class TranscriptChatViewModel {
             messages.removeAll()
             chatHistory.removeAll()
         }
+    }
+
+    private func discardEmptyCurrentConversation() {
+        guard let current = currentConversation,
+              current.messages == nil || current.messages?.isEmpty == true else { return }
+        _ = try? conversationRepo?.delete(id: current.id)
+        conversations.removeAll { $0.id == current.id }
     }
 
     private func persistChatMessages() {

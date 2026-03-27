@@ -155,6 +155,7 @@ struct TranscriptResultView: View {
             editingSpeakerLabel = ""
             showConversationPopover = false
             hoveredConversationId = nil
+            viewModel.hasConversations = false
             viewModel.selectedTab = .transcript
             viewModel.resetSummaryState()
             viewModel.loadPersistedContent()
