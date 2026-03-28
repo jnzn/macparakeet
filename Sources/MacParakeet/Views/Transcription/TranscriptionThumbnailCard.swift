@@ -110,28 +110,40 @@ struct TranscriptionThumbnailCard<MenuContent: View>: View {
 
     @ViewBuilder
     private var thumbnailContent: some View {
-        if let thumbnailURL = transcription.thumbnailURL,
-           let cached = sharedThumbnailCache.cachedThumbnail(for: transcription.id) {
-            // Cached thumbnail
-            AsyncImage(url: cached) { image in
-                image
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } placeholder: {
-                placeholderView
-            }
-        } else if let urlString = transcription.thumbnailURL, let url = URL(string: urlString) {
-            // Has URL but not cached yet — load from remote
-            AsyncImage(url: url) { image in
-                image
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } placeholder: {
-                placeholderView
+        if let cached = sharedThumbnailCache.cachedThumbnail(for: transcription.id),
+           let nsImage = NSImage(contentsOf: cached) {
+            // Locally cached thumbnail (YouTube download or local video frame)
+            Image(nsImage: nsImage)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+        } else if let url = resolvedThumbnailURL {
+            // Remote URL — load and cache in background
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                default:
+                    placeholderView
+                }
             }
         } else {
             placeholderView
         }
+    }
+
+    /// Resolves a thumbnail URL: explicit thumbnailURL, or derived from YouTube sourceURL.
+    private var resolvedThumbnailURL: URL? {
+        if let urlString = transcription.thumbnailURL, let url = URL(string: urlString) {
+            return url
+        }
+        // Derive from YouTube video ID
+        if let sourceURL = transcription.sourceURL,
+           let videoID = YouTubeURLValidator.extractVideoID(sourceURL) {
+            return URL(string: "https://i.ytimg.com/vi/\(videoID)/hqdefault.jpg")
+        }
+        return nil
     }
 
     private var placeholderView: some View {
@@ -149,7 +161,7 @@ struct TranscriptionThumbnailCard<MenuContent: View>: View {
             return "play.rectangle.fill"
         }
         let ext = transcription.filePath.map { URL(fileURLWithPath: $0).pathExtension.lowercased() } ?? ""
-        let videoExts: Set = ["mp4", "mov", "mkv", "avi", "webm", "m4v"]
+        let videoExts: Set = ["mp4", "mov", "mkv", "avi", "webm", "m4v", "flv", "wmv"]
         return videoExts.contains(ext) ? "film" : "waveform"
     }
 
@@ -163,16 +175,16 @@ struct TranscriptionThumbnailCard<MenuContent: View>: View {
                 .lineLimit(2)
                 .truncationMode(.tail)
 
-            if let channel = transcription.channelName {
-                Text(channel)
-                    .font(DesignSystem.Typography.caption)
-                    .foregroundStyle(DesignSystem.Colors.textTertiary)
-                    .lineLimit(1)
-            }
-
-            Text(transcription.createdAt.relativeFormatted)
+            Text(transcription.channelName ?? transcription.createdAt.relativeFormatted)
                 .font(DesignSystem.Typography.caption)
                 .foregroundStyle(DesignSystem.Colors.textTertiary)
+                .lineLimit(1)
+
+            if transcription.channelName != nil {
+                Text(transcription.createdAt.relativeFormatted)
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(DesignSystem.Colors.textTertiary)
+            }
         }
         .padding(DesignSystem.Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
