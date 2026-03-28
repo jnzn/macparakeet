@@ -31,12 +31,12 @@ struct TranscriptionThumbnailCard<MenuContent: View>: View {
             .animation(DesignSystem.Animation.hoverTransition, value: hovered)
         }
         .buttonStyle(.plain)
-        .onHover { hovered = $0 }
         .overlay(alignment: .topTrailing) {
             moreButton
                 .opacity(hovered ? 1 : 0)
                 .allowsHitTesting(hovered)
         }
+        .onHover { hovered = $0 }
         .animation(DesignSystem.Animation.hoverTransition, value: hovered)
     }
 
@@ -52,7 +52,9 @@ struct TranscriptionThumbnailCard<MenuContent: View>: View {
                 .frame(width: 26, height: 26)
                 .background(
                     Circle()
-                        .fill(.black.opacity(moreHovered ? 0.8 : 0.6))
+                        .fill(.black.opacity(moreHovered ? 0.85 : 0.5))
+                        .scaleEffect(moreHovered ? 1.15 : 1.0)
+                        .animation(.easeInOut(duration: 0.15), value: moreHovered)
                 )
                 .contentShape(Circle())
         }
@@ -60,7 +62,13 @@ struct TranscriptionThumbnailCard<MenuContent: View>: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .padding(6)
-        .onHover { moreHovered = $0 }
+        .background(
+            // Invisible tracking area — Menu swallows .onHover,
+            // so we use a background rectangle to detect hover instead
+            Color.clear
+                .contentShape(Rectangle())
+                .onHover { moreHovered = $0 }
+        )
     }
 
     // MARK: - Thumbnail
@@ -188,6 +196,7 @@ struct TranscriptionThumbnailCard<MenuContent: View>: View {
         }
         .padding(DesignSystem.Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: 80, alignment: .top)
     }
 }
 
