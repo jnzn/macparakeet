@@ -87,6 +87,15 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         try transcriptionRepo.save(transcription)
         Telemetry.send(.transcriptionStarted(source: source, audioDurationSeconds: nil))
 
+        // Extract thumbnail from video files (non-blocking)
+        if Self.isVideoFile(fileURL) {
+            let transcriptionId = transcription.id
+            let path = fileURL.path
+            Task.detached(priority: .utility) {
+                _ = try? await ThumbnailCacheService().extractVideoFrame(from: path, for: transcriptionId)
+            }
+        }
+
         return try await transcribeAudio(
             fileURL: fileURL,
             source: source,
@@ -301,5 +310,11 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
 
     private static func errorType(for error: Error) -> String {
         TelemetryErrorClassifier.classify(error)
+    }
+
+    private static let videoExtensions: Set<String> = ["mp4", "mov", "mkv", "avi", "webm", "m4v", "flv", "wmv"]
+
+    private static func isVideoFile(_ url: URL) -> Bool {
+        videoExtensions.contains(url.pathExtension.lowercased())
     }
 }
