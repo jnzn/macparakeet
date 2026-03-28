@@ -917,4 +917,99 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.summaryState, .complete)
         XCTAssertEqual(viewModel.currentTranscription?.summary, "DB summary")
     }
+
+    // MARK: - Retranscribe
+
+    func testRetranscribeDeletesOriginalAndCreatesNewRecord() async throws {
+        let tmpFile = FileManager.default.temporaryDirectory.appendingPathComponent("retranscribe-test.mp3")
+        FileManager.default.createFile(atPath: tmpFile.path, contents: Data([0]))
+        defer { try? FileManager.default.removeItem(at: tmpFile) }
+
+        let original = Transcription(
+            id: UUID(),
+            fileName: "lecture.mp3",
+            filePath: tmpFile.path,
+            rawTranscript: "Old transcript",
+            status: .completed,
+            sourceURL: "https://youtube.com/watch?v=abc123"
+        )
+        mockRepo.transcriptions = [original]
+
+        let newResult = Transcription(
+            fileName: tmpFile.lastPathComponent,
+            rawTranscript: "New transcript",
+            status: .completed
+        )
+        await mockService.configure(result: newResult)
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+
+        viewModel.retranscribe(original)
+
+        try await Task.sleep(for: .milliseconds(300))
+
+        // Original should be deleted
+        XCTAssertTrue(mockRepo.deleteCalledWith.contains(original.id),
+                       "Original transcription should be deleted after retranscribe")
+
+        // New record should be saved (the one from the service, with metadata preserved)
+        let saved = mockRepo.transcriptions
+        XCTAssertEqual(saved.count, 1, "Should have exactly one record (old deleted, new saved)")
+        XCTAssertNotEqual(saved.first?.id, original.id, "New record should have a different ID")
+        XCTAssertEqual(saved.first?.fileName, "lecture.mp3", "Should preserve original fileName")
+        XCTAssertEqual(saved.first?.sourceURL, "https://youtube.com/watch?v=abc123",
+                       "Should preserve original sourceURL")
+    }
+
+    func testRetranscribeDoesNothingWhenFileIsMissing() async throws {
+        let original = Transcription(
+            fileName: "gone.mp3",
+            filePath: "/tmp/nonexistent-\(UUID()).mp3",
+            rawTranscript: "Old transcript",
+            status: .completed
+        )
+        mockRepo.transcriptions = [original]
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+
+        viewModel.retranscribe(original)
+
+        try await Task.sleep(for: .milliseconds(100))
+
+        // Should not start transcription at all
+        XCTAssertFalse(viewModel.isTranscribing)
+        let callCount = await mockService.transcribeCallCount
+        XCTAssertEqual(callCount, 0, "Should not call transcribe when file is missing")
+        XCTAssertTrue(mockRepo.deleteCalledWith.isEmpty, "Should not delete anything")
+    }
+
+    func testRetranscribeFailureLeavesOriginalIntact() async throws {
+        let tmpFile = FileManager.default.temporaryDirectory.appendingPathComponent("retranscribe-fail-test.mp3")
+        FileManager.default.createFile(atPath: tmpFile.path, contents: Data([0]))
+        defer { try? FileManager.default.removeItem(at: tmpFile) }
+
+        let original = Transcription(
+            fileName: "lecture.mp3",
+            filePath: tmpFile.path,
+            rawTranscript: "Old transcript",
+            status: .completed
+        )
+        mockRepo.transcriptions = [original]
+
+        await mockService.configure(error: NSError(domain: "test", code: 1, userInfo: [
+            NSLocalizedDescriptionKey: "STT engine failed"
+        ]))
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+
+        viewModel.retranscribe(original)
+
+        try await Task.sleep(for: .milliseconds(300))
+
+        // Original should NOT be deleted on failure
+        XCTAssertTrue(mockRepo.deleteCalledWith.isEmpty,
+                       "Original should not be deleted when retranscribe fails")
+        XCTAssertEqual(mockRepo.transcriptions.count, 1, "Original should still exist")
+        XCTAssertEqual(mockRepo.transcriptions.first?.id, original.id)
+    }
 }

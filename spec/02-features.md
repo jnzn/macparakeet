@@ -55,6 +55,15 @@ See [00-vision.md](./00-vision.md) for positioning and market context.
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
+│  v0.5 - "Data & Reliability"                                     │
+│  "Foundations — data model maturity and open-source release"    │
+├─────────────────────────────────────────────────────────────────┤
+│  • Private dictation, multi-conversation chat, favorites        │
+│  • YouTube metadata, FTS5 cleanup, GPL-3.0 open source          │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
 │  Future - "Platform"                                             │
 ├─────────────────────────────────────────────────────────────────┤
 │  • iOS companion                                                 │
@@ -1314,27 +1323,89 @@ new scheduling architecture.
 
 ---
 
+## v0.5 Features (Data & Reliability)
+
+> Status: **IMPLEMENTED**
+
+Internal data model improvements, reliability fixes, and open-source release. No new UI surfaces — these are foundational changes that support future work.
+
+### F17: Private Dictation Mode
+
+> Status: **IMPLEMENTED**
+
+**What:** A `hidden` flag on dictations that excludes them from history and voice stats. Used for sensitive dictations the user doesn't want in their history.
+
+**Schema:** `dictations.hidden` (BOOLEAN, NOT NULL, DEFAULT 0)
+
+### F18: Voice Stats Word Count
+
+> Status: **IMPLEMENTED**
+
+**What:** Cached `wordCount` column on dictations for the voice stats dashboard, avoiding repeated O(n) text splitting. Backfilled on migration from existing transcripts.
+
+**Schema:** `dictations.wordCount` (INTEGER, NOT NULL, DEFAULT 0)
+
+### F19: Multi-Conversation Chat
+
+> Status: **IMPLEMENTED**
+
+**What:** Replaced the single `chatMessages` JSON field on `transcriptions` with a dedicated `chat_conversations` table. Each transcription can now have multiple named conversations with independent history.
+
+**Migration:** Existing `chatMessages` data migrated to new table with auto-derived titles. Legacy column nulled out but kept for backward compat.
+
+**Schema:** New `chat_conversations` table with FK → `transcriptions` (CASCADE delete). See `spec/01-data-model.md`.
+
+### F20: YouTube Video Metadata
+
+> Status: **IMPLEMENTED**
+
+**What:** Store YouTube video metadata (thumbnail URL, channel name, description) on transcription records. Powers thumbnail cards in the library grid and richer display.
+
+**Schema:** `transcriptions.thumbnailURL`, `transcriptions.channelName`, `transcriptions.videoDescription`
+
+### F21: Transcription Favorites
+
+> Status: **IMPLEMENTED**
+
+**What:** User can mark transcriptions as favorites. Library view supports filtering by favorites.
+
+**Schema:** `transcriptions.isFavorite` (BOOLEAN, NOT NULL, DEFAULT 0)
+
+### F22: FTS5 Removal
+
+> Status: **IMPLEMENTED**
+
+**What:** Dropped the unused FTS5 virtual table and 3 sync triggers on `dictations`. These were created in v0.1 but never queried — search uses `LIKE` instead. Removing them eliminates write overhead on every dictation INSERT/UPDATE/DELETE.
+
+### F23: Open-Source Release
+
+> Status: **IMPLEMENTED**
+
+**What:** Released MacParakeet as GPL-3.0 open source at github.com/moona3k/macparakeet. LemonSqueezy kept as $0 product. Community repo archived with redirect.
+
+---
+
 ## Future Features (Post-Launch)
 
-### F17: iOS Companion App
+### F24: iOS Companion App
 Share transcripts between Mac and iPhone. Capture in-person conversations on iPhone.
 
-### F18: Translation
+### F25: Translation
 Translate transcribed text to other languages. Implementation approach TBD (local model or API).
 
-### F19: API / Shortcuts Integration
+### F26: API / Shortcuts Integration
 Expose transcription as a macOS Shortcut action. Enable automation: "When I receive a voice memo, transcribe it."
 
-### F20: Team Vocabulary Sharing
+### F27: Team Vocabulary Sharing
 Export/import custom word lists and snippet packs. Share domain-specific vocabulary with team members.
 
-### F21: Vibe Coding Integrations
+### F28: Vibe Coding Integrations
 Deep integration with code editors:
 - **Cursor / VS Code:** Dictate code with context-aware formatting
 - **Xcode:** Swift-specific dictation mode
 - **Terminal:** Voice commands for git, build, test
 
-### F22: Context Awareness
+### F29: Context Awareness
 Read surrounding text from the active app via macOS Accessibility APIs (AXUIElement) to produce better transcriptions. Knows "React" in a code editor, "react" in a therapy note. All processing local -- no screen content ever leaves device.
 
 ---
