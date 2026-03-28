@@ -337,8 +337,17 @@ struct TranscribeView: View {
                 Text(truncateErrorMessage(error))
                     .font(DesignSystem.Typography.caption)
                     .lineLimit(2)
-                    .help(error)
+                    .textSelection(.enabled)
                 Spacer()
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(error, forType: .string)
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .help("Copy full error")
                 Button {
                     viewModel.errorMessage = nil
                 } label: {
@@ -349,7 +358,7 @@ struct TranscribeView: View {
             }
             .foregroundStyle(DesignSystem.Colors.errorRed)
 
-            Text("Hover for details. Report persistent issues via **Feedback** in the sidebar.")
+            Text("Click copy icon for full error. Report persistent issues via **Feedback** in the sidebar.")
                 .font(DesignSystem.Typography.micro)
                 .foregroundStyle(DesignSystem.Colors.textTertiary)
         }
