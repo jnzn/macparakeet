@@ -34,7 +34,7 @@ struct TranscriptResultView: View {
     @State private var showConversationPopover = false
     @State private var hoveredConversationId: UUID?
     @State private var playerViewModel = MediaPlayerViewModel()
-    @State private var showVideoPanel = true
+    @State private var showVideoPanel = false
     @State private var lastScrolledSegmentMs: Int = -1
     // Cached transcript data — recomputed only when transcription.id changes, not on every playback tick
     @State private var cachedSegments: [TranscriptSegment] = []
@@ -177,12 +177,11 @@ struct TranscriptResultView: View {
                         showVideoPanel = false
                     }
                 } label: {
-                    Image(systemName: "rectangle.lefthalf.inset.filled.arrow.left")
-                        .font(.system(size: 11))
-                        .foregroundStyle(DesignSystem.Colors.textTertiary)
+                    Label("Hide Video", systemImage: "rectangle.lefthalf.inset.filled.arrow.left")
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(DesignSystem.Colors.textSecondary)
                 }
                 .buttonStyle(.plain)
-                .help("Hide video panel")
             }
             .padding(.horizontal, DesignSystem.Spacing.lg)
             .padding(.top, DesignSystem.Spacing.md)
@@ -529,8 +528,14 @@ struct TranscriptResultView: View {
                 }
                 .padding(DesignSystem.Spacing.lg)
             }
-            .onChange(of: playerViewModel.currentTimeMs) { _, newValue in
+            .onChange(of: playerViewModel.currentTimeMs) { oldValue, newValue in
                 guard playerViewModel.isPlaying else { return }
+                // Detect seek (large time jump) — re-sync transcript regardless of pause state
+                if autoScrollPaused && abs(newValue - oldValue) > 2000 {
+                    autoScrollPaused = false
+                    scrollPauseTask?.cancel()
+                    lastScrolledSegmentMs = -1
+                }
                 guard !autoScrollPaused else { return }
                 guard !cachedSegments.isEmpty else { return }
                 if let targetId = autoScrollTarget(for: newValue),
