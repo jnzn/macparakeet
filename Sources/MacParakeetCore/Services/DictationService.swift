@@ -297,8 +297,14 @@ public actor DictationService: DictationServiceProtocol {
         }
 
         let mode = processingMode()
-        let words = mode.usesDeterministicPipeline ? ((try? customWordRepo?.fetchEnabled()) ?? []) : []
-        let snippets = mode.usesDeterministicPipeline ? ((try? snippetRepo?.fetchEnabled()) ?? []) : []
+        var words: [CustomWord] = []
+        var snippets: [TextSnippet] = []
+        if mode.usesDeterministicPipeline {
+            do { words = try customWordRepo?.fetchEnabled() ?? [] }
+            catch { logger.error("Failed to load custom words: \(error.localizedDescription)") }
+            do { snippets = try snippetRepo?.fetchEnabled() ?? [] }
+            catch { logger.error("Failed to load text snippets: \(error.localizedDescription)") }
+        }
         let refinement = await textRefinementService.refine(
             rawText: result.text,
             mode: mode,

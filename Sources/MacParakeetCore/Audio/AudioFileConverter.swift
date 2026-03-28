@@ -91,12 +91,10 @@ public final class AudioFileConverter: Sendable {
         // ffmpeg writes verbose progress to stderr; if it exceeds the 64KB pipe
         // buffer, both ffmpeg and waitUntilExit() block permanently.
         let stderrURL = tempDir.appendingPathComponent("ffmpeg-stderr-\(UUID().uuidString).log")
+        defer { try? FileManager.default.removeItem(at: stderrURL) }
         FileManager.default.createFile(atPath: stderrURL.path, contents: Data())
         let stderrHandle = try FileHandle(forWritingTo: stderrURL)
-        defer {
-            stderrHandle.closeFile()
-            try? FileManager.default.removeItem(at: stderrURL)
-        }
+        defer { stderrHandle.closeFile() }
 
         process.standardOutput = FileHandle.nullDevice
         process.standardError = stderrHandle

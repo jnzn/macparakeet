@@ -2,11 +2,13 @@ import AppKit
 import AVFoundation
 import Foundation
 import MacParakeetCore
+import os
 import UniformTypeIdentifiers
 
 @MainActor
 @Observable
 public final class DictationHistoryViewModel {
+    private let logger = Logger(subsystem: "com.macparakeet.viewmodels", category: "DictationHistory")
     public var groupedDictations: [(String, [Dictation])] = []
     public var searchText: String = "" {
         didSet { debounceSearch() }
@@ -76,10 +78,15 @@ public final class DictationHistoryViewModel {
         guard let repo = dictationRepo else { return }
 
         let dictations: [Dictation]
-        if searchText.isEmpty {
-            dictations = (try? repo.fetchAll(limit: 200)) ?? []
-        } else {
-            dictations = (try? repo.search(query: searchText, limit: 200)) ?? []
+        do {
+            if searchText.isEmpty {
+                dictations = try repo.fetchAll(limit: 200)
+            } else {
+                dictations = try repo.search(query: searchText, limit: 200)
+            }
+        } catch {
+            logger.error("Failed to load dictations: \(error.localizedDescription)")
+            dictations = []
         }
 
         // Group by date
@@ -105,13 +112,22 @@ public final class DictationHistoryViewModel {
         if let path = dictation.audioPath {
             try? FileManager.default.removeItem(atPath: path)
         }
-        _ = try? repo.delete(id: dictation.id)
+        do {
+            _ = try repo.delete(id: dictation.id)
+        } catch {
+            logger.error("Failed to delete dictation \(dictation.id): \(error.localizedDescription)")
+        }
         loadDictations()
     }
 
     private func refreshStats() {
         guard let repo = dictationRepo else { return }
-        stats = (try? repo.stats()) ?? .empty
+        do {
+            stats = try repo.stats()
+        } catch {
+            logger.error("Failed to load dictation stats: \(error.localizedDescription)")
+            stats = .empty
+        }
     }
 
     public func downloadAudio(for dictation: Dictation) {
@@ -266,14 +282,17 @@ public final class DictationHistoryViewModel {
 
 // MARK: - PlaybackDelegate
 
-private final class PlaybackDelegate: NSObject, AVAudioPlayerDelegate, @unchecked Sendable {
-    private let onFinish: () -> Void
+@MainActor
+private final class PlaybackDelegate: NSObject, AVAudioPlayerDelegate {
+    private let onFinish: @MainActor () -> Void
 
-    init(onFinish: @escaping () -> Void) {
+    init(onFinish: @escaping @MainActor () -> Void) {
         self.onFinish = onFinish
     }
 
-    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        onFinish()
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor in
+            self.onFinish()
+        }
     }
 }
