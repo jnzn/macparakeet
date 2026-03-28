@@ -730,41 +730,42 @@ struct TranscriptResultView: View {
                 )
             }
 
-            HStack(spacing: DesignSystem.Spacing.sm) {
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(viewModel.summary, forType: .string)
-                    Telemetry.send(.copyToClipboard(source: .transcription))
-                    summaryCopied = true
-                    copiedResetTask?.cancel()
-                    copiedResetTask = Task {
-                        try? await Task.sleep(for: .seconds(2))
-                        summaryCopied = false
-                    }
-                } label: {
-                    Label(
-                        summaryCopied ? "Copied" : "Copy",
-                        systemImage: summaryCopied ? "checkmark" : "doc.on.doc"
-                    )
-                    .font(DesignSystem.Typography.caption)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .foregroundStyle(summaryCopied ? DesignSystem.Colors.successGreen : .primary)
-
-                if viewModel.canGenerateSummary {
+            if !isStreaming {
+                HStack(spacing: DesignSystem.Spacing.sm) {
                     Button {
-                        viewModel.generateSummary(text: transcriptText)
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(viewModel.summary, forType: .string)
+                        Telemetry.send(.copyToClipboard(source: .transcription))
+                        summaryCopied = true
+                        copiedResetTask?.cancel()
+                        copiedResetTask = Task {
+                            try? await Task.sleep(for: .seconds(2))
+                            summaryCopied = false
+                        }
                     } label: {
-                        Label("Regenerate", systemImage: "arrow.clockwise")
-                            .font(DesignSystem.Typography.caption)
+                        Label(
+                            summaryCopied ? "Copied" : "Copy",
+                            systemImage: summaryCopied ? "checkmark" : "doc.on.doc"
+                        )
+                        .font(DesignSystem.Typography.caption)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .disabled(isStreaming)
-                }
+                    .foregroundStyle(summaryCopied ? DesignSystem.Colors.successGreen : .primary)
 
-                Spacer()
+                    if viewModel.canGenerateSummary {
+                        Button {
+                            viewModel.generateSummary(text: transcriptText)
+                        } label: {
+                            Label("Regenerate", systemImage: "arrow.clockwise")
+                                .font(DesignSystem.Typography.caption)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+
+                    Spacer()
+                }
             }
         }
         .padding(DesignSystem.Spacing.lg)
