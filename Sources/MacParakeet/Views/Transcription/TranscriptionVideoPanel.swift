@@ -37,28 +37,42 @@ struct TranscriptionVideoPanel: View {
     // MARK: - States
 
     private var loadingState: some View {
-        VStack(spacing: DesignSystem.Spacing.md) {
-            ProgressView()
-                .controlSize(.large)
-            Text(loadingMessage)
-                .font(DesignSystem.Typography.bodySmall)
-                .foregroundStyle(DesignSystem.Colors.textSecondary)
-        }
-        .frame(maxWidth: .infinity)
-        .aspectRatio(16/9, contentMode: .fit)
-        .background(
+        ZStack {
             RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
-                .fill(DesignSystem.Colors.surfaceElevated)
-        )
+                .fill(DesignSystem.Colors.surface)
+
+            VStack(spacing: DesignSystem.Spacing.lg) {
+                SpinnerRingView(size: 36, tintColor: DesignSystem.Colors.accent)
+
+                VStack(spacing: 4) {
+                    Text(loadingTitle)
+                        .font(DesignSystem.Typography.bodySmall.weight(.medium))
+                        .foregroundStyle(DesignSystem.Colors.textSecondary)
+
+                    if let subtitle = loadingSubtitle {
+                        Text(subtitle)
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(DesignSystem.Colors.textTertiary)
+                    }
+                }
+            }
+        }
+        .aspectRatio(16/9, contentMode: .fit)
     }
 
-    private var loadingMessage: String {
+    private var loadingTitle: String {
         let elapsed = Int(playerViewModel.loadingElapsed)
         if elapsed < 3 {
             return "Loading video..."
         } else {
-            return "Fetching stream from YouTube... (\(elapsed)s)"
+            return "Fetching stream from YouTube..."
         }
+    }
+
+    private var loadingSubtitle: String? {
+        let elapsed = Int(playerViewModel.loadingElapsed)
+        guard elapsed >= 3 else { return nil }
+        return "This can take 10–15 seconds (\(elapsed)s)"
     }
 
     private func errorState(message: String) -> some View {

@@ -547,6 +547,9 @@ struct TranscriptResultView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(viewModel.selectedTab == tab ? DesignSystem.Colors.accent : DesignSystem.Colors.textSecondary)
+                .onHover { hovering in
+                    if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+                }
             }
             Spacer()
         }
