@@ -329,7 +329,8 @@ public actor DictationService: DictationServiceProtocol {
         )
 
         if saveHistory, shouldSaveAudio?() ?? false {
-            try? AppPaths.ensureDirectories()
+            do { try AppPaths.ensureDirectories() }
+            catch { logger.error("Failed to create directories: \(error.localizedDescription, privacy: .public)") }
             let destURL = URL(fileURLWithPath: AppPaths.dictationsDir, isDirectory: true)
                 .appendingPathComponent("\(dictation.id.uuidString).wav")
 

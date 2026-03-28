@@ -278,7 +278,15 @@ public actor AudioRecorder {
                     try file.write(from: convertedBuffer)
                     self.sampleCounter.withLock { $0 += Int(convertedBuffer.frameLength) }
                 } catch {
-                    // Log but don't crash — we're on the audio thread
+                    // Log but don't crash — we're on the audio thread.
+                    // Throttled: only first error per session is logged.
+                    let alreadyLogged = self.tapErrorLogged.withLock { logged in
+                        let was = logged; logged = true; return was
+                    }
+                    if !alreadyLogged {
+                        let desc = error.localizedDescription
+                        Task { await self.logTapError("audio_write_error: \(desc)") }
+                    }
                 }
             case .error:
                 // Log converter errors (throttled — only first occurrence per recording)

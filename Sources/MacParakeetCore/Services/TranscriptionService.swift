@@ -234,8 +234,14 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             }
 
             let mode = processingMode()
-            let customWords = mode.usesDeterministicPipeline ? ((try? customWordRepo?.fetchEnabled()) ?? []) : []
-            let snippets = mode.usesDeterministicPipeline ? ((try? snippetRepo?.fetchEnabled()) ?? []) : []
+            var customWords: [CustomWord] = []
+            var snippets: [TextSnippet] = []
+            if mode.usesDeterministicPipeline {
+                do { customWords = try customWordRepo?.fetchEnabled() ?? [] }
+                catch { logger.error("Failed to fetch custom words: \(error.localizedDescription, privacy: .public)") }
+                do { snippets = try snippetRepo?.fetchEnabled() ?? [] }
+                catch { logger.error("Failed to fetch snippets: \(error.localizedDescription, privacy: .public)") }
+            }
             let refinement = await textRefinementService.refine(
                 rawText: result.text,
                 mode: mode,

@@ -48,7 +48,16 @@ public final class HotkeyManager {
     }
 
     deinit {
-        stop()
+        // Inline cleanup — deinit is nonisolated, can't call @MainActor stop().
+        // Safe because deinit guarantees exclusive access to self.
+        if let tap = eventTap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+        }
+        if let source = runLoopSource, let runLoop = installedRunLoop {
+            CFRunLoopRemoveSource(runLoop, source, .commonModes)
+        }
+        retainedSelf?.release()
+        holdTimer?.cancel()
     }
 
     /// Start listening for key events. Requires Accessibility permission.

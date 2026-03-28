@@ -104,6 +104,7 @@ public final class AudioFileConverter: Sendable {
         if process.terminationStatus != 0 {
             stderrHandle.synchronizeFile()
             let stderrStr = (try? String(contentsOf: stderrURL, encoding: .utf8)) ?? "Unknown error"
+            try? FileManager.default.removeItem(at: outputURL)
             throw AudioProcessorError.conversionFailed(stderrStr)
         }
 

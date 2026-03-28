@@ -205,7 +205,7 @@ public actor YouTubeDownloader {
             "--concurrent-fragments", "4",
             "--newline",
             "-o", outputTemplate,
-            url,
+            "--", url,
         ]
         process.arguments = args
 
@@ -261,17 +261,13 @@ public actor YouTubeDownloader {
             parseProgressLines(from: stderrBuffer, chunk: chunk)
         }
 
-        do {
-            try process.run()
-            try await waitForProcess(process, timeout: 600)
-        } catch {
+        defer {
             stdoutHandle.readabilityHandler = nil
             stderrHandle.readabilityHandler = nil
-            throw error
         }
 
-        stdoutHandle.readabilityHandler = nil
-        stderrHandle.readabilityHandler = nil
+        try process.run()
+        try await waitForProcess(process, timeout: 600)
 
         // Drain remaining data from both pipes
         let stdoutTail = stdoutHandle.readDataToEndOfFile()

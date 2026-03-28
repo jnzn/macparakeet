@@ -151,7 +151,7 @@ public final class TranscriptChatViewModel {
 
         let transcript = transcriptText
 
-        streamingTask = Task {
+        streamingTask = Task { @MainActor in
             var accumulated = ""
             do {
                 let stream = llmService.chatStream(
