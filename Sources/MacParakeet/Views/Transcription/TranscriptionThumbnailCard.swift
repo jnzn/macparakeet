@@ -6,6 +6,7 @@ private let sharedThumbnailCache = ThumbnailCacheService.shared
 /// Thumbnail card for displaying a transcription in a grid layout.
 struct TranscriptionThumbnailCard<MenuContent: View>: View {
     let transcription: Transcription
+    var searchText: String = ""
     var onTap: () -> Void
     @ViewBuilder var menuContent: () -> MenuContent
 
@@ -168,26 +169,53 @@ struct TranscriptionThumbnailCard<MenuContent: View>: View {
 
     private var infoArea: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(transcription.fileName)
+            Text(highlightedText(transcription.fileName))
                 .font(DesignSystem.Typography.bodySmall.weight(.medium))
                 .foregroundStyle(DesignSystem.Colors.textPrimary)
                 .lineLimit(2)
                 .truncationMode(.tail)
 
-            Text(transcription.channelName ?? transcription.createdAt.relativeFormatted)
-                .font(DesignSystem.Typography.caption)
-                .foregroundStyle(DesignSystem.Colors.textTertiary)
-                .lineLimit(1)
+            if let channelName = transcription.channelName {
+                Text(highlightedText(channelName))
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(DesignSystem.Colors.textTertiary)
+                    .lineLimit(1)
 
-            if transcription.channelName != nil {
                 Text(transcription.createdAt.relativeFormatted)
                     .font(DesignSystem.Typography.caption)
                     .foregroundStyle(DesignSystem.Colors.textTertiary)
+            } else {
+                Text(transcription.createdAt.relativeFormatted)
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(DesignSystem.Colors.textTertiary)
+                    .lineLimit(1)
             }
         }
         .padding(DesignSystem.Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: 80, alignment: .top)
+    }
+
+    // MARK: - Search Highlighting
+
+    private func highlightedText(_ text: String) -> AttributedString {
+        var attributed = AttributedString(text)
+
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return attributed }
+
+        var searchStart = attributed.startIndex
+        while searchStart < attributed.endIndex {
+            guard let range = attributed[searchStart...].range(
+                of: query,
+                options: .caseInsensitive
+            ) else { break }
+
+            attributed[range].backgroundColor = DesignSystem.Colors.accent.opacity(0.2)
+            searchStart = range.upperBound
+        }
+
+        return attributed
     }
 }
 
