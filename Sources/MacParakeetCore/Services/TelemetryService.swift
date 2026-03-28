@@ -16,6 +16,7 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
     private let lock = NSLock()
     private var queue: [TelemetryEvent] = []
     private var flushTimer: Timer?
+    private var lifecycleObserver: NSObjectProtocol?
 
     private let baseURL: URL
     private let session: URLSession
@@ -80,6 +81,9 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
 
     deinit {
         flushTimer?.invalidate()
+        if let lifecycleObserver {
+            NotificationCenter.default.removeObserver(lifecycleObserver)
+        }
     }
 
     public func send(_ event: TelemetryEventSpec) {
@@ -149,7 +153,7 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
     }
 
     private func registerLifecycleObservers() {
-        NotificationCenter.default.addObserver(
+        lifecycleObserver = NotificationCenter.default.addObserver(
             forName: Notification.Name("NSApplicationWillTerminateNotification"),
             object: nil,
             queue: .main

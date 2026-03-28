@@ -1,5 +1,6 @@
 import Foundation
 import MacParakeetCore
+import os
 
 public enum LibraryFilter: String, CaseIterable, Sendable {
     case all = "All"
@@ -16,6 +17,7 @@ public enum LibrarySortOrder: Sendable {
 
 @MainActor @Observable
 public final class TranscriptionLibraryViewModel {
+    private let logger = Logger(subsystem: "com.macparakeet.viewmodels", category: "TranscriptionLibrary")
     public var transcriptions: [Transcription] = [] { didSet { recomputeFiltered() } }
     public var filter: LibraryFilter = .all { didSet { recomputeFiltered() } }
     public var searchText: String = "" { didSet { recomputeFiltered() } }
@@ -60,7 +62,12 @@ public final class TranscriptionLibraryViewModel {
     }
 
     public func loadTranscriptions() {
-        transcriptions = (try? transcriptionRepo?.fetchAll(limit: nil)) ?? []
+        do {
+            transcriptions = try transcriptionRepo?.fetchAll(limit: nil) ?? []
+        } catch {
+            logger.error("Failed to load transcriptions: \(error.localizedDescription)")
+            transcriptions = []
+        }
     }
 
     public func toggleFavorite(_ transcription: Transcription) {

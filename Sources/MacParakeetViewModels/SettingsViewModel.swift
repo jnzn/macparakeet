@@ -218,11 +218,12 @@ public final class SettingsViewModel {
 
     public func refreshStats() {
         guard let repo = dictationRepo else { return }
-        if let stats = try? repo.stats() {
-            dictationCount = stats.visibleCount
-        }
-        customWordCount = (try? customWordRepo?.fetchAll().count) ?? 0
-        snippetCount = (try? snippetRepo?.fetchAll().count) ?? 0
+        do { dictationCount = try repo.stats().visibleCount }
+        catch { logger.error("Failed to load dictation stats: \(error.localizedDescription)") }
+        do { customWordCount = try customWordRepo?.fetchAll().count ?? 0 }
+        catch { logger.error("Failed to load custom word count: \(error.localizedDescription)") }
+        do { snippetCount = try snippetRepo?.fetchAll().count ?? 0 }
+        catch { logger.error("Failed to load snippet count: \(error.localizedDescription)") }
 
         let (count, sizeBytes) = youtubeDownloadStats()
         youtubeDownloadCount = count
