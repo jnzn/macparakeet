@@ -60,6 +60,7 @@ All ADRs live in `spec/adr/`. These are locked -- they record decisions already 
 | v0.2 | Clean Pipeline | Deterministic text processing, custom words, snippets | **Implemented** |
 | v0.3 | YouTube & Export | YouTube transcription, export formats | **Implemented** |
 | v0.4 | Polish & Launch | Diarization, custom hotkey, non-blocking progress, direct distribution | **Implemented** |
+| v0.5 | Data & Reliability | Private dictation, video metadata, multi-conversation chat, FTS5 cleanup, favorites | **Implemented** |
 
 ## Version Progress
 
@@ -108,6 +109,16 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 - [x] UI polish (toggles, sidebar sections, copy improvements)
 - [x] Non-blocking transcription progress (bottom bar UX)
 - [x] Distribution: Notarized DMG via macparakeet.com + LemonSqueezy, Sparkle auto-updates
+
+### v0.5 Data & Reliability (Implemented)
+
+- [x] Private dictation mode (hidden flag, excluded from history)
+- [x] Word count caching for voice stats dashboard
+- [x] Multi-conversation chat per transcription (migrated from single chatMessages field)
+- [x] YouTube video metadata (thumbnail, channel name, description)
+- [x] Transcription favorites with library filtering
+- [x] FTS5 removal (unused search infrastructure dropped, search uses LIKE)
+- [x] Open-source release (GPL-3.0)
 
 ## For AI Coding Assistants
 

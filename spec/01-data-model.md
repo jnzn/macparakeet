@@ -15,9 +15,10 @@ MacParakeet uses **SQLite via GRDB** for all persistent storage. Single database
 │    dictations    │   v0.1 — Voice dictation history
 └──────────────────┘
 
-┌──────────────────┐
-│  transcriptions  │   v0.1 — File transcription records
-└──────────────────┘
+┌──────────────────┐       ┌─────────────────────────┐
+│  transcriptions  │◄──FK──│   chat_conversations    │  v0.5 — Multi-conversation chat
+└──────────────────┘       └─────────────────────────┘
+   v0.1 — File transcription records
 
 ┌──────────────────┐
 │   custom_words   │   v0.2 — Vocabulary corrections
@@ -28,7 +29,7 @@ MacParakeet uses **SQLite via GRDB** for all persistent storage. Single database
 └──────────────────┘
 ```
 
-No foreign keys between tables. Each table is a self-contained domain. This keeps the schema simple and allows tables to be added independently per version.
+Tables are self-contained domains with one exception: `chat_conversations` has a foreign key to `transcriptions` with cascading delete (deleting a transcription removes its conversations).
 
 ---
 
@@ -57,42 +58,15 @@ CREATE TABLE dictations (
 
 CREATE INDEX idx_dictations_created_at ON dictations(createdAt DESC);
 
--- Full-text search across both transcript variants
-CREATE VIRTUAL TABLE dictations_fts USING fts5(
-    rawTranscript,
-    cleanTranscript,
-    content='dictations',
-    content_rowid='rowid'
-);
+-- Note: FTS5 virtual table + sync triggers were created in v0.1 but dropped in v0.5
+-- (never queried — search uses LIKE). Kept in migration history but not in active schema.
 ```
 
 **Notes:**
 - `audioPath` is nullable because audio retention is configurable (Settings > Storage).
 - `pastedToApp` captures the frontmost app's bundle ID at paste time (e.g., `com.apple.TextEdit`). Useful for history context.
 - `processingMode` records which mode was active when the dictation was captured.
-- FTS5 content-sync table enables fast search across dictation history.
-
-**FTS5 Sync Triggers:**
-
-```sql
--- Keep FTS in sync with dictations table
-CREATE TRIGGER dictations_ai AFTER INSERT ON dictations BEGIN
-    INSERT INTO dictations_fts(rowid, rawTranscript, cleanTranscript)
-    VALUES (new.rowid, new.rawTranscript, new.cleanTranscript);
-END;
-
-CREATE TRIGGER dictations_ad AFTER DELETE ON dictations BEGIN
-    INSERT INTO dictations_fts(dictations_fts, rowid, rawTranscript, cleanTranscript)
-    VALUES ('delete', old.rowid, old.rawTranscript, old.cleanTranscript);
-END;
-
-CREATE TRIGGER dictations_au AFTER UPDATE ON dictations BEGIN
-    INSERT INTO dictations_fts(dictations_fts, rowid, rawTranscript, cleanTranscript)
-    VALUES ('delete', old.rowid, old.rawTranscript, old.cleanTranscript);
-    INSERT INTO dictations_fts(rowid, rawTranscript, cleanTranscript)
-    VALUES (new.rowid, new.rawTranscript, new.cleanTranscript);
-END;
-```
+- ~~FTS5 was created in v0.1 but dropped in v0.5~~ — search uses `LIKE` queries instead. The FTS5 table and its 3 sync triggers added write overhead on every INSERT/UPDATE/DELETE without being queried.
 
 ---
 
@@ -121,6 +95,10 @@ CREATE TABLE transcriptions (
     errorMessage TEXT,                                  -- Error details if status='error'
     exportPath TEXT,                                    -- Path to last export (nullable)
     sourceURL TEXT,                                     -- YouTube/web URL if transcription sourced from URL (v0.3)
+    thumbnailURL TEXT,                                  -- v0.5: YouTube video thumbnail URL
+    channelName TEXT,                                   -- v0.5: YouTube channel name
+    videoDescription TEXT,                              -- v0.5: YouTube video description
+    isFavorite INTEGER NOT NULL DEFAULT 0,              -- v0.5: User favorite marker
     updatedAt TEXT NOT NULL                             -- ISO 8601 timestamp
 );
 
@@ -132,6 +110,8 @@ CREATE INDEX idx_transcriptions_created_at ON transcriptions(createdAt DESC);
 - `speakerCount` and `speakers` are nullable, populated only when diarization is available (v0.4).
 - `filePath` is nullable because the original file may be moved or deleted after transcription.
 - `sourceURL` distinguishes URL-sourced transcriptions (YouTube) from local file transcriptions. Added in v0.3.
+- `thumbnailURL`, `channelName`, `videoDescription` store YouTube metadata fetched during download. Added in v0.5.
+- `isFavorite` enables user-marked favorites with filtered library view. Added in v0.5.
 - No FTS on transcriptions in v0.1. Search by filename or scroll the list. Revisit if the list grows large.
 
 **Diarization data (v0.4):**
@@ -189,6 +169,32 @@ CREATE UNIQUE INDEX idx_text_snippets_trigger ON text_snippets(trigger COLLATE N
 **Notes:**
 - Case-insensitive unique index on trigger prevents conflicts.
 - `use_count` enables "most used" sorting in the management UI.
+
+---
+
+### `chat_conversations` (v0.5)
+
+Stores multi-conversation chat history per transcription. Migrated from the `chatMessages` JSON field on `transcriptions` (v0.4) to a proper table for multi-conversation support. Each transcription can have multiple conversations.
+
+```sql
+CREATE TABLE chat_conversations (
+    id TEXT PRIMARY KEY,                              -- UUID string
+    transcriptionId TEXT NOT NULL                      -- FK to transcriptions
+        REFERENCES transcriptions(id) ON DELETE CASCADE,
+    title TEXT NOT NULL DEFAULT '',                    -- Derived from first user message (auto-titled)
+    messages TEXT,                                     -- JSON: [{"role":"user","content":"..."},{"role":"assistant","content":"..."}]
+    createdAt TEXT NOT NULL,                           -- ISO 8601 timestamp
+    updatedAt TEXT NOT NULL                            -- ISO 8601 timestamp
+);
+
+CREATE INDEX idx_chat_conversations_transcription_id ON chat_conversations(transcriptionId);
+```
+
+**Notes:**
+- `transcriptionId` has a cascading delete — deleting a transcription removes all its conversations.
+- `messages` is a JSON array of `ChatMessage` objects, decoded via GRDB's `Codable` pattern.
+- `title` is auto-derived from the first user message (up to 50 chars) during creation or migration.
+- Legacy `chatMessages` field on `transcriptions` is nulled out after migration but kept for backward compatibility.
 
 ---
 
@@ -262,11 +268,15 @@ struct Transcription: Codable, Identifiable {
     var speakers: [SpeakerInfo]?
     var diarizationSegments: [DiarizationSegmentRecord]?
     var summary: String?                    // v0.4 — LLM-generated transcript summary
-    var chatMessages: [ChatMessage]?        // v0.4 — LLM chat history for this transcription
+    var chatMessages: [ChatMessage]?        // v0.4 — Legacy (migrated to chat_conversations in v0.5)
     var status: TranscriptionStatus
     var errorMessage: String?
     var exportPath: String?
     var sourceURL: String?              // YouTube/web URL (v0.3, nullable)
+    var thumbnailURL: String?           // v0.5 — YouTube video thumbnail URL
+    var channelName: String?            // v0.5 — YouTube channel name
+    var videoDescription: String?       // v0.5 — YouTube video description
+    var isFavorite: Bool                // v0.5 — User favorite marker
     var updatedAt: Date
 
     struct WordTimestamp: Codable {
@@ -345,6 +355,26 @@ struct TextSnippet: Codable, Identifiable {
 
 extension TextSnippet: FetchableRecord, PersistableRecord {
     static let databaseTableName = "text_snippets"
+}
+```
+
+### ChatConversation
+
+```swift
+import Foundation
+import GRDB
+
+struct ChatConversation: Codable, Identifiable {
+    var id: UUID
+    var transcriptionId: UUID
+    var title: String
+    var messages: [ChatMessage]?
+    var createdAt: Date
+    var updatedAt: Date
+}
+
+extension ChatConversation: FetchableRecord, PersistableRecord {
+    static let databaseTableName = "chat_conversations"
 }
 ```
 
@@ -463,13 +493,46 @@ migrator.registerMigration("v0.4-transcription-llm-content") { db in
 }
 
 // v0.5 — Private dictation mode + word count for voice stats
-migrator.registerMigration("v0.5-dictation-hidden-wordcount") { db in
+migrator.registerMigration("v0.5-private-dictation") { db in
     try db.alter(table: "dictations") { t in
         t.add(column: "hidden", .boolean).notNull().defaults(to: false)
         t.add(column: "wordCount", .integer).notNull().defaults(to: 0)
     }
     // Backfill wordCount for existing completed rows
-    // (uses rawTranscript word count as approximation)
+}
+
+// v0.5 — Chat conversations table (multi-conversation per transcript)
+migrator.registerMigration("v0.5-chat-conversations") { db in
+    try db.create(table: "chat_conversations") { t in
+        t.column("id", .text).primaryKey()
+        t.column("transcriptionId", .text)
+            .notNull()
+            .references("transcriptions", onDelete: .cascade)
+        t.column("title", .text).notNull().defaults(to: "")
+        t.column("messages", .text)
+        t.column("createdAt", .text).notNull()
+        t.column("updatedAt", .text).notNull()
+    }
+    // Migrates existing chatMessages from transcriptions into chat_conversations
+    // then nulls out the old column
+}
+
+// v0.5 — Remove unused FTS5 infrastructure (never queried, search uses LIKE)
+migrator.registerMigration("v0.5-drop-unused-fts") { db in
+    try db.execute(sql: "DROP TRIGGER IF EXISTS dictations_ai")
+    try db.execute(sql: "DROP TRIGGER IF EXISTS dictations_ad")
+    try db.execute(sql: "DROP TRIGGER IF EXISTS dictations_au")
+    try db.execute(sql: "DROP TABLE IF EXISTS dictations_fts")
+}
+
+// v0.5 — Video metadata + favorites for transcriptions
+migrator.registerMigration("v0.5-transcription-video-metadata") { db in
+    try db.alter(table: "transcriptions") { t in
+        t.add(column: "thumbnailURL", .text)
+        t.add(column: "channelName", .text)
+        t.add(column: "videoDescription", .text)
+        t.add(column: "isFavorite", .boolean).notNull().defaults(to: false)
+    }
 }
 ```
 
@@ -485,18 +548,23 @@ migrator.registerMigration("v0.5-dictation-hidden-wordcount") { db in
 
 ## Version Annotations
 
-| Table | Introduced | Notes |
+| Table / Column | Introduced | Notes |
 |-------|-----------|-------|
 | `dictations` | v0.1 | Core dictation history |
-| `dictations_fts` | v0.1 | Full-text search for dictations |
+| ~~`dictations_fts`~~ | ~~v0.1~~ | ~~Full-text search for dictations~~ (dropped in v0.5 — never queried) |
 | `transcriptions` | v0.1 | File transcription records |
 | `custom_words` | v0.2 | Vocabulary anchors and corrections |
 | `text_snippets` | v0.2 | Trigger-based text expansion |
-| `transcriptions.summary` | v0.4 | LLM-generated transcript summary |
-| `transcriptions.chatMessages` | v0.4 | LLM chat history (JSON) |
 | `transcriptions.diarizationSegments` | v0.4 | Speaker diarization segments (JSON) |
+| `transcriptions.summary` | v0.4 | LLM-generated transcript summary |
+| `transcriptions.chatMessages` | v0.4 | Legacy — migrated to `chat_conversations` in v0.5 |
 | `dictations.hidden` | v0.5 | Private dictation mode flag |
 | `dictations.wordCount` | v0.5 | Cached word count for voice stats |
+| `chat_conversations` | v0.5 | Multi-conversation chat per transcription (FK → transcriptions) |
+| `transcriptions.thumbnailURL` | v0.5 | YouTube video thumbnail URL |
+| `transcriptions.channelName` | v0.5 | YouTube channel name |
+| `transcriptions.videoDescription` | v0.5 | YouTube video description |
+| `transcriptions.isFavorite` | v0.5 | User favorite marker |
 
 ### Tables NOT Planned (YAGNI)
 
@@ -537,18 +605,16 @@ Transcription source files are **never moved or copied**. We store the original 
 
 ## Querying Patterns
 
-### Search Dictations (FTS5)
+### Search Dictations (LIKE)
 
 ```swift
-// Search dictation history
+// Search dictation history (FTS5 was dropped in v0.5; search uses LIKE)
 let dictations = try dbQueue.read { db in
-    let pattern = FTS5Pattern(matchingAllPrefixesIn: query)
-    return try Dictation
-        .joining(required: Dictation.hasOne(
-            FTS5TokenizedColumn.self,
-            using: ForeignKey(["rowid"])
-        ))
-        .filter(sql: "dictations_fts MATCH ?", arguments: [pattern])
+    try Dictation
+        .filter(
+            Dictation.Columns.rawTranscript.like("%\(query)%")
+            || Dictation.Columns.cleanTranscript.like("%\(query)%")
+        )
         .order(Column("createdAt").desc)
         .fetchAll(db)
 }
@@ -580,4 +646,4 @@ let processing = try dbQueue.read { db in
 
 ---
 
-*Last updated: 2026-03-14*
+*Last updated: 2026-03-27*
