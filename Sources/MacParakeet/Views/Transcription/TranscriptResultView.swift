@@ -556,8 +556,10 @@ struct TranscriptResultView: View {
             }
             scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
                 if self.playerViewModel.isPlaying {
-                    self.autoScrollPaused = true
-                    self.lastScrolledSegmentMs = -1
+                    if !self.autoScrollPaused {
+                        self.autoScrollPaused = true
+                        self.lastScrolledSegmentMs = -1
+                    }
                     self.scrollPauseTask?.cancel()
                     self.scrollPauseTask = Task { @MainActor in
                         try? await Task.sleep(for: .seconds(5))
