@@ -3,8 +3,8 @@ func truncateErrorMessage(_ msg: String) -> String {
         return "Library loading failed"
     }
     let firstLine = msg.prefix(while: { $0 != "\n" })
-    if firstLine.count > 40 {
-        return String(firstLine.prefix(37)) + "..."
+    if firstLine.count > 120 {
+        return String(firstLine.prefix(117)) + "..."
     }
     return String(firstLine)
 }
