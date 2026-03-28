@@ -21,6 +21,10 @@ public struct Transcription: Codable, Identifiable, Sendable {
     public var errorMessage: String?
     public var exportPath: String?
     public var sourceURL: String?
+    public var thumbnailURL: String?
+    public var channelName: String?
+    public var videoDescription: String?
+    public var isFavorite: Bool
     public var updatedAt: Date
 
     public enum TranscriptionStatus: String, Codable, Sendable {
@@ -50,6 +54,10 @@ public struct Transcription: Codable, Identifiable, Sendable {
         errorMessage: String? = nil,
         exportPath: String? = nil,
         sourceURL: String? = nil,
+        thumbnailURL: String? = nil,
+        channelName: String? = nil,
+        videoDescription: String? = nil,
+        isFavorite: Bool = false,
         updatedAt: Date = Date()
     ) {
         self.id = id
@@ -71,6 +79,10 @@ public struct Transcription: Codable, Identifiable, Sendable {
         self.errorMessage = errorMessage
         self.exportPath = exportPath
         self.sourceURL = sourceURL
+        self.thumbnailURL = thumbnailURL
+        self.channelName = channelName
+        self.videoDescription = videoDescription
+        self.isFavorite = isFavorite
         self.updatedAt = updatedAt
     }
 }
@@ -120,7 +132,8 @@ extension Transcription: FetchableRecord, PersistableRecord {
         case id, createdAt, fileName, filePath, fileSizeBytes, durationMs
         case rawTranscript, cleanTranscript, wordTimestamps, language
         case speakerCount, speakers, diarizationSegments, summary, chatMessages
-        case status, errorMessage, exportPath, sourceURL, updatedAt
+        case status, errorMessage, exportPath, sourceURL
+        case thumbnailURL, channelName, videoDescription, isFavorite, updatedAt
     }
 
     /// Backward-compatible decoding: `speakers` column may contain old `[String]` JSON
@@ -157,6 +170,10 @@ extension Transcription: FetchableRecord, PersistableRecord {
         errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)
         exportPath = try container.decodeIfPresent(String.self, forKey: .exportPath)
         sourceURL = try container.decodeIfPresent(String.self, forKey: .sourceURL)
+        thumbnailURL = try container.decodeIfPresent(String.self, forKey: .thumbnailURL)
+        channelName = try container.decodeIfPresent(String.self, forKey: .channelName)
+        videoDescription = try container.decodeIfPresent(String.self, forKey: .videoDescription)
+        isFavorite = try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
     }
 }

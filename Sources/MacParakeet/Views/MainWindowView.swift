@@ -5,6 +5,7 @@ import MacParakeetViewModels
 
 enum SidebarItem: String, CaseIterable, Identifiable {
     case transcribe = "Transcribe"
+    case library = "Library"
     case dictations = "Dictations"
     case vocabulary = "Vocabulary"
     case feedback = "Feedback"
@@ -16,6 +17,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .transcribe: return "waveform"
+        case .library: return "square.grid.2x2"
         case .dictations: return "clock.arrow.circlepath"
         case .vocabulary: return "book.fill"
         case .feedback: return "bubble.left.and.text.bubble.right"
@@ -25,7 +27,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
     }
 
     /// Primary features — the core things users do
-    static let primaryItems: [SidebarItem] = [.transcribe, .dictations]
+    static let primaryItems: [SidebarItem] = [.transcribe, .library, .dictations]
 
     /// Configuration and support items
     static let configItems: [SidebarItem] = [.vocabulary, .feedback, .settings]
@@ -46,6 +48,7 @@ struct MainWindowView: View {
     let textSnippetsViewModel: TextSnippetsViewModel
     let feedbackViewModel: FeedbackViewModel
     let discoverViewModel: DiscoverViewModel
+    let libraryViewModel: TranscriptionLibraryViewModel
     let updater: SPUUpdater
 
     var body: some View {
@@ -81,6 +84,11 @@ struct MainWindowView: View {
                     switch state.selectedItem {
                     case .transcribe:
                         TranscribeView(viewModel: transcriptionViewModel, chatViewModel: chatViewModel, showingProgressDetail: $state.showingProgressDetail)
+                    case .library:
+                        TranscriptionLibraryView(viewModel: libraryViewModel) { transcription in
+                            transcriptionViewModel.currentTranscription = transcription
+                            state.selectedItem = .transcribe
+                        }
                     case .dictations:
                         DictationHistoryView(viewModel: historyViewModel)
                     case .vocabulary:
@@ -97,7 +105,6 @@ struct MainWindowView: View {
                         DiscoverView(viewModel: discoverViewModel, thoughtsService: DiscoverThoughtsService())
                     }
                 }
-                .animation(DesignSystem.Animation.contentSwap, value: state.selectedItem)
             }
 
             if showGlobalProgressBar {

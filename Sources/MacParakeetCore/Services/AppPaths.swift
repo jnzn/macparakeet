@@ -42,6 +42,11 @@ public enum AppPaths {
         "\(appSupportDir)/discover-cache.json"
     }
 
+    /// Thumbnail cache directory
+    public static var thumbnailsDir: String {
+        "\(appSupportDir)/thumbnails"
+    }
+
     /// Temp directory for audio processing
     public static var tempDir: String {
         "\(NSTemporaryDirectory())macparakeet"
@@ -50,7 +55,7 @@ public enum AppPaths {
     /// Ensure all required directories exist
     public static func ensureDirectories() throws {
         let fm = FileManager.default
-        for dir in [appSupportDir, dictationsDir, youtubeDownloadsDir, binDir, tempDir] {
+        for dir in [appSupportDir, dictationsDir, youtubeDownloadsDir, binDir, thumbnailsDir, tempDir] {
             if !fm.fileExists(atPath: dir) {
                 try fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
             }

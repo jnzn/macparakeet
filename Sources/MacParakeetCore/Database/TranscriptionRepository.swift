@@ -13,6 +13,8 @@ public protocol TranscriptionRepositoryProtocol: Sendable {
     func updateChatMessages(id: UUID, chatMessages: [ChatMessage]?) throws
     func updateSpeakers(id: UUID, speakers: [SpeakerInfo]?) throws
     func clearStoredAudioPathsForURLTranscriptions() throws
+    func updateFavorite(id: UUID, isFavorite: Bool) throws
+    func fetchFavorites() throws -> [Transcription]
 }
 
 extension TranscriptionRepositoryProtocol {
@@ -21,6 +23,8 @@ extension TranscriptionRepositoryProtocol {
     public func updateSummary(id: UUID, summary: String?) throws {}
     public func updateChatMessages(id: UUID, chatMessages: [ChatMessage]?) throws {}
     public func updateSpeakers(id: UUID, speakers: [SpeakerInfo]?) throws {}
+    public func updateFavorite(id: UUID, isFavorite: Bool) throws {}
+    public func fetchFavorites() throws -> [Transcription] { [] }
 }
 
 public final class TranscriptionRepository: TranscriptionRepositoryProtocol {
@@ -130,6 +134,24 @@ public final class TranscriptionRepository: TranscriptionRepositoryProtocol {
             try db.execute(
                 sql: "UPDATE transcriptions SET filePath = NULL WHERE sourceURL IS NOT NULL"
             )
+        }
+    }
+
+    public func updateFavorite(id: UUID, isFavorite: Bool) throws {
+        try dbQueue.write { db in
+            guard var transcription = try Transcription.fetchOne(db, key: id) else { return }
+            transcription.isFavorite = isFavorite
+            transcription.updatedAt = Date()
+            try transcription.update(db)
+        }
+    }
+
+    public func fetchFavorites() throws -> [Transcription] {
+        try dbQueue.read { db in
+            try Transcription
+                .filter(Transcription.Columns.isFavorite == true)
+                .order(Transcription.Columns.createdAt.desc)
+                .fetchAll(db)
         }
     }
 }

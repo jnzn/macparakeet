@@ -39,6 +39,17 @@ final class DatabaseManagerTests: XCTestCase {
         }
     }
 
+    func testVideoMetadataColumnsExist() throws {
+        let manager = try DatabaseManager()
+        try manager.dbQueue.read { db in
+            let columns = try db.columns(in: "transcriptions").map(\.name)
+            XCTAssertTrue(columns.contains("thumbnailURL"), "transcriptions should have thumbnailURL column")
+            XCTAssertTrue(columns.contains("channelName"), "transcriptions should have channelName column")
+            XCTAssertTrue(columns.contains("videoDescription"), "transcriptions should have videoDescription column")
+            XCTAssertTrue(columns.contains("isFavorite"), "transcriptions should have isFavorite column")
+        }
+    }
+
     func testMigrationsAreIdempotent() throws {
         // Running migrations twice on the SAME database file should not error
         let tempDir = FileManager.default.temporaryDirectory

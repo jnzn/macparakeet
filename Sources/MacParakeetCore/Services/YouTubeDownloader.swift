@@ -34,11 +34,24 @@ public actor YouTubeDownloader {
         public let audioFileURL: URL
         public let title: String
         public let durationSeconds: Int?
+        public let channelName: String?
+        public let thumbnailURL: String?
+        public let videoDescription: String?
 
-        public init(audioFileURL: URL, title: String, durationSeconds: Int?) {
+        public init(
+            audioFileURL: URL,
+            title: String,
+            durationSeconds: Int?,
+            channelName: String? = nil,
+            thumbnailURL: String? = nil,
+            videoDescription: String? = nil
+        ) {
             self.audioFileURL = audioFileURL
             self.title = title
             self.durationSeconds = durationSeconds
+            self.channelName = channelName
+            self.thumbnailURL = thumbnailURL
+            self.videoDescription = videoDescription
         }
     }
 
@@ -65,7 +78,10 @@ public actor YouTubeDownloader {
         return DownloadResult(
             audioFileURL: audioURL,
             title: metadata.title,
-            durationSeconds: metadata.durationSeconds
+            durationSeconds: metadata.durationSeconds,
+            channelName: metadata.channelName,
+            thumbnailURL: metadata.thumbnailURL,
+            videoDescription: metadata.videoDescription
         )
     }
 
@@ -87,6 +103,9 @@ public actor YouTubeDownloader {
     private struct VideoMetadata {
         let title: String
         let durationSeconds: Int?
+        let channelName: String?
+        let thumbnailURL: String?
+        let videoDescription: String?
     }
 
     private struct JavaScriptRuntime {
@@ -137,8 +156,17 @@ public actor YouTubeDownloader {
 
         let title = json["title"] as? String ?? "Untitled"
         let duration = json["duration"] as? Int
+        let channel = json["channel"] as? String ?? json["uploader"] as? String
+        let thumbnail = json["thumbnail"] as? String
+        let description = json["description"] as? String
 
-        return VideoMetadata(title: title, durationSeconds: duration)
+        return VideoMetadata(
+            title: title,
+            durationSeconds: duration,
+            channelName: channel,
+            thumbnailURL: thumbnail,
+            videoDescription: description
+        )
     }
 
     private func downloadAudio(

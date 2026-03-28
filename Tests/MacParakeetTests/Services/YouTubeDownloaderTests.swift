@@ -47,4 +47,31 @@ final class YouTubeDownloaderTests: XCTestCase {
         XCTAssertNil(YouTubeDownloader.parseDownloadProgressPercent(from: "[info] Downloading webpage"))
         XCTAssertNil(YouTubeDownloader.parseDownloadProgressPercent(from: "some random log line"))
     }
+
+    // MARK: - DownloadResult Metadata Fields
+
+    func testDownloadResultWithVideoMetadata() {
+        let result = YouTubeDownloader.DownloadResult(
+            audioFileURL: URL(fileURLWithPath: "/tmp/test.m4a"),
+            title: "Swift Tutorial",
+            durationSeconds: 600,
+            channelName: "Swift Dev",
+            thumbnailURL: "https://i.ytimg.com/vi/abc/maxresdefault.jpg",
+            videoDescription: "Learn Swift"
+        )
+        XCTAssertEqual(result.channelName, "Swift Dev")
+        XCTAssertEqual(result.thumbnailURL, "https://i.ytimg.com/vi/abc/maxresdefault.jpg")
+        XCTAssertEqual(result.videoDescription, "Learn Swift")
+    }
+
+    func testDownloadResultMetadataDefaultsToNil() {
+        let result = YouTubeDownloader.DownloadResult(
+            audioFileURL: URL(fileURLWithPath: "/tmp/test.m4a"),
+            title: "Video",
+            durationSeconds: nil
+        )
+        XCTAssertNil(result.channelName)
+        XCTAssertNil(result.thumbnailURL)
+        XCTAssertNil(result.videoDescription)
+    }
 }

@@ -117,7 +117,10 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             fileName: downloadResult.title,
             filePath: keepDownloadedAudio ? downloadResult.audioFileURL.path : nil,
             status: .processing,
-            sourceURL: urlString
+            sourceURL: urlString,
+            thumbnailURL: downloadResult.thumbnailURL,
+            channelName: downloadResult.channelName,
+            videoDescription: downloadResult.videoDescription
         )
         try transcriptionRepo.save(transcription)
         Telemetry.send(.transcriptionStarted(source: .youtube, audioDurationSeconds: nil))
