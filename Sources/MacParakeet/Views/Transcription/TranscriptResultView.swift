@@ -36,6 +36,12 @@ struct TranscriptResultView: View {
     @State private var playerViewModel = MediaPlayerViewModel()
     @State private var showVideoPanel = true
     @State private var lastScrolledSegmentMs: Int = -1
+    // Cached transcript data — recomputed only when transcription.id changes, not on every playback tick
+    @State private var cachedSegments: [TranscriptSegment] = []
+    @State private var cachedTurns: [SpeakerTurn] = []
+    @State private var cachedHasSpeakers: Bool = false
+    @State private var cachedSpeakerColorMap: [String: Color] = [:]
+    @State private var cachedSegmentStartMs: [Int] = []  // sorted, for binary search
     @FocusState private var chatInputFocused: Bool
     @FocusState private var speakerRenameFocused: Bool
 
@@ -54,6 +60,7 @@ struct TranscriptResultView: View {
                     playerViewModel.loadSubtitleCues(from: words)
                 }
             }
+            rebuildSegmentCache()
             viewModel.resetSummaryState()
             viewModel.loadPersistedContent()
             let text = viewModel.currentTranscription?.cleanTranscript ?? viewModel.currentTranscription?.rawTranscript ?? ""
@@ -67,6 +74,7 @@ struct TranscriptResultView: View {
                     playerViewModel.loadSubtitleCues(from: words)
                 }
             }
+            rebuildSegmentCache()
             editingSpeakerId = nil
             editingSpeakerLabel = ""
             showConversationPopover = false
@@ -513,8 +521,8 @@ struct TranscriptResultView: View {
             }
             .onChange(of: playerViewModel.currentTimeMs) { _, newValue in
                 guard playerViewModel.isPlaying else { return }
-                guard let words = transcription.wordTimestamps, !words.isEmpty else { return }
-                if let targetId = autoScrollTarget(for: newValue, words: words),
+                guard !cachedSegments.isEmpty else { return }
+                if let targetId = autoScrollTarget(for: newValue),
                    targetId != lastScrolledSegmentMs {
                     lastScrolledSegmentMs = targetId
                     withAnimation(.easeInOut(duration: 0.3)) {
@@ -538,36 +546,37 @@ struct TranscriptResultView: View {
     private var tabBar: some View {
         HStack(spacing: 0) {
             ForEach(TranscriptionViewModel.TranscriptTab.allCases, id: \.self) { tab in
-                Button {
+                // Use onTapGesture instead of Button to avoid macOS focus-resignation
+                // consuming the first click when a TextField (e.g. chat input) has focus.
+                HStack(spacing: 6) {
+                    Image(systemName: tabIcon(tab))
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(tab.rawValue.capitalized)
+                        .font(DesignSystem.Typography.bodySmall.weight(
+                            viewModel.selectedTab == tab ? .semibold : .regular
+                        ))
+
+                    if tab == .summary && viewModel.summaryBadge {
+                        Circle()
+                            .fill(DesignSystem.Colors.accent)
+                            .frame(width: 6, height: 6)
+                    }
+                }
+                .padding(.horizontal, DesignSystem.Spacing.md)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .fill(viewModel.selectedTab == tab
+                              ? DesignSystem.Colors.accent.opacity(0.12)
+                              : .clear)
+                )
+                .contentShape(Capsule())
+                .foregroundStyle(viewModel.selectedTab == tab ? DesignSystem.Colors.accent : DesignSystem.Colors.textSecondary)
+                .onTapGesture {
                     viewModel.selectedTab = tab
                     if tab == .summary { viewModel.summaryBadge = false }
-                    // Focus is handled by onAppear in chatPane with async delay
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: tabIcon(tab))
-                            .font(.system(size: 11, weight: .semibold))
-                        Text(tab.rawValue.capitalized)
-                            .font(DesignSystem.Typography.bodySmall.weight(
-                                viewModel.selectedTab == tab ? .semibold : .regular
-                            ))
-
-                        if tab == .summary && viewModel.summaryBadge {
-                            Circle()
-                                .fill(DesignSystem.Colors.accent)
-                                .frame(width: 6, height: 6)
-                        }
-                    }
-                    .padding(.horizontal, DesignSystem.Spacing.md)
-                    .padding(.vertical, 8)
-                    .background(
-                        Capsule()
-                            .fill(viewModel.selectedTab == tab
-                                  ? DesignSystem.Colors.accent.opacity(0.12)
-                                  : .clear)
-                    )
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(viewModel.selectedTab == tab ? DesignSystem.Colors.accent : DesignSystem.Colors.textSecondary)
+                .accessibilityAddTraits(.isButton)
                 .onHover { hovering in
                     if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
                 }
@@ -1198,25 +1207,20 @@ struct TranscriptResultView: View {
 
     @ViewBuilder
     private func timestampedView(words: [WordTimestamp]) -> some View {
-        let hasSpeakers = words.contains { $0.speakerId != nil }
-        let speakerColorMap = buildSpeakerColorMap()
-        let segments = TranscriptSegmenter.groupIntoSegments(words: words)
-
-        if hasSpeakers {
-            // Speaker-aware layout: group segments into speaker turns
-            let turns = TranscriptSegmenter.groupIntoSpeakerTurns(segments: segments, speakerLabelProvider: speakerLabel(for:))
-            ForEach(Array(turns.enumerated()), id: \.offset) { _, turn in
+        if cachedHasSpeakers {
+            // Speaker-aware layout: use cached turns
+            ForEach(Array(cachedTurns.enumerated()), id: \.element.segments.first?.startMs) { _, turn in
                 transcriptTurnCard(
                     speakerLabel: turn.speakerLabel,
-                    speakerColor: speakerColorMap[turn.speakerId] ?? DesignSystem.Colors.textTertiary,
+                    speakerColor: cachedSpeakerColorMap[turn.speakerId] ?? DesignSystem.Colors.textTertiary,
                     segments: turn.segments.map { ($0.startMs, $0.text) }
                 )
                 .id(turn.segments.first?.startMs ?? 0)
             }
         } else {
-            // No speakers — render as clean transcript segments instead of a flat log.
-            ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
-                let isActive = isSegmentActive(segment, index: index, in: segments)
+            // No speakers — use cached segments
+            ForEach(Array(cachedSegments.enumerated()), id: \.element.startMs) { index, segment in
+                let isActive = isSegmentActiveBinarySearch(segmentIndex: index)
                 HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
                     timestampChip(segment.startMs)
 
@@ -1422,40 +1426,79 @@ struct TranscriptResultView: View {
             }
     }
 
-    // MARK: - Playback Sync
+    // MARK: - Segment Cache
 
-    private func isSegmentActive(_ segment: TranscriptSegment, index: Int, in segments: [TranscriptSegment]) -> Bool {
-        guard playerViewModel.isPlaying || playerViewModel.currentTimeMs > 0 else { return false }
-        let currentMs = playerViewModel.currentTimeMs
-        guard currentMs >= segment.startMs else { return false }
-        if index + 1 < segments.count {
-            return currentMs < segments[index + 1].startMs
+    /// Rebuild cached segment data. Called once on appear and when transcription.id changes.
+    private func rebuildSegmentCache() {
+        guard let words = transcription.wordTimestamps, !words.isEmpty else {
+            cachedSegments = []
+            cachedTurns = []
+            cachedHasSpeakers = false
+            cachedSpeakerColorMap = [:]
+            cachedSegmentStartMs = []
+            return
         }
-        return true // Last segment — active if past its start
-    }
 
-    /// Find the scroll target ID (segment startMs) for the given playback time.
-    /// For speaker-aware transcripts, returns the first segment startMs of the active speaker turn.
-    /// For non-speaker transcripts, returns the active segment's startMs.
-    private func autoScrollTarget(for currentMs: Int, words: [WordTimestamp]) -> Int? {
         let segments = TranscriptSegmenter.groupIntoSegments(words: words)
-        guard !segments.isEmpty else { return nil }
         let hasSpeakers = words.contains { $0.speakerId != nil }
 
+        cachedSegments = segments
+        cachedHasSpeakers = hasSpeakers
+        cachedSpeakerColorMap = buildSpeakerColorMap()
+        cachedSegmentStartMs = segments.map(\.startMs)
+
         if hasSpeakers {
-            let turns = TranscriptSegmenter.groupIntoSpeakerTurns(segments: segments, speakerLabelProvider: speakerLabel(for:))
+            cachedTurns = TranscriptSegmenter.groupIntoSpeakerTurns(segments: segments, speakerLabelProvider: speakerLabel(for:))
+        } else {
+            cachedTurns = []
+        }
+    }
+
+    // MARK: - Binary Search Helpers
+
+    /// Find the active segment index for the current playback time using binary search. O(log n).
+    private func activeSegmentIndex(for currentMs: Int) -> Int? {
+        guard !cachedSegmentStartMs.isEmpty else { return nil }
+
+        // Binary search: find the last segment whose startMs <= currentMs
+        var lo = 0
+        var hi = cachedSegmentStartMs.count - 1
+        var result = -1
+
+        while lo <= hi {
+            let mid = (lo + hi) / 2
+            if cachedSegmentStartMs[mid] <= currentMs {
+                result = mid
+                lo = mid + 1
+            } else {
+                hi = mid - 1
+            }
+        }
+
+        return result >= 0 ? result : nil
+    }
+
+    /// Check if a segment at the given index is active (O(1) after binary search).
+    private func isSegmentActiveBinarySearch(segmentIndex: Int) -> Bool {
+        guard playerViewModel.playbackMode != .none else { return false }
+        let currentMs = playerViewModel.currentTimeMs
+        guard currentMs > 0 else { return false }
+        guard let activeIdx = activeSegmentIndex(for: currentMs) else { return false }
+        return activeIdx == segmentIndex
+    }
+
+    /// Find the scroll target ID (segment startMs) for the given playback time using binary search.
+    private func autoScrollTarget(for currentMs: Int) -> Int? {
+        if cachedHasSpeakers {
             // Find the last turn whose first segment starts at or before currentMs
-            for turn in turns.reversed() {
+            for turn in cachedTurns.reversed() {
                 if let first = turn.segments.first, first.startMs <= currentMs {
                     return first.startMs
                 }
             }
         } else {
-            // Find the last segment that starts at or before currentMs
-            for segment in segments.reversed() {
-                if segment.startMs <= currentMs {
-                    return segment.startMs
-                }
+            if let idx = activeSegmentIndex(for: currentMs) {
+                return cachedSegmentStartMs[idx]
             }
         }
         return nil
