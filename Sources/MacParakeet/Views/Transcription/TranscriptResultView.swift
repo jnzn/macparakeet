@@ -577,6 +577,7 @@ struct TranscriptResultView: View {
                 scrollMonitor = nil
             }
             scrollPauseTask?.cancel()
+            autoScrollPaused = false
         }
     }
 
