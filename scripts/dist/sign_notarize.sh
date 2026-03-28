@@ -102,7 +102,27 @@ if [[ "${SKIP_NOTARIZE:-0}" == "1" ]]; then
 fi
 
 echo "[6/8] Submitting to notarization service…"
-xcrun notarytool submit "$ZIP_PATH" --keychain-profile "$NOTARYTOOL_PROFILE" --wait
+# Submit without --wait (crashes with bus error on macOS 15+), then poll.
+SUBMIT_OUT=$(xcrun notarytool submit "$ZIP_PATH" --keychain-profile "$NOTARYTOOL_PROFILE" 2>&1)
+echo "$SUBMIT_OUT"
+SUBMISSION_ID=$(echo "$SUBMIT_OUT" | grep '  id:' | head -1 | awk '{print $2}')
+if [[ -z "$SUBMISSION_ID" ]]; then
+  echo "Error: Failed to extract submission ID"
+  exit 1
+fi
+echo "Polling notarization status for $SUBMISSION_ID..."
+while true; do
+  STATUS=$(xcrun notarytool info "$SUBMISSION_ID" --keychain-profile "$NOTARYTOOL_PROFILE" 2>&1)
+  if echo "$STATUS" | grep -q "status: Accepted"; then
+    echo "Notarization accepted!"
+    break
+  elif echo "$STATUS" | grep -q "status: Invalid"; then
+    echo "Notarization REJECTED:"
+    echo "$STATUS"
+    exit 1
+  fi
+  sleep 15
+done
 
 echo "[7/8] Stapling app…"
 xcrun stapler staple "$APP_PATH"
