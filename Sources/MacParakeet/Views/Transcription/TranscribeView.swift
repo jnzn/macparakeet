@@ -59,7 +59,7 @@ struct TranscribeView: View {
                             viewModel.retranscribe(original)
                         }
                     )
-                } else if showingProgressDetail && viewModel.isTranscribing {
+                } else if viewModel.isTranscribing {
                     transcribingView
                 } else {
                     dropZoneView
@@ -79,148 +79,46 @@ struct TranscribeView: View {
 
     private var dropZoneView: some View {
         VStack(spacing: 0) {
-            if viewModel.isTranscribing {
-                ScrollView {
-                    VStack(spacing: DesignSystem.Spacing.lg) {
-                        activeTranscriptionCard
-                            .padding(.horizontal, DesignSystem.Spacing.lg)
-                            .padding(.top, DesignSystem.Spacing.lg)
+            // Centered two-card layout
+            VStack(spacing: 0) {
+                Spacer()
 
-                        if let error = viewModel.errorMessage {
-                            errorBanner(error)
-                                .padding(.horizontal, DesignSystem.Spacing.lg)
-                        }
+                VStack(spacing: DesignSystem.Spacing.xl) {
+                    HStack(alignment: .top, spacing: DesignSystem.Spacing.lg) {
+                        youTubeCard
+                        PortalDropZone(
+                            isDragging: $viewModel.isDragging,
+                            onDrop: { providers in
+                                viewModel.handleFileDrop(providers: providers) {
+                                    SoundManager.shared.play(.fileDropped)
+                                }
+                            },
+                            onBrowse: { openFilePicker() }
+                        )
                     }
-                    .padding(.bottom, DesignSystem.Spacing.lg)
-                }
-            } else {
-                // Centered two-card layout
-                VStack(spacing: 0) {
-                    Spacer()
+                    .padding(.horizontal, DesignSystem.Spacing.xl)
 
-                    VStack(spacing: DesignSystem.Spacing.xl) {
-                        HStack(alignment: .top, spacing: DesignSystem.Spacing.lg) {
-                            youTubeCard
-                            PortalDropZone(
-                                isDragging: $viewModel.isDragging,
-                                onDrop: { providers in
-                                    viewModel.handleFileDrop(providers: providers) {
-                                        SoundManager.shared.play(.fileDropped)
-                                    }
-                                },
-                                onBrowse: { openFilePicker() }
-                            )
-                        }
-                        .padding(.horizontal, DesignSystem.Spacing.xl)
-
-                        // Error banner
-                        if let error = viewModel.errorMessage {
-                            errorBanner(error)
-                                .padding(.horizontal, DesignSystem.Spacing.xl)
-                        }
-
-                        // Privacy tagline
-                        Text("Everything stays on your Mac.")
-                            .font(DesignSystem.Typography.caption)
-                            .foregroundStyle(.tertiary)
+                    // Error banner
+                    if let error = viewModel.errorMessage {
+                        errorBanner(error)
+                            .padding(.horizontal, DesignSystem.Spacing.xl)
                     }
 
-                    Spacer()
+                    // Privacy tagline
+                    Text("Everything stays on your Mac.")
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(.tertiary)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .onDrop(of: [.fileURL], isTargeted: $viewModel.isDragging) { providers in
-                    viewModel.handleFileDrop(providers: providers) {
-                        SoundManager.shared.play(.fileDropped)
-                    }
-                }
-            }
-        }
-    }
-
-    private var activeTranscriptionCard: some View {
-        VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
-            HStack(alignment: .firstTextBaseline, spacing: DesignSystem.Spacing.sm) {
-                Text("Active Transcription")
-                    .font(DesignSystem.Typography.sectionTitle)
-
-                statusCapsule(
-                    title: "On-device",
-                    systemImage: "bolt.badge.a.fill",
-                    tint: DesignSystem.Colors.successGreen
-                )
 
                 Spacer()
             }
-
-            HStack(alignment: .center, spacing: DesignSystem.Spacing.md) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(DesignSystem.Colors.accent.opacity(0.12))
-                        .frame(width: 52, height: 52)
-
-                    Image(systemName: phaseSymbol)
-                        .font(.system(size: 19, weight: .semibold))
-                        .foregroundStyle(DesignSystem.Colors.accent)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .onDrop(of: [.fileURL], isTargeted: $viewModel.isDragging) { providers in
+                viewModel.handleFileDrop(providers: providers) {
+                    SoundManager.shared.play(.fileDropped)
                 }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(viewModel.transcribingFileName.isEmpty ? "Preparing transcription..." : viewModel.transcribingFileName)
-                        .font(DesignSystem.Typography.body.weight(.semibold))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-
-                    Text(viewModel.progressHeadline)
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundStyle(.secondary)
-
-                    Text(viewModel.progress.isEmpty ? "Preparing..." : viewModel.progress)
-                        .font(DesignSystem.Typography.micro)
-                        .foregroundStyle(DesignSystem.Colors.textTertiary)
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: DesignSystem.Spacing.md)
-
-                VStack(alignment: .trailing, spacing: 8) {
-                    if let fraction = viewModel.transcriptionProgress {
-                        Text("\(Int((fraction * 100).rounded()))%")
-                            .font(DesignSystem.Typography.body.monospacedDigit().weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Button("View Details") {
-                        showingProgressDetail = true
-                    }
-                    .buttonStyle(.bordered)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                if let fraction = viewModel.transcriptionProgress {
-                    ProgressView(value: fraction)
-                        .progressViewStyle(.linear)
-                        .tint(DesignSystem.Colors.accent)
-                } else {
-                    ProgressView()
-                        .progressViewStyle(.linear)
-                        .tint(DesignSystem.Colors.accent)
-                }
-
-                Text("Safe to browse elsewhere — this keeps running in the background.")
-                    .font(DesignSystem.Typography.micro)
-                    .foregroundStyle(DesignSystem.Colors.textTertiary)
             }
         }
-        .padding(DesignSystem.Spacing.lg)
-        .background(
-            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
-                .fill(DesignSystem.Colors.cardBackground)
-                .cardShadow(DesignSystem.Shadows.cardRest)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
-                .strokeBorder(DesignSystem.Colors.border.opacity(0.6), lineWidth: 0.5)
-        )
     }
 
     // MARK: - YouTube Card
@@ -377,24 +275,6 @@ struct TranscribeView: View {
 
     private var transcribingView: some View {
         VStack(spacing: DesignSystem.Spacing.lg) {
-            HStack {
-                Button {
-                    showingProgressDetail = false
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text("Back")
-                            .font(DesignSystem.Typography.caption)
-                    }
-                    .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .padding(.leading, DesignSystem.Spacing.lg)
-                .padding(.top, DesignSystem.Spacing.md)
-                Spacer()
-            }
-
             Spacer()
 
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
@@ -611,22 +491,6 @@ struct TranscribeView: View {
         case .pending:
             return DesignSystem.Colors.border
         }
-    }
-
-    private func statusCapsule(title: String, systemImage: String, tint: Color) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: systemImage)
-                .font(.system(size: 9, weight: .bold))
-            Text(title)
-                .font(DesignSystem.Typography.micro)
-        }
-        .foregroundStyle(tint)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(
-            Capsule()
-                .fill(tint.opacity(0.12))
-        )
     }
 
     private func openFilePicker() {
