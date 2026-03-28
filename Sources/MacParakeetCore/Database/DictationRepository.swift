@@ -114,13 +114,17 @@ public final class DictationRepository: DictationRepositoryProtocol {
             let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return [] }
 
-            // Use LIKE for substring matching (users expect "keet" to find "MacParakeet")
-            let likePattern = "%\(trimmed)%"
+            // Escape LIKE wildcards so literal % and _ in user input are matched verbatim.
+            let escaped = trimmed
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "%", with: "\\%")
+                .replacingOccurrences(of: "_", with: "\\_")
+            let likePattern = "%\(escaped)%"
             let sql: String
             if let limit {
                 sql = """
                     SELECT * FROM dictations
-                    WHERE hidden = 0 AND (rawTranscript LIKE ? OR cleanTranscript LIKE ?)
+                    WHERE hidden = 0 AND (rawTranscript LIKE ? ESCAPE '\\' OR cleanTranscript LIKE ? ESCAPE '\\')
                     ORDER BY createdAt DESC
                     LIMIT ?
                 """
@@ -128,7 +132,7 @@ public final class DictationRepository: DictationRepositoryProtocol {
             } else {
                 sql = """
                     SELECT * FROM dictations
-                    WHERE hidden = 0 AND (rawTranscript LIKE ? OR cleanTranscript LIKE ?)
+                    WHERE hidden = 0 AND (rawTranscript LIKE ? ESCAPE '\\' OR cleanTranscript LIKE ? ESCAPE '\\')
                     ORDER BY createdAt DESC
                 """
                 return try Dictation.fetchAll(db, sql: sql, arguments: [likePattern, likePattern])

@@ -108,7 +108,12 @@ public final class TranscriptionViewModel {
 
     public func loadTranscriptions() {
         guard let repo = transcriptionRepo else { return }
-        transcriptions = (try? repo.fetchAll(limit: 50)) ?? []
+        do {
+            transcriptions = try repo.fetchAll(limit: 50)
+        } catch {
+            logger.error("Failed to load transcriptions: \(error.localizedDescription, privacy: .public)")
+            transcriptions = []
+        }
     }
 
     public func transcribeFile(url: URL, source: TelemetryTranscriptionSource = .file) {
@@ -271,9 +276,11 @@ public final class TranscriptionViewModel {
         guard let repo = transcriptionRepo else { return }
 
         if transcription.sourceURL != nil, let audioPath = transcription.filePath {
-            try? FileManager.default.removeItem(atPath: audioPath)
+            do { try FileManager.default.removeItem(atPath: audioPath) }
+            catch { logger.warning("Failed to remove audio: \(error.localizedDescription, privacy: .public)") }
         }
-        _ = try? repo.delete(id: transcription.id)
+        do { _ = try repo.delete(id: transcription.id) }
+        catch { logger.error("Failed to delete transcription: \(error.localizedDescription, privacy: .public)") }
         if currentTranscription?.id == transcription.id {
             currentTranscription = nil
         }
@@ -422,7 +429,7 @@ public final class TranscriptionViewModel {
         // Capture ID before async work — currentTranscription may change mid-stream
         let targetID = currentTranscription?.id
 
-        summaryTask = Task {
+        summaryTask = Task { @MainActor in
             do {
                 let stream = llmService.summarizeStream(transcript: text)
                 for try await token in stream {

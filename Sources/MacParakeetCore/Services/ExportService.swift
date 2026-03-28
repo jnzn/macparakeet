@@ -16,6 +16,8 @@ public protocol ExportServiceProtocol: Sendable {
 }
 
 /// Handles exporting transcriptions to files and clipboard.
+/// @MainActor because PDF/DOCX paths use NSTextStorage/NSLayoutManager (AppKit, not thread-safe).
+@MainActor
 public final class ExportService: ExportServiceProtocol, Sendable {
     public init() {}
 

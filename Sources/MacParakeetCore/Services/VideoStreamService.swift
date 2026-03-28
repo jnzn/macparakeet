@@ -63,7 +63,7 @@ public final class VideoStreamService: Sendable {
             "--get-url",
             "--no-playlist",
             "--extractor-args", "youtube:player_client=tv,android",
-            youtubeURL,
+            "--", youtubeURL,
         ]
 
         var env = ProcessInfo.processInfo.environment
