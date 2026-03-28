@@ -119,12 +119,7 @@ public final class ThumbnailCacheService: Sendable {
     }
 
     private func resolveFFmpegPath() -> String? {
-        // Check app-bundled FFmpeg first, then runtime bin
-        if let bundled = AppPaths.bundledFFmpegPath() {
-            return bundled
-        }
-        let runtimePath = "\(AppPaths.binDir)/ffmpeg"
-        return FileManager.default.isExecutableFile(atPath: runtimePath) ? runtimePath : nil
+        BinaryBootstrap.resolveRuntimeFFmpegPath()
     }
 }
 

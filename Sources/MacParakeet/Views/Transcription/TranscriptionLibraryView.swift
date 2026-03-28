@@ -59,7 +59,7 @@ struct TranscriptionLibraryView: View {
                         spacing: DesignSystem.Spacing.md
                     ) {
                         ForEach(viewModel.filteredTranscriptions) { transcription in
-                            TranscriptionThumbnailCard(transcription: transcription) {
+                            TranscriptionThumbnailCard(transcription: transcription, searchText: viewModel.searchText) {
                                 onSelect(transcription)
                             } menuContent: {
                                 libraryMenuItems(for: transcription)
@@ -130,13 +130,17 @@ struct TranscriptionLibraryView: View {
     private var emptyState: some View {
         VStack(spacing: DesignSystem.Spacing.lg) {
             Spacer()
-            Image(systemName: "square.grid.2x2")
+            Image(systemName: viewModel.searchText.isEmpty ? "square.grid.2x2" : "magnifyingglass")
                 .font(.system(size: 40, weight: .light))
                 .foregroundStyle(DesignSystem.Colors.textTertiary)
-            Text("No transcriptions yet")
+            Text(viewModel.searchText.isEmpty
+                 ? "No transcriptions yet"
+                 : "No matching transcriptions")
                 .font(DesignSystem.Typography.body)
                 .foregroundStyle(DesignSystem.Colors.textSecondary)
-            Text("Transcribe a file or YouTube video to get started.")
+            Text(viewModel.searchText.isEmpty
+                 ? "Transcribe a file or YouTube video to get started."
+                 : "Try different words or clear your search.")
                 .font(DesignSystem.Typography.bodySmall)
                 .foregroundStyle(DesignSystem.Colors.textTertiary)
             Spacer()
