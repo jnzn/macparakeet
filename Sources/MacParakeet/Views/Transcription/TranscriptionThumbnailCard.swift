@@ -87,7 +87,7 @@ struct TranscriptionThumbnailCard<MenuContent: View>: View {
         ZStack(alignment: .bottomTrailing) {
             thumbnailContent
                 .frame(maxWidth: .infinity)
-                .aspectRatio(DesignSystem.Layout.thumbnailAspectRatio, contentMode: .fit)
+                .aspectRatio(DesignSystem.Layout.thumbnailAspectRatio, contentMode: .fill)
                 .clipped()
 
             // Duration badge
@@ -104,25 +104,6 @@ struct TranscriptionThumbnailCard<MenuContent: View>: View {
                     .padding(8)
             }
 
-            // Summary badge
-            if transcription.summary != nil {
-                VStack {
-                    HStack {
-                        Text("SUMMARY")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(
-                                Capsule()
-                                    .fill(DesignSystem.Colors.accent)
-                            )
-                        Spacer()
-                    }
-                    Spacer()
-                }
-                .padding(8)
-            }
         }
     }
 
