@@ -37,7 +37,7 @@ struct TranscriptionThumbnailCard: View {
         ZStack(alignment: .bottomTrailing) {
             thumbnailContent
                 .frame(maxWidth: .infinity)
-                .aspectRatio(DesignSystem.Layout.thumbnailAspectRatio, contentMode: .fill)
+                .aspectRatio(DesignSystem.Layout.thumbnailAspectRatio, contentMode: .fit)
                 .clipped()
 
             // Duration badge

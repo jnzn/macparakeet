@@ -44,13 +44,16 @@ public final class VideoStreamService: Sendable {
 
     // MARK: - Private
 
+    /// Timeout for yt-dlp stream extraction (seconds)
+    private static let extractionTimeout: TimeInterval = 30
+
     private func extractStreamURL(youtubeURL: String) async throws -> URL {
         let ytDlpPath = try resolveYtDlpPath()
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: ytDlpPath)
         process.arguments = [
-            "-f", "best",
+            "-f", "b",
             "--get-url",
             "--no-playlist",
             "--extractor-args", "youtube:player_client=tv,android",
@@ -72,12 +75,20 @@ public final class VideoStreamService: Sendable {
 
         try process.run()
 
-        // Read pipes BEFORE waiting (prevents deadlock if output exceeds pipe buffer)
-        let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+        // Read pipes on a background thread to avoid blocking the cooperative pool
+        let stdoutData: Data = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: stdoutPipe.fileHandleForReading.readDataToEndOfFile())
+            }
+        }
+        let stderrData: Data = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: stderrPipe.fileHandleForReading.readDataToEndOfFile())
+            }
+        }
 
-        // Await termination without blocking the cooperative thread pool.
-        // Use a one-shot flag to prevent double-resume (terminationHandler vs isRunning race).
+        // Await termination with timeout.
+        // Use a one-shot flag to prevent double-resume.
         let resumed = OSAllocatedUnfairLock(initialState: false)
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             process.terminationHandler = { _ in
@@ -86,6 +97,18 @@ public final class VideoStreamService: Sendable {
                 }
                 if !alreadyResumed { continuation.resume() }
             }
+
+            // Timeout — kill the process if yt-dlp hangs
+            DispatchQueue.global().asyncAfter(deadline: .now() + Self.extractionTimeout) {
+                let alreadyResumed = resumed.withLock { flag -> Bool in
+                    let was = flag; flag = true; return was
+                }
+                if !alreadyResumed {
+                    process.terminate()
+                    continuation.resume(throwing: VideoStreamError.extractionFailed("Stream extraction timed out after \(Int(Self.extractionTimeout))s"))
+                }
+            }
+
             if !process.isRunning {
                 let alreadyResumed = resumed.withLock { flag -> Bool in
                     let was = flag; flag = true; return was
