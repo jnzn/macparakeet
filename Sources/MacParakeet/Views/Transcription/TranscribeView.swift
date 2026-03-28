@@ -66,11 +66,6 @@ struct TranscribeView: View {
                 }
             }
 
-            if !viewModel.transcriptions.isEmpty && viewModel.currentTranscription == nil && !showingProgressDetail {
-                Divider()
-                recentTranscriptionsList
-            }
-
             // Bottom bar now rendered globally in MainWindowView
         }
         .onChange(of: viewModel.isTranscribing) { _, isTranscribing in
@@ -83,42 +78,62 @@ struct TranscribeView: View {
     // MARK: - Drop Zone (Portal)
 
     private var dropZoneView: some View {
-        ScrollView {
-            VStack(spacing: DesignSystem.Spacing.lg) {
-                if viewModel.isTranscribing {
-                    activeTranscriptionCard
-                        .padding(.horizontal, DesignSystem.Spacing.lg)
-                        .padding(.top, DesignSystem.Spacing.lg)
-                }
+        VStack(spacing: 0) {
+            if viewModel.isTranscribing {
+                ScrollView {
+                    VStack(spacing: DesignSystem.Spacing.lg) {
+                        activeTranscriptionCard
+                            .padding(.horizontal, DesignSystem.Spacing.lg)
+                            .padding(.top, DesignSystem.Spacing.lg)
 
-                if !viewModel.isTranscribing {
-                    // Side-by-side input cards
-                    HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
-                        // YouTube URL card
-                        youTubeCard
-
-                        // Local file card (portal drop zone)
-                        PortalDropZone(
-                            isDragging: $viewModel.isDragging,
-                            onDrop: { providers in
-                                viewModel.handleFileDrop(providers: providers) {
-                                    SoundManager.shared.play(.fileDropped)
-                                }
-                            },
-                            onBrowse: { openFilePicker() }
-                        )
+                        if let error = viewModel.errorMessage {
+                            errorBanner(error)
+                                .padding(.horizontal, DesignSystem.Spacing.lg)
+                        }
                     }
-                    .padding(.horizontal, DesignSystem.Spacing.lg)
-                    .padding(.top, DesignSystem.Spacing.lg)
+                    .padding(.bottom, DesignSystem.Spacing.lg)
                 }
+            } else {
+                // Centered two-card layout
+                VStack(spacing: 0) {
+                    Spacer()
 
-                // Error banner
-                if let error = viewModel.errorMessage {
-                    errorBanner(error)
-                        .padding(.horizontal, DesignSystem.Spacing.lg)
+                    VStack(spacing: DesignSystem.Spacing.xl) {
+                        HStack(alignment: .top, spacing: DesignSystem.Spacing.lg) {
+                            youTubeCard
+                            PortalDropZone(
+                                isDragging: $viewModel.isDragging,
+                                onDrop: { providers in
+                                    viewModel.handleFileDrop(providers: providers) {
+                                        SoundManager.shared.play(.fileDropped)
+                                    }
+                                },
+                                onBrowse: { openFilePicker() }
+                            )
+                        }
+                        .padding(.horizontal, DesignSystem.Spacing.xl)
+
+                        // Error banner
+                        if let error = viewModel.errorMessage {
+                            errorBanner(error)
+                                .padding(.horizontal, DesignSystem.Spacing.xl)
+                        }
+
+                        // Privacy tagline
+                        Text("Everything stays on your Mac.")
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .onDrop(of: [.fileURL], isTargeted: $viewModel.isDragging) { providers in
+                    viewModel.handleFileDrop(providers: providers) {
+                        SoundManager.shared.play(.fileDropped)
+                    }
                 }
             }
-            .padding(.bottom, DesignSystem.Spacing.lg)
         }
     }
 
@@ -211,102 +226,105 @@ struct TranscribeView: View {
     // MARK: - YouTube Card
 
     private var youTubeCard: some View {
-        VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
-            HStack(alignment: .firstTextBaseline, spacing: DesignSystem.Spacing.sm) {
-                Text("YouTube Transcription")
-                    .font(DesignSystem.Typography.sectionTitle)
-                Text("On-device")
-                    .font(DesignSystem.Typography.micro)
-                    .foregroundStyle(DesignSystem.Colors.successGreen)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(DesignSystem.Colors.successGreen.opacity(0.14)))
-                Spacer()
-            }
+        ZStack {
+            // Card background — matches PortalDropZone styling
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.dropZoneCornerRadius)
+                .fill(DesignSystem.Colors.surfaceElevated)
+                .cardShadow(DesignSystem.Shadows.cardRest)
 
-            HStack(spacing: DesignSystem.Spacing.sm) {
-                HStack(spacing: 8) {
-                    Image(systemName: viewModel.isValidURL ? "checkmark.circle.fill" : "link")
-                        .font(.system(size: 14))
-                        .foregroundStyle(viewModel.isValidURL ? DesignSystem.Colors.successGreen : .secondary)
-                        .contentTransition(.symbolEffect(.replace))
+            VStack(spacing: DesignSystem.Spacing.md) {
+                // YouTube icon
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(DesignSystem.Colors.youtubeRed.opacity(0.1))
+                        .frame(width: 56, height: 56)
 
-                    TextField("Paste a YouTube link", text: $viewModel.urlInput)
-                        .textFieldStyle(.plain)
-                        .font(DesignSystem.Typography.body)
-                        .onSubmit {
-                            if viewModel.isValidURL {
-                                viewModel.transcribeURL()
+                    Image(systemName: "play.rectangle.fill")
+                        .font(.system(size: 24, weight: .medium))
+                        .foregroundStyle(DesignSystem.Colors.youtubeRed.opacity(0.7))
+                }
+
+                Text("Transcribe a YouTube video")
+                    .font(DesignSystem.Typography.pageTitle)
+
+                // URL input row
+                HStack(spacing: DesignSystem.Spacing.sm) {
+                    HStack(spacing: 8) {
+                        Image(systemName: viewModel.isValidURL ? "checkmark.circle.fill" : "link")
+                            .font(.system(size: 14))
+                            .foregroundStyle(viewModel.isValidURL ? DesignSystem.Colors.successGreen : .secondary)
+                            .contentTransition(.symbolEffect(.replace))
+
+                        TextField("Paste a YouTube link", text: $viewModel.urlInput)
+                            .textFieldStyle(.plain)
+                            .font(DesignSystem.Typography.body)
+                            .onSubmit {
+                                if viewModel.isValidURL {
+                                    viewModel.transcribeURL()
+                                }
                             }
+
+                        Button {
+                            if let clip = NSPasteboard.general.string(forType: .string) {
+                                viewModel.urlInput = clip.trimmingCharacters(in: .whitespacesAndNewlines)
+                            }
+                        } label: {
+                            Text("Paste")
+                                .font(DesignSystem.Typography.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(
+                                    Capsule()
+                                        .fill(DesignSystem.Colors.cardBackground)
+                                )
                         }
+                        .buttonStyle(.plain)
+                        .help("Paste from clipboard")
+                        .accessibilityLabel("Paste URL from clipboard")
+                        .accessibilityHint("Pastes clipboard text into the YouTube link field")
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                            .fill(DesignSystem.Colors.cardBackground)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                            .strokeBorder(
+                                viewModel.isValidURL ? DesignSystem.Colors.successGreen.opacity(0.35) : DesignSystem.Colors.border,
+                                lineWidth: 0.8
+                            )
+                    )
 
                     Button {
-                        if let clip = NSPasteboard.general.string(forType: .string) {
-                            viewModel.urlInput = clip.trimmingCharacters(in: .whitespacesAndNewlines)
-                        }
+                        viewModel.transcribeURL()
                     } label: {
-                        Text("Paste")
+                        Label("Transcribe", systemImage: "arrow.right")
                             .font(DesignSystem.Typography.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
+                            .foregroundStyle(DesignSystem.Colors.onAccent)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 9)
                             .background(
-                                Capsule()
-                                    .fill(DesignSystem.Colors.surfaceElevated)
+                                RoundedRectangle(cornerRadius: DesignSystem.Layout.buttonCornerRadius)
+                                    .fill(viewModel.isValidURL ? DesignSystem.Colors.accent : DesignSystem.Colors.accent.opacity(0.35))
                             )
                     }
                     .buttonStyle(.plain)
-                    .help("Paste from clipboard")
-                    .accessibilityLabel("Paste URL from clipboard")
-                    .accessibilityHint("Pastes clipboard text into the YouTube link field")
+                    .disabled(!viewModel.isValidURL)
+                    .accessibilityLabel("Start transcription")
+                    .accessibilityHint("Starts transcribing the YouTube link")
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
-                        .fill(DesignSystem.Colors.background)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
-                        .strokeBorder(
-                            viewModel.isValidURL ? DesignSystem.Colors.successGreen.opacity(0.35) : DesignSystem.Colors.border,
-                            lineWidth: 0.8
-                        )
-                )
+                .padding(.horizontal, DesignSystem.Spacing.md)
 
-                Button {
-                    viewModel.transcribeURL()
-                } label: {
-                    Label("Transcribe", systemImage: "arrow.right")
-                        .font(DesignSystem.Typography.caption.weight(.semibold))
-                        .foregroundStyle(DesignSystem.Colors.onAccent)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 9)
-                        .background(
-                            RoundedRectangle(cornerRadius: DesignSystem.Layout.buttonCornerRadius)
-                                .fill(viewModel.isValidURL ? DesignSystem.Colors.accent : DesignSystem.Colors.accent.opacity(0.35))
-                        )
-                }
-                .buttonStyle(.plain)
-                .disabled(!viewModel.isValidURL)
-                .accessibilityLabel("Start transcription")
-                .accessibilityHint("Starts transcribing the YouTube link")
+                Text("Downloads from YouTube, then transcribes entirely on your Mac.")
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(.tertiary)
             }
-
-            Text("Downloads from YouTube, then transcribes entirely on your Mac.")
-                .font(DesignSystem.Typography.caption)
-                .foregroundStyle(.secondary)
+            .padding(.vertical, DesignSystem.Spacing.xl)
         }
-        .padding(DesignSystem.Spacing.md)
-        .background(
-            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
-                .fill(DesignSystem.Colors.cardBackground)
-                .cardShadow(DesignSystem.Shadows.cardRest)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
-                .strokeBorder(DesignSystem.Colors.border.opacity(0.7), lineWidth: 0.5)
-        )
+        .frame(minHeight: 220)
     }
 
     // MARK: - Error Banner
@@ -463,89 +481,7 @@ struct TranscribeView: View {
         }
     }
 
-    // MARK: - Recent List
-
-    private var recentTranscriptionsList: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Recently Transcribed")
-                    .font(DesignSystem.Typography.sectionHeader)
-                    .foregroundStyle(.secondary)
-                Text("\(viewModel.transcriptions.count)")
-                    .font(DesignSystem.Typography.duration)
-                    .foregroundStyle(.tertiary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.primary.opacity(0.05)))
-                Spacer()
-            }
-            .padding(.horizontal, DesignSystem.Spacing.lg)
-            .padding(.top, DesignSystem.Spacing.md)
-            .padding(.bottom, DesignSystem.Spacing.sm)
-
-            ScrollView {
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: DesignSystem.Layout.thumbnailCardMinWidth), spacing: DesignSystem.Spacing.md)],
-                    spacing: DesignSystem.Spacing.md
-                ) {
-                    ForEach(Array(viewModel.transcriptions.prefix(8))) { transcription in
-                        TranscriptionThumbnailCard(transcription: transcription) {
-                            viewModel.currentTranscription = transcription
-                        } menuContent: {
-                            transcriptionMenuItems(for: transcription)
-                        }
-                        .contextMenu {
-                            transcriptionMenuItems(for: transcription)
-                        }
-                    }
-                }
-                .padding(.horizontal, DesignSystem.Spacing.lg)
-                .padding(.bottom, DesignSystem.Spacing.lg)
-            }
-        }
-        .alert(
-            "Delete Transcription?",
-            isPresented: Binding(
-                get: { viewModel.pendingDeleteTranscription != nil },
-                set: { if !$0 { viewModel.pendingDeleteTranscription = nil } }
-            )
-        ) {
-            Button("Cancel", role: .cancel) {
-                viewModel.pendingDeleteTranscription = nil
-            }
-            Button("Delete", role: .destructive) {
-                viewModel.confirmDelete()
-            }
-        } message: {
-            if let pending = viewModel.pendingDeleteTranscription {
-                if pending.sourceURL != nil {
-                    Text("\"\(pending.fileName)\" and its downloaded audio will be permanently deleted.")
-                } else {
-                    Text("\"\(pending.fileName)\" will be permanently deleted. The original file is not affected.")
-                }
-            }
-        }
-    }
-
     // MARK: - Helpers
-
-    @ViewBuilder
-    private func transcriptionMenuItems(for transcription: Transcription) -> some View {
-        Button {
-            viewModel.currentTranscription = transcription
-        } label: {
-            Label("Open", systemImage: "doc.text")
-        }
-
-        Divider()
-
-        Button(role: .destructive) {
-            viewModel.pendingDeleteTranscription = transcription
-        } label: {
-            Label("Delete", systemImage: "trash")
-        }
-        .disabled(transcription.status == .processing)
-    }
 
     private var phaseSymbol: String {
         switch viewModel.progressPhase {
@@ -699,175 +635,3 @@ struct TranscribeView: View {
     }
 }
 
-// MARK: - Recent Transcription Row
-
-private struct RecentTranscriptionRow: View {
-    let transcription: Transcription
-    @State private var isHovered = false
-
-    var body: some View {
-        HStack(spacing: DesignSystem.Spacing.md) {
-            // Contextual icon thumbnail
-            transcriptionIcon
-
-            // Content: filename + metadata
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(displayName)
-                        .font(DesignSystem.Typography.body)
-                        .lineLimit(1)
-                        .foregroundStyle(.primary)
-
-                    if transcription.sourceURL != nil {
-                        Text("YouTube")
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundStyle(DesignSystem.Colors.youtubeRed.opacity(0.7))
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1.5)
-                            .background(
-                                RoundedRectangle(cornerRadius: 3)
-                                    .fill(DesignSystem.Colors.youtubeRed.opacity(0.08))
-                            )
-                    }
-                }
-
-                HStack(spacing: 0) {
-                    Text(relativeTime(transcription.createdAt))
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundStyle(.tertiary)
-
-                    if let bytes = transcription.fileSizeBytes {
-                        metadataDot
-                        Text(formatFileSize(bytes))
-                            .font(DesignSystem.Typography.caption)
-                            .foregroundStyle(.tertiary)
-                    }
-
-                    if let duration = transcription.durationMs {
-                        metadataDot
-                        Text(duration.formattedDuration)
-                            .font(DesignSystem.Typography.duration)
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-            }
-
-            Spacer()
-
-            // Status pill
-            statusPill
-        }
-        .padding(.vertical, DesignSystem.Spacing.sm)
-        .padding(.horizontal, DesignSystem.Spacing.sm)
-        .background(
-            RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
-                .fill(isHovered ? DesignSystem.Colors.rowHoverBackground : .clear)
-        )
-        .onHover { hovering in
-            withAnimation(DesignSystem.Animation.hoverTransition) {
-                isHovered = hovering
-            }
-        }
-    }
-
-    private var metadataDot: some View {
-        Text("\u{2009}\u{00B7}\u{2009}")
-            .font(DesignSystem.Typography.caption)
-            .foregroundStyle(.quaternary)
-    }
-
-    // MARK: - Display Name
-
-    private var displayName: String {
-        let name = transcription.fileName
-        // If filename looks like a UUID (with or without extension), show transcript preview instead
-        let stem = (name as NSString).deletingPathExtension
-        if UUID(uuidString: stem) != nil, let text = transcription.rawTranscript, !text.isEmpty {
-            let preview = String(text.prefix(60)).replacingOccurrences(of: "\n", with: " ")
-            return preview
-        }
-        return name
-    }
-
-    // MARK: - Icon Thumbnail
-
-    private var isYouTube: Bool { transcription.sourceURL != nil }
-
-    @ViewBuilder
-    private var transcriptionIcon: some View {
-        let iconColor = isYouTube ? DesignSystem.Colors.youtubeRed : DesignSystem.Colors.accent
-        ZStack {
-            RoundedRectangle(cornerRadius: 10)
-                .fill(iconColor.opacity(0.1))
-            Image(systemName: isYouTube ? "play.rectangle.fill" : "waveform")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(iconColor.opacity(0.7))
-        }
-        .frame(width: 40, height: 40)
-    }
-
-    // MARK: - Status Pill
-
-    @ViewBuilder
-    private var statusPill: some View {
-        switch transcription.status {
-        case .completed:
-            pillLabel("Done", icon: "checkmark", color: DesignSystem.Colors.successGreen)
-        case .processing:
-            HStack(spacing: 4) {
-                SpinnerRingView(size: 10, revolutionDuration: 2.0, tintColor: DesignSystem.Colors.accent)
-                Text("Processing")
-                    .font(DesignSystem.Typography.micro)
-                    .foregroundStyle(DesignSystem.Colors.accent)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Capsule().fill(DesignSystem.Colors.accent.opacity(0.1)))
-        case .error:
-            VStack(alignment: .trailing, spacing: 2) {
-                pillLabel("Failed", icon: "xmark", color: DesignSystem.Colors.errorRed)
-                if let msg = transcription.errorMessage {
-                    Text(truncateErrorMessage(msg))
-                        .font(.system(size: 9))
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                        .help(msg)
-                }
-            }
-        case .cancelled:
-            pillLabel("Cancelled", icon: "minus", color: .secondary)
-        }
-    }
-
-    private func pillLabel(_ text: String, icon: String, color: Color) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.system(size: 8, weight: .bold))
-            Text(text)
-                .font(DesignSystem.Typography.micro)
-        }
-        .foregroundStyle(color)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(Capsule().fill(color.opacity(0.1)))
-    }
-
-    // MARK: - Helpers
-
-    private func relativeTime(_ date: Date) -> String {
-        let interval = Date().timeIntervalSince(date)
-        if interval < 60 { return "Just now" }
-        if interval < 3600 { return "\(Int(interval / 60)) min ago" }
-        if interval < 86400 { return "\(Int(interval / 3600))h ago" }
-        let formatter = DateFormatter()
-        formatter.dateStyle = .short
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
-    }
-
-    private func formatFileSize(_ bytes: Int) -> String {
-        if bytes < 1024 { return "\(bytes) B" }
-        if bytes < 1_048_576 { return String(format: "%.0f KB", Double(bytes) / 1024) }
-        return String(format: "%.1f MB", Double(bytes) / 1_048_576)
-    }
-}
