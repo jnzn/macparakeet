@@ -85,27 +85,29 @@ struct TranscriptionThumbnailCard<MenuContent: View>: View {
     // MARK: - Thumbnail
 
     private var thumbnailArea: some View {
-        ZStack(alignment: .bottomTrailing) {
-            thumbnailContent
-                .frame(maxWidth: .infinity)
-                .aspectRatio(DesignSystem.Layout.thumbnailAspectRatio, contentMode: .fill)
-                .clipped()
-
-            // Duration badge
-            if let durationMs = transcription.durationMs {
-                Text(durationMs.formattedDuration)
-                    .font(.system(size: 10, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(
-                        Capsule()
-                            .fill(.black.opacity(0.7))
-                    )
-                    .padding(8)
+        // Color.clear establishes a consistent 16:9 frame regardless of content
+        Color.clear
+            .aspectRatio(DesignSystem.Layout.thumbnailAspectRatio, contentMode: .fit)
+            .overlay {
+                thumbnailContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-
-        }
+            .overlay(alignment: .bottomTrailing) {
+                // Duration badge
+                if let durationMs = transcription.durationMs {
+                    Text(durationMs.formattedDuration)
+                        .font(.system(size: 10, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule()
+                                .fill(.black.opacity(0.7))
+                        )
+                        .padding(8)
+                }
+            }
+            .clipShape(Rectangle())
     }
 
     @ViewBuilder
