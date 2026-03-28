@@ -122,10 +122,10 @@ struct MainWindowView: View {
         }
     }
 
-    /// Show the global bottom bar when transcribing, except when on Transcribe tab with detail expanded
+    /// Show the global bottom bar when transcribing on any tab except Transcribe (which has its own detailed view)
     private var showGlobalProgressBar: Bool {
         transcriptionViewModel.isTranscribing
-            && !(state.selectedItem == .transcribe && state.showingProgressDetail)
+            && state.selectedItem != .transcribe
     }
 
     private var globalTranscriptionBottomBar: some View {
@@ -182,7 +182,6 @@ struct MainWindowView: View {
             Button {
                 transcriptionViewModel.currentTranscription = nil
                 state.selectedItem = .transcribe
-                state.showingProgressDetail = true
             } label: {
                 Text("View")
                     .font(DesignSystem.Typography.caption.weight(.semibold))
