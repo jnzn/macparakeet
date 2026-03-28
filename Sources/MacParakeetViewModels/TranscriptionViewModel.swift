@@ -227,6 +227,7 @@ public final class TranscriptionViewModel {
               FileManager.default.fileExists(atPath: filePath) else { return }
 
         let url = URL(fileURLWithPath: filePath)
+        let originalID = original.id
         let taskID = beginNewTranscription(source: .localFile, fileName: original.fileName, clearCurrent: true)
 
         transcriptionTask = Task { @MainActor [weak self] in
@@ -242,6 +243,8 @@ public final class TranscriptionViewModel {
                 result.sourceURL = original.sourceURL
                 do {
                     try transcriptionRepo?.save(result)
+                    // Delete the original to avoid duplicates
+                    _ = try? transcriptionRepo?.delete(id: originalID)
                 } catch {
                     logger.error("Failed to save transcription result error=\(error.localizedDescription, privacy: .public)")
                 }
