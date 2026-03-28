@@ -16,10 +16,11 @@ public enum LibrarySortOrder: Sendable {
 
 @MainActor @Observable
 public final class TranscriptionLibraryViewModel {
-    public var transcriptions: [Transcription] = []
-    public var filter: LibraryFilter = .all
-    public var searchText: String = ""
-    public var sortOrder: LibrarySortOrder = .dateDescending
+    public var transcriptions: [Transcription] = [] { didSet { recomputeFiltered() } }
+    public var filter: LibraryFilter = .all { didSet { recomputeFiltered() } }
+    public var searchText: String = "" { didSet { recomputeFiltered() } }
+    public var sortOrder: LibrarySortOrder = .dateDescending { didSet { recomputeFiltered() } }
+    public private(set) var filteredTranscriptions: [Transcription] = []
 
     private var transcriptionRepo: TranscriptionRepositoryProtocol?
 
@@ -29,22 +30,16 @@ public final class TranscriptionLibraryViewModel {
         self.transcriptionRepo = transcriptionRepo
     }
 
-    public var filteredTranscriptions: [Transcription] {
+    private func recomputeFiltered() {
         var result = transcriptions
 
-        // Apply filter
         switch filter {
-        case .all:
-            break
-        case .youtube:
-            result = result.filter { $0.sourceURL != nil }
-        case .local:
-            result = result.filter { $0.sourceURL == nil }
-        case .favorites:
-            result = result.filter(\.isFavorite)
+        case .all: break
+        case .youtube: result = result.filter { $0.sourceURL != nil }
+        case .local: result = result.filter { $0.sourceURL == nil }
+        case .favorites: result = result.filter(\.isFavorite)
         }
 
-        // Apply search
         if !searchText.isEmpty {
             let query = searchText.lowercased()
             result = result.filter { t in
@@ -55,17 +50,13 @@ public final class TranscriptionLibraryViewModel {
             }
         }
 
-        // Apply sort
         switch sortOrder {
-        case .dateDescending:
-            result.sort { $0.createdAt > $1.createdAt }
-        case .dateAscending:
-            result.sort { $0.createdAt < $1.createdAt }
-        case .titleAscending:
-            result.sort { $0.fileName.localizedCaseInsensitiveCompare($1.fileName) == .orderedAscending }
+        case .dateDescending: result.sort { $0.createdAt > $1.createdAt }
+        case .dateAscending: result.sort { $0.createdAt < $1.createdAt }
+        case .titleAscending: result.sort { $0.fileName.localizedCaseInsensitiveCompare($1.fileName) == .orderedAscending }
         }
 
-        return result
+        filteredTranscriptions = result
     }
 
     public func loadTranscriptions() {

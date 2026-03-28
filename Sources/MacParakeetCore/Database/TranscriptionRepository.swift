@@ -139,10 +139,10 @@ public final class TranscriptionRepository: TranscriptionRepositoryProtocol {
 
     public func updateFavorite(id: UUID, isFavorite: Bool) throws {
         try dbQueue.write { db in
-            guard var transcription = try Transcription.fetchOne(db, key: id) else { return }
-            transcription.isFavorite = isFavorite
-            transcription.updatedAt = Date()
-            try transcription.update(db)
+            try db.execute(
+                sql: "UPDATE transcriptions SET isFavorite = ?, updatedAt = ? WHERE id = ?",
+                arguments: [isFavorite, Date(), id]
+            )
         }
     }
 
