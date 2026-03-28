@@ -76,10 +76,12 @@ struct TranscriptionThumbnailCard: View {
         }
     }
 
+    private static let thumbnailCache = ThumbnailCacheService()
+
     @ViewBuilder
     private var thumbnailContent: some View {
         if let thumbnailURL = transcription.thumbnailURL,
-           let cached = ThumbnailCacheService().cachedThumbnail(for: transcription.id) {
+           let cached = Self.thumbnailCache.cachedThumbnail(for: transcription.id) {
             // Cached thumbnail
             AsyncImage(url: cached) { image in
                 image
