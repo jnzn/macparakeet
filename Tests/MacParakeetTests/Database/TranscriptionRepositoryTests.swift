@@ -279,4 +279,69 @@ final class TranscriptionRepositoryTests: XCTestCase {
         XCTAssertEqual(fetched?.durationMs, 5000)
         XCTAssertEqual(fetched?.status, .completed)
     }
+
+    // MARK: - Video Metadata
+
+    func testVideoMetadataRoundTrip() throws {
+        let transcription = Transcription(
+            fileName: "YouTube Video Title",
+            status: .completed,
+            sourceURL: "https://www.youtube.com/watch?v=abc123",
+            thumbnailURL: "https://i.ytimg.com/vi/abc123/maxresdefault.jpg",
+            channelName: "Tech Channel",
+            videoDescription: "A great video about Swift"
+        )
+        try repo.save(transcription)
+
+        let fetched = try repo.fetch(id: transcription.id)
+        XCTAssertEqual(fetched?.thumbnailURL, "https://i.ytimg.com/vi/abc123/maxresdefault.jpg")
+        XCTAssertEqual(fetched?.channelName, "Tech Channel")
+        XCTAssertEqual(fetched?.videoDescription, "A great video about Swift")
+    }
+
+    func testVideoMetadataNilByDefault() throws {
+        let transcription = Transcription(fileName: "audio.mp3", status: .completed)
+        try repo.save(transcription)
+
+        let fetched = try repo.fetch(id: transcription.id)
+        XCTAssertNil(fetched?.thumbnailURL)
+        XCTAssertNil(fetched?.channelName)
+        XCTAssertNil(fetched?.videoDescription)
+    }
+
+    // MARK: - Favorites
+
+    func testIsFavoriteDefaultsFalse() throws {
+        let transcription = Transcription(fileName: "test.mp3", status: .completed)
+        try repo.save(transcription)
+
+        let fetched = try repo.fetch(id: transcription.id)
+        XCTAssertEqual(fetched?.isFavorite, false)
+    }
+
+    func testUpdateFavorite() throws {
+        let transcription = Transcription(fileName: "test.mp3", status: .completed)
+        try repo.save(transcription)
+
+        try repo.updateFavorite(id: transcription.id, isFavorite: true)
+        let fetched = try repo.fetch(id: transcription.id)
+        XCTAssertEqual(fetched?.isFavorite, true)
+
+        try repo.updateFavorite(id: transcription.id, isFavorite: false)
+        let unfavorited = try repo.fetch(id: transcription.id)
+        XCTAssertEqual(unfavorited?.isFavorite, false)
+    }
+
+    func testFetchFavorites() throws {
+        let fav1 = Transcription(fileName: "fav1.mp3", status: .completed, isFavorite: true)
+        let fav2 = Transcription(fileName: "fav2.mp3", status: .completed, isFavorite: true)
+        let notFav = Transcription(fileName: "normal.mp3", status: .completed)
+        try repo.save(fav1)
+        try repo.save(fav2)
+        try repo.save(notFav)
+
+        let favorites = try repo.fetchFavorites()
+        XCTAssertEqual(favorites.count, 2)
+        XCTAssertTrue(favorites.allSatisfy(\.isFavorite))
+    }
 }

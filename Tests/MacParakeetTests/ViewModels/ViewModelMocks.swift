@@ -181,6 +181,17 @@ final class MockTranscriptionRepository: TranscriptionRepositoryProtocol, @unche
             }
         }
     }
+
+    func updateFavorite(id: UUID, isFavorite: Bool) throws {
+        if let idx = transcriptions.firstIndex(where: { $0.id == id }) {
+            transcriptions[idx].isFavorite = isFavorite
+            transcriptions[idx].updatedAt = Date()
+        }
+    }
+
+    func fetchFavorites() throws -> [Transcription] {
+        transcriptions.filter(\.isFavorite).sorted { $0.createdAt > $1.createdAt }
+    }
 }
 
 // MARK: - MockLaunchAtLoginService

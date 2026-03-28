@@ -182,6 +182,70 @@ final class TranscriptionModelTests: XCTestCase {
         XCTAssertNil(decoded.speakerId)
     }
 
+    func testVideoMetadataFieldsDefault() {
+        let t = Transcription(fileName: "test.mp3")
+        XCTAssertNil(t.thumbnailURL)
+        XCTAssertNil(t.channelName)
+        XCTAssertNil(t.videoDescription)
+        XCTAssertEqual(t.isFavorite, false)
+    }
+
+    func testVideoMetadataFieldsPopulate() {
+        let t = Transcription(
+            fileName: "YouTube Video",
+            sourceURL: "https://youtube.com/watch?v=abc",
+            thumbnailURL: "https://i.ytimg.com/vi/abc/maxresdefault.jpg",
+            channelName: "Test Channel",
+            videoDescription: "Great video",
+            isFavorite: true
+        )
+        XCTAssertEqual(t.thumbnailURL, "https://i.ytimg.com/vi/abc/maxresdefault.jpg")
+        XCTAssertEqual(t.channelName, "Test Channel")
+        XCTAssertEqual(t.videoDescription, "Great video")
+        XCTAssertEqual(t.isFavorite, true)
+    }
+
+    func testVideoMetadataCodableRoundTrip() throws {
+        let original = Transcription(
+            fileName: "video.mp4",
+            status: .completed,
+            sourceURL: "https://youtube.com/watch?v=test",
+            thumbnailURL: "https://example.com/thumb.jpg",
+            channelName: "My Channel",
+            videoDescription: "Description here",
+            isFavorite: true
+        )
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(original)
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(Transcription.self, from: data)
+
+        XCTAssertEqual(decoded.thumbnailURL, "https://example.com/thumb.jpg")
+        XCTAssertEqual(decoded.channelName, "My Channel")
+        XCTAssertEqual(decoded.videoDescription, "Description here")
+        XCTAssertEqual(decoded.isFavorite, true)
+    }
+
+    func testDecodingWithoutIsFavoriteDefaultsToFalse() throws {
+        let json = """
+        {
+            "id": "00000000-0000-0000-0000-000000000010",
+            "createdAt": "2026-03-01T00:00:00Z",
+            "fileName": "test.mp3",
+            "status": "completed",
+            "updatedAt": "2026-03-01T00:00:00Z"
+        }
+        """
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let t = try decoder.decode(Transcription.self, from: Data(json.utf8))
+        XCTAssertEqual(t.isFavorite, false)
+    }
+
     func testDiarizationSegmentRecordCodable() throws {
         let record = DiarizationSegmentRecord(speakerId: "S1", startMs: 0, endMs: 5000)
         let data = try JSONEncoder().encode(record)

@@ -61,9 +61,6 @@ struct TranscribeView: View {
                     dropZoneView
                 }
             }
-            .animation(DesignSystem.Animation.contentSwap, value: viewModel.isTranscribing)
-            .animation(DesignSystem.Animation.contentSwap, value: viewModel.currentTranscription?.id)
-            .animation(DesignSystem.Animation.contentSwap, value: showingProgressDetail)
 
             if !viewModel.transcriptions.isEmpty && viewModel.currentTranscription == nil && !showingProgressDetail {
                 Divider()
@@ -91,22 +88,24 @@ struct TranscribeView: View {
                 }
 
                 if !viewModel.isTranscribing {
-                    // Portal drop zone — the hero
-                    PortalDropZone(
-                        isDragging: $viewModel.isDragging,
-                        onDrop: { providers in
-                            viewModel.handleFileDrop(providers: providers) {
-                                SoundManager.shared.play(.fileDropped)
-                            }
-                        },
-                        onBrowse: { openFilePicker() }
-                    )
+                    // Side-by-side input cards
+                    HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
+                        // YouTube URL card
+                        youTubeCard
+
+                        // Local file card (portal drop zone)
+                        PortalDropZone(
+                            isDragging: $viewModel.isDragging,
+                            onDrop: { providers in
+                                viewModel.handleFileDrop(providers: providers) {
+                                    SoundManager.shared.play(.fileDropped)
+                                }
+                            },
+                            onBrowse: { openFilePicker() }
+                        )
+                    }
                     .padding(.horizontal, DesignSystem.Spacing.lg)
                     .padding(.top, DesignSystem.Spacing.lg)
-
-                    // YouTube URL card — separate warm card below
-                    youTubeCard
-                        .padding(.horizontal, DesignSystem.Spacing.lg)
                 }
 
                 // Error banner
@@ -465,7 +464,7 @@ struct TranscribeView: View {
     private var recentTranscriptionsList: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Recent Transcriptions")
+                Text("Recently Transcribed")
                     .font(DesignSystem.Typography.sectionHeader)
                     .foregroundStyle(.secondary)
                 Text("\(viewModel.transcriptions.count)")
@@ -480,33 +479,36 @@ struct TranscribeView: View {
             .padding(.top, DesignSystem.Spacing.md)
             .padding(.bottom, DesignSystem.Spacing.sm)
 
-            List(viewModel.transcriptions) { transcription in
-                Button {
-                    viewModel.currentTranscription = transcription
-                } label: {
-                    RecentTranscriptionRow(transcription: transcription)
-                }
-                .buttonStyle(.plain)
-                .listRowSeparator(.hidden)
-                .contextMenu {
-                    Button {
-                        viewModel.currentTranscription = transcription
-                    } label: {
-                        Label("Open", systemImage: "doc.text")
-                    }
+            ScrollView {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: DesignSystem.Layout.thumbnailCardMinWidth), spacing: DesignSystem.Spacing.md)],
+                    spacing: DesignSystem.Spacing.md
+                ) {
+                    ForEach(Array(viewModel.transcriptions.prefix(8))) { transcription in
+                        TranscriptionThumbnailCard(transcription: transcription) {
+                            viewModel.currentTranscription = transcription
+                        }
+                        .contextMenu {
+                            Button {
+                                viewModel.currentTranscription = transcription
+                            } label: {
+                                Label("Open", systemImage: "doc.text")
+                            }
 
-                    Divider()
+                            Divider()
 
-                    Button(role: .destructive) {
-                        viewModel.pendingDeleteTranscription = transcription
-                    } label: {
-                        Label("Delete", systemImage: "trash")
+                            Button(role: .destructive) {
+                                viewModel.pendingDeleteTranscription = transcription
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                            .disabled(transcription.status == .processing)
+                        }
                     }
-                    .disabled(transcription.status == .processing)
                 }
+                .padding(.horizontal, DesignSystem.Spacing.lg)
+                .padding(.bottom, DesignSystem.Spacing.lg)
             }
-            .listStyle(.plain)
-            .frame(maxHeight: 320)
         }
         .alert(
             "Delete Transcription?",

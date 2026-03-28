@@ -141,6 +141,11 @@ enum DesignSystem {
         static let minTouchTarget: CGFloat = 44
         static let dropZoneHeight: CGFloat = 200
         static let playbackBarHeight: CGFloat = 6
+        static let videoPlayerMinWidth: CGFloat = 320
+        static let videoPlayerIdealRatio: CGFloat = 0.4
+        static let audioScrubberHeight: CGFloat = 44
+        static let thumbnailCardMinWidth: CGFloat = 200
+        static let thumbnailAspectRatio: CGFloat = 16 / 9
     }
 
     // MARK: - Animation

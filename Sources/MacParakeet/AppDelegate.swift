@@ -46,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let textSnippetsViewModel = TextSnippetsViewModel()
     private let feedbackViewModel = FeedbackViewModel()
     private let discoverViewModel = DiscoverViewModel()
+    private let libraryViewModel = TranscriptionLibraryViewModel()
     private let llmSettingsViewModel = LLMSettingsViewModel()
     private let chatViewModel = TranscriptChatViewModel()
     private let mainWindowState = MainWindowState()
@@ -339,6 +340,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 configStore: env.llmConfigStore
             )
             historyViewModel.configure(dictationRepo: env.dictationRepo)
+            libraryViewModel.configure(transcriptionRepo: env.transcriptionRepo)
             settingsViewModel.configure(
                 permissionService: env.permissionService,
                 dictationRepo: env.dictationRepo,
@@ -741,6 +743,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             textSnippetsViewModel: textSnippetsViewModel,
             feedbackViewModel: feedbackViewModel,
             discoverViewModel: discoverViewModel,
+            libraryViewModel: libraryViewModel,
             updater: updaterController.updater
         )
 

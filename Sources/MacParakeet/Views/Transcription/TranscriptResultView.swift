@@ -1,3 +1,4 @@
+import AVKit
 import SwiftUI
 import MacParakeetCore
 import MacParakeetViewModels
@@ -32,6 +33,8 @@ struct TranscriptResultView: View {
     @State private var editingSpeakerLabel: String = ""
     @State private var showConversationPopover = false
     @State private var hoveredConversationId: UUID?
+    @State private var playerViewModel = MediaPlayerViewModel()
+    @State private var showVideoPanel = true
     @FocusState private var chatInputFocused: Bool
     @FocusState private var speakerRenameFocused: Bool
 
@@ -42,15 +45,112 @@ struct TranscriptResultView: View {
     ]
 
     var body: some View {
+        adaptiveLayout
+        .onAppear {
+            Task {
+                await playerViewModel.load(for: transcription)
+            }
+            viewModel.resetSummaryState()
+            viewModel.loadPersistedContent()
+            let text = viewModel.currentTranscription?.cleanTranscript ?? viewModel.currentTranscription?.rawTranscript ?? ""
+            chatViewModel.loadTranscript(text, transcriptionId: viewModel.currentTranscription?.id)
+        }
+        .onChange(of: transcription.id) {
+            Task {
+                playerViewModel.cleanup()
+                await playerViewModel.load(for: transcription)
+            }
+            editingSpeakerId = nil
+            editingSpeakerLabel = ""
+            showConversationPopover = false
+            hoveredConversationId = nil
+            viewModel.hasConversations = false
+            viewModel.selectedTab = .transcript
+            viewModel.resetSummaryState()
+            viewModel.loadPersistedContent()
+            let text = viewModel.currentTranscription?.cleanTranscript ?? viewModel.currentTranscription?.rawTranscript ?? ""
+            chatViewModel.loadTranscript(text, transcriptionId: viewModel.currentTranscription?.id)
+        }
+        .onDisappear {
+            playerViewModel.cleanup()
+        }
+    }
+
+    @ViewBuilder
+    private var adaptiveLayout: some View {
+        switch playerViewModel.playbackMode {
+        case .video where showVideoPanel:
+            HSplitView {
+                TranscriptionVideoPanel(
+                    transcription: transcription,
+                    playerViewModel: playerViewModel
+                )
+                .frame(
+                    minWidth: DesignSystem.Layout.videoPlayerMinWidth,
+                    idealWidth: 480
+                )
+
+                transcriptionContentColumn
+            }
+        case .audio:
+            VStack(spacing: 0) {
+                AudioScrubberBar(viewModel: playerViewModel)
+                Divider()
+                transcriptionContentColumn
+            }
+        default:
+            transcriptionContentColumn
+        }
+    }
+
+    private var transcriptionContentColumn: some View {
         VStack(alignment: .leading, spacing: 0) {
             resultHeaderCard
                 .padding(.horizontal, DesignSystem.Spacing.lg)
                 .padding(.top, DesignSystem.Spacing.lg)
 
-            if viewModel.showTabs {
-                tabBar
-                    .padding(.horizontal, DesignSystem.Spacing.lg)
-                    .padding(.top, DesignSystem.Spacing.md)
+            if playerViewModel.playbackMode == .video && showVideoPanel {
+                // Video mode: show toggle to hide video panel
+                HStack {
+                    if viewModel.showTabs {
+                        tabBar
+                    }
+                    Spacer()
+                    Button {
+                        withAnimation(DesignSystem.Animation.contentSwap) {
+                            showVideoPanel = false
+                        }
+                    } label: {
+                        Image(systemName: "rectangle.lefthalf.inset.filled.arrow.left")
+                            .font(.system(size: 11))
+                            .foregroundStyle(DesignSystem.Colors.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Hide video panel")
+                }
+                .padding(.horizontal, DesignSystem.Spacing.lg)
+                .padding(.top, DesignSystem.Spacing.md)
+            } else {
+                HStack {
+                    if viewModel.showTabs {
+                        tabBar
+                    }
+                    Spacer()
+                    if playerViewModel.playbackMode == .video && !showVideoPanel {
+                        Button {
+                            withAnimation(DesignSystem.Animation.contentSwap) {
+                                showVideoPanel = true
+                            }
+                        } label: {
+                            Label("Show Video", systemImage: "play.rectangle")
+                                .font(DesignSystem.Typography.caption)
+                                .foregroundStyle(DesignSystem.Colors.textSecondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, DesignSystem.Spacing.lg)
+                .padding(.top, DesignSystem.Spacing.md)
             }
 
             contentArea
@@ -143,24 +243,6 @@ struct TranscriptResultView: View {
             copiedResetTask = nil
             dismissTask?.cancel()
             dismissTask = nil
-        }
-        .onAppear {
-            viewModel.resetSummaryState()
-            viewModel.loadPersistedContent()
-            let text = viewModel.currentTranscription?.cleanTranscript ?? viewModel.currentTranscription?.rawTranscript ?? ""
-            chatViewModel.loadTranscript(text, transcriptionId: viewModel.currentTranscription?.id)
-        }
-        .onChange(of: transcription.id) {
-            editingSpeakerId = nil
-            editingSpeakerLabel = ""
-            showConversationPopover = false
-            hoveredConversationId = nil
-            viewModel.hasConversations = false
-            viewModel.selectedTab = .transcript
-            viewModel.resetSummaryState()
-            viewModel.loadPersistedContent()
-            let text = viewModel.currentTranscription?.cleanTranscript ?? viewModel.currentTranscription?.rawTranscript ?? ""
-            chatViewModel.loadTranscript(text, transcriptionId: viewModel.currentTranscription?.id)
         }
     }
 
@@ -972,7 +1054,8 @@ struct TranscriptResultView: View {
             MeditativeMerkabaView(
                 size: 60,
                 revolutionDuration: 6.0,
-                tintColor: DesignSystem.Colors.accent
+                tintColor: DesignSystem.Colors.accent,
+                animate: false
             )
 
             VStack(spacing: DesignSystem.Spacing.xs) {
@@ -1053,7 +1136,8 @@ struct TranscriptResultView: View {
             }
         } else {
             // No speakers — render as clean transcript segments instead of a flat log.
-            ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
+            ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
+                let isActive = isSegmentActive(segment, index: index, in: segments)
                 HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
                     timestampChip(segment.startMs)
 
@@ -1067,8 +1151,11 @@ struct TranscriptResultView: View {
                 .padding(DesignSystem.Spacing.md)
                 .background(
                     RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
-                        .fill(DesignSystem.Colors.surfaceElevated.opacity(0.45))
+                        .fill(isActive
+                              ? DesignSystem.Colors.accent.opacity(0.12)
+                              : DesignSystem.Colors.surfaceElevated.opacity(0.45))
                 )
+                .id(segment.startMs)
             }
         }
     }
@@ -1224,10 +1311,15 @@ struct TranscriptResultView: View {
         )
     }
 
+    private var isPlayerSeekable: Bool {
+        playerViewModel.playerState == .ready
+    }
+
+    @ViewBuilder
     private func timestampChip(_ startMs: Int) -> some View {
         Text(formatTimestamp(ms: startMs))
             .font(DesignSystem.Typography.timestamp)
-            .foregroundStyle(DesignSystem.Colors.textSecondary)
+            .foregroundStyle(isPlayerSeekable ? DesignSystem.Colors.accent : DesignSystem.Colors.textSecondary)
             .padding(.vertical, 4)
             .padding(.horizontal, 8)
             .background(
@@ -1235,6 +1327,32 @@ struct TranscriptResultView: View {
                     .fill(DesignSystem.Colors.surface)
             )
             .frame(width: 72, alignment: .leading)
+            .contentShape(Capsule())
+            .onTapGesture {
+                if isPlayerSeekable {
+                    playerViewModel.seek(toMs: startMs)
+                    if !playerViewModel.isPlaying {
+                        playerViewModel.togglePlayPause()
+                    }
+                }
+            }
+            .onHover { hovering in
+                if isPlayerSeekable {
+                    if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+                }
+            }
+    }
+
+    // MARK: - Playback Sync
+
+    private func isSegmentActive(_ segment: TranscriptSegment, index: Int, in segments: [TranscriptSegment]) -> Bool {
+        guard playerViewModel.isPlaying || playerViewModel.currentTimeMs > 0 else { return false }
+        let currentMs = playerViewModel.currentTimeMs
+        guard currentMs >= segment.startMs else { return false }
+        if index + 1 < segments.count {
+            return currentMs < segments[index + 1].startMs
+        }
+        return true // Last segment — active if past its start
     }
 
     // MARK: - Speaker Helpers

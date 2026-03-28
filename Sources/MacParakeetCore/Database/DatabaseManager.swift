@@ -240,6 +240,16 @@ public final class DatabaseManager: Sendable {
             try db.execute(sql: "DROP TABLE IF EXISTS dictations_fts")
         }
 
+        // v0.5 — Video metadata + favorites for transcriptions
+        migrator.registerMigration("v0.5-transcription-video-metadata") { db in
+            try db.alter(table: "transcriptions") { t in
+                t.add(column: "thumbnailURL", .text)
+                t.add(column: "channelName", .text)
+                t.add(column: "videoDescription", .text)
+                t.add(column: "isFavorite", .boolean).notNull().defaults(to: false)
+            }
+        }
+
         try migrator.migrate(dbQueue)
     }
 }
