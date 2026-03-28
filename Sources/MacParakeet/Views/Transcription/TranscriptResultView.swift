@@ -42,6 +42,9 @@ struct TranscriptResultView: View {
     @State private var cachedHasSpeakers: Bool = false
     @State private var cachedSpeakerColorMap: [String: Color] = [:]
     @State private var cachedSegmentStartMs: [Int] = []  // sorted, for binary search
+    @State private var autoScrollPaused = false
+    @State private var scrollPauseTask: Task<Void, Never>?
+    @State private var scrollMonitor: Any?
     @FocusState private var chatInputFocused: Bool
     @FocusState private var speakerRenameFocused: Bool
 
@@ -80,6 +83,8 @@ struct TranscriptResultView: View {
             showConversationPopover = false
             hoveredConversationId = nil
             lastScrolledSegmentMs = -1
+            autoScrollPaused = false
+            scrollPauseTask?.cancel()
             viewModel.hasConversations = false
             viewModel.selectedTab = .transcript
             viewModel.resetSummaryState()
@@ -89,6 +94,11 @@ struct TranscriptResultView: View {
         }
         .onDisappear {
             playerViewModel.cleanup()
+            if let monitor = scrollMonitor {
+                NSEvent.removeMonitor(monitor)
+                scrollMonitor = nil
+            }
+            scrollPauseTask?.cancel()
         }
     }
 
@@ -521,6 +531,7 @@ struct TranscriptResultView: View {
             }
             .onChange(of: playerViewModel.currentTimeMs) { _, newValue in
                 guard playerViewModel.isPlaying else { return }
+                guard !autoScrollPaused else { return }
                 guard !cachedSegments.isEmpty else { return }
                 if let targetId = autoScrollTarget(for: newValue),
                    targetId != lastScrolledSegmentMs {
@@ -539,6 +550,27 @@ struct TranscriptResultView: View {
             RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
                 .strokeBorder(DesignSystem.Colors.border.opacity(0.75), lineWidth: 0.5)
         )
+        .onAppear {
+            scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+                if self.playerViewModel.isPlaying {
+                    self.autoScrollPaused = true
+                    self.scrollPauseTask?.cancel()
+                    self.scrollPauseTask = Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(5))
+                        guard !Task.isCancelled else { return }
+                        self.autoScrollPaused = false
+                    }
+                }
+                return event
+            }
+        }
+        .onDisappear {
+            if let monitor = scrollMonitor {
+                NSEvent.removeMonitor(monitor)
+                scrollMonitor = nil
+            }
+            scrollPauseTask?.cancel()
+        }
     }
 
     // MARK: - Tab Bar
@@ -1418,6 +1450,8 @@ struct TranscriptResultView: View {
                     if !playerViewModel.isPlaying {
                         playerViewModel.togglePlayPause()
                     }
+                    autoScrollPaused = false
+                    scrollPauseTask?.cancel()
                 }
             }
             .onHover { hovering in
