@@ -30,6 +30,8 @@ public final class MediaPlayerViewModel {
     public var playbackMode: PlaybackMode = .none
 
     private var timeObserver: Any?
+    private var statusObserver: NSKeyValueObservation?
+    private var endOfTrackObserver: NSObjectProtocol?
     private var loadingTask: Task<Void, Never>?
     private let videoStreamService: VideoStreamService
 
@@ -77,12 +79,12 @@ public final class MediaPlayerViewModel {
 
     public func togglePlayPause() {
         guard let player else { return }
-        if isPlaying {
+        if player.timeControlStatus == .playing {
             player.pause()
         } else {
             player.play()
         }
-        isPlaying = !isPlaying
+        // isPlaying is updated by the KVO observer on timeControlStatus
     }
 
     public func cleanup() {
@@ -92,6 +94,12 @@ public final class MediaPlayerViewModel {
             player.removeTimeObserver(timeObserver)
         }
         timeObserver = nil
+        statusObserver?.invalidate()
+        statusObserver = nil
+        if let endOfTrackObserver {
+            NotificationCenter.default.removeObserver(endOfTrackObserver)
+        }
+        endOfTrackObserver = nil
         player?.pause()
         player = nil
         isPlaying = false
@@ -139,8 +147,13 @@ public final class MediaPlayerViewModel {
     }
 
     private func setupPlayer(with item: AVPlayerItem) {
+        // Tear down previous observers
         if let timeObserver, let player {
             player.removeTimeObserver(timeObserver)
+        }
+        statusObserver?.invalidate()
+        if let endOfTrackObserver {
+            NotificationCenter.default.removeObserver(endOfTrackObserver)
         }
 
         let avPlayer = AVPlayer(playerItem: item)
@@ -152,9 +165,27 @@ public final class MediaPlayerViewModel {
             self?.currentTimeMs = Int(time.seconds * 1000)
         }
 
+        // Drive isPlaying from AVPlayer's actual timeControlStatus via KVO
+        statusObserver = avPlayer.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
+            Task { @MainActor [weak self] in
+                self?.isPlaying = player.timeControlStatus == .playing
+            }
+        }
+
+        // Reset isPlaying when track finishes
+        endOfTrackObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.isPlaying = false
+            }
+        }
+
         // Observe duration once available
         Task { @MainActor [weak self] in
-            guard let self else { return }
+            guard let self, self.player === avPlayer else { return }
             if let duration = try? await item.asset.load(.duration),
                duration.isNumeric {
                 self.durationMs = Int(duration.seconds * 1000)
