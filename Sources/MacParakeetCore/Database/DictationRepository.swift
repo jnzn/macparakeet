@@ -120,23 +120,18 @@ public final class DictationRepository: DictationRepositoryProtocol {
                 .replacingOccurrences(of: "%", with: "\\%")
                 .replacingOccurrences(of: "_", with: "\\_")
             let likePattern = "%\(escaped)%"
-            let sql: String
+
+            var sql = """
+                SELECT * FROM dictations
+                WHERE hidden = 0 AND (rawTranscript LIKE ? ESCAPE '\\' OR cleanTranscript LIKE ? ESCAPE '\\')
+                ORDER BY createdAt DESC
+                """
+            var args: [any DatabaseValueConvertible] = [likePattern, likePattern]
             if let limit {
-                sql = """
-                    SELECT * FROM dictations
-                    WHERE hidden = 0 AND (rawTranscript LIKE ? ESCAPE '\\' OR cleanTranscript LIKE ? ESCAPE '\\')
-                    ORDER BY createdAt DESC
-                    LIMIT ?
-                """
-                return try Dictation.fetchAll(db, sql: sql, arguments: [likePattern, likePattern, limit])
-            } else {
-                sql = """
-                    SELECT * FROM dictations
-                    WHERE hidden = 0 AND (rawTranscript LIKE ? ESCAPE '\\' OR cleanTranscript LIKE ? ESCAPE '\\')
-                    ORDER BY createdAt DESC
-                """
-                return try Dictation.fetchAll(db, sql: sql, arguments: [likePattern, likePattern])
+                sql += " LIMIT ?"
+                args.append(limit)
             }
+            return try Dictation.fetchAll(db, sql: sql, arguments: StatementArguments(args))
         }
     }
 
