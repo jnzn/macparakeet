@@ -4,11 +4,29 @@ import MacParakeetViewModels
 
 struct YouTubeInputPanelView: View {
     @Bindable var viewModel: TranscriptionViewModel
-    var onTranscribe: () -> Void
+    var onTranscribe: (String) -> Void
     var onDismiss: () -> Void
 
+    // Local draft — isolates the panel's editing state from the shared VM urlInput
+    @State private var draft: String
     @FocusState private var isTextFieldFocused: Bool
     @State private var appeared = false
+
+    init(
+        viewModel: TranscriptionViewModel,
+        initialURL: String,
+        onTranscribe: @escaping (String) -> Void,
+        onDismiss: @escaping () -> Void
+    ) {
+        self.viewModel = viewModel
+        self.onTranscribe = onTranscribe
+        self.onDismiss = onDismiss
+        self._draft = State(initialValue: initialURL)
+    }
+
+    private var isValidDraft: Bool {
+        YouTubeURLValidator.isYouTubeURL(draft)
+    }
 
     var body: some View {
         VStack(spacing: DesignSystem.Spacing.md) {
@@ -23,34 +41,40 @@ struct YouTubeInputPanelView: View {
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(DesignSystem.Colors.youtubeRed.opacity(0.7))
                 }
+                .accessibilityHidden(true)
 
                 Text("Transcribe a YouTube video")
                     .font(DesignSystem.Typography.sectionTitle)
+                    .accessibilityAddTraits(.isHeader)
 
                 Spacer()
             }
 
             // URL input row
             HStack(spacing: 8) {
-                Image(systemName: viewModel.isValidURL ? "checkmark.circle.fill" : "link")
+                Image(systemName: isValidDraft ? "checkmark.circle.fill" : "link")
                     .font(.system(size: 14))
-                    .foregroundStyle(viewModel.isValidURL ? DesignSystem.Colors.successGreen : .secondary)
+                    .foregroundStyle(isValidDraft ? DesignSystem.Colors.successGreen : .secondary)
                     .contentTransition(.symbolEffect(.replace))
+                    .accessibilityHidden(true)
 
-                TextField("Paste a YouTube link", text: $viewModel.urlInput)
+                TextField("Paste a YouTube link", text: $draft)
                     .textFieldStyle(.plain)
                     .font(DesignSystem.Typography.body)
                     .focused($isTextFieldFocused)
+                    .accessibilityLabel("YouTube URL")
+                    .accessibilityValue(isValidDraft ? "Valid YouTube URL" : "")
                     .onSubmit {
-                        if viewModel.isValidURL && !viewModel.isTranscribing {
-                            onTranscribe()
+                        if isValidDraft && !viewModel.isTranscribing {
+                            onTranscribe(draft)
                         }
                     }
 
                 Button {
                     if let clip = NSPasteboard.general.string(forType: .string) {
-                        viewModel.urlInput = clip.trimmingCharacters(in: .whitespacesAndNewlines)
+                        draft = clip.trimmingCharacters(in: .whitespacesAndNewlines)
                     }
+                    isTextFieldFocused = true
                 } label: {
                     Text("Paste")
                         .font(DesignSystem.Typography.caption.weight(.semibold))
@@ -74,37 +98,46 @@ struct YouTubeInputPanelView: View {
             .overlay(
                 RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
                     .strokeBorder(
-                        viewModel.isValidURL ? DesignSystem.Colors.successGreen.opacity(0.35) : DesignSystem.Colors.border,
+                        isValidDraft ? DesignSystem.Colors.successGreen.opacity(0.35) : DesignSystem.Colors.border,
                         lineWidth: 0.8
                     )
             )
 
             // Transcribe button (full width)
             Button {
-                onTranscribe()
+                onTranscribe(draft)
             } label: {
                 Label("Transcribe", systemImage: "arrow.right")
                 .font(DesignSystem.Typography.body.weight(.semibold))
-                .foregroundStyle(DesignSystem.Colors.onAccent)
+                .foregroundStyle(
+                    isValidDraft && !viewModel.isTranscribing
+                        ? DesignSystem.Colors.onAccent
+                        : DesignSystem.Colors.textTertiary
+                )
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
                 .background(
                     RoundedRectangle(cornerRadius: DesignSystem.Layout.buttonCornerRadius)
-                        .fill(viewModel.isValidURL && !viewModel.isTranscribing
+                        .fill(isValidDraft && !viewModel.isTranscribing
                               ? DesignSystem.Colors.accent
-                              : DesignSystem.Colors.accent.opacity(0.35))
+                              : DesignSystem.Colors.surfaceElevated)
                 )
             }
             .buttonStyle(.plain)
-            .disabled(!viewModel.isValidURL || viewModel.isTranscribing)
+            .disabled(!isValidDraft || viewModel.isTranscribing)
             .accessibilityLabel("Start transcription")
             .accessibilityHint("Starts transcribing the YouTube link")
 
             // Footer text
             if viewModel.isTranscribing {
-                Text("A transcription is already in progress.")
-                    .font(DesignSystem.Typography.caption)
-                    .foregroundStyle(DesignSystem.Colors.warningAmber)
+                HStack(spacing: 6) {
+                    Image(systemName: "info.circle.fill")
+                        .font(.system(size: 11))
+                        .accessibilityHidden(true)
+                    Text("Wait for the current transcription to finish, or cancel it first.")
+                }
+                .font(DesignSystem.Typography.caption)
+                .foregroundStyle(DesignSystem.Colors.warningAmber)
             } else {
                 Text("Downloads from YouTube, then transcribes entirely on your Mac.")
                     .font(DesignSystem.Typography.caption)
@@ -124,15 +157,12 @@ struct YouTubeInputPanelView: View {
         .shadow(color: .black.opacity(0.3), radius: 20, y: 8)
         .scaleEffect(appeared ? 1.0 : 0.97)
         .opacity(appeared ? 1.0 : 0)
-        .onAppear {
+        .task {
+            try? await Task.sleep(for: .milliseconds(50))
             isTextFieldFocused = true
             withAnimation(.easeOut(duration: 0.15)) {
                 appeared = true
             }
-        }
-        .onKeyPress(.escape) {
-            onDismiss()
-            return .handled
         }
     }
 }
