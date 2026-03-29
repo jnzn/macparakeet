@@ -7,31 +7,39 @@ import MacParakeetViewModels
 /// Unlike DictationOverlayController which uses `.nonactivatingPanel`,
 /// this panel needs keyboard focus for the text field, so it uses
 /// `canBecomeKey = true` with `canBecomeMain = false`.
+///
+/// Lifecycle: AppDelegate owns this controller for the app's lifetime via `lazy var`.
+/// Cleanup happens in `hide()` — no `deinit` needed (and `deinit` is nonisolated
+/// in Swift 6 `@MainActor` classes, so AppKit calls there would be unsafe).
 @MainActor
 final class YouTubeInputPanelController {
     private var panel: NSPanel?
-    private var hostingView: NSHostingView<YouTubeInputPanelView>?
-    private var clickMonitor: Any?
+    private var resignObserver: NSObjectProtocol?
 
-    private unowned let transcriptionViewModel: TranscriptionViewModel
+    private let transcriptionViewModel: TranscriptionViewModel
 
     init(transcriptionViewModel: TranscriptionViewModel) {
         self.transcriptionViewModel = transcriptionViewModel
     }
 
-    deinit {
-        if let monitor = clickMonitor {
-            NSEvent.removeMonitor(monitor)
-        }
-    }
-
     func show() {
         if panel != nil { return }
 
+        // Auto-paste: if clipboard has a valid YouTube URL, use it as initial value
+        var initialURL = ""
+        if let clip = NSPasteboard.general.string(forType: .string)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           YouTubeURLValidator.isYouTubeURL(clip) {
+            initialURL = clip
+        }
+
         let view = YouTubeInputPanelView(
             viewModel: transcriptionViewModel,
-            onTranscribe: { [weak self] in
+            initialURL: initialURL,
+            onTranscribe: { [weak self] url in
                 guard let self else { return }
+                // Push the panel's local draft into the VM right before transcribing
+                self.transcriptionViewModel.urlInput = url
                 self.transcriptionViewModel.transcribeURL()
                 self.hide()
             },
@@ -41,8 +49,9 @@ final class YouTubeInputPanelController {
         )
 
         let hosting = NSHostingView(rootView: view)
-        let panelWidth: CGFloat = 500
-        let panelHeight: CGFloat = 220
+        // Extra padding around the 460pt SwiftUI card for shadow clearance
+        let panelWidth: CGFloat = 540
+        let panelHeight: CGFloat = 280
         hosting.frame = NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight)
 
         let panel = KeyablePanel(
@@ -55,6 +64,7 @@ final class YouTubeInputPanelController {
         panel.backgroundColor = .clear
         panel.hasShadow = false // SwiftUI handles shadow
         panel.level = .floating
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentView = hosting
 
         // Center horizontally, upper third vertically (Spotlight-style)
@@ -65,48 +75,34 @@ final class YouTubeInputPanelController {
             panel.setFrameOrigin(NSPoint(x: x, y: y))
         }
 
-        // Auto-paste: if clipboard has a valid YouTube URL, pre-fill
-        if let clip = NSPasteboard.general.string(forType: .string)?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-           YouTubeURLValidator.isYouTubeURL(clip) {
-            transcriptionViewModel.urlInput = clip
-        }
-
-        panel.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-
         self.panel = panel
-        self.hostingView = hosting
 
-        installClickOutsideMonitor()
+        NSApp.activate()
+        panel.makeKeyAndOrderFront(nil)
+
+        installResignObserver()
     }
 
     func hide() {
-        if let monitor = clickMonitor {
-            NSEvent.removeMonitor(monitor)
-            clickMonitor = nil
+        if let observer = resignObserver {
+            NotificationCenter.default.removeObserver(observer)
+            resignObserver = nil
         }
         panel?.orderOut(nil)
         panel = nil
-        hostingView = nil
-        transcriptionViewModel.urlInput = ""
     }
 
     // MARK: - Private
 
-    private func installClickOutsideMonitor() {
-        // Remove stale monitor if any
-        if let monitor = clickMonitor {
-            NSEvent.removeMonitor(monitor)
-            clickMonitor = nil
-        }
-
-        clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
-            guard let self, let panel = self.panel else { return event }
-            if event.window !== panel {
-                self.hide()
-            }
-            return event
+    /// Dismiss when the panel loses key status — covers click-outside (any app),
+    /// Cmd+Tab, Mission Control, and all other focus-loss scenarios.
+    private func installResignObserver() {
+        resignObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResignKeyNotification,
+            object: panel,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.hide() }
         }
     }
 }
@@ -114,7 +110,13 @@ final class YouTubeInputPanelController {
 // MARK: - Panel Subclass
 
 /// NSPanel that accepts keyboard focus (for text field) but won't become main window.
+/// Overrides `cancelOperation` to dismiss on Escape — more reliable than SwiftUI's
+/// `.onKeyPress(.escape)` when the AppKit field editor is first responder.
 private final class KeyablePanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    override func cancelOperation(_ sender: Any?) {
+        orderOut(nil)
+    }
 }
