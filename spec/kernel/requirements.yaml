@@ -1,0 +1,169 @@
+# MacParakeet Requirements
+# Requirement IDs for traceability between specs, tests, and code.
+# Format: REQ-{area}-{number}: {description}
+#
+# Areas:
+#   DICT  - Dictation (system-wide voice input)
+#   TRANS - File transcription
+#   STT   - Speech-to-text engine
+#   UI    - User interface
+#   DATA  - Database and data model
+#   PIPE  - Text processing pipeline
+#   EXP   - Export formats
+#   YT    - YouTube integration
+#   DIAR  - Speaker diarization
+#   LLM   - LLM provider integration
+#   PLAY  - Video/audio playback
+#   LIB   - Transcription library
+
+# --- v0.1 Core MVP ---
+
+REQ-DICT-001:
+  description: System-wide dictation via configurable hotkey
+  version: v0.1
+  status: implemented
+
+REQ-DICT-002:
+  description: Double-tap for persistent recording, hold for push-to-talk
+  version: v0.1
+  status: implemented
+
+REQ-DICT-003:
+  description: Auto-paste transcribed text with clipboard save/restore
+  version: v0.1
+  status: implemented
+
+REQ-TRANS-001:
+  description: Drag-drop audio/video file transcription
+  version: v0.1
+  status: implemented
+
+REQ-UI-001:
+  description: Compact dark pill overlay with recording timer and waveform
+  version: v0.1
+  status: implemented
+
+REQ-UI-002:
+  description: Persistent idle pill (always-visible, click-to-dictate)
+  version: v0.1
+  status: implemented
+
+REQ-UI-003:
+  description: Menu bar app with main window and sidebar navigation
+  version: v0.1
+  status: implemented
+
+REQ-DATA-001:
+  description: Dictation history with date-grouped search and audio playback
+  version: v0.1
+  status: implemented
+
+REQ-DATA-002:
+  description: SQLite database via GRDB for dictations and transcriptions
+  version: v0.1
+  status: implemented
+
+REQ-STT-001:
+  description: Parakeet TDT 0.6B-v3 via FluidAudio CoreML on ANE
+  version: v0.1
+  status: implemented
+
+REQ-EXP-001:
+  description: Basic export (TXT, Markdown, SRT, VTT, copy to clipboard)
+  version: v0.1
+  status: implemented
+
+# --- v0.2 Clean Pipeline ---
+
+REQ-PIPE-001:
+  description: Deterministic text processing pipeline (filler removal, custom words, snippets)
+  version: v0.2
+  status: implemented
+
+REQ-PIPE-002:
+  description: Custom words and snippets management UI
+  version: v0.2
+  status: implemented
+
+# --- v0.3 YouTube & Export ---
+
+REQ-YT-001:
+  description: YouTube URL transcription via yt-dlp
+  version: v0.3
+  status: implemented
+
+REQ-EXP-002:
+  description: Full export formats (DOCX, PDF, JSON)
+  version: v0.3
+  status: implemented
+
+# --- v0.4 Polish & Launch ---
+
+REQ-DIAR-001:
+  description: Speaker diarization via FluidAudio offline pipeline
+  version: v0.4
+  status: implemented
+
+REQ-DICT-004:
+  description: Custom hotkey support (any single key + chord combos)
+  version: v0.4
+  status: implemented
+
+REQ-LLM-001:
+  description: LLM provider integration (cloud API keys, summary + chat)
+  version: v0.4
+  status: implemented
+
+# --- v0.5 Data & Reliability ---
+
+REQ-DICT-005:
+  description: Private dictation mode (hidden flag, excluded from history)
+  version: v0.5
+  status: implemented
+
+REQ-DATA-003:
+  description: Multi-conversation chat per transcription
+  version: v0.5
+  status: implemented
+
+REQ-YT-002:
+  description: YouTube video metadata (thumbnail, channel name, description)
+  version: v0.5
+  status: implemented
+
+REQ-DATA-004:
+  description: Transcription favorites with library filtering
+  version: v0.5
+  status: implemented
+
+# --- v0.6 Video Player & UI Revamp ---
+
+REQ-PLAY-001:
+  description: HLS streaming for YouTube video playback
+  version: v0.6
+  status: implemented
+
+REQ-PLAY-002:
+  description: Audio scrubber bar for audio-only files
+  version: v0.6
+  status: implemented
+
+REQ-PLAY-003:
+  description: Synced transcript highlighting with clickable timestamp seeking
+  version: v0.6
+  status: implemented
+
+REQ-UI-004:
+  description: Split-pane detail view (video left, content right)
+  version: v0.6
+  status: implemented
+
+REQ-LIB-001:
+  description: Transcription library with thumbnail grid, filters, search
+  version: v0.6
+  status: implemented
+
+REQ-UI-005:
+  description: Two side-by-side input cards on home page
+  version: v0.6
+  status: implemented

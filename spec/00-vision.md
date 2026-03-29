@@ -122,7 +122,7 @@ WisprFlow charges $144-180/year. After 3-4 months of MacParakeet, you have saved
 - **Not a note-taking app** -- It puts text where your cursor is. Your note app is your note app.
 - **Not a cloud service** -- No servers, no accounts, no sync. Local only.
 - **Not an enterprise product** -- Single-user, single-Mac. No admin console, no team management (initially).
-- **Not a mobile app** -- macOS only. Apple Silicon required for Parakeet/MLX performance.
+- **Not a mobile app** -- macOS only. Apple Silicon required for Parakeet STT via FluidAudio CoreML on the Neural Engine.
 - **Not a transcription editor** -- Drop a file, get text. We do not build a full editing environment around transcripts.
 
 ---
