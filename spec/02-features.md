@@ -90,7 +90,7 @@ See [00-vision.md](./00-vision.md) for positioning and market context.
 
 ### F0: First-Run Onboarding
 
-**What:** A premium first-run setup window that guides users through permissions, hotkey basics, and local model setup so core dictation plus AI features are ready immediately.
+**What:** A premium first-run setup window that guides users through permissions, hotkey basics, and local model setup so core dictation and file transcription are ready immediately.
 
 **Goals:**
 - Reduce first-run friction (no mysterious permission failures).
