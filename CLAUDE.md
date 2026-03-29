@@ -49,7 +49,7 @@ A **fast, private, local-first voice app** for macOS with two co-equal modes: sy
 | Audio | AVAudioEngine + Core Audio | Mic capture for dictation; FFmpeg (bundled) for video file conversion |
 | YouTube | yt-dlp | Standalone macOS binary, weekly non-blocking auto-update via `--update` |
 | Auto-Update | Sparkle 2 | In-app updates via EdDSA-signed appcast (non-App Store) |
-| Licensing | LemonSqueezy | License key activation, validation API |
+| Licensing | LemonSqueezy | Historical — kept as $0 product for download tracking (app is free/GPL-3.0) |
 
 ## Product Context
 
@@ -71,8 +71,8 @@ These decisions were made during spec review and are locked:
 | Empty transcript UX | Silently dismiss | Short hold-to-talk with no speech = user changed their mind. No error card. |
 | Audio retention | On/off toggle | Simpler than 3-tier (all/7d/never). Users who care about storage can manually delete. |
 | Processing mode scope | Global default only | Set once in Vocabulary, applies to all dictations. No per-dictation picker on overlay. |
-| Trial start timing | On onboarding completion | 7-day clock starts after permissions are granted, not during setup. |
-| License grace period | Unlimited | Validate once on activation, never expire locally. One-time purchase = yours forever. |
+| Trial start timing | On onboarding completion | 7-day clock starts after permissions are granted, not during setup. (Historical — app is now free/GPL-3.0) |
+| License grace period | Unlimited | Validate once on activation, never expire locally. (Historical — app is now free/GPL-3.0) |
 | Context awareness | Aspirational future | No version commitment. Don't promise what doesn't exist. Build post-launch. |
 | Sound design | Skip for v1.0 | Ship without custom sounds. Add later when there's time to get them right. |
 
@@ -83,8 +83,8 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 | ADR | Decision | File |
 |-----|----------|------|
 | ADR-001 | Parakeet TDT 0.6B-v3 as primary STT | `spec/adr/001-parakeet-stt.md` |
-| ADR-002 | Local-first processing (amended: opt-in LLM providers) | `spec/adr/002-local-only.md` |
-| ADR-003 | One-time purchase pricing ($49) | `spec/adr/003-one-time-purchase.md` |
+| ADR-002 | Local-first processing (amended: opt-in LLM providers, telemetry) | `spec/adr/002-local-only.md` |
+| ADR-003 | One-time purchase pricing (historical — now free/GPL-3.0) | `spec/adr/003-one-time-purchase.md` |
 | ADR-004 | Deterministic text processing pipeline | `spec/adr/004-deterministic-pipeline.md` |
 | ADR-005 | First-run onboarding flow | `spec/adr/005-onboarding-first-run.md` |
 | ADR-006 | Trial + license key activation | `spec/adr/006-trial-and-license-activation.md` |
@@ -97,7 +97,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 
 ## Current Phase
 
-**v0.4 Complete** -- ~141 source files, ~70 test files, 963 tests passing (`swift test` green)
+**v0.6 Complete** -- ~143 source files, ~70 test files, 976 tests passing (`swift test` green)
 
 ### v0.1 MVP (Implemented)
 - [x] System-wide dictation: Configurable hotkey (Fn default), double-tap (persistent) + hold-to-talk
@@ -126,7 +126,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 - [x] Export formats (DOCX, PDF, JSON)
 - [x] Drag-and-drop enhancements (menu bar icon support)
 
-### v0.4 Polish + Launch (In Progress)
+### v0.4 Polish + Launch (Implemented)
 - [x] Speaker diarization CLI preview (FluidAudio offline pipeline, ADR-010)
 - [x] Custom hotkey support (any single key + chord combos, ADR-009)
 - [x] Sparkle auto-updates
@@ -140,6 +140,25 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 - [x] Speaker diarization GUI
 - [x] Non-blocking transcription progress (bottom bar UX)
 - [x] Distribution: Notarized DMG via macparakeet.com + LemonSqueezy, Sparkle auto-updates
+
+### v0.5 Data & Reliability (Implemented)
+- [x] Private dictation mode (hidden flag, excluded from history)
+- [x] Word count caching for voice stats dashboard
+- [x] Multi-conversation chat per transcription
+- [x] YouTube video metadata (thumbnail, channel name, description)
+- [x] Transcription favorites with library filtering
+- [x] FTS5 removal (search uses LIKE)
+- [x] Open-source release (GPL-3.0)
+
+### v0.6 Video Player & UI Revamp (Implemented)
+- [x] HLS streaming for YouTube video playback (yt-dlp + AVPlayer)
+- [x] Thumbnail cache service (YouTube download + FFmpeg frame extraction)
+- [x] MediaPlayerViewModel with 10Hz time sync
+- [x] Audio scrubber bar for audio-only files
+- [x] Split-pane detail view (video left, content right)
+- [x] Synced transcript highlighting + clickable timestamp seeking
+- [x] Transcription library view with thumbnail grid, filters, search
+- [x] Two side-by-side input cards on home page
 
 ## Key Patterns
 
@@ -239,8 +258,10 @@ Menu Bar Icon (always visible)
 View files organized by feature in `Sources/MacParakeet/Views/`:
 - `Transcription/` -- Main window, drop zone, transcript display, export
 - `Dictation/` -- Overlay, waveform, recording state
+- `Discover/` -- Discover sidebar, curated content cards
 - `Vocabulary/` -- Processing mode, custom words, text snippets
 - `Feedback/` -- Feedback form, category selection, community link
+- `Onboarding/` -- First-run onboarding flow
 - `Settings/` -- License, dictation prefs, storage, permissions
 - `History/` -- Dictation history, search, playback
 - `Components/` -- Reusable components (status badge, waveform view)

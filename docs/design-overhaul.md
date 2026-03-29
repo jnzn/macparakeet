@@ -23,7 +23,7 @@ These were discussed and finalized. Don't revisit.
 
 MacParakeet currently has a **Pro/Technical** aesthetic: dark-only theme, low-opacity text (`.tertiary`, `.quaternary`), dense layouts, small type, dashed borders, sacred geometry as cold mathematical ornament. This is the visual language of Xcode, Logic Pro, and Terminal.
 
-Our customer at $49 one-time purchase is a **journalist, student, podcaster, content creator, or knowledge worker**. The current UI says "this is a tool for engineers" when it should say "this is magic, and anyone can use it."
+Our customer is a **journalist, student, podcaster, content creator, or knowledge worker**. The current UI says "this is a tool for engineers" when it should say "this is magic, and anyone can use it."
 
 ### Current UI Audit
 

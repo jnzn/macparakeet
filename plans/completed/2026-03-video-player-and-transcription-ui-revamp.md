@@ -1,6 +1,6 @@
 # Video Player & Transcription UI Revamp
 
-> Status: **ACTIVE**
+> Status: **COMPLETED** - 2026-03-29
 
 ## Overview
 
@@ -683,42 +683,50 @@ extension DesignSystem.Layout {
 
 ## Acceptance Criteria
 
-### Phase 1
-- [ ] YouTube transcriptions store channelName and thumbnailURL
-- [ ] Existing transcriptions unaffected by migration (all fields optional)
-- [ ] Thumbnails cached locally and load from cache on repeat views
-- [ ] `swift test` passes
+### Phase 1 (Complete)
+- [x] YouTube transcriptions store channelName and thumbnailURL
+- [x] Existing transcriptions unaffected by migration (all fields optional)
+- [x] Thumbnails cached locally and load from cache on repeat views
+- [x] `swift test` passes
 
-### Phase 2
-- [ ] AVPlayer streams YouTube video via HLS URL
-- [ ] AVPlayer plays local video files directly
-- [ ] Audio scrubber bar renders for audio-only files (thin horizontal bar, ~44px)
-- [ ] Playback mode auto-detected (video/audio/none) based on source type
-- [ ] Player shows loading/ready/error/offline states
-- [ ] Play/pause, seek, and scrub bar functional in both modes
-- [ ] Stream URL cached per session, re-extracted on expiry
-- [ ] `swift test` passes
+### Phase 2 (Complete)
+- [x] AVPlayer streams YouTube video via HLS URL
+- [x] AVPlayer plays local video files directly
+- [x] Audio scrubber bar renders for audio-only files (thin horizontal bar, ~44px)
+- [x] Playback mode auto-detected (video/audio/none) based on source type
+- [x] Player shows loading/ready/error/offline states
+- [x] Play/pause, seek, and scrub bar functional in both modes
+- [x] Stream URL cached per session, re-extracted on expiry
+- [x] `swift test` passes
 
-### Phase 3
-- [ ] YouTube transcription detail shows split-pane (video left, tabs right)
-- [ ] Local video file transcription shows split-pane (video left, tabs right)
-- [ ] Local audio file transcription shows scrubber bar + full-width content
-- [ ] Clicking timestamp in transcript seeks player (works in both modes)
-- [ ] Active transcript segment highlighted during playback (works in both modes)
-- [ ] Video panel collapsible (full → mini → hidden; hidden = audio-mode layout)
-- [ ] `swift test` passes
+### Phase 3 (Complete)
+- [x] YouTube transcription detail shows split-pane (video left, tabs right)
+- [x] Local video file transcription shows split-pane (video left, tabs right)
+- [x] Local audio file transcription shows scrubber bar + full-width content
+- [x] Clicking timestamp in transcript seeks player (works in both modes)
+- [x] Active transcript segment highlighted during playback (works in both modes)
+- [x] Video panel collapsible (full → mini → hidden; hidden = audio-mode layout)
+- [x] `swift test` passes
+- [ ] Chat tab timestamp chips (deferred — plan said "best-effort", low priority)
 
-### Phase 4
-- [ ] Home page shows two input cards side-by-side
-- [ ] Recent transcriptions displayed as thumbnail grid
-- [ ] YouTube cards show cached thumbnails
-- [ ] Audio-only cards show placeholder artwork
-- [ ] "View All" link navigates to Library
-- [ ] `swift test` passes
+### Phase 4 (Mostly Complete)
+- [x] Home page shows two input cards side-by-side
+- [ ] Recent transcriptions displayed as thumbnail grid on home page (grid built, lives in Library view only)
+- [x] YouTube cards show cached thumbnails
+- [x] Audio-only cards show placeholder artwork (icon-based, not SonicMandalaView)
+- [x] "View All" navigates to Library (via sidebar)
+- [x] `swift test` passes
 
-### Phase 5
-- [ ] Library view shows all transcriptions in grid
-- [ ] Filter by All/YouTube/Local/Favorites works
-- [ ] Search filters by title and transcript content
-- [ ] Favorite toggle persists to database
-- [ ] `swift test` passes
+### Phase 5 (Complete)
+- [x] Library view shows all transcriptions in grid
+- [x] Filter by All/YouTube/Local/Favorites works
+- [x] Search filters by title and transcript content
+- [x] Favorite toggle persists to database
+- [x] `swift test` passes
+- [ ] Star overlay on thumbnail cards (favorites work via context menu only)
+
+## Deferred Items
+- Chat tab timestamp chips (best-effort, low priority)
+- "Recently Transcribed" thumbnail grid on home page (content lives in Library sidebar instead)
+- SonicMandalaView-based placeholder art for audio cards (using icon placeholder instead)
+- Star icon overlay on thumbnail cards (toggle works via context menu)

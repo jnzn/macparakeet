@@ -71,7 +71,7 @@ Features are scoped to transcript-level actions. No dictation-time LLM processin
 
 ### Quality over locality for text intelligence
 
-Local 8B models produce mediocre summaries. Cloud models (Claude Sonnet, GPT-4o) produce excellent ones. For a $49 product, users expect quality. The cost of cloud API calls is pennies per transcript — far cheaper than the subscription pricing that would fund a hosted backend.
+Local 8B models produce mediocre summaries. Cloud models (Claude Sonnet, GPT-4o) produce excellent ones. Users expect quality. The cost of cloud API calls is pennies per transcript — far cheaper than the subscription pricing that would fund a hosted backend.
 
 ### Zero resource impact
 

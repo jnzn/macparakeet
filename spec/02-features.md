@@ -64,6 +64,16 @@ See [00-vision.md](./00-vision.md) for positioning and market context.
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
+│  v0.6 - "Video Player & UI Revamp"                               │
+│  "Embedded playback, library grid, polished detail view"        │
+├─────────────────────────────────────────────────────────────────┤
+│  • YouTube HLS streaming + local video/audio playback            │
+│  • Split-pane detail view with synced transcript highlighting    │
+│  • Transcription library with thumbnail grid, filters, search   │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
 │  Future - "Platform"                                             │
 ├─────────────────────────────────────────────────────────────────┤
 │  • iOS companion                                                 │
@@ -1317,7 +1327,7 @@ new scheduling architecture.
 **Distribution pipeline (implemented):**
 - Notarized DMG signed with Developer ID
 - Direct download from downloads.macparakeet.com (Cloudflare R2)
-- LemonSqueezy license key activation ($49 one-time)
+- LemonSqueezy product page (free, $0 — originally $49 one-time, now GPL-3.0)
 - Sparkle 2 auto-updates via EdDSA-signed appcast
 - Privacy policy live at macparakeet.com/privacy
 
@@ -1385,27 +1395,83 @@ Internal data model improvements, reliability fixes, and open-source release. No
 
 ---
 
+## v0.6 Features (Video Player & UI Revamp)
+
+> Status: **IMPLEMENTED**
+
+Embedded video/audio playback, split-pane detail view, synced transcript highlighting, and a library grid with thumbnails, filters, and search.
+
+### F24: Video & Audio Playback
+
+> Status: **IMPLEMENTED**
+
+**What:** Embedded playback for YouTube videos (HLS streaming) and local audio/video files. Split-pane layout with video on the left and tabbed content on the right.
+
+**Acceptance criteria:**
+- [x] YouTube videos play via HLS streaming (yt-dlp URL extraction + AVPlayer)
+- [x] Local video files play via AVPlayer
+- [x] Audio-only files show a 44px horizontal scrubber bar instead of video
+- [x] Playback mode auto-detected (video/audio/none)
+- [x] MediaPlayerViewModel with play/pause, seek, 10Hz time sync
+- [x] Video panel collapsible (full → hidden)
+
+### F25: Synced Transcript & Timestamps
+
+> Status: **IMPLEMENTED**
+
+**What:** Transcript highlighting synced to playback position. Click any timestamp to seek.
+
+**Acceptance criteria:**
+- [x] Active word/segment highlighted during playback (binary search for current time)
+- [x] Auto-scroll follows playback position
+- [x] Clicking a timestamp in the transcript seeks the player to that position
+
+### F26: Transcription Library
+
+> Status: **IMPLEMENTED**
+
+**What:** Grid view of all transcriptions with thumbnail cards, filters, search, and sorting.
+
+**Acceptance criteria:**
+- [x] Thumbnail grid layout with cards (YouTube thumbnails downloaded, local video frames extracted via FFmpeg)
+- [x] Filter bar: All / YouTube / Local / Favorites
+- [x] Search across transcription titles and content
+- [x] Sort by date (newest/oldest)
+
+### F27: Home Page Redesign
+
+> Status: **IMPLEMENTED**
+
+**What:** Two side-by-side input cards on the home page: YouTube URL input and local file drop zone.
+
+**Acceptance criteria:**
+- [x] YouTube input card with URL field and transcribe button
+- [x] Local file card with drag-and-drop zone
+- [x] Both cards equally prominent (co-equal modes)
+
+---
+
 ## Future Features (Post-Launch)
 
-### F24: iOS Companion App
+### F28: iOS Companion App
 Share transcripts between Mac and iPhone. Capture in-person conversations on iPhone.
 
-### F25: Translation
+### F29: Translation
 Translate transcribed text to other languages. Implementation approach TBD (local model or API).
 
-### F26: API / Shortcuts Integration
+### F30: API / Shortcuts Integration
 Expose transcription as a macOS Shortcut action. Enable automation: "When I receive a voice memo, transcribe it."
 
-### F27: Team Vocabulary Sharing
+### F31: Team Vocabulary Sharing
 Export/import custom word lists and snippet packs. Share domain-specific vocabulary with team members.
 
-### F28: Vibe Coding Integrations
+### F32: Vibe Coding Integrations
 Deep integration with code editors:
 - **Cursor / VS Code:** Dictate code with context-aware formatting
 - **Xcode:** Swift-specific dictation mode
 - **Terminal:** Voice commands for git, build, test
 
-### F29: Context Awareness
+### F33: Context Awareness
 Read surrounding text from the active app via macOS Accessibility APIs (AXUIElement) to produce better transcriptions. Knows "React" in a code editor, "react" in a therapy note. All processing local -- no screen content ever leaves device.
 
 ---
@@ -1557,30 +1623,21 @@ FluidAudio model download → Audio capture (AVAudioEngine)
 | Meeting recording (system audio) | That's Oatmeal, not MacParakeet |
 | Calendar integration | Meeting app territory |
 | Entity extraction / memory | Meeting app territory |
-| Cloud processing | Privacy is the brand -- no OpenAI, no Anthropic |
+| Cloud processing | Privacy is the brand -- opt-in LLM providers only (ADR-011) |
 | Windows / Linux | macOS-only simplifies everything, Apple Silicon required |
 | Collaborative / multi-user | Single-user product |
-| Subscription pricing | One-time purchase is the differentiator |
+| Subscription pricing | Free and open-source (GPL-3.0) — no monetization |
 | Realtime streaming transcription | File-based and dictation-based only |
-| Video playback | We transcribe audio, not play video |
+| ~~Video playback~~ | ~~We transcribe audio, not play video~~ (implemented in v0.6) |
 
 ---
 
-## Trial vs Pro
+## Licensing
 
-| Tier | What’s Included |
-|------|------------------|
-| **Trial (7 days)** | Full feature access: dictation, file transcription, YouTube transcription, clean pipeline, custom words/snippets, exports. |
-| **Pro ($49)** | Unlimited access after trial ends. |
+> Status: **HISTORICAL** — MacParakeet is now free and open-source (GPL-3.0) as of v0.5.
 
-**Implementation:**
-- Trial is time-based (7 days from first launch).
-- No account required.
-- Pro is unlocked via license activation (one-time purchase).
-- License stored in Keychain (survives reinstall)
-- No "nag screens" -- free tier is genuinely useful, Pro is genuinely better
+The trial/Pro tier system (ADR-006) is no longer enforced. LemonSqueezy is kept as a $0 product for download tracking. License activation code remains in the codebase but all features are unlocked.
 
 ---
 
 *See [03-architecture.md](./03-architecture.md) for how these features are implemented technically.*
-*See [00-vision.md](./00-vision.md) for market positioning and pricing strategy.*
