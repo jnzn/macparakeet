@@ -301,6 +301,12 @@ struct TranscribeView: View {
                         Text(viewModel.progressHeadline)
                             .font(DesignSystem.Typography.bodySmall)
                             .foregroundStyle(.secondary)
+
+                        if let subline = viewModel.progressSubline {
+                            Text(subline)
+                                .font(DesignSystem.Typography.caption)
+                                .foregroundStyle(.tertiary)
+                        }
                     }
 
                     Spacer()
