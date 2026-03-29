@@ -63,6 +63,7 @@ struct YouTubeInputPanelView: View {
                         )
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Paste URL from clipboard")
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
@@ -82,9 +83,7 @@ struct YouTubeInputPanelView: View {
             Button {
                 onTranscribe()
             } label: {
-                HStack(spacing: 6) {
-                    Label("Transcribe", systemImage: "arrow.right")
-                }
+                Label("Transcribe", systemImage: "arrow.right")
                 .font(DesignSystem.Typography.body.weight(.semibold))
                 .foregroundStyle(DesignSystem.Colors.onAccent)
                 .frame(maxWidth: .infinity)
@@ -98,6 +97,8 @@ struct YouTubeInputPanelView: View {
             }
             .buttonStyle(.plain)
             .disabled(!viewModel.isValidURL || viewModel.isTranscribing)
+            .accessibilityLabel("Start transcription")
+            .accessibilityHint("Starts transcribing the YouTube link")
 
             // Footer text
             if viewModel.isTranscribing {

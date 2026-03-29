@@ -19,11 +19,14 @@ final class YouTubeInputPanelController {
         self.transcriptionViewModel = transcriptionViewModel
     }
 
-    func show() {
-        guard panel == nil else {
-            panel?.makeKeyAndOrderFront(nil)
-            return
+    deinit {
+        if let monitor = clickMonitor {
+            NSEvent.removeMonitor(monitor)
         }
+    }
+
+    func show() {
+        if panel != nil { return }
 
         let view = YouTubeInputPanelView(
             viewModel: transcriptionViewModel,
