@@ -42,6 +42,7 @@ public final class TranscriptionViewModel {
     public private(set) var sourceKind: SourceKind = .localFile
     public private(set) var progressPhase: ProgressPhase = .preparing
     public private(set) var progressHeadline: String = "Preparing transcription pipeline"
+    public private(set) var progressSubline: String? = nil
     public var errorMessage: String?
     public private(set) var transcribingFileName: String = ""
     public var isDragging = false
@@ -344,6 +345,7 @@ public final class TranscriptionViewModel {
         transcriptionProgress = nil
         progressPhase = .preparing
         progressHeadline = Self.headline(for: .preparing)
+        progressSubline = nil
         errorMessage = nil
         resetSummaryState()
         selectedTab = .transcript
@@ -357,6 +359,7 @@ public final class TranscriptionViewModel {
         transcribingFileName = ""
         progressPhase = .preparing
         progressHeadline = Self.headline(for: .preparing)
+        progressSubline = nil
     }
 
     private func updateProgress(with progress: TranscriptionProgress, taskID: UUID? = nil) {
@@ -368,6 +371,7 @@ public final class TranscriptionViewModel {
         self.transcriptionProgress = progress.fraction
         self.progressPhase = phase
         self.progressHeadline = Self.headline(for: phase)
+        self.progressSubline = Self.subline(for: phase, sourceKind: sourceKind)
     }
 
     private static func mapPhase(from progress: TranscriptionProgress) -> ProgressPhase {
@@ -406,9 +410,24 @@ public final class TranscriptionViewModel {
         case .transcribing:
             return "Running speech recognition"
         case .identifyingSpeakers:
-            return "Identifying speakers..."
+            return "Identifying speakers"
         case .finalizing:
             return "Finalizing transcript"
+        }
+    }
+
+    private static func subline(for phase: ProgressPhase, sourceKind: SourceKind) -> String? {
+        switch phase {
+        case .downloading:
+            return sourceKind == .youtubeURL
+                ? "Longer videos take more time to fetch"
+                : nil
+        case .transcribing:
+            return "Runs entirely on-device using the Neural Engine"
+        case .identifyingSpeakers:
+            return "Adds ~30\u{2013}60s per hour of audio. Labels are approximate \u{2014} click to rename."
+        default:
+            return nil
         }
     }
 

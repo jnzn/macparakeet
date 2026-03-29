@@ -21,6 +21,8 @@ struct TranscriptResultView: View {
     var onRetranscribe: ((Transcription) -> Void)?
 
     @State private var backHovered = false
+    @State private var headerExpanded = false
+    @State private var speakerOverviewExpanded = false
     @State private var copied = false
     @State private var summaryCopied = false
     @State private var copiedMessageId: UUID?
@@ -86,6 +88,8 @@ struct TranscriptResultView: View {
                 }
             }
             rebuildSegmentCache()
+            headerExpanded = false
+            speakerOverviewExpanded = false
             editingSpeakerId = nil
             editingSpeakerLabel = ""
             showConversationPopover = false
@@ -355,17 +359,18 @@ struct TranscriptResultView: View {
     }
 
     private var resultHeaderCard: some View {
-        VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
-            HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
+        VStack(alignment: .leading, spacing: 0) {
+            // Always-visible compact row: back button + title + metadata + mandala + expand toggle
+            HStack(alignment: .center, spacing: DesignSystem.Spacing.sm) {
                 if let onBack {
                     Button(action: onBack) {
                         Image(systemName: "chevron.left")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(backHovered ? DesignSystem.Colors.textPrimary : DesignSystem.Colors.textSecondary)
-                            .frame(width: 34, height: 34)
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(backHovered ? DesignSystem.Colors.accent : DesignSystem.Colors.textPrimary)
+                            .frame(width: 36, height: 36)
                             .background(
                                 Circle()
-                                    .fill(backHovered ? DesignSystem.Colors.surfaceElevated : DesignSystem.Colors.surface)
+                                    .fill(backHovered ? DesignSystem.Colors.accent.opacity(0.12) : DesignSystem.Colors.surfaceElevated)
                             )
                     }
                     .buttonStyle(.plain)
@@ -377,28 +382,56 @@ struct TranscriptResultView: View {
                     .accessibilityLabel("Back")
                 }
 
-                VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
-                    HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(transcription.fileName)
-                                .font(DesignSystem.Typography.pageTitle)
-                                .foregroundStyle(DesignSystem.Colors.textPrimary)
-                                .lineLimit(3)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(transcription.fileName)
+                        .font(headerExpanded ? DesignSystem.Typography.pageTitle : DesignSystem.Typography.sectionTitle)
+                        .foregroundStyle(DesignSystem.Colors.textPrimary)
+                        .lineLimit(headerExpanded ? 3 : 1)
 
-                            Text("Transcript ready for review, summary, and chat.")
-                                .font(DesignSystem.Typography.bodySmall)
-                                .foregroundStyle(DesignSystem.Colors.textSecondary)
+                    if !headerExpanded {
+                        // Inline metadata in collapsed mode
+                        HStack(spacing: 6) {
+                            metadataChip(
+                                icon: transcription.sourceURL != nil ? "play.rectangle.fill" : "waveform",
+                                text: transcription.sourceURL != nil ? "YouTube" : "Local",
+                                tint: transcription.sourceURL != nil ? DesignSystem.Colors.youtubeRed : DesignSystem.Colors.accent
+                            )
+
+                            if let durationMs = transcription.durationMs {
+                                metadataChip(icon: "clock", text: durationMs.formattedDuration, tint: DesignSystem.Colors.textSecondary)
+                            }
+
+                            if transcriptWordCount > 0 {
+                                metadataChip(icon: "text.word.spacing", text: "\(transcriptWordCount.formatted()) words", tint: DesignSystem.Colors.textSecondary)
+                            }
+
+                            if speakerCountValue > 0 {
+                                metadataChip(icon: "person.2.fill", text: "\(speakerCountValue) speaker\(speakerCountValue == 1 ? "" : "s")", tint: DesignSystem.Colors.textSecondary)
+                            }
                         }
-
-                        Spacer(minLength: DesignSystem.Spacing.md)
-
-                        SonicMandalaView(
-                            data: mandalaData,
-                            size: 64,
-                            style: .fullColor
-                        )
                     }
+                }
 
+                Spacer(minLength: DesignSystem.Spacing.sm)
+
+                SonicMandalaView(
+                    data: mandalaData,
+                    size: headerExpanded ? 56 : 40,
+                    style: .fullColor
+                )
+
+                // Expand/collapse chevron
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(DesignSystem.Colors.textTertiary)
+                    .rotationEffect(.degrees(headerExpanded ? 180 : 0))
+            }
+            .padding(.horizontal, DesignSystem.Spacing.md)
+            .padding(.vertical, DesignSystem.Spacing.sm)
+
+            // Expanded details section
+            if headerExpanded {
+                VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
                     HStack(spacing: DesignSystem.Spacing.sm) {
                         metadataChip(
                             icon: transcription.sourceURL != nil ? "play.rectangle.fill" : "waveform",
@@ -407,27 +440,15 @@ struct TranscriptResultView: View {
                         )
 
                         if let durationMs = transcription.durationMs {
-                            metadataChip(
-                                icon: "clock",
-                                text: durationMs.formattedDuration,
-                                tint: DesignSystem.Colors.textSecondary
-                            )
+                            metadataChip(icon: "clock", text: durationMs.formattedDuration, tint: DesignSystem.Colors.textSecondary)
                         }
 
                         if transcriptWordCount > 0 {
-                            metadataChip(
-                                icon: "text.word.spacing",
-                                text: "\(transcriptWordCount.formatted()) words",
-                                tint: DesignSystem.Colors.textSecondary
-                            )
+                            metadataChip(icon: "text.word.spacing", text: "\(transcriptWordCount.formatted()) words", tint: DesignSystem.Colors.textSecondary)
                         }
 
                         if speakerCountValue > 0 {
-                            metadataChip(
-                                icon: "person.2.fill",
-                                text: "\(speakerCountValue) speaker\(speakerCountValue == 1 ? "" : "s")",
-                                tint: DesignSystem.Colors.textSecondary
-                            )
+                            metadataChip(icon: "person.2.fill", text: "\(speakerCountValue) speaker\(speakerCountValue == 1 ? "" : "s")", tint: DesignSystem.Colors.textSecondary)
                         }
                     }
 
@@ -464,9 +485,18 @@ struct TranscriptResultView: View {
                         }
                     }
                 }
+                .padding(.horizontal, DesignSystem.Spacing.md)
+                .padding(.bottom, DesignSystem.Spacing.sm)
+                .padding(.leading, onBack != nil ? 36 + DesignSystem.Spacing.sm : 0)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .padding(DesignSystem.Spacing.lg)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                headerExpanded.toggle()
+            }
+        }
         .background(
             RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
                 .fill(DesignSystem.Colors.cardBackground)
@@ -1314,10 +1344,38 @@ struct TranscriptResultView: View {
         )
 
         VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
-            Text("Speaker overview")
-                .font(DesignSystem.Typography.body.weight(.semibold))
-                .foregroundStyle(DesignSystem.Colors.textPrimary)
+            // Collapsible header row
+            HStack {
+                Text("Speaker overview")
+                    .font(DesignSystem.Typography.body.weight(.semibold))
+                    .foregroundStyle(DesignSystem.Colors.textPrimary)
 
+                if !speakerOverviewExpanded {
+                    // Compact inline speaker dots when collapsed
+                    HStack(spacing: 4) {
+                        ForEach(speakers.prefix(6), id: \.id) { speaker in
+                            Circle()
+                                .fill(colorMap[speaker.id] ?? DesignSystem.Colors.textTertiary)
+                                .frame(width: 8, height: 8)
+                        }
+                    }
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(DesignSystem.Colors.textTertiary)
+                    .rotationEffect(.degrees(speakerOverviewExpanded ? 180 : 0))
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    speakerOverviewExpanded.toggle()
+                }
+            }
+
+            if speakerOverviewExpanded {
             ForEach(speakers, id: \.id) { speaker in
                 let stats = speakerStats[speaker.id]
                 HStack(spacing: DesignSystem.Spacing.md) {
@@ -1344,6 +1402,10 @@ struct TranscriptResultView: View {
                         .fill(DesignSystem.Colors.surfaceElevated.opacity(0.45))
                 )
             }
+            Text("Speaker labels are approximate. Click a name to rename.")
+                .font(DesignSystem.Typography.caption)
+                .foregroundStyle(DesignSystem.Colors.textTertiary)
+            } // end if speakerOverviewExpanded
         }
         .padding(DesignSystem.Spacing.md)
         .background(
