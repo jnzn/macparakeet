@@ -1,8 +1,9 @@
 # ADR-003: One-Time Purchase Pricing Model
 
-> Status: **HISTORICAL** - Pricing decision remains current; entitlement/trial mechanics are superseded by ADR-006.
+> Status: **HISTORICAL** - Superseded by open-source release (GPL-3.0) in v0.5. MacParakeet is now free.
 > Date: 2026-02-08
-> Note: References to "command mode" and "LLM modes" in pricing rationale are historical — LLM support removed 2026-02-23. Pricing tiers remain valid; feature differentiation now centers on unlimited usage, export formats, custom words, and text snippets.
+> Amended: 2026-03-24 — MacParakeet went free and open-source (GPL-3.0). LemonSqueezy kept as $0 product for download tracking. The $49 pricing model below is historical context only.
+> Note: References to "command mode" and "LLM modes" in pricing rationale are historical — LLM support removed 2026-02-23.
 
 ## Context
 

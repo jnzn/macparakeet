@@ -31,7 +31,7 @@ These decisions are final. Do not second-guess them.
 | Local STT | Parakeet TDT 0.6B-v3 via FluidAudio CoreML/ANE | 155x realtime, ~2.5% WER, fully local, ~66 MB working RAM |
 | Database | SQLite via GRDB | Single file, embedded, zero config |
 | Platform | macOS 14.2+ (Apple Silicon only) | FluidAudio requires Apple Silicon; Swift 6.0 |
-| Business model | One-time purchase ($49) | Key differentiator vs WisprFlow ($144-180/year subscription) |
+| Business model | Free and open-source (GPL-3.0) | Originally $49 one-time (ADR-003), went free with open-source release in v0.5 |
 
 ## Architecture Decision Records (ADRs)
 
@@ -40,7 +40,7 @@ All ADRs live in `spec/adr/`. These are locked -- they record decisions already 
 | ADR | Decision |
 |-----|----------|
 | [ADR-001](adr/001-parakeet-stt.md) | Parakeet TDT 0.6B-v3 as primary STT engine |
-| [ADR-002](adr/002-local-only.md) | No cloud processing (100% local) |
+| [ADR-002](adr/002-local-only.md) | Local-first processing (amended: opt-in LLM providers, telemetry) |
 | [ADR-003](adr/003-one-time-purchase.md) | One-time purchase pricing ($49) |
 | [ADR-004](adr/004-deterministic-pipeline.md) | Deterministic text processing pipeline |
 | [ADR-005](adr/005-onboarding-first-run.md) | First-run onboarding flow |
@@ -61,6 +61,7 @@ All ADRs live in `spec/adr/`. These are locked -- they record decisions already 
 | v0.3 | YouTube & Export | YouTube transcription, export formats | **Implemented** |
 | v0.4 | Polish & Launch | Diarization, custom hotkey, non-blocking progress, direct distribution | **Implemented** |
 | v0.5 | Data & Reliability | Private dictation, video metadata, multi-conversation chat, FTS5 cleanup, favorites | **Implemented** |
+| v0.6 | Video Player & UI Revamp | Embedded video playback, split-pane detail view, library grid, thumbnail cards | **Implemented** |
 
 ## Version Progress
 
@@ -119,6 +120,24 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 - [x] Transcription favorites with library filtering
 - [x] FTS5 removal (unused search infrastructure dropped, search uses LIKE)
 - [x] Open-source release (GPL-3.0)
+
+### v0.6 Video Player & UI Revamp (Implemented)
+
+- [x] YouTube video metadata expansion (thumbnailURL, channelName, videoDescription)
+- [x] Thumbnail cache service (download YouTube thumbnails, FFmpeg frame extraction for local video)
+- [x] HLS streaming for YouTube video playback (yt-dlp URL extraction + AVPlayer)
+- [x] AVPlayer SwiftUI wrapper with subtitle overlay
+- [x] MediaPlayerViewModel (state machine, 10Hz time sync, seek, play/pause)
+- [x] Audio scrubber bar for audio-only files (44px horizontal bar)
+- [x] Playback mode auto-detection (video/audio/none)
+- [x] Split-pane detail view (video 40% left, tabbed content 60% right)
+- [x] Synced transcript highlighting during playback (binary search, auto-scroll)
+- [x] Clickable timestamp seeking in transcript tab
+- [x] Video panel collapse (full → hidden)
+- [x] Two side-by-side input cards on home page (YouTube + Local File)
+- [x] Transcription library view with thumbnail grid
+- [x] Library filter bar (All/YouTube/Local/Favorites)
+- [x] Library search and sort
 
 ## For AI Coding Assistants
 

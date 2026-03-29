@@ -1,7 +1,8 @@
 # MacParakeet: Vision & Philosophy
 
 > Status: **ACTIVE** - Authoritative, current
-> The fastest, most private voice app for Mac. No cloud. No subscriptions.
+> The fastest, most private voice app for Mac. No cloud. Free and open-source (GPL-3.0).
+> Pricing amendment: All references to "$49 one-time purchase" and pricing tiers below are historical. MacParakeet is now free and open-source (GPL-3.0) as of v0.5.
 
 ---
 
