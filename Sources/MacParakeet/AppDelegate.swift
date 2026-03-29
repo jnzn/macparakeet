@@ -57,6 +57,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var menuBarOnlyModeObserver: Any?
     private var showIdlePillObserver: Any?
     private var hotkeyMenuItem: NSMenuItem?
+    private lazy var youtubeInputController = YouTubeInputPanelController(
+        transcriptionViewModel: transcriptionViewModel
+    )
     private var pasteLastMenuItem: NSMenuItem?
     private var recentDictationsMenuItem: NSMenuItem?
     private var reopenOnboardingOnNextActivate = false
@@ -707,9 +710,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func transcribeFromYouTubeMenu() {
         guard appEnvironment != nil else { return }
-        transcriptionViewModel.currentTranscription = nil
-        mainWindowState.selectedItem = .transcribe
-        openMainWindow()
+        youtubeInputController.show()
     }
 
     private func rebuildRecentDictationsSubmenu(with dictations: [Dictation]) {
