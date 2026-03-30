@@ -181,30 +181,31 @@ public final class TranscriptChatViewModel {
                     return
                 }
 
-                if let idx = messages.firstIndex(where: { $0.id == assistantID }) {
-                    messages[idx].isStreaming = false
-                }
-
                 let assistantMsg = ChatMessage(role: .assistant, content: accumulated)
 
-                if currentConversation?.id == capturedConversationId {
-                    // Still on the same conversation — normal persistence
+                if streamingAssistantID == assistantID {
+                    // Still the active task — normal UI update and persistence
+                    if let idx = messages.firstIndex(where: { $0.id == assistantID }) {
+                        messages[idx].isStreaming = false
+                    }
                     chatHistory.append(assistantMsg)
                     persistChatMessages()
-                } else if let convId = capturedConversationId, !accumulated.isEmpty {
-                    // Detached — user switched away. Persist directly to repo.
-                    var updatedHistory = capturedHistory
-                    updatedHistory.append(assistantMsg)
-                    try? repo?.updateMessages(id: convId, messages: updatedHistory)
-                    if let idx = conversations.firstIndex(where: { $0.id == convId }) {
-                        conversations[idx].messages = updatedHistory
-                        conversations[idx].updatedAt = Date()
-                    }
-                }
-
-                if streamingAssistantID == assistantID {
                     streamingAssistantID = nil
                     isStreaming = false
+                } else if let convId = capturedConversationId, !accumulated.isEmpty {
+                    // Detached — user switched away. Persist directly to repo.
+                    // Only write if the conversation hasn't been modified since detach,
+                    // otherwise we'd overwrite newer messages (e.g. user navigated back and sent more).
+                    let currentMessages = conversations.first(where: { $0.id == convId })?.messages
+                    if currentMessages == nil || currentMessages == capturedHistory {
+                        var updatedHistory = capturedHistory
+                        updatedHistory.append(assistantMsg)
+                        try? repo?.updateMessages(id: convId, messages: updatedHistory)
+                        if let idx = conversations.firstIndex(where: { $0.id == convId }) {
+                            conversations[idx].messages = updatedHistory
+                            conversations[idx].updatedAt = Date()
+                        }
+                    }
                 }
             } catch is CancellationError {
                 // Cancellation is expected (Stop button, provider change) — don't surface as error
