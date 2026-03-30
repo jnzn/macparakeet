@@ -151,6 +151,11 @@ public final class TranscriptChatViewModel {
 
         let transcript = transcriptText
 
+        // Capture context so the task can persist independently if detached (e.g. user clicks New Chat)
+        let capturedConversationId = currentConversation?.id
+        let capturedHistory = chatHistory
+        let repo = conversationRepo
+
         streamingTask = Task { @MainActor in
             var accumulated = ""
             do {
@@ -161,15 +166,18 @@ public final class TranscriptChatViewModel {
                 )
                 for try await token in stream {
                     accumulated += token
+                    // UI update — silently no-ops if message was removed (detached)
                     if let idx = messages.firstIndex(where: { $0.id == assistantID }) {
                         messages[idx].content = accumulated
                     }
                 }
 
+                // Explicit cancellation (Stop button) — discard partial response
                 guard !Task.isCancelled else {
-                    removeStreamingAssistantMessage()
-                    streamingAssistantID = nil
-                    isStreaming = false
+                    if streamingAssistantID == assistantID {
+                        removeStreamingAssistantMessage()
+                        isStreaming = false
+                    }
                     return
                 }
 
@@ -177,19 +185,40 @@ public final class TranscriptChatViewModel {
                     messages[idx].isStreaming = false
                 }
 
-                chatHistory.append(ChatMessage(role: .assistant, content: accumulated))
-                persistChatMessages()
+                let assistantMsg = ChatMessage(role: .assistant, content: accumulated)
+
+                if currentConversation?.id == capturedConversationId {
+                    // Still on the same conversation — normal persistence
+                    chatHistory.append(assistantMsg)
+                    persistChatMessages()
+                } else if let convId = capturedConversationId, !accumulated.isEmpty {
+                    // Detached — user switched away. Persist directly to repo.
+                    var updatedHistory = capturedHistory
+                    updatedHistory.append(assistantMsg)
+                    try? repo?.updateMessages(id: convId, messages: updatedHistory)
+                    if let idx = conversations.firstIndex(where: { $0.id == convId }) {
+                        conversations[idx].messages = updatedHistory
+                        conversations[idx].updatedAt = Date()
+                    }
+                }
+
+                if streamingAssistantID == assistantID {
+                    streamingAssistantID = nil
+                    isStreaming = false
+                }
             } catch is CancellationError {
-                // Cancellation is expected (navigation, provider change) — don't surface as error
-                removeStreamingAssistantMessage()
-                isStreaming = false
-                return
+                // Cancellation is expected (Stop button, provider change) — don't surface as error
+                if streamingAssistantID == assistantID {
+                    removeStreamingAssistantMessage()
+                    isStreaming = false
+                }
             } catch {
-                removeStreamingAssistantMessage()
-                errorMessage = error.localizedDescription
+                if streamingAssistantID == assistantID {
+                    removeStreamingAssistantMessage()
+                    isStreaming = false
+                    errorMessage = error.localizedDescription
+                }
             }
-            streamingAssistantID = nil
-            isStreaming = false
         }
     }
 
@@ -247,7 +276,7 @@ public final class TranscriptChatViewModel {
     // MARK: - Multi-Conversation
 
     public func newChat() {
-        cancelStreaming()
+        detachCurrentStreaming()
         discardEmptyCurrentConversation()
 
         messages.removeAll()
@@ -260,7 +289,7 @@ public final class TranscriptChatViewModel {
     }
 
     public func switchConversation(_ conversation: ChatConversation) {
-        cancelStreaming()
+        detachCurrentStreaming()
         discardEmptyCurrentConversation()
 
         loadConversationMessages(conversation)
@@ -308,6 +337,14 @@ public final class TranscriptChatViewModel {
     }
 
     // MARK: - Private
+
+    /// Disowns the current streaming task without cancelling.
+    /// The task continues in the background and persists to DB when done.
+    private func detachCurrentStreaming() {
+        streamingTask = nil
+        isStreaming = false
+        removeStreamingAssistantMessage()
+    }
 
     private func loadConversationMessages(_ conversation: ChatConversation) {
         currentConversation = conversation
