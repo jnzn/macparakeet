@@ -31,7 +31,7 @@ A **fast, private, local-first voice app** for macOS with two co-equal modes: sy
 | AI coding methodology | `spec/10-ai-coding-method.md` |
 | LLM integration (historical) | `spec/11-llm-integration.md` |
 | ADRs (locked decisions) | `spec/adr/` -> individual decision records |
-| Competitive research | `docs/competitive-analysis.md` |
+| CLI testing guide | `docs/cli-testing.md` |
 | Brand identity | `docs/brand-identity.md` |
 | UI/UX design overhaul | `docs/design-overhaul.md` |
 | Distribution, signing & auto-updates | `docs/distribution.md` |
@@ -244,10 +244,16 @@ Menu Bar Icon (always visible)
     |   +-- Community link (macparakeet-community GitHub)
     |
     +-- Settings Window
-    |   +-- License activation
     |   +-- Hotkey configuration
+    |   +-- LLM provider settings
     |   +-- Storage management
     |   +-- Permissions
+    |   +-- Auto-update preferences
+    |
+    +-- Library Panel
+    |   +-- Transcription thumbnail grid
+    |   +-- Filter bar (All/YouTube/Local/Favorites)
+    |   +-- Search and sort
     |
     +-- History Panel
         +-- Dictation history with search
@@ -262,7 +268,7 @@ View files organized by feature in `Sources/MacParakeet/Views/`:
 - `Vocabulary/` -- Processing mode, custom words, text snippets
 - `Feedback/` -- Feedback form, category selection, community link
 - `Onboarding/` -- First-run onboarding flow
-- `Settings/` -- License, dictation prefs, storage, permissions
+- `Settings/` -- Hotkey, LLM providers, storage, permissions
 - `History/` -- Dictation history, search, playback
 - `Components/` -- Reusable components (status badge, waveform view)
 

@@ -1,6 +1,8 @@
 # ADR-006: Trial + License Key Activation
 
-> Status: **Accepted**
+> Status: **HISTORICAL** — Superseded by open-source release (GPL-3.0) in v0.5.
+> MacParakeet is now free with unlimited features. Trial and license activation removed.
+> LemonSqueezy kept as $0 product for download tracking only.
 > Date: 2026-02-12
 
 ## Context
