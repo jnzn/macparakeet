@@ -1102,61 +1102,68 @@ struct TranscriptResultView: View {
 
     @ViewBuilder
     private func chatBubble(_ message: ChatDisplayMessage) -> some View {
-        HStack(alignment: .center, spacing: DesignSystem.Spacing.sm) {
-            if message.role == .user { Spacer(minLength: 60) }
+        let isUser = message.role == .user
 
-            if message.role == .assistant {
+        HStack(alignment: .bottom, spacing: DesignSystem.Spacing.sm) {
+            if isUser { Spacer(minLength: 80) }
+
+            if !isUser {
                 ZStack {
                     Circle()
                         .fill(DesignSystem.Colors.surfaceElevated)
-                        .frame(width: 28, height: 28)
-                        .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
+                        .frame(width: 26, height: 26)
+                        .shadow(color: .black.opacity(0.06), radius: 2, y: 1)
 
                     if message.isStreaming {
-                        SpinnerRingView(size: 16, revolutionDuration: 2.0, tintColor: DesignSystem.Colors.accent)
+                        SpinnerRingView(size: 14, revolutionDuration: 2.0, tintColor: DesignSystem.Colors.accent)
                     } else {
                         Image(systemName: "sparkles")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(DesignSystem.Colors.accent)
                     }
                 }
             }
 
-            VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 4) {
+            VStack(alignment: isUser ? .trailing : .leading, spacing: 4) {
                 if message.content.isEmpty && message.isStreaming {
-                    // Light sweep loading bar
                     ChatLoadingSweep()
                 } else {
+                    let bubbleShape = UnevenRoundedRectangle(
+                        topLeadingRadius: 16,
+                        bottomLeadingRadius: isUser ? 16 : 4,
+                        bottomTrailingRadius: isUser ? 4 : 16,
+                        topTrailingRadius: 16
+                    )
+
                     VStack(alignment: .leading, spacing: 0) {
-                        if message.role == .assistant {
-                            MarkdownContentView(message.content)
-                        } else {
+                        if isUser {
                             Text(message.content)
-                                .font(DesignSystem.Typography.bodyLarge)
+                                .font(DesignSystem.Typography.body)
                                 .foregroundStyle(DesignSystem.Colors.onAccent)
                                 .textSelection(.enabled)
+                        } else {
+                            MarkdownContentView(message.content)
                         }
                     }
-                    .frame(maxWidth: 620, alignment: .leading)
-                    .padding(.horizontal, DesignSystem.Spacing.md)
+                    .padding(.horizontal, 14)
                     .padding(.vertical, 10)
+                    .frame(maxWidth: isUser ? nil : 620, alignment: .leading)
                     .background(
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(message.role == .user
-                                  ? DesignSystem.Colors.accent
-                                  : DesignSystem.Colors.surfaceElevated.opacity(0.9))
-                            .shadow(color: .black.opacity(message.role == .user ? 0.15 : 0.05), radius: 4, y: 2)
+                        bubbleShape.fill(isUser
+                            ? DesignSystem.Colors.accent
+                            : DesignSystem.Colors.surfaceElevated)
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 16)
-                            .strokeBorder(
-                                message.role == .user ? DesignSystem.Colors.accent.opacity(0.25) : DesignSystem.Colors.border.opacity(0.45),
-                                lineWidth: 0.5
-                            )
+                        bubbleShape.strokeBorder(
+                            isUser
+                                ? Color.white.opacity(0.12)
+                                : DesignSystem.Colors.border.opacity(0.4),
+                            lineWidth: 0.5
+                        )
                     )
+                    .shadow(color: .black.opacity(isUser ? 0.12 : 0.05), radius: isUser ? 3 : 2, y: 1)
                     .overlay(alignment: .bottomTrailing) {
-                        // Copy button for assistant messages — appears on hover
-                        if message.role == .assistant && !message.isStreaming && !message.content.isEmpty {
+                        if !isUser && !message.isStreaming && !message.content.isEmpty {
                             if hoveredMessageId == message.id || copiedMessageId == message.id {
                                 Button {
                                     NSPasteboard.general.clearContents()
@@ -1181,7 +1188,8 @@ struct TranscriptResultView: View {
                                     .padding(.vertical, 3)
                                     .background(
                                         Capsule()
-                                            .fill(DesignSystem.Colors.surfaceElevated.opacity(0.8))
+                                            .fill(DesignSystem.Colors.surfaceElevated.opacity(0.85))
+                                            .overlay(Capsule().strokeBorder(DesignSystem.Colors.border.opacity(0.3), lineWidth: 0.5))
                                     )
                                 }
                                 .buttonStyle(.plain)
@@ -1198,7 +1206,7 @@ struct TranscriptResultView: View {
                 }
             }
 
-            if message.role == .assistant { Spacer(minLength: 60) }
+            if !isUser { Spacer(minLength: 80) }
         }
     }
 

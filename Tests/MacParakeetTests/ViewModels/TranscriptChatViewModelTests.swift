@@ -520,6 +520,69 @@ final class TranscriptChatViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.conversations[1].title, "Older")
     }
 
+    func testNewChatDuringStreamingPersistsResponseInBackground() async throws {
+        let transcriptionId = UUID()
+        viewModel.loadTranscript("Transcript", transcriptionId: transcriptionId)
+
+        mockService.streamTokens = ["background", " response"]
+        mockService.streamDelayNs = 100_000_000  // 100ms per token
+        viewModel.inputText = "Question"
+        viewModel.sendMessage()
+
+        // Let first token arrive, then switch away
+        try await Task.sleep(nanoseconds: 150_000_000)
+        let originalConversationId = viewModel.currentConversation?.id
+        XCTAssertNotNil(originalConversationId)
+
+        viewModel.newChat()
+        XCTAssertNil(viewModel.currentConversation)
+        XCTAssertTrue(viewModel.messages.isEmpty)
+        XCTAssertFalse(viewModel.isStreaming)
+
+        // Wait for background streaming to complete and persist
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        // The detached task should have persisted the assistant response directly to repo
+        let finalPersist = mockConversationRepo.updateMessagesCalls.last
+        XCTAssertEqual(finalPersist?.id, originalConversationId)
+        XCTAssertEqual(finalPersist?.messages?.count, 2)  // user + assistant
+        XCTAssertEqual(finalPersist?.messages?.last?.role, .assistant)
+        XCTAssertEqual(finalPersist?.messages?.last?.content, "background response")
+    }
+
+    func testSwitchConversationDuringStreamingPersistsResponseInBackground() async throws {
+        let transcriptionId = UUID()
+        let existingConv = ChatConversation(
+            transcriptionId: transcriptionId,
+            title: "Existing",
+            messages: [ChatMessage(role: .user, content: "Old")]
+        )
+        mockConversationRepo.conversations = [existingConv]
+        viewModel.loadTranscript("Transcript", transcriptionId: transcriptionId)
+
+        // Switch to empty state then send a message
+        viewModel.newChat()
+        mockService.streamTokens = ["will", " persist"]
+        mockService.streamDelayNs = 100_000_000
+        viewModel.inputText = "New question"
+        viewModel.sendMessage()
+
+        try await Task.sleep(nanoseconds: 150_000_000)
+        let streamingConvId = viewModel.currentConversation?.id
+
+        // Switch to existing conversation while streaming
+        viewModel.switchConversation(existingConv)
+        XCTAssertEqual(viewModel.currentConversation?.id, existingConv.id)
+
+        // Wait for background task to complete
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        let finalPersist = mockConversationRepo.updateMessagesCalls.last(where: { $0.id == streamingConvId })
+        XCTAssertNotNil(finalPersist)
+        XCTAssertEqual(finalPersist?.messages?.count, 2)
+        XCTAssertEqual(finalPersist?.messages?.last?.content, "will persist")
+    }
+
     func testLoadTranscriptCleansEmptyConversations() {
         let transcriptionId = UUID()
         let empty = ChatConversation(transcriptionId: transcriptionId, title: "Empty")
