@@ -23,7 +23,7 @@
 |                                                                       |
 |   MacPARAKEET                                                         |
 |   -----------                                                         |
-|   Voice -> Text. Done. $49 once.                                      |
+|   Voice -> Text. Done. Free & open-source.                            |
 |                                                                       |
 +-----------------------------------------------------------------------+
 ```
@@ -46,13 +46,13 @@ Everything else exists to make those two modes faster, smarter, and more useful.
 | **Cloud services** (WisprFlow, Otter) | Fast | Your audio on their servers | $12+/mo forever | Simple |
 | **Local apps** (MacWhisper, Superwhisper) | Good | Private | $30-$250 | Complex or expensive |
 | **Apple Dictation** | Slow | Mostly local | Free | Very limited |
-| **MacParakeet** | **Fastest** | **100% local** | **$49 once** | **Two modes** |
+| **MacParakeet** | **Fastest** | **100% local** | **Free (GPL-3.0)** | **Two modes** |
 
 No existing app nails all four: **Speed + Privacy + Simplicity + Fair Pricing**.
 
 Cloud services send your voice to remote servers, create accounts, charge monthly, and add server latency. Local apps either bury you in settings (MacWhisper has 50+ features) or charge a premium (Superwhisper at $250). Apple Dictation is free but slow, inaccurate, and has no custom vocabulary, no file transcription.
 
-**MacParakeet's answer:** Built from the ground up around Parakeet TDT -- the fastest, most accurate open-source STT model available. 100% local. Two modes. $49. Done.
+**MacParakeet's answer:** Built from the ground up around Parakeet TDT -- the fastest, most accurate open-source STT model available. 100% local. Two modes. Free. Done.
 
 ---
 
@@ -92,14 +92,11 @@ Simple does not mean basic. MacParakeet includes modern capabilities that cloud 
 - **Custom Words** -- Teach it your vocabulary. Technical terms, proper nouns, acronyms. Anchors that improve recognition accuracy.
 - **Context Awareness** -- (Future) Reads the surrounding text to produce better transcriptions. Knows "React" in a code editor, "react" in a therapy note.
 
-### 5. Fair Pricing, No Tricks
+### 5. Free and Open-Source
 
-One-time purchase. No subscription. No feature gates that make the free tier unusable.
+No price tags. No subscriptions. No feature gates. MacParakeet is free and open-source (GPL-3.0).
 
-- **Free**: 7-day trial (full features).
-- **Pro ($49)**: Unlimited. Everything. Forever.
-
-WisprFlow charges $144-180/year. After 3-4 months of MacParakeet, you have saved money. After a year, you have saved $95-131. After two years, $239-311. The gap only grows.
+Every feature is available to everyone, forever. The code is public. Contributions are welcome.
 
 ---
 
@@ -110,8 +107,8 @@ WisprFlow charges $144-180/year. After 3-4 months of MacParakeet, you have saved
 | **Product type** | Native macOS app (menu bar + window) |
 | **Core function** | Voice dictation and file transcription |
 | **Target users** | Developers, professionals, writers who want fast private voice input |
-| **Key differentiators** | Parakeet speed + 100% local + $49 one-time |
-| **Business model** | Free trial (7 days) + $49 Pro (one-time) |
+| **Key differentiators** | Parakeet speed + 100% local + free/open-source |
+| **Business model** | Free and open-source (GPL-3.0) |
 | **Platform** | macOS 14.2+, Apple Silicon only |
 
 ---
@@ -224,7 +221,7 @@ Writers who think better out loud. Podcasters who need episode transcripts. Cont
                                |
                                |
             MacParakeet -------+----------------- WisprFlow
-            ($49, local,       |                  ($144-180/yr, cloud,
+            (free, local,      |                  ($144-180/yr, cloud,
              Parakeet 155x)    |                   fast but server delays)
                                |
                                |
@@ -251,7 +248,7 @@ Writers who think better out loud. Podcasters who need episode transcripts. Cont
 | **File transcription** | Yes | No | Yes | Limited | No |
 | **Smart cleanup** | Deterministic | Cloud AI | No | Cloud AI | No |
 | **Custom words** | Yes | Yes | Limited | No | No |
-| **Price** | $49 once | $144-180/yr | $30 once | $250 once | Free |
+| **Price** | Free (GPL-3.0) | $144-180/yr | $30 once | $250 once | Free |
 | **Account required** | No | Yes | No | Yes | Apple ID |
 
 *WisprFlow speed includes network latency.
@@ -259,10 +256,10 @@ Writers who think better out loud. Podcasters who need episode transcripts. Cont
 
 ### Why We Win Each Segment
 
-- **vs WisprFlow**: Same speed class, but local + $49 once vs $144-180/year. WisprFlow users who care about privacy or cost switch to us.
-- **vs MacWhisper**: Faster (Parakeet vs Whisper), simpler (2 modes vs 50+ features), plus system-wide dictation. The $19 premium over MacWhisper ($30) buys dictation and a Parakeet-first architecture.
-- **vs Superwhisper**: Dramatically cheaper ($49 vs $250), Parakeet-first architecture. Price-sensitive Superwhisper users switch to us.
-- **vs Apple Dictation**: Faster, more accurate, custom words, file transcription. Free users wanting more capability upgrade to us.
+- **vs WisprFlow**: Same speed class, but local + free vs $144-180/year. WisprFlow users who care about privacy or cost switch to us.
+- **vs MacWhisper**: Faster (Parakeet vs Whisper), simpler (2 modes vs 50+ features), plus system-wide dictation — and free.
+- **vs Superwhisper**: Free vs $250, Parakeet-first architecture. No contest on price.
+- **vs Apple Dictation**: Faster, more accurate, custom words, file transcription. Same price (free), dramatically more capable.
 
 ---
 
@@ -285,14 +282,9 @@ This is not "local option available." This is "there is no cloud option." The ar
 
 This makes our privacy claim unchallengeable. Competitors who offer "local mode" still have cloud infrastructure, still collect accounts, still have terms of service that hedge on data usage. We have none of that.
 
-### 3. $49 One-Time Purchase
+### 3. Free and Open-Source
 
-In a market of subscriptions ($144-180/yr for WisprFlow) and premium pricing ($250 for Superwhisper), $49 one-time is a clear value proposition.
-
-- Break-even vs WisprFlow: 3-4 months
-- Savings vs WisprFlow after 1 year: $95-131
-- Savings vs WisprFlow after 2 years: $239-311
-- Savings vs Superwhisper: $201 immediately
+In a market of subscriptions ($144-180/yr for WisprFlow) and premium pricing ($250 for Superwhisper), free and open-source is the ultimate value proposition. No pricing objection. No trial friction. No conversion funnel. Just the best tool, available to everyone.
 
 ### 4. Focused Simplicity
 
@@ -302,29 +294,11 @@ The product surface area is intentionally small. This means fewer bugs, faster i
 
 ---
 
-## Pricing Strategy
+## Licensing
 
-### Tiers
+MacParakeet is free and open-source under the **GPL-3.0** license. All features are available to all users, forever. The source code is public at [github.com/moona3k/macparakeet](https://github.com/moona3k/macparakeet).
 
-| Tier | Price | What You Get |
-|------|-------|--------------|
-| **Free** | $0 | 7-day trial (full features) |
-| **Pro** | $49 (one-time) | Unlimited dictation, unlimited transcription, all export formats (SRT/VTT/MD), custom words, text snippets, dictation history |
-
-### Why This Works
-
-**Trial reduces friction.** A 7-day full-feature trial lets users build the habit and evaluate accuracy and speed before buying.
-
-**Pro is a clear upgrade.** Unlimited usage removes the daily cap. Export formats add real capability. Custom words and snippets add personalization. The upgrade path is obvious and compelling.
-
-**No subscription.** This is a feature, not a limitation. In a market where every competitor charges monthly or annually, one-time pricing is a differentiator that drives word-of-mouth. "I paid $49 once and never think about it again" is a story people tell their friends.
-
-### Revenue Model
-
-With 10,000 downloads and a 10% conversion rate:
-- 1,000 Pro purchases at $49 = $49,000 Year 1 revenue
-- Ongoing organic growth from SEO, word-of-mouth, and direct distribution
-- Future: major version upgrades (MacParakeet 2.0) as separate paid upgrade if warranted
+> Historical note: MacParakeet was originally planned as a $49 one-time purchase (see ADR-003). The decision to go free/open-source was made in v0.5 to maximize adoption and community contribution.
 
 ---
 
@@ -350,7 +324,7 @@ MacParakeet and Oatmeal are **separate products** that share underlying technolo
 |  - Export formats     |  - Knowledge graph                            |
 |                       |  - Pre-meeting briefs                         |
 |  Simple, focused      |  Complex, powerful                            |
-|  $49 one-time         |  TBD                                          |
+|  Free (GPL-3.0)       |  TBD                                          |
 +-----------------------+-----------------------------------------------+
 ```
 
@@ -363,13 +337,13 @@ MacParakeet and Oatmeal are **separate products** that share underlying technolo
 | **Complexity** | Two modes | Full knowledge system |
 | **User relationship** | Tool (use and forget) | System (compounds over time) |
 | **Codebase** | Independent | Independent |
-| **Revenue** | $49 one-time | TBD |
+| **Revenue** | Free (GPL-3.0) | TBD |
 
 ### Strategic Relationship
 
 - **Standalone value**: MacParakeet is a complete product on its own. It does not require or reference Oatmeal.
 - **Funnel potential**: MacParakeet users who want meeting-specific features (calendar sync, entity extraction, memory) are natural Oatmeal prospects.
-- **Revenue timing**: MacParakeet can generate revenue while Oatmeal matures. Simpler product = faster to market.
+- **Adoption timing**: MacParakeet builds community and mindshare while Oatmeal matures. Simpler product = faster to market.
 - **Technology proving ground**: Parakeet integration and clean pipeline are battle-tested in MacParakeet before being used in Oatmeal.
 
 ---
@@ -380,11 +354,10 @@ MacParakeet and Oatmeal are **separate products** that share underlying technolo
 
 | Metric | Target | How We Measure |
 |--------|--------|----------------|
-| Downloads | 10,000 | Website analytics + LemonSqueezy |
-| Paid conversions | 1,000 (10% rate) | LemonSqueezy |
-| Revenue | $49,000 | LemonSqueezy |
+| Downloads | 10,000 | Website analytics + telemetry |
+| GitHub stars | 1,000 | GitHub |
 | User satisfaction | 4.5+ stars equivalent | Community feedback + NPS |
-| Daily active users | 2,000 | Local analytics (opt-in, anonymized) |
+| Daily active users | 2,000 | Telemetry (opt-in, anonymized) |
 | Dictation sessions/user/day | 5+ | Local metrics |
 
 ### Quality Metrics
@@ -461,8 +434,7 @@ Ship-quality polish. Direct distribution via notarized DMG.
 | **UI framework** | SwiftUI | Native Mac experience. Menu bar + window. |
 | **Database** | SQLite (GRDB) | Single file. No server. Dictation history, custom words, settings. |
 | **Cloud option** | None | Privacy is the brand. No cloud means no cloud. |
-| **Pricing** | $49 one-time | Clear value vs subscriptions. Premium over MacWhisper ($30) justified by system-wide dictation + smart cleanup. |
-| **Subscription** | No | Differentiator. One-time purchase builds trust and word-of-mouth. |
+| **Pricing** | Free (GPL-3.0) | Zero friction. Maximum adoption. Community-driven development. |
 
 ---
 
@@ -484,7 +456,7 @@ The parakeet bird is known for mimicking speech -- a fitting metaphor for a voic
 | **100% Local** | Zero network, zero accounts | Unchallengeable privacy claim |
 | **Clean Pipeline** | Deterministic text cleanup | Professional output without LLM overhead |
 | **Custom Words** | User-defined vocabulary anchors | Technical terms transcribed correctly every time |
-| **$49 Forever** | One-time purchase, no subscription | Pay once, use forever. Saves $95+/yr vs competitors |
+| **Free & Open-Source** | GPL-3.0, no price, no accounts | Zero friction adoption. Community-driven development. |
 
 ---
 

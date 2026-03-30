@@ -402,6 +402,8 @@ cat >"$INFO_PLIST" <<EOF
   <string>MacParakeet needs microphone access for dictation.</string>
   <key>SUFeedURL</key>
   <string>https://macparakeet.com/appcast.xml</string>
+  <key>SUEnableAutomaticChecks</key>
+  <true/>
   <key>SUPublicEDKey</key>
   <string>2aqRU0Agz+xxZwt0kLybmKz/SAvZUsyn+z9fU0I6ynY=</string>
 $(printf "%b" "$LICENSING_PLIST")
