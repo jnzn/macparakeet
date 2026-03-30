@@ -583,6 +583,48 @@ final class TranscriptChatViewModelTests: XCTestCase {
         XCTAssertEqual(finalPersist?.messages?.last?.content, "will persist")
     }
 
+    func testNavigateBackToDetachedConversationDoesNotCorruptHistory() async throws {
+        let transcriptionId = UUID()
+        viewModel.loadTranscript("Transcript", transcriptionId: transcriptionId)
+
+        mockService.streamTokens = ["detached", " response"]
+        mockService.streamDelayNs = 100_000_000
+        viewModel.inputText = "First question"
+        viewModel.sendMessage()
+
+        try await Task.sleep(nanoseconds: 150_000_000)
+        let originalConv = viewModel.currentConversation!
+
+        // Navigate away
+        viewModel.newChat()
+
+        // Navigate BACK to the same conversation before detached task finishes
+        viewModel.switchConversation(originalConv)
+        XCTAssertEqual(viewModel.currentConversation?.id, originalConv.id)
+
+        // Send a second message — this modifies the conversation
+        mockService.streamTokens = ["second"]
+        mockService.streamDelayNs = 0
+        viewModel.inputText = "Second question"
+        viewModel.sendMessage()
+
+        // Wait for both tasks to complete
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        // The active task (Q2 → A2) should have persisted normally via chatHistory
+        // The detached task (Q1 → A1) should have been DROPPED because the conversation
+        // was modified since detach (user sent Q2). This prevents stale overwrites.
+        XCTAssertEqual(viewModel.messages.count, 3)  // Q1 (loaded), Q2, A2
+        XCTAssertFalse(viewModel.isStreaming)
+
+        // chatHistory should contain Q1, Q2, A2 (no stale A1 from detached task)
+        let lastActivePersist = mockConversationRepo.updateMessagesCalls.last(where: {
+            $0.messages?.contains(where: { $0.content == "Second question" }) == true
+        })
+        XCTAssertNotNil(lastActivePersist, "Active task should have persisted Q2")
+        XCTAssertEqual(lastActivePersist?.messages?.count, 3, "Should have Q1, Q2, A2")
+    }
+
     func testLoadTranscriptCleansEmptyConversations() {
         let transcriptionId = UUID()
         let empty = ChatConversation(transcriptionId: transcriptionId, title: "Empty")
