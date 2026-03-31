@@ -81,6 +81,15 @@ public actor STTClient: STTClientProtocol {
     }
 
     private func setBackgroundWarmUpState(_ state: WarmUpState) {
+        // Guard: never regress from .ready/.failed to .working — stale progress
+        // callback Tasks can arrive after the download completes, which would
+        // corrupt backgroundWarmUpState and block onboarding reconnection.
+        if case .working = state {
+            switch backgroundWarmUpState {
+            case .ready, .failed: return
+            default: break
+            }
+        }
         backgroundWarmUpState = state
         for (_, continuation) in warmUpObservers {
             continuation.yield(state)
