@@ -226,6 +226,7 @@ public final class OnboardingViewModel {
                 return
             }
 
+            let warmUpStartedAt = Date()
             Telemetry.send(.modelDownloadStarted)
             await sttClient.backgroundWarmUp()
 
@@ -246,11 +247,14 @@ public final class OnboardingViewModel {
                         case .working(let message, let progress):
                             self.engineState = .working(message: message, progress: progress)
                         case .ready:
+                            let durationSeconds = Date().timeIntervalSince(warmUpStartedAt)
+                            Telemetry.send(.modelDownloadCompleted(durationSeconds: durationSeconds))
                             self.engineState = .ready
                             self.isBusy = false
                             self.warmUpObserverTask?.cancel()
                             self.warmUpObserverTask = nil
                         case .failed(let message):
+                            Telemetry.send(.modelDownloadFailed(errorType: "BackgroundWarmUpError", errorDetail: message))
                             self.engineState = .failed(message: message)
                             self.isBusy = false
                             self.warmUpObserverTask?.cancel()
