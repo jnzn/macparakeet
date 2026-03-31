@@ -50,7 +50,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
                          backing: .buffered,
                          defer: false)
         w.title = "Welcome to MacParakeet"
-        w.isReleasedWhenClosed = true
+        w.isReleasedWhenClosed = false
         w.center()
         w.contentView = hosting
         w.standardWindowButton(.zoomButton)?.isHidden = true
@@ -103,7 +103,13 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
         onIncompleteDismiss = nil
         viewModel?.stopObservingWarmUp()
         viewModel = nil
-        window?.contentView = nil
+        // Defer teardown to the next run-loop tick so we don't destroy the
+        // SwiftUI hosting view (and its window animations) while the button
+        // callback that triggered close() is still on the call stack.
+        let w = window
         window = nil
+        DispatchQueue.main.async {
+            w?.contentView = nil
+        }
     }
 }

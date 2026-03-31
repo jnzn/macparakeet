@@ -238,33 +238,32 @@ public final class OnboardingViewModel {
             let (observerId, stream) = await sttClient.observeWarmUpProgress()
             await MainActor.run {
                 self.warmUpObserverId = observerId
-            }
+                self.warmUpObserverTask = Task { @MainActor [weak self] in
+                    // Ensure warmUpObserverTask is cleared when the loop exits
+                    // for any reason (cancellation, stream end, generation mismatch)
+                    // so the guard at the top of startEngineWarmUp() doesn't block
+                    // future calls with a stale completed Task handle.
+                    defer { self?.warmUpObserverTask = nil }
 
-            self.warmUpObserverTask = Task { [weak self] in
-                // Ensure warmUpObserverTask is cleared when the loop exits
-                // for any reason (cancellation, stream end, generation mismatch)
-                // so the guard at the top of startEngineWarmUp() doesn't block
-                // future calls with a stale completed Task handle.
-                defer { self?.warmUpObserverTask = nil }
-
-                for await state in stream {
-                    guard let self, self.engineGeneration == generation else { break }
-                    switch state {
-                    case .idle:
-                        self.engineState = .working(message: "Preparing...", progress: nil)
-                    case .working(let message, let progress):
-                        self.engineState = .working(message: message, progress: progress)
-                    case .ready:
-                        let durationSeconds = Date().timeIntervalSince(warmUpStartedAt)
-                        Telemetry.send(.modelDownloadCompleted(durationSeconds: durationSeconds))
-                        self.engineState = .ready
-                        self.isBusy = false
-                        self.warmUpObserverTask?.cancel()
-                    case .failed(let message):
-                        Telemetry.send(.modelDownloadFailed(errorType: "BackgroundWarmUpError", errorDetail: message))
-                        self.engineState = .failed(message: message)
-                        self.isBusy = false
-                        self.warmUpObserverTask?.cancel()
+                    for await state in stream {
+                        guard let self, self.engineGeneration == generation else { break }
+                        switch state {
+                        case .idle:
+                            self.engineState = .working(message: "Preparing...", progress: nil)
+                        case .working(let message, let progress):
+                            self.engineState = .working(message: message, progress: progress)
+                        case .ready:
+                            let durationSeconds = Date().timeIntervalSince(warmUpStartedAt)
+                            Telemetry.send(.modelDownloadCompleted(durationSeconds: durationSeconds))
+                            self.engineState = .ready
+                            self.isBusy = false
+                            self.warmUpObserverTask?.cancel()
+                        case .failed(let message):
+                            Telemetry.send(.modelDownloadFailed(errorType: "BackgroundWarmUpError", errorDetail: message))
+                            self.engineState = .failed(message: message)
+                            self.isBusy = false
+                            self.warmUpObserverTask?.cancel()
+                        }
                     }
                 }
             }
