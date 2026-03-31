@@ -206,7 +206,11 @@ public final class OnboardingViewModel {
         isBusy = true
         engineState = .working(message: "Checking setup requirements...", progress: nil)
 
-        Task {
+        // Assign the outer Task immediately so re-entrant calls hit the
+        // `warmUpObserverTask != nil` guard. Without this, the two `await`
+        // actor hops below leave a window where a second call can proceed.
+        let outerTask = Task { [weak self] in
+            guard let self else { return }
             do {
                 try await runEnginePreflight()
                 guard self.engineGeneration == generation else { return }
@@ -237,33 +241,35 @@ public final class OnboardingViewModel {
             }
 
             self.warmUpObserverTask = Task { [weak self] in
+                // Ensure warmUpObserverTask is cleared when the loop exits
+                // for any reason (cancellation, stream end, generation mismatch)
+                // so the guard at the top of startEngineWarmUp() doesn't block
+                // future calls with a stale completed Task handle.
+                defer { self?.warmUpObserverTask = nil }
+
                 for await state in stream {
                     guard let self, self.engineGeneration == generation else { break }
-                    await MainActor.run {
-                        guard self.engineGeneration == generation else { return }
-                        switch state {
-                        case .idle:
-                            self.engineState = .working(message: "Preparing...", progress: nil)
-                        case .working(let message, let progress):
-                            self.engineState = .working(message: message, progress: progress)
-                        case .ready:
-                            let durationSeconds = Date().timeIntervalSince(warmUpStartedAt)
-                            Telemetry.send(.modelDownloadCompleted(durationSeconds: durationSeconds))
-                            self.engineState = .ready
-                            self.isBusy = false
-                            self.warmUpObserverTask?.cancel()
-                            self.warmUpObserverTask = nil
-                        case .failed(let message):
-                            Telemetry.send(.modelDownloadFailed(errorType: "BackgroundWarmUpError", errorDetail: message))
-                            self.engineState = .failed(message: message)
-                            self.isBusy = false
-                            self.warmUpObserverTask?.cancel()
-                            self.warmUpObserverTask = nil
-                        }
+                    switch state {
+                    case .idle:
+                        self.engineState = .working(message: "Preparing...", progress: nil)
+                    case .working(let message, let progress):
+                        self.engineState = .working(message: message, progress: progress)
+                    case .ready:
+                        let durationSeconds = Date().timeIntervalSince(warmUpStartedAt)
+                        Telemetry.send(.modelDownloadCompleted(durationSeconds: durationSeconds))
+                        self.engineState = .ready
+                        self.isBusy = false
+                        self.warmUpObserverTask?.cancel()
+                    case .failed(let message):
+                        Telemetry.send(.modelDownloadFailed(errorType: "BackgroundWarmUpError", errorDetail: message))
+                        self.engineState = .failed(message: message)
+                        self.isBusy = false
+                        self.warmUpObserverTask?.cancel()
                     }
                 }
             }
         }
+        warmUpObserverTask = outerTask
     }
 
     /// Direct warm-up for mock STTClient in tests (no backgroundWarmUp support).
