@@ -29,11 +29,15 @@
 </p>
 
 <p align="center">
-  <img src="Assets/screenshots/transcribe.png" width="720" alt="MacParakeet — Transcription view">
+  <img src="Assets/screenshots/transcribe.png" width="720" alt="MacParakeet — Transcribe view with YouTube and file input">
 </p>
 
 <p align="center">
-  <img src="Assets/screenshots/dictations.png?v=2" width="720" alt="MacParakeet — Dictation history and voice stats">
+  <img src="Assets/screenshots/library.png" width="720" alt="MacParakeet — Transcription library with thumbnails">
+</p>
+
+<p align="center">
+  <img src="Assets/screenshots/dictations.png" width="720" alt="MacParakeet — Dictation history and voice stats">
 </p>
 
 ---
