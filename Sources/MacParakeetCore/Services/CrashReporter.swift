@@ -251,6 +251,10 @@ public final class CrashReporter {
         let content = lines.joined(separator: "\n") + "\n"
         try? content.write(toFile: crashReportPath, atomically: true, encoding: .utf8)
 
+        // Prevent the subsequent SIGABRT (from abort() after uncaught exception)
+        // from overwriting this richer exception report with a generic signal report.
+        OSAtomicCompareAndSwap32Barrier(0, 1, &handlerEntered)
+
         // Chain to previous handler
         previousExceptionHandler?(exception)
     }
