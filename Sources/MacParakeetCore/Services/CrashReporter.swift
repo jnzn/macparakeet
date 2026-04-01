@@ -309,10 +309,13 @@ public final class CrashReporter {
     /// Load a pending crash report from disk, if one exists.
     public static func loadPendingReport(from path: String? = nil) -> CrashReport? {
         let filePath = path ?? crashReportPath
-        guard let content = try? String(contentsOfFile: filePath, encoding: .utf8),
-              !content.isEmpty else {
+        // Use tolerant UTF-8 decoding: a crash mid-write could truncate a
+        // multi-byte character, and strict .utf8 would discard the entire report.
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: filePath)),
+              !data.isEmpty else {
             return nil
         }
+        let content = String(decoding: data, as: UTF8.self)
 
         let lines = content.components(separatedBy: "\n")
         var fields = [String: String]()

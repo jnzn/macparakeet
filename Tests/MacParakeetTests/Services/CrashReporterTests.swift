@@ -326,8 +326,4 @@ private final class MockTelemetryService: TelemetryServiceProtocol, @unchecked S
     func flushForTermination() {}
 }
 
-private final class NoOpTelemetryService: TelemetryServiceProtocol, @unchecked Sendable {
-    func send(_ event: TelemetryEventSpec) {}
-    func flush() async {}
-    func flushForTermination() {}
-}
+// NoOpTelemetryService is imported from MacParakeetCore via @testable import
