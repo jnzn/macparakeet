@@ -139,7 +139,7 @@ final class CrashReporterTests: XCTestCase {
 
         // Verify event was sent
         XCTAssertEqual(mock.sentEvents.count, 1)
-        if case .crashOccurred(let crashType, let signal, let name, _, _, _, _, _, _) = mock.sentEvents.first {
+        if case .crashOccurred(let crashType, let signal, let name, _, _, _, _, _, _, _) = mock.sentEvents.first {
             XCTAssertEqual(crashType, "signal")
             XCTAssertEqual(signal, "11")
             XCTAssertEqual(name, "SIGSEGV")
@@ -277,12 +277,38 @@ final class CrashReporterTests: XCTestCase {
         let mock = MockTelemetryService()
         CrashReporter.sendPendingReport(via: mock, from: testCrashPath)
 
-        if case .crashOccurred(_, _, _, _, _, _, let uuid, let slide, let stackTrace) = mock.sentEvents.first {
+        if case .crashOccurred(_, _, _, _, let appVer, let osVer, let uuid, let slide, let reason, let stackTrace) = mock.sentEvents.first {
+            XCTAssertEqual(appVer, "0.5.1")
+            XCTAssertEqual(osVer, "15.3")
             XCTAssertEqual(uuid, "TEST-UUID")
             XCTAssertEqual(slide, "0x100000")
+            XCTAssertNil(reason)
             XCTAssertEqual(stackTrace, "0xAAAA\n0xBBBB\n0xCCCC")
         } else {
             XCTFail("Expected crashOccurred event")
+        }
+    }
+
+    func testExceptionReasonWithNewlinesIsPreserved() {
+        let content = """
+        crash_type: exception
+        signal: exception
+        name: NSRangeException
+        timestamp: 1711900000
+        app_ver: 0.5.1
+        reason: index 5 beyond bounds [0..3]\\nmore context here
+        --- stack ---
+        0x1234
+        """
+        try! content.write(toFile: testCrashPath, atomically: true, encoding: .utf8)
+
+        let mock = MockTelemetryService()
+        CrashReporter.sendPendingReport(via: mock, from: testCrashPath)
+
+        if case .crashOccurred(_, _, _, _, _, _, _, _, let reason, _) = mock.sentEvents.first {
+            XCTAssertEqual(reason, "index 5 beyond bounds [0..3]\nmore context here")
+        } else {
+            XCTFail("Expected crashOccurred event with reason")
         }
     }
 }
