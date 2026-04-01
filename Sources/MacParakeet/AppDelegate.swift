@@ -184,6 +184,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
 
+        let aboutItem = NSMenuItem(
+            title: "About MacParakeet",
+            action: #selector(showAboutPanel),
+            keyEquivalent: ""
+        )
+        aboutItem.target = self
+        appMenu.addItem(aboutItem)
+        appMenu.addItem(NSMenuItem.separator())
+
         let checkForUpdatesItem = NSMenuItem(
             title: "Check for Updates...",
             action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
@@ -772,6 +781,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.isReleasedWhenClosed = false
 
         mainWindow = window
+    }
+
+    @objc private func showAboutPanel() {
+        let repoLink = "https://github.com/moona3k/macparakeet"
+        let credits = NSMutableAttributedString()
+
+        let style = NSMutableParagraphStyle()
+        style.alignment = .center
+
+        let normalAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11),
+            .paragraphStyle: style,
+        ]
+        let linkAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11),
+            .link: URL(string: repoLink)!,
+            .paragraphStyle: style,
+        ]
+
+        credits.append(NSAttributedString(string: "Free and open source (GPL-3.0)\n", attributes: normalAttrs))
+        credits.append(NSAttributedString(string: repoLink, attributes: linkAttrs))
+
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.orderFrontStandardAboutPanel(options: [
+            .credits: credits,
+        ])
     }
 
     @objc private func quitApp() {
