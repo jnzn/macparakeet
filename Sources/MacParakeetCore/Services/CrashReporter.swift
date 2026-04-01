@@ -109,15 +109,17 @@ public final class CrashReporter {
             sigaltstack(&ss, nil)
         }
 
-        // 7. Register signal handlers via sigaction with SA_ONSTACK | SA_RESETHAND
-        // SA_RESETHAND: if the handler itself crashes, fall through to default handler
+        // 7. Register signal handlers via sigaction
+        // SA_ONSTACK:   use alternate stack (handles stack overflow)
+        // SA_RESETHAND: reset to SIG_DFL on entry (handler crash → default termination)
+        // SA_NODEFER:   don't block the signal during handler (belt-and-suspenders with SA_RESETHAND)
         for sig in signals {
             var action = sigaction()
             action.__sigaction_u = unsafeBitCast(
                 signalHandler as @convention(c) (Int32) -> Void,
                 to: __sigaction_u.self
             )
-            action.sa_flags = Int32(SA_ONSTACK) | Int32(SA_RESETHAND)
+            action.sa_flags = Int32(SA_ONSTACK) | Int32(SA_RESETHAND) | Int32(SA_NODEFER)
             sigaction(sig, &action, nil)
         }
 
@@ -133,7 +135,12 @@ public final class CrashReporter {
 
     private static let signalHandler: @convention(c) (Int32) -> Void = { sig in
         // Guard: only first thread proceeds
-        guard OSAtomicCompareAndSwap32Barrier(0, 1, &handlerEntered) else { return }
+        guard OSAtomicCompareAndSwap32Barrier(0, 1, &handlerEntered) else {
+            // Second concurrent thread: re-raise so it terminates via SIG_DFL
+            // rather than resuming from the crash site.
+            Darwin.raise(sig)
+            return
+        }
 
         // snprintf is async-signal-safe on Darwin (per man sigaction).
         // Use it for all formatting — much safer than manual int/hex formatters.
