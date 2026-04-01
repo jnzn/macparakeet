@@ -410,7 +410,7 @@ final class TelemetryServiceTests: XCTestCase {
                 crashType: "signal", signal: "11", name: "SIGSEGV",
                 crashTimestamp: "1711900000", crashAppVer: "0.5.1",
                 crashOsVer: "15.3.1", uuid: "A1B2C3D4", slide: "0x100000",
-                stackTrace: "0x1234\n0x5678"
+                reason: nil, stackTrace: "0x1234\n0x5678"
             ),
         ]
     }

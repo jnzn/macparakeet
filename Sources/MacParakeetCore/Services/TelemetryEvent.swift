@@ -150,7 +150,7 @@ public enum TelemetryEventSpec: Sendable {
         crashType: String, signal: String, name: String,
         crashTimestamp: String, crashAppVer: String,
         crashOsVer: String, uuid: String,
-        slide: String, stackTrace: String
+        slide: String, reason: String?, stackTrace: String
     )
 }
 
@@ -318,7 +318,8 @@ extension TelemetryEventSpec {
         case .errorOccurred(let domain, let code, let description):
             return ["domain": domain, "code": code, "description": String(description.prefix(512))]
         case .crashOccurred(let crashType, let signal, let name, let crashTimestamp,
-                            let crashAppVer, let crashOsVer, let uuid, let slide, let stackTrace):
+                            let crashAppVer, let crashOsVer, let uuid, let slide,
+                            let reason, let stackTrace):
             return Self.compactProps(
                 ("crash_type", crashType),
                 ("signal", signal),
@@ -328,7 +329,8 @@ extension TelemetryEventSpec {
                 ("crash_os_ver", crashOsVer),
                 ("uuid", uuid),
                 ("slide", slide),
-                ("stack_trace", String(stackTrace.prefix(1024)))
+                ("reason", reason.map { String($0.prefix(512)) }),
+                ("stack_trace", String(stackTrace.prefix(2048)))
             )
         }
     }

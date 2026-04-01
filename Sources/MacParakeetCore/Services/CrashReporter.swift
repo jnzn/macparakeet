@@ -232,7 +232,9 @@ public final class CrashReporter {
         lines.append("os_ver: \(String(cString: &osVersion))")
         lines.append("uuid: \(String(cString: &machOUUID))")
         lines.append("slide: \(String(cString: &aslrSlide))")
-        lines.append("reason: \(reason)")
+        let safeReason = reason.replacingOccurrences(of: "\n", with: "\\n")
+                               .replacingOccurrences(of: "\r", with: "\\r")
+        lines.append("reason: \(safeReason)")
         lines.append("--- stack ---")
 
         for address in exception.callStackReturnAddresses {
@@ -318,18 +320,18 @@ public final class CrashReporter {
         var inStack = false
 
         for line in lines {
-            if line.trimmingCharacters(in: .whitespaces) == "--- stack ---" {
+            if line.trimmingCharacters(in: .whitespacesAndNewlines) == "--- stack ---" {
                 inStack = true
                 continue
             }
             if inStack {
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
                 if trimmed.hasPrefix("0x"), stackTrace.count < 256 {
                     stackTrace.append(trimmed)
                 }
             } else if let colonIndex = line.firstIndex(of: ":") {
-                let key = String(line[line.startIndex..<colonIndex]).trimmingCharacters(in: .whitespaces)
-                let value = String(line[line.index(after: colonIndex)...]).trimmingCharacters(in: .whitespaces)
+                let key = String(line[line.startIndex..<colonIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+                let value = String(line[line.index(after: colonIndex)...]).trimmingCharacters(in: .whitespacesAndNewlines)
                 fields[key] = value
             }
         }
@@ -351,7 +353,9 @@ public final class CrashReporter {
             osVersion: fields["os_ver"] ?? "",
             uuid: fields["uuid"] ?? "",
             slide: fields["slide"] ?? "",
-            reason: fields["reason"],
+            reason: fields["reason"]?
+                .replacingOccurrences(of: "\\n", with: "\n")
+                .replacingOccurrences(of: "\\r", with: "\r"),
             stackTrace: stackTrace
         )
     }
@@ -377,6 +381,7 @@ public final class CrashReporter {
             crashOsVer: report.osVersion,
             uuid: report.uuid,
             slide: report.slide,
+            reason: report.reason,
             stackTrace: stackTraceString
         ))
 
