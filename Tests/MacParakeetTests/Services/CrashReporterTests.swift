@@ -168,6 +168,123 @@ final class CrashReporterTests: XCTestCase {
         CrashReporter.sendPendingReport(via: mock, from: testDir + "/nonexistent.txt")
         XCTAssertTrue(mock.sentEvents.isEmpty)
     }
+
+    // MARK: - Reviewer-Flagged Edge Cases
+
+    func testReasonFieldWithColonsPreservesFullValue() {
+        let content = """
+        crash_type: exception
+        signal: exception
+        name: NSInvalidArgumentException
+        timestamp: 1711900000
+        app_ver: 0.5.1
+        reason: Cannot decode: key "url": no such key
+        --- stack ---
+        0x1234
+        """
+        try! content.write(toFile: testCrashPath, atomically: true, encoding: .utf8)
+
+        let report = CrashReporter.loadPendingReport(from: testCrashPath)
+        XCTAssertEqual(report?.reason, "Cannot decode: key \"url\": no such key")
+    }
+
+    func testNoStackSectionReturnsEmptyStackTrace() {
+        let content = """
+        crash_type: signal
+        signal: 11
+        name: SIGSEGV
+        timestamp: 1711900000
+        app_ver: 0.5.1
+        """
+        try! content.write(toFile: testCrashPath, atomically: true, encoding: .utf8)
+
+        let report = CrashReporter.loadPendingReport(from: testCrashPath)
+        XCTAssertNotNil(report)
+        XCTAssertTrue(report?.stackTrace.isEmpty ?? false)
+    }
+
+    func testNonHexLinesInStackSectionAreSkipped() {
+        let content = """
+        crash_type: signal
+        signal: 11
+        name: SIGSEGV
+        timestamp: 1711900000
+        app_ver: 0.5.1
+        --- stack ---
+        0x1234
+        garbage line
+        not a hex address
+        0x5678
+        """
+        try! content.write(toFile: testCrashPath, atomically: true, encoding: .utf8)
+
+        let report = CrashReporter.loadPendingReport(from: testCrashPath)
+        XCTAssertEqual(report?.stackTrace, ["0x1234", "0x5678"])
+    }
+
+    func testStackTraceCappedAt256Frames() {
+        var lines = [
+            "crash_type: signal", "signal: 11", "name: SIGSEGV",
+            "timestamp: 1711900000", "app_ver: 0.5.1", "--- stack ---"
+        ]
+        for i in 0..<300 {
+            lines.append("0x\(String(i, radix: 16))")
+        }
+        let content = lines.joined(separator: "\n")
+        try! content.write(toFile: testCrashPath, atomically: true, encoding: .utf8)
+
+        let report = CrashReporter.loadPendingReport(from: testCrashPath)
+        XCTAssertEqual(report?.stackTrace.count, 256)
+    }
+
+    func testMissingOptionalFieldsDefaultToEmptyString() {
+        let content = "crash_type: signal\nsignal: 11\nname: SIGSEGV\ntimestamp: 0\napp_ver: 0.1\n"
+        try! content.write(toFile: testCrashPath, atomically: true, encoding: .utf8)
+
+        let report = CrashReporter.loadPendingReport(from: testCrashPath)
+        XCTAssertNotNil(report)
+        XCTAssertEqual(report?.osVersion, "")
+        XCTAssertEqual(report?.uuid, "")
+        XCTAssertEqual(report?.slide, "")
+        XCTAssertNil(report?.reason)
+    }
+
+    func testStackTraceMarkerWithTrailingWhitespace() {
+        let content = "crash_type: signal\nsignal: 11\nname: SIGSEGV\ntimestamp: 0\napp_ver: 0.1\n--- stack ---  \n0xABCD\n"
+        try! content.write(toFile: testCrashPath, atomically: true, encoding: .utf8)
+
+        let report = CrashReporter.loadPendingReport(from: testCrashPath)
+        XCTAssertEqual(report?.stackTrace, ["0xABCD"])
+    }
+
+    func testSendPendingReportIncludesStackTraceInProps() {
+        let content = """
+        crash_type: signal
+        signal: 11
+        name: SIGSEGV
+        timestamp: 1711900000
+        app_ver: 0.5.1
+        os_ver: 15.3
+        uuid: TEST-UUID
+        slide: 0x100000
+        --- stack ---
+        0xAAAA
+        0xBBBB
+        0xCCCC
+        """
+        try! content.write(toFile: testCrashPath, atomically: true, encoding: .utf8)
+
+        let mock = MockTelemetryService()
+        CrashReporter.sendPendingReport(via: mock, from: testCrashPath)
+
+        if case .crashOccurred(_, _, _, _, _, _, let uuid, let slide, let stackTrace) = mock.sentEvents.first {
+            XCTAssertEqual(uuid, "TEST-UUID")
+            XCTAssertEqual(slide, "0x100000")
+            XCTAssertEqual(stackTrace, "0xAAAA\n0xBBBB\n0xCCCC")
+        } else {
+            XCTFail("Expected crashOccurred event")
+        }
+    }
 }
 
 // MARK: - Mock Telemetry Service

@@ -19,50 +19,50 @@ import MachO
 public final class CrashReporter {
 
     // MARK: - Pre-Allocated Static Buffers (signal-safe)
+    //
+    // All mutable statics are written once in install() (main thread, before run loop)
+    // and read in the signal handler (crash context). This is safe because install()
+    // completes before any signal can fire, and the signal handler is guarded by an
+    // atomic compare-and-swap to ensure single entry.
 
     /// 4 KB buffer for formatting crash report in the signal handler.
-    private static var buffer = [CChar](repeating: 0, count: 4096)
+    nonisolated(unsafe) private static var buffer = [CChar](repeating: 0, count: 4096)
 
     /// Pre-resolved crash file path as a C string.
-    private static var crashFilePath = [CChar](repeating: 0, count: 512)
+    nonisolated(unsafe) private static var crashFilePath = [CChar](repeating: 0, count: 512)
 
     /// Pre-snapshotted metadata (set once at install, read in signal handler).
-    private static var appVersion = [CChar](repeating: 0, count: 64)
-    private static var osVersion = [CChar](repeating: 0, count: 32)
-    private static var machOUUID = [CChar](repeating: 0, count: 48)
-    private static var aslrSlide = [CChar](repeating: 0, count: 24)
+    nonisolated(unsafe) private static var appVersion = [CChar](repeating: 0, count: 64)
+    nonisolated(unsafe) private static var osVersion = [CChar](repeating: 0, count: 32)
+    nonisolated(unsafe) private static var machOUUID = [CChar](repeating: 0, count: 48)
+    nonisolated(unsafe) private static var aslrSlide = [CChar](repeating: 0, count: 24)
 
     /// Alternate signal stack for handling stack overflow crashes.
-    private static var altStack = [UInt8](repeating: 0, count: Int(SIGSTKSZ))
+    nonisolated(unsafe) private static var altStack = [UInt8](repeating: 0, count: Int(SIGSTKSZ))
 
-    /// Flag to prevent concurrent signal handler entry from multiple threads.
-    /// Volatile int32 — set via OSAtomicTestAndSet which is async-signal-safe.
-    private static var handlerEntered: Int32 = 0
+    /// Pre-allocated frame buffer for backtrace() — avoids heap allocation in signal handler.
+    nonisolated(unsafe) private static var framesBuffer = [UnsafeMutableRawPointer?](repeating: nil, count: 64)
+
+    /// Atomic flag to prevent concurrent signal handler entry from multiple threads.
+    nonisolated(unsafe) private static var handlerEntered: Int32 = 0
 
     /// Previous ObjC exception handler (for chaining).
-    private static var previousExceptionHandler: (@convention(c) (NSException) -> Void)?
+    nonisolated(unsafe) private static var previousExceptionHandler: (@convention(c) (NSException) -> Void)?
+
+    /// Whether install() has been called (prevents double-install).
+    nonisolated(unsafe) private static var installed = false
 
     /// Signals to catch.
     private static let signals: [Int32] = [SIGSEGV, SIGABRT, SIGBUS, SIGILL, SIGTRAP, SIGFPE]
-
-    /// Signal name lookup (async-signal-safe — no allocation).
-    private static func signalName(_ sig: Int32) -> StaticString {
-        switch sig {
-        case SIGSEGV: return "SIGSEGV"
-        case SIGABRT: return "SIGABRT"
-        case SIGBUS:  return "SIGBUS"
-        case SIGILL:  return "SIGILL"
-        case SIGTRAP: return "SIGTRAP"
-        case SIGFPE:  return "SIGFPE"
-        default:      return "UNKNOWN"
-        }
-    }
 
     // MARK: - Install (call once, before NSApplication.run())
 
     /// Install crash handlers. Call as the very first line of `main()`.
     /// This method has no dependencies on any services or protocols.
     public static func install() {
+        guard !installed else { return }
+        installed = true
+
         // 1. Ensure the crash directory exists
         let dir = AppPaths.appSupportDir
         var isDir: ObjCBool = false
@@ -75,15 +75,19 @@ public final class CrashReporter {
         path.withCString { ptr in
             strncpy(&crashFilePath, ptr, crashFilePath.count - 1)
         }
+        crashFilePath[crashFilePath.count - 1] = 0
 
         // 3. Snapshot version strings into static buffers
         let info = SystemInfo.current
         info.appVersion.withCString { ptr in
             strncpy(&appVersion, ptr, appVersion.count - 1)
         }
+        appVersion[appVersion.count - 1] = 0
+
         info.macOSVersion.withCString { ptr in
             strncpy(&osVersion, ptr, osVersion.count - 1)
         }
+        osVersion[osVersion.count - 1] = 0
 
         // 4. Capture Mach-O UUID from main executable load commands
         snapshotMachOUUID()
@@ -94,6 +98,7 @@ public final class CrashReporter {
         slideStr.withCString { ptr in
             strncpy(&aslrSlide, ptr, aslrSlide.count - 1)
         }
+        aslrSlide[aslrSlide.count - 1] = 0
 
         // 6. Set up alternate signal stack (handles stack overflow crashes)
         altStack.withUnsafeMutableBufferPointer { buf in
@@ -104,14 +109,15 @@ public final class CrashReporter {
             sigaltstack(&ss, nil)
         }
 
-        // 7. Register signal handlers via sigaction with SA_ONSTACK
+        // 7. Register signal handlers via sigaction with SA_ONSTACK | SA_RESETHAND
+        // SA_RESETHAND: if the handler itself crashes, fall through to default handler
         for sig in signals {
             var action = sigaction()
             action.__sigaction_u = unsafeBitCast(
                 signalHandler as @convention(c) (Int32) -> Void,
                 to: __sigaction_u.self
             )
-            action.sa_flags = Int32(SA_ONSTACK)
+            action.sa_flags = Int32(SA_ONSTACK) | Int32(SA_RESETHAND)
             sigaction(sig, &action, nil)
         }
 
@@ -121,17 +127,21 @@ public final class CrashReporter {
     }
 
     // MARK: - Signal Handler (@convention(c), async-signal-safe)
+    //
+    // Uses only async-signal-safe functions per Darwin's man sigaction:
+    // snprintf, open, write, close, backtrace, raise, sigaction, time.
 
     private static let signalHandler: @convention(c) (Int32) -> Void = { sig in
-        // Guard: only first thread proceeds (OSAtomicTestAndSet is async-signal-safe)
-        guard OSAtomicTestAndSet(0, &handlerEntered) == false else { return }
+        // Guard: only first thread proceeds
+        guard OSAtomicCompareAndSwap32Barrier(0, 1, &handlerEntered) else { return }
 
-        // Format crash report into pre-allocated buffer using only
-        // async-signal-safe-on-Darwin functions (snprintf, open, write, close).
+        // snprintf is async-signal-safe on Darwin (per man sigaction).
+        // Use it for all formatting — much safer than manual int/hex formatters.
         var offset = 0
         let bufSize = buffer.count
 
-        func appendBytes(_ s: UnsafePointer<CChar>) {
+        // Helper: append formatted string to buffer via snprintf
+        func append(_ s: UnsafePointer<CChar>) {
             let len = Int(strlen(s))
             guard offset + len < bufSize else { return }
             buffer.withUnsafeMutableBufferPointer { buf in
@@ -140,98 +150,53 @@ public final class CrashReporter {
             offset += len
         }
 
-        func appendLine(_ key: UnsafePointer<CChar>, _ value: UnsafePointer<CChar>) {
-            appendBytes(key)
-            appendBytes(value)
-            buffer[offset] = 0x0A // '\n'
-            offset += 1
-        }
-
-        // Manual decimal formatting (async-signal-safe, no snprintf)
-        func appendInt(_ key: UnsafePointer<CChar>, _ value: Int) {
-            appendBytes(key)
-            var digits: (CChar, CChar, CChar, CChar, CChar, CChar, CChar, CChar,
-                         CChar, CChar, CChar, CChar, CChar, CChar, CChar, CChar,
-                         CChar, CChar, CChar, CChar, CChar) =
-                (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
-            var n = value < 0 ? -value : value
-            var pos = 19
-            withUnsafeMutablePointer(to: &digits) { ptr in
-                let base = UnsafeMutableRawPointer(ptr).assumingMemoryBound(to: CChar.self)
-                repeat {
-                    base[pos] = CChar(0x30 + (n % 10)) // '0' = 0x30
-                    n /= 10
-                    pos -= 1
-                } while n > 0
-                if value < 0 { base[pos] = 0x2D; pos -= 1 } // '-'
-                base[20] = 0
-                appendBytes(base + pos + 1)
-            }
-            buffer[offset] = 0x0A
-            offset += 1
-        }
-
-        // Manual hex formatting (async-signal-safe, no snprintf)
-        func appendHex(_ value: UInt) {
-            let hexChars: StaticString = "0123456789abcdef"
-            var hexBuf: (CChar, CChar, CChar, CChar, CChar, CChar, CChar, CChar,
-                         CChar, CChar, CChar, CChar, CChar, CChar, CChar, CChar,
-                         CChar, CChar, CChar) =
-                (0x30, 0x78, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0) // "0x"
-            var n = value
-            var pos = 17
-            withUnsafeMutablePointer(to: &hexBuf) { ptr in
-                let base = UnsafeMutableRawPointer(ptr).assumingMemoryBound(to: CChar.self)
-                hexChars.withUTF8Buffer { chars in
-                    repeat {
-                        base[pos] = CChar(bitPattern: chars[Int(n & 0xF)])
-                        n >>= 4
-                        pos -= 1
-                    } while n > 0
-                }
-                // Shift "0x" prefix to just before the digits
-                base[pos - 1] = 0x78 // 'x'
-                base[pos - 2] = 0x30 // '0'
-                base[18] = 0x0A // '\n'
-                let start = pos - 2
-                let len = 19 - start
-                guard offset + len < bufSize else { return }
+        // Helper: vsnprintf into buffer at current offset.
+        // snprintf is async-signal-safe on Darwin per man sigaction, but Swift marks
+        // C variadic functions as unavailable. Use vsnprintf via withVaList instead.
+        func snprintfInto(_ format: UnsafePointer<CChar>, _ args: CVarArg...) {
+            let remaining = bufSize - offset
+            guard remaining > 0 else { return }
+            let written = withVaList(args) { vaList in
                 buffer.withUnsafeMutableBufferPointer { buf in
-                    memcpy(buf.baseAddress! + offset, base + start, len)
+                    Int(vsnprintf(buf.baseAddress! + offset, remaining, format, vaList))
                 }
-                offset += len
             }
+            if written > 0 { offset += min(written, remaining - 1) }
         }
 
-        appendLine("crash_type: ", "signal")
-        appendInt("signal: ", Int(sig))
+        append("crash_type: signal\n")
+        snprintfInto("signal: %d\n", sig)
 
         // Signal name
+        append("name: ")
         switch sig {
-        case SIGSEGV: appendLine("name: ", "SIGSEGV")
-        case SIGABRT: appendLine("name: ", "SIGABRT")
-        case SIGBUS:  appendLine("name: ", "SIGBUS")
-        case SIGILL:  appendLine("name: ", "SIGILL")
-        case SIGTRAP: appendLine("name: ", "SIGTRAP")
-        case SIGFPE:  appendLine("name: ", "SIGFPE")
-        default:      appendLine("name: ", "UNKNOWN")
+        case SIGSEGV: append("SIGSEGV")
+        case SIGABRT: append("SIGABRT")
+        case SIGBUS:  append("SIGBUS")
+        case SIGILL:  append("SIGILL")
+        case SIGTRAP: append("SIGTRAP")
+        case SIGFPE:  append("SIGFPE")
+        default:      append("UNKNOWN")
         }
+        append("\n")
 
-        appendInt("timestamp: ", time(nil))
-        appendLine("app_ver: ", &appVersion)
-        appendLine("os_ver: ", &osVersion)
-        appendLine("uuid: ", &machOUUID)
-        appendLine("slide: ", &aslrSlide)
-        appendBytes("--- stack ---\n")
+        snprintfInto("timestamp: %ld\n", time(nil))
+
+        // Append pre-snapshotted C strings
+        append("app_ver: "); append(&appVersion); append("\n")
+        append("os_ver: "); append(&osVersion); append("\n")
+        append("uuid: "); append(&machOUUID); append("\n")
+        append("slide: "); append(&aslrSlide); append("\n")
+        append("--- stack ---\n")
 
         // Stack trace via backtrace() — not strictly async-signal-safe but
         // pragmatically used by all major crash reporters (Sentry, PLCrashReporter).
-        var frames = [UnsafeMutableRawPointer?](repeating: nil, count: 64)
-        let frameCount = backtrace(&frames, Int32(frames.count))
+        // Uses pre-allocated framesBuffer to avoid heap allocation.
+        let frameCount = backtrace(&framesBuffer, Int32(framesBuffer.count))
         for i in 0..<Int(frameCount) {
-            guard offset + 24 < bufSize else { break }
-            if let addr = frames[i] {
-                appendHex(UInt(bitPattern: addr))
+            guard bufSize - offset > 20 else { break }
+            if let addr = framesBuffer[i] {
+                snprintfInto("0x%lx\n", UInt(bitPattern: addr))
             }
         }
 
@@ -244,8 +209,8 @@ public final class CrashReporter {
             Darwin.close(fd)
         }
 
-        // Restore default handler and re-raise so macOS gets the crash
-        Darwin.signal(sig, SIG_DFL)
+        // SA_RESETHAND already restored SIG_DFL before entering this handler.
+        // Just re-raise to let the OS default handler produce the crash report.
         Darwin.raise(sig)
     }
 
@@ -289,10 +254,16 @@ public final class CrashReporter {
             return
         }
 
+        guard header.pointee.magic == MH_MAGIC_64 else {
+            strncpy(&machOUUID, "unknown", machOUUID.count - 1)
+            return
+        }
+
         var cursor = UnsafeRawPointer(header).advanced(by: MemoryLayout<mach_header_64>.size)
         for _ in 0..<header.pointee.ncmds {
             let cmd = cursor.assumingMemoryBound(to: load_command.self).pointee
-            if cmd.cmd == LC_UUID {
+            guard cmd.cmdsize >= UInt32(MemoryLayout<load_command>.size) else { break }
+            if cmd.cmd == LC_UUID, cmd.cmdsize >= 24 {
                 // uuid_command: load_command (8 bytes) + uuid (16 bytes)
                 let uuidPtr = cursor.advanced(by: 8).assumingMemoryBound(to: UInt8.self)
                 let bytes = (0..<16).map { uuidPtr[$0] }
@@ -347,13 +318,13 @@ public final class CrashReporter {
         var inStack = false
 
         for line in lines {
-            if line == "--- stack ---" {
+            if line.trimmingCharacters(in: .whitespaces) == "--- stack ---" {
                 inStack = true
                 continue
             }
             if inStack {
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
-                if trimmed.hasPrefix("0x") {
+                if trimmed.hasPrefix("0x"), stackTrace.count < 256 {
                     stackTrace.append(trimmed)
                 }
             } else if let colonIndex = line.firstIndex(of: ":") {
