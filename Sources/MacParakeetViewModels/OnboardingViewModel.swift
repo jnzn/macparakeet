@@ -62,7 +62,6 @@ public final class OnboardingViewModel {
     private var refreshTask: Task<Void, Never>?
     private var warmUpObserverTask: Task<Void, Never>?
     private var warmUpObserverId: UUID?
-    private static let progressPercentRegex = try! NSRegularExpression(pattern: #"(\d{1,3}(?:\.\d+)?)\s*%"#)
     private let engineWarmUpAttempts = 3
     private let requiredFirstSetupDiskBytes: Int64 = 7 * 1_024 * 1_024 * 1_024
 
@@ -346,21 +345,6 @@ public final class OnboardingViewModel {
         }
     }
 
-    /// Extract a percentage from messages like:
-    /// "Downloading speech model... 45%" or "Downloading speech model... 45% (3/7)"
-    static func parseProgressFraction(from message: String) -> Double? {
-        let range = NSRange(message.startIndex..., in: message)
-        guard let match = progressPercentRegex.firstMatch(in: message, options: [], range: range),
-              match.numberOfRanges >= 2,
-              let numberRange = Range(match.range(at: 1), in: message),
-              let percent = Double(message[numberRange]),
-              percent >= 0,
-              percent <= 100 else {
-            return nil
-        }
-
-        return percent / 100
-    }
 
     public func retryEngineWarmUp() {
         warmUpObserverTask?.cancel()

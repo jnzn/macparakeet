@@ -242,53 +242,6 @@ public actor BinaryBootstrap {
         }
     }
 
-    private func runProcess(executablePath: String, arguments: [String], timeout: TimeInterval) async throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executablePath)
-        process.arguments = arguments
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-
-        try process.run()
-
-        let resumed = OSAllocatedUnfairLock(initialState: false)
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            process.terminationHandler = { _ in
-                let shouldResume = resumed.withLock { done -> Bool in
-                    guard !done else { return false }
-                    done = true
-                    return true
-                }
-                if shouldResume {
-                    continuation.resume()
-                }
-            }
-
-            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
-                let shouldResume = resumed.withLock { done -> Bool in
-                    guard !done else { return false }
-                    done = true
-                    return true
-                }
-                if shouldResume {
-                    process.terminate()
-                    continuation.resume(throwing: BinaryBootstrapError.updateTimedOut)
-                }
-            }
-
-            if !process.isRunning {
-                let shouldResume = resumed.withLock { done -> Bool in
-                    guard !done else { return false }
-                    done = true
-                    return true
-                }
-                if shouldResume {
-                    continuation.resume()
-                }
-            }
-        }
-    }
-
     private nonisolated static func currentYtDlpAssetName() -> String {
         #if arch(arm64)
         return ytDlpAssetArm64
