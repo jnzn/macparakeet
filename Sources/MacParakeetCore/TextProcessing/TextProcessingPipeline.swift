@@ -3,7 +3,7 @@ import Foundation
 /// Deterministic 5-step text processing pipeline.
 /// Pure function: same input always produces same output.
 ///
-/// Steps: Filler Removal → Custom Words → Snippet Expansion → Whitespace Cleanup → Trailing Action Extraction
+/// Steps: Filler Removal → Custom Words → Trailing Action Extraction → Snippet Expansion → Whitespace Cleanup
 public struct TextProcessingPipeline: Sendable {
 
     public init() {}
@@ -29,14 +29,7 @@ public struct TextProcessingPipeline: Sendable {
         // Step 2: Custom word replacements
         result = applyCustomWords(to: result, words: customWords)
 
-        // Step 3: Text snippet expansion (text-type only)
-        let (expandedText, expandedIDs) = expandSnippets(in: result, snippets: textSnippets)
-        result = expandedText
-
-        // Step 4: Whitespace cleanup
-        result = cleanWhitespace(in: result)
-
-        // Step 5: Extract trailing action snippet (after cleanup, so trigger isn't mangled)
+        // Step 3: Extract trailing action snippet (before expansion, so trigger isn't mangled)
         var actionIDs = Set<UUID>()
         var postPasteAction: KeyAction?
         let (actionCleanedText, matchedSnippet) = extractTrailingAction(
@@ -47,6 +40,13 @@ public struct TextProcessingPipeline: Sendable {
             postPasteAction = matchedSnippet.action
             actionIDs.insert(matchedSnippet.id)
         }
+
+        // Step 4: Text snippet expansion (text-type only)
+        let (expandedText, expandedIDs) = expandSnippets(in: result, snippets: textSnippets)
+        result = expandedText
+
+        // Step 5: Whitespace cleanup
+        result = cleanWhitespace(in: result)
 
         return TextProcessingResult(
             text: result,
@@ -102,7 +102,38 @@ public struct TextProcessingPipeline: Sendable {
         return result
     }
 
-    // MARK: - Step 3: Snippet Expansion
+    // MARK: - Step 3: Trailing Action Extraction
+
+    func extractTrailingAction(
+        from text: String,
+        actionSnippets: [TextSnippet]
+    ) -> (String, TextSnippet?) {
+        guard !actionSnippets.isEmpty else { return (text, nil) }
+
+        // Sort longest-trigger-first (same as expandSnippets)
+        let sorted = actionSnippets
+            .filter { $0.isEnabled }
+            .sorted { $0.trigger.count > $1.trigger.count }
+
+        for snippet in sorted {
+            // Punctuation-tolerant: match trigger at end with optional trailing punctuation
+            let escaped = NSRegularExpression.escapedPattern(for: snippet.trigger)
+            let pattern = "\\b\(escaped)[.!?,;:]*\\s*$"
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else {
+                continue
+            }
+            let range = NSRange(text.startIndex..., in: text)
+            if let match = regex.firstMatch(in: text, range: range) {
+                let cleaned = (text as NSString).replacingCharacters(in: match.range, with: "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                return (cleaned, snippet)
+            }
+        }
+
+        return (text, nil)
+    }
+
+    // MARK: - Step 4: Snippet Expansion
 
     func expandSnippets(
         in text: String,
@@ -138,12 +169,12 @@ public struct TextProcessingPipeline: Sendable {
         return (result, expandedIDs)
     }
 
-    // MARK: - Step 4: Whitespace Cleanup
+    // MARK: - Step 5: Whitespace Cleanup
 
     func cleanWhitespace(in text: String) -> String {
         var result = text
 
-        // 4a: Collapse multiple spaces
+        // 5a: Collapse multiple spaces
         if let regex = try? NSRegularExpression(pattern: " {2,}") {
             result = regex.stringByReplacingMatches(
                 in: result,
@@ -152,7 +183,7 @@ public struct TextProcessingPipeline: Sendable {
             )
         }
 
-        // 4a2: Clean spaces around newlines, preserving newline count
+        // 5a2: Clean spaces around newlines, preserving newline count
         // "Hello, \n world" → "Hello,\nworld"
         // "Hello, \n\n world" → "Hello,\n\nworld" (paragraph break preserved)
         if let regex = try? NSRegularExpression(pattern: " *(\n+) *") {
@@ -163,7 +194,7 @@ public struct TextProcessingPipeline: Sendable {
             )
         }
 
-        // 4b: Remove space before punctuation (only horizontal space, preserve newlines)
+        // 5b: Remove space before punctuation (only horizontal space, preserve newlines)
         if let regex = try? NSRegularExpression(pattern: " +([.!?,;:])") {
             result = regex.stringByReplacingMatches(
                 in: result,
@@ -172,45 +203,14 @@ public struct TextProcessingPipeline: Sendable {
             )
         }
 
-        // 4c: Trim
+        // 5c: Trim
         result = result.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // 4d: Capitalize first letter
+        // 5d: Capitalize first letter
         if let first = result.first, first.isLowercase {
             result = first.uppercased() + result.dropFirst()
         }
 
         return result
-    }
-
-    // MARK: - Step 5: Trailing Action Extraction
-
-    func extractTrailingAction(
-        from text: String,
-        actionSnippets: [TextSnippet]
-    ) -> (String, TextSnippet?) {
-        guard !actionSnippets.isEmpty else { return (text, nil) }
-
-        // Sort longest-trigger-first (same as expandSnippets)
-        let sorted = actionSnippets
-            .filter { $0.isEnabled }
-            .sorted { $0.trigger.count > $1.trigger.count }
-
-        for snippet in sorted {
-            // Punctuation-tolerant: match trigger at end with optional trailing punctuation
-            let escaped = NSRegularExpression.escapedPattern(for: snippet.trigger)
-            let pattern = "\\b\(escaped)[.!?,;:]*\\s*$"
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else {
-                continue
-            }
-            let range = NSRange(text.startIndex..., in: text)
-            if let match = regex.firstMatch(in: text, range: range) {
-                let cleaned = (text as NSString).replacingCharacters(in: match.range, with: "")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                return (cleaned, snippet)
-            }
-        }
-
-        return (text, nil)
     }
 }
