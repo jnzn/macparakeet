@@ -254,6 +254,7 @@ public actor STTClient: STTClientProtocol {
     private func completeInitialization(models: AsrModels, manager: AsrManager) {
         guard !Task.isCancelled else {
             manager.cleanup()
+            initializationTask = nil
             return
         }
         self.models = models
