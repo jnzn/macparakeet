@@ -417,7 +417,8 @@ These are improvements, not bugs. Address when relevant or when working in the a
 - **P2-9** GCD timeout closure retained in YouTubeDownloader
 
 ### Observability
-- **P2-7** Add Logger to YouTubeDownloader, BinaryBootstrap, LLMService
+- ~~**P2-7** Add Logger to YouTubeDownloader~~ → Not needed. `transcription_failed` telemetry already sends `error_type` (e.g. `YouTubeDownloadError.downloadFailed`) and `error_detail` (sanitized yt-dlp stderr, 512 chars). Remote visibility is sufficient.
+- **P2-7** Add Logger to BinaryBootstrap, LLMService — lower priority, only helps local debugging
 - **P2-8** Fire missing telemetry events (app_updated, model_loaded, etc.)
 
 ### Test infrastructure
