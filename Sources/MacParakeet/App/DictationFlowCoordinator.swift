@@ -382,21 +382,21 @@ final class DictationFlowCoordinator {
                 try? await Task.sleep(for: .milliseconds(200))
                 guard !Task.isCancelled else { return }
 
+                let action = self.pendingPostPasteAction
+                self.pendingPostPasteAction = nil
+
                 do {
-                    if self.pendingPostPasteAction != nil {
+                    if let action {
                         // Action mode: no trailing space, action replaces the space role
                         try await self.clipboardService.pasteTextWithAction(
                             transcript,
-                            postPasteAction: self.pendingPostPasteAction
+                            postPasteAction: action
                         )
-                        if let action = self.pendingPostPasteAction {
-                            Telemetry.send(.keystrokeSnippetFired(action: action.rawValue))
-                        }
+                        Telemetry.send(.keystrokeSnippetFired(action: action.rawValue))
                     } else {
                         // Normal mode: trailing space as before
                         try await self.clipboardService.pasteText(transcript + " ")
                     }
-                    self.pendingPostPasteAction = nil
                     guard !Task.isCancelled else { return }
 
                     // Save pastedToApp metadata
