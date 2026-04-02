@@ -269,4 +269,111 @@ final class TextProcessingPipelineTests: XCTestCase {
         let result = pipeline.cleanWhitespace(in: "Hello.\n\n. World")
         XCTAssertTrue(result.contains("\n\n"), "Newlines before punctuation must not be stripped, got: \(result)")
     }
+
+    // MARK: - Keystroke Action Snippets
+
+    func testActionSnippetAtEndOfText() {
+        let snippets = [
+            TextSnippet(trigger: "return", expansion: "return", action: .returnKey)
+        ]
+        let result = pipeline.process(text: "hello world return", customWords: [], snippets: snippets)
+        XCTAssertEqual(result.text, "Hello world")
+        XCTAssertEqual(result.postPasteAction, .returnKey)
+    }
+
+    func testActionSnippetMidTextIgnored() {
+        let snippets = [
+            TextSnippet(trigger: "return", expansion: "return", action: .returnKey)
+        ]
+        let result = pipeline.process(text: "press return to continue", customWords: [], snippets: snippets)
+        XCTAssertEqual(result.text, "Press return to continue")
+        XCTAssertNil(result.postPasteAction)
+    }
+
+    func testActionSnippetCaseInsensitive() {
+        let snippets = [
+            TextSnippet(trigger: "return", expansion: "return", action: .returnKey)
+        ]
+        let result = pipeline.process(text: "hello RETURN", customWords: [], snippets: snippets)
+        XCTAssertEqual(result.text, "Hello")
+        XCTAssertEqual(result.postPasteAction, .returnKey)
+    }
+
+    func testActionSnippetWithTrailingPunctuation() {
+        let snippets = [
+            TextSnippet(trigger: "return", expansion: "return", action: .returnKey)
+        ]
+        let result = pipeline.process(text: "hello world return.", customWords: [], snippets: snippets)
+        XCTAssertEqual(result.text, "Hello world")
+        XCTAssertEqual(result.postPasteAction, .returnKey)
+    }
+
+    func testActionSnippetWithTrailingComma() {
+        let snippets = [
+            TextSnippet(trigger: "press tab", expansion: "tab", action: .tab)
+        ]
+        let result = pipeline.process(text: "git che press tab,", customWords: [], snippets: snippets)
+        XCTAssertEqual(result.text, "Git che")
+        XCTAssertEqual(result.postPasteAction, .tab)
+    }
+
+    func testActionSnippetTracksExpandedID() {
+        let snippet = TextSnippet(trigger: "return", expansion: "return", action: .returnKey)
+        let result = pipeline.process(text: "hello return", customWords: [], snippets: [snippet])
+        XCTAssertTrue(result.expandedSnippetIDs.contains(snippet.id))
+    }
+
+    func testNoActionSnippetsReturnsNilAction() {
+        let snippets = [
+            TextSnippet(trigger: "my sig", expansion: "Best regards, Daniel")
+        ]
+        let result = pipeline.process(text: "hello my sig", customWords: [], snippets: snippets)
+        XCTAssertNil(result.postPasteAction)
+    }
+
+    func testTextAndActionSnippetsTogether() {
+        let snippets = [
+            TextSnippet(trigger: "my sig", expansion: "Best regards"),
+            TextSnippet(trigger: "return", expansion: "return", action: .returnKey)
+        ]
+        let result = pipeline.process(text: "my sig return", customWords: [], snippets: snippets)
+        XCTAssertEqual(result.text, "Best regards")
+        XCTAssertEqual(result.postPasteAction, .returnKey)
+    }
+
+    func testDisabledActionSnippetIgnored() {
+        let snippets = [
+            TextSnippet(trigger: "return", expansion: "return", isEnabled: false, action: .returnKey)
+        ]
+        let result = pipeline.process(text: "hello return", customWords: [], snippets: snippets)
+        XCTAssertNil(result.postPasteAction)
+        XCTAssertEqual(result.text, "Hello return")
+    }
+
+    func testTabActionSnippet() {
+        let snippets = [
+            TextSnippet(trigger: "press tab", expansion: "tab", action: .tab)
+        ]
+        let result = pipeline.process(text: "git che press tab", customWords: [], snippets: snippets)
+        XCTAssertEqual(result.text, "Git che")
+        XCTAssertEqual(result.postPasteAction, .tab)
+    }
+
+    func testActionOnlyDictation() {
+        let snippets = [
+            TextSnippet(trigger: "return", expansion: "return", action: .returnKey)
+        ]
+        let result = pipeline.process(text: "return", customWords: [], snippets: snippets)
+        XCTAssertEqual(result.text, "")
+        XCTAssertEqual(result.postPasteAction, .returnKey)
+    }
+
+    func testTriggerMidTextAndAtEnd() {
+        let snippets = [
+            TextSnippet(trigger: "return", expansion: "return", action: .returnKey)
+        ]
+        let result = pipeline.process(text: "press return and then return", customWords: [], snippets: snippets)
+        XCTAssertEqual(result.text, "Press return and then")
+        XCTAssertEqual(result.postPasteAction, .returnKey)
+    }
 }
