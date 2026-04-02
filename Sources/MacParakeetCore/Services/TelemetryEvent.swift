@@ -24,6 +24,7 @@ public enum TelemetryEventName: String, Sendable, CaseIterable {
     case processingModeChanged = "processing_mode_changed"
     case customWordAdded = "custom_word_added"
     case snippetAdded = "snippet_added"
+    case keystrokeSnippetFired = "keystroke_snippet_fired"
     case settingChanged = "setting_changed"
     case telemetryOptedOut = "telemetry_opted_out"
     case onboardingCompleted = "onboarding_completed"
@@ -47,8 +48,6 @@ public enum TelemetryEventName: String, Sendable, CaseIterable {
     case modelDownloadFailed = "model_download_failed"
     // Errors
     case errorOccurred = "error_occurred"
-    // Keystroke actions
-    case keystrokeSnippetFired = "keystroke_snippet_fired"
     // Crashes
     case crashOccurred = "crash_occurred"
 }
