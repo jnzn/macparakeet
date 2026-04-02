@@ -119,16 +119,16 @@ final class OnboardingViewModelTests: XCTestCase {
     }
 
     func testParseProgressFractionFromPercentage() {
-        XCTAssertEqual(OnboardingViewModel.parseProgressFraction(from: "Downloading speech model (571 MB)... 45%"), 0.45)
-        XCTAssertEqual(OnboardingViewModel.parseProgressFraction(from: "Downloading speech model (571 MB)... 0%"), 0.0)
-        XCTAssertEqual(OnboardingViewModel.parseProgressFraction(from: "Downloading speech model (571 MB)... 100%"), 1.0)
-        XCTAssertEqual(OnboardingViewModel.parseProgressFraction(from: "Speech model: Downloading speech model... 60% (3/5)"), 0.6)
+        XCTAssertEqual(OnboardingProgressParser.parseProgressFraction(from: "Downloading speech model (571 MB)... 45%"), 0.45)
+        XCTAssertEqual(OnboardingProgressParser.parseProgressFraction(from: "Downloading speech model (571 MB)... 0%"), 0.0)
+        XCTAssertEqual(OnboardingProgressParser.parseProgressFraction(from: "Downloading speech model (571 MB)... 100%"), 1.0)
+        XCTAssertEqual(OnboardingProgressParser.parseProgressFraction(from: "Speech model: Downloading speech model... 60% (3/5)"), 0.6)
     }
 
     func testParseProgressFractionReturnsNilForNonPercentage() {
-        XCTAssertNil(OnboardingViewModel.parseProgressFraction(from: "Creating Python environment..."))
-        XCTAssertNil(OnboardingViewModel.parseProgressFraction(from: "Loading model into memory..."))
-        XCTAssertNil(OnboardingViewModel.parseProgressFraction(from: "Ready"))
+        XCTAssertNil(OnboardingProgressParser.parseProgressFraction(from: "Creating Python environment..."))
+        XCTAssertNil(OnboardingProgressParser.parseProgressFraction(from: "Loading model into memory..."))
+        XCTAssertNil(OnboardingProgressParser.parseProgressFraction(from: "Ready"))
     }
 
     func testEngineStateWorkingWithProgress() {
