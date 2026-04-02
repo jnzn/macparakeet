@@ -89,14 +89,6 @@ struct TextSnippetsView: View {
                     .font(DesignSystem.Typography.bodySmall)
                     .foregroundStyle(.secondary)
             }
-            HStack(alignment: .top, spacing: DesignSystem.Spacing.sm) {
-                Image(systemName: "command")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(DesignSystem.Colors.warningAmber)
-                Text("Use Keystroke type to simulate a Return keypress at the end of dictation — great for terminal command execution. Use distinctive trigger phrases like \"press return\" or \"send it\" to avoid false matches with common words.")
-                    .font(DesignSystem.Typography.bodySmall)
-                    .foregroundStyle(.secondary)
-            }
         }
     }
 
@@ -143,31 +135,21 @@ struct TextSnippetsView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                Picker("Type", selection: $viewModel.newSnippetIsKeystroke) {
-                    Text("Text").tag(false)
-                    Text("Keystroke").tag(true)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-
                 HStack(spacing: DesignSystem.Spacing.sm) {
                     TextField("Trigger phrase", text: $viewModel.newTrigger)
                         .textFieldStyle(.roundedBorder)
                         .focused($triggerFieldFocused)
-                    if viewModel.newSnippetIsKeystroke {
-                        Text(KeyAction.returnKey.label)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    } else {
-                        TextField("Expansion", text: $viewModel.newExpansion)
-                            .textFieldStyle(.roundedBorder)
-                    }
+                    TextField("Expansion", text: $viewModel.newExpansion)
+                        .textFieldStyle(.roundedBorder)
                     Button("Add") {
                         viewModel.addSnippet()
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(DesignSystem.Colors.accent)
-                    .disabled(addButtonDisabled)
+                    .disabled(
+                        viewModel.newTrigger.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || viewModel.newExpansion.trimmingCharacters(in: .whitespaces).isEmpty
+                    )
                 }
             }
         }
@@ -196,16 +178,10 @@ struct TextSnippetsView: View {
                         .opacity(snippet.isEnabled ? 1.0 : 0.55)
                 }
 
-                if let action = snippet.action {
-                    Text("Action: \(action.label)")
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundStyle(DesignSystem.Colors.accent)
-                } else {
-                    Text("Expands to: \(snippet.expansion.replacingOccurrences(of: "\n", with: " ↵ "))")
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
+                Text("Expands to: \(snippet.expansion.replacingOccurrences(of: "\n", with: " ↵ "))")
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
             }
 
             Spacer()
@@ -237,15 +213,6 @@ struct TextSnippetsView: View {
             withAnimation(DesignSystem.Animation.hoverTransition) {
                 hoveredSnippetID = hovering ? snippet.id : nil
             }
-        }
-    }
-
-    private var addButtonDisabled: Bool {
-        let triggerEmpty = viewModel.newTrigger.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        if viewModel.newSnippetIsKeystroke {
-            return triggerEmpty
-        } else {
-            return triggerEmpty || viewModel.newExpansion.trimmingCharacters(in: .whitespaces).isEmpty
         }
     }
 

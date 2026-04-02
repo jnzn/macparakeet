@@ -132,46 +132,4 @@ final class TextSnippetsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.filteredSnippets.count, 1)
     }
 
-    // MARK: - Keystroke Action Snippets
-
-    func testAddKeystrokeSnippet() {
-        viewModel.newTrigger = "press return"
-        viewModel.newSnippetIsKeystroke = true
-        viewModel.newKeystrokeAction = .returnKey
-        viewModel.addSnippet()
-
-        XCTAssertEqual(viewModel.snippets.count, 1)
-        XCTAssertEqual(viewModel.snippets.first?.action, .returnKey)
-        XCTAssertEqual(viewModel.snippets.first?.trigger, "press return")
-        // State reset after add
-        XCTAssertEqual(viewModel.newTrigger, "")
-        XCTAssertFalse(viewModel.newSnippetIsKeystroke)
-    }
-
-    func testDuplicateTriggerAcrossTypes() {
-        // Add a text snippet with trigger "return"
-        viewModel.newTrigger = "return"
-        viewModel.newExpansion = "some text"
-        viewModel.addSnippet()
-        XCTAssertEqual(viewModel.snippets.count, 1)
-
-        // Try to add a keystroke snippet with same trigger — should fail
-        viewModel.newTrigger = "return"
-        viewModel.newSnippetIsKeystroke = true
-        viewModel.newKeystrokeAction = .returnKey
-        viewModel.addSnippet()
-        XCTAssertEqual(viewModel.snippets.count, 1)
-        XCTAssertNotNil(viewModel.errorMessage)
-    }
-
-    func testKeystrokeSnippetDoesNotRequireExpansion() {
-        viewModel.newTrigger = "hit return"
-        viewModel.newSnippetIsKeystroke = true
-        viewModel.newKeystrokeAction = .returnKey
-        viewModel.newExpansion = ""  // Expansion is empty but should not matter
-        viewModel.addSnippet()
-
-        XCTAssertEqual(viewModel.snippets.count, 1)
-        XCTAssertEqual(viewModel.snippets.first?.action, .returnKey)
-    }
 }
