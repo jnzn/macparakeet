@@ -52,6 +52,7 @@ public actor DictationService: DictationServiceProtocol {
     private let entitlements: EntitlementsChecking?
     private let customWordRepo: CustomWordRepositoryProtocol?
     private let snippetRepo: TextSnippetRepositoryProtocol?
+    private let voiceReturnTrigger: @Sendable () -> String?
     private let processingMode: @Sendable () -> Dictation.ProcessingMode
     private let textRefinementService: TextRefinementService
     private let cancelWindow: Duration
@@ -80,6 +81,7 @@ public actor DictationService: DictationServiceProtocol {
         entitlements: EntitlementsChecking? = nil,
         customWordRepo: CustomWordRepositoryProtocol? = nil,
         snippetRepo: TextSnippetRepositoryProtocol? = nil,
+        voiceReturnTrigger: (@Sendable () -> String?)? = nil,
         processingMode: (@Sendable () -> Dictation.ProcessingMode)? = nil,
         cancelWindow: Duration = .seconds(5)
     ) {
@@ -91,6 +93,7 @@ public actor DictationService: DictationServiceProtocol {
         self.entitlements = entitlements
         self.customWordRepo = customWordRepo
         self.snippetRepo = snippetRepo
+        self.voiceReturnTrigger = voiceReturnTrigger ?? { nil }
         self.processingMode = processingMode ?? { .raw }
         self.textRefinementService = TextRefinementService()
         self.cancelWindow = cancelWindow
@@ -304,6 +307,15 @@ public actor DictationService: DictationServiceProtocol {
             catch { logger.error("Failed to load custom words: \(error.localizedDescription)") }
             do { snippets = try snippetRepo?.fetchEnabled() ?? [] }
             catch { logger.error("Failed to load text snippets: \(error.localizedDescription)") }
+
+            // Voice Return: inject synthetic action snippet from settings
+            if let trigger = voiceReturnTrigger(), !trigger.isEmpty {
+                snippets.append(TextSnippet(
+                    trigger: trigger,
+                    expansion: KeyAction.returnKey.label,
+                    action: .returnKey
+                ))
+            }
         }
         let refinement = await textRefinementService.refine(
             rawText: result.text,

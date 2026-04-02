@@ -27,6 +27,7 @@ struct VocabularyView: View {
                 } else {
                     pipelineCard
                 }
+                voiceReturnCard
             }
             .padding(DesignSystem.Spacing.lg)
         }
@@ -181,6 +182,56 @@ struct VocabularyView: View {
                 )
             }
             .padding(.top, 2)
+        }
+    }
+
+    // MARK: - Voice Return
+
+    private var voiceReturnCard: some View {
+        vocabularyCard(
+            title: "Voice Return",
+            subtitle: "Press Return with your voice — useful for terminal commands.",
+            icon: "return"
+        ) {
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+                Toggle(isOn: $settingsViewModel.voiceReturnEnabled) {
+                    Text("Enable Voice Return")
+                        .font(DesignSystem.Typography.body)
+                }
+                .toggleStyle(.switch)
+                .tint(DesignSystem.Colors.accent)
+
+                if settingsViewModel.voiceReturnEnabled {
+                    VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
+                        Text("Trigger phrase")
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(.secondary)
+                        TextField("press return", text: $settingsViewModel.voiceReturnTrigger)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: 250)
+                    }
+
+                    HStack(alignment: .top, spacing: DesignSystem.Spacing.sm) {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        Text("Say your trigger phrase at the end of a dictation to simulate a Return keypress. Only matches at the end — mid-sentence occurrences are left as literal text.")
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if selectedMode == .raw {
+                        HStack(alignment: .top, spacing: DesignSystem.Spacing.sm) {
+                            Image(systemName: "exclamationmark.triangle")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(DesignSystem.Colors.warningAmber)
+                            Text("Voice Return requires Clean mode. Switch to Clean mode for this feature to work.")
+                                .font(DesignSystem.Typography.caption)
+                                .foregroundStyle(DesignSystem.Colors.warningAmber)
+                        }
+                    }
+                }
+            }
         }
     }
 
