@@ -92,9 +92,18 @@ struct DictationOverlayView: View {
 
         default:
             let isReady = if case .ready = viewModel.state { true } else { false }
+            // Processing (non-command) and success show a single 26×26 icon — use equal
+            // padding so the Capsule background renders as a perfect circle, not an oval.
+            let isIconOnly: Bool = {
+                switch viewModel.state {
+                case .processing: return viewModel.sessionKind != .command
+                case .success: return true
+                default: return false
+                }
+            }()
             pillContent
-                .padding(.horizontal, isReady ? 6 : 16)
-                .padding(.vertical, isReady ? 4 : 7)
+                .padding(.horizontal, isReady ? 6 : (isIconOnly ? 10 : 16))
+                .padding(.vertical, isReady ? 4 : (isIconOnly ? 10 : 7))
                 .background(
                     Capsule()
                         .fill(DesignSystem.Colors.pillBackground)
