@@ -310,11 +310,11 @@ final class TextProcessingPipelineTests: XCTestCase {
 
     func testActionSnippetWithTrailingComma() {
         let snippets = [
-            TextSnippet(trigger: "press tab", expansion: "tab", action: .tab)
+            TextSnippet(trigger: "press return", expansion: "return", action: .returnKey)
         ]
-        let result = pipeline.process(text: "git che press tab,", customWords: [], snippets: snippets)
-        XCTAssertEqual(result.text, "Git che")
-        XCTAssertEqual(result.postPasteAction, .tab)
+        let result = pipeline.process(text: "git status press return,", customWords: [], snippets: snippets)
+        XCTAssertEqual(result.text, "Git status")
+        XCTAssertEqual(result.postPasteAction, .returnKey)
     }
 
     func testActionSnippetTracksExpandedID() {
@@ -350,13 +350,13 @@ final class TextProcessingPipelineTests: XCTestCase {
         XCTAssertEqual(result.text, "Hello return")
     }
 
-    func testTabActionSnippet() {
+    func testMultiWordActionTrigger() {
         let snippets = [
-            TextSnippet(trigger: "press tab", expansion: "tab", action: .tab)
+            TextSnippet(trigger: "press return", expansion: "return", action: .returnKey)
         ]
-        let result = pipeline.process(text: "git che press tab", customWords: [], snippets: snippets)
-        XCTAssertEqual(result.text, "Git che")
-        XCTAssertEqual(result.postPasteAction, .tab)
+        let result = pipeline.process(text: "git status press return", customWords: [], snippets: snippets)
+        XCTAssertEqual(result.text, "Git status")
+        XCTAssertEqual(result.postPasteAction, .returnKey)
     }
 
     func testActionOnlyDictation() {
