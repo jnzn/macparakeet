@@ -198,7 +198,7 @@ public enum AudioDeviceManager {
 
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioAggregateDevicePropertyActiveSubDeviceList,
-            mScope: kAudioObjectPropertyScopeInput,
+            mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
 
@@ -211,7 +211,9 @@ public enum AudioDeviceManager {
         status = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &dataSize, &subDeviceIDs)
         guard status == noErr, let firstID = subDeviceIDs.first else { return nil }
 
-        return transportType(firstID)
+        let subTransport = transportType(firstID)
+        guard subTransport != 0 else { return nil }
+        return subTransport
     }
 
     // MARK: - Private
