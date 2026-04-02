@@ -265,6 +265,13 @@ public final class DictationHistoryViewModel {
         }
     }
 
+    private static let dateHeaderFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .none
+        return f
+    }()
+
     private func formatDateHeader(_ date: Date) -> String {
         let calendar = Calendar.current
         if calendar.isDateInToday(date) {
@@ -272,10 +279,7 @@ public final class DictationHistoryViewModel {
         } else if calendar.isDateInYesterday(date) {
             return "Yesterday"
         } else {
-            let formatter = DateFormatter()
-            formatter.dateStyle = .medium
-            formatter.timeStyle = .none
-            return formatter.string(from: date)
+            return Self.dateHeaderFormatter.string(from: date)
         }
     }
 }

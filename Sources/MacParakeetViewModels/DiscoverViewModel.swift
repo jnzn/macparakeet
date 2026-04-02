@@ -46,10 +46,10 @@ public final class DiscoverViewModel {
 
     private func startRotation() {
         rotationTask?.cancel()
-        rotationTask = Task {
+        rotationTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(30))
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, let self else { return }
                 sidebarIndex += 1
             }
         }

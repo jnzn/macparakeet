@@ -449,7 +449,8 @@ public final class TranscriptionViewModel {
         // Capture ID before async work — currentTranscription may change mid-stream
         let targetID = currentTranscription?.id
 
-        summaryTask = Task { @MainActor in
+        summaryTask = Task { @MainActor [weak self] in
+            guard let self else { return }
             do {
                 let stream = llmService.summarizeStream(transcript: text)
                 for try await token in stream {

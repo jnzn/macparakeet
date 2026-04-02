@@ -63,18 +63,21 @@ public struct TextProcessingPipeline: Sendable {
         "um", "uh", "umm", "uhh"
     ]
 
+    /// Pre-compiled filler regexes — avoids recompilation on every dictation.
+    private static let fillerRegexes: [NSRegularExpression] = alwaysSafeFillers.compactMap { filler in
+        let pattern = "\\b\(NSRegularExpression.escapedPattern(for: filler))\\b"
+        return try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+    }
+
     func removeFillers(from text: String) -> String {
         var result = text
 
-        for filler in Self.alwaysSafeFillers {
-            let pattern = "\\b\(NSRegularExpression.escapedPattern(for: filler))\\b"
-            if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
-                result = regex.stringByReplacingMatches(
-                    in: result,
-                    range: NSRange(result.startIndex..., in: result),
-                    withTemplate: ""
-                )
-            }
+        for regex in Self.fillerRegexes {
+            result = regex.stringByReplacingMatches(
+                in: result,
+                range: NSRange(result.startIndex..., in: result),
+                withTemplate: ""
+            )
         }
 
         return result
