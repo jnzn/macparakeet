@@ -3,7 +3,14 @@ import Foundation
 
 public protocol ClipboardServiceProtocol: Sendable {
     func pasteText(_ text: String) async throws
+    func pasteTextWithAction(_ text: String, postPasteAction: KeyAction?) async throws
     func copyToClipboard(_ text: String) async
+}
+
+extension ClipboardServiceProtocol {
+    public func pasteTextWithAction(_ text: String, postPasteAction: KeyAction?) async throws {
+        try await pasteText(text)
+    }
 }
 
 public enum ClipboardServiceError: LocalizedError {
@@ -79,7 +86,51 @@ public final class ClipboardService: ClipboardServiceProtocol {
         pasteboard.setString(text, forType: .string)
     }
 
+    public func pasteTextWithAction(_ text: String, postPasteAction: KeyAction?) async throws {
+        guard let action = postPasteAction else {
+            try await pasteText(text)
+            return
+        }
+
+        // If text is empty (trigger was entire dictation), skip paste — just fire keystroke
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            try simulateKeystroke(action.keyCode)
+            return
+        }
+
+        // Paste text (no trailing space — action replaces the role of the space)
+        try await pasteText(text)
+
+        // Wait for paste to land in the receiving app before sending keystroke
+        try await Task.sleep(for: .milliseconds(200))
+
+        // After paste succeeds, keystroke failure is non-fatal
+        do {
+            try simulateKeystroke(action.keyCode)
+        } catch {
+            // Log but don't throw — text was already pasted successfully
+        }
+    }
+
     // MARK: - Private
+
+    private func simulateKeystroke(_ keyCode: UInt16) throws {
+        guard AXIsProcessTrusted() else {
+            throw ClipboardServiceError.accessibilityPermissionRequired
+        }
+
+        guard let source = CGEventSource(stateID: .hidSystemState) else {
+            throw ClipboardServiceError.eventSourceUnavailable
+        }
+
+        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false) else {
+            throw ClipboardServiceError.eventCreationFailed
+        }
+
+        keyDown.post(tap: .cghidEventTap)
+        keyUp.post(tap: .cghidEventTap)
+    }
 
     private func simulatePaste() throws {
         guard AXIsProcessTrusted() else {

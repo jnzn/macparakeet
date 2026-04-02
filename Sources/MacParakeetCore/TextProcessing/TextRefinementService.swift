@@ -9,15 +9,18 @@ public struct TextRefinementResult: Sendable {
     public let text: String?
     public let expandedSnippetIDs: Set<UUID>
     public let path: TextRefinementPath
+    public let postPasteAction: KeyAction?
 
     public init(
         text: String?,
         expandedSnippetIDs: Set<UUID>,
-        path: TextRefinementPath
+        path: TextRefinementPath,
+        postPasteAction: KeyAction? = nil
     ) {
         self.text = text
         self.expandedSnippetIDs = expandedSnippetIDs
         self.path = path
+        self.postPasteAction = postPasteAction
     }
 }
 
@@ -47,7 +50,8 @@ public struct TextRefinementService: Sendable {
         return TextRefinementResult(
             text: deterministic.text,
             expandedSnippetIDs: deterministic.expandedSnippetIDs,
-            path: .deterministic
+            path: .deterministic,
+            postPasteAction: deterministic.postPasteAction
         )
     }
 }

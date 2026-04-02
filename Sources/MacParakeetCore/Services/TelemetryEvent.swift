@@ -47,6 +47,8 @@ public enum TelemetryEventName: String, Sendable, CaseIterable {
     case modelDownloadFailed = "model_download_failed"
     // Errors
     case errorOccurred = "error_occurred"
+    // Keystroke actions
+    case keystrokeSnippetFired = "keystroke_snippet_fired"
     // Crashes
     case crashOccurred = "crash_occurred"
 }
@@ -143,6 +145,8 @@ public enum TelemetryEventSpec: Sendable {
     case modelDownloadStarted
     case modelDownloadCompleted(durationSeconds: Double)
     case modelDownloadFailed(errorType: String, errorDetail: String? = nil)
+    // Keystroke actions
+    case keystrokeSnippetFired(action: String)
     // Errors
     case errorOccurred(domain: String, code: String, description: String)
     // Crashes
@@ -199,6 +203,7 @@ extension TelemetryEventSpec {
         case .modelDownloadStarted: return .modelDownloadStarted
         case .modelDownloadCompleted: return .modelDownloadCompleted
         case .modelDownloadFailed: return .modelDownloadFailed
+        case .keystrokeSnippetFired: return .keystrokeSnippetFired
         case .errorOccurred: return .errorOccurred
         case .crashOccurred: return .crashOccurred
         }
@@ -315,6 +320,8 @@ extension TelemetryEventSpec {
             var props = ["error_type": errorType]
             if let errorDetail { props["error_detail"] = errorDetail }
             return props
+        case .keystrokeSnippetFired(let action):
+            return ["action": action]
         case .errorOccurred(let domain, let code, let description):
             return ["domain": domain, "code": code, "description": String(description.prefix(512))]
         case .crashOccurred(let crashType, let signal, let name, let crashTimestamp,
@@ -353,6 +360,7 @@ extension TelemetryEventSpec {
         var merged = base ?? [:]
         merged["device_name"] = device.deviceName
         merged["device_transport"] = device.transport
+        if let sub = device.subTransport { merged["device_sub_transport"] = sub }
         merged["device_sample_rate"] = "\(Int(device.sampleRate))"
         merged["device_channels"] = "\(device.channels)"
         if device.fallbackUsed { merged["device_fallback"] = "true" }
@@ -404,6 +412,7 @@ public enum TelemetryImplementedContract {
         .modelDownloadStarted: [],
         .modelDownloadCompleted: ["duration_seconds"],
         .modelDownloadFailed: ["error_type"],
+        .keystrokeSnippetFired: ["action"],
         .errorOccurred: ["domain", "code", "description"],
         .crashOccurred: ["crash_type", "signal", "name", "crash_ts", "crash_app_ver"],
     ]

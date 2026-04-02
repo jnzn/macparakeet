@@ -27,4 +27,34 @@ final class TextRefinementServiceTests: XCTestCase {
         XCTAssertNil(result.text, "Raw mode returns nil (no processing applied)")
         XCTAssertEqual(result.path, .raw)
     }
+
+    func testRawModeSkipsActionSnippets() async {
+        let service = TextRefinementService()
+        let snippets = [
+            TextSnippet(trigger: "return", expansion: "return", action: .returnKey)
+        ]
+        let result = await service.refine(
+            rawText: "hello return",
+            mode: .raw,
+            customWords: [],
+            snippets: snippets
+        )
+        XCTAssertNil(result.text)
+        XCTAssertNil(result.postPasteAction)
+    }
+
+    func testDeterministicModeReturnsAction() async {
+        let service = TextRefinementService()
+        let snippets = [
+            TextSnippet(trigger: "return", expansion: "return", action: .returnKey)
+        ]
+        let result = await service.refine(
+            rawText: "hello return",
+            mode: .clean,
+            customWords: [],
+            snippets: snippets
+        )
+        XCTAssertEqual(result.text, "Hello")
+        XCTAssertEqual(result.postPasteAction, .returnKey)
+    }
 }

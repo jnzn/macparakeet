@@ -8,6 +8,8 @@ public final class TextSnippetsViewModel {
     public var searchText: String = ""
     public var newTrigger: String = ""
     public var newExpansion: String = ""
+    public var newSnippetIsKeystroke: Bool = false
+    public var newKeystrokeAction: KeyAction = .returnKey
     public var errorMessage: String?
     public var pendingDeleteSnippet: TextSnippet?
 
@@ -41,23 +43,34 @@ public final class TextSnippetsViewModel {
     public func addSnippet() {
         guard let repo else { return }
         let trimmedTrigger = newTrigger.trimmingCharacters(in: .whitespacesAndNewlines)
-        let rawExpansion = newExpansion.trimmingCharacters(in: .whitespaces)
-        let processedExpansion = rawExpansion.replacingOccurrences(of: "\\n", with: "\n")
-        guard !trimmedTrigger.isEmpty, !processedExpansion.isEmpty else { return }
+        guard !trimmedTrigger.isEmpty else { return }
 
-        // Duplicate check (case-insensitive)
+        // Duplicate check (case-insensitive, across both snippet types)
         if snippets.contains(where: { $0.trigger.caseInsensitiveCompare(trimmedTrigger) == .orderedSame }) {
             errorMessage = "'\(trimmedTrigger)' already exists"
             return
         }
 
-        let snippet = TextSnippet(trigger: trimmedTrigger, expansion: processedExpansion)
+        let snippet: TextSnippet
+        if newSnippetIsKeystroke {
+            snippet = TextSnippet(
+                trigger: trimmedTrigger,
+                expansion: newKeystrokeAction.label,
+                action: newKeystrokeAction
+            )
+        } else {
+            let rawExpansion = newExpansion.trimmingCharacters(in: .whitespaces)
+            let processedExpansion = rawExpansion.replacingOccurrences(of: "\\n", with: "\n")
+            guard !processedExpansion.isEmpty else { return }
+            snippet = TextSnippet(trigger: trimmedTrigger, expansion: processedExpansion)
+        }
 
         do {
             try repo.save(snippet)
             Telemetry.send(.snippetAdded)
             newTrigger = ""
             newExpansion = ""
+            newSnippetIsKeystroke = false
             errorMessage = nil
             loadSnippets()
         } catch {
