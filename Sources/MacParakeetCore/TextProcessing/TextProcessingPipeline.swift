@@ -138,37 +138,6 @@ public struct TextProcessingPipeline: Sendable {
         return (result, expandedIDs)
     }
 
-    // MARK: - Step 5: Trailing Action Extraction
-
-    func extractTrailingAction(
-        from text: String,
-        actionSnippets: [TextSnippet]
-    ) -> (String, TextSnippet?) {
-        guard !actionSnippets.isEmpty else { return (text, nil) }
-
-        // Sort longest-trigger-first (same as expandSnippets)
-        let sorted = actionSnippets
-            .filter { $0.isEnabled }
-            .sorted { $0.trigger.count > $1.trigger.count }
-
-        for snippet in sorted {
-            // Punctuation-tolerant: match trigger at end with optional trailing punctuation
-            let escaped = NSRegularExpression.escapedPattern(for: snippet.trigger)
-            let pattern = "\\b\(escaped)[.!?,;:]*\\s*$"
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else {
-                continue
-            }
-            let range = NSRange(text.startIndex..., in: text)
-            if let match = regex.firstMatch(in: text, range: range) {
-                let cleaned = (text as NSString).replacingCharacters(in: match.range, with: "")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                return (cleaned, snippet)
-            }
-        }
-
-        return (text, nil)
-    }
-
     // MARK: - Step 4: Whitespace Cleanup
 
     func cleanWhitespace(in text: String) -> String {
@@ -212,5 +181,36 @@ public struct TextProcessingPipeline: Sendable {
         }
 
         return result
+    }
+
+    // MARK: - Step 5: Trailing Action Extraction
+
+    func extractTrailingAction(
+        from text: String,
+        actionSnippets: [TextSnippet]
+    ) -> (String, TextSnippet?) {
+        guard !actionSnippets.isEmpty else { return (text, nil) }
+
+        // Sort longest-trigger-first (same as expandSnippets)
+        let sorted = actionSnippets
+            .filter { $0.isEnabled }
+            .sorted { $0.trigger.count > $1.trigger.count }
+
+        for snippet in sorted {
+            // Punctuation-tolerant: match trigger at end with optional trailing punctuation
+            let escaped = NSRegularExpression.escapedPattern(for: snippet.trigger)
+            let pattern = "\\b\(escaped)[.!?,;:]*\\s*$"
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else {
+                continue
+            }
+            let range = NSRange(text.startIndex..., in: text)
+            if let match = regex.firstMatch(in: text, range: range) {
+                let cleaned = (text as NSString).replacingCharacters(in: match.range, with: "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                return (cleaned, snippet)
+            }
+        }
+
+        return (text, nil)
     }
 }

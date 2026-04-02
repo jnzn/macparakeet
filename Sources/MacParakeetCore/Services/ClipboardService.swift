@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import OSLog
 
 public protocol ClipboardServiceProtocol: Sendable {
     func pasteText(_ text: String) async throws
@@ -33,6 +34,8 @@ public enum ClipboardServiceError: LocalizedError {
 /// Handles clipboard save/restore and paste simulation via Cmd+V.
 @MainActor
 public final class ClipboardService: ClipboardServiceProtocol {
+    private let logger = Logger(subsystem: "com.macparakeet.core", category: "ClipboardService")
+
     public init() {}
 
     /// Paste text into the active app by:
@@ -108,7 +111,7 @@ public final class ClipboardService: ClipboardServiceProtocol {
         do {
             try simulateKeystroke(action.keyCode)
         } catch {
-            // Log but don't throw — text was already pasted successfully
+            logger.error("Post-paste keystroke failed (text was pasted successfully): \(error.localizedDescription, privacy: .public)")
         }
     }
 
