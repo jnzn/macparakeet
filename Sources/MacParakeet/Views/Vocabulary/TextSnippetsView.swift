@@ -93,7 +93,7 @@ struct TextSnippetsView: View {
                 Image(systemName: "command")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(DesignSystem.Colors.warningAmber)
-                Text("Use Keystroke type to simulate a keypress at the end of dictation — great for terminal command execution. Use distinctive trigger phrases like \"press return\" or \"hit tab\" to avoid false matches with common words.")
+                Text("Use Keystroke type to simulate a Return keypress at the end of dictation — great for terminal command execution. Use distinctive trigger phrases like \"press return\" or \"send it\" to avoid false matches with common words.")
                     .font(DesignSystem.Typography.bodySmall)
                     .foregroundStyle(.secondary)
             }
