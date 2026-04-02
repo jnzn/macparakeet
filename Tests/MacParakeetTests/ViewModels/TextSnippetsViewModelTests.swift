@@ -165,13 +165,13 @@ final class TextSnippetsViewModelTests: XCTestCase {
     }
 
     func testKeystrokeSnippetDoesNotRequireExpansion() {
-        viewModel.newTrigger = "hit tab"
+        viewModel.newTrigger = "hit return"
         viewModel.newSnippetIsKeystroke = true
-        viewModel.newKeystrokeAction = .tab
+        viewModel.newKeystrokeAction = .returnKey
         viewModel.newExpansion = ""  // Expansion is empty but should not matter
         viewModel.addSnippet()
 
         XCTAssertEqual(viewModel.snippets.count, 1)
-        XCTAssertEqual(viewModel.snippets.first?.action, .tab)
+        XCTAssertEqual(viewModel.snippets.first?.action, .returnKey)
     }
 }

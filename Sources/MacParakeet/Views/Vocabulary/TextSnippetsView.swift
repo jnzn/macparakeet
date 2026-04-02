@@ -155,12 +155,9 @@ struct TextSnippetsView: View {
                         .textFieldStyle(.roundedBorder)
                         .focused($triggerFieldFocused)
                     if viewModel.newSnippetIsKeystroke {
-                        Picker("Action", selection: $viewModel.newKeystrokeAction) {
-                            ForEach(KeyAction.allCases, id: \.self) { action in
-                                Text(action.label).tag(action)
-                            }
-                        }
-                        .labelsHidden()
+                        Text(KeyAction.returnKey.label)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     } else {
                         TextField("Expansion", text: $viewModel.newExpansion)
                             .textFieldStyle(.roundedBorder)

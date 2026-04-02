@@ -131,6 +131,11 @@ public final class ClipboardService: ClipboardServiceProtocol {
             throw ClipboardServiceError.eventCreationFailed
         }
 
+        // Explicitly clear modifier flags — .hidSystemState source may inherit
+        // stray modifiers if the user happens to hold a key during dictation.
+        keyDown.flags = []
+        keyUp.flags = []
+
         keyDown.post(tap: .cghidEventTap)
         keyUp.post(tap: .cghidEventTap)
     }
