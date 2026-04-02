@@ -156,7 +156,8 @@ public final class TranscriptChatViewModel {
         let capturedHistory = chatHistory
         let repo = conversationRepo
 
-        streamingTask = Task { @MainActor in
+        streamingTask = Task { @MainActor [weak self] in
+            guard let self else { return }
             var accumulated = ""
             do {
                 let stream = llmService.chatStream(
