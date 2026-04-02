@@ -307,15 +307,16 @@ public actor DictationService: DictationServiceProtocol {
             catch { logger.error("Failed to load custom words: \(error.localizedDescription)") }
             do { snippets = try snippetRepo?.fetchEnabled() ?? [] }
             catch { logger.error("Failed to load text snippets: \(error.localizedDescription)") }
+        }
 
-            // Voice Return: inject synthetic action snippet from settings
-            if let trigger = voiceReturnTrigger(), !trigger.isEmpty {
-                snippets.append(TextSnippet(
-                    trigger: trigger,
-                    expansion: KeyAction.returnKey.label,
-                    action: .returnKey
-                ))
-            }
+        // Voice Return: inject synthetic action snippet regardless of mode
+        // (raw mode extracts trailing action without running the full pipeline)
+        if let trigger = voiceReturnTrigger(), !trigger.isEmpty {
+            snippets.append(TextSnippet(
+                trigger: trigger,
+                expansion: KeyAction.returnKey.label,
+                action: .returnKey
+            ))
         }
         let refinement = await textRefinementService.refine(
             rawText: result.text,

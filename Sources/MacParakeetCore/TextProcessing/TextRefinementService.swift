@@ -34,6 +34,22 @@ public struct TextRefinementService: Sendable {
         snippets: [TextSnippet]
     ) async -> TextRefinementResult {
         guard mode.usesDeterministicPipeline else {
+            // Raw mode: skip full pipeline but still extract trailing action (Voice Return)
+            let actionSnippets = snippets.filter { $0.action != nil && $0.isEnabled }
+            if !actionSnippets.isEmpty {
+                let pipeline = TextProcessingPipeline()
+                let (cleaned, matched) = pipeline.extractTrailingAction(
+                    from: rawText, actionSnippets: actionSnippets
+                )
+                if let matched {
+                    return TextRefinementResult(
+                        text: cleaned,
+                        expandedSnippetIDs: [matched.id],
+                        path: .raw,
+                        postPasteAction: matched.action
+                    )
+                }
+            }
             return TextRefinementResult(
                 text: nil,
                 expandedSnippetIDs: [],
