@@ -251,10 +251,11 @@ public final class TranscriptionViewModel {
                     try transcriptionRepo?.save(result)
                     // Delete the original to avoid duplicates
                     _ = try? transcriptionRepo?.delete(id: originalID)
+                    completeSuccessfulTranscription(taskID: taskID, result: result)
                 } catch {
                     logger.error("Failed to save transcription result error=\(error.localizedDescription, privacy: .public)")
+                    completeFailedTranscription(taskID: taskID, error: error)
                 }
-                completeSuccessfulTranscription(taskID: taskID, result: result)
             } catch is CancellationError {
                 completeCancelledTranscription(taskID: taskID)
             } catch {
