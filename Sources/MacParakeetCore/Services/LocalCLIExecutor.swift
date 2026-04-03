@@ -106,12 +106,17 @@ public final class LocalCLIConfigStore: @unchecked Sendable {
 
 public final class LocalCLIExecutor: Sendable {
     private static let outputDrainTimeout: Double = 2
+    private static let processTreeWarmupPollCount = 40
+    private static let processTreeWarmupPollIntervalUs: useconds_t = 5_000
+    private static let processTreePollIntervalUs: useconds_t = 50_000
 
     private final class ProcessExecutionState: @unchecked Sendable {
         private let lock = NSLock()
         private var process: Process?
         private var cancelled = false
         private var continuationResumed = false
+        private var monitoringStopped = false
+        private var observedDescendantPIDs = Set<Int32>()
 
         var isCancelled: Bool {
             lock.withLock { cancelled }
@@ -137,6 +142,29 @@ public final class LocalCLIExecutor: Sendable {
                 continuationResumed = true
                 return true
             }
+        }
+
+        func stopMonitoring() {
+            lock.withLock {
+                monitoringStopped = true
+            }
+        }
+
+        func shouldMonitor(processID: Int32) -> Bool {
+            lock.withLock {
+                !monitoringStopped && process?.processIdentifier == processID
+            }
+        }
+
+        func recordObservedDescendants(_ pids: [Int32]) {
+            guard !pids.isEmpty else { return }
+            lock.withLock {
+                observedDescendantPIDs.formUnion(pids.filter { $0 > 0 })
+            }
+        }
+
+        func observedDescendants() -> [Int32] {
+            lock.withLock { Array(observedDescendantPIDs) }
         }
     }
 
@@ -195,6 +223,25 @@ public final class LocalCLIExecutor: Sendable {
             """
     }
 
+    static func wrappedCommandTemplate(_ commandTemplate: String) -> String {
+        """
+        __macparakeet_cleanup_children() {
+            local children
+            children=$(pgrep -P $$)
+            if [ -n "$children" ]; then
+                kill $children >/dev/null 2>&1 || true
+                sleep 0.2
+                kill -9 $children >/dev/null 2>&1 || true
+            fi
+        }
+        trap '__macparakeet_cleanup_children; trap - TERM INT; exit 143' TERM INT
+        \(commandTemplate)
+        __macparakeet_exit_code=$?
+        __macparakeet_cleanup_children
+        exit $__macparakeet_exit_code
+        """
+    }
+
     // MARK: - Private
 
     private func runProcess(
@@ -218,7 +265,7 @@ public final class LocalCLIExecutor: Sendable {
 
                     let process = Process()
                     process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-                    process.arguments = ["-lc", commandTemplate]
+                    process.arguments = ["-lc", Self.wrappedCommandTemplate(commandTemplate)]
 
                     var environment = ProcessInfo.processInfo.environment
                     environment["PATH"] = preferredPATH(fallback: environment["PATH"])
@@ -259,6 +306,18 @@ public final class LocalCLIExecutor: Sendable {
                         return
                     }
 
+                    let monitorGroup = DispatchGroup()
+                    monitorGroup.enter()
+                    let processID = process.processIdentifier
+                    DispatchQueue.global(qos: .utility).async {
+                        Self.monitorDescendants(of: processID, state: state)
+                        monitorGroup.leave()
+                    }
+                    defer {
+                        state.stopMonitoring()
+                        _ = monitorGroup.wait(timeout: .now() + 1)
+                    }
+
                     // Read stdout/stderr concurrently with process execution to
                     // avoid pipe deadlock: if the pipe buffer fills (64KB), the
                     // process blocks writing and can never exit.
@@ -294,7 +353,7 @@ public final class LocalCLIExecutor: Sendable {
                     // separate queue so a full pipe cannot block timeout/cancel.
                     let waitResult = semaphore.wait(timeout: .now() + clampedTimeout)
                     if waitResult == .timedOut {
-                        Self.stopProcess(process)
+                        Self.stopProcess(process, state: state)
                         _ = semaphore.wait(timeout: .now() + 2)
                         Self.closePipes(
                             input: inputPipe.fileHandleForWriting,
@@ -332,7 +391,9 @@ public final class LocalCLIExecutor: Sendable {
                             error: errorPipe.fileHandleForReading
                         )
                         if process.isRunning {
-                            Self.stopProcess(process)
+                            Self.stopProcess(process, state: state)
+                        } else {
+                            Self.stopObservedDescendants(from: state)
                         }
                         _ = readGroup.wait(timeout: .now() + 1)
                         Self.resume(
@@ -384,7 +445,7 @@ public final class LocalCLIExecutor: Sendable {
             }
         } onCancel: {
             if let process = state.cancel() {
-                Self.stopProcess(process)
+                Self.stopProcess(process, state: state)
             }
         }
     }
@@ -437,21 +498,92 @@ public final class LocalCLIExecutor: Sendable {
         }
     }
 
-    private static func stopProcess(_ process: Process) {
-        guard process.isRunning else { return }
+    private static func stopProcess(_ process: Process, state: ProcessExecutionState? = nil) {
+        state?.stopMonitoring()
 
-        process.terminate()
-        usleep(200_000)
+        let processID = process.processIdentifier
+        signalProcesses(descendantProcessIDs(of: processID) + (state?.observedDescendants() ?? []), signal: SIGTERM)
 
         if process.isRunning {
-            kill(process.processIdentifier, SIGKILL)
+            process.terminate()
         }
+        usleep(200_000)
+
+        signalProcesses(descendantProcessIDs(of: processID) + (state?.observedDescendants() ?? []), signal: SIGKILL)
+
+        if process.isRunning {
+            kill(processID, SIGKILL)
+        }
+    }
+
+    private static func stopObservedDescendants(from state: ProcessExecutionState) {
+        state.stopMonitoring()
+        signalProcesses(state.observedDescendants(), signal: SIGTERM)
+        usleep(200_000)
+        signalProcesses(state.observedDescendants(), signal: SIGKILL)
     }
 
     private static func closePipes(input: FileHandle, output: FileHandle, error: FileHandle) {
         try? input.close()
         try? output.close()
         try? error.close()
+    }
+
+    private static func monitorDescendants(of rootPID: Int32, state: ProcessExecutionState) {
+        var pollCount = 0
+        while state.shouldMonitor(processID: rootPID) {
+            state.recordObservedDescendants(descendantProcessIDs(of: rootPID))
+            let interval = pollCount < Self.processTreeWarmupPollCount
+                ? Self.processTreeWarmupPollIntervalUs
+                : Self.processTreePollIntervalUs
+            usleep(interval)
+            pollCount += 1
+        }
+    }
+
+    private static func descendantProcessIDs(of rootPID: Int32) -> [Int32] {
+        guard rootPID > 0 else { return [] }
+
+        var seen = Set<Int32>()
+        var queue = directChildProcessIDs(of: rootPID)
+
+        while let pid = queue.popLast() {
+            guard pid > 0, seen.insert(pid).inserted else { continue }
+            queue.append(contentsOf: directChildProcessIDs(of: pid))
+        }
+
+        return Array(seen)
+    }
+
+    private static func directChildProcessIDs(of parentPID: Int32) -> [Int32] {
+        guard parentPID > 0 else { return [] }
+
+        let pidSize = MemoryLayout<Int32>.stride
+        var capacity = 16
+
+        while true {
+            var buffer = Array(repeating: Int32.zero, count: capacity)
+            let bytesReturned = buffer.withUnsafeMutableBytes { rawBuffer -> Int32 in
+                proc_listchildpids(parentPID, rawBuffer.baseAddress, Int32(rawBuffer.count))
+            }
+
+            guard bytesReturned > 0 else { return [] }
+
+            let count = Int(bytesReturned) / pidSize
+            guard count > 0 else { return [] }
+
+            if count < capacity {
+                return Array(buffer.prefix(count))
+            }
+
+            capacity *= 2
+        }
+    }
+
+    private static func signalProcesses(_ pids: [Int32], signal: Int32) {
+        for pid in Set(pids) where pid > 0 {
+            _ = kill(pid, signal)
+        }
     }
 
     // MARK: - PATH Discovery
@@ -474,13 +606,17 @@ public final class LocalCLIExecutor: Sendable {
     /// Spawns a login shell to capture the user's PATH.
     /// Uses `-lc` (login, non-interactive) to source .zprofile/.zlogin
     /// without triggering interactive .zshrc hooks that could hang.
-    private static func discoverPATH() -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = [
+    static func discoverPATH(
+        executableURL: URL = URL(fileURLWithPath: "/bin/zsh"),
+        arguments: [String] = [
             "-lc",
             "echo __MACPARAKEET_PATH_START__; print -r -- $PATH; echo __MACPARAKEET_PATH_END__",
-        ]
+        ],
+        timeout: Double = 3
+    ) -> String? {
+        let process = Process()
+        process.executableURL = executableURL
+        process.arguments = arguments
 
         let stdoutPipe = Pipe()
         process.standardOutput = stdoutPipe
@@ -496,15 +632,33 @@ public final class LocalCLIExecutor: Sendable {
             return nil
         }
 
-        let waitResult = semaphore.wait(timeout: .now() + 3)
+        var outputData = Data()
+        let readGroup = DispatchGroup()
+        readGroup.enter()
+        DispatchQueue.global(qos: .utility).async {
+            outputData = (try? stdoutPipe.fileHandleForReading.readToEnd()) ?? Data()
+            readGroup.leave()
+        }
+
+        let waitResult = semaphore.wait(timeout: .now() + timeout)
         if waitResult == .timedOut {
-            if process.isRunning { process.terminate() }
+            if process.isRunning {
+                Self.stopProcess(process)
+            }
+            Self.closePipes(
+                input: FileHandle.nullDevice,
+                output: stdoutPipe.fileHandleForReading,
+                error: FileHandle.nullDevice
+            )
+            _ = readGroup.wait(timeout: .now() + 1)
             return nil
         }
 
         guard process.terminationStatus == 0 else { return nil }
 
-        let output = String(data: (try? stdoutPipe.fileHandleForReading.readToEnd()) ?? Data(), encoding: .utf8) ?? ""
+        guard readGroup.wait(timeout: .now() + 1) == .success else { return nil }
+
+        let output = String(data: outputData, encoding: .utf8) ?? ""
         let startMarker = "__MACPARAKEET_PATH_START__"
         let endMarker = "__MACPARAKEET_PATH_END__"
 
