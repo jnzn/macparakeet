@@ -6,12 +6,14 @@ final class AutoSaveServiceTests: XCTestCase {
 
     private var tempDir: URL!
     private var defaults: UserDefaults!
+    private var suiteName: String!
 
     override func setUp() {
         super.setUp()
         tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try! FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        defaults = UserDefaults(suiteName: "com.macparakeet.test.autosave.\(UUID().uuidString)")!
+        suiteName = "com.macparakeet.test.autosave.\(UUID().uuidString)"
+        defaults = UserDefaults(suiteName: suiteName)!
     }
 
     override func tearDown() {
@@ -19,7 +21,8 @@ final class AutoSaveServiceTests: XCTestCase {
         if let name = defaults.volatileDomainNames.first {
             defaults.removeVolatileDomain(forName: name)
         }
-        defaults.removePersistentDomain(forName: defaults.description)
+        defaults.removePersistentDomain(forName: suiteName)
+        suiteName = nil
         super.tearDown()
     }
 
