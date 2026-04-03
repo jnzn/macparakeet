@@ -13,8 +13,7 @@ struct StatsCommand: ParsableCommand {
 
     func run() throws {
         try AppPaths.ensureDirectories()
-        let dbPath = resolvedDatabasePath(database)
-        let dbManager = try DatabaseManager(path: dbPath)
+        let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
         let dictationRepo = DictationRepository(dbQueue: dbManager.dbQueue)
         let transcriptionRepo = TranscriptionRepository(dbQueue: dbManager.dbQueue)
 
@@ -22,7 +21,7 @@ struct StatsCommand: ParsableCommand {
         let transcriptionCount = try transcriptionRepo.fetchAll().count
         let favoriteCount = try transcriptionRepo.fetchFavorites().count
 
-        if stats.isEmpty && transcriptionCount == 0 {
+        if stats.visibleCount == 0 && transcriptionCount == 0 {
             print("No voice activity yet.")
             return
         }
@@ -82,14 +81,4 @@ struct StatsCommand: ParsableCommand {
             print("  Favorites:        \(favoriteCount)")
         }
     }
-}
-
-private func resolvedDatabasePath(_ database: String?) -> String {
-    let opt = database?.trimmingCharacters(in: .whitespacesAndNewlines)
-    if let opt, !opt.isEmpty {
-        let dir = URL(fileURLWithPath: opt).deletingLastPathComponent()
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return opt
-    }
-    return AppPaths.databasePath
 }

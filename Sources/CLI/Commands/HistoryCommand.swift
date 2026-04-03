@@ -2,17 +2,6 @@ import ArgumentParser
 import Foundation
 import MacParakeetCore
 
-private func resolveDatabasePath(_ database: String?) -> String {
-    let opt = database?.trimmingCharacters(in: .whitespacesAndNewlines)
-    return (opt?.isEmpty == false) ? opt! : AppPaths.databasePath
-}
-
-private func ensureDatabaseDirectoryExists(path: String) {
-    guard path != AppPaths.databasePath else { return }
-    let dir = URL(fileURLWithPath: path).deletingLastPathComponent()
-    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-}
-
 struct HistoryCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "history",
@@ -46,9 +35,7 @@ struct DictationsSubcommand: ParsableCommand {
 
     func run() throws {
         try AppPaths.ensureDirectories()
-        let dbPath = resolveDatabasePath(database)
-        ensureDatabaseDirectoryExists(path: dbPath)
-        let dbManager = try DatabaseManager(path: dbPath)
+        let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
         let repo = DictationRepository(dbQueue: dbManager.dbQueue)
         let dictations = try repo.fetchAll(limit: limit)
 
@@ -64,9 +51,9 @@ struct DictationsSubcommand: ParsableCommand {
         for d in dictations {
             let date = formatter.string(from: d.createdAt)
             let seconds = d.durationMs / 1000
-            let preview = String((d.cleanTranscript ?? d.rawTranscript).prefix(80))
-            let truncated = preview.count >= 80 ? preview + "..." : preview
-            print("[\(date)] (\(seconds)s) \(truncated)  (\(d.id.uuidString.prefix(8)))")
+            let text = d.cleanTranscript ?? d.rawTranscript
+            let preview = text.count > 80 ? String(text.prefix(80)) + "..." : text
+            print("[\(date)] (\(seconds)s) \(preview)  (\(d.id.uuidString.prefix(8)))")
         }
 
         let stats = try repo.stats()
@@ -89,9 +76,7 @@ struct TranscriptionsSubcommand: ParsableCommand {
 
     func run() throws {
         try AppPaths.ensureDirectories()
-        let dbPath = resolveDatabasePath(database)
-        ensureDatabaseDirectoryExists(path: dbPath)
-        let dbManager = try DatabaseManager(path: dbPath)
+        let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
         let repo = TranscriptionRepository(dbQueue: dbManager.dbQueue)
         let transcriptions = try repo.fetchAll(limit: limit)
 
@@ -136,9 +121,7 @@ struct SearchSubcommand: ParsableCommand {
 
     func run() throws {
         try AppPaths.ensureDirectories()
-        let dbPath = resolveDatabasePath(database)
-        ensureDatabaseDirectoryExists(path: dbPath)
-        let dbManager = try DatabaseManager(path: dbPath)
+        let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
         let repo = DictationRepository(dbQueue: dbManager.dbQueue)
         let results = try repo.search(query: query, limit: limit)
 
@@ -153,9 +136,9 @@ struct SearchSubcommand: ParsableCommand {
 
         for d in results {
             let date = formatter.string(from: d.createdAt)
-            let preview = String((d.cleanTranscript ?? d.rawTranscript).prefix(80))
-            let truncated = preview.count >= 80 ? preview + "..." : preview
-            print("[\(date)] \(truncated)")
+            let text = d.cleanTranscript ?? d.rawTranscript
+            let preview = text.count > 80 ? String(text.prefix(80)) + "..." : text
+            print("[\(date)] \(preview)")
         }
 
         print()
@@ -180,9 +163,7 @@ struct SearchTranscriptionsSubcommand: ParsableCommand {
 
     func run() throws {
         try AppPaths.ensureDirectories()
-        let dbPath = resolveDatabasePath(database)
-        ensureDatabaseDirectoryExists(path: dbPath)
-        let dbManager = try DatabaseManager(path: dbPath)
+        let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
         let repo = TranscriptionRepository(dbQueue: dbManager.dbQueue)
         let all = try repo.fetchAll()
 
@@ -234,9 +215,7 @@ struct DeleteDictationSubcommand: ParsableCommand {
 
     func run() throws {
         try AppPaths.ensureDirectories()
-        let dbPath = resolveDatabasePath(database)
-        ensureDatabaseDirectoryExists(path: dbPath)
-        let dbManager = try DatabaseManager(path: dbPath)
+        let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
         let repo = DictationRepository(dbQueue: dbManager.dbQueue)
 
         let dictation = try findDictation(id: id, repo: repo)
@@ -248,21 +227,6 @@ struct DeleteDictationSubcommand: ParsableCommand {
         } else {
             print("Dictation not found.")
         }
-    }
-
-    private func findDictation(id: String, repo: DictationRepository) throws -> Dictation {
-        if let uuid = UUID(uuidString: id), let d = try repo.fetch(id: uuid) {
-            return d
-        }
-        let all = try repo.fetchAll()
-        let matches = all.filter { $0.id.uuidString.lowercased().hasPrefix(id.lowercased()) }
-        guard let match = matches.first else {
-            throw HistoryError.notFound("No dictation matching '\(id)'")
-        }
-        guard matches.count == 1 else {
-            throw HistoryError.ambiguous("Multiple dictations match '\(id)'. Be more specific.")
-        }
-        return match
     }
 }
 
@@ -280,9 +244,7 @@ struct DeleteTranscriptionSubcommand: ParsableCommand {
 
     func run() throws {
         try AppPaths.ensureDirectories()
-        let dbPath = resolveDatabasePath(database)
-        ensureDatabaseDirectoryExists(path: dbPath)
-        let dbManager = try DatabaseManager(path: dbPath)
+        let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
         let repo = TranscriptionRepository(dbQueue: dbManager.dbQueue)
 
         let transcription = try findTranscription(id: id, repo: repo)
@@ -293,21 +255,6 @@ struct DeleteTranscriptionSubcommand: ParsableCommand {
         } else {
             print("Transcription not found.")
         }
-    }
-
-    private func findTranscription(id: String, repo: TranscriptionRepository) throws -> Transcription {
-        if let uuid = UUID(uuidString: id), let t = try repo.fetch(id: uuid) {
-            return t
-        }
-        let all = try repo.fetchAll()
-        let matches = all.filter { $0.id.uuidString.lowercased().hasPrefix(id.lowercased()) }
-        guard let match = matches.first else {
-            throw HistoryError.notFound("No transcription matching '\(id)'")
-        }
-        guard matches.count == 1 else {
-            throw HistoryError.ambiguous("Multiple transcriptions match '\(id)'. Be more specific.")
-        }
-        return match
     }
 }
 
@@ -322,9 +269,7 @@ struct FavoritesSubcommand: ParsableCommand {
 
     func run() throws {
         try AppPaths.ensureDirectories()
-        let dbPath = resolveDatabasePath(database)
-        ensureDatabaseDirectoryExists(path: dbPath)
-        let dbManager = try DatabaseManager(path: dbPath)
+        let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
         let repo = TranscriptionRepository(dbQueue: dbManager.dbQueue)
         let favorites = try repo.fetchFavorites()
 
@@ -368,29 +313,12 @@ struct FavoriteSubcommand: ParsableCommand {
 
     func run() throws {
         try AppPaths.ensureDirectories()
-        let dbPath = resolveDatabasePath(database)
-        ensureDatabaseDirectoryExists(path: dbPath)
-        let dbManager = try DatabaseManager(path: dbPath)
+        let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
         let repo = TranscriptionRepository(dbQueue: dbManager.dbQueue)
 
         let transcription = try findTranscription(id: id, repo: repo)
         try repo.updateFavorite(id: transcription.id, isFavorite: true)
         print("Favorited: \"\(transcription.fileName)\"")
-    }
-
-    private func findTranscription(id: String, repo: TranscriptionRepository) throws -> Transcription {
-        if let uuid = UUID(uuidString: id), let t = try repo.fetch(id: uuid) {
-            return t
-        }
-        let all = try repo.fetchAll()
-        let matches = all.filter { $0.id.uuidString.lowercased().hasPrefix(id.lowercased()) }
-        guard let match = matches.first else {
-            throw HistoryError.notFound("No transcription matching '\(id)'")
-        }
-        guard matches.count == 1 else {
-            throw HistoryError.ambiguous("Multiple transcriptions match '\(id)'. Be more specific.")
-        }
-        return match
     }
 }
 
@@ -408,40 +336,11 @@ struct UnfavoriteSubcommand: ParsableCommand {
 
     func run() throws {
         try AppPaths.ensureDirectories()
-        let dbPath = resolveDatabasePath(database)
-        ensureDatabaseDirectoryExists(path: dbPath)
-        let dbManager = try DatabaseManager(path: dbPath)
+        let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
         let repo = TranscriptionRepository(dbQueue: dbManager.dbQueue)
 
         let transcription = try findTranscription(id: id, repo: repo)
         try repo.updateFavorite(id: transcription.id, isFavorite: false)
         print("Unfavorited: \"\(transcription.fileName)\"")
-    }
-
-    private func findTranscription(id: String, repo: TranscriptionRepository) throws -> Transcription {
-        if let uuid = UUID(uuidString: id), let t = try repo.fetch(id: uuid) {
-            return t
-        }
-        let all = try repo.fetchAll()
-        let matches = all.filter { $0.id.uuidString.lowercased().hasPrefix(id.lowercased()) }
-        guard let match = matches.first else {
-            throw HistoryError.notFound("No transcription matching '\(id)'")
-        }
-        guard matches.count == 1 else {
-            throw HistoryError.ambiguous("Multiple transcriptions match '\(id)'. Be more specific.")
-        }
-        return match
-    }
-}
-
-enum HistoryError: Error, LocalizedError {
-    case notFound(String)
-    case ambiguous(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .notFound(let msg): return msg
-        case .ambiguous(let msg): return msg
-        }
     }
 }

@@ -33,6 +33,11 @@ struct FeedbackCommand: AsyncParsableCommand {
     var email: String?
 
     func run() async throws {
+        guard !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            print("Error: Feedback message must not be empty.")
+            throw ExitCode.validationFailure
+        }
+
         let systemInfo = SystemInfo.current
 
         let payload = FeedbackPayload(
