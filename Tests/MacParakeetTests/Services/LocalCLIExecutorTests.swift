@@ -163,6 +163,42 @@ final class LocalCLIExecutorTests: XCTestCase {
         XCTAssertFalse(isProcessRunning(childPID))
     }
 
+    func testBackgroundGrandchildIsCleanedUpWhenShellExits() async throws {
+        let executor = LocalCLIExecutor()
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("localcli-grandchild-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let grandchildPIDPath = directory.appendingPathComponent("grandchild.txt").path
+
+        let config = LocalCLIConfig(
+            commandTemplate: """
+            sh -c 'sleep 30 </dev/null >/dev/null 2>&1 & echo $! > \(shellQuote(grandchildPIDPath))' &
+            while [ ! -f \(shellQuote(grandchildPIDPath)) ]; do sleep 0.01; done
+            echo ok
+            """,
+            timeoutSeconds: 30
+        )
+
+        let output = try await executor.execute(systemPrompt: "", userPrompt: "", config: config)
+        XCTAssertEqual(output, "ok")
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: grandchildPIDPath))
+        let grandchildPID = try XCTUnwrap(
+            Int32(
+                String(contentsOfFile: grandchildPIDPath, encoding: .utf8)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+        )
+
+        let terminationDeadline = Date().addingTimeInterval(5)
+        while isProcessRunning(grandchildPID) && Date() < terminationDeadline {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertFalse(isProcessRunning(grandchildPID))
+    }
+
     func testCancellationTerminatesShellAndBackgroundChild() async throws {
         let executor = LocalCLIExecutor()
 
