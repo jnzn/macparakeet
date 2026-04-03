@@ -8,11 +8,12 @@ public struct LocalCLIConfig: Codable, Sendable, Equatable {
     public let commandTemplate: String
     public let timeoutSeconds: Double
 
+    public static let minimumTimeout: Double = 5
     public static let defaultTimeout: Double = 120
 
     public init(commandTemplate: String, timeoutSeconds: Double = Self.defaultTimeout) {
         self.commandTemplate = commandTemplate
-        self.timeoutSeconds = timeoutSeconds
+        self.timeoutSeconds = max(Self.minimumTimeout, timeoutSeconds)
     }
 }
 
@@ -47,6 +48,7 @@ public enum LocalCLIError: Error, LocalizedError, Sendable {
     case commandNotConfigured
     case commandNotFound(String)
     case timeout(seconds: Double)
+    case drainTimeout
     case nonZeroExit(code: Int32, stderr: String)
     case emptyOutput
     case executionFailed(String)
@@ -59,6 +61,8 @@ public enum LocalCLIError: Error, LocalizedError, Sendable {
             return "CLI command not found. Ensure it is installed and on your PATH. Details: \(details)"
         case .timeout(let seconds):
             return "CLI command timed out after \(Int(seconds)) seconds."
+        case .drainTimeout:
+            return "CLI command exited, but its output pipes did not close in time."
         case .nonZeroExit(let code, let stderr):
             if stderr.isEmpty {
                 return "CLI command failed with exit code \(code)."
@@ -101,6 +105,8 @@ public final class LocalCLIConfigStore: @unchecked Sendable {
 // MARK: - Executor
 
 public final class LocalCLIExecutor: Sendable {
+    private static let outputDrainTimeout: Double = 2
+
     private final class ProcessExecutionState: @unchecked Sendable {
         private let lock = NSLock()
         private var process: Process?
@@ -198,7 +204,7 @@ public final class LocalCLIExecutor: Sendable {
         fullPrompt: String,
         timeout: Double
     ) async throws -> String {
-        let clampedTimeout = max(5, timeout)
+        let clampedTimeout = max(LocalCLIConfig.minimumTimeout, timeout)
         let state = ProcessExecutionState()
 
         return try await withTaskCancellationHandler {
@@ -318,7 +324,24 @@ public final class LocalCLIExecutor: Sendable {
                     }
 
                     _ = writerGroup.wait(timeout: .now() + 1)
-                    readGroup.wait()
+                    let drainWaitResult = readGroup.wait(timeout: .now() + Self.outputDrainTimeout)
+                    if drainWaitResult == .timedOut {
+                        Self.closePipes(
+                            input: inputPipe.fileHandleForWriting,
+                            output: outputPipe.fileHandleForReading,
+                            error: errorPipe.fileHandleForReading
+                        )
+                        if process.isRunning {
+                            Self.stopProcess(process)
+                        }
+                        _ = readGroup.wait(timeout: .now() + 1)
+                        Self.resume(
+                            continuation,
+                            state: state,
+                            result: .failure(LocalCLIError.drainTimeout)
+                        )
+                        return
+                    }
 
                     if state.isCancelled {
                         Self.resume(continuation, state: state, result: .failure(CancellationError()))

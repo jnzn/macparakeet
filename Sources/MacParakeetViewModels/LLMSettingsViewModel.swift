@@ -132,7 +132,7 @@ public final class LLMSettingsViewModel {
         get { draft.cliTimeoutSeconds }
         set {
             var nextDraft = draft
-            nextDraft.cliTimeoutSeconds = newValue
+            nextDraft.cliTimeoutSeconds = max(LocalCLIConfig.minimumTimeout, newValue)
             updateDraft(nextDraft)
         }
     }

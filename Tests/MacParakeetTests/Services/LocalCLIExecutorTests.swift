@@ -131,6 +131,25 @@ final class LocalCLIExecutorTests: XCTestCase {
         }
     }
 
+    func testBackgroundChildHoldingPipesTriggersDrainTimeout() async throws {
+        let executor = LocalCLIExecutor()
+
+        let config = LocalCLIConfig(
+            commandTemplate: "sleep 30 & echo ok",
+            timeoutSeconds: 30
+        )
+
+        do {
+            _ = try await executor.execute(systemPrompt: "", userPrompt: "", config: config)
+            XCTFail("Expected drain timeout error")
+        } catch let error as LocalCLIError {
+            guard case .drainTimeout = error else {
+                XCTFail("Expected drainTimeout, got \(error)")
+                return
+            }
+        }
+    }
+
     func testCancellationTerminatesChildProcess() async throws {
         let executor = LocalCLIExecutor()
 

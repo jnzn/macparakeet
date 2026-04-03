@@ -395,6 +395,15 @@ final class LLMSettingsViewModelTests: XCTestCase {
         XCTAssertEqual(saved?.commandTemplate, "claude -p")
     }
 
+    func testLocalCLITimeoutClampsToMinimum() {
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.selectedProviderID = .localCLI
+
+        viewModel.cliTimeoutSeconds = 1
+
+        XCTAssertEqual(viewModel.cliTimeoutSeconds, LocalCLIConfig.minimumTimeout)
+    }
+
     func testLocalCLISaveDuringConnectionTestDoesNotRestoreStaleCommand() async throws {
         let defaults = UserDefaults(suiteName: "test.vm.\(UUID().uuidString)")!
         let cliStore = LocalCLIConfigStore(defaults: defaults)

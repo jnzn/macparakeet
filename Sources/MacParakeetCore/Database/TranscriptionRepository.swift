@@ -80,9 +80,9 @@ public final class TranscriptionRepository: TranscriptionRepositoryProtocol {
 
             var sql = """
                 SELECT * FROM transcriptions
-                WHERE fileName LIKE ? ESCAPE '\\'
-                   OR rawTranscript LIKE ? ESCAPE '\\'
-                   OR cleanTranscript LIKE ? ESCAPE '\\'
+                WHERE LOWER(fileName) LIKE LOWER(?) ESCAPE '\\'
+                   OR LOWER(rawTranscript) LIKE LOWER(?) ESCAPE '\\'
+                   OR LOWER(cleanTranscript) LIKE LOWER(?) ESCAPE '\\'
                 ORDER BY createdAt DESC
                 """
             var args: [any DatabaseValueConvertible] = [likePattern, likePattern, likePattern]
