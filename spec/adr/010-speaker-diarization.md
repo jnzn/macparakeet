@@ -113,21 +113,23 @@ If diarization fails (e.g. `noSpeechDetected`, model error, timeout), the ASR re
 - Per-speaker analytics (speaking time, word count)
 - All export formats include speaker labels when available
 - Progress: "Identifying speakers..." sublabel with time estimate during diarization phase
-- Option-key alternate to skip diarization for power users (per-run, not a global toggle)
+- Settings toggle to enable/disable diarization (on by default)
 
 ### Always-on vs opt-in
 
-Diarization adds ~30-56 seconds of processing per hour of audio (at 64-122x RTF) on top of ASR's ~23 seconds per hour. Total file transcription time for 1 hour of audio: ~53-79 seconds (ASR + diarization). This is still very fast and the additional time is worth it for speaker attribution. Model download is ~130 MB (one-time).
+> **Amendment (2026-04-02):** The original decision was "always-on, no global toggle." This has been revised to **a Settings toggle (on by default)**. See rationale below.
 
-For file transcription, always run it — users transcribing files almost always want to know who said what. If a file has only one speaker, diarization correctly returns a single speaker label with no user-visible overhead.
+~~For file transcription, always run it — users transcribing files almost always want to know who said what.~~ **Revised:** Diarization is controlled by a "Speaker detection" toggle in Settings (on by default). Users who don't need speaker attribution can disable it for faster transcriptions.
 
-**Progress UX:** Show "Transcribing..." during ASR, then "Identifying speakers..." with sublabel *"Adds ~30-60s per hour of audio"* during diarization. No tooltip or info icon needed — the sublabel sets expectations.
+**Why the change:** The original decision was "always-on, no toggle." A Settings toggle gives users explicit control over the accuracy/speed tradeoff. The toggle detail text sets realistic expectations: "~85% accurate — best with clear audio and distinct voices."
 
-**No global toggle.** Adding a settings toggle introduces UI complexity, conditional logic, and "why don't I see speakers?" confusion. Instead, provide a **per-run Option-key alternate** — hold ⌥ when dropping a file to skip diarization ("Transcribe (Fast, No Speakers)"). This follows macOS convention for alternate actions and keeps the default UX clean.
+**Progress UX:** When enabled, show "Transcribing..." during ASR, then "Identifying speakers..." during diarization. When disabled, the diarization step is skipped entirely (no progress indicator for it).
 
-Skip diarization only for: dictation (single speaker by design) or explicit user opt-out via Option-key.
+~~**No global toggle.**~~ **Global toggle added.** A "Speaker detection" toggle in Settings → Transcription controls whether diarization runs. The original concern about "why don't I see speakers?" confusion is addressed by the toggle being clearly labeled and discoverable.
 
-**CLI:** `macparakeet-cli transcribe` runs diarization by default (matching GUI). Use `--no-diarize` to skip. Text output shows speaker labels at turn changes; JSON output includes all speaker data via Codable.
+Skip diarization for: dictation (single speaker by design), or when the Settings toggle is off.
+
+**CLI:** `macparakeet-cli transcribe` runs diarization by default (backward compatibility). Use `--no-diarize` to skip. Text output shows speaker labels at turn changes; JSON output includes all speaker data via Codable.
 
 ## Rationale
 
