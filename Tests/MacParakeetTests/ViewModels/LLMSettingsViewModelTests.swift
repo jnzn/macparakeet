@@ -395,6 +395,26 @@ final class LLMSettingsViewModelTests: XCTestCase {
         XCTAssertEqual(saved?.commandTemplate, "claude -p")
     }
 
+    func testLocalCLISaveDuringConnectionTestDoesNotRestoreStaleCommand() async throws {
+        let defaults = UserDefaults(suiteName: "test.vm.\(UUID().uuidString)")!
+        let cliStore = LocalCLIConfigStore(defaults: defaults)
+        try cliStore.save(LocalCLIConfig(commandTemplate: "echo OLD", timeoutSeconds: 10))
+
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient, cliConfigStore: cliStore)
+        viewModel.selectedProviderID = .localCLI
+        viewModel.commandTemplate = "sleep 0.2; cat >/dev/null; echo OK"
+        viewModel.cliTimeoutSeconds = 10
+
+        viewModel.testConnection()
+        viewModel.commandTemplate = "echo SAVED"
+        viewModel.saveConfiguration()
+
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        XCTAssertEqual(cliStore.load()?.commandTemplate, "echo SAVED")
+        XCTAssertEqual(viewModel.connectionTestState, .idle)
+    }
+
     func testLocalCLICannotSaveWithoutCommand() {
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
         viewModel.selectedProviderID = .localCLI

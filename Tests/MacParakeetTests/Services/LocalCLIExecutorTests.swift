@@ -2,6 +2,9 @@ import XCTest
 @testable import MacParakeetCore
 
 final class LocalCLIExecutorTests: XCTestCase {
+    private func shellQuote(_ value: String) -> String {
+        "'\(value.replacingOccurrences(of: "'", with: "'\"'\"'"))'"
+    }
 
     // MARK: - Config Store
 
@@ -108,6 +111,74 @@ final class LocalCLIExecutorTests: XCTestCase {
                 XCTFail("Expected timeout, got \(error)")
             }
         }
+    }
+
+    func testTimeoutWhileChildIsNotDrainingStdin() async throws {
+        let defaults = UserDefaults(suiteName: "test.localcli.\(UUID().uuidString)")!
+        let store = LocalCLIConfigStore(defaults: defaults)
+        let executor = LocalCLIExecutor(configStore: store)
+        let largePrompt = String(repeating: "x", count: 200_000)
+
+        // `sleep` never reads stdin, so a large prompt would previously block
+        // the synchronous write before timeout handling started.
+        let config = LocalCLIConfig(commandTemplate: "sleep 30", timeoutSeconds: 5)
+        do {
+            _ = try await executor.execute(systemPrompt: "", userPrompt: largePrompt, config: config)
+            XCTFail("Expected timeout error")
+        } catch let error as LocalCLIError {
+            guard case .timeout(let seconds) = error else {
+                XCTFail("Expected timeout, got \(error)")
+                return
+            }
+            XCTAssertEqual(seconds, 5)
+        }
+    }
+
+    func testCancellationTerminatesChildProcess() async throws {
+        let defaults = UserDefaults(suiteName: "test.localcli.\(UUID().uuidString)")!
+        let store = LocalCLIConfigStore(defaults: defaults)
+        let executor = LocalCLIExecutor(configStore: store)
+
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("localcli-cancel-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let startedPath = directory.appendingPathComponent("started.txt").path
+        let terminatedPath = directory.appendingPathComponent("terminated.txt").path
+        let command = """
+        trap 'echo terminated > \(shellQuote(terminatedPath)); exit 0' TERM
+        echo started > \(shellQuote(startedPath))
+        while true; do sleep 1; done
+        """
+        let config = LocalCLIConfig(commandTemplate: command, timeoutSeconds: 30)
+
+        let task = Task {
+            try await executor.execute(systemPrompt: "", userPrompt: "cancel me", config: config)
+        }
+
+        let deadline = Date().addingTimeInterval(2)
+        while !FileManager.default.fileExists(atPath: startedPath) && Date() < deadline {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: startedPath))
+
+        task.cancel()
+
+        do {
+            _ = try await task.value
+            XCTFail("Expected cancellation")
+        } catch is CancellationError {
+            // Expected
+        } catch {
+            XCTFail("Expected CancellationError, got \(error)")
+        }
+
+        let terminationDeadline = Date().addingTimeInterval(2)
+        while !FileManager.default.fileExists(atPath: terminatedPath) && Date() < terminationDeadline {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: terminatedPath))
     }
 
     func testEmptyOutput() async throws {

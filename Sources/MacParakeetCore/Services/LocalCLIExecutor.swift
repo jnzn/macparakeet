@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import os
 
 // MARK: - Configuration
@@ -100,6 +101,39 @@ public final class LocalCLIConfigStore: @unchecked Sendable {
 // MARK: - Executor
 
 public final class LocalCLIExecutor: Sendable {
+    private final class ProcessExecutionState: @unchecked Sendable {
+        private let lock = NSLock()
+        private var process: Process?
+        private var cancelled = false
+        private var continuationResumed = false
+
+        var isCancelled: Bool {
+            lock.withLock { cancelled }
+        }
+
+        func setProcess(_ process: Process) -> Bool {
+            lock.withLock {
+                self.process = process
+                return cancelled
+            }
+        }
+
+        func cancel() -> Process? {
+            lock.withLock {
+                cancelled = true
+                return process
+            }
+        }
+
+        func claimContinuation() -> Bool {
+            lock.withLock {
+                guard !continuationResumed else { return false }
+                continuationResumed = true
+                return true
+            }
+        }
+    }
+
     private let configStore: LocalCLIConfigStore
     private let cachedPATH: OSAllocatedUnfairLock<String?>
 
@@ -179,113 +213,236 @@ public final class LocalCLIExecutor: Sendable {
         timeout: Double
     ) async throws -> String {
         let clampedTimeout = max(5, timeout)
+        let state = ProcessExecutionState()
 
-        return try await withCheckedThrowingContinuation { continuation in
-            // Run on a background queue — Process APIs are synchronous
-            DispatchQueue.global(qos: .userInitiated).async { [self] in
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-                process.arguments = ["-lc", commandTemplate]
-
-                var environment = ProcessInfo.processInfo.environment
-                environment["PATH"] = preferredPATH(fallback: environment["PATH"])
-                // Env vars are capped to avoid hitting macOS exec arg+env size limits
-                // (~256KB). Full prompt content is always available via stdin.
-                let envLimit = 32_000
-                environment["MACPARAKEET_SYSTEM_PROMPT"] = String(systemPrompt.prefix(envLimit))
-                environment["MACPARAKEET_USER_PROMPT"] = String(userPrompt.prefix(envLimit))
-                environment["MACPARAKEET_FULL_PROMPT"] = String(fullPrompt.prefix(envLimit))
-                process.environment = environment
-
-                let inputPipe = Pipe()
-                let outputPipe = Pipe()
-                let errorPipe = Pipe()
-                process.standardInput = inputPipe
-                process.standardOutput = outputPipe
-                process.standardError = errorPipe
-
-                // Install termination handler BEFORE run() to avoid race
-                // where a fast command exits before the handler is set.
-                let semaphore = DispatchSemaphore(value: 0)
-                process.terminationHandler = { _ in
-                    semaphore.signal()
-                }
-
-                do {
-                    try process.run()
-                } catch {
-                    continuation.resume(throwing: LocalCLIError.executionFailed(error.localizedDescription))
-                    return
-                }
-
-                // Write prompt to stdin so CLI tools can read it
-                if let data = fullPrompt.data(using: .utf8) {
-                    inputPipe.fileHandleForWriting.write(data)
-                }
-                try? inputPipe.fileHandleForWriting.close()
-
-                // Read stdout/stderr concurrently with process execution to
-                // avoid pipe deadlock: if the pipe buffer fills (64KB), the
-                // process blocks writing and can never exit.
-                var stdoutData = Data()
-                var stderrData = Data()
-                let readGroup = DispatchGroup()
-
-                readGroup.enter()
-                DispatchQueue.global(qos: .utility).async {
-                    stdoutData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-                    readGroup.leave()
-                }
-                readGroup.enter()
-                DispatchQueue.global(qos: .utility).async {
-                    stderrData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-                    readGroup.leave()
-                }
-
-                // Wait for process with timeout
-                let waitResult = semaphore.wait(timeout: .now() + clampedTimeout)
-                if waitResult == .timedOut {
-                    if process.isRunning { process.terminate() }
-                    // Give it a moment to clean up
-                    _ = semaphore.wait(timeout: .now() + 2)
-                    // Close pipe read-ends to unblock the reader threads.
-                    // Without this, readDataToEndOfFile blocks forever if
-                    // child processes inherit the pipe file descriptors.
-                    try? outputPipe.fileHandleForReading.close()
-                    try? errorPipe.fileHandleForReading.close()
-                    continuation.resume(throwing: LocalCLIError.timeout(seconds: clampedTimeout))
-                    return
-                }
-
-                // Wait for pipe reads to finish (they will, since process exited)
-                readGroup.wait()
-
-                let stdout = (String(data: stdoutData, encoding: .utf8) ?? "")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                let stderr = (String(data: stderrData, encoding: .utf8) ?? "")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-
-                let exitCode = process.terminationStatus
-                if exitCode != 0 {
-                    let looksLikeNotFound = exitCode == 127 || stderr.lowercased().contains("command not found")
-                    if looksLikeNotFound {
-                        continuation.resume(throwing: LocalCLIError.commandNotFound(
-                            stderr.isEmpty ? commandTemplate : stderr
-                        ))
-                    } else {
-                        continuation.resume(throwing: LocalCLIError.nonZeroExit(code: exitCode, stderr: stderr))
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
+                // Run on a background queue — Process APIs are synchronous
+                DispatchQueue.global(qos: .userInitiated).async { [self] in
+                    if state.isCancelled {
+                        Self.resume(continuation, state: state, result: .failure(CancellationError()))
+                        return
                     }
-                    return
-                }
 
-                guard !stdout.isEmpty else {
-                    continuation.resume(throwing: LocalCLIError.emptyOutput)
-                    return
-                }
+                    let process = Process()
+                    process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+                    process.arguments = ["-lc", commandTemplate]
 
-                continuation.resume(returning: stdout)
+                    var environment = ProcessInfo.processInfo.environment
+                    environment["PATH"] = preferredPATH(fallback: environment["PATH"])
+                    // Env vars are capped to avoid hitting macOS exec arg+env size limits
+                    // (~256KB). Full prompt content is always available via stdin.
+                    let envLimit = 32_000
+                    environment["MACPARAKEET_SYSTEM_PROMPT"] = String(systemPrompt.prefix(envLimit))
+                    environment["MACPARAKEET_USER_PROMPT"] = String(userPrompt.prefix(envLimit))
+                    environment["MACPARAKEET_FULL_PROMPT"] = String(fullPrompt.prefix(envLimit))
+                    process.environment = environment
+
+                    let inputPipe = Pipe()
+                    let outputPipe = Pipe()
+                    let errorPipe = Pipe()
+                    process.standardInput = inputPipe
+                    process.standardOutput = outputPipe
+                    process.standardError = errorPipe
+
+                    // Install termination handler BEFORE run() to avoid race
+                    // where a fast command exits before the handler is set.
+                    let semaphore = DispatchSemaphore(value: 0)
+                    process.terminationHandler = { _ in
+                        semaphore.signal()
+                    }
+
+                    if state.setProcess(process) {
+                        Self.resume(continuation, state: state, result: .failure(CancellationError()))
+                        return
+                    }
+
+                    do {
+                        try process.run()
+                    } catch {
+                        let failure: Error = state.isCancelled
+                            ? CancellationError()
+                            : LocalCLIError.executionFailed(error.localizedDescription)
+                        Self.resume(continuation, state: state, result: .failure(failure))
+                        return
+                    }
+
+                    // Read stdout/stderr concurrently with process execution to
+                    // avoid pipe deadlock: if the pipe buffer fills (64KB), the
+                    // process blocks writing and can never exit.
+                    var stdoutData = Data()
+                    var stderrData = Data()
+                    let readGroup = DispatchGroup()
+
+                    readGroup.enter()
+                    DispatchQueue.global(qos: .utility).async {
+                        stdoutData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                        readGroup.leave()
+                    }
+                    readGroup.enter()
+                    DispatchQueue.global(qos: .utility).async {
+                        stderrData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                        readGroup.leave()
+                    }
+
+                    let writerGroup = DispatchGroup()
+                    writerGroup.enter()
+                    let promptData = fullPrompt.data(using: .utf8) ?? Data()
+                    DispatchQueue.global(qos: .utility).async {
+                        Self.writePromptData(
+                            promptData,
+                            to: inputPipe.fileHandleForWriting,
+                            isCancelled: { state.isCancelled }
+                        )
+                        try? inputPipe.fileHandleForWriting.close()
+                        writerGroup.leave()
+                    }
+
+                    // Wait for process with timeout while stdin is written on a
+                    // separate queue so a full pipe cannot block timeout/cancel.
+                    let waitResult = semaphore.wait(timeout: .now() + clampedTimeout)
+                    if waitResult == .timedOut {
+                        Self.stopProcess(process)
+                        _ = semaphore.wait(timeout: .now() + 2)
+                        Self.closePipes(
+                            input: inputPipe.fileHandleForWriting,
+                            output: outputPipe.fileHandleForReading,
+                            error: errorPipe.fileHandleForReading
+                        )
+                        _ = writerGroup.wait(timeout: .now() + 1)
+                        _ = readGroup.wait(timeout: .now() + 1)
+                        Self.resume(
+                            continuation,
+                            state: state,
+                            result: .failure(LocalCLIError.timeout(seconds: clampedTimeout))
+                        )
+                        return
+                    }
+
+                    if state.isCancelled {
+                        Self.closePipes(
+                            input: inputPipe.fileHandleForWriting,
+                            output: outputPipe.fileHandleForReading,
+                            error: errorPipe.fileHandleForReading
+                        )
+                        _ = writerGroup.wait(timeout: .now() + 1)
+                        _ = readGroup.wait(timeout: .now() + 1)
+                        Self.resume(continuation, state: state, result: .failure(CancellationError()))
+                        return
+                    }
+
+                    _ = writerGroup.wait(timeout: .now() + 1)
+                    readGroup.wait()
+
+                    if state.isCancelled {
+                        Self.resume(continuation, state: state, result: .failure(CancellationError()))
+                        return
+                    }
+
+                    let stdout = (String(data: stdoutData, encoding: .utf8) ?? "")
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    let stderr = (String(data: stderrData, encoding: .utf8) ?? "")
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+
+                    let exitCode = process.terminationStatus
+                    if exitCode != 0 {
+                        let looksLikeNotFound = exitCode == 127 || stderr.lowercased().contains("command not found")
+                        if looksLikeNotFound {
+                            Self.resume(
+                                continuation,
+                                state: state,
+                                result: .failure(LocalCLIError.commandNotFound(
+                                    stderr.isEmpty ? commandTemplate : stderr
+                                ))
+                            )
+                        } else {
+                            Self.resume(
+                                continuation,
+                                state: state,
+                                result: .failure(LocalCLIError.nonZeroExit(code: exitCode, stderr: stderr))
+                            )
+                        }
+                        return
+                    }
+
+                    guard !stdout.isEmpty else {
+                        Self.resume(continuation, state: state, result: .failure(LocalCLIError.emptyOutput))
+                        return
+                    }
+
+                    Self.resume(continuation, state: state, result: .success(stdout))
+                }
+            }
+        } onCancel: {
+            if let process = state.cancel() {
+                Self.stopProcess(process)
             }
         }
+    }
+
+    private static func resume(
+        _ continuation: CheckedContinuation<String, Error>,
+        state: ProcessExecutionState,
+        result: Result<String, Error>
+    ) {
+        guard state.claimContinuation() else { return }
+        switch result {
+        case .success(let output):
+            continuation.resume(returning: output)
+        case .failure(let error):
+            continuation.resume(throwing: error)
+        }
+    }
+
+    private static func writePromptData(
+        _ data: Data,
+        to handle: FileHandle,
+        isCancelled: @escaping @Sendable () -> Bool
+    ) {
+        guard !data.isEmpty else { return }
+        let fileDescriptor = handle.fileDescriptor
+        _ = Darwin.fcntl(fileDescriptor, F_SETNOSIGPIPE, 1)
+
+        data.withUnsafeBytes { buffer in
+            guard let baseAddress = buffer.baseAddress else { return }
+
+            var offset = 0
+            while offset < data.count {
+                if isCancelled() { break }
+
+                let chunkSize = min(16_384, data.count - offset)
+                let pointer = baseAddress.advanced(by: offset)
+                let written = Darwin.write(fileDescriptor, pointer, chunkSize)
+
+                if written > 0 {
+                    offset += written
+                    continue
+                }
+
+                if written == -1 && errno == EINTR {
+                    continue
+                }
+
+                break
+            }
+        }
+    }
+
+    private static func stopProcess(_ process: Process) {
+        guard process.isRunning else { return }
+
+        process.terminate()
+        usleep(200_000)
+
+        if process.isRunning {
+            kill(process.processIdentifier, SIGKILL)
+        }
+    }
+
+    private static func closePipes(input: FileHandle, output: FileHandle, error: FileHandle) {
+        try? input.close()
+        try? output.close()
+        try? error.close()
     }
 
     // MARK: - PATH Discovery

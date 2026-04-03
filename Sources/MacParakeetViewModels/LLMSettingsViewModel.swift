@@ -191,33 +191,20 @@ public final class LLMSettingsViewModel {
             return
         }
 
-        // For Local CLI, temporarily save draft config so the executor tests
-        // the command being edited. Restore the original afterward to avoid
-        // corrupting the saved config if the user doesn't click Save.
-        var savedCLIConfig: LocalCLIConfig?
+        let connectionTestClient: any LLMClientProtocol
         if snapshot.providerID == .localCLI {
-            savedCLIConfig = cliConfigStore?.load()
-            let draftConfig = LocalCLIConfig(
+            connectionTestClient = LocalCLILLMClient(overrideConfig: LocalCLIConfig(
                 commandTemplate: snapshot.trimmedCommandTemplate,
                 timeoutSeconds: snapshot.cliTimeoutSeconds
-            )
-            try? cliConfigStore?.save(draftConfig)
+            ))
+        } else {
+            connectionTestClient = llmClient
         }
 
         connectionTestState = .testing
         Task {
-            defer {
-                // Restore original CLI config after test completes
-                if snapshot.providerID == .localCLI {
-                    if let original = savedCLIConfig {
-                        try? self.cliConfigStore?.save(original)
-                    } else {
-                        self.cliConfigStore?.delete()
-                    }
-                }
-            }
             do {
-                try await llmClient.testConnection(config: config)
+                try await connectionTestClient.testConnection(config: config)
                 guard draft == snapshot else { return }
                 connectionTestState = .success
             } catch {
