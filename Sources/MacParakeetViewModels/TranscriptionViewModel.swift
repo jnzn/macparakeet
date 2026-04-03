@@ -324,6 +324,12 @@ public final class TranscriptionViewModel {
         currentTranscription = result
         loadTranscriptions()
         autoSummarizeIfNeeded(result)
+        autoSaveIfEnabled(result)
+    }
+
+    private func autoSaveIfEnabled(_ transcription: Transcription) {
+        let service = AutoSaveService()
+        service.saveIfEnabled(transcription)
     }
 
     private func completeFailedTranscription(taskID: UUID, error: Error) {
