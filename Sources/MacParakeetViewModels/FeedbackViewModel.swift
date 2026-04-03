@@ -133,6 +133,7 @@ public final class FeedbackViewModel {
                 try await service.submitFeedback(payload)
                 guard !Task.isCancelled else { return }
 
+                Telemetry.send(.feedbackSubmitted(category: payload.category.rawValue))
                 submissionState = .success
                 // Auto-reset after 3 seconds
                 try await Task.sleep(for: .seconds(3))
