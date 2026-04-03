@@ -353,6 +353,7 @@ final class DictationFlowCoordinator {
                     guard !Task.isCancelled else { return }
                     self.currentDictation = result.dictation
                     self.pendingPostPasteAction = result.postPasteAction
+                    Telemetry.send(.dictationUndoUsed)
                     self.sendEvent(.transcriptionCompleted(generation: gen))
                 } catch where self.isNoSpeechError(error) {
                     guard !Task.isCancelled else { return }
