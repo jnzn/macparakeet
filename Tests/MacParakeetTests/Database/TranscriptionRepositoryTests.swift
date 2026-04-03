@@ -97,17 +97,17 @@ final class TranscriptionRepositoryTests: XCTestCase {
     func testSearchMatchesUnicodeCaseInsensitively() throws {
         try repo.save(
             Transcription(
-                fileName: "Résumé.m4a",
-                rawTranscript: "Met at the Café",
+                fileName: "CAFÉ-notes.m4a",
+                rawTranscript: "Travel guide for İSTANBUL",
                 cleanTranscript: "Met at the Café",
                 status: .completed
             )
         )
 
-        let fileNameResults = try repo.search(query: "résumé", limit: nil)
+        let fileNameResults = try repo.search(query: "café", limit: nil)
         XCTAssertEqual(fileNameResults.count, 1)
 
-        let transcriptResults = try repo.search(query: "café", limit: nil)
+        let transcriptResults = try repo.search(query: "istanbul", limit: nil)
         XCTAssertEqual(transcriptResults.count, 1)
     }
 

@@ -112,7 +112,7 @@ public final class LocalCLIExecutor: Sendable {
 
     private final class ProcessExecutionState: @unchecked Sendable {
         private let lock = NSLock()
-        private var process: Process?
+        private var processID: Int32?
         private var cancelled = false
         private var continuationResumed = false
         private var monitoringStopped = false
@@ -122,17 +122,17 @@ public final class LocalCLIExecutor: Sendable {
             lock.withLock { cancelled }
         }
 
-        func setProcess(_ process: Process) -> Bool {
+        func setProcessID(_ processID: Int32) -> Bool {
             lock.withLock {
-                self.process = process
+                self.processID = processID
                 return cancelled
             }
         }
 
-        func cancel() -> Process? {
+        func cancel() -> Int32? {
             lock.withLock {
                 cancelled = true
-                return process
+                return processID
             }
         }
 
@@ -152,7 +152,7 @@ public final class LocalCLIExecutor: Sendable {
 
         func shouldMonitor(processID: Int32) -> Bool {
             lock.withLock {
-                !monitoringStopped && process?.processIdentifier == processID
+                !monitoringStopped && self.processID == processID
             }
         }
 
@@ -165,6 +165,21 @@ public final class LocalCLIExecutor: Sendable {
 
         func observedDescendants() -> [Int32] {
             lock.withLock { Array(observedDescendantPIDs) }
+        }
+    }
+
+    private final class ChildTerminationState: @unchecked Sendable {
+        private let lock = NSLock()
+        private var status: Int32?
+
+        func setStatus(_ status: Int32) {
+            lock.withLock {
+                self.status = status
+            }
+        }
+
+        func currentStatus() -> Int32? {
+            lock.withLock { status }
         }
     }
 
@@ -263,10 +278,6 @@ public final class LocalCLIExecutor: Sendable {
                         return
                     }
 
-                    let process = Process()
-                    process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-                    process.arguments = ["-lc", Self.wrappedCommandTemplate(commandTemplate)]
-
                     var environment = ProcessInfo.processInfo.environment
                     environment["PATH"] = preferredPATH(fallback: environment["PATH"])
                     // Env vars are capped to avoid hitting macOS exec arg+env size limits
@@ -275,29 +286,22 @@ public final class LocalCLIExecutor: Sendable {
                     environment["MACPARAKEET_SYSTEM_PROMPT"] = String(systemPrompt.prefix(envLimit))
                     environment["MACPARAKEET_USER_PROMPT"] = String(userPrompt.prefix(envLimit))
                     environment["MACPARAKEET_FULL_PROMPT"] = String(fullPrompt.prefix(envLimit))
-                    process.environment = environment
 
                     let inputPipe = Pipe()
                     let outputPipe = Pipe()
                     let errorPipe = Pipe()
-                    process.standardInput = inputPipe
-                    process.standardOutput = outputPipe
-                    process.standardError = errorPipe
-
-                    // Install termination handler BEFORE run() to avoid race
-                    // where a fast command exits before the handler is set.
                     let semaphore = DispatchSemaphore(value: 0)
-                    process.terminationHandler = { _ in
-                        semaphore.signal()
-                    }
-
-                    if state.setProcess(process) {
-                        Self.resume(continuation, state: state, result: .failure(CancellationError()))
-                        return
-                    }
+                    let terminationState = ChildTerminationState()
+                    let processID: Int32
 
                     do {
-                        try process.run()
+                        processID = try Self.spawnShell(
+                            command: Self.wrappedCommandTemplate(commandTemplate),
+                            environment: environment,
+                            inputPipe: inputPipe,
+                            outputPipe: outputPipe,
+                            errorPipe: errorPipe
+                        )
                     } catch {
                         let failure: Error = state.isCancelled
                             ? CancellationError()
@@ -306,9 +310,26 @@ public final class LocalCLIExecutor: Sendable {
                         return
                     }
 
+                    if state.setProcessID(processID) {
+                        Self.stopProcess(processID, state: state)
+                        Self.resume(continuation, state: state, result: .failure(CancellationError()))
+                        return
+                    }
+
+                    DispatchQueue.global(qos: .utility).async {
+                        var status: Int32 = 0
+                        while waitpid(processID, &status, 0) == -1 {
+                            if errno == EINTR {
+                                continue
+                            }
+                            break
+                        }
+                        terminationState.setStatus(status)
+                        semaphore.signal()
+                    }
+
                     let monitorGroup = DispatchGroup()
                     monitorGroup.enter()
-                    let processID = process.processIdentifier
                     DispatchQueue.global(qos: .utility).async {
                         Self.monitorDescendants(of: processID, state: state)
                         monitorGroup.leave()
@@ -353,7 +374,7 @@ public final class LocalCLIExecutor: Sendable {
                     // separate queue so a full pipe cannot block timeout/cancel.
                     let waitResult = semaphore.wait(timeout: .now() + clampedTimeout)
                     if waitResult == .timedOut {
-                        Self.stopProcess(process, state: state)
+                        Self.stopProcess(processID, state: state)
                         _ = semaphore.wait(timeout: .now() + 2)
                         Self.closePipes(
                             input: inputPipe.fileHandleForWriting,
@@ -376,6 +397,7 @@ public final class LocalCLIExecutor: Sendable {
                             output: outputPipe.fileHandleForReading,
                             error: errorPipe.fileHandleForReading
                         )
+                        Self.stopProcess(processID, state: state)
                         _ = writerGroup.wait(timeout: .now() + 1)
                         _ = readGroup.wait(timeout: .now() + 1)
                         Self.resume(continuation, state: state, result: .failure(CancellationError()))
@@ -390,11 +412,7 @@ public final class LocalCLIExecutor: Sendable {
                             output: outputPipe.fileHandleForReading,
                             error: errorPipe.fileHandleForReading
                         )
-                        if process.isRunning {
-                            Self.stopProcess(process, state: state)
-                        } else {
-                            Self.stopObservedDescendants(from: state)
-                        }
+                        Self.stopProcess(processID, state: state)
                         _ = readGroup.wait(timeout: .now() + 1)
                         Self.resume(
                             continuation,
@@ -405,16 +423,19 @@ public final class LocalCLIExecutor: Sendable {
                     }
 
                     if state.isCancelled {
+                        Self.stopProcess(processID, state: state)
                         Self.resume(continuation, state: state, result: .failure(CancellationError()))
                         return
                     }
+
+                    Self.stopProcess(processID, state: state)
 
                     let stdout = (String(data: stdoutData, encoding: .utf8) ?? "")
                         .trimmingCharacters(in: .whitespacesAndNewlines)
                     let stderr = (String(data: stderrData, encoding: .utf8) ?? "")
                         .trimmingCharacters(in: .whitespacesAndNewlines)
 
-                    let exitCode = process.terminationStatus
+                    let exitCode = Self.exitCode(from: terminationState.currentStatus() ?? 0)
                     if exitCode != 0 {
                         let looksLikeNotFound = exitCode == 127 || stderr.lowercased().contains("command not found")
                         if looksLikeNotFound {
@@ -444,10 +465,108 @@ public final class LocalCLIExecutor: Sendable {
                 }
             }
         } onCancel: {
-            if let process = state.cancel() {
-                Self.stopProcess(process, state: state)
+            if let processID = state.cancel() {
+                Self.stopProcess(processID, state: state)
             }
         }
+    }
+
+    private static func spawnShell(
+        command: String,
+        environment: [String: String],
+        inputPipe: Pipe,
+        outputPipe: Pipe,
+        errorPipe: Pipe
+    ) throws -> Int32 {
+        let executable = "/bin/zsh"
+        let arguments = [executable, "-lc", command]
+        let environmentStrings = environment.map { "\($0.key)=\($0.value)" }
+
+        var fileActions: posix_spawn_file_actions_t? = nil
+        guard posix_spawn_file_actions_init(&fileActions) == 0 else {
+            throw LocalCLIError.executionFailed("Unable to initialize file actions")
+        }
+        defer { posix_spawn_file_actions_destroy(&fileActions) }
+
+        let stdinRead = inputPipe.fileHandleForReading.fileDescriptor
+        let stdinWrite = inputPipe.fileHandleForWriting.fileDescriptor
+        let stdoutRead = outputPipe.fileHandleForReading.fileDescriptor
+        let stdoutWrite = outputPipe.fileHandleForWriting.fileDescriptor
+        let stderrRead = errorPipe.fileHandleForReading.fileDescriptor
+        let stderrWrite = errorPipe.fileHandleForWriting.fileDescriptor
+
+        guard posix_spawn_file_actions_adddup2(&fileActions, stdinRead, STDIN_FILENO) == 0,
+              posix_spawn_file_actions_adddup2(&fileActions, stdoutWrite, STDOUT_FILENO) == 0,
+              posix_spawn_file_actions_adddup2(&fileActions, stderrWrite, STDERR_FILENO) == 0,
+              posix_spawn_file_actions_addclose(&fileActions, stdinWrite) == 0,
+              posix_spawn_file_actions_addclose(&fileActions, stdoutRead) == 0,
+              posix_spawn_file_actions_addclose(&fileActions, stderrRead) == 0,
+              posix_spawn_file_actions_addclose(&fileActions, stdinRead) == 0,
+              posix_spawn_file_actions_addclose(&fileActions, stdoutWrite) == 0,
+              posix_spawn_file_actions_addclose(&fileActions, stderrWrite) == 0
+        else {
+            throw LocalCLIError.executionFailed("Unable to configure file descriptor actions")
+        }
+
+        var attr: posix_spawnattr_t? = nil
+        guard posix_spawnattr_init(&attr) == 0 else {
+            throw LocalCLIError.executionFailed("Unable to initialize spawn attributes")
+        }
+        defer { posix_spawnattr_destroy(&attr) }
+
+        let flags = Int16(POSIX_SPAWN_SETPGROUP)
+        guard posix_spawnattr_setflags(&attr, flags) == 0,
+              posix_spawnattr_setpgroup(&attr, 0) == 0
+        else {
+            throw LocalCLIError.executionFailed("Unable to configure spawn process group")
+        }
+
+        var pid = pid_t()
+        let spawnResult = try withSpawnCStringArray(arguments) { argv in
+            try withSpawnCStringArray(environmentStrings) { envp in
+                posix_spawn(&pid, executable, &fileActions, &attr, argv, envp)
+            }
+        }
+        guard spawnResult == 0 else {
+            throw LocalCLIError.executionFailed(String(cString: strerror(spawnResult)))
+        }
+
+        try? inputPipe.fileHandleForReading.close()
+        try? outputPipe.fileHandleForWriting.close()
+        try? errorPipe.fileHandleForWriting.close()
+
+        return pid
+    }
+
+    private static func withSpawnCStringArray<R>(
+        _ strings: [String],
+        body: (UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) throws -> R
+    ) throws -> R {
+        let cStrings = try strings.map { string -> UnsafeMutablePointer<CChar>? in
+            guard let duplicated = strdup(string) else {
+                throw LocalCLIError.executionFailed("Unable to allocate spawn argument")
+            }
+            return duplicated
+        }
+        defer {
+            cStrings.forEach { free($0) }
+        }
+
+        var pointerArray = cStrings + [nil]
+        return try pointerArray.withUnsafeMutableBufferPointer { buffer in
+            try body(buffer.baseAddress)
+        }
+    }
+
+    private static func exitCode(from waitStatus: Int32) -> Int32 {
+        let statusBits = waitStatus & 0x7f
+        if statusBits == 0 {
+            return (waitStatus >> 8) & 0xff
+        }
+        if statusBits != 0x7f {
+            return 128 + statusBits
+        }
+        return waitStatus
     }
 
     private static func resume(
@@ -498,22 +617,16 @@ public final class LocalCLIExecutor: Sendable {
         }
     }
 
-    private static func stopProcess(_ process: Process, state: ProcessExecutionState? = nil) {
+    private static func stopProcess(_ processID: Int32, state: ProcessExecutionState? = nil) {
         state?.stopMonitoring()
 
-        let processID = process.processIdentifier
+        signalProcessGroup(processID, signal: SIGTERM)
         signalProcesses(descendantProcessIDs(of: processID) + (state?.observedDescendants() ?? []), signal: SIGTERM)
-
-        if process.isRunning {
-            process.terminate()
-        }
         usleep(200_000)
 
+        signalProcessGroup(processID, signal: SIGKILL)
         signalProcesses(descendantProcessIDs(of: processID) + (state?.observedDescendants() ?? []), signal: SIGKILL)
-
-        if process.isRunning {
-            kill(processID, SIGKILL)
-        }
+        kill(processID, SIGKILL)
     }
 
     private static func stopObservedDescendants(from state: ProcessExecutionState) {
@@ -586,6 +699,11 @@ public final class LocalCLIExecutor: Sendable {
         }
     }
 
+    private static func signalProcessGroup(_ processID: Int32, signal: Int32) {
+        guard processID > 0 else { return }
+        _ = kill(-processID, signal)
+    }
+
     // MARK: - PATH Discovery
 
     /// Returns the user's full shell PATH. Apps launched from Finder/Dock
@@ -643,7 +761,7 @@ public final class LocalCLIExecutor: Sendable {
         let waitResult = semaphore.wait(timeout: .now() + timeout)
         if waitResult == .timedOut {
             if process.isRunning {
-                Self.stopProcess(process)
+                Self.stopProcess(process.processIdentifier)
             }
             Self.closePipes(
                 input: FileHandle.nullDevice,
