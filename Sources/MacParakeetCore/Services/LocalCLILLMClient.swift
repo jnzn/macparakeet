@@ -5,9 +5,14 @@ import Foundation
 /// plugs transparently into `LLMService` via `RoutingLLMClient`.
 public final class LocalCLILLMClient: LLMClientProtocol, Sendable {
     private let executor: LocalCLIExecutor
+    private let overrideConfig: LocalCLIConfig?
 
-    public init(executor: LocalCLIExecutor = LocalCLIExecutor()) {
+    public init(
+        executor: LocalCLIExecutor = LocalCLIExecutor(),
+        overrideConfig: LocalCLIConfig? = nil
+    ) {
         self.executor = executor
+        self.overrideConfig = overrideConfig
     }
 
     public func chatCompletion(
@@ -18,7 +23,11 @@ public final class LocalCLILLMClient: LLMClientProtocol, Sendable {
         let (system, user) = Self.extractPrompts(from: messages)
 
         do {
-            let output = try await executor.execute(systemPrompt: system, userPrompt: user)
+            let output = try await executor.execute(
+                systemPrompt: system,
+                userPrompt: user,
+                config: overrideConfig
+            )
             return ChatCompletionResponse(content: output, model: "cli")
         } catch let error as LLMError {
             throw error
@@ -50,7 +59,7 @@ public final class LocalCLILLMClient: LLMClientProtocol, Sendable {
 
     public func testConnection(config: LLMProviderConfig) async throws {
         do {
-            try await executor.testConnection()
+            try await executor.testConnection(config: overrideConfig)
         } catch let error as LLMError {
             throw error
         } catch {
