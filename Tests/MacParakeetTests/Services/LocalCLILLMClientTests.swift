@@ -42,7 +42,7 @@ final class LocalCLILLMClientTests: XCTestCase {
     // MARK: - Chat Completion
 
     func testChatCompletionViaEcho() async throws {
-        let config = LocalCLIConfig(commandTemplate: "echo 'summary result'", timeoutSeconds: 10)
+        let config = LocalCLIConfig(commandTemplate: "printf 'summary result'", timeoutSeconds: 10)
 
         let executor = LocalCLIExecutor()
         let client = LocalCLILLMClient(executor: executor)
@@ -66,7 +66,7 @@ final class LocalCLILLMClientTests: XCTestCase {
     // MARK: - Streaming
 
     func testStreamYieldsSingleChunk() async throws {
-        let config = LocalCLIConfig(commandTemplate: "echo 'streamed'", timeoutSeconds: 10)
+        let config = LocalCLIConfig(commandTemplate: "printf 'streamed'", timeoutSeconds: 10)
 
         let executor = LocalCLIExecutor()
         let client = LocalCLILLMClient(executor: executor)
