@@ -61,16 +61,25 @@ public final class LocalCLILLMClient: LLMClientProtocol, Sendable {
     // MARK: - Private
 
     /// Splits a message array into (system prompt, user prompt) strings.
+    /// Non-system messages preserve role labels for multi-turn context.
     static func extractPrompts(from messages: [ChatMessage]) -> (system: String, user: String) {
         let system = messages
             .filter { $0.role == .system }
             .map(\.content)
             .joined(separator: "\n\n")
 
-        let user = messages
-            .filter { $0.role != .system }
-            .map(\.content)
-            .joined(separator: "\n\n")
+        let nonSystem = messages.filter { $0.role != .system }
+        let user: String
+        if nonSystem.count == 1 {
+            // Single message — no role prefix needed
+            user = nonSystem[0].content
+        } else {
+            // Multi-turn: prefix each message with its role
+            user = nonSystem.map { msg in
+                let label = msg.role == .user ? "User" : "Assistant"
+                return "\(label): \(msg.content)"
+            }.joined(separator: "\n\n")
+        }
 
         return (system, user)
     }

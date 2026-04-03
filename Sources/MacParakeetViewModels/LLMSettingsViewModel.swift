@@ -186,6 +186,16 @@ public final class LLMSettingsViewModel {
             return
         }
 
+        // For Local CLI, save the draft config so the executor tests
+        // the command the user is currently editing, not a stale saved one.
+        if snapshot.providerID == .localCLI {
+            let cliConfig = LocalCLIConfig(
+                commandTemplate: snapshot.trimmedCommandTemplate,
+                timeoutSeconds: snapshot.cliTimeoutSeconds
+            )
+            try? cliConfigStore?.save(cliConfig)
+        }
+
         connectionTestState = .testing
         Task {
             do {
@@ -205,6 +215,9 @@ public final class LLMSettingsViewModel {
             try configStore.deleteConfig()
         } catch {
             logger.error("Failed to delete LLM configuration error=\(error.localizedDescription, privacy: .public)")
+        }
+        if draft.providerID == .localCLI {
+            cliConfigStore?.delete()
         }
         let apiKey = draft.providerID.requiresAPIKey ? ((try? configStore.loadAPIKey(for: draft.providerID)) ?? "") : ""
         draft = .defaults(

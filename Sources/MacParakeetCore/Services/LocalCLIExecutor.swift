@@ -73,6 +73,7 @@ public enum LocalCLIError: Error, LocalizedError, Sendable {
 
 // MARK: - Config Store
 
+// @unchecked Sendable: UserDefaults is internally thread-safe
 public final class LocalCLIConfigStore: @unchecked Sendable {
     private static let configKey = "local_cli_config"
     private let defaults: UserDefaults
@@ -177,7 +178,9 @@ public final class LocalCLIExecutor: Sendable {
         fullPrompt: String,
         timeout: Double
     ) async throws -> String {
-        try await withCheckedThrowingContinuation { continuation in
+        let clampedTimeout = max(5, timeout)
+
+        return try await withCheckedThrowingContinuation { continuation in
             // Run on a background queue — Process APIs are synchronous
             DispatchQueue.global(qos: .userInitiated).async { [self] in
                 let process = Process()
@@ -198,6 +201,13 @@ public final class LocalCLIExecutor: Sendable {
                 process.standardOutput = outputPipe
                 process.standardError = errorPipe
 
+                // Install termination handler BEFORE run() to avoid race
+                // where a fast command exits before the handler is set.
+                let semaphore = DispatchSemaphore(value: 0)
+                process.terminationHandler = { _ in
+                    semaphore.signal()
+                }
+
                 do {
                     try process.run()
                 } catch {
@@ -211,23 +221,36 @@ public final class LocalCLIExecutor: Sendable {
                 }
                 try? inputPipe.fileHandleForWriting.close()
 
-                // Wait for process with timeout
-                let semaphore = DispatchSemaphore(value: 0)
-                process.terminationHandler = { _ in
-                    semaphore.signal()
+                // Read stdout/stderr concurrently with process execution to
+                // avoid pipe deadlock: if the pipe buffer fills (64KB), the
+                // process blocks writing and can never exit.
+                var stdoutData = Data()
+                var stderrData = Data()
+                let readGroup = DispatchGroup()
+
+                readGroup.enter()
+                DispatchQueue.global(qos: .utility).async {
+                    stdoutData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                    readGroup.leave()
+                }
+                readGroup.enter()
+                DispatchQueue.global(qos: .utility).async {
+                    stderrData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                    readGroup.leave()
                 }
 
-                let waitResult = semaphore.wait(timeout: .now() + timeout)
+                // Wait for process with timeout
+                let waitResult = semaphore.wait(timeout: .now() + clampedTimeout)
                 if waitResult == .timedOut {
                     if process.isRunning { process.terminate() }
                     // Give it a moment to clean up
                     _ = semaphore.wait(timeout: .now() + 2)
-                    continuation.resume(throwing: LocalCLIError.timeout(seconds: timeout))
+                    continuation.resume(throwing: LocalCLIError.timeout(seconds: clampedTimeout))
                     return
                 }
 
-                let stdoutData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-                let stderrData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                // Wait for pipe reads to finish (they will, since process exited)
+                readGroup.wait()
 
                 let stdout = (String(data: stdoutData, encoding: .utf8) ?? "")
                     .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -274,12 +297,14 @@ public final class LocalCLIExecutor: Sendable {
         return fallback ?? "/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin"
     }
 
-    /// Spawns an interactive login shell to capture the user's PATH.
+    /// Spawns a login shell to capture the user's PATH.
+    /// Uses `-lc` (login, non-interactive) to source .zprofile/.zlogin
+    /// without triggering interactive .zshrc hooks that could hang.
     private static func discoverPATH() -> String? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
         process.arguments = [
-            "-ilc",
+            "-lc",
             "echo __MACPARAKEET_PATH_START__; print -r -- $PATH; echo __MACPARAKEET_PATH_END__",
         ]
 
