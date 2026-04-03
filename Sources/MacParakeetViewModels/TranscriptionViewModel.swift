@@ -281,7 +281,10 @@ public final class TranscriptionViewModel {
             do { try FileManager.default.removeItem(atPath: audioPath) }
             catch { logger.warning("Failed to remove audio: \(error.localizedDescription, privacy: .public)") }
         }
-        do { _ = try repo.delete(id: transcription.id) }
+        do {
+            _ = try repo.delete(id: transcription.id)
+            Telemetry.send(.transcriptionDeleted)
+        }
         catch { logger.error("Failed to delete transcription: \(error.localizedDescription, privacy: .public)") }
         if currentTranscription?.id == transcription.id {
             currentTranscription = nil

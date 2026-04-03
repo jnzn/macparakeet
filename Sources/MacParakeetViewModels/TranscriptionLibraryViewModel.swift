@@ -77,6 +77,7 @@ public final class TranscriptionLibraryViewModel {
             if let idx = transcriptions.firstIndex(where: { $0.id == transcription.id }) {
                 transcriptions[idx].isFavorite = newValue
             }
+            Telemetry.send(.transcriptionFavorited(isFavorite: newValue))
         } catch {
             // DB failed — don't update UI state
         }
@@ -86,6 +87,7 @@ public final class TranscriptionLibraryViewModel {
         do {
             _ = try transcriptionRepo?.delete(id: transcription.id)
             transcriptions.removeAll { $0.id == transcription.id }
+            Telemetry.send(.transcriptionDeleted)
         } catch {
             // DB failed — don't remove from UI
         }

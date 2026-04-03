@@ -148,6 +148,12 @@ CREATE INDEX idx_events_session ON events(session);
 | `history_replayed` | — | Do people re-listen to audio? |
 | `copy_to_clipboard` | `source` (dictation, transcription, history) | How do people get text out? |
 | `keystroke_snippet_fired` | — | Are keystroke action snippets being used? |
+| `feedback_submitted` | `category` (bug, featureRequest, other) | Feedback volume and sentiment split |
+| `transcription_deleted` | — | Are users cleaning up transcriptions? |
+| `dictation_deleted` | — | History hygiene patterns |
+| `transcription_favorited` | `is_favorite` (true/false) | Which content types get saved? |
+| `dictation_undo_used` | — | Is the 5-second undo window used? |
+| `chat_conversation_created` | — | Multi-conversation adoption |
 
 ### 5. Settings & Customization — "How do people configure the app?"
 

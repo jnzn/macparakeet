@@ -287,6 +287,7 @@ public final class TranscriptChatViewModel {
         inputText = ""
         currentConversation = nil
 
+        Telemetry.send(.chatConversationCreated)
         notifyConversationsChanged()
     }
 
