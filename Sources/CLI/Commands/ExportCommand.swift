@@ -44,8 +44,7 @@ struct ExportCommand: AsyncParsableCommand {
 
     func run() async throws {
         try AppPaths.ensureDirectories()
-        let dbPath = resolvedDatabasePath(database)
-        let dbManager = try DatabaseManager(path: dbPath)
+        let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
         let repo = TranscriptionRepository(dbQueue: dbManager.dbQueue)
 
         let transcription = try findTranscription(id: id, repo: repo)
@@ -59,25 +58,6 @@ struct ExportCommand: AsyncParsableCommand {
             try await writeExport(transcription: transcription, exportService: exportService, url: outputURL)
             print("Exported to \(outputURL.path)")
         }
-    }
-
-    private func findTranscription(id: String, repo: TranscriptionRepository) throws -> Transcription {
-        // Try exact UUID first
-        if let uuid = UUID(uuidString: id), let t = try repo.fetch(id: uuid) {
-            return t
-        }
-
-        // Prefix match
-        let all = try repo.fetchAll()
-        let matches = all.filter { $0.id.uuidString.lowercased().hasPrefix(id.lowercased()) }
-
-        guard let match = matches.first else {
-            throw ExportError.notFound("No transcription matching '\(id)'")
-        }
-        guard matches.count == 1 else {
-            throw ExportError.ambiguous("Multiple transcriptions match '\(id)'. Be more specific.")
-        }
-        return match
     }
 
     private func resolveOutputURL(transcription: Transcription) -> URL {
@@ -129,28 +109,6 @@ struct ExportCommand: AsyncParsableCommand {
             try await exportService.exportToVTT(transcription: transcription, url: url)
         case .json:
             try await exportService.exportToJSON(transcription: transcription, url: url)
-        }
-    }
-}
-
-private func resolvedDatabasePath(_ database: String?) -> String {
-    let opt = database?.trimmingCharacters(in: .whitespacesAndNewlines)
-    if let opt, !opt.isEmpty {
-        let dir = URL(fileURLWithPath: opt).deletingLastPathComponent()
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return opt
-    }
-    return AppPaths.databasePath
-}
-
-enum ExportError: Error, LocalizedError {
-    case notFound(String)
-    case ambiguous(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .notFound(let msg): return msg
-        case .ambiguous(let msg): return msg
         }
     }
 }
