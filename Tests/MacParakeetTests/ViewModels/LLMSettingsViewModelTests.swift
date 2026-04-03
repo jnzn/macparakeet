@@ -381,13 +381,18 @@ final class LLMSettingsViewModelTests: XCTestCase {
     }
 
     func testLocalCLICanSaveWithCommand() {
-        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        let cliStore = LocalCLIConfigStore(defaults: UserDefaults(suiteName: "test.vm.\(UUID().uuidString)")!)
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient, cliConfigStore: cliStore)
         viewModel.selectedProviderID = .localCLI
         viewModel.commandTemplate = "claude -p"
 
         XCTAssertTrue(viewModel.canSave)
         viewModel.saveConfiguration()
         XCTAssertEqual(viewModel.saveState, .saved)
+
+        // Verify CLI config was persisted
+        let saved = cliStore.load()
+        XCTAssertEqual(saved?.commandTemplate, "claude -p")
     }
 
     func testLocalCLICannotSaveWithoutCommand() {
@@ -396,6 +401,19 @@ final class LLMSettingsViewModelTests: XCTestCase {
         viewModel.commandTemplate = ""
 
         XCTAssertFalse(viewModel.canSave)
+    }
+
+    func testLocalCLITemplateClears_onManualEdit() {
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.selectedProviderID = .localCLI
+
+        viewModel.selectedCLITemplate = .claudeCode
+        XCTAssertEqual(viewModel.commandTemplate, "claude -p")
+        XCTAssertEqual(viewModel.selectedCLITemplate, .claudeCode)
+
+        // Manually editing clears the template selection
+        viewModel.commandTemplate = "my-custom-tool"
+        XCTAssertNil(viewModel.selectedCLITemplate)
     }
 
     func testSwitchToLocalCLIAndBack() {

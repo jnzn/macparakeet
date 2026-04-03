@@ -20,8 +20,10 @@ public final class LocalCLILLMClient: LLMClientProtocol, Sendable {
         do {
             let output = try await executor.execute(systemPrompt: system, userPrompt: user)
             return ChatCompletionResponse(content: output, model: "cli")
-        } catch let error as LocalCLIError {
-            throw LLMError.cliError(error.errorDescription ?? error.localizedDescription)
+        } catch let error as LLMError {
+            throw error
+        } catch {
+            throw LLMError.cliError(error.localizedDescription)
         }
     }
 
@@ -49,8 +51,10 @@ public final class LocalCLILLMClient: LLMClientProtocol, Sendable {
     public func testConnection(config: LLMProviderConfig) async throws {
         do {
             try await executor.testConnection()
-        } catch let error as LocalCLIError {
-            throw LLMError.cliError(error.errorDescription ?? error.localizedDescription)
+        } catch let error as LLMError {
+            throw error
+        } catch {
+            throw LLMError.cliError(error.localizedDescription)
         }
     }
 

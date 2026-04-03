@@ -189,9 +189,12 @@ public final class LocalCLIExecutor: Sendable {
 
                 var environment = ProcessInfo.processInfo.environment
                 environment["PATH"] = preferredPATH(fallback: environment["PATH"])
-                environment["MACPARAKEET_SYSTEM_PROMPT"] = systemPrompt
-                environment["MACPARAKEET_USER_PROMPT"] = userPrompt
-                environment["MACPARAKEET_FULL_PROMPT"] = fullPrompt
+                // Env vars are capped to avoid hitting macOS exec arg+env size limits
+                // (~256KB). Full prompt content is always available via stdin.
+                let envLimit = 32_000
+                environment["MACPARAKEET_SYSTEM_PROMPT"] = String(systemPrompt.prefix(envLimit))
+                environment["MACPARAKEET_USER_PROMPT"] = String(userPrompt.prefix(envLimit))
+                environment["MACPARAKEET_FULL_PROMPT"] = String(fullPrompt.prefix(envLimit))
                 process.environment = environment
 
                 let inputPipe = Pipe()
@@ -245,6 +248,11 @@ public final class LocalCLIExecutor: Sendable {
                     if process.isRunning { process.terminate() }
                     // Give it a moment to clean up
                     _ = semaphore.wait(timeout: .now() + 2)
+                    // Close pipe read-ends to unblock the reader threads.
+                    // Without this, readDataToEndOfFile blocks forever if
+                    // child processes inherit the pipe file descriptors.
+                    try? outputPipe.fileHandleForReading.close()
+                    try? errorPipe.fileHandleForReading.close()
                     continuation.resume(throwing: LocalCLIError.timeout(seconds: clampedTimeout))
                     return
                 }
@@ -309,9 +317,9 @@ public final class LocalCLIExecutor: Sendable {
         ]
 
         let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
         process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
+        // Discard stderr to avoid pipe deadlock from noisy shell profiles
+        process.standardError = FileHandle.nullDevice
 
         let semaphore = DispatchSemaphore(value: 0)
         process.terminationHandler = { _ in semaphore.signal() }
