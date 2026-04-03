@@ -33,9 +33,10 @@ final class LocalCLILLMClientTests: XCTestCase {
         ]
         let (system, user) = LocalCLILLMClient.extractPrompts(from: messages)
         XCTAssertEqual(system, "System")
-        XCTAssertTrue(user.contains("First"))
-        XCTAssertTrue(user.contains("Response"))
-        XCTAssertTrue(user.contains("Second"))
+        // Multi-turn messages should include role labels
+        XCTAssertTrue(user.contains("User: First"))
+        XCTAssertTrue(user.contains("Assistant: Response"))
+        XCTAssertTrue(user.contains("User: Second"))
     }
 
     // MARK: - Chat Completion

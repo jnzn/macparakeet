@@ -96,13 +96,14 @@ final class LocalCLIExecutorTests: XCTestCase {
         let store = LocalCLIConfigStore(defaults: defaults)
         let executor = LocalCLIExecutor(configStore: store)
 
-        let config = LocalCLIConfig(commandTemplate: "sleep 30", timeoutSeconds: 1)
+        // Minimum timeout is clamped to 5 seconds
+        let config = LocalCLIConfig(commandTemplate: "sleep 30", timeoutSeconds: 5)
         do {
             _ = try await executor.execute(systemPrompt: "", userPrompt: "", config: config)
             XCTFail("Expected timeout error")
         } catch let error as LocalCLIError {
             if case .timeout(let seconds) = error {
-                XCTAssertEqual(seconds, 1)
+                XCTAssertEqual(seconds, 5)
             } else {
                 XCTFail("Expected timeout, got \(error)")
             }
