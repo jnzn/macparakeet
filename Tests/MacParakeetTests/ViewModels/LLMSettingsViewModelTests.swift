@@ -377,7 +377,10 @@ final class LLMSettingsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.commandTemplate, "claude -p --model haiku")
 
         viewModel.selectedCLITemplate = .codex
-        XCTAssertEqual(viewModel.commandTemplate, "codex exec --model gpt-5.4-mini")
+        XCTAssertEqual(
+            viewModel.commandTemplate,
+            "codex exec --skip-git-repo-check --model gpt-5.4-mini"
+        )
     }
 
     func testLocalCLICanSaveWithCommand() {
@@ -427,19 +430,33 @@ final class LLMSettingsViewModelTests: XCTestCase {
     func testClearKeepsSavedLocalCLIConfigAfterUnsavedProviderSwitch() throws {
         let defaults = UserDefaults(suiteName: "test.vm.\(UUID().uuidString)")!
         let cliStore = LocalCLIConfigStore(defaults: defaults)
-        try cliStore.save(LocalCLIConfig(commandTemplate: "codex exec --model gpt-5.4-mini", timeoutSeconds: 15))
+        try cliStore.save(
+            LocalCLIConfig(
+                commandTemplate: "codex exec --skip-git-repo-check --model gpt-5.4-mini",
+                timeoutSeconds: 15
+            )
+        )
         mockConfigStore.config = .openai(apiKey: "sk-test")
 
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient, cliConfigStore: cliStore)
         viewModel.selectedProviderID = .localCLI
-        XCTAssertEqual(viewModel.commandTemplate, "codex exec --model gpt-5.4-mini")
+        XCTAssertEqual(
+            viewModel.commandTemplate,
+            "codex exec --skip-git-repo-check --model gpt-5.4-mini"
+        )
 
         viewModel.clearConfiguration()
 
         XCTAssertNil(mockConfigStore.config)
-        XCTAssertEqual(cliStore.load()?.commandTemplate, "codex exec --model gpt-5.4-mini")
+        XCTAssertEqual(
+            cliStore.load()?.commandTemplate,
+            "codex exec --skip-git-repo-check --model gpt-5.4-mini"
+        )
         XCTAssertEqual(viewModel.selectedProviderID, .localCLI)
-        XCTAssertEqual(viewModel.commandTemplate, "codex exec --model gpt-5.4-mini")
+        XCTAssertEqual(
+            viewModel.commandTemplate,
+            "codex exec --skip-git-repo-check --model gpt-5.4-mini"
+        )
         XCTAssertEqual(viewModel.cliTimeoutSeconds, 15)
     }
 

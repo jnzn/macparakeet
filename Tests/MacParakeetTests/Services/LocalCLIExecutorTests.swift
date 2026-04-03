@@ -35,7 +35,10 @@ final class LocalCLIExecutorTests: XCTestCase {
 
     func testTemplateDefaults() {
         XCTAssertEqual(LocalCLITemplate.claudeCode.defaultCommand, "claude -p --model haiku")
-        XCTAssertEqual(LocalCLITemplate.codex.defaultCommand, "codex exec --model gpt-5.4-mini")
+        XCTAssertEqual(
+            LocalCLITemplate.codex.defaultCommand,
+            "codex exec --skip-git-repo-check --model gpt-5.4-mini"
+        )
         XCTAssertEqual(LocalCLITemplate.claudeCode.displayName, "Claude Code")
         XCTAssertEqual(LocalCLITemplate.codex.displayName, "Codex")
     }
@@ -64,6 +67,18 @@ final class LocalCLIExecutorTests: XCTestCase {
             systemPrompt: "", userPrompt: "ignored", config: config
         )
         XCTAssertEqual(output, "test output")
+    }
+
+    func testExecutionUsesAppOwnedWorkingDirectory() async throws {
+        let executor = LocalCLIExecutor()
+        let output = try await executor.execute(
+            systemPrompt: "",
+            userPrompt: "",
+            config: LocalCLIConfig(commandTemplate: "pwd", timeoutSeconds: 10)
+        )
+
+        let workingDirectory = try LocalCLIExecutor.executionWorkingDirectory()
+        XCTAssertEqual(output, workingDirectory.path)
     }
 
     func testStdinDelivery() async throws {

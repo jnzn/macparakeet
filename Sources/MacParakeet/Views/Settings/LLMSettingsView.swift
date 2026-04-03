@@ -200,7 +200,7 @@ struct LLMSettingsView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Command")
                     .font(DesignSystem.Typography.body)
-                Text("Prompt is passed via stdin and environment variables.")
+                Text("Prompt is passed via stdin and environment variables. Presets run from an app-owned working directory.")
                     .font(DesignSystem.Typography.caption)
                     .foregroundStyle(.secondary)
             }
