@@ -24,7 +24,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="GPL-3.0 License"></a>
   <img src="https://img.shields.io/badge/macOS-14.2%2B-000000.svg" alt="macOS 14.2+">
   <img src="https://img.shields.io/badge/Swift-6.0-F05138.svg" alt="Swift 6">
-  <img src="https://img.shields.io/badge/tests-1092%20passing-brightgreen.svg" alt="1092 tests passing">
+  <img src="https://img.shields.io/badge/tests-1126%20passing-brightgreen.svg" alt="1126 tests passing">
   <img src="https://img.shields.io/badge/Apple%20Silicon-only-333333.svg" alt="Apple Silicon only">
 </p>
 
@@ -52,7 +52,7 @@ MacParakeet runs NVIDIA's Parakeet TDT on Apple's Neural Engine via [FluidAudio]
 
 **Text cleanup** — Filler word removal, custom word replacements, text snippets with triggers. Deterministic pipeline, no LLM needed.
 
-**AI features** — Optional transcript summarization and chat via your own API keys (OpenAI, Anthropic, Ollama, OpenRouter). Entirely opt-in.
+**AI features** — Optional transcript summaries and chat. Use your existing Claude Code or Codex subscription, or connect any provider (OpenAI, Anthropic, Ollama, OpenRouter) with your own API key. Entirely opt-in.
 
 ### Performance
 
@@ -78,7 +78,7 @@ First launch downloads the speech model (~6 GB). After that, dictation and trans
 ```bash
 git clone https://github.com/moona3k/macparakeet.git
 cd macparakeet
-swift test                # 1092 tests
+swift test                # 1126 tests
 scripts/dev/run_app.sh    # build, sign, launch
 ```
 
@@ -112,7 +112,7 @@ All speech recognition runs on the Neural Engine. Your audio never leaves your M
 - **Anonymous telemetry.** Non-identifying usage analytics, opt-out in Settings. No persistent IDs, no IP storage, no content transmitted. [Source code is right here](Sources/MacParakeetCore/Services/TelemetryService.swift) — verify it yourself.
 - **Temp files cleaned up.** Audio deleted after transcription unless you save it.
 
-**What does use the network:** AI Summary & Chat connects to LLM providers when you configure it with your own API keys. YouTube transcription downloads video via yt-dlp. Telemetry pings our server unless you opt out. Core dictation and transcription are fully offline.
+**What does use the network:** AI summaries and chat connect to LLM providers — either via CLI tools (Claude Code, Codex) or your own API keys. YouTube transcription downloads video via yt-dlp. Telemetry pings our server unless you opt out. Core dictation and transcription are fully offline.
 
 **Note:** Builds from source also send telemetry by default. Opt out in Settings or set `MACPARAKEET_TELEMETRY_URL` to override.
 
