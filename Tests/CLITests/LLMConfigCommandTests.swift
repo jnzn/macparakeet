@@ -57,4 +57,15 @@ final class LLMConfigCommandTests: XCTestCase {
         try await context.client.testConnection(context: context.context)
     }
 
+    func testLocalCLIRejectsWhitespaceOnlyCommand() throws {
+        let options = try LLMInlineOptions.parse([
+            "--provider", "localCLI",
+            "--command", "   \n  ",
+        ])
+
+        XCTAssertThrowsError(try options.buildExecutionContext()) { error in
+            XCTAssertTrue(error is ValidationError)
+        }
+    }
+
 }

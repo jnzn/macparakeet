@@ -53,7 +53,7 @@ public struct LLMSettingsDraft: Equatable, Sendable {
         self.baseURLOverride = baseURLOverride
         self.commandTemplate = commandTemplate
         self.selectedCLITemplate = selectedCLITemplate
-        self.cliTimeoutSeconds = cliTimeoutSeconds
+        self.cliTimeoutSeconds = max(LocalCLIConfig.minimumTimeout, cliTimeoutSeconds)
     }
 
     public var requiresAPIKey: Bool {
