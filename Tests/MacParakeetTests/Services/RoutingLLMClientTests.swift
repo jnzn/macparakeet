@@ -4,7 +4,7 @@ import XCTest
 final class RoutingLLMClientTests: XCTestCase {
 
     func testLocalCLIContextRoutesToCLIClient() async throws {
-        let cliConfig = LocalCLIConfig(commandTemplate: "echo routed", timeoutSeconds: 10)
+        let cliConfig = LocalCLIConfig(commandTemplate: "printf routed", timeoutSeconds: 10)
         let context = LLMExecutionContext(
             providerConfig: .localCLI(),
             localCLIConfig: cliConfig
