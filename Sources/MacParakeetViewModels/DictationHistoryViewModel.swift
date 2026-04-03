@@ -114,6 +114,7 @@ public final class DictationHistoryViewModel {
         }
         do {
             _ = try repo.delete(id: dictation.id)
+            Telemetry.send(.dictationDeleted)
         } catch {
             logger.error("Failed to delete dictation \(dictation.id): \(error.localizedDescription)")
         }

@@ -28,6 +28,12 @@ public enum TelemetryEventName: String, Sendable, CaseIterable {
     case customWordAdded = "custom_word_added"
     case snippetAdded = "snippet_added"
     case keystrokeSnippetFired = "keystroke_snippet_fired"
+    case feedbackSubmitted = "feedback_submitted"
+    case transcriptionDeleted = "transcription_deleted"
+    case dictationDeleted = "dictation_deleted"
+    case transcriptionFavorited = "transcription_favorited"
+    case dictationUndoUsed = "dictation_undo_used"
+    case chatConversationCreated = "chat_conversation_created"
     case settingChanged = "setting_changed"
     case telemetryOptedOut = "telemetry_opted_out"
     case onboardingCompleted = "onboarding_completed"
@@ -151,6 +157,13 @@ public enum TelemetryEventSpec: Sendable {
     case modelDownloadStarted
     case modelDownloadCompleted(durationSeconds: Double)
     case modelDownloadFailed(errorType: String, errorDetail: String? = nil)
+    // Lifecycle actions
+    case feedbackSubmitted(category: String)
+    case transcriptionDeleted
+    case dictationDeleted
+    case transcriptionFavorited(isFavorite: Bool)
+    case dictationUndoUsed
+    case chatConversationCreated
     // Keystroke actions
     case keystrokeSnippetFired(action: String)
     // Errors
@@ -212,6 +225,12 @@ extension TelemetryEventSpec {
         case .modelDownloadStarted: return .modelDownloadStarted
         case .modelDownloadCompleted: return .modelDownloadCompleted
         case .modelDownloadFailed: return .modelDownloadFailed
+        case .feedbackSubmitted: return .feedbackSubmitted
+        case .transcriptionDeleted: return .transcriptionDeleted
+        case .dictationDeleted: return .dictationDeleted
+        case .transcriptionFavorited: return .transcriptionFavorited
+        case .dictationUndoUsed: return .dictationUndoUsed
+        case .chatConversationCreated: return .chatConversationCreated
         case .keystrokeSnippetFired: return .keystrokeSnippetFired
         case .errorOccurred: return .errorOccurred
         case .crashOccurred: return .crashOccurred
@@ -227,6 +246,10 @@ extension TelemetryEventSpec {
              .customWordAdded,
              .snippetAdded,
              .telemetryOptedOut,
+             .transcriptionDeleted,
+             .dictationDeleted,
+             .dictationUndoUsed,
+             .chatConversationCreated,
              .licenseActivated,
              .trialStarted,
              .trialExpired,
@@ -341,6 +364,10 @@ extension TelemetryEventSpec {
             var props = ["error_type": errorType]
             if let errorDetail { props["error_detail"] = errorDetail }
             return props
+        case .feedbackSubmitted(let category):
+            return ["category": category]
+        case .transcriptionFavorited(let isFavorite):
+            return ["is_favorite": isFavorite ? "true" : "false"]
         case .keystrokeSnippetFired(let action):
             return ["action": action]
         case .errorOccurred(let domain, let code, let description):
@@ -436,6 +463,12 @@ public enum TelemetryImplementedContract {
         .modelDownloadStarted: [],
         .modelDownloadCompleted: ["duration_seconds"],
         .modelDownloadFailed: ["error_type"],
+        .feedbackSubmitted: ["category"],
+        .transcriptionDeleted: [],
+        .dictationDeleted: [],
+        .transcriptionFavorited: ["is_favorite"],
+        .dictationUndoUsed: [],
+        .chatConversationCreated: [],
         .keystrokeSnippetFired: ["action"],
         .errorOccurred: ["domain", "code", "description"],
         .crashOccurred: ["crash_type", "signal", "name", "crash_ts", "crash_app_ver"],
