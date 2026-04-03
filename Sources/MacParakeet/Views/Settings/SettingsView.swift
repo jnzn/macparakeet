@@ -227,11 +227,91 @@ struct SettingsView: View {
             subtitle: "Options for file and YouTube transcription.",
             icon: "doc.text"
         ) {
-            settingsToggleRow(
-                title: "Speaker detection",
-                detail: "Identify who said what using Pyannote community-1. Typically ~85% accurate — best with clear audio and distinct voices.",
-                isOn: $viewModel.speakerDiarization
-            )
+            VStack(spacing: DesignSystem.Spacing.md) {
+                settingsToggleRow(
+                    title: "Speaker detection",
+                    detail: "Identify who said what using Pyannote community-1. Typically ~85% accurate — best with clear audio and distinct voices.",
+                    isOn: $viewModel.speakerDiarization
+                )
+
+                Divider()
+
+                settingsToggleRow(
+                    title: "Auto-save transcripts to disk",
+                    detail: "Automatically write a file to the chosen folder after every transcription completes.",
+                    isOn: $viewModel.autoSaveTranscripts
+                )
+
+                if viewModel.autoSaveTranscripts {
+                    autoSaveOptionsView
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var autoSaveOptionsView: some View {
+        VStack(spacing: DesignSystem.Spacing.sm) {
+            // Format picker
+            HStack {
+                rowText(title: "Format", detail: "File format for saved transcripts.")
+                Spacer(minLength: DesignSystem.Spacing.md)
+                Picker("", selection: $viewModel.autoSaveFormat) {
+                    ForEach(AutoSaveFormat.allCases, id: \.self) { format in
+                        Text(format.displayName).tag(format)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 200)
+            }
+
+            // Folder picker
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Folder")
+                        .font(DesignSystem.Typography.body)
+                    if let path = viewModel.autoSaveFolderPath {
+                        Text(path)
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    } else {
+                        Text("No folder selected")
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: DesignSystem.Spacing.md)
+                if viewModel.autoSaveFolderPath != nil {
+                    Button("Clear") {
+                        viewModel.clearAutoSaveFolder()
+                    }
+                    .buttonStyle(.bordered)
+                }
+                Button("Choose…") {
+                    chooseAutoSaveFolder()
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(DesignSystem.Spacing.sm)
+        .background(
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                .fill(DesignSystem.Colors.surfaceElevated)
+        )
+    }
+
+    private func chooseAutoSaveFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Choose"
+        panel.message = "Select a folder for auto-saved transcripts"
+        if panel.runModal() == .OK, let url = panel.url {
+            viewModel.chooseAutoSaveFolder(url: url)
         }
     }
 
