@@ -1270,7 +1270,7 @@ new scheduling architecture.
 - [x] Single-speaker files handled gracefully (one speaker label)
 - [x] Diarization failure is non-fatal (ASR result preserved)
 - [x] Progress shows "Identifying speakers..." headline
-- [ ] Option-key (⌥) alternate skips diarization for per-run fast transcription (Step 8 — UI PR)
+- [x] Settings toggle for speaker detection (on by default, replaces planned Option-key alternate)
 - [x] CLI: `macparakeet-cli transcribe` runs diarization by default, `--no-diarize` to skip
 
 ---
