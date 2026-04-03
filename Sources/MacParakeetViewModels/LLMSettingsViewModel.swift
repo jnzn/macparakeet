@@ -220,22 +220,26 @@ public final class LLMSettingsViewModel {
 
     public func clearConfiguration() {
         guard let configStore else { return }
-        // Check stored config's provider before deleting, since draft may
-        // have switched to a different provider.
-        let storedIsLocalCLI = (try? configStore.loadConfig())?.id == .localCLI
+        // Use the persisted provider to decide what to delete. The draft may
+        // point at an unsaved provider switch in Settings.
+        let storedProviderID = (try? configStore.loadConfig())?.id
+        let preservedCLIConfig = draft.providerID == .localCLI && storedProviderID != .localCLI
+            ? cliConfigStore?.load()
+            : nil
         do {
             try configStore.deleteConfig()
         } catch {
             logger.error("Failed to delete LLM configuration error=\(error.localizedDescription, privacy: .public)")
         }
-        if draft.providerID == .localCLI || storedIsLocalCLI {
+        if storedProviderID == .localCLI {
             cliConfigStore?.delete()
         }
         let apiKey = draft.providerID.requiresAPIKey ? ((try? configStore.loadAPIKey(for: draft.providerID)) ?? "") : ""
         draft = .defaults(
             for: draft.providerID,
             apiKey: apiKey,
-            defaultModelName: Self.defaultModelName(for: draft.providerID)
+            defaultModelName: Self.defaultModelName(for: draft.providerID),
+            cliConfig: preservedCLIConfig
         )
         connectionTestState = .idle
         saveState = .idle

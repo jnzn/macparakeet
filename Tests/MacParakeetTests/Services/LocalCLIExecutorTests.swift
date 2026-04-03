@@ -131,26 +131,39 @@ final class LocalCLIExecutorTests: XCTestCase {
         }
     }
 
-    func testBackgroundChildHoldingPipesTriggersDrainTimeout() async throws {
+    func testBackgroundChildIsCleanedUpWhenShellExits() async throws {
         let executor = LocalCLIExecutor()
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("localcli-drain-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let pidPath = directory.appendingPathComponent("child.txt").path
 
         let config = LocalCLIConfig(
-            commandTemplate: "sleep 30 & echo ok",
+            commandTemplate: "sleep 30 & echo $! > \(shellQuote(pidPath)); echo ok",
             timeoutSeconds: 30
         )
 
-        do {
-            _ = try await executor.execute(systemPrompt: "", userPrompt: "", config: config)
-            XCTFail("Expected drain timeout error")
-        } catch let error as LocalCLIError {
-            guard case .drainTimeout = error else {
-                XCTFail("Expected drainTimeout, got \(error)")
-                return
-            }
+        let output = try await executor.execute(systemPrompt: "", userPrompt: "", config: config)
+        XCTAssertEqual(output, "ok")
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: pidPath))
+        let childPID = try XCTUnwrap(
+            Int32(
+                String(contentsOfFile: pidPath, encoding: .utf8)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+        )
+
+        let terminationDeadline = Date().addingTimeInterval(5)
+        while isProcessRunning(childPID) && Date() < terminationDeadline {
+            try await Task.sleep(nanoseconds: 50_000_000)
         }
+        XCTAssertFalse(isProcessRunning(childPID))
     }
 
-    func testCancellationTerminatesChildProcess() async throws {
+    func testCancellationTerminatesShellAndBackgroundChild() async throws {
         let executor = LocalCLIExecutor()
 
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -159,10 +172,12 @@ final class LocalCLIExecutorTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let startedPath = directory.appendingPathComponent("started.txt").path
-        let pidPath = directory.appendingPathComponent("pid.txt").path
+        let shellPIDPath = directory.appendingPathComponent("shell.txt").path
+        let childPIDPath = directory.appendingPathComponent("child.txt").path
         let command = """
-        trap 'exit 0' TERM
-        echo $$ > \(shellQuote(pidPath))
+        echo $$ > \(shellQuote(shellPIDPath))
+        sleep 30 &
+        echo $! > \(shellQuote(childPIDPath))
         echo started > \(shellQuote(startedPath))
         while true; do sleep 1; done
         """
@@ -177,11 +192,15 @@ final class LocalCLIExecutorTests: XCTestCase {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
         XCTAssertTrue(FileManager.default.fileExists(atPath: startedPath))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: pidPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: shellPIDPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: childPIDPath))
 
-        let pidContents = try String(contentsOfFile: pidPath, encoding: .utf8)
+        let shellPIDContents = try String(contentsOfFile: shellPIDPath, encoding: .utf8)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let pid = try XCTUnwrap(Int32(pidContents))
+        let shellPID = try XCTUnwrap(Int32(shellPIDContents))
+        let childPIDContents = try String(contentsOfFile: childPIDPath, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let childPID = try XCTUnwrap(Int32(childPIDContents))
 
         task.cancel()
 
@@ -195,10 +214,11 @@ final class LocalCLIExecutorTests: XCTestCase {
         }
 
         let terminationDeadline = Date().addingTimeInterval(5)
-        while isProcessRunning(pid) && Date() < terminationDeadline {
+        while (isProcessRunning(shellPID) || isProcessRunning(childPID)) && Date() < terminationDeadline {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
-        XCTAssertFalse(isProcessRunning(pid))
+        XCTAssertFalse(isProcessRunning(shellPID))
+        XCTAssertFalse(isProcessRunning(childPID))
     }
 
     func testEmptyOutput() async throws {
@@ -230,5 +250,23 @@ final class LocalCLIExecutorTests: XCTestCase {
         )
         XCTAssertTrue(output.contains("sys:SysPrompt"))
         XCTAssertTrue(output.contains("usr:UsrPrompt"))
+    }
+
+    func testDiscoverPATHDrainsChattyStdoutBeforeWaitingForExit() {
+        let path = LocalCLIExecutor.discoverPATH(
+            executableURL: URL(fileURLWithPath: "/usr/bin/perl"),
+            arguments: [
+                "-e",
+                """
+                print "x" x 70000;
+                print "__MACPARAKEET_PATH_START__\\n";
+                print "/tmp/discovered/path\\n";
+                print "__MACPARAKEET_PATH_END__\\n";
+                """,
+            ],
+            timeout: 1
+        )
+
+        XCTAssertEqual(path, "/tmp/discovered/path")
     }
 }

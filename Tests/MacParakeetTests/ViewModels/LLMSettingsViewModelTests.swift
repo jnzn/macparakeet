@@ -424,6 +424,25 @@ final class LLMSettingsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.connectionTestState, .idle)
     }
 
+    func testClearKeepsSavedLocalCLIConfigAfterUnsavedProviderSwitch() throws {
+        let defaults = UserDefaults(suiteName: "test.vm.\(UUID().uuidString)")!
+        let cliStore = LocalCLIConfigStore(defaults: defaults)
+        try cliStore.save(LocalCLIConfig(commandTemplate: "codex exec --model gpt-5.4-mini", timeoutSeconds: 15))
+        mockConfigStore.config = .openai(apiKey: "sk-test")
+
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient, cliConfigStore: cliStore)
+        viewModel.selectedProviderID = .localCLI
+        XCTAssertEqual(viewModel.commandTemplate, "codex exec --model gpt-5.4-mini")
+
+        viewModel.clearConfiguration()
+
+        XCTAssertNil(mockConfigStore.config)
+        XCTAssertEqual(cliStore.load()?.commandTemplate, "codex exec --model gpt-5.4-mini")
+        XCTAssertEqual(viewModel.selectedProviderID, .localCLI)
+        XCTAssertEqual(viewModel.commandTemplate, "codex exec --model gpt-5.4-mini")
+        XCTAssertEqual(viewModel.cliTimeoutSeconds, 15)
+    }
+
     func testLocalCLICannotSaveWithoutCommand() {
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
         viewModel.selectedProviderID = .localCLI
