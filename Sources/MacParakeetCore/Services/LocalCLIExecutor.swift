@@ -33,7 +33,7 @@ public enum LocalCLITemplate: String, CaseIterable, Sendable, Codable {
     public var defaultCommand: String {
         switch self {
         case .claudeCode: return "claude -p --model haiku"
-        case .codex: return "codex exec --model gpt-5.4-mini"
+        case .codex: return "codex exec --skip-git-repo-check --model gpt-5.4-mini"
         }
     }
 
@@ -255,6 +255,20 @@ public final class LocalCLIExecutor: Sendable {
         __macparakeet_cleanup_children
         exit $__macparakeet_exit_code
         """
+    }
+
+    static func executionWorkingDirectory(fileManager: FileManager = .default) throws -> URL {
+        let appSupportDirectory = try fileManager.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        let workingDirectory = appSupportDirectory
+            .appendingPathComponent("MacParakeet", isDirectory: true)
+            .appendingPathComponent("LocalCLI", isDirectory: true)
+        try fileManager.createDirectory(at: workingDirectory, withIntermediateDirectories: true)
+        return workingDirectory
     }
 
     // MARK: - Private
@@ -481,6 +495,7 @@ public final class LocalCLIExecutor: Sendable {
         let executable = "/bin/zsh"
         let arguments = [executable, "-lc", command]
         let environmentStrings = environment.map { "\($0.key)=\($0.value)" }
+        let workingDirectory = try executionWorkingDirectory()
 
         var fileActions: posix_spawn_file_actions_t? = nil
         guard posix_spawn_file_actions_init(&fileActions) == 0 else {
@@ -495,17 +510,21 @@ public final class LocalCLIExecutor: Sendable {
         let stderrRead = errorPipe.fileHandleForReading.fileDescriptor
         let stderrWrite = errorPipe.fileHandleForWriting.fileDescriptor
 
-        guard posix_spawn_file_actions_adddup2(&fileActions, stdinRead, STDIN_FILENO) == 0,
-              posix_spawn_file_actions_adddup2(&fileActions, stdoutWrite, STDOUT_FILENO) == 0,
-              posix_spawn_file_actions_adddup2(&fileActions, stderrWrite, STDERR_FILENO) == 0,
-              posix_spawn_file_actions_addclose(&fileActions, stdinWrite) == 0,
-              posix_spawn_file_actions_addclose(&fileActions, stdoutRead) == 0,
-              posix_spawn_file_actions_addclose(&fileActions, stderrRead) == 0,
-              posix_spawn_file_actions_addclose(&fileActions, stdinRead) == 0,
-              posix_spawn_file_actions_addclose(&fileActions, stdoutWrite) == 0,
-              posix_spawn_file_actions_addclose(&fileActions, stderrWrite) == 0
-        else {
-            throw LocalCLIError.executionFailed("Unable to configure file descriptor actions")
+        let configuredFileActions = workingDirectory.withUnsafeFileSystemRepresentation { workingDirectoryPath in
+            guard let workingDirectoryPath else { return false }
+            return addChangeDirectoryAction(&fileActions, path: workingDirectoryPath) &&
+                posix_spawn_file_actions_adddup2(&fileActions, stdinRead, STDIN_FILENO) == 0 &&
+                posix_spawn_file_actions_adddup2(&fileActions, stdoutWrite, STDOUT_FILENO) == 0 &&
+                posix_spawn_file_actions_adddup2(&fileActions, stderrWrite, STDERR_FILENO) == 0 &&
+                posix_spawn_file_actions_addclose(&fileActions, stdinWrite) == 0 &&
+                posix_spawn_file_actions_addclose(&fileActions, stdoutRead) == 0 &&
+                posix_spawn_file_actions_addclose(&fileActions, stderrRead) == 0 &&
+                posix_spawn_file_actions_addclose(&fileActions, stdinRead) == 0 &&
+                posix_spawn_file_actions_addclose(&fileActions, stdoutWrite) == 0 &&
+                posix_spawn_file_actions_addclose(&fileActions, stderrWrite) == 0
+        }
+        guard configuredFileActions else {
+            throw LocalCLIError.executionFailed("Unable to configure spawn file actions")
         }
 
         var attr: posix_spawnattr_t? = nil
@@ -536,6 +555,16 @@ public final class LocalCLIExecutor: Sendable {
         try? errorPipe.fileHandleForWriting.close()
 
         return pid
+    }
+
+    private static func addChangeDirectoryAction(
+        _ fileActions: inout posix_spawn_file_actions_t?,
+        path: UnsafePointer<CChar>
+    ) -> Bool {
+        if #available(macOS 26.0, *) {
+            return posix_spawn_file_actions_addchdir(&fileActions, path) == 0
+        }
+        return posix_spawn_file_actions_addchdir_np(&fileActions, path) == 0
     }
 
     private static func withSpawnCStringArray<R>(
