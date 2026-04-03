@@ -106,6 +106,11 @@ public final class LLMSettingsViewModel {
         set {
             var nextDraft = draft
             nextDraft.commandTemplate = newValue
+            // Clear template picker when user manually edits the command
+            if let template = nextDraft.selectedCLITemplate,
+               newValue != template.defaultCommand {
+                nextDraft.selectedCLITemplate = nil
+            }
             updateDraft(nextDraft)
         }
     }
@@ -186,18 +191,31 @@ public final class LLMSettingsViewModel {
             return
         }
 
-        // For Local CLI, save the draft config so the executor tests
-        // the command the user is currently editing, not a stale saved one.
+        // For Local CLI, temporarily save draft config so the executor tests
+        // the command being edited. Restore the original afterward to avoid
+        // corrupting the saved config if the user doesn't click Save.
+        var savedCLIConfig: LocalCLIConfig?
         if snapshot.providerID == .localCLI {
-            let cliConfig = LocalCLIConfig(
+            savedCLIConfig = cliConfigStore?.load()
+            let draftConfig = LocalCLIConfig(
                 commandTemplate: snapshot.trimmedCommandTemplate,
                 timeoutSeconds: snapshot.cliTimeoutSeconds
             )
-            try? cliConfigStore?.save(cliConfig)
+            try? cliConfigStore?.save(draftConfig)
         }
 
         connectionTestState = .testing
         Task {
+            defer {
+                // Restore original CLI config after test completes
+                if snapshot.providerID == .localCLI {
+                    if let original = savedCLIConfig {
+                        try? self.cliConfigStore?.save(original)
+                    } else {
+                        self.cliConfigStore?.delete()
+                    }
+                }
+            }
             do {
                 try await llmClient.testConnection(config: config)
                 guard draft == snapshot else { return }
@@ -211,12 +229,15 @@ public final class LLMSettingsViewModel {
 
     public func clearConfiguration() {
         guard let configStore else { return }
+        // Check stored config's provider before deleting, since draft may
+        // have switched to a different provider.
+        let storedIsLocalCLI = (try? configStore.loadConfig())?.id == .localCLI
         do {
             try configStore.deleteConfig()
         } catch {
             logger.error("Failed to delete LLM configuration error=\(error.localizedDescription, privacy: .public)")
         }
-        if draft.providerID == .localCLI {
+        if draft.providerID == .localCLI || storedIsLocalCLI {
             cliConfigStore?.delete()
         }
         let apiKey = draft.providerID.requiresAPIKey ? ((try? configStore.loadAPIKey(for: draft.providerID)) ?? "") : ""
