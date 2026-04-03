@@ -119,9 +119,9 @@ If diarization fails (e.g. `noSpeechDetected`, model error, timeout), the ASR re
 
 > **Amendment (2026-04-02):** The original decision was "always-on, no global toggle." This has been revised to **opt-in via a Settings toggle (off by default)**. See rationale below.
 
-~~For file transcription, always run it — users transcribing files almost always want to know who said what.~~ **Revised:** Diarization is opt-in via a "Speaker detection" toggle in Settings (off by default). Users who want speaker attribution enable it once; it stays on for all subsequent transcriptions.
+~~For file transcription, always run it — users transcribing files almost always want to know who said what.~~ **Revised:** Diarization is controlled by a "Speaker detection" toggle in Settings (on by default). Users who don't need speaker attribution can disable it for faster transcriptions.
 
-**Why the change:** The original reasoning assumed ~15% DER would be good enough to justify always-on. In practice, diarization accuracy isn't strong enough to warrant the extra processing time for every transcription by default. Defaulting to off avoids surprising users with slower transcriptions and imperfect speaker labels. Users who need speaker attribution can easily enable it.
+**Why the change:** The original decision was "always-on, no toggle." A Settings toggle gives users explicit control over the accuracy/speed tradeoff. The toggle detail text sets realistic expectations: "~85% accurate — best with clear audio and distinct voices."
 
 **Progress UX:** When enabled, show "Transcribing..." during ASR, then "Identifying speakers..." during diarization. When disabled, the diarization step is skipped entirely (no progress indicator for it).
 
