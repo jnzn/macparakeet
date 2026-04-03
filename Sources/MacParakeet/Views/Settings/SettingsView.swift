@@ -30,8 +30,8 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
                 headerCard
                 dictationCard
-                transcriptionCard
                 aiProviderCard
+                transcriptionCard
                 storageCard
                 generalCard
                 updatesCard
@@ -229,7 +229,7 @@ struct SettingsView: View {
         ) {
             settingsToggleRow(
                 title: "Speaker detection",
-                detail: "Identify who said what using Pyannote community-1. Typically ~85% accurate — best with clear audio and distinct voices. Adds a few seconds of processing time.",
+                detail: "Identify who said what using Pyannote community-1. Typically ~85% accurate — best with clear audio and distinct voices.",
                 isOn: $viewModel.speakerDiarization
             )
         }
