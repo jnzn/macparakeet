@@ -916,6 +916,7 @@ struct TranscriptResultView: View {
                     Text(promptName)
                         .font(DesignSystem.Typography.sectionTitle)
                         .foregroundStyle(DesignSystem.Colors.textPrimary)
+                    Spacer()
                 }
                 .contentShape(Rectangle())
                 .onTapGesture {
@@ -925,8 +926,6 @@ struct TranscriptResultView: View {
                         }
                     }
                 }
-
-                Spacer()
 
                 if isStreaming {
                     AIStreamingIndicator()
