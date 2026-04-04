@@ -22,7 +22,7 @@ public struct LLMSettingsDraft: Equatable, Sendable {
         }
     }
 
-    public var providerID: LLMProviderID
+    public var providerID: LLMProviderID?
     public var apiKeyInput: String
     public var suggestedModelName: String
     public var useCustomModel: Bool
@@ -35,9 +35,9 @@ public struct LLMSettingsDraft: Equatable, Sendable {
     public var cliTimeoutSeconds: Double
 
     public init(
-        providerID: LLMProviderID = .openai,
+        providerID: LLMProviderID? = nil,
         apiKeyInput: String = "",
-        suggestedModelName: String = "gpt-5.4",
+        suggestedModelName: String = "",
         useCustomModel: Bool = false,
         customModelName: String = "",
         baseURLOverride: String = "",
@@ -57,7 +57,7 @@ public struct LLMSettingsDraft: Equatable, Sendable {
     }
 
     public var requiresAPIKey: Bool {
-        providerID.requiresAPIKey
+        providerID?.requiresAPIKey ?? false
     }
 
     public var trimmedAPIKey: String {
@@ -81,6 +81,7 @@ public struct LLMSettingsDraft: Equatable, Sendable {
     }
 
     public var validationError: ValidationError? {
+        guard let providerID else { return nil }
         if providerID == .localCLI {
             return trimmedCommandTemplate.isEmpty ? .missingCommandTemplate : nil
         }
@@ -100,7 +101,8 @@ public struct LLMSettingsDraft: Equatable, Sendable {
         validationError == nil
     }
 
-    public func buildConfig(defaultBaseURL: String) throws -> LLMProviderConfig {
+    public func buildConfig(defaultBaseURL: String) throws -> LLMProviderConfig? {
+        guard let providerID else { return nil }
         if let validationError {
             throw validationError
         }
@@ -131,15 +133,15 @@ public struct LLMSettingsDraft: Equatable, Sendable {
     }
 
     public static func defaults(
-        for providerID: LLMProviderID,
-        apiKey: String,
-        defaultModelName: String,
+        for providerID: LLMProviderID?,
+        apiKey: String = "",
+        defaultModelName: String = "",
         cliConfig: LocalCLIConfig? = nil
     ) -> Self {
         let selectedCLITemplate = cliConfig.map { LocalCLITemplate.inferredTemplate(for: $0.commandTemplate) } ?? nil
         return LLMSettingsDraft(
             providerID: providerID,
-            apiKeyInput: providerID.requiresAPIKey ? apiKey : "",
+            apiKeyInput: providerID?.requiresAPIKey == true ? apiKey : "",
             suggestedModelName: defaultModelName,
             useCustomModel: false,
             customModelName: "",

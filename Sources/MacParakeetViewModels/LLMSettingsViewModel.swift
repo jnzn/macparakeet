@@ -22,7 +22,7 @@ public final class LLMSettingsViewModel {
     public var connectionTestState: ConnectionTestState = .idle
     public var saveState: SaveState = .idle
 
-    public var selectedProviderID: LLMProviderID {
+    public var selectedProviderID: LLMProviderID? {
         get { draft.providerID }
         set { applyProviderChange(to: newValue) }
     }
@@ -81,7 +81,8 @@ public final class LLMSettingsViewModel {
     }
 
     public var availableModels: [String] {
-        Self.suggestedModels(for: draft.providerID)
+        guard let providerID = draft.providerID else { return [] }
+        return Self.suggestedModels(for: providerID)
     }
 
     public var effectiveModelName: String {
@@ -89,11 +90,12 @@ public final class LLMSettingsViewModel {
     }
 
     public var canSave: Bool {
-        draft.isValid
+        if draft.providerID == nil { return isConfigured }
+        return draft.isValid
     }
 
     public var canTestConnection: Bool {
-        draft.isValid
+        draft.providerID != nil && draft.isValid
     }
 
     public var validationMessage: String? {
@@ -159,8 +161,9 @@ public final class LLMSettingsViewModel {
 
     public func saveConfiguration() {
         guard let configStore else { return }
+        guard draft.providerID != nil else { clearConfiguration(); return }
         do {
-            let config = try buildConfig(from: draft)
+            guard let config = try buildConfig(from: draft) else { return }
             try configStore.saveConfig(config)
 
             // Save CLI config separately when using Local CLI
@@ -185,7 +188,7 @@ public final class LLMSettingsViewModel {
         let snapshot = draft
         let context: LLMExecutionContext
         do {
-            let config = try buildConfig(from: snapshot)
+            guard let config = try buildConfig(from: snapshot) else { return }
             context = LLMExecutionContext(
                 providerConfig: config,
                 localCLIConfig: snapshot.providerID == .localCLI ? LocalCLIConfig(
@@ -227,11 +230,17 @@ public final class LLMSettingsViewModel {
         if storedProviderID == .localCLI {
             cliConfigStore?.delete()
         }
-        let apiKey = draft.providerID.requiresAPIKey ? ((try? configStore.loadAPIKey(for: draft.providerID)) ?? "") : ""
+        let currentProvider = draft.providerID
+        let apiKey: String
+        if let currentProvider, currentProvider.requiresAPIKey {
+            apiKey = (try? configStore.loadAPIKey(for: currentProvider)) ?? ""
+        } else {
+            apiKey = ""
+        }
         draft = .defaults(
-            for: draft.providerID,
+            for: currentProvider,
             apiKey: apiKey,
-            defaultModelName: Self.defaultModelName(for: draft.providerID),
+            defaultModelName: currentProvider.map { Self.defaultModelName(for: $0) } ?? "",
             cliConfig: preservedCLIConfig
         )
         connectionTestState = .idle
@@ -250,8 +259,9 @@ public final class LLMSettingsViewModel {
         }
     }
 
-    private func applyProviderChange(to providerID: LLMProviderID) {
+    private func applyProviderChange(to providerID: LLMProviderID?) {
         guard draft.providerID != providerID else { return }
+        guard let providerID else { updateDraft(LLMSettingsDraft()); return }
         let apiKey = providerID.requiresAPIKey ? ((try? configStore?.loadAPIKey(for: providerID)) ?? "") : ""
         let cliConfig = providerID == .localCLI ? cliConfigStore?.load() : nil
         let nextDraft = LLMSettingsDraft.defaults(
@@ -277,8 +287,9 @@ public final class LLMSettingsViewModel {
         saveState = .idle
     }
 
-    private func buildConfig(from draft: LLMSettingsDraft) throws -> LLMProviderConfig {
-        try draft.buildConfig(defaultBaseURL: Self.defaultBaseURL(for: draft.providerID))
+    private func buildConfig(from draft: LLMSettingsDraft) throws -> LLMProviderConfig? {
+        guard let providerID = draft.providerID else { return nil }
+        return try draft.buildConfig(defaultBaseURL: Self.defaultBaseURL(for: providerID))
     }
 
     /// Popular models for each provider. Empty means free-text input.
