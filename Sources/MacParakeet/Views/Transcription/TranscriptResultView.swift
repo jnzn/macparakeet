@@ -550,9 +550,19 @@ struct TranscriptResultView: View {
                 case .transcript:
                     transcriptPane
                 case .summary(let id):
-                    summaryContentPane(summaryID: id)
+                    if summaryViewModel.summaries.contains(where: { $0.id == id }) {
+                        summaryContentPane(summaryID: id)
+                    } else {
+                        transcriptPane
+                            .onAppear { viewModel.selectedTab = .transcript }
+                    }
                 case .streaming:
-                    streamingSummaryPane
+                    if summaryViewModel.isStreaming {
+                        streamingSummaryPane
+                    } else {
+                        transcriptPane
+                            .onAppear { viewModel.selectedTab = .transcript }
+                    }
                 case .chat:
                     chatPane(viewModel: chatViewModel)
                 }
@@ -862,6 +872,7 @@ struct TranscriptResultView: View {
                     Spacer()
                     Button {
                         summaryViewModel.cancelStreaming()
+                        viewModel.selectedTab = .transcript
                     } label: {
                         HStack(spacing: DesignSystem.Spacing.xs) {
                             Image(systemName: "xmark")
