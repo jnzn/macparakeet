@@ -917,23 +917,13 @@ struct TranscriptResultView: View {
                         }
                     }
                 } label: {
-                    HStack(alignment: .top, spacing: DesignSystem.Spacing.sm) {
+                    HStack(alignment: .center, spacing: DesignSystem.Spacing.sm) {
                         Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(DesignSystem.Colors.textSecondary)
-                            .frame(width: 12, height: 20, alignment: .center)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(promptName)
-                                .font(DesignSystem.Typography.sectionTitle)
-                                .foregroundStyle(DesignSystem.Colors.textPrimary)
-                            if !isExpanded && !content.isEmpty {
-                                Text(content.prefix(100).replacingOccurrences(of: "\n", with: " "))
-                                    .font(DesignSystem.Typography.caption)
-                                    .foregroundStyle(DesignSystem.Colors.textTertiary)
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                            }
-                        }
+                        Text(promptName)
+                            .font(DesignSystem.Typography.sectionTitle)
+                            .foregroundStyle(DesignSystem.Colors.textPrimary)
                     }
                     .contentShape(Rectangle())
                 }
@@ -955,11 +945,12 @@ struct TranscriptResultView: View {
                             summaryCopied = false
                         }
                     } label: {
-                        Label(
-                            summaryCopied ? "Copied" : "Copy",
-                            systemImage: summaryCopied ? "checkmark" : "doc.on.doc"
-                        )
+                        HStack(spacing: DesignSystem.Spacing.xs) {
+                            Image(systemName: summaryCopied ? "checkmark" : "doc.on.doc")
+                            Text(summaryCopied ? "Copied" : "Copy")
+                        }
                         .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(summaryCopied ? DesignSystem.Colors.successGreen : .primary)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
@@ -968,8 +959,11 @@ struct TranscriptResultView: View {
                         Button(role: .destructive) {
                             summaryViewModel.pendingDeleteSummary = summary
                         } label: {
-                            Text("Delete")
-                                .font(DesignSystem.Typography.caption)
+                            HStack(spacing: DesignSystem.Spacing.xs) {
+                                Image(systemName: "trash")
+                                Text("Delete")
+                            }
+                            .font(DesignSystem.Typography.caption)
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
