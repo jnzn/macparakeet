@@ -392,6 +392,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 llmService: hasLLMConfig ? env.llmService : nil,
                 promptRepo: env.promptRepo,
                 summaryRepo: env.summaryRepo,
+                transcriptionRepo: env.transcriptionRepo,
                 configStore: env.llmConfigStore
             )
             chatViewModel.onConversationsChanged = { [weak self] transcriptionID, hasConversations in
@@ -409,6 +410,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             summaryViewModel.onSummariesChanged = { [weak self] transcriptionID, hasSummaries in
                 guard self?.transcriptionViewModel.currentTranscription?.id == transcriptionID else { return }
                 self?.transcriptionViewModel.hasSummaries = hasSummaries
+            }
+            summaryViewModel.onLegacySummaryChanged = { [weak self] transcriptionID, summary in
+                self?.transcriptionViewModel.updateLegacySummary(id: transcriptionID, summary: summary)
             }
             summaryViewModel.shouldShowBadge = { [weak self] in
                 self?.transcriptionViewModel.selectedTab != .summary

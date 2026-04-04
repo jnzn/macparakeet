@@ -22,11 +22,13 @@ public final class SummaryViewModel {
     public var summaryBadge: Bool = false
     public var onModelChanged: (() -> Void)?
     public var onSummariesChanged: ((UUID, Bool) -> Void)?
+    public var onLegacySummaryChanged: ((UUID, String?) -> Void)?
     public var shouldShowBadge: (() -> Bool)?
 
     private var llmService: LLMServiceProtocol?
     private var promptRepo: PromptRepositoryProtocol?
     private var summaryRepo: SummaryRepositoryProtocol?
+    private var transcriptionRepo: TranscriptionRepositoryProtocol?
     private var configStore: LLMConfigStoreProtocol?
     private var cliConfigStore: LocalCLIConfigStore?
     private var currentTranscriptionID: UUID?
@@ -51,12 +53,14 @@ public final class SummaryViewModel {
         llmService: LLMServiceProtocol?,
         promptRepo: PromptRepositoryProtocol?,
         summaryRepo: SummaryRepositoryProtocol?,
+        transcriptionRepo: TranscriptionRepositoryProtocol? = nil,
         configStore: LLMConfigStoreProtocol? = nil,
         cliConfigStore: LocalCLIConfigStore = LocalCLIConfigStore()
     ) {
         self.llmService = llmService
         self.promptRepo = promptRepo
         self.summaryRepo = summaryRepo
+        self.transcriptionRepo = transcriptionRepo
         self.configStore = configStore
         self.cliConfigStore = cliConfigStore
         loadVisiblePrompts()
@@ -126,7 +130,9 @@ public final class SummaryViewModel {
     }
 
     public func loadSummaries(transcriptionId: UUID) {
-        cancelStreaming()
+        if currentTranscriptionID != transcriptionId {
+            cancelStreaming()
+        }
         currentTranscriptionID = transcriptionId
         do {
             summaries = try summaryRepo?.fetchAll(transcriptionId: transcriptionId) ?? []
@@ -165,6 +171,7 @@ public final class SummaryViewModel {
             _ = try summaryRepo.delete(id: summary.id)
             summaries.removeAll { $0.id == summary.id }
             expandedSummaryIDs.remove(summary.id)
+            try syncLegacySummary(for: summary.transcriptionId)
             if let transcriptionID = currentTranscriptionID {
                 onSummariesChanged?(transcriptionID, !summaries.isEmpty)
             }
@@ -242,6 +249,8 @@ public final class SummaryViewModel {
                     updatedAt: timestamp
                 )
                 try summaryRepo?.save(summary)
+                try transcriptionRepo?.updateSummary(id: targetTranscriptionID, summary: summary.content)
+                onLegacySummaryChanged?(targetTranscriptionID, summary.content)
 
                 isStreaming = false
                 streamingSummaryID = nil
@@ -292,5 +301,11 @@ public final class SummaryViewModel {
     private func normalizedExtraInstructions(_ value: String) -> String? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func syncLegacySummary(for transcriptionId: UUID) throws {
+        let latestSummary = try summaryRepo?.fetchAll(transcriptionId: transcriptionId).first
+        try transcriptionRepo?.updateSummary(id: transcriptionId, summary: latestSummary?.content)
+        onLegacySummaryChanged?(transcriptionId, latestSummary?.content)
     }
 }
