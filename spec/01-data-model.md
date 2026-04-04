@@ -210,7 +210,7 @@ Reusable prompt templates for LLM-powered transcript processing. Community promp
 ```sql
 CREATE TABLE prompts (
     id        TEXT PRIMARY KEY,                          -- UUID string
-    name      TEXT NOT NULL,                              -- Display name ("Concise Summary", "Action Items")
+    name      TEXT NOT NULL,                              -- Display name ("General Summary", "Action Items")
     content   TEXT NOT NULL,                              -- The actual instruction text
     category  TEXT NOT NULL DEFAULT 'summary',            -- .summary (extensible to .transform)
     isBuiltIn INTEGER NOT NULL DEFAULT 0,                 -- Community prompt — hide only, no edit/delete

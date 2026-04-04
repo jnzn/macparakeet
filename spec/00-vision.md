@@ -68,9 +68,9 @@ Speed changes behavior. When transcription takes 30 seconds, you think about whe
 
 100% local is not a feature. It is the identity.
 
-- Zero cloud. Zero accounts. Zero tracking.
-- Audio never leaves your Mac. Not to our servers, not to anyone's.
-- No email signup. No login. No analytics. Download and use.
+- Local-first STT. No cloud speech processing, no accounts, no required backend.
+- Audio never leaves your Mac for dictation or transcription.
+- No email signup. No login. Optional self-hosted telemetry can be disabled in Settings.
 - Works in airplane mode, air-gapped environments, classified settings.
 
 This is not privacy theater ("your data is encrypted in transit"). This is privacy by architecture: there is no server to send data to.
@@ -276,11 +276,11 @@ We are not a Whisper app that added Parakeet. We built the entire product around
 
 Competitors bolted Parakeet onto existing Whisper architectures. We optimized the entire pipeline for it.
 
-### 2. 100% Local, Zero Compromise
+### 2. Local-First, Zero-Compromise Speech
 
-This is not "local option available." This is "there is no cloud option." The architecture has no server component. There is no API endpoint to send audio to. There is no account system to create.
+This is not "cloud by default with a local mode." Core speech recognition runs entirely on-device. There is no cloud STT path, no account system, and no requirement to send audio anywhere.
 
-This makes our privacy claim unchallengeable. Competitors who offer "local mode" still have cloud infrastructure, still collect accounts, still have terms of service that hedge on data usage. We have none of that.
+Optional network features exist, but they are explicit and separate: transcript text can be sent to user-configured LLM providers, Sparkle checks for updates, YouTube imports download media, and self-hosted telemetry can be disabled. The privacy boundary is simple: speech stays local.
 
 ### 3. Free and Open-Source
 
@@ -433,7 +433,7 @@ Ship-quality polish. Direct distribution via notarized DMG.
 | **YouTube downloads** | Standalone yt-dlp | macOS binary, auto-updates via `--update`. No Python needed. |
 | **UI framework** | SwiftUI | Native Mac experience. Menu bar + window. |
 | **Database** | SQLite (GRDB) | Single file. No server. Dictation history, custom words, settings. |
-| **Cloud option** | None | Privacy is the brand. No cloud means no cloud. |
+| **Cloud option** | No cloud STT; optional LLM providers | Core speech stays local. Network use is explicit and opt-in for AI, updates, telemetry, and media download. |
 | **Pricing** | Free (GPL-3.0) | Zero friction. Maximum adoption. Community-driven development. |
 
 ---
@@ -453,7 +453,7 @@ The parakeet bird is known for mimicking speech -- a fitting metaphor for a voic
 | **Parakeet Speed** | 60 min audio in ~23 seconds | Transcription so fast it feels instant |
 | **System-wide Dictation** | Fn to dictate in any app | Voice input everywhere, not just our app |
 | **YouTube Transcription** | Paste a URL, get a transcript | File transcription for the YouTube era |
-| **100% Local** | Zero network, zero accounts | Unchallengeable privacy claim |
+| **Local-First STT** | Speech stays on-device; optional networked AI | Strong privacy claim without pretending the app never uses the network |
 | **Clean Pipeline** | Deterministic text cleanup | Professional output without LLM overhead |
 | **Custom Words** | User-defined vocabulary anchors | Technical terms transcribed correctly every time |
 | **Free & Open-Source** | GPL-3.0, no price, no accounts | Zero friction adoption. Community-driven development. |

@@ -1,9 +1,9 @@
 # MacParakeet Spec Index
 
 > Status: **ACTIVE** - Authoritative, current
-> Migration Note: FluidAudio CoreML migration is the active target architecture. Specs describe target behavior while runtime implementation is in progress.
+> Runtime Note: FluidAudio CoreML is the active architecture. Core STT is local; optional LLM and telemetry features are opt-in.
 
-**MacParakeet** is a local-first voice toolkit for macOS: system-wide dictation and file transcription -- all running on-device with zero cloud dependency.
+**MacParakeet** is a local-first voice toolkit for macOS: system-wide dictation and file transcription with on-device STT, plus optional AI and telemetry features.
 
 ## Spec Documents
 
@@ -65,7 +65,7 @@ All ADRs live in `spec/adr/`. These are locked -- they record decisions already 
 | v0.4 | Polish & Launch | Diarization, custom hotkey, non-blocking progress, direct distribution | **Implemented** |
 | v0.5 | Data & Reliability | Private dictation, video metadata, multi-conversation chat, FTS5 cleanup, favorites | **Implemented** |
 | v0.6 | Video Player & UI Revamp | Embedded video playback, split-pane detail view, library grid, thumbnail cards | **Implemented** |
-| v0.7 | Prompt Library & Multi-Summary | Prompt library, multi-summary per transcript, custom instructions | **In Progress** |
+| v0.7 | Prompt Library & Multi-Summary | Prompt library, multi-summary per transcript, custom instructions | **Implemented on current branch** |
 
 ## Version Progress
 
@@ -143,21 +143,21 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 - [x] Library filter bar (All/YouTube/Local/Favorites)
 - [x] Library search and sort
 
-### v0.7 Prompt Library & Multi-Summary (In Progress)
+### v0.7 Prompt Library & Multi-Summary (Implemented On Current Branch)
 
-- [ ] `prompts` table + community prompt seeds
-- [ ] `summaries` table (one-to-many per transcription, cascade delete)
-- [ ] Prompt model + repository (CRUD, visibility toggle, built-in guard)
-- [ ] Summary model + repository (CRUD, replace for regeneration)
-- [ ] SummaryViewModel (extracted from TranscriptionViewModel)
-- [ ] PromptsViewModel (CRUD, validation, restore defaults)
-- [ ] Prompt picker + generation bar with model selector
-- [ ] Extra instructions field
-- [ ] Multi-summary tab navigation + queued pipeline
-- [ ] Management sheet (hide community, CRUD custom)
-- [ ] LLMService accepts custom system prompt
-- [ ] Migration from `transcriptions.summary` → `summaries`
-- [ ] Auto-summary uses default community prompt
+- [x] `prompts` table + built-in/community prompt seeds
+- [x] `summaries` table (one-to-many per transcription, cascade delete)
+- [x] Prompt model + repository (CRUD, visibility toggle, built-in guard)
+- [x] Summary model + repository (CRUD, replace for regeneration)
+- [x] SummaryViewModel (extracted from TranscriptionViewModel)
+- [x] PromptsViewModel (CRUD, validation, restore defaults)
+- [x] Prompt picker + generation bar with model selector
+- [x] Extra instructions field
+- [x] Multi-summary tab navigation + queued pipeline
+- [x] Management sheet (hide built-in/community, CRUD custom)
+- [x] LLMService accepts custom system prompt
+- [x] Migration from `transcriptions.summary` → `summaries`
+- [x] Auto-summary uses default community prompt
 
 ## For AI Coding Assistants
 
@@ -167,7 +167,7 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 2. **ADRs are locked.** Do not propose alternatives to locked decisions.
 3. **Version order matters.** Implement v0.1 before v0.2. Do not jump ahead.
 4. **Never lose user data.** Graceful degradation over silent failure.
-5. **Local-first.** Audio and text never leave the device. No cloud APIs.
+5. **Local-first.** Audio stays on-device for STT. Optional AI sends transcript text only to the user-configured provider or CLI tool. Telemetry is opt-out and self-hosted.
 6. **`swift test` is the gate.** All tests must pass before and after changes.
 8. **Kernel has precedence for implementation.** When present, `spec/kernel/*` artifacts define executable requirements and contracts.
 
