@@ -257,6 +257,75 @@ public final class DatabaseManager: Sendable {
             }
         }
 
+        // v0.7 — Prompt library + multi-summary
+        migrator.registerMigration("v0.7-prompts-and-summaries") { db in
+            try db.create(table: "prompts") { t in
+                t.column("id", .text).primaryKey()
+                t.column("name", .text).notNull()
+                t.column("content", .text).notNull()
+                t.column("category", .text).notNull().defaults(to: "summary")
+                t.column("isBuiltIn", .boolean).notNull().defaults(to: false)
+                t.column("isVisible", .boolean).notNull().defaults(to: true)
+                t.column("sortOrder", .integer).notNull().defaults(to: 0)
+                t.column("createdAt", .text).notNull()
+                t.column("updatedAt", .text).notNull()
+            }
+            try db.execute(sql: """
+                CREATE UNIQUE INDEX idx_prompts_name ON prompts(name COLLATE NOCASE)
+            """)
+
+            let now = Date()
+            for prompt in Prompt.builtInSummaryPrompts(now: now) {
+                try prompt.insert(db)
+            }
+
+            try db.create(table: "summaries") { t in
+                t.column("id", .text).primaryKey()
+                t.column("transcriptionId", .text)
+                    .notNull()
+                    .references("transcriptions", onDelete: .cascade)
+                t.column("promptName", .text).notNull()
+                t.column("promptContent", .text).notNull()
+                t.column("extraInstructions", .text)
+                t.column("content", .text).notNull()
+                t.column("createdAt", .text).notNull()
+                t.column("updatedAt", .text).notNull()
+            }
+            try db.create(
+                index: "idx_summaries_transcription_id",
+                on: "summaries",
+                columns: ["transcriptionId"]
+            )
+
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT id, summary, createdAt
+                FROM transcriptions
+                WHERE summary IS NOT NULL AND summary != ''
+            """)
+
+            for row in rows {
+                guard
+                    let transcriptionId = UUID.fromDatabaseValue(row["id"] as DatabaseValue),
+                    let summaryText = String.fromDatabaseValue(row["summary"] as DatabaseValue)
+                else {
+                    continue
+                }
+
+                let createdAt = Date.fromDatabaseValue(row["createdAt"] as DatabaseValue) ?? now
+                let migratedSummary = Summary(
+                    transcriptionId: transcriptionId,
+                    promptName: Prompt.defaultSummaryPrompt.name,
+                    promptContent: Prompt.defaultSummaryPrompt.content,
+                    content: summaryText,
+                    createdAt: createdAt,
+                    updatedAt: createdAt
+                )
+                try migratedSummary.insert(db)
+            }
+
+            try db.execute(sql: "UPDATE transcriptions SET summary = NULL WHERE summary IS NOT NULL")
+        }
+
         try migrator.migrate(dbQueue)
     }
 }

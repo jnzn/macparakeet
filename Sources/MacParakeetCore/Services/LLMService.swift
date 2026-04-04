@@ -3,13 +3,23 @@ import Foundation
 // MARK: - Protocol
 
 public protocol LLMServiceProtocol: Sendable {
-    func summarize(transcript: String) async throws -> String
+    func summarize(transcript: String, systemPrompt: String?) async throws -> String
     func chat(question: String, transcript: String, history: [ChatMessage]) async throws -> String
     func transform(text: String, prompt: String) async throws -> String
 
-    func summarizeStream(transcript: String) -> AsyncThrowingStream<String, Error>
+    func summarizeStream(transcript: String, systemPrompt: String?) -> AsyncThrowingStream<String, Error>
     func chatStream(question: String, transcript: String, history: [ChatMessage]) -> AsyncThrowingStream<String, Error>
     func transformStream(text: String, prompt: String) -> AsyncThrowingStream<String, Error>
+}
+
+public extension LLMServiceProtocol {
+    func summarize(transcript: String) async throws -> String {
+        try await summarize(transcript: transcript, systemPrompt: nil)
+    }
+
+    func summarizeStream(transcript: String) -> AsyncThrowingStream<String, Error> {
+        summarizeStream(transcript: transcript, systemPrompt: nil)
+    }
 }
 
 // MARK: - Implementation
@@ -46,12 +56,12 @@ public final class LLMService: LLMServiceProtocol, Sendable {
 
     // MARK: - Sync Variants
 
-    public func summarize(transcript: String) async throws -> String {
+    public func summarize(transcript: String, systemPrompt: String?) async throws -> String {
         let context = try loadContext()
         let config = context.providerConfig
         let truncated = Self.truncateMiddle(transcript, limit: contextBudget(for: config))
         let messages = [
-            ChatMessage(role: .system, content: Prompts.summary),
+            ChatMessage(role: .system, content: resolveSummaryPrompt(systemPrompt)),
             ChatMessage(role: .user, content: truncated),
         ]
         do {
@@ -98,7 +108,7 @@ public final class LLMService: LLMServiceProtocol, Sendable {
 
     // MARK: - Streaming Variants
 
-    public func summarizeStream(transcript: String) -> AsyncThrowingStream<String, Error> {
+    public func summarizeStream(transcript: String, systemPrompt: String?) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 var provider = "unknown"
@@ -108,7 +118,7 @@ public final class LLMService: LLMServiceProtocol, Sendable {
                     provider = config.id.rawValue
                     let truncated = Self.truncateMiddle(transcript, limit: self.contextBudget(for: config))
                     let messages = [
-                        ChatMessage(role: .system, content: Prompts.summary),
+                        ChatMessage(role: .system, content: self.resolveSummaryPrompt(systemPrompt)),
                         ChatMessage(role: .user, content: truncated),
                     ]
                     let stream = self.client.chatCompletionStream(messages: messages, context: context, options: .default)
@@ -197,6 +207,11 @@ public final class LLMService: LLMServiceProtocol, Sendable {
 
     private func contextBudget(for config: LLMProviderConfig) -> Int {
         config.isLocal ? Self.localContextBudget : Self.cloudContextBudget
+    }
+
+    private func resolveSummaryPrompt(_ systemPrompt: String?) -> String {
+        let trimmed = systemPrompt?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (trimmed?.isEmpty == false ? trimmed : nil) ?? Prompts.summary
     }
 
     private static func errorType(for error: Error) -> String {

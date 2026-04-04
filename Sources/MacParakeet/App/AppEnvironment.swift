@@ -10,6 +10,8 @@ final class AppEnvironment {
     let customWordRepo: CustomWordRepository
     let snippetRepo: TextSnippetRepository
     let chatConversationRepo: ChatConversationRepository
+    let promptRepo: PromptRepository
+    let summaryRepo: SummaryRepository
     let sttClient: STTClient
     let audioProcessor: AudioProcessor
     let dictationService: DictationService
@@ -42,6 +44,8 @@ final class AppEnvironment {
         customWordRepo = CustomWordRepository(dbQueue: databaseManager.dbQueue)
         snippetRepo = TextSnippetRepository(dbQueue: databaseManager.dbQueue)
         chatConversationRepo = ChatConversationRepository(dbQueue: databaseManager.dbQueue)
+        promptRepo = PromptRepository(dbQueue: databaseManager.dbQueue)
+        summaryRepo = SummaryRepository(dbQueue: databaseManager.dbQueue)
 
         // One-time cleanup on launch
         _ = try? dictationRepo.deleteEmpty()

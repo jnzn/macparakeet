@@ -49,6 +49,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let libraryViewModel = TranscriptionLibraryViewModel()
     private let llmSettingsViewModel = LLMSettingsViewModel()
     private let chatViewModel = TranscriptChatViewModel()
+    private let summaryViewModel = SummaryViewModel()
+    private let promptsViewModel = PromptsViewModel()
     private let mainWindowState = MainWindowState()
     private let onboardingWindowController = OnboardingWindowController()
     private var onboardingObserver: Any?
@@ -349,7 +351,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 transcriptionService: env.transcriptionService,
                 transcriptionRepo: env.transcriptionRepo,
                 llmService: hasLLMConfig ? env.llmService : nil,
-                configStore: env.llmConfigStore
+                configStore: env.llmConfigStore,
+                summaryRepo: env.summaryRepo,
+                summaryViewModel: summaryViewModel
             )
             historyViewModel.configure(dictationRepo: env.dictationRepo)
             libraryViewModel.configure(transcriptionRepo: env.transcriptionRepo)
@@ -366,6 +370,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             )
             customWordsViewModel.configure(repo: env.customWordRepo)
             textSnippetsViewModel.configure(repo: env.snippetRepo)
+            promptsViewModel.configure(repo: env.promptRepo)
             llmSettingsViewModel.configure(
                 configStore: env.llmConfigStore,
                 llmClient: env.llmClient
@@ -383,6 +388,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 configStore: env.llmConfigStore,
                 conversationRepo: env.chatConversationRepo
             )
+            summaryViewModel.configure(
+                llmService: hasLLMConfig ? env.llmService : nil,
+                promptRepo: env.promptRepo,
+                summaryRepo: env.summaryRepo,
+                configStore: env.llmConfigStore
+            )
             chatViewModel.onConversationsChanged = { [weak self] transcriptionID, hasConversations in
                 self?.transcriptionViewModel.updateConversationStatus(
                     id: transcriptionID,
@@ -390,10 +401,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 )
             }
             chatViewModel.onModelChanged = { [weak self] in
-                self?.transcriptionViewModel.refreshModelInfo()
+                self?.summaryViewModel.refreshModelInfo()
             }
-            transcriptionViewModel.onModelChanged = { [weak self] in
+            summaryViewModel.onModelChanged = { [weak self] in
                 self?.chatViewModel.refreshModelInfo()
+            }
+            summaryViewModel.onSummariesChanged = { [weak self] transcriptionID, hasSummaries in
+                guard self?.transcriptionViewModel.currentTranscription?.id == transcriptionID else { return }
+                self?.transcriptionViewModel.hasSummaries = hasSummaries
+            }
+            summaryViewModel.shouldShowBadge = { [weak self] in
+                self?.transcriptionViewModel.selectedTab != .summary
             }
             transcriptionViewModel.onTranscribingChanged = { [weak self] isTranscribing in
                 guard let self, !(self.dictationFlowCoordinator?.isDictationActive ?? false) else { return }
@@ -443,6 +461,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let service: LLMService? = hasConfig ? env.llmService : nil
         transcriptionViewModel.updateLLMAvailability(hasConfig, llmService: service)
         chatViewModel.updateLLMService(service)
+        summaryViewModel.updateLLMService(service)
     }
 
     // MARK: - Hotkey
@@ -750,6 +769,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             settingsViewModel: settingsViewModel,
             llmSettingsViewModel: llmSettingsViewModel,
             chatViewModel: chatViewModel,
+            summaryViewModel: summaryViewModel,
+            promptsViewModel: promptsViewModel,
             customWordsViewModel: customWordsViewModel,
             textSnippetsViewModel: textSnippetsViewModel,
             feedbackViewModel: feedbackViewModel,

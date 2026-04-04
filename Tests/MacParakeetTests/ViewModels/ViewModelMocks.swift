@@ -410,9 +410,11 @@ final class MockLLMService: LLMServiceProtocol, @unchecked Sendable {
     var chatCallCount = 0
     var lastChatQuestion: String?
     var lastChatHistory: [ChatMessage]?
+    var lastSummarySystemPrompt: String?
 
-    func summarize(transcript: String) async throws -> String {
+    func summarize(transcript: String, systemPrompt: String?) async throws -> String {
         summarizeCallCount += 1
+        lastSummarySystemPrompt = systemPrompt
         if let error = errorToThrow { throw error }
         return summarizeResult
     }
@@ -428,8 +430,9 @@ final class MockLLMService: LLMServiceProtocol, @unchecked Sendable {
         return "Mock transform"
     }
 
-    func summarizeStream(transcript: String) -> AsyncThrowingStream<String, Error> {
+    func summarizeStream(transcript: String, systemPrompt: String?) -> AsyncThrowingStream<String, Error> {
         summarizeCallCount += 1
+        lastSummarySystemPrompt = systemPrompt
         let tokens = streamTokens
         let error = errorToThrow
         let delay = streamDelayNs
@@ -493,6 +496,96 @@ final class MockLLMService: LLMServiceProtocol, @unchecked Sendable {
             }
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+}
+
+// MARK: - MockPromptRepository
+
+final class MockPromptRepository: PromptRepositoryProtocol, @unchecked Sendable {
+    var prompts: [Prompt] = []
+
+    func save(_ prompt: Prompt) throws {
+        if let index = prompts.firstIndex(where: { $0.id == prompt.id }) {
+            prompts[index] = prompt
+        } else {
+            prompts.append(prompt)
+        }
+    }
+
+    func fetch(id: UUID) throws -> Prompt? {
+        prompts.first(where: { $0.id == id })
+    }
+
+    func fetchAll() throws -> [Prompt] {
+        prompts.sorted { lhs, rhs in
+            if lhs.sortOrder == rhs.sortOrder {
+                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            }
+            return lhs.sortOrder < rhs.sortOrder
+        }
+    }
+
+    func fetchVisible(category: Prompt.Category?) throws -> [Prompt] {
+        try fetchAll().filter {
+            $0.isVisible && (category == nil || $0.category == category)
+        }
+    }
+
+    func delete(id: UUID) throws -> Bool {
+        let before = prompts.count
+        prompts.removeAll { $0.id == id }
+        return prompts.count < before
+    }
+
+    func toggleVisibility(id: UUID) throws {
+        guard let index = prompts.firstIndex(where: { $0.id == id }) else { return }
+        prompts[index].isVisible.toggle()
+        prompts[index].updatedAt = Date()
+    }
+
+    func restoreDefaults() throws {
+        for index in prompts.indices where prompts[index].isBuiltIn {
+            prompts[index].isVisible = true
+            prompts[index].updatedAt = Date()
+        }
+    }
+}
+
+// MARK: - MockSummaryRepository
+
+final class MockSummaryRepository: SummaryRepositoryProtocol, @unchecked Sendable {
+    var summaries: [Summary] = []
+    var saveCalls: [Summary] = []
+    var deleteCalls: [UUID] = []
+
+    func save(_ summary: Summary) throws {
+        saveCalls.append(summary)
+        if let index = summaries.firstIndex(where: { $0.id == summary.id }) {
+            summaries[index] = summary
+        } else {
+            summaries.append(summary)
+        }
+    }
+
+    func fetchAll(transcriptionId: UUID) throws -> [Summary] {
+        summaries
+            .filter { $0.transcriptionId == transcriptionId }
+            .sorted { $0.createdAt > $1.createdAt }
+    }
+
+    func delete(id: UUID) throws -> Bool {
+        deleteCalls.append(id)
+        let before = summaries.count
+        summaries.removeAll { $0.id == id }
+        return summaries.count < before
+    }
+
+    func deleteAll(transcriptionId: UUID) throws {
+        summaries.removeAll { $0.transcriptionId == transcriptionId }
+    }
+
+    func hasSummaries(transcriptionId: UUID) throws -> Bool {
+        summaries.contains { $0.transcriptionId == transcriptionId }
     }
 }
 
