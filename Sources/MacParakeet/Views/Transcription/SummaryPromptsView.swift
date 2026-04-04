@@ -57,12 +57,6 @@ struct SummaryPromptsView: View {
                                         .font(DesignSystem.Typography.caption.weight(.medium))
                                         .foregroundStyle(DesignSystem.Colors.accent)
                                 }
-                                Button("Restore Defaults") {
-                                    withAnimation { viewModel.restoreDefaults() }
-                                }
-                                .buttonStyle(.borderless)
-                                .font(DesignSystem.Typography.caption.weight(.medium))
-                                .foregroundStyle(DesignSystem.Colors.textSecondary)
                             }
                         }
                     ) {

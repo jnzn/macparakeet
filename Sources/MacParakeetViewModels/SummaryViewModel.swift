@@ -202,7 +202,7 @@ public final class SummaryViewModel {
 
     public func loadSummaries(transcriptionId: UUID) {
         if currentTranscriptionID != transcriptionId {
-            cancelAllGenerations()
+            cancelStreaming()
         }
         currentTranscriptionID = transcriptionId
         do {
@@ -214,6 +214,7 @@ public final class SummaryViewModel {
             onSummariesChanged?(transcriptionId, false)
             errorMessage = error.localizedDescription
         }
+        processNextQueuedGeneration()
     }
 
     public func clearBadge(for summaryID: UUID) {
@@ -302,12 +303,6 @@ public final class SummaryViewModel {
         pendingGenerations.remove(at: index)
     }
 
-    private func cancelAllGenerations() {
-        streamingTask?.cancel()
-        streamingTask = nil
-        pendingGenerations = []
-    }
-
     @discardableResult
     private func enqueueGeneration(
         transcript: String,
@@ -336,7 +331,10 @@ public final class SummaryViewModel {
 
     private func processNextQueuedGeneration() {
         guard streamingTask == nil, llmService != nil else { return }
-        guard let nextIndex = pendingGenerations.firstIndex(where: { $0.state == .queued }) else { return }
+        guard let currentTranscriptionID else { return }
+        guard let nextIndex = pendingGenerations.firstIndex(where: {
+            $0.state == .queued && $0.transcriptionId == currentTranscriptionID
+        }) else { return }
 
         pendingGenerations[nextIndex].state = .streaming
         let generation = pendingGenerations[nextIndex]

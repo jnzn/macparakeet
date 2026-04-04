@@ -325,5 +325,63 @@ public final class DatabaseManager: Sendable {
         }
 
         try migrator.migrate(dbQueue)
+        try reconcileBuiltInPrompts()
+    }
+
+    private func reconcileBuiltInPrompts() throws {
+        let builtInPrompts = Prompt.builtInSummaryPrompts(now: Date())
+        try dbQueue.write { db in
+            for prompt in builtInPrompts {
+                if let existing = try Prompt.fetchOne(db, key: prompt.id) {
+                    try db.execute(
+                        sql: """
+                            UPDATE prompts
+                            SET name = ?, content = ?, category = ?, isBuiltIn = 1, sortOrder = ?, updatedAt = ?
+                            WHERE id = ?
+                            """,
+                        arguments: [
+                            prompt.name,
+                            prompt.content,
+                            prompt.category.rawValue,
+                            prompt.sortOrder,
+                            prompt.updatedAt,
+                            existing.id,
+                        ]
+                    )
+                    continue
+                }
+
+                if let legacyPromptID = try String.fetchOne(
+                    db,
+                    sql: """
+                        SELECT id
+                        FROM prompts
+                        WHERE name = ? COLLATE NOCASE
+                        LIMIT 1
+                        """,
+                    arguments: [prompt.name]
+                ) {
+                    try db.execute(
+                        sql: """
+                            UPDATE prompts
+                            SET id = ?, name = ?, content = ?, category = ?, isBuiltIn = 1, sortOrder = ?, updatedAt = ?
+                            WHERE id = ?
+                            """,
+                        arguments: [
+                            prompt.id.uuidString,
+                            prompt.name,
+                            prompt.content,
+                            prompt.category.rawValue,
+                            prompt.sortOrder,
+                            prompt.updatedAt,
+                            legacyPromptID,
+                        ]
+                    )
+                    continue
+                }
+
+                try prompt.insert(db)
+            }
+        }
     }
 }
