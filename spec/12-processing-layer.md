@@ -146,13 +146,13 @@ CREATE INDEX idx_summaries_transcription_id ON summaries(transcriptionId);
 
 **Why snapshot instead of reference:** Prompts can be edited or deleted after a summary is generated. The summary should always know exactly what instructions produced it. `promptName` is for display; `promptContent` is for reproducibility.
 
-**Migration from existing data:** Existing `transcriptions.summary` values migrate into the `summaries` table with `promptName = "Concise Summary"` and `promptContent` set to the current default summary prompt text. The legacy `transcriptions.summary` column is preserved and mirrors the newest completed summary for backward compatibility.
+**Migration from existing data:** Existing `transcriptions.summary` values migrate into the `summaries` table with `promptName = "General Summary"` and `promptContent` set to the current default summary prompt text. The legacy `transcriptions.summary` column is preserved and mirrors the newest completed summary for backward compatibility.
 
 ### Community Prompts
 
-Community prompts are defined in `Sources/MacParakeetCore/Resources/community-prompts.json` and seeded during migration. Contributors can add new prompts via PR without touching Swift code. The app loads from the JSON bundle at runtime with a hardcoded fallback.
+The current branch seeds seven built-in/community prompts from `Prompt.builtInSummaryPrompts()` in Swift. `Sources/MacParakeetCore/Resources/community-prompts.json` exists as a contribution/reference file, but it is not yet the runtime source of truth for prompt seeding.
 
-The first prompt (sort order 0) is the default — used for auto-summary and pre-selected in the picker. See the JSON file for the current list.
+The first prompt (sort order 0), `General Summary`, is the default — used for auto-summary and pre-selected in the picker. The shipped built-in list is: `General Summary`, `Meeting Notes`, `Action Items`, `Key Quotes`, `Study Notes`, `Bullet Points`, and `Executive Brief`.
 
 ### System Prompt Assembly
 

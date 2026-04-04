@@ -3,6 +3,7 @@
 > Status: **Accepted**
 > Date: 2026-04-03
 > Related: ADR-011 (LLM providers), spec/12-processing-layer.md
+> Implementation Note (2026-04-04): The current branch seeds built-in/community prompts from `Prompt.builtInSummaryPrompts()` in Swift. `community-prompts.json` exists as a contribution/reference artifact, but runtime JSON loading has not shipped.
 
 ## Context
 
@@ -16,7 +17,7 @@ Additionally, this feature is the first building block for a future processing l
 
 ### 1. Prompt Library stored in SQLite
 
-Reusable prompt templates are stored in the `prompts` table (not UserDefaults). Each prompt has a name, content, category, and visibility flag. Community prompts are defined in `Sources/MacParakeetCore/Resources/community-prompts.json` (so contributors can add new ones via PR without touching Swift), loaded at runtime, and seeded during migration. They can be hidden but not edited or deleted. Custom prompts support full CRUD.
+Reusable prompt templates are stored in the `prompts` table (not UserDefaults). Each prompt has a name, content, category, and visibility flag. Built-in/community prompts are currently seeded from Swift constants in `Prompt.builtInSummaryPrompts()`. The JSON file at `Sources/MacParakeetCore/Resources/community-prompts.json` is kept as a contribution/reference artifact, not the active runtime seed source. Built-in/community prompts can be hidden but not edited or deleted. Custom prompts support full CRUD.
 
 The table is named `prompts` (not `summary_presets`) because the model is general-purpose — the same prompt can serve summaries today, transforms tomorrow, and workflow steps later. A `category` enum field (`.summary`, `.transform`) scopes prompts to their use case.
 

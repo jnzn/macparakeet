@@ -8,6 +8,7 @@ struct SummaryPromptsView: View {
     @State private var editName: String = ""
     @State private var editContent: String = ""
     @State private var hoveredPromptId: UUID?
+    @State private var expandedPromptIds: Set<UUID> = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -186,6 +187,7 @@ struct SummaryPromptsView: View {
     private func promptRow(_ prompt: Prompt, allowEdit: Bool) -> some View {
         let isHovered = hoveredPromptId == prompt.id
         let isDefault = prompt.isBuiltIn && prompt.name == Prompt.defaultSummaryPrompt.name
+        let isExpanded = expandedPromptIds.contains(prompt.id)
 
         return HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
             // Status toggle
@@ -214,17 +216,17 @@ struct SummaryPromptsView: View {
                             .background(DesignSystem.Colors.accentLight)
                             .clipShape(Capsule())
                     }
+
+                    Spacer()
                 }
                 
                 Text(prompt.content)
                     .font(DesignSystem.Typography.body)
                     .foregroundStyle(prompt.isVisible ? DesignSystem.Colors.textSecondary : DesignSystem.Colors.textTertiary)
-                    .lineLimit(2)
+                    .lineLimit(isExpanded ? nil : 2)
                     .lineSpacing(2)
             }
             
-            Spacer()
-
             if allowEdit {
                 HStack(spacing: DesignSystem.Spacing.sm) {
                     Button {
@@ -262,8 +264,20 @@ struct SummaryPromptsView: View {
         .padding(DesignSystem.Spacing.lg)
         .background(isHovered ? DesignSystem.Colors.surfaceElevated.opacity(0.5) : Color.clear)
         .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                if isExpanded {
+                    expandedPromptIds.remove(prompt.id)
+                } else {
+                    expandedPromptIds.insert(prompt.id)
+                }
+            }
+        }
         .onHover { hovering in
-            hoveredPromptId = hovering ? prompt.id : nil
+            if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+            withAnimation(DesignSystem.Animation.hoverTransition) {
+                hoveredPromptId = hovering ? prompt.id : nil
+            }
         }
     }
 

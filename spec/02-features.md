@@ -1463,37 +1463,37 @@ Embedded video/audio playback, split-pane detail view, synced transcript highlig
 
 ---
 
-## v0.7 — Processing Layer (In Progress)
+## v0.7 — Processing Layer (Implemented On Current Branch)
 
 Prompt library and multi-summary system. Users control how AI processes transcripts via reusable prompts. See [spec/12-processing-layer.md](12-processing-layer.md) and [ADR-013](adr/013-prompt-library-multi-summary.md).
 
 ### F28: Prompt Library
 
-> Status: **IN PROGRESS**
+> Status: **IMPLEMENTED ON CURRENT BRANCH**
 
 **What:** Reusable prompt templates stored in SQLite. Community prompts ship with the app and can be hidden but not edited or deleted. Users can create, edit, and delete custom prompts.
 
 **Acceptance criteria:**
-- [ ] Community prompts available on first launch from built-in seed
-- [ ] Community prompts can be hidden but not edited or deleted
-- [ ] Custom prompts can be created, edited, and deleted via management sheet
-- [ ] Prompt management accessible from the generation popover
-- [ ] Default community prompt used for auto-summary
+- [x] Built-in/community prompts available on first launch from built-in seed
+- [x] Built-in/community prompts can be hidden but not edited or deleted
+- [x] Custom prompts can be created, edited, and deleted via management sheet
+- [x] Prompt management accessible from the generation popover
+- [x] Default community prompt used for auto-summary
 
 ### F29: Multi-Summary
 
-> Status: **IN PROGRESS**
+> Status: **IMPLEMENTED ON CURRENT BRANCH**
 
 **What:** Multiple summaries per transcript, each from a different prompt. Summaries are tab-based, with pending generations appearing immediately.
 
 **Acceptance criteria:**
-- [ ] User can select a prompt from the generation popover
-- [ ] Generating a summary creates a new summary record (does not overwrite)
-- [ ] Multiple summaries displayed as tabs, pending generations appear immediately
-- [ ] User can add extra instructions layered on top of selected prompt
-- [ ] Queued summary pipeline (single-worker, sequential execution)
-- [ ] Auto-summary after transcription uses default community prompt
-- [ ] Existing transcriptions with summaries display migrated data correctly
+- [x] User can select a prompt from the generation popover
+- [x] Generating a summary creates a new summary record (does not overwrite)
+- [x] Multiple summaries displayed as tabs, pending generations appear immediately
+- [x] User can add extra instructions layered on top of selected prompt
+- [x] Queued summary pipeline (single-worker, sequential execution)
+- [x] Auto-summary after transcription uses default community prompt
+- [x] Existing transcriptions with summaries display migrated data correctly
 
 ---
 
@@ -1543,19 +1543,18 @@ MacParakeet's brand is privacy. These are non-negotiable.
 
 | Requirement | Detail |
 |-------------|--------|
-| No network by default | App works fully offline after one-time model setup unless optional license activation/validation is enabled |
-| No analytics | Zero telemetry, no crash reporting to servers |
-| No telemetry | No usage tracking, no feature analytics |
+| Core offline operation | Dictation and file transcription work fully offline after one-time model setup |
+| Opt-out telemetry | Self-hosted usage analytics and crash reporting can be disabled in Settings |
 | No accounts | No email, no login, no registration |
-| No cloud processing | All STT runs locally on Apple Silicon |
+| No cloud STT | All speech recognition runs locally on Apple Silicon |
 | User-controlled storage | Audio saved by default, user can disable or delete |
-| Network only for setup/licensing + YouTube | One-time model downloads during onboarding, optional license activation/validation, and YouTube download |
+| Explicit network surfaces | Model download, update checks, optional LLM providers, optional telemetry/crash reporting, licensing flows, and YouTube download |
 
-**What "100% local" means:**
+**What "local-first" means:**
 - Parakeet STT runs on Apple Silicon Neural Engine (ANE) via FluidAudio CoreML -- no cloud API
 - Audio never leaves the device
-- Transcripts never leave the device
-- No "phone home" on launch, no update checks to our servers (App Store handles updates)
+- Transcripts stay local unless the user explicitly enables AI features
+- Network access is limited to explicit product surfaces such as updates, telemetry, licensing, and media download
 
 ---
 

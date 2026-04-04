@@ -303,6 +303,12 @@ public final class SummaryViewModel {
         pendingGenerations.remove(at: index)
     }
 
+    private func cancelAllGenerations() {
+        streamingTask?.cancel()
+        streamingTask = nil
+        pendingGenerations = []
+    }
+
     @discardableResult
     private func enqueueGeneration(
         transcript: String,
