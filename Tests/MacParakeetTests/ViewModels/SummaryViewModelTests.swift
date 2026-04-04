@@ -27,8 +27,8 @@ final class SummaryViewModelTests: XCTestCase {
             transcriptionRepo: transcriptionRepo
         )
 
-        XCTAssertEqual(viewModel.visiblePrompts.count, 2)
-        XCTAssertEqual(viewModel.selectedPrompt?.name, "Concise Summary")
+        XCTAssertEqual(viewModel.visiblePrompts.count, 7)
+        XCTAssertEqual(viewModel.selectedPrompt?.name, "General Summary")
     }
 
     func testConfigureShowsLocalCLIPresetName() throws {
@@ -173,7 +173,7 @@ final class SummaryViewModelTests: XCTestCase {
         XCTAssertTrue(viewModel.isStreaming)
         XCTAssertTrue(viewModel.canGenerateSummary)
         XCTAssertEqual(llm.summarizeCallCount, 1)
-        XCTAssertEqual(viewModel.streamingPromptName, "Concise Summary")
+        XCTAssertEqual(viewModel.streamingPromptName, "General Summary")
         XCTAssertEqual(viewModel.pendingGenerations.count, 1)
         XCTAssertEqual(viewModel.pendingGenerations.first?.id, firstGenerationID)
 
@@ -184,7 +184,7 @@ final class SummaryViewModelTests: XCTestCase {
         )
 
         XCTAssertEqual(llm.summarizeCallCount, 1)
-        XCTAssertEqual(viewModel.streamingPromptName, "Concise Summary")
+        XCTAssertEqual(viewModel.streamingPromptName, "General Summary")
         XCTAssertEqual(viewModel.pendingGenerations.count, 2)
         XCTAssertEqual(viewModel.pendingGenerations.last?.id, secondGenerationID)
         XCTAssertEqual(viewModel.pendingGenerations.last?.state, .queued)
@@ -192,18 +192,18 @@ final class SummaryViewModelTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(700))
 
         XCTAssertEqual(summaryRepo.saveCalls.count, 2)
-        XCTAssertEqual(summaryRepo.saveCalls[0].promptName, "Concise Summary")
+        XCTAssertEqual(summaryRepo.saveCalls[0].promptName, "General Summary")
         XCTAssertEqual(summaryRepo.saveCalls[1].promptName, "Action Items")
         XCTAssertEqual(llm.summarizeCallCount, 2)
         XCTAssertEqual(viewModel.pendingGenerations.count, 0)
-        XCTAssertEqual(viewModel.summaries.map(\.promptName), ["Action Items", "Concise Summary"])
+        XCTAssertEqual(viewModel.summaries.map(\.promptName), ["Action Items", "General Summary"])
     }
 
     func testGenerateSummarySamePromptWithDifferentInstructionsCreatesAnotherSummary() async throws {
         let transcriptionID = UUID()
         let existing = Summary(
             transcriptionId: transcriptionID,
-            promptName: "Concise Summary",
+            promptName: "General Summary",
             promptContent: Prompt.defaultSummaryPrompt.content,
             extraInstructions: "Focus on decisions.",
             content: "Old summary",
@@ -229,7 +229,7 @@ final class SummaryViewModelTests: XCTestCase {
         XCTAssertEqual(llm.summarizeCallCount, 1)
         XCTAssertEqual(summaryRepo.saveCalls.count, 1)
         XCTAssertTrue(summaryRepo.replaceCalls.isEmpty)
-        XCTAssertEqual(summaryRepo.saveCalls[0].promptName, "Concise Summary")
+        XCTAssertEqual(summaryRepo.saveCalls[0].promptName, "General Summary")
         XCTAssertEqual(summaryRepo.saveCalls[0].extraInstructions, "Focus on risks.")
         XCTAssertEqual(summaryRepo.summaries.count, 2)
         XCTAssertEqual(viewModel.pendingGenerations.count, 0)
@@ -242,7 +242,7 @@ final class SummaryViewModelTests: XCTestCase {
         let transcriptionID = UUID()
         let existing = Summary(
             transcriptionId: transcriptionID,
-            promptName: "Concise Summary",
+            promptName: "General Summary",
             promptContent: Prompt.defaultSummaryPrompt.content,
             content: "Old summary",
             createdAt: Date(timeIntervalSince1970: 10),
@@ -282,13 +282,48 @@ final class SummaryViewModelTests: XCTestCase {
         XCTAssertEqual(transcriptionRepo.updateSummaryCalls.last?.summary, "New summary")
     }
 
+    func testRegenerateSummaryCompletesBeforeDeletedCallback() async throws {
+        let transcriptionID = UUID()
+        let existing = Summary(
+            transcriptionId: transcriptionID,
+            promptName: "General Summary",
+            promptContent: Prompt.defaultSummaryPrompt.content,
+            content: "Old summary",
+            createdAt: Date(timeIntervalSince1970: 10),
+            updatedAt: Date(timeIntervalSince1970: 10)
+        )
+        summaryRepo.summaries = [existing]
+        viewModel.configure(
+            llmService: llm,
+            promptRepo: promptRepo,
+            summaryRepo: summaryRepo,
+            transcriptionRepo: transcriptionRepo
+        )
+        viewModel.loadSummaries(transcriptionId: transcriptionID)
+        llm.streamTokens = ["New ", "summary"]
+
+        var callbackOrder: [String] = []
+        viewModel.onGenerationCompleted = { _, _ in
+            callbackOrder.append("completed")
+        }
+        viewModel.onDeletedSummary = { _ in
+            callbackOrder.append("deleted")
+        }
+
+        _ = viewModel.regenerateSummary(existing, transcript: "Transcript")
+
+        try await Task.sleep(for: .milliseconds(200))
+
+        XCTAssertEqual(callbackOrder, ["completed", "deleted"])
+    }
+
     func testLoadSummariesSwitchesTranscriptions() {
         let transcriptionA = UUID()
         let transcriptionB = UUID()
         summaryRepo.summaries = [
             Summary(
                 transcriptionId: transcriptionA,
-                promptName: "Concise Summary",
+                promptName: "General Summary",
                 promptContent: Prompt.defaultSummaryPrompt.content,
                 content: "A1",
                 createdAt: Date(timeIntervalSince1970: 10),
@@ -296,7 +331,7 @@ final class SummaryViewModelTests: XCTestCase {
             ),
             Summary(
                 transcriptionId: transcriptionB,
-                promptName: "Concise Summary",
+                promptName: "General Summary",
                 promptContent: Prompt.defaultSummaryPrompt.content,
                 content: "B1",
                 createdAt: Date(timeIntervalSince1970: 20),
@@ -322,7 +357,7 @@ final class SummaryViewModelTests: XCTestCase {
         var mirroredLegacySummary: String?
         let summary = Summary(
             transcriptionId: transcriptionID,
-            promptName: "Concise Summary",
+            promptName: "General Summary",
             promptContent: Prompt.defaultSummaryPrompt.content,
             content: "Delete me"
         )
