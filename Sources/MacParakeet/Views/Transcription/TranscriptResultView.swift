@@ -860,17 +860,31 @@ struct TranscriptResultView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
                 HStack {
-                    AIStreamingIndicator()
                     Spacer()
-                    Button("Cancel") {
+                    Button {
                         summaryViewModel.cancelStreaming()
+                    } label: {
+                        HStack(spacing: DesignSystem.Spacing.xs) {
+                            Image(systemName: "xmark")
+                            Text("Cancel")
+                        }
+                        .font(DesignSystem.Typography.caption)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                 }
 
                 if summaryViewModel.streamingContent.isEmpty {
-                    SummarySkeletonView()
+                    VStack(spacing: DesignSystem.Spacing.md) {
+                        Spacer().frame(height: DesignSystem.Spacing.xl)
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Generating summary...")
+                            .font(DesignSystem.Typography.body)
+                            .foregroundStyle(DesignSystem.Colors.textTertiary)
+                        Spacer().frame(height: DesignSystem.Spacing.xl)
+                    }
+                    .frame(maxWidth: .infinity)
                 } else {
                     MarkdownContentView(summaryViewModel.streamingContent, font: DesignSystem.Typography.bodyLarge)
                         .frame(maxWidth: .infinity, alignment: .leading)
