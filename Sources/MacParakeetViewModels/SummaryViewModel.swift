@@ -356,7 +356,10 @@ public final class SummaryViewModel {
                 for try await token in stream {
                     appendStreamingToken(token, to: generationID)
                 }
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled else {
+                    finishCancelledGeneration(id: generationID)
+                    return
+                }
                 try finishGeneration(id: generationID)
             } catch is CancellationError {
                 finishCancelledGeneration(id: generationID)
