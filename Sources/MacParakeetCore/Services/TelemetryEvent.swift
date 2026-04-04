@@ -102,6 +102,7 @@ public enum TelemetrySettingName: String, Sendable, Equatable {
     case hidePill = "hide_pill"
     case saveTranscriptionAudio = "save_transcription_audio"
     case speakerDiarization = "speaker_diarization"
+    case autoSave = "auto_save"
 }
 
 public enum TelemetryEventSpec: Sendable {
