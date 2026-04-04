@@ -414,19 +414,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             summaryViewModel.onLegacySummaryChanged = { [weak self] transcriptionID, summary in
                 self?.transcriptionViewModel.updateLegacySummary(id: transcriptionID, summary: summary)
             }
-            summaryViewModel.onSelectSummaryTab = { [weak self] summaryID in
-                self?.transcriptionViewModel.selectedTab = .summary(id: summaryID)
+            summaryViewModel.onGenerationCompleted = { [weak self] generationID, summaryID in
+                self?.transcriptionViewModel.handleGenerationCompleted(generationID, summaryID: summaryID)
             }
             summaryViewModel.onDeletedSummary = { [weak self] summaryID in
                 self?.transcriptionViewModel.handleSummaryDeleted(summaryID)
             }
-            summaryViewModel.shouldShowBadge = { [weak self] in
+            summaryViewModel.shouldShowBadge = { [weak self] summaryID in
                 guard let self else { return true }
                 if case .summary(let id) = self.transcriptionViewModel.selectedTab,
-                   id == self.summaryViewModel.streamingSummaryID {
-                    return false
-                }
-                if case .streaming = self.transcriptionViewModel.selectedTab {
+                   id == summaryID {
                     return false
                 }
                 return true

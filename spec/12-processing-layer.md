@@ -75,7 +75,7 @@ Additional categories are future schema decisions and are not part of this spec.
 
 A **Prompt** is a named, reusable instruction template that tells an LLM how to process a transcript. Called "Prompt" (not "Summary Preset") because the data model is general-purpose — the same prompt can serve summaries today, transforms tomorrow, and workflow steps later.
 
-A **Summary** is a generated output tied to a specific transcript. Each transcript can have multiple summaries, each produced by a different prompt. Summaries snapshot the prompt that created them — they're self-contained records, not live references.
+A **Summary** is a generated output tied to a specific transcript. Each transcript can have multiple summaries, including multiple runs of the same prompt with different per-run instructions. Summaries snapshot the prompt that created them — they're self-contained records, not live references.
 
 ### Data Model: Prompt
 
@@ -236,7 +236,8 @@ When a generation completes:
 #### Completed Summary Tabs
 
 - completed summaries render as markdown
-- regenerating a summary replaces the prior summary for the same prompt after the new result is durably saved
+- generate appends a new completed summary tab every time
+- regenerate replaces only the specific summary the user chose, and only after the new result is durably saved
 - copy is available from both the pane and tab context menu
 - delete requires confirmation
 

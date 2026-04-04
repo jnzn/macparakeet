@@ -126,7 +126,7 @@ final class SummaryViewModelTests: XCTestCase {
             summaryRepo: summaryRepo,
             transcriptionRepo: transcriptionRepo
         )
-        viewModel.shouldShowBadge = { false }
+        viewModel.shouldShowBadge = { _ in false }
         llm.streamTokens = ["Done"]
 
         viewModel.generateSummary(transcript: "Transcript", transcriptionId: UUID())
@@ -135,7 +135,7 @@ final class SummaryViewModelTests: XCTestCase {
 
         XCTAssertNil(viewModel.badgedSummaryID)
 
-        viewModel.shouldShowBadge = { true }
+        viewModel.shouldShowBadge = { _ in true }
         viewModel.generateSummary(transcript: "Transcript", transcriptionId: UUID())
 
         try await Task.sleep(for: .milliseconds(200))
@@ -146,7 +146,7 @@ final class SummaryViewModelTests: XCTestCase {
         XCTAssertNil(viewModel.badgedSummaryID)
     }
 
-    func testGenerateSummaryWhileStreamingIgnoresSecondRequest() async throws {
+    func testGenerateSummaryWhileStreamingQueuesSecondRequest() async throws {
         let transcriptionID = UUID()
         let secondPrompt = Prompt(
             name: "Action Items",
@@ -164,25 +164,78 @@ final class SummaryViewModelTests: XCTestCase {
         llm.streamTokens = ["First ", "summary"]
         llm.streamDelayNs = 150_000_000
 
-        viewModel.generateSummary(transcript: "Transcript", transcriptionId: transcriptionID)
+        let firstGenerationID = viewModel.generateSummary(
+            transcript: "Transcript",
+            transcriptionId: transcriptionID
+        )
         try await Task.sleep(for: .milliseconds(25))
 
         XCTAssertTrue(viewModel.isStreaming)
-        XCTAssertFalse(viewModel.canGenerateSummary)
+        XCTAssertTrue(viewModel.canGenerateSummary)
         XCTAssertEqual(llm.summarizeCallCount, 1)
         XCTAssertEqual(viewModel.streamingPromptName, "Concise Summary")
+        XCTAssertEqual(viewModel.pendingGenerations.count, 1)
+        XCTAssertEqual(viewModel.pendingGenerations.first?.id, firstGenerationID)
 
         viewModel.selectedPrompt = secondPrompt
-        viewModel.generateSummary(transcript: "Transcript", transcriptionId: transcriptionID)
+        let secondGenerationID = viewModel.generateSummary(
+            transcript: "Transcript",
+            transcriptionId: transcriptionID
+        )
 
         XCTAssertEqual(llm.summarizeCallCount, 1)
         XCTAssertEqual(viewModel.streamingPromptName, "Concise Summary")
+        XCTAssertEqual(viewModel.pendingGenerations.count, 2)
+        XCTAssertEqual(viewModel.pendingGenerations.last?.id, secondGenerationID)
+        XCTAssertEqual(viewModel.pendingGenerations.last?.state, .queued)
 
-        try await Task.sleep(for: .milliseconds(350))
+        try await Task.sleep(for: .milliseconds(700))
 
-        XCTAssertEqual(summaryRepo.saveCalls.count, 1)
+        XCTAssertEqual(summaryRepo.saveCalls.count, 2)
         XCTAssertEqual(summaryRepo.saveCalls[0].promptName, "Concise Summary")
-        XCTAssertEqual(viewModel.summaries.first?.promptName, "Concise Summary")
+        XCTAssertEqual(summaryRepo.saveCalls[1].promptName, "Action Items")
+        XCTAssertEqual(llm.summarizeCallCount, 2)
+        XCTAssertEqual(viewModel.pendingGenerations.count, 0)
+        XCTAssertEqual(viewModel.summaries.map(\.promptName), ["Action Items", "Concise Summary"])
+    }
+
+    func testGenerateSummarySamePromptWithDifferentInstructionsCreatesAnotherSummary() async throws {
+        let transcriptionID = UUID()
+        let existing = Summary(
+            transcriptionId: transcriptionID,
+            promptName: "Concise Summary",
+            promptContent: Prompt.defaultSummaryPrompt.content,
+            extraInstructions: "Focus on decisions.",
+            content: "Old summary",
+            createdAt: Date(timeIntervalSince1970: 10),
+            updatedAt: Date(timeIntervalSince1970: 10)
+        )
+        summaryRepo.summaries = [existing]
+        viewModel.configure(
+            llmService: llm,
+            promptRepo: promptRepo,
+            summaryRepo: summaryRepo,
+            transcriptionRepo: transcriptionRepo
+        )
+        viewModel.loadSummaries(transcriptionId: transcriptionID)
+        viewModel.selectedPrompt = Prompt.defaultSummaryPrompt
+        viewModel.extraInstructions = "Focus on risks."
+        llm.streamTokens = ["New ", "summary"]
+
+        viewModel.generateSummary(transcript: "Transcript", transcriptionId: transcriptionID)
+
+        try await Task.sleep(for: .milliseconds(200))
+
+        XCTAssertEqual(llm.summarizeCallCount, 1)
+        XCTAssertEqual(summaryRepo.saveCalls.count, 1)
+        XCTAssertTrue(summaryRepo.replaceCalls.isEmpty)
+        XCTAssertEqual(summaryRepo.saveCalls[0].promptName, "Concise Summary")
+        XCTAssertEqual(summaryRepo.saveCalls[0].extraInstructions, "Focus on risks.")
+        XCTAssertEqual(summaryRepo.summaries.count, 2)
+        XCTAssertEqual(viewModel.pendingGenerations.count, 0)
+        XCTAssertEqual(viewModel.summaries.count, 2)
+        XCTAssertEqual(viewModel.summaries.first?.content, "New summary")
+        XCTAssertEqual(viewModel.summaries.last?.id, existing.id)
     }
 
     func testRegenerateSummaryReplacesExistingSummaryForPrompt() async throws {
@@ -206,11 +259,13 @@ final class SummaryViewModelTests: XCTestCase {
         llm.streamTokens = ["New ", "summary"]
 
         var deletedSummaryID: UUID?
-        var selectedSummaryID: UUID?
+        var completedGeneration: (generationID: UUID, summaryID: UUID)?
         viewModel.onDeletedSummary = { deletedSummaryID = $0 }
-        viewModel.onSelectSummaryTab = { selectedSummaryID = $0 }
+        viewModel.onGenerationCompleted = { generationID, summaryID in
+            completedGeneration = (generationID, summaryID)
+        }
 
-        viewModel.regenerateSummary(existing, transcript: "Transcript")
+        let generationID = viewModel.regenerateSummary(existing, transcript: "Transcript")
 
         try await Task.sleep(for: .milliseconds(200))
 
@@ -222,7 +277,8 @@ final class SummaryViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.summaries.count, 1)
         XCTAssertEqual(viewModel.summaries.first?.content, "New summary")
         XCTAssertEqual(deletedSummaryID, existing.id)
-        XCTAssertEqual(selectedSummaryID, viewModel.summaries.first?.id)
+        XCTAssertEqual(completedGeneration?.generationID, generationID)
+        XCTAssertEqual(completedGeneration?.summaryID, viewModel.summaries.first?.id)
         XCTAssertEqual(transcriptionRepo.updateSummaryCalls.last?.summary, "New summary")
     }
 
