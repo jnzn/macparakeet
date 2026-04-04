@@ -20,8 +20,9 @@ struct LLMSettingsView: View {
                 }
                 Spacer(minLength: DesignSystem.Spacing.md)
                 Picker("Provider", selection: $viewModel.selectedProviderID) {
+                    Text("None").tag(LLMProviderID?.none)
                     ForEach(LLMProviderID.allCases, id: \.self) { provider in
-                        Text(provider.displayName).tag(provider)
+                        Text(provider.displayName).tag(Optional(provider))
                     }
                 }
                 .labelsHidden()
@@ -29,6 +30,8 @@ struct LLMSettingsView: View {
                 .frame(width: 160)
             }
 
+            if viewModel.selectedProviderID == nil {
+            } else {
             Divider()
 
             // API key (hidden for local providers)
@@ -117,6 +120,7 @@ struct LLMSettingsView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            } // end if selectedProviderID != nil
 
             Divider()
 
@@ -234,7 +238,7 @@ struct LLMSettingsView: View {
 
     @ViewBuilder
     private var privacyInfo: some View {
-        let isLocal = viewModel.selectedProviderID.isLocal
+        let isLocal = viewModel.selectedProviderID?.isLocal ?? false
         let isCLI = viewModel.selectedProviderID == .localCLI
         HStack(spacing: DesignSystem.Spacing.sm) {
             Image(systemName: isLocal ? "lock.fill" : "arrow.up.right.circle")
