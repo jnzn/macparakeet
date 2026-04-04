@@ -16,7 +16,7 @@ Additionally, this feature is the first building block for a future processing l
 
 ### 1. Prompt Library stored in SQLite
 
-Reusable prompt templates are stored in the `prompts` table (not UserDefaults). Each prompt has a name, content, category, and visibility flag. Built-in prompts ship with the app and can be hidden but not edited or deleted. Custom prompts support full CRUD.
+Reusable prompt templates are stored in the `prompts` table (not UserDefaults). Each prompt has a name, content, category, and visibility flag. Community prompts are defined in `Sources/MacParakeetCore/Resources/community-prompts.json` (so contributors can add new ones via PR without touching Swift), loaded at runtime, and seeded during migration. They can be hidden but not edited or deleted. Custom prompts support full CRUD.
 
 The table is named `prompts` (not `summary_presets`) because the model is general-purpose — the same prompt can serve summaries today, transforms tomorrow, and workflow steps later. A `category` enum field (`.summary`, `.transform`) scopes prompts to their use case.
 
@@ -40,7 +40,7 @@ The prompt selector is a dropdown/menu (not inline chips) because:
 
 ### 5. Auto-summary uses default prompt
 
-Auto-summary after transcription always uses the "General Summary" built-in prompt (identical to the current hardcoded prompt). No configuration for auto-summary behavior. Users who want a different perspective generate manually.
+Auto-summary after transcription always uses the default community prompt (first in sort order). No configuration for auto-summary behavior. Users who want a different perspective generate manually.
 
 ## Rationale
 
@@ -104,6 +104,6 @@ The three-layer architecture (Prompts → Actions → Workflows) is the long-ter
 └─────────────────────────────────────────────────┘
 
 Database:
-  prompts     ←  7 built-in + user custom
+  prompts     ←  community (from JSON) + user custom
   summaries   ←  0-N per transcription (cascade delete)
 ```
