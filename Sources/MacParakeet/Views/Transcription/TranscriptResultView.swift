@@ -965,24 +965,9 @@ struct TranscriptResultView: View {
     }
 
     private var summaryGenerationPopover: some View {
-        VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
-            // Prompt chips + manage button
-            HStack(spacing: DesignSystem.Spacing.sm) {
-                promptChips
-
-                Spacer()
-
-                Button {
-                    showGeneratePopover = false
-                    showSummaryPrompts = true
-                } label: {
-                    Image(systemName: "slider.horizontal.3")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(DesignSystem.Colors.textSecondary)
-                }
-                .buttonStyle(.borderless)
-                .help("Manage prompts")
-            }
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
+            // Prompt chips
+            promptChips
 
             // Model selector
             if !summaryViewModel.availableModels.isEmpty {
@@ -995,10 +980,10 @@ struct TranscriptResultView: View {
                 )
             }
 
-            // Extra instructions — always visible
+            // Extra instructions
             TextField("Extra instructions (optional)", text: $summaryViewModel.extraInstructions)
                 .textFieldStyle(.roundedBorder)
-                .font(DesignSystem.Typography.bodySmall)
+                .font(DesignSystem.Typography.body)
 
             if summaryViewModel.hasPendingGenerations {
                 Text(queueStatusText)
@@ -1012,9 +997,19 @@ struct TranscriptResultView: View {
                     .foregroundStyle(DesignSystem.Colors.errorRed)
             }
 
-            // Generate button
+            // Actions row — manage prompts on the left, generate on the right
             HStack {
+                Button {
+                    showGeneratePopover = false
+                    showSummaryPrompts = true
+                } label: {
+                    Label("Manage Prompts", systemImage: "slider.horizontal.3")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+
                 Spacer()
+
                 Button {
                     showGeneratePopover = false
                     if let generationID = summaryViewModel.generateSummary(
@@ -1027,6 +1022,7 @@ struct TranscriptResultView: View {
                     Label("Generate", systemImage: "sparkles")
                 }
                 .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(!summaryViewModel.canGenerateSummary || transcriptText.isEmpty)
             }
@@ -1035,24 +1031,24 @@ struct TranscriptResultView: View {
 
     private var promptChips: some View {
         let prompts = summaryViewModel.visiblePrompts
-        return FlowLayout(spacing: 6) {
+        return FlowLayout(spacing: 8) {
             ForEach(prompts) { prompt in
                 let isSelected = summaryViewModel.selectedPrompt?.id == prompt.id
                 let hasExisting = summaryViewModel.summaries.contains { $0.promptName == prompt.name }
                     || summaryViewModel.pendingGenerations.contains { $0.promptName == prompt.name }
 
-                HStack(spacing: 4) {
+                HStack(spacing: 5) {
                     Text(prompt.name)
-                        .font(DesignSystem.Typography.caption.weight(isSelected ? .semibold : .regular))
+                        .font(DesignSystem.Typography.body.weight(isSelected ? .semibold : .regular))
                         .lineLimit(1)
                     if hasExisting {
                         Circle()
                             .fill(DesignSystem.Colors.accent)
-                            .frame(width: 5, height: 5)
+                            .frame(width: 6, height: 6)
                     }
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
                 .background(
                     Capsule()
                         .fill(isSelected ? DesignSystem.Colors.accent.opacity(0.15) : DesignSystem.Colors.surfaceElevated)
