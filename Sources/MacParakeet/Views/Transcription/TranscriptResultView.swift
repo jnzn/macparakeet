@@ -909,27 +909,24 @@ struct TranscriptResultView: View {
         let isExpanded = summaryID.map { summaryViewModel.expandedSummaryIDs.contains($0) } ?? true
         return VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
             HStack(alignment: .center, spacing: DesignSystem.Spacing.md) {
-                Button {
+                HStack(alignment: .center, spacing: DesignSystem.Spacing.sm) {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(DesignSystem.Colors.textSecondary)
+                    Text(promptName)
+                        .font(DesignSystem.Typography.sectionTitle)
+                        .foregroundStyle(DesignSystem.Colors.textPrimary)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
                     if let summaryID {
                         withAnimation(DesignSystem.Animation.contentSwap) {
                             summaryViewModel.toggleExpanded(summaryID)
                         }
                     }
-                } label: {
-                    HStack(alignment: .center, spacing: DesignSystem.Spacing.sm) {
-                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(DesignSystem.Colors.textSecondary)
-                        Text(promptName)
-                            .font(DesignSystem.Typography.sectionTitle)
-                            .foregroundStyle(DesignSystem.Colors.textPrimary)
-                        if !isExpanded { Spacer() }
-                    }
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
 
-                if isExpanded { Spacer() }
+                Spacer()
 
                 if isStreaming {
                     AIStreamingIndicator()
@@ -986,6 +983,14 @@ struct TranscriptResultView: View {
             }
         }
         .padding(DesignSystem.Spacing.lg)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if !isExpanded, let summaryID {
+                withAnimation(DesignSystem.Animation.contentSwap) {
+                    summaryViewModel.toggleExpanded(summaryID)
+                }
+            }
+        }
         .background(
             RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
                 .fill(DesignSystem.Colors.surface.opacity(0.55))
