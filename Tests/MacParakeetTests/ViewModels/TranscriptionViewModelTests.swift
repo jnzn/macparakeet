@@ -701,7 +701,7 @@ final class TranscriptionViewModelTests: XCTestCase {
         viewModel.currentTranscription = transcription
         XCTAssertFalse(viewModel.llmAvailable)
         XCTAssertTrue(viewModel.showTabs)
-        XCTAssertTrue(viewModel.hasSummaries)
+        XCTAssertTrue(viewModel.hasSummaryTabs)
     }
 
     func testShowTabsTrueWhenHasConversations() {
@@ -764,7 +764,7 @@ final class TranscriptionViewModelTests: XCTestCase {
         viewModel.loadPersistedContent()
 
         XCTAssertEqual(viewModel.currentTranscription?.summary, "DB summary")
-        XCTAssertTrue(viewModel.hasSummaries)
+        XCTAssertTrue(viewModel.hasSummaryTabs)
     }
 
     // MARK: - Retranscribe

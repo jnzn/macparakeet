@@ -409,13 +409,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
             summaryViewModel.onSummariesChanged = { [weak self] transcriptionID, hasSummaries in
                 guard self?.transcriptionViewModel.currentTranscription?.id == transcriptionID else { return }
-                self?.transcriptionViewModel.hasSummaries = hasSummaries
+                self?.transcriptionViewModel.hasSummaryTabs = hasSummaries
             }
             summaryViewModel.onLegacySummaryChanged = { [weak self] transcriptionID, summary in
                 self?.transcriptionViewModel.updateLegacySummary(id: transcriptionID, summary: summary)
             }
+            summaryViewModel.onSelectSummaryTab = { [weak self] summaryID in
+                self?.transcriptionViewModel.selectedTab = .summary(id: summaryID)
+            }
+            summaryViewModel.onDeletedSummary = { [weak self] summaryID in
+                self?.transcriptionViewModel.handleSummaryDeleted(summaryID)
+            }
             summaryViewModel.shouldShowBadge = { [weak self] in
-                self?.transcriptionViewModel.selectedTab != .summary
+                guard let self else { return true }
+                if case .summary(let id) = self.transcriptionViewModel.selectedTab,
+                   id == self.summaryViewModel.streamingSummaryID {
+                    return false
+                }
+                if case .streaming = self.transcriptionViewModel.selectedTab {
+                    return false
+                }
+                return true
             }
             transcriptionViewModel.onTranscribingChanged = { [weak self] isTranscribing in
                 guard let self, !(self.dictationFlowCoordinator?.isDictationActive ?? false) else { return }

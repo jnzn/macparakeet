@@ -20,9 +20,10 @@ public final class TranscriptionViewModel {
         case finalizing
     }
 
-    public enum TranscriptTab: String, CaseIterable, Sendable {
+    public enum TranscriptTab: Hashable, Sendable {
         case transcript
-        case summary
+        case summary(id: UUID)
+        case streaming
         case chat
     }
 
@@ -54,13 +55,7 @@ public final class TranscriptionViewModel {
     public private(set) var transcribingFileName: String = ""
     public var isDragging = false
     public var urlInput: String = ""
-    public var hasSummaries: Bool = false {
-        didSet {
-            if !hasSummaries && selectedTab == .summary && !llmAvailable {
-                selectedTab = .transcript
-            }
-        }
-    }
+    public var hasSummaryTabs: Bool = false
 
     // LLM state
     public var llmAvailable: Bool = false
@@ -76,8 +71,13 @@ public final class TranscriptionViewModel {
 
     public var showTabs: Bool {
         llmAvailable
-            || hasSummaries
+            || hasSummaryTabs
             || hasConversations
+    }
+
+    public func handleSummaryDeleted(_ deletedID: UUID) {
+        guard case .summary(let selectedID) = selectedTab, selectedID == deletedID else { return }
+        selectedTab = .transcript
     }
 
     private var transcriptionService: TranscriptionServiceProtocol?
@@ -486,15 +486,15 @@ public final class TranscriptionViewModel {
 
     private func refreshSummaryStatus() {
         guard let transcriptionID = currentTranscription?.id else {
-            hasSummaries = false
+            hasSummaryTabs = false
             return
         }
 
         do {
-            hasSummaries = try summaryRepo?.hasSummaries(transcriptionId: transcriptionID) ?? false
+            hasSummaryTabs = try summaryRepo?.hasSummaries(transcriptionId: transcriptionID) ?? false
         } catch {
             logger.error("Failed to query summaries error=\(error.localizedDescription, privacy: .public)")
-            hasSummaries = false
+            hasSummaryTabs = false
         }
     }
 }

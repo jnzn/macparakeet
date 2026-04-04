@@ -133,16 +133,17 @@ final class SummaryViewModelTests: XCTestCase {
 
         try await Task.sleep(for: .milliseconds(200))
 
-        XCTAssertFalse(viewModel.summaryBadge)
+        XCTAssertNil(viewModel.badgedSummaryID)
 
         viewModel.shouldShowBadge = { true }
         viewModel.generateSummary(transcript: "Transcript", transcriptionId: UUID())
 
         try await Task.sleep(for: .milliseconds(200))
 
-        XCTAssertTrue(viewModel.summaryBadge)
-        viewModel.markSummaryTabViewed()
-        XCTAssertFalse(viewModel.summaryBadge)
+        XCTAssertNotNil(viewModel.badgedSummaryID)
+        let badgedID = viewModel.badgedSummaryID!
+        viewModel.clearBadge(for: badgedID)
+        XCTAssertNil(viewModel.badgedSummaryID)
     }
 
     func testLoadSummariesSwitchesTranscriptions() {
@@ -178,7 +179,6 @@ final class SummaryViewModelTests: XCTestCase {
 
         viewModel.loadSummaries(transcriptionId: transcriptionB)
         XCTAssertEqual(viewModel.summaries.map(\.content), ["B1"])
-        XCTAssertEqual(viewModel.expandedSummaryIDs.count, 1)
     }
 
     func testDeleteSummaryRemovesItFromState() {
