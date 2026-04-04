@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import Foundation
 import OSLog
 
@@ -146,13 +147,14 @@ public final class ClipboardService: ClipboardServiceProtocol {
             throw ClipboardServiceError.accessibilityPermissionRequired
         }
 
-        // Cmd+V: virtual key 0x09 = 'v'
         guard let source = CGEventSource(stateID: .hidSystemState) else {
             throw ClipboardServiceError.eventSourceUnavailable
         }
 
-        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true),
-              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false) else {
+        let vKeyCode = virtualKeyCode(for: "v")
+
+        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false) else {
             throw ClipboardServiceError.eventCreationFailed
         }
 
@@ -161,5 +163,40 @@ public final class ClipboardService: ClipboardServiceProtocol {
 
         keyUp.flags = .maskCommand
         keyUp.post(tap: .cghidEventTap)
+    }
+
+    private func virtualKeyCode(for character: Character) -> CGKeyCode {
+        let inputSource = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
+        guard let layoutDataRef = TISGetInputSourceProperty(inputSource, kTISPropertyUnicodeKeyLayoutData) else {
+            return 0x09
+        }
+        let layoutData = unsafeBitCast(layoutDataRef, to: CFData.self)
+        let keyboardLayout = unsafeBitCast(CFDataGetBytePtr(layoutData), to: UnsafePointer<UCKeyboardLayout>.self)
+
+        let target = String(character).utf16.first!
+
+        for keyCode: UInt16 in 0..<128 {
+            var deadKeyState: UInt32 = 0
+            var length = 0
+            var chars = [UniChar](repeating: 0, count: 4)
+
+            let status = UCKeyTranslate(
+                keyboardLayout,
+                keyCode,
+                UInt16(kUCKeyActionDown),
+                0,
+                UInt32(LMGetKbdType()),
+                UInt32(kUCKeyTranslateNoDeadKeysBit),
+                &deadKeyState,
+                chars.count,
+                &length,
+                &chars
+            )
+
+            if status == noErr && length > 0 && chars[0] == target {
+                return CGKeyCode(keyCode)
+            }
+        }
+        return 0x09
     }
 }
