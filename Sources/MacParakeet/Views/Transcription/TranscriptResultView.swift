@@ -26,13 +26,13 @@ struct TranscriptResultView: View {
     @State private var headerExpanded = false
     @State private var speakerOverviewExpanded = false
     @State private var copied = false
-    @State private var summaryCopied = false
     @State private var copiedSummaryID: UUID?
     @State private var copiedMessageId: UUID?
     @State private var hoveredMessageId: UUID?
     @State private var exportConfirmation: ExportConfirmation?
     @State private var exportErrorMessage: String?
     @State private var copiedResetTask: Task<Void, Never>?
+    @State private var summaryCopiedResetTask: Task<Void, Never>?
     @State private var dismissTask: Task<Void, Never>?
     @State private var editingSpeakerId: String?
     @State private var editingSpeakerLabel: String = ""
@@ -237,6 +237,8 @@ struct TranscriptResultView: View {
         .onDisappear {
             copiedResetTask?.cancel()
             copiedResetTask = nil
+            summaryCopiedResetTask?.cancel()
+            summaryCopiedResetTask = nil
             dismissTask?.cancel()
             dismissTask = nil
         }
@@ -301,6 +303,8 @@ struct TranscriptResultView: View {
         .onDisappear {
             copiedResetTask?.cancel()
             copiedResetTask = nil
+            summaryCopiedResetTask?.cancel()
+            summaryCopiedResetTask = nil
             dismissTask?.cancel()
             dismissTask = nil
         }
@@ -717,15 +721,22 @@ struct TranscriptResultView: View {
             return false
         }()
 
+        let isCopiedTab: Bool = {
+            if case .summary(let id) = tab { return copiedSummaryID == id }
+            return false
+        }()
+
         return HStack(spacing: 6) {
-            Image(systemName: tabIcon(tab))
+            Image(systemName: isCopiedTab ? "checkmark" : tabIcon(tab))
                 .font(.system(size: 11, weight: .semibold))
                 .symbolEffect(.pulse, options: .repeating, isActive: isStreamingTab)
-            Text(tabLabel(tab))
+                .contentTransition(.symbolEffect(.replace))
+            Text(isCopiedTab ? "Copied" : tabLabel(tab))
                 .font(DesignSystem.Typography.bodySmall.weight(isSelected ? .semibold : .regular))
                 .lineLimit(1)
+                .contentTransition(.numericText())
 
-            if case .summary(let id) = tab, summaryViewModel.badgedSummaryID == id {
+            if case .summary(let id) = tab, summaryViewModel.badgedSummaryID == id, !isCopiedTab {
                 Circle()
                     .fill(DesignSystem.Colors.accent)
                     .frame(width: 6, height: 6)
@@ -738,7 +749,8 @@ struct TranscriptResultView: View {
                 .fill(isSelected ? DesignSystem.Colors.accent.opacity(0.12) : .clear)
         )
         .contentShape(Capsule())
-        .foregroundStyle(isSelected ? DesignSystem.Colors.accent : DesignSystem.Colors.textSecondary)
+        .foregroundStyle(isCopiedTab ? DesignSystem.Colors.successGreen : isSelected ? DesignSystem.Colors.accent : DesignSystem.Colors.textSecondary)
+        .animation(DesignSystem.Animation.selectionChange, value: isCopiedTab)
         .onTapGesture {
             viewModel.selectedTab = tab
         }
@@ -749,6 +761,12 @@ struct TranscriptResultView: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(summary.content, forType: .string)
                     Telemetry.send(.copyToClipboard(source: .transcription))
+                    copiedSummaryID = id
+                    copiedResetTask?.cancel()
+                    copiedResetTask = Task {
+                        try? await Task.sleep(for: .seconds(2))
+                        copiedSummaryID = nil
+                    }
                 }
                 Button("Delete Summary", role: .destructive) {
                     summaryViewModel.pendingDeleteSummary = summary
@@ -853,8 +871,8 @@ struct TranscriptResultView: View {
                             NSPasteboard.general.setString(summary.content, forType: .string)
                             Telemetry.send(.copyToClipboard(source: .transcription))
                             copiedSummaryID = summaryID
-                            copiedResetTask?.cancel()
-                            copiedResetTask = Task {
+                            summaryCopiedResetTask?.cancel()
+                            summaryCopiedResetTask = Task {
                                 try? await Task.sleep(for: .seconds(2))
                                 copiedSummaryID = nil
                             }
