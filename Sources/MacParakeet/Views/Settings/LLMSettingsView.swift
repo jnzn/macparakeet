@@ -30,97 +30,95 @@ struct LLMSettingsView: View {
                 .frame(width: 160)
             }
 
-            if viewModel.selectedProviderID == nil {
-            } else {
-            Divider()
-
-            // API key (hidden for local providers)
-            if viewModel.requiresAPIKey {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("API Key")
-                            .font(DesignSystem.Typography.body)
-                        Text("Your key is stored securely in the macOS Keychain.")
-                            .font(DesignSystem.Typography.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: DesignSystem.Spacing.md)
-                    SecureField("sk-...", text: $viewModel.apiKeyInput)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 220)
-                }
-
+            if viewModel.selectedProviderID != nil {
                 Divider()
-            }
 
-            if viewModel.selectedProviderID == .localCLI {
-                cliSettingsSection
-            } else {
-                // Model name
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Model")
-                            .font(DesignSystem.Typography.body)
-                        Text("The model to use for AI features.")
-                            .font(DesignSystem.Typography.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: DesignSystem.Spacing.md)
-                    modelPicker
-                }
-
-                // Advanced: Base URL override
-                DisclosureGroup("Advanced", isExpanded: $showAdvanced) {
+                // API key (hidden for local providers)
+                if viewModel.requiresAPIKey {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Base URL")
+                            Text("API Key")
                                 .font(DesignSystem.Typography.body)
-                            Text("Override the default API endpoint.")
+                            Text("Your key is stored securely in the macOS Keychain.")
                                 .font(DesignSystem.Typography.caption)
                                 .foregroundStyle(.secondary)
                         }
                         Spacer(minLength: DesignSystem.Spacing.md)
-                        TextField("https://...", text: $viewModel.baseURLOverride)
+                        SecureField("sk-...", text: $viewModel.apiKeyInput)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 220)
                     }
-                    .padding(.top, DesignSystem.Spacing.sm)
+
+                    Divider()
                 }
-                .font(DesignSystem.Typography.caption)
-            }
 
-            Divider()
+                if viewModel.selectedProviderID == .localCLI {
+                    cliSettingsSection
+                } else {
+                    // Model name
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Model")
+                                .font(DesignSystem.Typography.body)
+                            Text("The model to use for AI features.")
+                                .font(DesignSystem.Typography.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: DesignSystem.Spacing.md)
+                        modelPicker
+                    }
 
-            // Privacy info
-            privacyInfo
-
-            Divider()
-
-            // Test connection + status
-            HStack(spacing: DesignSystem.Spacing.sm) {
-                Button("Test Connection") {
-                    viewModel.testConnection()
+                    // Advanced: Base URL override
+                    DisclosureGroup("Advanced", isExpanded: $showAdvanced) {
+                        HStack(alignment: .top) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Base URL")
+                                    .font(DesignSystem.Typography.body)
+                                Text("Override the default API endpoint.")
+                                    .font(DesignSystem.Typography.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: DesignSystem.Spacing.md)
+                            TextField("https://...", text: $viewModel.baseURLOverride)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 220)
+                        }
+                        .padding(.top, DesignSystem.Spacing.sm)
+                    }
+                    .font(DesignSystem.Typography.caption)
                 }
-                .buttonStyle(.bordered)
-                .disabled(viewModel.connectionTestState == .testing || !viewModel.canTestConnection)
 
-                connectionStatusIndicator
+                Divider()
 
-                Spacer()
-            }
+                privacyInfo
 
-            if let validationMessage = viewModel.validationMessage {
-                HStack(spacing: 4) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(DesignSystem.Colors.warningAmber)
-                    Text(validationMessage)
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundStyle(DesignSystem.Colors.warningAmber)
+                Divider()
+
+                // Test connection + status
+                HStack(spacing: DesignSystem.Spacing.sm) {
+                    Button("Test Connection") {
+                        viewModel.testConnection()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(viewModel.connectionTestState == .testing || !viewModel.canTestConnection)
+
+                    connectionStatusIndicator
+
+                    Spacer()
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+
+                if let validationMessage = viewModel.validationMessage {
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 12))
+                            .foregroundStyle(DesignSystem.Colors.warningAmber)
+                        Text(validationMessage)
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(DesignSystem.Colors.warningAmber)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
-            } // end if selectedProviderID != nil
 
             Divider()
 

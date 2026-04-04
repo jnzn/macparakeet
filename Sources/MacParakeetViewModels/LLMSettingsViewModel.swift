@@ -161,7 +161,11 @@ public final class LLMSettingsViewModel {
 
     public func saveConfiguration() {
         guard let configStore else { return }
-        guard draft.providerID != nil else { clearConfiguration(); return }
+        guard draft.providerID != nil else {
+            clearConfiguration()
+            saveState = .saved
+            return
+        }
         do {
             guard let config = try buildConfig(from: draft) else { return }
             try configStore.saveConfig(config)
