@@ -14,6 +14,8 @@ final class DatabaseManagerTests: XCTestCase {
         try manager.dbQueue.read { db in
             XCTAssertTrue(try db.tableExists("dictations"))
             XCTAssertTrue(try db.tableExists("transcriptions"))
+            XCTAssertTrue(try db.tableExists("prompts"))
+            XCTAssertTrue(try db.tableExists("summaries"))
             // dictations_fts was dropped in v0.5-drop-unused-fts (never queried, wasted write overhead)
             XCTAssertFalse(try db.tableExists("dictations_fts"))
         }
@@ -27,6 +29,12 @@ final class DatabaseManagerTests: XCTestCase {
 
             let transcriptionIndexes = try db.indexes(on: "transcriptions")
             XCTAssertTrue(transcriptionIndexes.contains { $0.name == "idx_transcriptions_created_at" })
+
+            let promptIndexes = try db.indexes(on: "prompts")
+            XCTAssertTrue(promptIndexes.contains { $0.name == "idx_prompts_name" })
+
+            let summaryIndexes = try db.indexes(on: "summaries")
+            XCTAssertTrue(summaryIndexes.contains { $0.name == "idx_summaries_transcription_id" })
         }
     }
 
@@ -47,6 +55,14 @@ final class DatabaseManagerTests: XCTestCase {
             XCTAssertTrue(columns.contains("channelName"), "transcriptions should have channelName column")
             XCTAssertTrue(columns.contains("videoDescription"), "transcriptions should have videoDescription column")
             XCTAssertTrue(columns.contains("isFavorite"), "transcriptions should have isFavorite column")
+        }
+    }
+
+    func testSummariesTableIncludesUpdatedAtColumn() throws {
+        let manager = try DatabaseManager()
+        try manager.dbQueue.read { db in
+            let columns = try db.columns(in: "summaries").map(\.name)
+            XCTAssertTrue(columns.contains("updatedAt"), "summaries should have updatedAt column")
         }
     }
 

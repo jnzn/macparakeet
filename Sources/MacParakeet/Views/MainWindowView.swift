@@ -44,6 +44,8 @@ struct MainWindowView: View {
     let settingsViewModel: SettingsViewModel
     let llmSettingsViewModel: LLMSettingsViewModel
     let chatViewModel: TranscriptChatViewModel
+    let summaryViewModel: SummaryViewModel
+    let promptsViewModel: PromptsViewModel
     let customWordsViewModel: CustomWordsViewModel
     let textSnippetsViewModel: TextSnippetsViewModel
     let feedbackViewModel: FeedbackViewModel
@@ -83,7 +85,14 @@ struct MainWindowView: View {
                 Group {
                     switch state.selectedItem {
                     case .transcribe:
-                        TranscribeView(viewModel: transcriptionViewModel, chatViewModel: chatViewModel, showingProgressDetail: $state.showingProgressDetail, onNavigateBack: { state.navigateBack() })
+                        TranscribeView(
+                            viewModel: transcriptionViewModel,
+                            chatViewModel: chatViewModel,
+                            summaryViewModel: summaryViewModel,
+                            promptsViewModel: promptsViewModel,
+                            showingProgressDetail: $state.showingProgressDetail,
+                            onNavigateBack: { state.navigateBack() }
+                        )
                     case .library:
                         TranscriptionLibraryView(viewModel: libraryViewModel) { transcription in
                             transcriptionViewModel.currentTranscription = transcription

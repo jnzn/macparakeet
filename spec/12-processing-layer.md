@@ -117,6 +117,7 @@ public struct Summary: Codable, Identifiable, Sendable {
     public var extraInstructions: String?  // user's extra instructions (if any)
     public var content: String            // the generated summary text
     public var createdAt: Date
+    public var updatedAt: Date
 }
 ```
 
@@ -128,7 +129,8 @@ CREATE TABLE summaries (
     promptContent     TEXT NOT NULL,
     extraInstructions TEXT,
     content           TEXT NOT NULL,
-    createdAt         TEXT NOT NULL
+    createdAt         TEXT NOT NULL,
+    updatedAt         TEXT NOT NULL
 );
 
 CREATE INDEX idx_summaries_transcription_id ON summaries(transcriptionId);

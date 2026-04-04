@@ -17,6 +17,8 @@ struct TranscriptResultView: View {
     let transcription: Transcription
     @Bindable var viewModel: TranscriptionViewModel
     var chatViewModel: TranscriptChatViewModel
+    @Bindable var summaryViewModel: SummaryViewModel
+    @Bindable var promptsViewModel: PromptsViewModel
     var onBack: (() -> Void)?
     var onRetranscribe: ((Transcription) -> Void)?
 
@@ -47,6 +49,7 @@ struct TranscriptResultView: View {
     @State private var autoScrollPaused = false
     @State private var scrollPauseTask: Task<Void, Never>?
     @State private var scrollMonitor: Any?
+    @State private var showSummaryPrompts = false
     @FocusState private var chatInputFocused: Bool
     @FocusState private var speakerRenameFocused: Bool
 
@@ -70,8 +73,9 @@ struct TranscriptResultView: View {
                 }
             }
             rebuildSegmentCache()
-            viewModel.resetSummaryState()
             viewModel.loadPersistedContent()
+            summaryViewModel.loadVisiblePrompts()
+            summaryViewModel.loadSummaries(transcriptionId: transcription.id)
             let text = viewModel.currentTranscription?.cleanTranscript ?? viewModel.currentTranscription?.rawTranscript ?? ""
             chatViewModel.loadTranscript(text, transcriptionId: viewModel.currentTranscription?.id)
         }
@@ -99,10 +103,15 @@ struct TranscriptResultView: View {
             scrollPauseTask?.cancel()
             viewModel.hasConversations = false
             viewModel.selectedTab = .transcript
-            viewModel.resetSummaryState()
             viewModel.loadPersistedContent()
+            summaryViewModel.loadSummaries(transcriptionId: transcription.id)
             let text = viewModel.currentTranscription?.cleanTranscript ?? viewModel.currentTranscription?.rawTranscript ?? ""
             chatViewModel.loadTranscript(text, transcriptionId: viewModel.currentTranscription?.id)
+        }
+        .onChange(of: viewModel.selectedTab) {
+            if viewModel.selectedTab == .summary {
+                summaryViewModel.markSummaryTabViewed()
+            }
         }
         .onDisappear {
             playerViewModel.cleanup()
@@ -111,6 +120,12 @@ struct TranscriptResultView: View {
                 scrollMonitor = nil
             }
             scrollPauseTask?.cancel()
+        }
+        .sheet(isPresented: $showSummaryPrompts, onDismiss: {
+            promptsViewModel.loadPrompts()
+            summaryViewModel.loadVisiblePrompts()
+        }) {
+            SummaryPromptsView(viewModel: promptsViewModel)
         }
     }
 
@@ -645,7 +660,7 @@ struct TranscriptResultView: View {
                             viewModel.selectedTab == tab ? .semibold : .regular
                         ))
 
-                    if tab == .summary && viewModel.summaryBadge {
+                    if tab == .summary && summaryViewModel.summaryBadge {
                         Circle()
                             .fill(DesignSystem.Colors.accent)
                             .frame(width: 6, height: 6)
@@ -663,7 +678,7 @@ struct TranscriptResultView: View {
                 .foregroundStyle(viewModel.selectedTab == tab ? DesignSystem.Colors.accent : DesignSystem.Colors.textSecondary)
                 .onTapGesture {
                     viewModel.selectedTab = tab
-                    if tab == .summary { viewModel.summaryBadge = false }
+                    if tab == .summary { summaryViewModel.markSummaryTabViewed() }
                 }
                 .accessibilityAddTraits(.isButton)
                 .onHover { hovering in
@@ -690,75 +705,56 @@ struct TranscriptResultView: View {
     private var summaryPane: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
-                switch viewModel.summaryState {
-                case .idle:
+                summaryGenerationBar
+
+                if let errorMessage = summaryViewModel.errorMessage {
+                    Text(errorMessage)
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(DesignSystem.Colors.errorRed)
+                        .padding(.horizontal, DesignSystem.Spacing.sm)
+                }
+
+                if summaryViewModel.isStreaming {
+                    summaryContentCard(
+                        promptName: summaryViewModel.streamingPromptName,
+                        content: summaryViewModel.streamingContent,
+                        createdAt: Date(),
+                        summaryID: summaryViewModel.streamingSummaryID,
+                        isStreaming: true
+                    )
+                }
+
+                if summaryViewModel.summaries.isEmpty && !summaryViewModel.isStreaming {
                     VStack(spacing: DesignSystem.Spacing.md) {
                         Image(systemName: "text.document")
                             .font(.system(size: 28))
                             .foregroundStyle(DesignSystem.Colors.textTertiary)
-                        Text("No summary yet")
+                        Text("No summaries yet")
                             .foregroundStyle(DesignSystem.Colors.textSecondary)
                             .font(DesignSystem.Typography.body)
 
-                        if viewModel.canGenerateSummary {
-                            Text("Summaries are generated automatically after transcription, or you can generate one manually.")
-                                .foregroundStyle(DesignSystem.Colors.textSecondary)
-                                .font(DesignSystem.Typography.caption)
-                                .multilineTextAlignment(.center)
-                                .frame(maxWidth: 280)
-
-                            HStack(spacing: DesignSystem.Spacing.sm) {
-                                Button {
-                                    let text = transcription.cleanTranscript ?? transcription.rawTranscript ?? ""
-                                    viewModel.generateSummary(text: text)
-                                } label: {
-                                    Label("Generate Summary", systemImage: "sparkles")
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.regular)
-
-                                if !viewModel.availableModels.isEmpty {
-                                    ModelSelectorView(
-                                        currentModel: viewModel.currentModelName,
-                                        displayName: viewModel.modelDisplayName,
-                                        availableModels: viewModel.availableModels,
-                                        onSelect: { viewModel.selectModel($0) }
-                                    )
-                                }
-                            }
-                        } else {
-                            Text("Configure an LLM provider in Settings to generate summaries.")
-                                .foregroundStyle(DesignSystem.Colors.textSecondary)
-                                .font(DesignSystem.Typography.caption)
-                                .multilineTextAlignment(.center)
-                                .frame(maxWidth: 280)
-                        }
+                        Text(
+                            summaryViewModel.canGenerateSummary
+                                ? "Pick a prompt and generate a summary. Each run is kept as a separate card."
+                                : "Configure an LLM provider in Settings to generate summaries."
+                        )
+                        .foregroundStyle(DesignSystem.Colors.textSecondary)
+                        .font(DesignSystem.Typography.caption)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 320)
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.top, DesignSystem.Spacing.xl)
-                case .streaming:
-                    summaryContentCard(isStreaming: true)
-                case .complete:
-                    summaryContentCard(isStreaming: false)
-                case .error(let message):
-                    VStack(spacing: DesignSystem.Spacing.md) {
-                        Image(systemName: "exclamationmark.triangle")
-                            .font(.system(size: 28))
-                            .foregroundStyle(DesignSystem.Colors.errorRed.opacity(0.6))
-                        Text(message)
-                            .font(DesignSystem.Typography.body)
-                            .foregroundStyle(DesignSystem.Colors.textSecondary)
-                            .multilineTextAlignment(.center)
-                        Button {
-                            let text = transcriptText
-                            viewModel.generateSummary(text: text)
-                        } label: {
-                            Label("Retry", systemImage: "arrow.clockwise")
-                        }
-                        .buttonStyle(.bordered)
+                    .padding(.vertical, DesignSystem.Spacing.xl)
+                } else {
+                    ForEach(summaryViewModel.summaries) { summary in
+                        summaryContentCard(
+                            promptName: summary.promptName,
+                            content: summary.content,
+                            createdAt: summary.createdAt,
+                            summaryID: summary.id,
+                            isStreaming: false
+                        )
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, DesignSystem.Spacing.xl)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -772,58 +768,145 @@ struct TranscriptResultView: View {
             RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
                 .strokeBorder(DesignSystem.Colors.border.opacity(0.75), lineWidth: 0.5)
         )
+        .alert(
+            "Delete Summary?",
+            isPresented: Binding(
+                get: { summaryViewModel.pendingDeleteSummary != nil },
+                set: { if !$0 { summaryViewModel.pendingDeleteSummary = nil } }
+            )
+        ) {
+            Button("Delete", role: .destructive) {
+                summaryViewModel.confirmDelete()
+            }
+            Button("Cancel", role: .cancel) {
+                summaryViewModel.pendingDeleteSummary = nil
+            }
+        } message: {
+            Text("This summary cannot be undone.")
+        }
     }
 
-    private func summaryContentCard(isStreaming: Bool) -> some View {
+    private var summaryGenerationBar: some View {
         VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
-            HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(isStreaming ? "Generating summary" : "AI summary")
-                        .font(DesignSystem.Typography.sectionTitle)
-                        .foregroundStyle(DesignSystem.Colors.textPrimary)
-                    Text(isStreaming ? "Reading the transcript and assembling a concise overview." : "A readable brief you can copy, refine, or regenerate.")
-                        .font(DesignSystem.Typography.bodySmall)
-                        .foregroundStyle(DesignSystem.Colors.textSecondary)
+            HStack(spacing: DesignSystem.Spacing.sm) {
+                Menu {
+                    ForEach(summaryViewModel.visiblePrompts) { prompt in
+                        Button {
+                            summaryViewModel.selectedPrompt = prompt
+                        } label: {
+                            HStack {
+                                Text(prompt.name)
+                                if prompt.id == summaryViewModel.selectedPrompt?.id {
+                                    Spacer()
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+
+                    Divider()
+
+                    Button("Manage Prompts...") {
+                        showSummaryPrompts = true
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "sparkles")
+                        Text(summaryViewModel.selectedPrompt?.name ?? "Choose Prompt")
+                            .lineLimit(1)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                }
+                .menuStyle(.borderedButton)
+
+                if !summaryViewModel.availableModels.isEmpty {
+                    ModelSelectorView(
+                        currentModel: summaryViewModel.currentModelName,
+                        displayName: summaryViewModel.modelDisplayName,
+                        availableModels: summaryViewModel.availableModels,
+                        disabled: summaryViewModel.isStreaming,
+                        onSelect: { summaryViewModel.selectModel($0) }
+                    )
                 }
 
                 Spacer()
 
-                if !viewModel.availableModels.isEmpty {
-                    ModelSelectorView(
-                        currentModel: viewModel.currentModelName,
-                        displayName: viewModel.modelDisplayName,
-                        availableModels: viewModel.availableModels,
-                        disabled: viewModel.summaryState == .streaming,
-                        onSelect: { viewModel.selectModel($0) }
+                Button {
+                    summaryViewModel.generateSummary(
+                        transcript: transcriptText,
+                        transcriptionId: transcription.id
+                    )
+                } label: {
+                    Label(
+                        summaryViewModel.isStreaming ? "Generating..." : "Generate",
+                        systemImage: "sparkles"
                     )
                 }
+                .buttonStyle(.borderedProminent)
+                .disabled(!summaryViewModel.canGenerateSummary || transcriptText.isEmpty)
             }
 
-            if viewModel.summary.isEmpty && isStreaming {
-                SummarySkeletonView()
-            } else {
-                VStack(alignment: .leading, spacing: 0) {
-                    MarkdownContentView(viewModel.summary, font: DesignSystem.Typography.bodyLarge)
-                        .padding(DesignSystem.Spacing.lg)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+            TextField("Extra instructions (optional)", text: $summaryViewModel.extraInstructions)
+                .textFieldStyle(.roundedBorder)
 
-                    if isStreaming {
-                        AIStreamingIndicator()
-                            .padding(.leading, DesignSystem.Spacing.lg)
-                            .padding(.bottom, DesignSystem.Spacing.md)
+            if !summaryViewModel.canGenerateSummary {
+                Text("Configure an LLM provider in Settings to generate summaries.")
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(DesignSystem.Colors.textSecondary)
+            }
+        }
+        .padding(DesignSystem.Spacing.lg)
+        .background(
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                .fill(DesignSystem.Colors.surface.opacity(0.55))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                .strokeBorder(DesignSystem.Colors.border.opacity(0.45), lineWidth: 0.5)
+        )
+    }
+
+    private func summaryContentCard(
+        promptName: String,
+        content: String,
+        createdAt: Date,
+        summaryID: UUID?,
+        isStreaming: Bool
+    ) -> some View {
+        let isExpanded = summaryID.map { summaryViewModel.expandedSummaryIDs.contains($0) } ?? true
+        return VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+            HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
+                Button {
+                    if let summaryID {
+                        summaryViewModel.toggleExpanded(summaryID)
                     }
+                } label: {
+                    HStack(alignment: .top, spacing: DesignSystem.Spacing.sm) {
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(DesignSystem.Colors.textSecondary)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(promptName)
+                                .font(DesignSystem.Typography.sectionTitle)
+                                .foregroundStyle(DesignSystem.Colors.textPrimary)
+                            Text(createdAt, style: .relative)
+                                .font(DesignSystem.Typography.caption)
+                                .foregroundStyle(DesignSystem.Colors.textSecondary)
+                        }
+                    }
+                    .contentShape(Rectangle())
                 }
-                .background(
-                    RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
-                        .fill(DesignSystem.Colors.surfaceElevated.opacity(0.65))
-                )
-            }
+                .buttonStyle(.plain)
 
-            if !isStreaming {
-                HStack(spacing: DesignSystem.Spacing.sm) {
+                Spacer()
+
+                if isStreaming {
+                    AIStreamingIndicator()
+                } else {
                     Button {
                         NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(viewModel.summary, forType: .string)
+                        NSPasteboard.general.setString(content, forType: .string)
                         Telemetry.send(.copyToClipboard(source: .transcription))
                         summaryCopied = true
                         copiedResetTask?.cancel()
@@ -840,20 +923,28 @@ struct TranscriptResultView: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .foregroundStyle(summaryCopied ? DesignSystem.Colors.successGreen : .primary)
 
-                    if viewModel.canGenerateSummary {
-                        Button {
-                            viewModel.generateSummary(text: transcriptText)
-                        } label: {
-                            Label("Regenerate", systemImage: "arrow.clockwise")
-                                .font(DesignSystem.Typography.caption)
+                    if let summary = summaryViewModel.summaries.first(where: { $0.id == summaryID }) {
+                        Button("Delete", role: .destructive) {
+                            summaryViewModel.pendingDeleteSummary = summary
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                     }
+                }
+            }
 
-                    Spacer()
+            if isExpanded {
+                if content.isEmpty && isStreaming {
+                    SummarySkeletonView()
+                } else {
+                    MarkdownContentView(content, font: DesignSystem.Typography.bodyLarge)
+                        .padding(DesignSystem.Spacing.lg)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                                .fill(DesignSystem.Colors.surfaceElevated.opacity(0.65))
+                        )
                 }
             }
         }
