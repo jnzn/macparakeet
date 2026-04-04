@@ -52,6 +52,7 @@ struct TranscriptResultView: View {
     @State private var scrollMonitor: Any?
     @State private var showSummaryPrompts = false
     @State private var showExtraInstructions = false
+    @State private var showGeneratePopover = false
     @FocusState private var chatInputFocused: Bool
     @FocusState private var speakerRenameFocused: Bool
 
@@ -111,8 +112,8 @@ struct TranscriptResultView: View {
             chatViewModel.loadTranscript(text, transcriptionId: viewModel.currentTranscription?.id)
         }
         .onChange(of: viewModel.selectedTab) {
-            if viewModel.selectedTab == .summary {
-                summaryViewModel.markSummaryTabViewed()
+            if case .summary(let id) = viewModel.selectedTab {
+                summaryViewModel.clearBadge(for: id)
             }
         }
         .onDisappear {
@@ -548,8 +549,10 @@ struct TranscriptResultView: View {
                 switch viewModel.selectedTab {
                 case .transcript:
                     transcriptPane
-                case .summary:
-                    summaryPane
+                case .summary(let id):
+                    summaryContentPane(summaryID: id)
+                case .streaming:
+                    streamingSummaryPane
                 case .chat:
                     chatPane(viewModel: chatViewModel)
                 }
@@ -649,45 +652,105 @@ struct TranscriptResultView: View {
 
     // MARK: - Tab Bar
 
-    private var tabBar: some View {
-        HStack(spacing: 0) {
-            ForEach(TranscriptionViewModel.TranscriptTab.allCases, id: \.self) { tab in
-                // Use onTapGesture instead of Button to avoid macOS focus-resignation
-                // consuming the first click when a TextField (e.g. chat input) has focus.
-                HStack(spacing: 6) {
-                    Image(systemName: tabIcon(tab))
-                        .font(.system(size: 11, weight: .semibold))
-                    Text(tab.rawValue.capitalized)
-                        .font(DesignSystem.Typography.bodySmall.weight(
-                            viewModel.selectedTab == tab ? .semibold : .regular
-                        ))
+    private var orderedTabs: [TranscriptionViewModel.TranscriptTab] {
+        var tabs: [TranscriptionViewModel.TranscriptTab] = [.transcript]
+        if summaryViewModel.isStreaming {
+            tabs.append(.streaming)
+        }
+        for summary in summaryViewModel.summaries {
+            tabs.append(.summary(id: summary.id))
+        }
+        tabs.append(.chat)
+        return tabs
+    }
 
-                    if tab == .summary && summaryViewModel.summaryBadge {
-                        Circle()
-                            .fill(DesignSystem.Colors.accent)
-                            .frame(width: 6, height: 6)
-                    }
+    private var tabBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 0) {
+                ForEach(orderedTabs, id: \.self) { tab in
+                    tabCapsule(for: tab)
                 }
-                .padding(.horizontal, DesignSystem.Spacing.md)
-                .padding(.vertical, 8)
-                .background(
-                    Capsule()
-                        .fill(viewModel.selectedTab == tab
-                              ? DesignSystem.Colors.accent.opacity(0.12)
-                              : .clear)
-                )
-                .contentShape(Capsule())
-                .foregroundStyle(viewModel.selectedTab == tab ? DesignSystem.Colors.accent : DesignSystem.Colors.textSecondary)
-                .onTapGesture {
-                    viewModel.selectedTab = tab
-                    if tab == .summary { summaryViewModel.markSummaryTabViewed() }
+
+                if summaryViewModel.canGenerateSummary {
+                    generateTabButton
                 }
-                .accessibilityAddTraits(.isButton)
-                .onHover { hovering in
-                    if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+
+                Spacer()
+            }
+        }
+        .scrollClipDisabled()
+    }
+
+    private func tabCapsule(for tab: TranscriptionViewModel.TranscriptTab) -> some View {
+        let isSelected = viewModel.selectedTab == tab
+
+        return HStack(spacing: 6) {
+            Image(systemName: tabIcon(tab))
+                .font(.system(size: 11, weight: .semibold))
+            Text(tabLabel(tab))
+                .font(DesignSystem.Typography.bodySmall.weight(isSelected ? .semibold : .regular))
+                .lineLimit(1)
+
+            if case .streaming = tab {
+                AIStreamingIndicator()
+            }
+
+            if case .summary(let id) = tab, summaryViewModel.badgedSummaryID == id {
+                Circle()
+                    .fill(DesignSystem.Colors.accent)
+                    .frame(width: 6, height: 6)
+            }
+        }
+        .padding(.horizontal, DesignSystem.Spacing.md)
+        .padding(.vertical, 8)
+        .background(
+            Capsule()
+                .fill(isSelected ? DesignSystem.Colors.accent.opacity(0.12) : .clear)
+        )
+        .contentShape(Capsule())
+        .foregroundStyle(isSelected ? DesignSystem.Colors.accent : DesignSystem.Colors.textSecondary)
+        .onTapGesture {
+            viewModel.selectedTab = tab
+        }
+        .contextMenu {
+            if case .summary(let id) = tab,
+               let summary = summaryViewModel.summaries.first(where: { $0.id == id }) {
+                Button("Copy Summary") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(summary.content, forType: .string)
+                    Telemetry.send(.copyToClipboard(source: .transcription))
+                }
+                Button("Delete Summary", role: .destructive) {
+                    summaryViewModel.pendingDeleteSummary = summary
                 }
             }
-            Spacer()
+        }
+        .accessibilityAddTraits(.isButton)
+        .onHover { hovering in
+            if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+        }
+    }
+
+    private var generateTabButton: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "plus")
+                .font(.system(size: 11, weight: .semibold))
+        }
+        .padding(.horizontal, DesignSystem.Spacing.md)
+        .padding(.vertical, 8)
+        .contentShape(Capsule())
+        .foregroundStyle(DesignSystem.Colors.textSecondary)
+        .onTapGesture {
+            showGeneratePopover = true
+        }
+        .popover(isPresented: $showGeneratePopover) {
+            summaryGenerationPopover
+                .frame(width: 380)
+                .padding(DesignSystem.Spacing.lg)
+        }
+        .accessibilityAddTraits(.isButton)
+        .onHover { hovering in
+            if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
         }
     }
 
@@ -695,62 +758,73 @@ struct TranscriptResultView: View {
         switch tab {
         case .transcript:
             return "text.alignleft"
-        case .summary:
-            return "sparkles.rectangle.stack"
+        case .summary, .streaming:
+            return "sparkles"
         case .chat:
             return "bubble.left.and.text.bubble.right"
         }
     }
 
-    // MARK: - Summary Pane
+    private func tabLabel(_ tab: TranscriptionViewModel.TranscriptTab) -> String {
+        switch tab {
+        case .transcript:
+            return "Transcript"
+        case .summary(let id):
+            return summaryViewModel.summaries.first(where: { $0.id == id })?.promptName ?? "Summary"
+        case .streaming:
+            return summaryViewModel.streamingPromptName
+        case .chat:
+            return "Chat"
+        }
+    }
 
-    private var summaryPane: some View {
-        ScrollView {
+    // MARK: - Summary Panes
+
+    private func summaryContentPane(summaryID: UUID) -> some View {
+        let summary = summaryViewModel.summaries.first(where: { $0.id == summaryID })
+        return ScrollView {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
-                summaryGenerationBar
-
-                if let errorMessage = summaryViewModel.errorMessage {
-                    Text(errorMessage)
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundStyle(DesignSystem.Colors.errorRed)
-                        .padding(.horizontal, DesignSystem.Spacing.sm)
-                }
-
-                if summaryViewModel.isStreaming {
-                    summaryContentCard(
-                        promptName: summaryViewModel.streamingPromptName,
-                        content: summaryViewModel.streamingContent,
-                        summaryID: summaryViewModel.streamingSummaryID,
-                        isStreaming: true
-                    )
-                }
-
-                if summaryViewModel.summaries.isEmpty && !summaryViewModel.isStreaming {
-                    VStack(spacing: DesignSystem.Spacing.sm) {
+                if let summary {
+                    HStack {
                         Spacer()
-                            .frame(height: DesignSystem.Spacing.xl)
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 24))
-                            .foregroundStyle(DesignSystem.Colors.textTertiary)
-                        Text(
-                            summaryViewModel.canGenerateSummary
-                                ? "Choose a prompt and generate."
-                                : "Configure an LLM provider in Settings."
-                        )
-                        .foregroundStyle(DesignSystem.Colors.textTertiary)
-                        .font(DesignSystem.Typography.body)
+
+                        let isCopied = copiedSummaryID == summaryID
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(summary.content, forType: .string)
+                            Telemetry.send(.copyToClipboard(source: .transcription))
+                            copiedSummaryID = summaryID
+                            copiedResetTask?.cancel()
+                            copiedResetTask = Task {
+                                try? await Task.sleep(for: .seconds(2))
+                                copiedSummaryID = nil
+                            }
+                        } label: {
+                            HStack(spacing: DesignSystem.Spacing.xs) {
+                                Image(systemName: isCopied ? "checkmark" : "doc.on.doc")
+                                Text(isCopied ? "Copied" : "Copy")
+                            }
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(isCopied ? DesignSystem.Colors.successGreen : .primary)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+
+                        Button(role: .destructive) {
+                            summaryViewModel.pendingDeleteSummary = summary
+                        } label: {
+                            HStack(spacing: DesignSystem.Spacing.xs) {
+                                Image(systemName: "trash")
+                                Text("Delete")
+                            }
+                            .font(DesignSystem.Typography.caption)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, DesignSystem.Spacing.xl)
-                } else {
-                    ForEach(summaryViewModel.summaries) { summary in
-                        summaryContentCard(
-                            promptName: summary.promptName,
-                            content: summary.content,
-                            summaryID: summary.id,
-                            isStreaming: false
-                        )
-                    }
+
+                    MarkdownContentView(summary.content, font: DesignSystem.Typography.bodyLarge)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -782,14 +856,63 @@ struct TranscriptResultView: View {
         }
     }
 
-    private var summaryGenerationBar: some View {
-        VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
-            HStack(spacing: DesignSystem.Spacing.sm) {
-                Menu {
-                    let builtIn = summaryViewModel.visiblePrompts.filter(\.isBuiltIn)
-                    let custom = summaryViewModel.visiblePrompts.filter { !$0.isBuiltIn }
+    private var streamingSummaryPane: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+                HStack {
+                    AIStreamingIndicator()
+                    Spacer()
+                    Button("Cancel") {
+                        summaryViewModel.cancelStreaming()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
 
-                    ForEach(builtIn) { prompt in
+                if summaryViewModel.streamingContent.isEmpty {
+                    SummarySkeletonView()
+                } else {
+                    MarkdownContentView(summaryViewModel.streamingContent, font: DesignSystem.Typography.bodyLarge)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(DesignSystem.Spacing.lg)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
+                .fill(DesignSystem.Colors.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
+                .strokeBorder(DesignSystem.Colors.border.opacity(0.75), lineWidth: 0.5)
+        )
+    }
+
+    private var summaryGenerationPopover: some View {
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+            Menu {
+                let builtIn = summaryViewModel.visiblePrompts.filter(\.isBuiltIn)
+                let custom = summaryViewModel.visiblePrompts.filter { !$0.isBuiltIn }
+
+                ForEach(builtIn) { prompt in
+                    Button {
+                        summaryViewModel.selectedPrompt = prompt
+                    } label: {
+                        HStack {
+                            Text(prompt.name)
+                            if prompt.id == summaryViewModel.selectedPrompt?.id {
+                                Spacer()
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+
+                if !custom.isEmpty {
+                    Divider()
+
+                    ForEach(custom) { prompt in
                         Button {
                             summaryViewModel.selectedPrompt = prompt
                         } label: {
@@ -802,73 +925,38 @@ struct TranscriptResultView: View {
                             }
                         }
                     }
-
-                    if !custom.isEmpty {
-                        Divider()
-
-                        ForEach(custom) { prompt in
-                            Button {
-                                summaryViewModel.selectedPrompt = prompt
-                            } label: {
-                                HStack {
-                                    Text(prompt.name)
-                                    if prompt.id == summaryViewModel.selectedPrompt?.id {
-                                        Spacer()
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Divider()
-
-                    Button("Manage Prompts...") {
-                        showSummaryPrompts = true
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "sparkles")
-                        Text(summaryViewModel.selectedPrompt?.name ?? "Choose Prompt")
-                            .lineLimit(1)
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 10, weight: .semibold))
-                    }
-                }
-                .menuStyle(.borderedButton)
-
-                if !summaryViewModel.availableModels.isEmpty {
-                    ModelSelectorView(
-                        currentModel: summaryViewModel.currentModelName,
-                        displayName: summaryViewModel.modelDisplayName,
-                        availableModels: summaryViewModel.availableModels,
-                        disabled: summaryViewModel.isStreaming,
-                        onSelect: { summaryViewModel.selectModel($0) }
-                    )
                 }
 
-                Spacer()
+                Divider()
 
-                Button {
-                    summaryViewModel.generateSummary(
-                        transcript: transcriptText,
-                        transcriptionId: transcription.id
-                    )
-                } label: {
-                    Label(
-                        summaryViewModel.isStreaming ? "Generating..." : "Generate",
-                        systemImage: "sparkles"
-                    )
+                Button("Manage Prompts...") {
+                    showGeneratePopover = false
+                    showSummaryPrompts = true
                 }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.return, modifiers: .command)
-                .disabled(!summaryViewModel.canGenerateSummary || transcriptText.isEmpty)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                    Text(summaryViewModel.selectedPrompt?.name ?? "Choose Prompt")
+                        .lineLimit(1)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+            }
+            .menuStyle(.borderedButton)
+
+            if !summaryViewModel.availableModels.isEmpty {
+                ModelSelectorView(
+                    currentModel: summaryViewModel.currentModelName,
+                    displayName: summaryViewModel.modelDisplayName,
+                    availableModels: summaryViewModel.availableModels,
+                    disabled: summaryViewModel.isStreaming,
+                    onSelect: { summaryViewModel.selectModel($0) }
+                )
             }
 
             if showExtraInstructions || !summaryViewModel.extraInstructions.isEmpty {
                 TextField("Add extra instructions...", text: $summaryViewModel.extraInstructions)
                     .textFieldStyle(.roundedBorder)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
             } else {
                 Button {
                     withAnimation(DesignSystem.Animation.contentSwap) {
@@ -883,121 +971,29 @@ struct TranscriptResultView: View {
                 .contentShape(Rectangle())
             }
 
-            if !summaryViewModel.canGenerateSummary {
-                Text("Configure an LLM provider in Settings to generate summaries.")
+            if let errorMessage = summaryViewModel.errorMessage {
+                Text(errorMessage)
                     .font(DesignSystem.Typography.caption)
-                    .foregroundStyle(DesignSystem.Colors.textSecondary)
+                    .foregroundStyle(DesignSystem.Colors.errorRed)
+            }
+
+            HStack {
+                Spacer()
+                Button {
+                    showGeneratePopover = false
+                    summaryViewModel.generateSummary(
+                        transcript: transcriptText,
+                        transcriptionId: transcription.id
+                    )
+                    viewModel.selectedTab = .streaming
+                } label: {
+                    Label("Generate", systemImage: "sparkles")
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.return, modifiers: .command)
+                .disabled(!summaryViewModel.canGenerateSummary || transcriptText.isEmpty)
             }
         }
-        .padding(DesignSystem.Spacing.lg)
-        .background(
-            RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
-                .fill(DesignSystem.Colors.surface.opacity(0.55))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
-                .strokeBorder(DesignSystem.Colors.border.opacity(0.45), lineWidth: 0.5)
-        )
-    }
-
-    private func summaryContentCard(
-        promptName: String,
-        content: String,
-        summaryID: UUID?,
-        isStreaming: Bool
-    ) -> some View {
-        let isExpanded = summaryID.map { summaryViewModel.expandedSummaryIDs.contains($0) } ?? true
-        return VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
-            HStack(alignment: .center, spacing: DesignSystem.Spacing.md) {
-                HStack(alignment: .center, spacing: DesignSystem.Spacing.sm) {
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(DesignSystem.Colors.textSecondary)
-                    Text(promptName)
-                        .font(DesignSystem.Typography.sectionTitle)
-                        .foregroundStyle(DesignSystem.Colors.textPrimary)
-                    Spacer()
-                }
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    if let summaryID {
-                        withAnimation(DesignSystem.Animation.contentSwap) {
-                            summaryViewModel.toggleExpanded(summaryID)
-                        }
-                    }
-                }
-
-                if isStreaming {
-                    AIStreamingIndicator()
-                } else if isExpanded {
-                    let isCopied = copiedSummaryID == summaryID
-                    Button {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(content, forType: .string)
-                        Telemetry.send(.copyToClipboard(source: .transcription))
-                        copiedSummaryID = summaryID
-                        copiedResetTask?.cancel()
-                        copiedResetTask = Task {
-                            try? await Task.sleep(for: .seconds(2))
-                            copiedSummaryID = nil
-                        }
-                    } label: {
-                        HStack(spacing: DesignSystem.Spacing.xs) {
-                            Image(systemName: isCopied ? "checkmark" : "doc.on.doc")
-                            Text(isCopied ? "Copied" : "Copy")
-                        }
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundStyle(isCopied ? DesignSystem.Colors.successGreen : .primary)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-
-                    if let summary = summaryViewModel.summaries.first(where: { $0.id == summaryID }) {
-                        Button(role: .destructive) {
-                            summaryViewModel.pendingDeleteSummary = summary
-                        } label: {
-                            HStack(spacing: DesignSystem.Spacing.xs) {
-                                Image(systemName: "trash")
-                                Text("Delete")
-                            }
-                            .font(DesignSystem.Typography.caption)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                    }
-                }
-            }
-
-            if isExpanded {
-                if content.isEmpty && isStreaming {
-                    SummarySkeletonView()
-                } else {
-                    Divider()
-                        .opacity(0.5)
-                    MarkdownContentView(content, font: DesignSystem.Typography.bodyLarge)
-                        .padding(.horizontal, DesignSystem.Spacing.sm)
-                        .padding(.bottom, DesignSystem.Spacing.xs)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-        }
-        .padding(DesignSystem.Spacing.lg)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if !isExpanded, let summaryID {
-                withAnimation(DesignSystem.Animation.contentSwap) {
-                    summaryViewModel.toggleExpanded(summaryID)
-                }
-            }
-        }
-        .background(
-            RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
-                .fill(DesignSystem.Colors.surface.opacity(0.55))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
-                .strokeBorder(DesignSystem.Colors.border.opacity(0.45), lineWidth: 0.5)
-        )
     }
 
     // MARK: - Chat Pane

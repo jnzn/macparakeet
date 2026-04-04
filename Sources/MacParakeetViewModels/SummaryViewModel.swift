@@ -8,7 +8,6 @@ public final class SummaryViewModel {
     private static let autoSummaryTranscriptLengthThreshold = 500
 
     public var summaries: [Summary] = []
-    public var expandedSummaryIDs: Set<UUID> = []
     public var isStreaming: Bool = false
     public var streamingContent: String = ""
     public var streamingSummaryID: UUID?
@@ -21,10 +20,12 @@ public final class SummaryViewModel {
     public var currentModelName: String = ""
     public var currentProviderID: LLMProviderID?
     public var availableModels: [String] = []
-    public var summaryBadge: Bool = false
+    public var badgedSummaryID: UUID?
     public var onModelChanged: (() -> Void)?
     public var onSummariesChanged: ((UUID, Bool) -> Void)?
     public var onLegacySummaryChanged: ((UUID, String?) -> Void)?
+    public var onSelectSummaryTab: ((UUID) -> Void)?
+    public var onDeletedSummary: ((UUID) -> Void)?
     public var shouldShowBadge: (() -> Bool)?
 
     private var llmService: LLMServiceProtocol?
@@ -138,27 +139,19 @@ public final class SummaryViewModel {
         currentTranscriptionID = transcriptionId
         do {
             summaries = try summaryRepo?.fetchAll(transcriptionId: transcriptionId) ?? []
-            expandedSummaryIDs = summaries.first.map { [$0.id] } ?? []
             onSummariesChanged?(transcriptionId, !summaries.isEmpty)
             errorMessage = nil
         } catch {
             summaries = []
-            expandedSummaryIDs = []
             onSummariesChanged?(transcriptionId, false)
             errorMessage = error.localizedDescription
         }
     }
 
-    public func toggleExpanded(_ summaryID: UUID) {
-        if expandedSummaryIDs.contains(summaryID) {
-            expandedSummaryIDs.remove(summaryID)
-        } else {
-            expandedSummaryIDs.insert(summaryID)
+    public func clearBadge(for summaryID: UUID) {
+        if badgedSummaryID == summaryID {
+            badgedSummaryID = nil
         }
-    }
-
-    public func markSummaryTabViewed() {
-        summaryBadge = false
     }
 
     public func confirmDelete() {
@@ -172,11 +165,12 @@ public final class SummaryViewModel {
         do {
             _ = try summaryRepo.delete(id: summary.id)
             summaries.removeAll { $0.id == summary.id }
-            expandedSummaryIDs.remove(summary.id)
+            if badgedSummaryID == summary.id { badgedSummaryID = nil }
             try syncLegacySummary(for: summary.transcriptionId)
             if let transcriptionID = currentTranscriptionID {
                 onSummariesChanged?(transcriptionID, !summaries.isEmpty)
             }
+            onDeletedSummary?(summary.id)
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
@@ -261,11 +255,11 @@ public final class SummaryViewModel {
 
                 if currentTranscriptionID == targetTranscriptionID {
                     summaries.insert(summary, at: 0)
-                    expandedSummaryIDs = [summary.id]
                 }
                 onSummariesChanged?(targetTranscriptionID, true)
+                onSelectSummaryTab?(summary.id)
                 if shouldShowBadge?() ?? true {
-                    summaryBadge = true
+                    badgedSummaryID = summary.id
                 }
             } catch is CancellationError {
                 cancelStreaming()

@@ -120,12 +120,13 @@ struct SummaryPromptsView: View {
                 TextEditor(text: $viewModel.newContent)
                     .font(DesignSystem.Typography.body)
                     .scrollContentBackground(.hidden)
+                    .padding(.horizontal, 3)
                 if viewModel.newContent.isEmpty {
                     Text("Write your prompt instructions...")
                         .font(DesignSystem.Typography.body)
                         .foregroundStyle(DesignSystem.Colors.textTertiary)
-                        .padding(.top, 7)
-                        .padding(.leading, 6)
+                        .padding(.top, 8)
+                        .padding(.leading, 8)
                         .allowsHitTesting(false)
                 }
             }
@@ -212,12 +213,13 @@ struct SummaryPromptsView: View {
                 TextEditor(text: $editContent)
                     .font(DesignSystem.Typography.body)
                     .scrollContentBackground(.hidden)
+                    .padding(.horizontal, 3)
                 if editContent.isEmpty {
                     Text("Write your prompt instructions...")
                         .font(DesignSystem.Typography.body)
                         .foregroundStyle(DesignSystem.Colors.textTertiary)
-                        .padding(.top, 7)
-                        .padding(.leading, 6)
+                        .padding(.top, 8)
+                        .padding(.leading, 8)
                         .allowsHitTesting(false)
                 }
             }
