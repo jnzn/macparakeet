@@ -21,7 +21,7 @@ This spec defines MacParakeet's current processing layer for v0.7: the Prompt Li
 1. Building a workflow engine or step chaining.
 2. CLI action execution from the summary tab.
 3. Post-dictation automation triggers.
-4. Running multiple prompts simultaneously against one transcript (each is user-initiated).
+4. Running multiple prompts in parallel against one transcript.
 5. Defining agent profiles, desktop-control context, or voice-control automation. Those are explored in [spec/13-agent-workflows.md](13-agent-workflows.md), not locked here.
 
 ---
@@ -85,7 +85,7 @@ public struct Prompt: Codable, Identifiable, Sendable {
     public var name: String          // "Meeting Notes", "Action Items"
     public var content: String       // The actual instruction text
     public var category: Category    // .summary (extensible)
-    public var isBuiltIn: Bool       // shipped with app — hide only, no edit/delete
+    public var isBuiltIn: Bool       // community prompt — hide only, no edit/delete
     public var isVisible: Bool       // false = hidden from picker
     public var sortOrder: Int        // display ordering
     public var createdAt: Date
@@ -146,23 +146,13 @@ CREATE INDEX idx_summaries_transcription_id ON summaries(transcriptionId);
 
 **Why snapshot instead of reference:** Prompts can be edited or deleted after a summary is generated. The summary should always know exactly what instructions produced it. `promptName` is for display; `promptContent` is for reproducibility.
 
-**Migration from existing data:** Existing `transcriptions.summary` values migrate into the `summaries` table with `promptName = "General Summary"` and `promptContent` set to the old hardcoded prompt text. Then `transcriptions.summary` is nulled out (column kept for backward compat, same pattern as `chatMessages` in v0.5).
+**Migration from existing data:** Existing `transcriptions.summary` values migrate into the `summaries` table with `promptName = "Concise Summary"` and `promptContent` set to the current default summary prompt text. The legacy `transcriptions.summary` column is preserved and mirrors the newest completed summary for backward compatibility.
 
-### Built-in Prompts
+### Community Prompts
 
-Seven built-in prompts ship with the app, seeded during migration:
+Community prompts are defined in `Sources/MacParakeetCore/Resources/community-prompts.json` and seeded during migration. Contributors can add new prompts via PR without touching Swift code. The app loads from the JSON bundle at runtime with a hardcoded fallback.
 
-| # | Name | Sort | Prompt Content |
-|---|------|------|----------------|
-| 1 | General Summary | 0 | You are a helpful assistant that summarizes transcripts. Provide a clear, concise summary that captures the key points, decisions, and action items. Use bullet points for clarity. Keep the summary under 500 words. |
-| 2 | Meeting Notes | 1 | Summarize this transcript as structured meeting notes. Include: a one-line meeting purpose, attendees mentioned, key discussion points as bullet points, decisions made, and action items with owners if mentioned. Use clear headings. |
-| 3 | Action Items | 2 | Extract all action items, tasks, and commitments from this transcript. For each item include: what needs to be done, who is responsible (if mentioned), and any deadline or timeline mentioned. Format as a numbered list. If no clear action items exist, say so. |
-| 4 | Key Quotes | 3 | Extract the most important and notable quotes from this transcript. Include exact wording where possible, with enough surrounding context to understand the significance. Attribute quotes to speakers if identified. List 5–10 quotes, ordered by importance. |
-| 5 | Study Notes | 4 | Summarize this transcript as study notes. Extract key concepts, definitions, and explanations. Organize by topic with clear headings. Include any examples or analogies that aid understanding. End with a brief list of key terms. |
-| 6 | Bullet Points | 5 | Summarize this transcript as a concise bullet-point list. Each bullet should capture one distinct point, fact, or idea. Aim for 10–20 bullets. No sub-bullets. Order by importance, not chronology. |
-| 7 | Executive Brief | 6 | Write a 2–3 paragraph executive brief of this transcript. First paragraph: the core topic and why it matters. Second paragraph: key findings, decisions, or conclusions. Third paragraph (if needed): next steps or open questions. Write for a busy reader who needs the essential takeaway in under 60 seconds. |
-
-"General Summary" (sort order 0) is the default — used for auto-summary and pre-selected in the picker. It preserves backward compatibility with the existing hardcoded summary prompt.
+The first prompt (sort order 0) is the default — used for auto-summary and pre-selected in the picker. See the JSON file for the current list.
 
 ### System Prompt Assembly
 
@@ -181,7 +171,7 @@ Edge cases:
 | Selected | None | Prompt content only (most common case) |
 | Selected | Provided | Prompt content + blank line + extra instructions |
 | None | Provided | Minimal framing + extra instructions (see below) |
-| None | None | "General Summary" built-in (backward compatible) |
+| None | None | Default community prompt (backward compatible) |
 
 Minimal framing when only extra instructions are provided:
 ```
@@ -192,7 +182,7 @@ You are a helpful assistant that processes transcripts. Follow the user's instru
 
 ### Auto-Summary Behavior
 
-Auto-summary after transcription always uses the "General Summary" built-in prompt. No preset selection for auto-summary — keeps it simple and predictable. Users who want a different perspective generate manually via the prompt picker.
+Auto-summary after transcription always uses the default community prompt (first in sort order). No preset selection for auto-summary — keeps it simple and predictable. Users who want a different perspective generate manually via the summary popover.
 
 Conditions unchanged: `llmAvailable && transcript.count > 500`.
 
@@ -202,101 +192,70 @@ Conditions unchanged: `llmAvailable && transcript.count > 500`.
 
 ### Summary Pane
 
-The summary tab has two zones: a **generation bar** at top (always visible) and a **summaries list** below.
+The summary experience is tab-based rather than card-based.
 
-#### Empty State (no summaries yet)
+- `Transcript` remains the first tab.
+- Each completed summary gets its own tab.
+- Each pending generation gets its own tab immediately.
+- `Chat` remains the final tab.
+- A dedicated `Summarize` affordance opens the generation popover.
 
-```
-┌─────────────────────────────────────────────────┐
-│  Transcript │ Summary │ Chat                     │
-├─────────────────────────────────────────────────┤
-│                                                  │
-│   📄 No summaries yet                           │
-│                                                  │
-│   Prompt: [General Summary ▾]                    │
-│   [Extra instructions...                      ]  │
-│                                                  │
-│   [Generate Summary]           [model ▾]         │
-│                                                  │
-└─────────────────────────────────────────────────┘
-```
+#### Generation Popover
 
-#### One or More Summaries Exist
+The generation popover contains:
 
-```
-┌─────────────────────────────────────────────────┐
-│  Transcript │ Summary │ Chat                     │
-├─────────────────────────────────────────────────┤
-│                                                  │
-│  Prompt: [Action Items ▾]      [Generate] [m ▾]  │
-│  [Extra instructions...                       ]  │
-│                                                  │
-│  ┌─ Meeting Notes ─────────── 3 min ago ──────┐  │
-│  │                                            │  │
-│  │ • Q1 results exceeded targets by 12%       │  │
-│  │ • Decision to expand team by 3 headcount   │  │
-│  │ • Action: Sarah to prepare hiring plan     │  │
-│  │                                            │  │
-│  │ [Copy]                            [Delete] │  │
-│  └────────────────────────────────────────────┘  │
-│                                                  │
-│  ▸ Action Items                    1 min ago     │
-│                                                  │
-└─────────────────────────────────────────────────┘
-```
+- prompt chips for visible summary prompts
+- a manage button that opens the prompt-library sheet
+- model selector
+- extra instructions field
+- queue status text when generations are pending
+- generate button
 
-#### Key UX Behaviors
+#### Queued Summary Pipeline
 
-- **Generation bar always visible** at top — prompt dropdown + extra instructions + Generate button. Always ready to create a new summary.
-- **Summaries listed below** as collapsible cards, newest first.
-- **Most recent summary expanded** by default; older summaries collapsed (show name + timestamp only). Click to expand/collapse.
-- **Each card shows:** prompt name as title, relative timestamp, summary content (markdown rendered), Copy button, Delete button.
-- **Streaming:** When generating, a new card appears at top in streaming state (skeleton → content filling in). Other summaries remain visible below.
-- **Delete:** Confirmation alert ("Delete this summary? This cannot be undone.").
-- **Prompt dropdown pre-selects** "General Summary" by default. Remembers last-used prompt within the session (not persisted).
+Summary generation uses a **single-worker queue**:
 
-#### Prompt Dropdown Menu
+- one summary may actively stream at a time
+- additional user-triggered generations are accepted immediately and appended to the queue
+- queued generations appear as their own tabs right away
+- when the active generation finishes, the next queued generation starts automatically
+- the app does **not** run multiple summary streams in parallel
 
-```
-┌──────────────────────────────┐
-│ ✓ General Summary            │
-│   Meeting Notes              │
-│   Action Items               │
-│   Key Quotes                 │
-│   Study Notes                │
-│   Bullet Points              │
-│   Executive Brief            │
-│ ─────────────────────────── │
-│   My Standup Format          │  ← custom prompts
-│   Client Debrief             │
-│ ─────────────────────────── │
-│   Manage Prompts...          │  ← opens management sheet
-└──────────────────────────────┘
-```
+#### Pending Generation Tabs
 
-Built-in prompts first (only visible ones), custom prompts in a second section, "Manage Prompts..." at bottom.
+Pending generation tabs render in one of two states:
+
+- `Streaming`: live markdown fill with cancel support
+- `Queued`: waiting state with remove support
+
+When a generation completes:
+
+- if the user is currently viewing that generation tab, it transitions into the completed summary tab
+- otherwise the current tab stays put and the completed summary receives a badge
+
+#### Completed Summary Tabs
+
+- completed summaries render as markdown
+- regenerating a summary replaces the prior summary for the same prompt after the new result is durably saved
+- copy is available from both the pane and tab context menu
+- delete requires confirmation
 
 ### Management Sheet
 
-Opened via "Manage Prompts..." in the dropdown menu. Follows the card-based management pattern from CustomWordsView.
+Opened via the management control in the summary generation popover. Follows the card-based management pattern from CustomWordsView.
 
 ```
 ┌─ Summary Prompts ────────────────────────────────┐
 │                                                   │
-│  ┌─ Built-in ─────────────────────────────────┐   │
+│  ┌─ Community ────────────────────────────────┐   │
 │  │                                            │   │
-│  │  ☑ General Summary        (always visible) │   │
-│  │  ☑ Meeting Notes                           │   │
-│  │  ☑ Action Items                            │   │
-│  │  ☐ Key Quotes              (hidden)        │   │
-│  │  ☑ Study Notes                             │   │
-│  │  ☑ Bullet Points                           │   │
-│  │  ☑ Executive Brief                         │   │
+│  │  ☑ (default prompt)       (always visible) │   │
+│  │  ☑ ...                                     │   │
 │  │                                            │   │
-│  │               [Restore Defaults]           │   │
+│  │  [Suggest a prompt]  [Restore Defaults]    │   │
 │  └────────────────────────────────────────────┘   │
 │                                                   │
-│  ┌─ Custom ───────────────────────────────────┐   │
+│  ┌─ My Prompts ──────────────────────────────┐   │
 │  │                                            │   │
 │  │  ● My Standup Format     [Edit] [Delete]   │   │
 │  │  ● Client Debrief        [Edit] [Delete]   │   │
@@ -315,9 +274,9 @@ Opened via "Manage Prompts..." in the dropdown menu. Follows the card-based mana
 └───────────────────────────────────────────────────┘
 ```
 
-- **Built-in prompts:** Toggle visibility via checkbox. "General Summary" cannot be hidden (it's the auto-summary fallback and default). "Restore Defaults" unhides all built-in prompts.
-- **Custom prompts:** Full CRUD. Edit opens a sheet with name + multi-line TextEditor (prompt text is too long for inline editing). Delete with confirmation alert.
-- **Add Prompt:** Name field + multi-line prompt content + Add button. Name must be unique (case-insensitive, across both built-in and custom).
+- **Community prompts:** Toggle visibility via checkbox. The default prompt (first in sort order) cannot be hidden (it's the auto-summary fallback). "Restore Defaults" unhides all community prompts. "Suggest a prompt" links to the JSON file on GitHub for contributors.
+- **My Prompts:** Full CRUD. Edit opens a sheet with name + multi-line TextEditor (prompt text is too long for inline editing). Delete with confirmation alert.
+- **Add Prompt:** Name field + multi-line prompt content + Add button. Name must be unique (case-insensitive, across both community and custom).
 
 ---
 
@@ -341,14 +300,14 @@ Provider architecture is unchanged. The Prompt Library changes what goes into th
 
 | Build Now (v0.7) | Explore Later |
 |------------------|---------------|
-| `prompts` table + 7 built-in seeds | Action types beyond prompt-driven summarization |
+| `prompts` table + community prompt seeds | Action types beyond prompt-driven summarization |
 | `summaries` table (one-to-many) | Workflow engine / step chaining |
 | Prompt model + repository | Triggered automation |
 | Summary model + repository | Agent profiles / agent handoff |
-| Prompt dropdown picker | Desktop-context collection |
+| Prompt chips + generation popover | Desktop-context collection |
 | Extra instructions field | Apple Shortcuts / App Intents integration |
-| Multi-summary navigation (collapsible cards) | |
-| Management sheet (hide built-ins, CRUD custom) | |
+| Multi-summary tab navigation + queued pipeline | |
+| Management sheet (hide community, CRUD custom) | |
 | SummaryViewModel (extracted from TranscriptionVM) | |
 | LLMService accepts custom system prompt | |
 | Migration from `transcriptions.summary` → `summaries` | |
@@ -361,7 +320,7 @@ The future design space for actions, workflows, agents, and voice control is doc
 
 ### Unit Tests
 
-1. **PromptRepository:** CRUD operations, built-in seeding verification, visibility toggle, name uniqueness constraint, `restoreDefaults`, `fetchVisible` filtering by category.
+1. **PromptRepository:** CRUD operations, community prompt seeding verification, visibility toggle, name uniqueness constraint, `restoreDefaults`, `fetchVisible` filtering by category.
 2. **SummaryRepository:** CRUD operations, `fetchAll` ordering (newest first), cascade delete when transcription deleted, `hasSummaries` check.
 3. **LLMService:** Custom system prompt flows through to message array; default prompt used when nil.
 4. **PromptsViewModel:** CRUD operations, visibility toggle, validation (empty fields, duplicate names), restore defaults.
@@ -369,7 +328,7 @@ The future design space for actions, workflows, agents, and voice control is doc
 
 ### What We Skip
 
-- Visual layout of summary cards (test ViewModels instead).
+- Visual layout of summary tabs and queued states (test ViewModels instead).
 - Actual LLM output quality (depends on external model).
 - Prompt effectiveness (subjective, depends on transcript content).
 
@@ -377,14 +336,14 @@ The future design space for actions, workflows, agents, and voice control is doc
 
 ## Acceptance Criteria
 
-1. User can select a prompt from a dropdown on the summary tab.
+1. User can select a prompt from chips in the generation popover on the summary tab.
 2. Generating a summary creates a new summary record (does not overwrite previous summaries).
-3. Multiple summaries per transcript are displayed as collapsible cards, newest first.
+3. Multiple summaries per transcript are displayed as tabs, with pending generations appearing immediately.
 4. User can add extra instructions that layer on top of the selected prompt.
-5. Seven built-in prompts are available on first launch.
-6. Built-in prompts can be hidden but not edited or deleted.
+5. Community prompts are available on first launch from the bundled JSON seed.
+6. Community prompts can be hidden but not edited or deleted.
 7. Custom prompts can be created, edited, and deleted via the management sheet.
-8. "Manage Prompts..." is accessible from the prompt dropdown menu.
-9. Auto-summary after transcription uses "General Summary" default.
+8. Prompt management is accessible from the generation popover.
+9. Auto-summary after transcription uses the default community prompt.
 10. Existing transcriptions with summaries display migrated data correctly.
 11. `swift test` passes with all new tests.
