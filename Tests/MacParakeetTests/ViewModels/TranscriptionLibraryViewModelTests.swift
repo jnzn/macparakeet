@@ -24,6 +24,29 @@ final class TranscriptionLibraryViewModelTests: XCTestCase {
         XCTAssertEqual(vm.transcriptions.count, 2)
     }
 
+    func testLoadTranscriptionsExcludesProcessingRows() throws {
+        try repo.save(Transcription(fileName: "done.mp3", status: .completed))
+        try repo.save(Transcription(fileName: "working.mp3", status: .processing))
+
+        vm.loadTranscriptions()
+
+        XCTAssertEqual(vm.transcriptions.map(\.fileName), ["done.mp3"])
+        XCTAssertEqual(vm.filteredTranscriptions.map(\.fileName), ["done.mp3"])
+    }
+
+    func testLoadTranscriptionsExcludesCancelledAndErrorRows() throws {
+        try repo.save(Transcription(fileName: "done.mp3", status: .completed))
+        try repo.save(Transcription(fileName: "cancelled.mp3", status: .cancelled))
+        try repo.save(Transcription(fileName: "failed.mp3", status: .error, errorMessage: "boom"))
+
+        vm.loadTranscriptions()
+
+        XCTAssertEqual(vm.transcriptions.count, 1)
+        XCTAssertEqual(vm.transcriptions.first?.fileName, "done.mp3")
+        XCTAssertEqual(vm.filteredTranscriptions.count, 1)
+        XCTAssertEqual(vm.filteredTranscriptions.first?.fileName, "done.mp3")
+    }
+
     // MARK: - Filter
 
     func testFilterAll() throws {
