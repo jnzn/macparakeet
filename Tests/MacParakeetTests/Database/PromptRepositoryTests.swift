@@ -12,10 +12,10 @@ final class PromptRepositoryTests: XCTestCase {
 
     func testBuiltInPromptsSeededAfterMigration() throws {
         let prompts = try repo.fetchAll()
-        XCTAssertEqual(prompts.count, 2)
+        XCTAssertEqual(prompts.count, 7)
         XCTAssertTrue(prompts.allSatisfy(\.isBuiltIn))
         XCTAssertTrue(prompts.allSatisfy(\.isVisible))
-        XCTAssertEqual(prompts.first?.name, "Concise Summary")
+        XCTAssertEqual(prompts.first?.name, "General Summary")
     }
 
     func testSaveAndFetchCustomPrompt() throws {
@@ -28,7 +28,7 @@ final class PromptRepositoryTests: XCTestCase {
     }
 
     func testFetchVisibleFiltersHiddenPrompts() throws {
-        let prompt = try XCTUnwrap((try repo.fetchAll()).first(where: { $0.name == "Detailed Summary" }))
+        let prompt = try XCTUnwrap((try repo.fetchAll()).first(where: { $0.name == "Meeting Notes" }))
         try repo.toggleVisibility(id: prompt.id)
 
         let visible = try repo.fetchVisible(category: .summary)
@@ -36,7 +36,7 @@ final class PromptRepositoryTests: XCTestCase {
     }
 
     func testRestoreDefaultsRevealsBuiltIns() throws {
-        let prompt = try XCTUnwrap((try repo.fetchAll()).first(where: { $0.name == "Detailed Summary" }))
+        let prompt = try XCTUnwrap((try repo.fetchAll()).first(where: { $0.name == "Meeting Notes" }))
         try repo.toggleVisibility(id: prompt.id)
         XCTAssertFalse(try repo.fetchVisible(category: .summary).contains(where: { $0.id == prompt.id }))
 
@@ -46,7 +46,7 @@ final class PromptRepositoryTests: XCTestCase {
     }
 
     func testNameUniquenessConstraintIsCaseInsensitive() throws {
-        let duplicate = Prompt(name: "concise summary", content: "Duplicate")
+        let duplicate = Prompt(name: "general summary", content: "Duplicate")
 
         XCTAssertThrowsError(try repo.save(duplicate))
     }

@@ -413,11 +413,11 @@ public final class SummaryViewModel {
             summaries.insert(summary, at: 0)
         }
 
+        onSummariesChanged?(generation.transcriptionId, true)
+        onGenerationCompleted?(generation.id, summary.id)
         if let replacingSummaryID = generation.replacingSummaryID {
             onDeletedSummary?(replacingSummaryID)
         }
-        onSummariesChanged?(generation.transcriptionId, true)
-        onGenerationCompleted?(generation.id, summary.id)
         if shouldShowBadge?(summary.id) ?? true {
             badgedSummaryID = summary.id
         }
