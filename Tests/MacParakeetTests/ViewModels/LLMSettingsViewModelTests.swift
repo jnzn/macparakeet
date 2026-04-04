@@ -17,13 +17,13 @@ final class LLMSettingsViewModelTests: XCTestCase {
     // MARK: - Defaults
 
     func testDefaultValuesAfterInit() {
-        XCTAssertEqual(viewModel.selectedProviderID, .openai)
+        XCTAssertNil(viewModel.selectedProviderID)
         XCTAssertEqual(viewModel.apiKeyInput, "")
-        XCTAssertEqual(viewModel.modelName, "gpt-5.4")
+        XCTAssertEqual(viewModel.modelName, "")
         XCTAssertEqual(viewModel.baseURLOverride, "")
         XCTAssertEqual(viewModel.connectionTestState, .idle)
         XCTAssertFalse(viewModel.isConfigured)
-        XCTAssertTrue(viewModel.requiresAPIKey)
+        XCTAssertFalse(viewModel.requiresAPIKey)
     }
 
     // MARK: - Provider Change
@@ -150,6 +150,7 @@ final class LLMSettingsViewModelTests: XCTestCase {
 
     func testConnectionSuccess() async throws {
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.selectedProviderID = .openai
         viewModel.apiKeyInput = "sk-test"
 
         viewModel.testConnection()
@@ -162,6 +163,7 @@ final class LLMSettingsViewModelTests: XCTestCase {
     func testConnectionFailure() async throws {
         mockClient.testConnectionError = LLMError.authenticationFailed(nil)
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.selectedProviderID = .openai
         viewModel.apiKeyInput = "sk-bad"
 
         viewModel.testConnection()
@@ -177,6 +179,7 @@ final class LLMSettingsViewModelTests: XCTestCase {
     func testStaleConnectionSuccessIsIgnoredAfterFieldChange() async throws {
         mockClient.testConnectionDelayNs = 200_000_000
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.selectedProviderID = .openai
         viewModel.apiKeyInput = "sk-test"
 
         viewModel.testConnection()
@@ -190,6 +193,7 @@ final class LLMSettingsViewModelTests: XCTestCase {
         mockClient.testConnectionDelayNs = 200_000_000
         mockClient.testConnectionError = LLMError.authenticationFailed(nil)
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.selectedProviderID = .openai
         viewModel.apiKeyInput = "sk-test"
 
         viewModel.testConnection()
@@ -206,6 +210,7 @@ final class LLMSettingsViewModelTests: XCTestCase {
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
         var callbackCalled = false
         viewModel.onConfigurationChanged = { callbackCalled = true }
+        viewModel.selectedProviderID = .openai
         viewModel.apiKeyInput = "sk-test"
         viewModel.saveConfiguration()
         XCTAssertTrue(callbackCalled)
@@ -222,6 +227,41 @@ final class LLMSettingsViewModelTests: XCTestCase {
 
     // MARK: - Provider switch preserves per-provider keys
 
+    func testSelectingNoneDisablesTestConnection() {
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        XCTAssertFalse(viewModel.canTestConnection)
+    }
+
+    func testSelectingNoneCanSaveOnlyWhenConfigured() {
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        XCTAssertFalse(viewModel.canSave)
+
+        viewModel.selectedProviderID = .openai
+        viewModel.apiKeyInput = "sk-test"
+        viewModel.saveConfiguration()
+        XCTAssertTrue(viewModel.isConfigured)
+
+        viewModel.selectedProviderID = nil
+        XCTAssertTrue(viewModel.canSave)
+    }
+
+    func testSavingNoneClearsExistingConfig() {
+        mockConfigStore.config = .openai(apiKey: "sk-test")
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        XCTAssertTrue(viewModel.isConfigured)
+
+        viewModel.selectedProviderID = nil
+        viewModel.saveConfiguration()
+
+        XCTAssertNil(mockConfigStore.config)
+        XCTAssertFalse(viewModel.isConfigured)
+    }
+
+    func testNoneProviderReturnsEmptyModels() {
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        XCTAssertTrue(viewModel.availableModels.isEmpty)
+    }
+
     func testSwitchingToLocalClearsAPIKey() {
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
         viewModel.apiKeyInput = "sk-test"
@@ -234,6 +274,7 @@ final class LLMSettingsViewModelTests: XCTestCase {
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
 
         // Save OpenAI config (stores key in mock)
+        viewModel.selectedProviderID = .openai
         viewModel.apiKeyInput = "sk-openai-key"
         viewModel.saveConfiguration()
 
@@ -263,6 +304,7 @@ final class LLMSettingsViewModelTests: XCTestCase {
 
     func testSaveShowsSavedState() {
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.selectedProviderID = .openai
         viewModel.apiKeyInput = "sk-test"
         viewModel.saveConfiguration()
         XCTAssertEqual(viewModel.saveState, .saved)
@@ -270,6 +312,7 @@ final class LLMSettingsViewModelTests: XCTestCase {
 
     func testFieldChangeResetsSaveState() {
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.selectedProviderID = .openai
         viewModel.apiKeyInput = "sk-test"
         viewModel.saveConfiguration()
         XCTAssertEqual(viewModel.saveState, .saved)
@@ -280,6 +323,7 @@ final class LLMSettingsViewModelTests: XCTestCase {
 
     func testFieldChangeResetsConnectionTestState() {
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.selectedProviderID = .openai
         viewModel.connectionTestState = .success
 
         viewModel.apiKeyInput = "sk-changed"
@@ -290,11 +334,13 @@ final class LLMSettingsViewModelTests: XCTestCase {
 
     func testAvailableModelsReturnsSuggestedModels() {
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.selectedProviderID = .openai
         XCTAssertEqual(viewModel.availableModels, LLMSettingsViewModel.suggestedModels(for: .openai))
     }
 
     func testCustomModelUsesCustomModelName() {
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.selectedProviderID = .openai
         viewModel.useCustomModel = true
         viewModel.customModelName = "my-fine-tuned-model"
         XCTAssertEqual(viewModel.effectiveModelName, "my-fine-tuned-model")
@@ -302,6 +348,7 @@ final class LLMSettingsViewModelTests: XCTestCase {
 
     func testPickerModelUsesModelName() {
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.selectedProviderID = .openai
         viewModel.useCustomModel = false
         viewModel.modelName = "gpt-4o"
         XCTAssertEqual(viewModel.effectiveModelName, "gpt-4o")
@@ -309,6 +356,7 @@ final class LLMSettingsViewModelTests: XCTestCase {
 
     func testProviderChangeResetsCustomModel() {
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.selectedProviderID = .openai
         viewModel.useCustomModel = true
         viewModel.customModelName = "custom-model"
 
@@ -319,6 +367,7 @@ final class LLMSettingsViewModelTests: XCTestCase {
 
     func testEmptyCustomModelIsInvalid() {
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.selectedProviderID = .openai
         viewModel.apiKeyInput = "sk-test"
         viewModel.useCustomModel = true
         viewModel.customModelName = "   "
