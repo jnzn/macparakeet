@@ -923,12 +923,13 @@ struct TranscriptResultView: View {
                         Text(promptName)
                             .font(DesignSystem.Typography.sectionTitle)
                             .foregroundStyle(DesignSystem.Colors.textPrimary)
+                        if !isExpanded { Spacer() }
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
 
-                Spacer()
+                if isExpanded { Spacer() }
 
                 if isStreaming {
                     AIStreamingIndicator()
