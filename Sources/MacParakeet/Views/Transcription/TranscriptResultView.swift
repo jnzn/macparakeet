@@ -571,9 +571,9 @@ struct TranscriptResultView: View {
                         transcriptPane
                             .onAppear { viewModel.selectedTab = .transcript }
                     }
-                case .streaming:
-                    if summaryViewModel.isStreaming {
-                        streamingSummaryPane
+                case .generation(let id):
+                    if summaryViewModel.pendingGeneration(id: id) != nil {
+                        pendingGenerationPane(generationID: id)
                     } else {
                         transcriptPane
                             .onAppear { viewModel.selectedTab = .transcript }
@@ -683,8 +683,8 @@ struct TranscriptResultView: View {
         for summary in summaryViewModel.summaries.reversed() {
             tabs.append(.summary(id: summary.id))
         }
-        if summaryViewModel.isStreaming {
-            tabs.append(.streaming)
+        for generation in summaryViewModel.pendingGenerations {
+            tabs.append(.generation(id: generation.id))
         }
         tabs.append(.chat)
         return tabs
@@ -710,7 +710,13 @@ struct TranscriptResultView: View {
     private func tabCapsule(for tab: TranscriptionViewModel.TranscriptTab) -> some View {
         let isSelected = viewModel.selectedTab == tab
 
-        let isStreamingTab = { if case .streaming = tab { return true } else { return false } }()
+        let isStreamingTab = {
+            if case .generation(let id) = tab,
+               let generation = summaryViewModel.pendingGeneration(id: id) {
+                return generation.state == .streaming
+            }
+            return false
+        }()
 
         return HStack(spacing: 6) {
             Image(systemName: tabIcon(tab))
@@ -747,6 +753,11 @@ struct TranscriptResultView: View {
                 }
                 Button("Delete Summary", role: .destructive) {
                     summaryViewModel.pendingDeleteSummary = summary
+                }
+            }
+            if case .generation(let id) = tab {
+                Button("Remove", role: .destructive) {
+                    summaryViewModel.cancelGeneration(id: id)
                 }
             }
         }
@@ -795,7 +806,12 @@ struct TranscriptResultView: View {
         switch tab {
         case .transcript:
             return "text.alignleft"
-        case .summary, .streaming:
+        case .summary:
+            return "sparkles"
+        case .generation(let id):
+            if summaryViewModel.pendingGeneration(id: id)?.state == .queued {
+                return "clock"
+            }
             return "sparkles"
         case .chat:
             return "bubble.left.and.text.bubble.right"
@@ -808,8 +824,8 @@ struct TranscriptResultView: View {
             return "Transcript"
         case .summary(let id):
             return summaryViewModel.summaries.first(where: { $0.id == id })?.promptName ?? "Summary"
-        case .streaming:
-            return summaryViewModel.streamingPromptName
+        case .generation(let id):
+            return summaryViewModel.pendingGeneration(id: id)?.promptName ?? "Summary"
         case .chat:
             return "Chat"
         }
@@ -826,8 +842,9 @@ struct TranscriptResultView: View {
                         Spacer()
 
                         Button {
-                            summaryViewModel.regenerateSummary(summary, transcript: transcriptText)
-                            viewModel.selectedTab = .streaming
+                            if let generationID = summaryViewModel.regenerateSummary(summary, transcript: transcriptText) {
+                                viewModel.selectedTab = .generation(id: generationID)
+                            }
                         } label: {
                             HStack(spacing: DesignSystem.Spacing.xs) {
                                 Image(systemName: "arrow.clockwise")
@@ -891,18 +908,25 @@ struct TranscriptResultView: View {
         )
     }
 
-    private var streamingSummaryPane: some View {
+    @ViewBuilder
+    private func pendingGenerationPane(generationID: UUID) -> some View {
+        if let generation = summaryViewModel.pendingGeneration(id: generationID) {
+            generationPane(generation)
+        }
+    }
+
+    private func generationPane(_ generation: SummaryViewModel.PendingGeneration) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
                 HStack {
                     Spacer()
                     Button {
-                        summaryViewModel.cancelStreaming()
+                        summaryViewModel.cancelGeneration(id: generation.id)
                         viewModel.selectedTab = .transcript
                     } label: {
                         HStack(spacing: DesignSystem.Spacing.xs) {
-                            Image(systemName: "xmark")
-                            Text("Cancel")
+                            Image(systemName: generation.state == .queued ? "minus.circle" : "xmark")
+                            Text(generation.state == .queued ? "Remove" : "Cancel")
                         }
                         .font(DesignSystem.Typography.caption)
                     }
@@ -910,10 +934,12 @@ struct TranscriptResultView: View {
                     .controlSize(.small)
                 }
 
-                if summaryViewModel.streamingContent.isEmpty {
+                if generation.state == .queued {
+                    queuedGenerationCard
+                } else if generation.content.isEmpty {
                     SummarySkeletonView()
                 } else {
-                    MarkdownContentView(summaryViewModel.streamingContent, font: DesignSystem.Typography.bodyLarge)
+                    MarkdownContentView(generation.content, font: DesignSystem.Typography.bodyLarge)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
@@ -927,6 +953,23 @@ struct TranscriptResultView: View {
         .overlay(
             RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
                 .strokeBorder(DesignSystem.Colors.border.opacity(0.75), lineWidth: 0.5)
+        )
+    }
+
+    private var queuedGenerationCard: some View {
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
+            Label("Queued", systemImage: "clock")
+                .font(DesignSystem.Typography.caption.weight(.semibold))
+                .foregroundStyle(DesignSystem.Colors.accent)
+            Text("This summary will start automatically after the current generation finishes.")
+                .font(DesignSystem.Typography.body)
+                .foregroundStyle(DesignSystem.Colors.textSecondary)
+        }
+        .padding(DesignSystem.Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                .fill(DesignSystem.Colors.surfaceElevated.opacity(0.7))
         )
     }
 
@@ -956,7 +999,7 @@ struct TranscriptResultView: View {
                     currentModel: summaryViewModel.currentModelName,
                     displayName: summaryViewModel.modelDisplayName,
                     availableModels: summaryViewModel.availableModels,
-                    disabled: summaryViewModel.isStreaming,
+                    disabled: summaryViewModel.hasPendingGenerations,
                     onSelect: { summaryViewModel.selectModel($0) }
                 )
             }
@@ -965,6 +1008,12 @@ struct TranscriptResultView: View {
             TextField("Extra instructions (optional)", text: $summaryViewModel.extraInstructions)
                 .textFieldStyle(.roundedBorder)
                 .font(DesignSystem.Typography.bodySmall)
+
+            if summaryViewModel.hasPendingGenerations {
+                Text(queueStatusText)
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(DesignSystem.Colors.textSecondary)
+            }
 
             if let errorMessage = summaryViewModel.errorMessage {
                 Text(errorMessage)
@@ -977,11 +1026,12 @@ struct TranscriptResultView: View {
                 Spacer()
                 Button {
                     showGeneratePopover = false
-                    summaryViewModel.generateSummary(
+                    if let generationID = summaryViewModel.generateSummary(
                         transcript: transcriptText,
                         transcriptionId: transcription.id
-                    )
-                    viewModel.selectedTab = .streaming
+                    ) {
+                        viewModel.selectedTab = .generation(id: generationID)
+                    }
                 } label: {
                     Label("Generate", systemImage: "sparkles")
                 }
@@ -998,6 +1048,7 @@ struct TranscriptResultView: View {
             ForEach(prompts) { prompt in
                 let isSelected = summaryViewModel.selectedPrompt?.id == prompt.id
                 let hasExisting = summaryViewModel.summaries.contains { $0.promptName == prompt.name }
+                    || summaryViewModel.pendingGenerations.contains { $0.promptName == prompt.name }
 
                 HStack(spacing: 4) {
                     Text(prompt.name)
@@ -1031,6 +1082,16 @@ struct TranscriptResultView: View {
                 }
             }
         }
+    }
+
+    private var queueStatusText: String {
+        if summaryViewModel.isStreaming && summaryViewModel.queuedGenerationCount > 0 {
+            return "1 generating, \(summaryViewModel.queuedGenerationCount) queued"
+        }
+        if summaryViewModel.isStreaming {
+            return "Generating summary"
+        }
+        return "\(summaryViewModel.queuedGenerationCount) queued"
     }
 
     // MARK: - Chat Pane

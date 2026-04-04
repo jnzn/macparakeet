@@ -23,7 +23,7 @@ public final class TranscriptionViewModel {
     public enum TranscriptTab: Hashable, Sendable {
         case transcript
         case summary(id: UUID)
-        case streaming
+        case generation(id: UUID)
         case chat
     }
 
@@ -78,6 +78,11 @@ public final class TranscriptionViewModel {
     public func handleSummaryDeleted(_ deletedID: UUID) {
         guard case .summary(let selectedID) = selectedTab, selectedID == deletedID else { return }
         selectedTab = .transcript
+    }
+
+    public func handleGenerationCompleted(_ generationID: UUID, summaryID: UUID) {
+        guard case .generation(let selectedID) = selectedTab, selectedID == generationID else { return }
+        selectedTab = .summary(id: summaryID)
     }
 
     private var transcriptionService: TranscriptionServiceProtocol?
