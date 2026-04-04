@@ -443,4 +443,47 @@ final class SummaryViewModelTests: XCTestCase {
 
         XCTAssertTrue(summaryRepo.saveCalls.isEmpty)
     }
+
+    func testLoadSummariesDifferentTranscriptionPreservesQueuedGenerationUntilReturn() async throws {
+        viewModel.configure(
+            llmService: llm,
+            promptRepo: promptRepo,
+            summaryRepo: summaryRepo,
+            transcriptionRepo: transcriptionRepo
+        )
+        let transcriptionA = UUID()
+        let transcriptionB = UUID()
+        let queuedPrompt = try XCTUnwrap(promptRepo.prompts.first(where: { $0.name == "Action Items" }))
+        llm.streamTokens = ["First ", "summary"]
+        llm.streamDelayNs = 200_000_000
+
+        viewModel.selectedPrompt = Prompt.defaultSummaryPrompt
+        _ = viewModel.generateSummary(transcript: "Transcript", transcriptionId: transcriptionA)
+        viewModel.selectedPrompt = queuedPrompt
+        let queuedGenerationID = viewModel.generateSummary(transcript: "Transcript", transcriptionId: transcriptionA)
+
+        viewModel.loadSummaries(transcriptionId: transcriptionB)
+
+        try await Task.sleep(for: .milliseconds(300))
+
+        XCTAssertTrue(summaryRepo.saveCalls.isEmpty)
+        XCTAssertEqual(llm.summarizeCallCount, 1)
+        XCTAssertEqual(viewModel.pendingGenerations.count, 1)
+        XCTAssertEqual(viewModel.pendingGenerations.first?.id, queuedGenerationID)
+        XCTAssertEqual(viewModel.pendingGenerations.first?.state, .queued)
+        XCTAssertEqual(viewModel.pendingGenerations.first?.transcriptionId, transcriptionA)
+
+        llm.streamTokens = ["Queued ", "summary"]
+        llm.streamDelayNs = 100_000_000
+
+        viewModel.loadSummaries(transcriptionId: transcriptionA)
+
+        try await Task.sleep(for: .milliseconds(300))
+
+        XCTAssertEqual(llm.summarizeCallCount, 2)
+        XCTAssertEqual(summaryRepo.saveCalls.count, 1)
+        XCTAssertEqual(summaryRepo.saveCalls.first?.promptName, queuedPrompt.name)
+        XCTAssertEqual(summaryRepo.saveCalls.first?.content, "Queued summary")
+        XCTAssertEqual(viewModel.pendingGenerations.count, 0)
+    }
 }

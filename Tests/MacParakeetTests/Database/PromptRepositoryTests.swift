@@ -3,10 +3,11 @@ import GRDB
 @testable import MacParakeetCore
 
 final class PromptRepositoryTests: XCTestCase {
+    var manager: DatabaseManager!
     var repo: PromptRepository!
 
     override func setUp() async throws {
-        let manager = try DatabaseManager()
+        manager = try DatabaseManager()
         repo = PromptRepository(dbQueue: manager.dbQueue)
     }
 
@@ -49,5 +50,54 @@ final class PromptRepositoryTests: XCTestCase {
         let duplicate = Prompt(name: "general summary", content: "Duplicate")
 
         XCTAssertThrowsError(try repo.save(duplicate))
+    }
+
+    func testBuiltInPromptsReconciledOnReopen() throws {
+        let dbURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("prompt-reconcile-\(UUID().uuidString).sqlite")
+        defer { try? FileManager.default.removeItem(at: dbURL) }
+
+        let expectedMeetingNotes = try XCTUnwrap(
+            Prompt.builtInSummaryPrompts().first(where: { $0.name == "Meeting Notes" })
+        )
+        let expectedExecutiveBrief = try XCTUnwrap(
+            Prompt.builtInSummaryPrompts().first(where: { $0.name == "Executive Brief" })
+        )
+
+        do {
+            let manager = try DatabaseManager(path: dbURL.path)
+            try manager.dbQueue.write { db in
+                try db.execute(
+                    sql: """
+                        UPDATE prompts
+                        SET id = ?, content = ?, isVisible = 0
+                        WHERE name = ?
+                        """,
+                    arguments: [
+                        UUID().uuidString,
+                        "Stale content",
+                        "Meeting Notes",
+                    ]
+                )
+                try db.execute(
+                    sql: "DELETE FROM prompts WHERE name = ?",
+                    arguments: ["Executive Brief"]
+                )
+            }
+        }
+
+        let reopenedManager = try DatabaseManager(path: dbURL.path)
+        let reopenedRepo = PromptRepository(dbQueue: reopenedManager.dbQueue)
+        let prompts = try reopenedRepo.fetchAll()
+
+        let meetingNotes = try XCTUnwrap(prompts.first(where: { $0.name == "Meeting Notes" }))
+        XCTAssertEqual(meetingNotes.id, expectedMeetingNotes.id)
+        XCTAssertEqual(meetingNotes.content, expectedMeetingNotes.content)
+        XCTAssertFalse(meetingNotes.isVisible)
+        XCTAssertEqual(prompts.count, Prompt.builtInSummaryPrompts().count)
+        XCTAssertEqual(
+            prompts.first(where: { $0.name == "Executive Brief" })?.id,
+            expectedExecutiveBrief.id
+        )
     }
 }
