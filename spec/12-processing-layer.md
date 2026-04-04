@@ -25,39 +25,98 @@ This spec defines MacParakeet's configurable processing layer — the system tha
 
 ---
 
-## Architecture: Three Layers
+## Architecture
+
+### Four Capabilities
+
+The processing layer has four capabilities, built incrementally. Each is independently useful.
 
 ```
-Layer 3: Workflows (future)
-  Chain actions into named sequences with triggers
-  e.g., "Podcast Publish" = Summarize → Format → Export → Webhook
-
-  ┌─────────────────────────────────────────────────┐
-  │  Workflow { name, trigger, steps: [Action] }    │
-  └──────────────────────┬──────────────────────────┘
-                         │ references
-Layer 2: Actions (future)
-  Typed processing steps: LLM prompt, CLI command, export, webhook
-
-  ┌─────────────────────────────────────────────────┐
-  │  Action { type, config }                        │
-  │    .prompt(id) → references Prompt Library       │
-  │    .cliCommand(cmd) → Armin's pattern (PR #47)  │
-  │    .export(format) → TXT/MD/SRT/DOCX/PDF        │
-  │    .webhook(url) → POST result to endpoint       │
-  └──────────────────────┬──────────────────────────┘
-                         │ references
-Layer 1: Prompt Library + Multi-Summary ← BUILD NOW (v0.7)
-  Named, reusable instruction templates + multiple outputs per transcript
-
-  ┌─────────────────────────────────────────────────┐
-  │  Prompt  { id, name, content, category, ... }   │
-  │  Summary { id, transcriptionId, promptName,     │
-  │            content, ... }                        │
-  └─────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                                                                 │
+│  ┌─ Prompt Library ──────────────────────────────┐  BUILD NOW  │
+│  │  Named, reusable instruction templates        │  (v0.7)     │
+│  │  Prompt { id, name, content, category, ... }  │             │
+│  │  Summary { id, transcriptionId, ... }         │             │
+│  └───────────────────────────┬───────────────────┘             │
+│                              │                                  │
+│               ┌──── snapshot │ FK ────┐                         │
+│               ▼              ▼        ▼                         │
+│  ┌─ Summaries ─┐  ┌─ Agent Profiles ─┐  ┌─ Workflows ───────┐ │
+│  │  Immutable   │  │  prompt + tools  │  │  Ordered steps    │ │
+│  │  historical  │  │  + context +     │  │  with triggers    │ │
+│  │  outputs     │  │  trigger         │  │  (static chains)  │ │
+│  └──────────────┘  └─────────────────┘  └──────────────────┘ │
+│       (v0.7)            (future)              (future)         │
+│                                                                 │
+│  ┌─ Actions ─────────────────────────────────────┐  (future)   │
+│  │  .prompt(id) | .cliCommand | .export          │             │
+│  │  .webhook | .clipboard | .agentHandoff        │             │
+│  │  All receive ProcessingContext                 │             │
+│  └───────────────────────────────────────────────┘             │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-Each layer is independently useful. Layer 1 (Prompt Library) ships as a standalone feature. Layer 2 (Actions) adds non-LLM processing types. Layer 3 (Workflows) chains them together.
+**Prompts** are the foundation — the universal instruction library. Everything else references or snapshots them.
+
+**Actions** are typed processing steps (LLM prompt, CLI command, export, webhook, agent handoff). Each receives a standard `ProcessingContext`.
+
+**Workflows** chain actions into repeatable, static pipelines with triggers. For predictable, same-every-time sequences ("summarize → format → export").
+
+**Agent Profiles** configure an LLM agent with a system prompt, tools, and context — then hand it the transcript and let it decide what to do. For open-ended, unpredictable tasks ("fix this bug," "reply to this email"). The agent is the orchestrator, not a pre-defined step chain.
+
+Workflows and agent profiles are parallel capabilities, not layers. Both reference the prompt library. Both use actions as building blocks. The difference is control flow: workflows are static (step 1 → 2 → 3), agents are dynamic (LLM decides).
+
+### Data Model Relationships
+
+```
+prompts (universal instruction library, category-namespaced)
+  │
+  ├──snapshot──→ summaries.promptContent    (immutable — editing prompt doesn't change past summaries)
+  │
+  ├──FK──→ agent_profiles.promptId          (live — editing prompt changes agent behavior)
+  │
+  └──FK──→ workflow_steps → actions         (live — editing prompt changes workflow behavior)
+```
+
+**Snapshot vs. reference:** Summaries are historical records — they snapshot the prompt content at generation time. Agents and workflows are live configurations — they reference prompts by ID so edits propagate.
+
+The `category` enum on prompts is the namespace: `.summary` prompts appear in the summary dropdown, `.transform` prompts in the transform menu, `.agent` prompts in agent profile configuration. Each context shows only its relevant prompts.
+
+### ProcessingContext
+
+Every action (prompt, CLI, export, webhook, agent) receives a standard context. This is defined as a concept now but implemented as a Swift type when actions ship.
+
+**Transcript context** (available today):
+```
+transcript: String             — raw or clean transcript text
+source: .file | .youtube | .dictation
+filename: String?              — original filename
+duration: TimeInterval?        — audio duration
+speakers: Int?                 — identified speaker count
+language: String?              — detected language code
+youtubeURL: URL?               — source YouTube URL
+diarizationSegments: [...]?    — speaker segments with timestamps
+wordTimestamps: [...]?         — word-level timing data
+```
+
+**Desktop context** (available via Accessibility API + system APIs, for agents/voice control):
+```
+activeApp: String?             — frontmost app name
+activeAppBundleID: String?     — frontmost app bundle ID
+browserURL: String?            — current browser tab URL
+selectedText: String?          — selected text in frontmost app
+clipboardText: String?         — current clipboard contents
+locale: String                 — system locale
+```
+
+**Chaining context** (for workflows):
+```
+previousOutput: String?        — output of the prior step
+```
+
+For CLI actions, context maps to `MACPARAKEET_*` environment variables (extending PR #47, inspired by VoiceInk PR #600).
 
 ---
 
@@ -329,32 +388,24 @@ Provider architecture is unchanged. The Prompt Library changes what goes into th
 
 ---
 
-## Layer 2: Actions (future — design only, do not build)
+## Actions (future — design only, do not build)
 
-An Action is a typed processing step. The Prompt Library is one action type. Others include:
+An Action is a typed processing step — the atomic unit that workflows and agents compose.
 
 | Action Type | Input | Output | Provider |
 |-------------|-------|--------|----------|
 | `.prompt(id)` | Transcript text | LLM-generated text | Configured LLM provider |
 | `.cliCommand(cmd)` | Env vars + stdin | stdout text | Any CLI tool (PR #47 pattern) |
+| `.agentHandoff(cmd)` | Full context + stdin | stdout text | Coding agent (claude, codex) |
 | `.export(format)` | Transcript + metadata | File on disk | Built-in ExportService |
 | `.webhook(url)` | JSON payload | HTTP response | URLSession |
 | `.clipboard` | Text | Clipboard contents | ClipboardService |
 
+**`.agentHandoff` vs `.cliCommand`:** Both run a CLI tool, but agent handoff passes the full desktop context (active app, selected text, clipboard, browser URL) and expects the agent to interpret intent and act autonomously. A CLI command runs a fixed command with known arguments. The distinction is about control: commands are deterministic, agents are autonomous.
+
 ### The Interface Contract
 
-Every action receives a `ProcessingContext` — the standard input regardless of action type:
-
-```
-ProcessingContext
-  - transcript: String (raw or clean)
-  - metadata: { source, filename, duration, speakers, language, youtubeURL }
-  - previousOutput: String? (for chaining — output of the prior step)
-  - diarizationSegments: [DiarizationSegment]?
-  - wordTimestamps: [WordTimestamp]?
-```
-
-For CLI actions, the context maps to `MACPARAKEET_*` environment variables (extending PR #47):
+Defined in the Architecture section above as `ProcessingContext`. For CLI and agent actions, context maps to `MACPARAKEET_*` environment variables (extending PR #47, inspired by VoiceInk PR #600):
 
 | Variable | Value |
 |----------|-------|
@@ -366,56 +417,83 @@ For CLI actions, the context maps to `MACPARAKEET_*` environment variables (exte
 | `MACPARAKEET_LANGUAGE` | Detected language code |
 | `MACPARAKEET_YOUTUBE_URL` | Source YouTube URL (if applicable) |
 | `MACPARAKEET_PREVIOUS_OUTPUT` | Output of the prior step (if chaining) |
-
-This extends the env var contract sketched in PR #47 and inspired by VoiceInk PR #600 (@mitsuhiko).
+| `MACPARAKEET_ACTIVE_APP` | Frontmost app name |
+| `MACPARAKEET_ACTIVE_APP_BUNDLE_ID` | Frontmost app bundle ID |
+| `MACPARAKEET_BROWSER_URL` | Current browser tab URL (if applicable) |
+| `MACPARAKEET_SELECTED_TEXT` | Selected text in frontmost app |
+| `MACPARAKEET_CLIPBOARD_TEXT` | Current clipboard contents |
+| `MACPARAKEET_LOCALE` | System locale |
 
 ---
 
-## Layer 3: Workflows (future — vision only, do not build)
+## Workflows (future — design only, do not build)
 
-A Workflow chains Actions into a named sequence with a trigger.
+A Workflow chains Actions into a named sequence with a trigger. For predictable, repeatable pipelines that run the same way every time.
 
 ```
-Workflow { name, trigger, steps: [Action] }
+Workflow { name, trigger, steps: [Action], isEnabled }
 
-trigger: .manual | .postTranscription | .postDictation
+trigger: .manual | .postTranscription | .postDictation | .contextRule(app, condition)
 ```
 
 ### Example Workflows
 
+**Content processing:**
 - **Podcast Publish:** Summarize key topics → Format as blog post → Export markdown → Webhook to CMS
 - **Meeting Debrief:** Meeting notes prompt → Extract action items → Copy to clipboard
-- **Quick Clean:** Post-dictation → Clean pipeline → Format → Paste
+- **Study Session:** Transcribe lecture → Study notes prompt → Export to Notes app
 
-### UX Direction
+**Voice control (via agent handoff action):**
+- **Code Assistant:** Post-dictation in VS Code → Agent handoff to `claude -p` with selected text + file context
+- **Email Reply:** Post-dictation in Mail → Prompt: draft reply → Paste into compose window
+- **Quick Command:** Post-dictation → Agent handoff to `claude -p` → Execute interpreted command
 
-A step-list builder with add/remove/reorder. Each step shows its type icon + name + brief config summary. Preview/dry-run mode to see what would happen without executing. Error handling per step: stop on error vs. continue.
+Voice control is a workflow use case, not a separate system. A `.postDictation` trigger + `.agentHandoff` action = voice-controlled computer.
 
-### What This Enables
+### Creation Methods
 
-- "Every time I transcribe a meeting, generate meeting notes and email them to my team"
-- "When I dictate, clean the text, format as code comments, and paste"
-- "Transcribe this podcast, extract key quotes, format for Twitter, copy to clipboard"
+Two ways to create workflows:
 
-The Prompt Library is the first building block. Actions add the non-LLM processing types. Workflows chain them together.
+1. **Manual configuration** — Step-list editor where users add/remove/reorder actions, configure triggers, and set parameters. Simple form-based UI.
+
+2. **Agent-assisted builder** — User describes what they want in natural language ("when I transcribe a YouTube video, summarize it and save as markdown"). An LLM generates the workflow definition. User reviews and approves. The agent is the workflow builder — no visual programming needed.
+
+```
+User: "After every meeting transcript, give me action items
+       and save meeting notes to my Documents folder"
+
+         ↓ agent generates workflow
+
+┌─ Generated Workflow ──────────────────────────┐
+│  Name: Meeting Post-Processing                 │
+│  Trigger: After transcription                  │
+│                                                │
+│  Step 1: Apply "Action Items" prompt           │
+│  Step 2: Apply "Meeting Notes" prompt          │
+│  Step 3: Export as Markdown to ~/Documents/    │
+│                                                │
+│  [Approve]  [Edit]  [Try it now]              │
+└────────────────────────────────────────────────┘
+```
+
+Both methods produce the same stored workflow record. The agent-assisted builder is a creation UX, not a different data model.
+
+### External Integration: Apple Shortcuts
+
+MacParakeet can also expose capabilities to Apple Shortcuts via the App Intents framework (macOS 13+). Instead of building a full workflow orchestrator, MacParakeet provides building blocks — "Transcribe File," "Summarize with Prompt," "Get Last Transcription" — and Apple Shortcuts handles orchestration, triggers, and chaining with other apps. This is complementary to native workflows, not a replacement.
 
 ---
 
-## Boundaries
+## Boundaries & Sequencing
 
-| Build Now (v0.7) | Build Later |
-|-------------------|-------------|
-| `prompts` table + 7 built-in seeds | Action types beyond LLM prompts |
-| `summaries` table (one-to-many) | Workflow engine / step chaining |
-| Prompt model + repository | Post-transcription/dictation triggers |
-| Summary model + repository | Multi-prompt simultaneous generation |
-| Prompt dropdown picker | Transform prompts UI (when transforms ship) |
-| Extra instructions field | CLI action configuration |
-| Multi-summary navigation (collapsible cards) | Webhook / export actions |
-| Management sheet (hide built-ins, CRUD custom) | Workflow builder UI |
-| SummaryViewModel (extracted from TranscriptionVM) | ProcessingContext interface |
-| LLMService accepts custom system prompt | |
-| Migration from `transcriptions.summary` → `summaries` | |
+| Phase | What | When |
+|-------|------|------|
+| **v0.7 — Prompt Library** | `prompts` table + 7 built-ins, `summaries` table (multi-summary), dropdown picker, extra instructions, management sheet, SummaryViewModel | **Build now** |
+| **Actions** | Action type definitions, ProcessingContext Swift type, CLI/export/webhook/clipboard action executors | When demand is clear |
+| **Workflows** | Workflow storage, trigger system, step execution engine, manual step-list editor | After actions |
+| **Agent-assisted builder** | Natural language → workflow generation via LLM, review/approve UI | After workflows ship and we see how users create them |
+| **Agent handoff** | Full desktop context env vars, `.agentHandoff` action type | Can ship alongside or after workflows |
+| **Apple Shortcuts** | App Intents for transcription + prompt capabilities | Independent, can ship anytime |
 
 ---
 
