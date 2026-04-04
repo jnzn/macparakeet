@@ -718,7 +718,6 @@ struct TranscriptResultView: View {
                     summaryContentCard(
                         promptName: summaryViewModel.streamingPromptName,
                         content: summaryViewModel.streamingContent,
-                        createdAt: Date(),
                         summaryID: summaryViewModel.streamingSummaryID,
                         isStreaming: true
                     )
@@ -750,7 +749,6 @@ struct TranscriptResultView: View {
                         summaryContentCard(
                             promptName: summary.promptName,
                             content: summary.content,
-                            createdAt: summary.createdAt,
                             summaryID: summary.id,
                             isStreaming: false
                         )
@@ -870,7 +868,6 @@ struct TranscriptResultView: View {
     private func summaryContentCard(
         promptName: String,
         content: String,
-        createdAt: Date,
         summaryID: UUID?,
         isStreaming: Bool
     ) -> some View {
@@ -882,18 +879,13 @@ struct TranscriptResultView: View {
                         summaryViewModel.toggleExpanded(summaryID)
                     }
                 } label: {
-                    HStack(alignment: .top, spacing: DesignSystem.Spacing.sm) {
+                    HStack(alignment: .center, spacing: DesignSystem.Spacing.sm) {
                         Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(DesignSystem.Colors.textSecondary)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(promptName)
-                                .font(DesignSystem.Typography.sectionTitle)
-                                .foregroundStyle(DesignSystem.Colors.textPrimary)
-                            Text(createdAt, style: .relative)
-                                .font(DesignSystem.Typography.caption)
-                                .foregroundStyle(DesignSystem.Colors.textSecondary)
-                        }
+                        Text(promptName)
+                            .font(DesignSystem.Typography.sectionTitle)
+                            .foregroundStyle(DesignSystem.Colors.textPrimary)
                     }
                     .contentShape(Rectangle())
                 }
