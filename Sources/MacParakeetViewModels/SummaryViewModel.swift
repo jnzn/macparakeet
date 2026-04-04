@@ -5,6 +5,8 @@ import OSLog
 @MainActor
 @Observable
 public final class SummaryViewModel {
+    private static let autoSummaryTranscriptLengthThreshold = 500
+
     public var summaries: [Summary] = []
     public var expandedSummaryIDs: Set<UUID> = []
     public var isStreaming: Bool = false
@@ -192,7 +194,7 @@ public final class SummaryViewModel {
     }
 
     public func autoSummarize(transcript: String, transcriptionId: UUID) {
-        guard transcript.count > 500 else { return }
+        guard transcript.count > Self.autoSummaryTranscriptLengthThreshold else { return }
         startGeneration(
             transcript: transcript,
             transcriptionId: transcriptionId,
@@ -222,11 +224,11 @@ public final class SummaryViewModel {
         errorMessage = nil
         isStreaming = true
         streamingContent = ""
-        streamingSummaryID = UUID()
+        let summaryID = UUID()
+        streamingSummaryID = summaryID
         streamingPromptName = prompt.name
 
         let systemPrompt = assembledSystemPrompt(prompt: prompt, extraInstructions: extraInstructions)
-        let summaryID = streamingSummaryID ?? UUID()
         let targetTranscriptionID = transcriptionId
         streamingTask = Task { @MainActor [weak self] in
             guard let self else { return }

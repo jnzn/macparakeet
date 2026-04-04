@@ -322,8 +322,6 @@ public final class DatabaseManager: Sendable {
                 )
                 try migratedSummary.insert(db)
             }
-
-            try db.execute(sql: "UPDATE transcriptions SET summary = NULL WHERE summary IS NOT NULL")
         }
 
         try migrator.migrate(dbQueue)
