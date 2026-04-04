@@ -117,6 +117,20 @@ public final class SettingsViewModel {
         }
     }
 
+    // Auto-save
+    public var autoSaveTranscripts: Bool {
+        didSet {
+            defaults.set(autoSaveTranscripts, forKey: AutoSaveService.enabledKey)
+            Telemetry.send(.settingChanged(setting: .autoSave))
+        }
+    }
+    public var autoSaveFormat: AutoSaveFormat {
+        didSet {
+            defaults.set(autoSaveFormat.rawValue, forKey: AutoSaveService.formatKey)
+        }
+    }
+    public var autoSaveFolderPath: String?
+
     // Permission status
     public var microphoneGranted = false
     public var accessibilityGranted = false
@@ -184,6 +198,31 @@ public final class SettingsViewModel {
         saveAudioRecordings = defaults.object(forKey: "saveAudioRecordings") as? Bool ?? true
         saveTranscriptionAudio = defaults.object(forKey: "saveTranscriptionAudio") as? Bool ?? true
         speakerDiarization = defaults.object(forKey: "speakerDiarization") as? Bool ?? true
+        autoSaveTranscripts = defaults.bool(forKey: AutoSaveService.enabledKey)
+        autoSaveFormat = AutoSaveFormat(rawValue: defaults.string(forKey: AutoSaveService.formatKey) ?? "md") ?? .md
+        autoSaveFolderPath = Self.resolveAutoSaveFolderPath(defaults: defaults)
+    }
+
+    /// Resolve the stored bookmark to a display path.
+    private static func resolveAutoSaveFolderPath(defaults: UserDefaults) -> String? {
+        guard let data = defaults.data(forKey: AutoSaveService.folderBookmarkKey) else { return nil }
+        var isStale = false
+        guard let url = try? URL(
+            resolvingBookmarkData: data,
+            bookmarkDataIsStale: &isStale
+        ) else { return nil }
+        return url.path
+    }
+
+    public func chooseAutoSaveFolder(url: URL) {
+        if let path = AutoSaveService.storeFolder(url, defaults: defaults) {
+            autoSaveFolderPath = path
+        }
+    }
+
+    public func clearAutoSaveFolder() {
+        AutoSaveService.clearFolder(defaults: defaults)
+        autoSaveFolderPath = nil
     }
 
     public func configure(
