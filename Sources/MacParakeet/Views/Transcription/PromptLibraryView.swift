@@ -65,7 +65,7 @@ struct PromptLibraryView: View {
                     // Built-In Prompts Section
                     sectionContainer(
                         title: "Built-In Prompts",
-                        subtitle: "Shipped with MacParakeet and kept in sync with the app's built-in prompt set."
+                        subtitle: "Toggle visibility or enable Auto-Run to generate results automatically."
                     ) {
                         cardGroup {
                             let builtIns = viewModel.prompts.filter(\.isBuiltIn)
@@ -79,7 +79,7 @@ struct PromptLibraryView: View {
                     // Custom Prompts Section
                     sectionContainer(
                         title: "My Prompts",
-                        subtitle: "Your personal templates for specific workflows."
+                        subtitle: "Custom prompts you've created. Edit, reorder, or remove anytime."
                     ) {
                         let customPrompts = viewModel.prompts.filter { !$0.isBuiltIn }
                         if customPrompts.isEmpty {
@@ -104,7 +104,7 @@ struct PromptLibraryView: View {
                 }
                 .padding(DesignSystem.Spacing.xl)
             }
-            .background(DesignSystem.Colors.background)
+            // Background removed here to let the ZStack watermark show through
         }
         .frame(minWidth: 600, minHeight: 600)
         .alert(
