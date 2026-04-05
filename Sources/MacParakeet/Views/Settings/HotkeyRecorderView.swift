@@ -8,6 +8,7 @@ import MacParakeetCore
 ///                    Warning text shown below.
 struct HotkeyRecorderView: View {
     @Binding var trigger: HotkeyTrigger
+    var additionalValidation: ((HotkeyTrigger) -> HotkeyTrigger.ValidationResult)? = nil
     @State private var isRecording = false
     @State private var validationMessage: String?
     @State private var validationIsBlocked = false
@@ -116,7 +117,7 @@ struct HotkeyRecorderView: View {
                 if !heldModifiers.isEmpty {
                     // Chord: modifier(s) + key
                     let candidate = HotkeyTrigger.chord(modifiers: heldModifiers, keyCode: keyCode)
-                    switch candidate.validation {
+                    switch combinedValidation(for: candidate) {
                     case .blocked(let msg):
                         pendingModifiers = []
                         validationMessage = msg
@@ -132,7 +133,7 @@ struct HotkeyRecorderView: View {
                 } else {
                     // Bare key (no modifiers held)
                     let candidate = HotkeyTrigger.fromKeyCode(keyCode)
-                    switch candidate.validation {
+                    switch combinedValidation(for: candidate) {
                     case .blocked(let msg):
                         validationMessage = msg
                         validationIsBlocked = true
@@ -217,5 +218,23 @@ struct HotkeyRecorderView: View {
         validationMessage = warning
         validationIsBlocked = false
         stopRecording()
+    }
+
+    private func combinedValidation(for candidate: HotkeyTrigger) -> HotkeyTrigger.ValidationResult {
+        let primary = candidate.validation
+        let secondary = additionalValidation?(candidate) ?? .allowed
+
+        switch (primary, secondary) {
+        case (.blocked(let message), _):
+            return .blocked(message)
+        case (_, .blocked(let message)):
+            return .blocked(message)
+        case (.warned(let message), _):
+            return .warned(message)
+        case (_, .warned(let message)):
+            return .warned(message)
+        default:
+            return .allowed
+        }
     }
 }

@@ -181,7 +181,16 @@ struct SettingsView: View {
                         detail: "System-wide key used to start and stop dictation."
                     )
                     Spacer(minLength: DesignSystem.Spacing.md)
-                    HotkeyRecorderView(trigger: $viewModel.hotkeyTrigger)
+                    VStack(alignment: .trailing, spacing: 4) {
+                        HotkeyRecorderView(trigger: $viewModel.hotkeyTrigger) { candidate in
+                            guard candidate == viewModel.meetingHotkeyTrigger else { return .allowed }
+                            return .blocked("Already used by meeting recording.")
+                        }
+
+                        if viewModel.hotkeyTrigger == viewModel.meetingHotkeyTrigger {
+                            hotkeyConflictText
+                        }
+                    }
                 }
 
                 Divider()
@@ -235,7 +244,16 @@ struct SettingsView: View {
                         detail: "Global shortcut that immediately starts or stops meeting recording."
                     )
                     Spacer(minLength: DesignSystem.Spacing.md)
-                    HotkeyRecorderView(trigger: $viewModel.meetingHotkeyTrigger)
+                    VStack(alignment: .trailing, spacing: 4) {
+                        HotkeyRecorderView(trigger: $viewModel.meetingHotkeyTrigger) { candidate in
+                            guard candidate == viewModel.hotkeyTrigger else { return .allowed }
+                            return .blocked("Already used by dictation.")
+                        }
+
+                        if viewModel.hotkeyTrigger == viewModel.meetingHotkeyTrigger {
+                            hotkeyConflictText
+                        }
+                    }
                 }
 
                 Divider()
@@ -300,6 +318,16 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    private var hotkeyConflictText: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "xmark.circle.fill")
+                .font(.system(size: 10))
+            Text("Dictation and meeting recording cannot use the same shortcut.")
+                .font(DesignSystem.Typography.micro)
+        }
+        .foregroundStyle(DesignSystem.Colors.errorRed)
     }
 
     @ViewBuilder
