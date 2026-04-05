@@ -3,7 +3,8 @@ import MacParakeetViewModels
 import SwiftUI
 
 private final class MeetingRecordingClickablePanel: NSPanel {
-    override var canBecomeKey: Bool { true }
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
 }
 
 @MainActor
@@ -21,8 +22,8 @@ final class MeetingRecordingPillController {
         let view = MeetingRecordingPillView(viewModel: pillViewModel)
         let hosting = NSHostingView(rootView: view)
 
-        let panelWidth: CGFloat = 440
-        let panelHeight: CGFloat = 220
+        let panelWidth: CGFloat = 240
+        let panelHeight: CGFloat = 120
         hosting.frame = NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight)
 
         let panel = MeetingRecordingClickablePanel(
@@ -36,6 +37,7 @@ final class MeetingRecordingPillController {
         panel.hasShadow = false
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.isMovableByWindowBackground = true
         panel.contentView = hosting
 
         if let screen = NSScreen.main {
