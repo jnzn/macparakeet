@@ -1,6 +1,6 @@
 # Prompt Library + Multi-Summary Implementation Plan
 
-> Status: **ACTIVE**
+> Status: **COMPLETED** - April 2026
 > Spec: [spec/12-processing-layer.md](../../spec/12-processing-layer.md)
 > ADR: [ADR-013](../../spec/adr/013-prompt-library-multi-summary.md)
 > Issue: [#51](https://github.com/moona3k/macparakeet/issues/51)

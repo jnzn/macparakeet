@@ -65,7 +65,7 @@ let package = Package(
         // Tests
         .testTarget(
             name: "MacParakeetTests",
-            dependencies: ["MacParakeetCore", "MacParakeetViewModels"],
+            dependencies: ["MacParakeet", "MacParakeetCore", "MacParakeetViewModels"],
             path: "Tests/MacParakeetTests"
         ),
         .testTarget(

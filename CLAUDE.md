@@ -53,7 +53,7 @@ A **fast, private, local-first voice app** for macOS with three co-equal modes: 
 
 ## Product Context
 
-MacParakeet is extracted from the OatFlow feature in Oatmeal but is **fully independent** -- no shared code, no shared packages, no monorepo dependencies.
+MacParakeet is extracted from the OatFlow feature in Oatmeal but is maintained independently -- no shared packages, no monorepo dependencies.
 
 | | MacParakeet | Oatmeal |
 |---|-------------|---------|
@@ -104,7 +104,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 - **v0.5** Data & Reliability -- Private dictation, multi-conversation chat, YouTube metadata, favorites, open-source release
 - **v0.6** Video Player & UI Revamp -- HLS streaming, thumbnails, media player, split-pane detail, synced transcript, library view
 - **v0.7** Prompt Library & Multi-Summary -- Prompt Library (6 built-in + custom), multi-summary per transcript (tab-based), extra instructions, prompt management sheet, `summaries` table migration
-- **v0.6** Meeting Recording (Planned) -- System audio + mic capture via Core Audio Taps, recording pill UI, results in library with full prompt/summary/chat support (ADR-014)
+- **Meeting recording** -- System audio + mic capture via Core Audio Taps, sacred-geometry recording pill + meeting panel, library integration, prompt/summary/chat support (ADR-014)
 
 ## Key Patterns
 
@@ -141,7 +141,7 @@ let result = try await manager.transcribe(audioSamples, source: .system)
 **Two-chip architecture:**
 ```
 CPU:  MacParakeet app (UI, hotkeys, clipboard, history)
-ANE:  Parakeet STT (via FluidAudio/CoreML) — dedicated ML chip
+ANE:  Parakeet STT (via FluidAudio/CoreML) -- dedicated ML chip
 ```
 
 ### Database
@@ -265,7 +265,7 @@ macparakeet/
 
 - [macparakeet-website](https://github.com/moona3k/macparakeet-website) -- Marketing website (Astro + Tailwind), macparakeet.com
 - [macparakeet-community](https://github.com/moona3k/macparakeet-community) -- Archived; all issues now on moona3k/macparakeet
-- [oatmeal](https://github.com/moona3k/oatmeal) -- Sibling product (meeting memory app, audio capture code ported to MacParakeet for v0.6)
+- [oatmeal](https://github.com/moona3k/oatmeal) -- Sibling product (meeting memory app); some meeting audio capture code was ported and adapted into MacParakeet
 
 ### Feedback & Community
 

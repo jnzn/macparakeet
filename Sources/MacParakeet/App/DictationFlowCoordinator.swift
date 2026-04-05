@@ -5,6 +5,8 @@ import MacParakeetViewModels
 
 @MainActor
 final class DictationFlowCoordinator {
+    private static let silenceAutoStopThreshold: Float = 0.03
+
     // MARK: - Public Interface
 
     /// Read by AppDelegate for menu bar icon guard.
@@ -17,7 +19,7 @@ final class DictationFlowCoordinator {
 
     // MARK: - Dependencies
 
-    private let dictationService: DictationService
+    private let serviceSession: DictationServiceSession
     private let clipboardService: ClipboardServiceProtocol
     private let entitlementsService: EntitlementsService
     private let dictationRepo: DictationRepository
@@ -52,6 +54,9 @@ final class DictationFlowCoordinator {
     private var pendingPostPasteAction: KeyAction?
     /// Error from the most recent entitlements check failure, consumed by presentEntitlementsAlert effect.
     private var lastEntitlementsError: Error?
+    private var readyPillDismissDelayMs: Int {
+        (hotkeyManager?.tapThresholdMs ?? FnKeyStateMachine.defaultTapThresholdMs) * 2
+    }
 
     // MARK: - Init
 
@@ -65,7 +70,7 @@ final class DictationFlowCoordinator {
         onHistoryReload: @escaping () -> Void,
         onPresentEntitlementsAlert: @escaping (Error) -> Void
     ) {
-        self.dictationService = dictationService
+        self.serviceSession = DictationServiceSession(service: dictationService)
         self.clipboardService = clipboardService
         self.entitlementsService = entitlementsService
         self.dictationRepo = dictationRepo
@@ -115,6 +120,10 @@ final class DictationFlowCoordinator {
         // Map telemetry reason to state machine cancel reason
         let flowReason: DictationFlowCancelReason = reason == .ui ? .ui : .escape
         sendEvent(.cancelRequested(reason: flowReason))
+    }
+
+    func discardProvisionalRecording(showReadyPill: Bool) {
+        sendEvent(.discardRequested(showReadyPill: showReadyPill))
     }
 
     func dismissOverlayIfError() {
@@ -186,7 +195,7 @@ final class DictationFlowCoordinator {
                 }
             }
             readyDismissTimer = timer
-            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(FnKeyStateMachine.tapThresholdMs * 2), execute: timer)
+            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(readyPillDismissDelayMs), execute: timer)
 
         case .showRecordingOverlay(let mode):
             // Reuse existing overlay if it's in ready state (seamless transition)
@@ -265,106 +274,36 @@ final class DictationFlowCoordinator {
             }
 
         case .startRecording(let mode):
-            let gen = stateMachine.generation
-            let trigger = currentTrigger
-            // Launch in a new task that calls startRecording then runs audio level loop
-            recordingTask = Task { @MainActor in
-                do {
-                    let telemetryMode: TelemetryDictationMode = switch mode {
-                    case .persistent: .persistent
-                    case .holdToTalk: .hold
-                    }
-                    try await self.dictationService.startRecording(
-                        context: DictationTelemetryContext(trigger: trigger, mode: telemetryMode)
-                    )
-                    guard !Task.isCancelled else { return }
-                    self.sendEvent(.recordingStarted(generation: gen))
-
-                    // Audio level loop + silence auto-stop
-                    let (autoStopEnabled, silenceDelay) = (self.settingsViewModel.silenceAutoStop, self.settingsViewModel.silenceDelay)
-                    let silenceThreshold: Float = 0.03
-                    var lastNonSilenceAt = Date()
-                    var didAutoStop = false
-
-                    while !Task.isCancelled,
-                          case .recording = await self.dictationService.state {
-                        let level = await self.dictationService.audioLevel
-                        self.overlayViewModel?.audioLevel = level
-
-                        if autoStopEnabled {
-                            let now = Date()
-                            if level >= silenceThreshold {
-                                lastNonSilenceAt = now
-                            } else if !didAutoStop, now.timeIntervalSince(lastNonSilenceAt) >= silenceDelay {
-                                didAutoStop = true
-                                self.stopDictation()
-                                break
-                            }
-                        }
-
-                        try? await Task.sleep(for: .milliseconds(50))
-                    }
-                } catch {
-                    guard !Task.isCancelled else { return }
-                    self.dictationLog.error("start_recording_failed gen=\(gen) error=\(error.localizedDescription, privacy: .public)")
-                    self.sendEvent(.startFailed(generation: gen, message: error.localizedDescription))
-                }
-            }
+            let sessionID = serviceSession.reserveNextSessionID()
+            startRecordingTask(mode: mode, generation: stateMachine.generation, sessionID: sessionID)
 
         case .stopRecordingAndTranscribe:
-            let gen = stateMachine.generation
-            actionTask = Task { @MainActor in
-                do {
-                    let result = try await self.dictationService.stopRecording()
-                    guard !Task.isCancelled else { return }
-                    self.currentDictation = result.dictation
-                    self.pendingPostPasteAction = result.postPasteAction
-                    self.sendEvent(.transcriptionCompleted(generation: gen))
-                } catch where self.isNoSpeechError(error) {
-                    guard !Task.isCancelled else { return }
-                    self.dictationLog.notice("dictation_completed gen=\(gen) outcome=no_speech")
-                    self.sendEvent(.transcriptionFailedNoSpeech(generation: gen))
-                } catch {
-                    guard !Task.isCancelled else { return }
-                    self.dictationLog.error("dictation_completed gen=\(gen) outcome=stop_failed error=\(error.localizedDescription, privacy: .public)")
-                    self.sendEvent(.transcriptionFailed(generation: gen, message: error.localizedDescription))
-                }
-            }
+            let sessionID = serviceSession.currentSessionID
+            stopRecordingTask(generation: stateMachine.generation, sessionID: sessionID)
 
         case .cancelRecording(let reason):
-            let telemetryReason: TelemetryDictationCancelReason = switch reason {
-            case .escape: .escape
-            case .ui: .ui
-            }
-            Task {
-                await self.dictationService.cancelRecording(reason: telemetryReason)
+            let sessionID = serviceSession.currentSessionID
+            Task { @MainActor in
+                await self.serviceSession.cancelRecording(
+                    reason: self.telemetryCancelReason(for: reason),
+                    sessionID: sessionID
+                )
             }
 
         case .confirmCancel:
-            Task {
-                await self.dictationService.confirmCancel()
+            let sessionID = serviceSession.currentSessionID
+            Task { @MainActor in
+                await self.serviceSession.confirmCancel(sessionID: sessionID)
+            }
+
+        case .discardRecording:
+            let sessionID = serviceSession.currentSessionID
+            Task { @MainActor in
+                await self.serviceSession.confirmCancel(sessionID: sessionID)
             }
 
         case .undoCancelAndTranscribe:
-            let gen = stateMachine.generation
-            actionTask = Task { @MainActor in
-                do {
-                    let result = try await self.dictationService.undoCancel()
-                    guard !Task.isCancelled else { return }
-                    self.currentDictation = result.dictation
-                    self.pendingPostPasteAction = result.postPasteAction
-                    Telemetry.send(.dictationUndoUsed)
-                    self.sendEvent(.transcriptionCompleted(generation: gen))
-                } catch where self.isNoSpeechError(error) {
-                    guard !Task.isCancelled else { return }
-                    self.dictationLog.notice("dictation_completed gen=\(gen) outcome=undo_no_speech")
-                    self.sendEvent(.transcriptionFailedNoSpeech(generation: gen))
-                } catch {
-                    guard !Task.isCancelled else { return }
-                    self.dictationLog.error("dictation_completed gen=\(gen) outcome=undo_failed error=\(error.localizedDescription, privacy: .public)")
-                    self.sendEvent(.transcriptionFailed(generation: gen, message: error.localizedDescription))
-                }
-            }
+            undoCancelTask(generation: stateMachine.generation)
 
         // MARK: Paste
 
@@ -475,7 +414,7 @@ final class DictationFlowCoordinator {
                 }
             }
             readyDismissTimer = timer
-            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(FnKeyStateMachine.tapThresholdMs * 2), execute: timer)
+            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(readyPillDismissDelayMs), execute: timer)
 
         case .cancelReadyDismissTimer:
             readyDismissTimer?.cancel()
@@ -537,6 +476,126 @@ final class DictationFlowCoordinator {
         return false
     }
 
+    private func telemetryMode(for mode: FnKeyStateMachine.RecordingMode) -> TelemetryDictationMode {
+        switch mode {
+        case .persistent: return .persistent
+        case .holdToTalk: return .hold
+        }
+    }
+
+    private func telemetryCancelReason(for reason: DictationFlowCancelReason) -> TelemetryDictationCancelReason {
+        switch reason {
+        case .escape: return .escape
+        case .ui: return .ui
+        }
+    }
+
+    private func startRecordingTask(
+        mode: FnKeyStateMachine.RecordingMode,
+        generation: Int,
+        sessionID: Int
+    ) {
+        let trigger = currentTrigger
+        recordingTask = Task { @MainActor in
+            do {
+                try await self.serviceSession.startRecording(
+                    sessionID: sessionID,
+                    context: DictationTelemetryContext(trigger: trigger, mode: self.telemetryMode(for: mode))
+                )
+                let serviceState = await self.serviceSession.state
+                guard case .recording = serviceState else {
+                    self.dictationLog.notice(
+                        "start_recording_aborted gen=\(generation) session=\(sessionID) flowState=\(self.describeState(self.stateMachine.state), privacy: .public) serviceState=\(self.describeServiceState(serviceState), privacy: .public)"
+                    )
+                    return
+                }
+                guard !Task.isCancelled else { return }
+                self.sendEvent(.recordingStarted(generation: generation))
+                await self.runRecordingLevelLoop()
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.dictationLog.error(
+                    "start_recording_failed gen=\(generation) session=\(sessionID) error=\(error.localizedDescription, privacy: .public)"
+                )
+                self.sendEvent(.startFailed(generation: generation, message: error.localizedDescription))
+            }
+        }
+    }
+
+    private func stopRecordingTask(generation: Int, sessionID: Int) {
+        actionTask = Task { @MainActor in
+            do {
+                let serviceState = await self.serviceSession.state
+                self.dictationLog.notice(
+                    "stop_recording_requested gen=\(generation) session=\(sessionID) flowState=\(self.describeState(self.stateMachine.state), privacy: .public) serviceState=\(self.describeServiceState(serviceState), privacy: .public)"
+                )
+                let result = try await self.serviceSession.stopRecording(sessionID: sessionID)
+                guard !Task.isCancelled else { return }
+                self.consumeDictationResult(result)
+                self.sendEvent(.transcriptionCompleted(generation: generation))
+            } catch {
+                self.handleTranscriptionFailure(error, generation: generation, phase: "stop")
+            }
+        }
+    }
+
+    private func undoCancelTask(generation: Int) {
+        actionTask = Task { @MainActor in
+            do {
+                let result = try await self.serviceSession.undoCancel()
+                guard !Task.isCancelled else { return }
+                self.consumeDictationResult(result)
+                Telemetry.send(.dictationUndoUsed)
+                self.sendEvent(.transcriptionCompleted(generation: generation))
+            } catch {
+                self.handleTranscriptionFailure(error, generation: generation, phase: "undo")
+            }
+        }
+    }
+
+    private func consumeDictationResult(_ result: DictationResult) {
+        currentDictation = result.dictation
+        pendingPostPasteAction = result.postPasteAction
+    }
+
+    private func handleTranscriptionFailure(_ error: Error, generation: Int, phase: String) {
+        guard !Task.isCancelled else { return }
+        if isNoSpeechError(error) {
+            dictationLog.notice("dictation_completed gen=\(generation) outcome=\(phase, privacy: .public)_no_speech")
+            sendEvent(.transcriptionFailedNoSpeech(generation: generation))
+        } else {
+            dictationLog.error("dictation_completed gen=\(generation) outcome=\(phase, privacy: .public)_failed error=\(error.localizedDescription, privacy: .public)")
+            sendEvent(.transcriptionFailed(generation: generation, message: error.localizedDescription))
+        }
+    }
+
+    private func runRecordingLevelLoop() async {
+        let (autoStopEnabled, silenceDelay) = (settingsViewModel.silenceAutoStop, settingsViewModel.silenceDelay)
+        var lastNonSilenceAt = Date()
+        var didAutoStop = false
+
+        while !Task.isCancelled {
+            let snapshot = await serviceSession.recordingSnapshot()
+            guard case .recording = snapshot.state else { break }
+
+            let level = snapshot.audioLevel
+            overlayViewModel?.audioLevel = level
+
+            if autoStopEnabled {
+                let now = Date()
+                if level >= Self.silenceAutoStopThreshold {
+                    lastNonSilenceAt = now
+                } else if !didAutoStop, now.timeIntervalSince(lastNonSilenceAt) >= silenceDelay {
+                    didAutoStop = true
+                    stopDictation()
+                    break
+                }
+            }
+
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+    }
+
     private func commandFailureBucket(for error: Error) -> String {
         if let accessibilityError = error as? AccessibilityServiceError {
             switch accessibilityError {
@@ -568,6 +627,17 @@ final class DictationFlowCoordinator {
             case .noSpeech: return "finishing.noSpeech"
             case .error: return "finishing.error"
             }
+        }
+    }
+
+    private func describeServiceState(_ state: DictationState) -> String {
+        switch state {
+        case .idle: return "idle"
+        case .recording: return "recording"
+        case .processing: return "processing"
+        case .cancelled: return "cancelled"
+        case .success: return "success"
+        case .error: return "error"
         }
     }
 }
