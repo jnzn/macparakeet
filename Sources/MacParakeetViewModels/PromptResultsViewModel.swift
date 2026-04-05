@@ -4,7 +4,7 @@ import OSLog
 
 @MainActor
 @Observable
-public final class SummaryViewModel {
+public final class PromptResultsViewModel {
     public struct PendingGeneration: Identifiable, Equatable, Sendable {
         public enum State: Equatable, Sendable {
             case queued
@@ -17,7 +17,7 @@ public final class SummaryViewModel {
         public var promptContent: String
         public var extraInstructions: String?
         public var transcript: String
-        public var replacingSummaryID: UUID?
+        public var replacingPromptResultID: UUID?
         public var state: State
         public var content: String
 
@@ -28,7 +28,7 @@ public final class SummaryViewModel {
             promptContent: String,
             extraInstructions: String?,
             transcript: String,
-            replacingSummaryID: UUID? = nil,
+            replacingPromptResultID: UUID? = nil,
             state: State = .queued,
             content: String = ""
         ) {
@@ -38,51 +38,51 @@ public final class SummaryViewModel {
             self.promptContent = promptContent
             self.extraInstructions = extraInstructions
             self.transcript = transcript
-            self.replacingSummaryID = replacingSummaryID
+            self.replacingPromptResultID = replacingPromptResultID
             self.state = state
             self.content = content
         }
     }
 
-    private static let autoSummaryTranscriptLengthThreshold = 500
+    private static let autoGenerationTranscriptLengthThreshold = 500
 
-    public var summaries: [Summary] = []
+    public var promptResults: [PromptResult] = []
     public var pendingGenerations: [PendingGeneration] = []
     public var selectedPrompt: Prompt?
     public var extraInstructions: String = ""
     public var errorMessage: String?
     public var visiblePrompts: [Prompt] = []
-    public var pendingDeleteSummary: Summary?
+    public var pendingDeletePromptResult: PromptResult?
     public var currentModelName: String = ""
     public var currentProviderID: LLMProviderID?
     public var availableModels: [String] = []
-    public var badgedSummaryID: UUID?
+    public var unreadPromptResultIDs: Set<UUID> = []
     public var onModelChanged: (() -> Void)?
-    public var onSummariesChanged: ((UUID, Bool) -> Void)?
+    public var onPromptResultsChanged: ((UUID, Bool) -> Void)?
     public var onLegacySummaryChanged: ((UUID, String?) -> Void)?
     public var onGenerationCompleted: ((UUID, UUID) -> Void)?
-    public var onDeletedSummary: ((UUID) -> Void)?
-    public var shouldShowBadge: ((UUID) -> Bool)?
+    public var onDeletedPromptResult: ((UUID) -> Void)?
+    public var shouldMarkPromptResultUnread: ((UUID) -> Bool)?
 
     private var llmService: LLMServiceProtocol?
     private var promptRepo: PromptRepositoryProtocol?
-    private var summaryRepo: SummaryRepositoryProtocol?
+    private var promptResultRepo: PromptResultRepositoryProtocol?
     private var transcriptionRepo: TranscriptionRepositoryProtocol?
     private var configStore: LLMConfigStoreProtocol?
     private var cliConfigStore: LocalCLIConfigStore?
     private var currentTranscriptionID: UUID?
     private var streamingTask: Task<Void, Never>?
-    private let logger = Logger(subsystem: "com.macparakeet.viewmodels", category: "SummaryViewModel")
+    private let logger = Logger(subsystem: "com.macparakeet.viewmodels", category: "PromptResultsViewModel")
 
-    public var canGenerateSummary: Bool {
+    public var canGeneratePromptResult: Bool {
         llmService != nil
     }
 
-    public var canGenerateManualSummary: Bool {
+    public var canGenerateManualPromptResult: Bool {
         llmService != nil && selectedPrompt != nil
     }
 
-    public var hasSummaryGenerationCapability: Bool {
+    public var hasPromptResultGenerationCapability: Bool {
         llmService != nil
     }
 
@@ -102,7 +102,7 @@ public final class SummaryViewModel {
         activeStreamingGeneration?.content ?? ""
     }
 
-    public var streamingSummaryID: UUID? {
+    public var streamingPromptResultID: UUID? {
         activeStreamingGeneration?.id
     }
 
@@ -127,14 +127,14 @@ public final class SummaryViewModel {
     public func configure(
         llmService: LLMServiceProtocol?,
         promptRepo: PromptRepositoryProtocol?,
-        summaryRepo: SummaryRepositoryProtocol?,
+        promptResultRepo: PromptResultRepositoryProtocol?,
         transcriptionRepo: TranscriptionRepositoryProtocol? = nil,
         configStore: LLMConfigStoreProtocol? = nil,
         cliConfigStore: LocalCLIConfigStore = LocalCLIConfigStore()
     ) {
         self.llmService = llmService
         self.promptRepo = promptRepo
-        self.summaryRepo = summaryRepo
+        self.promptResultRepo = promptResultRepo
         self.transcriptionRepo = transcriptionRepo
         self.configStore = configStore
         self.cliConfigStore = cliConfigStore
@@ -188,7 +188,7 @@ public final class SummaryViewModel {
     public func loadVisiblePrompts() {
         guard let promptRepo else { return }
         do {
-            visiblePrompts = try promptRepo.fetchVisible(category: .summary)
+            visiblePrompts = try promptRepo.fetchVisible(category: .result)
             if let selectedPrompt,
                let refreshed = visiblePrompts.first(where: { $0.id == selectedPrompt.id }) {
                 self.selectedPrompt = refreshed
@@ -204,27 +204,29 @@ public final class SummaryViewModel {
         }
     }
 
-    public func loadSummaries(transcriptionId: UUID) {
+    public func loadPromptResults(transcriptionId: UUID) {
         if currentTranscriptionID != transcriptionId {
             cancelStreaming()
         }
         currentTranscriptionID = transcriptionId
         do {
-            summaries = try summaryRepo?.fetchAll(transcriptionId: transcriptionId) ?? []
-            onSummariesChanged?(transcriptionId, !summaries.isEmpty)
+            promptResults = try promptResultRepo?.fetchAll(transcriptionId: transcriptionId) ?? []
+            onPromptResultsChanged?(transcriptionId, !promptResults.isEmpty)
             errorMessage = nil
         } catch {
-            summaries = []
-            onSummariesChanged?(transcriptionId, false)
+            promptResults = []
+            onPromptResultsChanged?(transcriptionId, false)
             errorMessage = error.localizedDescription
         }
         processNextQueuedGeneration()
     }
 
-    public func clearBadge(for summaryID: UUID) {
-        if badgedSummaryID == summaryID {
-            badgedSummaryID = nil
-        }
+    public func markPromptResultViewed(_ promptResultID: UUID) {
+        unreadPromptResultIDs.remove(promptResultID)
+    }
+
+    public func hasUnreadPromptResult(_ promptResultID: UUID) -> Bool {
+        unreadPromptResultIDs.contains(promptResultID)
     }
 
     public func pendingGeneration(id: UUID) -> PendingGeneration? {
@@ -242,22 +244,22 @@ public final class SummaryViewModel {
     }
 
     public func confirmDelete() {
-        guard let summary = pendingDeleteSummary else { return }
-        pendingDeleteSummary = nil
-        deleteSummary(summary)
+        guard let promptResult = pendingDeletePromptResult else { return }
+        pendingDeletePromptResult = nil
+        deletePromptResult(promptResult)
     }
 
-    public func deleteSummary(_ summary: Summary) {
-        guard let summaryRepo else { return }
+    public func deletePromptResult(_ promptResult: PromptResult) {
+        guard let promptResultRepo else { return }
         do {
-            _ = try summaryRepo.delete(id: summary.id)
-            summaries.removeAll { $0.id == summary.id }
-            if badgedSummaryID == summary.id { badgedSummaryID = nil }
-            try syncLegacySummary(for: summary.transcriptionId)
+            _ = try promptResultRepo.delete(id: promptResult.id)
+            promptResults.removeAll { $0.id == promptResult.id }
+            unreadPromptResultIDs.remove(promptResult.id)
+            try syncLegacySummary(for: promptResult.transcriptionId)
             if let transcriptionID = currentTranscriptionID {
-                onSummariesChanged?(transcriptionID, !summaries.isEmpty)
+                onPromptResultsChanged?(transcriptionID, !promptResults.isEmpty)
             }
-            onDeletedSummary?(summary.id)
+            onDeletedPromptResult?(promptResult.id)
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
@@ -265,7 +267,7 @@ public final class SummaryViewModel {
     }
 
     @discardableResult
-    public func generateSummary(transcript: String, transcriptionId: UUID) -> UUID? {
+    public func generatePromptResult(transcript: String, transcriptionId: UUID) -> UUID? {
         guard let prompt = selectedPrompt else { return nil }
         return enqueueGeneration(
             transcript: transcript,
@@ -276,25 +278,25 @@ public final class SummaryViewModel {
     }
 
     @discardableResult
-    public func regenerateSummary(_ summary: Summary, transcript: String) -> UUID? {
+    public func regeneratePromptResult(_ promptResult: PromptResult, transcript: String) -> UUID? {
         let prompt = Prompt(
-            name: summary.promptName,
-            content: summary.promptContent,
+            name: promptResult.promptName,
+            content: promptResult.promptContent,
             isBuiltIn: false,
             sortOrder: 0
         )
         return enqueueGeneration(
             transcript: transcript,
-            transcriptionId: summary.transcriptionId,
+            transcriptionId: promptResult.transcriptionId,
             prompt: prompt,
-            extraInstructions: summary.extraInstructions,
-            replacingSummaryID: summary.id
+            extraInstructions: promptResult.extraInstructions,
+            replacingPromptResultID: promptResult.id
         )
     }
 
     @discardableResult
-    public func autoSummarize(transcript: String, transcriptionId: UUID) -> [UUID] {
-        guard transcript.count > Self.autoSummaryTranscriptLengthThreshold else { return [] }
+    public func autoGeneratePromptResults(transcript: String, transcriptionId: UUID) -> [UUID] {
+        guard transcript.count > Self.autoGenerationTranscriptLengthThreshold else { return [] }
         
         let autoPrompts = (try? promptRepo?.fetchAutoRunPrompts()) ?? [Prompt.defaultPrompt]
         guard !autoPrompts.isEmpty else { return [] }
@@ -314,7 +316,7 @@ public final class SummaryViewModel {
     }
 
     public func cancelStreaming() {
-        guard let generationID = streamingSummaryID else { return }
+        guard let generationID = streamingPromptResultID else { return }
         cancelGeneration(id: generationID)
     }
 
@@ -339,7 +341,7 @@ public final class SummaryViewModel {
         transcriptionId: UUID,
         prompt: Prompt,
         extraInstructions: String?,
-        replacingSummaryID: UUID? = nil
+        replacingPromptResultID: UUID? = nil
     ) -> UUID? {
         guard llmService != nil else { return nil }
 
@@ -352,7 +354,7 @@ public final class SummaryViewModel {
             promptContent: prompt.content,
             extraInstructions: extraInstructions,
             transcript: transcript,
-            replacingSummaryID: replacingSummaryID
+            replacingPromptResultID: replacingPromptResultID
         )
         pendingGenerations.append(generation)
         processNextQueuedGeneration()
@@ -411,7 +413,7 @@ public final class SummaryViewModel {
 
         let generation = pendingGenerations[index]
         let timestamp = Date()
-        let summary = Summary(
+        let promptResult = PromptResult(
             id: generation.id,
             transcriptionId: generation.transcriptionId,
             promptName: generation.promptName,
@@ -422,32 +424,32 @@ public final class SummaryViewModel {
             updatedAt: timestamp
         )
 
-        if let replacingSummaryID = generation.replacingSummaryID {
-            try summaryRepo?.replace(summary, deletingExistingID: replacingSummaryID)
+        if let replacingPromptResultID = generation.replacingPromptResultID {
+            try promptResultRepo?.replace(promptResult, deletingExistingID: replacingPromptResultID)
         } else {
-            try summaryRepo?.save(summary)
+            try promptResultRepo?.save(promptResult)
         }
-        try transcriptionRepo?.updateSummary(id: generation.transcriptionId, summary: summary.content)
-        onLegacySummaryChanged?(generation.transcriptionId, summary.content)
+        try transcriptionRepo?.updateSummary(id: generation.transcriptionId, summary: promptResult.content)
+        onLegacySummaryChanged?(generation.transcriptionId, promptResult.content)
 
         pendingGenerations.remove(at: index)
         streamingTask = nil
 
         if currentTranscriptionID == generation.transcriptionId {
-            if let replacingSummaryID = generation.replacingSummaryID {
-                if badgedSummaryID == replacingSummaryID { badgedSummaryID = nil }
-                summaries.removeAll { $0.id == replacingSummaryID }
+            if let replacingPromptResultID = generation.replacingPromptResultID {
+                unreadPromptResultIDs.remove(replacingPromptResultID)
+                promptResults.removeAll { $0.id == replacingPromptResultID }
             }
-            summaries.insert(summary, at: 0)
+            promptResults.insert(promptResult, at: 0)
         }
 
-        onSummariesChanged?(generation.transcriptionId, true)
-        onGenerationCompleted?(generation.id, summary.id)
-        if let replacingSummaryID = generation.replacingSummaryID {
-            onDeletedSummary?(replacingSummaryID)
+        onPromptResultsChanged?(generation.transcriptionId, true)
+        onGenerationCompleted?(generation.id, promptResult.id)
+        if let replacingPromptResultID = generation.replacingPromptResultID {
+            onDeletedPromptResult?(replacingPromptResultID)
         }
-        if shouldShowBadge?(summary.id) ?? true {
-            badgedSummaryID = summary.id
+        if shouldMarkPromptResultUnread?(promptResult.id) ?? true {
+            unreadPromptResultIDs.insert(promptResult.id)
         }
 
         processNextQueuedGeneration()
@@ -462,7 +464,7 @@ public final class SummaryViewModel {
     }
 
     private func finishFailedGeneration(id generationID: UUID, error: Error) {
-        logger.error("Failed to generate summary error=\(error.localizedDescription, privacy: .public)")
+        logger.error("Failed to generate prompt result error=\(error.localizedDescription, privacy: .public)")
         if let index = pendingGenerations.firstIndex(where: { $0.id == generationID }) {
             pendingGenerations.remove(at: index)
         }
@@ -485,8 +487,8 @@ public final class SummaryViewModel {
     }
 
     private func syncLegacySummary(for transcriptionId: UUID) throws {
-        let latestSummary = try summaryRepo?.fetchAll(transcriptionId: transcriptionId).first
-        try transcriptionRepo?.updateSummary(id: transcriptionId, summary: latestSummary?.content)
-        onLegacySummaryChanged?(transcriptionId, latestSummary?.content)
+        let latestPromptResult = try promptResultRepo?.fetchAll(transcriptionId: transcriptionId).first
+        try transcriptionRepo?.updateSummary(id: transcriptionId, summary: latestPromptResult?.content)
+        onLegacySummaryChanged?(transcriptionId, latestPromptResult?.content)
     }
 }

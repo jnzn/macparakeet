@@ -32,18 +32,18 @@ final class PromptRepositoryTests: XCTestCase {
         let prompt = try XCTUnwrap((try repo.fetchAll()).first(where: { $0.name == "Meeting Notes" }))
         try repo.toggleVisibility(id: prompt.id)
 
-        let visible = try repo.fetchVisible(category: .summary)
+        let visible = try repo.fetchVisible(category: .result)
         XCTAssertFalse(visible.contains(where: { $0.id == prompt.id }))
     }
 
     func testRestoreDefaultsRevealsBuiltIns() throws {
         let prompt = try XCTUnwrap((try repo.fetchAll()).first(where: { $0.name == "Meeting Notes" }))
         try repo.toggleVisibility(id: prompt.id)
-        XCTAssertFalse(try repo.fetchVisible(category: .summary).contains(where: { $0.id == prompt.id }))
+        XCTAssertFalse(try repo.fetchVisible(category: .result).contains(where: { $0.id == prompt.id }))
 
         try repo.restoreDefaults()
 
-        XCTAssertTrue(try repo.fetchVisible(category: .summary).contains(where: { $0.id == prompt.id }))
+        XCTAssertTrue(try repo.fetchVisible(category: .result).contains(where: { $0.id == prompt.id }))
     }
 
     func testNameUniquenessConstraintIsCaseInsensitive() throws {
@@ -126,7 +126,7 @@ final class PromptRepositoryTests: XCTestCase {
                         customID.uuidString,
                         "Executive Brief",
                         customContent,
-                        Prompt.Category.summary.rawValue,
+                        Prompt.Category.result.rawValue,
                         false,
                         true,
                         false,
