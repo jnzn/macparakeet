@@ -5,6 +5,8 @@ import MacParakeetViewModels
 
 @MainActor
 final class DictationFlowCoordinator {
+    private static let silenceAutoStopThreshold: Float = 0.03
+
     // MARK: - Public Interface
 
     /// Read by AppDelegate for menu bar icon guard.
@@ -569,18 +571,19 @@ final class DictationFlowCoordinator {
 
     private func runRecordingLevelLoop() async {
         let (autoStopEnabled, silenceDelay) = (settingsViewModel.silenceAutoStop, settingsViewModel.silenceDelay)
-        let silenceThreshold: Float = 0.03
         var lastNonSilenceAt = Date()
         var didAutoStop = false
 
-        while !Task.isCancelled,
-              case .recording = await serviceSession.state {
-            let level = await serviceSession.audioLevel
+        while !Task.isCancelled {
+            let snapshot = await serviceSession.recordingSnapshot()
+            guard case .recording = snapshot.state else { break }
+
+            let level = snapshot.audioLevel
             overlayViewModel?.audioLevel = level
 
             if autoStopEnabled {
                 let now = Date()
-                if level >= silenceThreshold {
+                if level >= Self.silenceAutoStopThreshold {
                     lastNonSilenceAt = now
                 } else if !didAutoStop, now.timeIntervalSince(lastNonSilenceAt) >= silenceDelay {
                     didAutoStop = true

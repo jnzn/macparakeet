@@ -335,7 +335,7 @@ public final class HotkeyManager {
         for output in outputs {
             switch output {
             case .startRecording(let mode):
-            onStartRecording?(mode)
+                onStartRecording?(mode)
             case .stopRecording:
                 onStopRecording?()
             case .cancelRecording:

@@ -23,6 +23,12 @@ public final class DictationServiceSession {
         get async { await service.audioLevel }
     }
 
+    public func recordingSnapshot() async -> (state: DictationState, audioLevel: Float) {
+        async let state = service.state
+        async let audioLevel = service.audioLevel
+        return await (state: state, audioLevel: audioLevel)
+    }
+
     public func reserveNextSessionID() -> Int {
         activeSessionID += 1
         return activeSessionID
@@ -51,6 +57,9 @@ public final class DictationServiceSession {
         await service.confirmCancel(sessionID: sessionID)
     }
 
+    /// Undo the most recently cancelled recording and transcribe its pending audio.
+    /// This intentionally follows DictationService's most-recent-cancelled semantics
+    /// rather than the current reserved session ID.
     public func undoCancel() async throws -> DictationResult {
         try await service.undoCancel()
     }
