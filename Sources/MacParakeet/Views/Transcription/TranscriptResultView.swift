@@ -27,12 +27,14 @@ struct TranscriptResultView: View {
     @State private var speakerOverviewExpanded = false
     @State private var copied = false
     @State private var copiedSummaryID: UUID?
+    @State private var copiedButtonSummaryID: UUID?
     @State private var copiedMessageId: UUID?
     @State private var hoveredMessageId: UUID?
     @State private var exportConfirmation: ExportConfirmation?
     @State private var exportErrorMessage: String?
     @State private var copiedResetTask: Task<Void, Never>?
     @State private var summaryCopiedResetTask: Task<Void, Never>?
+    @State private var summaryButtonCopiedResetTask: Task<Void, Never>?
     @State private var dismissTask: Task<Void, Never>?
     @State private var editingSpeakerId: String?
     @State private var editingSpeakerLabel: String = ""
@@ -882,16 +884,16 @@ struct TranscriptResultView: View {
                         .controlSize(.small)
                         .disabled(!summaryViewModel.canGenerateSummary || transcriptText.isEmpty)
 
-                        let isCopied = copiedSummaryID == summaryID
+                        let isCopied = copiedButtonSummaryID == summaryID
                         Button {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(summary.content, forType: .string)
                             Telemetry.send(.copyToClipboard(source: .transcription))
-                            copiedSummaryID = summaryID
-                            summaryCopiedResetTask?.cancel()
-                            summaryCopiedResetTask = Task {
+                            copiedButtonSummaryID = summaryID
+                            summaryButtonCopiedResetTask?.cancel()
+                            summaryButtonCopiedResetTask = Task {
                                 try? await Task.sleep(for: .seconds(1))
-                                copiedSummaryID = nil
+                                copiedButtonSummaryID = nil
                             }
                         } label: {
                             HStack(spacing: DesignSystem.Spacing.xs) {
