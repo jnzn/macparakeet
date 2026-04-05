@@ -249,19 +249,28 @@ struct PromptLibraryView: View {
                     }
 
                     Spacer()
-                }
-                
-                Text(prompt.content)
+                    }
+
+                    Text(prompt.content)
                     .font(DesignSystem.Typography.body)
                     .foregroundStyle(prompt.isVisible ? DesignSystem.Colors.textSecondary : DesignSystem.Colors.textTertiary)
                     .lineLimit(isExpanded ? nil : 2)
                     .lineSpacing(2)
                     .textSelection(.enabled)
-            }
-            
-            if allowEdit {
-                HStack(spacing: DesignSystem.Spacing.sm) {
-                    Button {
+                    }
+                    .contentShape(Rectangle()) // Make the whole VStack tappable for expansion
+                    .onTapGesture {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    if isExpanded {
+                        expandedPromptIds.remove(prompt.id)
+                    } else {
+                        expandedPromptIds.insert(prompt.id)
+                    }
+                    }
+                    }
+
+                    if allowEdit {
+                    HStack(spacing: DesignSystem.Spacing.sm) {                    Button {
                         viewModel.editingPrompt = prompt
                         editName = prompt.name
                         editContent = prompt.content
@@ -295,16 +304,6 @@ struct PromptLibraryView: View {
         }
         .padding(DesignSystem.Spacing.lg)
         .background(isHovered ? DesignSystem.Colors.surfaceElevated.opacity(0.5) : Color.clear)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                if isExpanded {
-                    expandedPromptIds.remove(prompt.id)
-                } else {
-                    expandedPromptIds.insert(prompt.id)
-                }
-            }
-        }
         .onHover { hovering in
             if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
             withAnimation(DesignSystem.Animation.hoverTransition) {
