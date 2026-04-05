@@ -229,24 +229,13 @@ struct PromptLibraryView: View {
                     Spacer()
                 }
 
-                // Workaround for macOS SwiftUI bug: Animating lineLimit on text with .textSelection
-                // causes severe layout snapping because it wraps the Text in an un-animatable NSTextView.
-                // Using an if/else block forces SwiftUI to smoothly crossfade and interpolate the container height.
-                if isExpanded {
-                    Text(prompt.content)
-                        .font(DesignSystem.Typography.body)
-                        .foregroundStyle(prompt.isVisible ? DesignSystem.Colors.textSecondary : DesignSystem.Colors.textTertiary)
-                        .lineSpacing(2)
-                        .textSelection(.enabled)
-                        .transition(.opacity)
-                } else {
-                    Text(prompt.content)
-                        .font(DesignSystem.Typography.body)
-                        .foregroundStyle(prompt.isVisible ? DesignSystem.Colors.textSecondary : DesignSystem.Colors.textTertiary)
-                        .lineLimit(2)
-                        .lineSpacing(2)
-                        .transition(.opacity)
-                }
+                Text(prompt.content)
+                    .font(DesignSystem.Typography.body)
+                    .foregroundStyle(prompt.isVisible ? DesignSystem.Colors.textSecondary : DesignSystem.Colors.textTertiary)
+                    .lineLimit(isExpanded ? nil : 2)
+                    .lineSpacing(2)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if allowEdit {
