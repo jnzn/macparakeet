@@ -11,24 +11,9 @@ struct PromptLibraryView: View {
     @State private var expandedPromptIds: Set<UUID> = []
 
     var body: some View {
-        ZStack {
-            // Background Merkaba Watermark
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
-                    MerkabaShape()
-                        .stroke(DesignSystem.Colors.textTertiary.opacity(0.08), lineWidth: 1.5)
-                        .frame(width: 400, height: 400)
-                        .offset(x: 100, y: 100)
-                        .rotationEffect(.degrees(15))
-                }
-            }
-            .ignoresSafeArea()
-            
-            VStack(spacing: 0) {
-                // MARK: - Header
-                HStack(alignment: .bottom) {
+        VStack(spacing: 0) {
+            // MARK: - Header
+            HStack(alignment: .bottom) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Prompt Library")
                         .font(DesignSystem.Typography.heroTitle)
@@ -65,7 +50,7 @@ struct PromptLibraryView: View {
                     // Built-In Prompts Section
                     sectionContainer(
                         title: "Built-In Prompts",
-                        subtitle: "Toggle visibility or enable Auto-Run to generate results automatically."
+                        subtitle: "Toggle visibility or enable Auto-Run to generate results automatically after transcription."
                     ) {
                         cardGroup {
                             let builtIns = viewModel.prompts.filter(\.isBuiltIn)
@@ -104,9 +89,25 @@ struct PromptLibraryView: View {
                 }
                 .padding(DesignSystem.Spacing.xl)
             }
-            // Background removed here to let the ZStack watermark show through
         }
-        .frame(minWidth: 600, minHeight: 600)
+        .background {
+            ZStack {
+                DesignSystem.Colors.background
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        MerkabaShape()
+                            .stroke(DesignSystem.Colors.textTertiary.opacity(0.08), lineWidth: 1.5)
+                            .frame(width: 400, height: 400)
+                            .offset(x: 100, y: 100)
+                            .rotationEffect(.degrees(15))
+                    }
+                }
+            }
+            .ignoresSafeArea()
+        }
+        .frame(minWidth: 720, minHeight: 700)
         .alert(
             "Delete Prompt?",
             isPresented: Binding(
@@ -136,9 +137,6 @@ struct PromptLibraryView: View {
             if let prompt = viewModel.editingPrompt {
                 editSheet(prompt: prompt)
             }
-        }
-        .frame(width: 720, height: 700)
-        .background(DesignSystem.Colors.surface)
         }
     }
 
@@ -230,24 +228,25 @@ struct PromptLibraryView: View {
                 }
 
                 // Workaround for macOS SwiftUI bug: NSTextView (.textSelection(.enabled)) 
-                // does not animate height bounds correctly when lineLimit changes.
+                // does not animate height bounds correctly when lineLimit changes, and expands to full height.
                 // We use an invisible SwiftUI Text to drive the layout container's smooth animation,
-                // and the selectable NSTextView simply fills that properly-sized frame.
-                ZStack(alignment: .topLeading) {
-                    Text(prompt.content)
-                        .font(DesignSystem.Typography.body)
-                        .lineLimit(isExpanded ? nil : 2)
-                        .lineSpacing(2)
-                        .opacity(0)
-                        .accessibilityHidden(true)
-
-                    Text(prompt.content)
-                        .font(DesignSystem.Typography.body)
-                        .foregroundStyle(prompt.isVisible ? DesignSystem.Colors.textSecondary : DesignSystem.Colors.textTertiary)
-                        .lineLimit(isExpanded ? nil : 2)
-                        .lineSpacing(2)
-                        .textSelection(.enabled)
-                }
+                // and place the selectable text in an overlay that is strictly clipped to those bounds.
+                Text(prompt.content)
+                    .font(DesignSystem.Typography.body)
+                    .lineLimit(isExpanded ? nil : 2)
+                    .lineSpacing(2)
+                    .opacity(0)
+                    .accessibilityHidden(true)
+                    .overlay(alignment: .topLeading) {
+                        Text(prompt.content)
+                            .font(DesignSystem.Typography.body)
+                            .foregroundStyle(prompt.isVisible ? DesignSystem.Colors.textSecondary : DesignSystem.Colors.textTertiary)
+                            .lineLimit(isExpanded ? nil : 2)
+                            .lineSpacing(2)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    }
+                    .clipped()
             }
 
             if allowEdit {
