@@ -140,6 +140,14 @@ final class HotkeyTriggerTests: XCTestCase {
         XCTAssertEqual(HotkeyTrigger.current(defaults: testDefaults), .command)
     }
 
+    func testLegacyStringRightOptionPreservesSideSpecificModifier() {
+        testDefaults.set("right_option", forKey: "hotkeyTrigger")
+        XCTAssertEqual(
+            HotkeyTrigger.current(defaults: testDefaults),
+            HotkeyTrigger(kind: .modifier, modifierName: "option", keyCode: nil, modifierKeyCode: 61)
+        )
+    }
+
     func testLegacyStringInvalidFallsBackToFn() {
         testDefaults.set("invalid_key", forKey: "hotkeyTrigger")
         XCTAssertEqual(HotkeyTrigger.current(defaults: testDefaults), .fn)

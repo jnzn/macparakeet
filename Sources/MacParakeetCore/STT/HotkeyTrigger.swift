@@ -271,6 +271,14 @@ public struct HotkeyTrigger: Sendable {
     private static let legacyModifiers: [String: HotkeyTrigger] = [
         "fn": .fn, "control": .control, "option": .option,
         "shift": .shift, "command": .command,
+        "left_shift": HotkeyTrigger(kind: .modifier, modifierName: "shift", keyCode: nil, modifierKeyCode: 56),
+        "right_shift": HotkeyTrigger(kind: .modifier, modifierName: "shift", keyCode: nil, modifierKeyCode: 60),
+        "left_control": HotkeyTrigger(kind: .modifier, modifierName: "control", keyCode: nil, modifierKeyCode: 59),
+        "right_control": HotkeyTrigger(kind: .modifier, modifierName: "control", keyCode: nil, modifierKeyCode: 62),
+        "left_option": HotkeyTrigger(kind: .modifier, modifierName: "option", keyCode: nil, modifierKeyCode: 58),
+        "right_option": HotkeyTrigger(kind: .modifier, modifierName: "option", keyCode: nil, modifierKeyCode: 61),
+        "left_command": HotkeyTrigger(kind: .modifier, modifierName: "command", keyCode: nil, modifierKeyCode: 55),
+        "right_command": HotkeyTrigger(kind: .modifier, modifierName: "command", keyCode: nil, modifierKeyCode: 54),
     ]
 
     /// Resolve the configured trigger from the provided defaults store.

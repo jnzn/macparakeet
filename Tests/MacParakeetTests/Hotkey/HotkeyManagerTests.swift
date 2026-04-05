@@ -87,7 +87,6 @@ final class HotkeyManagerTests: XCTestCase {
                     CGEventFlags.maskAlternate.rawValue,
                     rightOptionMask
                 ),
-                keyCode: 61,
                 timestampMs: 1_000
             ),
             [
@@ -108,7 +107,6 @@ final class HotkeyManagerTests: XCTestCase {
                     CGEventFlags.maskAlternate.rawValue,
                     leftOptionMask
                 ),
-                keyCode: 58,
                 timestampMs: 1_000
             ),
             []
@@ -125,14 +123,12 @@ final class HotkeyManagerTests: XCTestCase {
                 CGEventFlags.maskAlternate.rawValue,
                 rightOptionMask
             ),
-            keyCode: 61,
             timestampMs: 1_000
         )
 
         // Release right option (within tap threshold)
         let outputs = manager.modifierFlagsChangedOutputsForTesting(
             flags: [],
-            keyCode: 61,
             timestampMs: 1_050
         )
 
@@ -149,7 +145,6 @@ final class HotkeyManagerTests: XCTestCase {
                 CGEventFlags.maskAlternate.rawValue,
                 rightOptionMask
             ),
-            keyCode: 61,
             timestampMs: 1_000
         )
 
@@ -160,7 +155,6 @@ final class HotkeyManagerTests: XCTestCase {
                 leftOptionMask,
                 rightOptionMask
             ),
-            keyCode: 58,
             timestampMs: 1_050
         )
         XCTAssertEqual(outputs, [.cancelStartupDebounce, .cancelHoldWindow] as [HotkeyGestureController.Output])
@@ -175,7 +169,6 @@ final class HotkeyManagerTests: XCTestCase {
                 CGEventFlags.maskAlternate.rawValue,
                 leftOptionMask
             ),
-            keyCode: 58,
             timestampMs: 1_000
         )
 
@@ -186,7 +179,6 @@ final class HotkeyManagerTests: XCTestCase {
                     leftOptionMask,
                     rightOptionMask
                 ),
-                keyCode: 61,
                 timestampMs: 1_050
             ),
             []
@@ -198,7 +190,6 @@ final class HotkeyManagerTests: XCTestCase {
                     CGEventFlags.maskAlternate.rawValue,
                     leftOptionMask
                 ),
-                keyCode: 61,
                 timestampMs: 1_100
             ),
             []
@@ -219,7 +210,6 @@ final class HotkeyManagerTests: XCTestCase {
         XCTAssertEqual(
             manager.modifierFlagsChangedOutputsForTesting(
                 flags: [],
-                keyCode: 61,
                 timestampMs: 1_000
             ),
             []
@@ -231,7 +221,6 @@ final class HotkeyManagerTests: XCTestCase {
                     CGEventFlags.maskAlternate.rawValue,
                     rightOptionMask
                 ),
-                keyCode: 61,
                 timestampMs: 1_050
             ),
             [
@@ -250,7 +239,6 @@ final class HotkeyManagerTests: XCTestCase {
                 CGEventFlags.maskAlternate.rawValue,
                 rightOptionMask
             ),
-            keyCode: 61,
             timestampMs: 1_000
         )
 
@@ -262,7 +250,6 @@ final class HotkeyManagerTests: XCTestCase {
                     CGEventFlags.maskAlternate.rawValue,
                     rightOptionMask
                 ),
-                keyCode: 61,
                 timestampMs: 1_050
             ),
             [
@@ -282,7 +269,6 @@ final class HotkeyManagerTests: XCTestCase {
                 CGEventFlags.maskAlternate.rawValue,
                 rightOptionMask
             ),
-            keyCode: 61,
             timestampMs: 1_000
         )
 
@@ -293,7 +279,6 @@ final class HotkeyManagerTests: XCTestCase {
                 rightOptionMask,
                 UInt64(CGEventFlags.maskAlphaShift.rawValue)
             ),
-            keyCode: 57,
             timestampMs: 1_050
         )
         XCTAssertEqual(outputs, [])
@@ -301,7 +286,6 @@ final class HotkeyManagerTests: XCTestCase {
         // Release right option — should still be treated as bare tap
         let releaseOutputs = manager.modifierFlagsChangedOutputsForTesting(
             flags: CGEventFlags(rawValue: UInt64(CGEventFlags.maskAlphaShift.rawValue)),
-            keyCode: 61,
             timestampMs: 1_100
         )
         XCTAssertEqual(releaseOutputs, [.cancelStartupDebounce, .cancelHoldWindow, .showReadyForSecondTap])
@@ -315,7 +299,6 @@ final class HotkeyManagerTests: XCTestCase {
         XCTAssertEqual(
             manager.modifierFlagsChangedOutputsForTesting(
                 flags: [.maskAlternate],
-                keyCode: 58,
                 timestampMs: 1_000
             ),
             [
