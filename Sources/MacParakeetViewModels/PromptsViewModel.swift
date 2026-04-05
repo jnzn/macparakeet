@@ -98,7 +98,7 @@ public final class PromptsViewModel {
 
     public func toggleVisibility(_ prompt: Prompt) {
         guard let repo else { return }
-        if prompt.isDefault && prompt.isVisible {
+        if prompt.isAutoRun && prompt.isVisible {
             return
         }
         do {
@@ -110,10 +110,10 @@ public final class PromptsViewModel {
         }
     }
 
-    public func setAsDefault(_ prompt: Prompt) {
+    public func toggleAutoRun(_ prompt: Prompt) {
         guard let repo else { return }
         do {
-            try repo.setDefault(id: prompt.id)
+            try repo.toggleAutoRun(id: prompt.id)
             errorMessage = nil
             loadPrompts()
         } catch {

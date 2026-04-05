@@ -186,7 +186,7 @@ struct PromptLibraryView: View {
 
     private func promptRow(_ prompt: Prompt, allowEdit: Bool) -> some View {
         let isHovered = hoveredPromptId == prompt.id
-        let isDefault = prompt.isDefault
+        let isAutoRun = prompt.isAutoRun
         let isExpanded = expandedPromptIds.contains(prompt.id)
 
         return HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
@@ -198,7 +198,7 @@ struct PromptLibraryView: View {
             .toggleStyle(.switch)
             .controlSize(.small)
             .tint(DesignSystem.Colors.accent)
-            .disabled(isDefault)
+            .disabled(isAutoRun)
             .padding(.top, 2)
 
             VStack(alignment: .leading, spacing: 6) {
@@ -208,22 +208,31 @@ struct PromptLibraryView: View {
                         .foregroundStyle(prompt.isVisible ? DesignSystem.Colors.textPrimary : DesignSystem.Colors.textTertiary)
                         .textSelection(.enabled)
                     
-                    if isDefault {
-                        Text("Default")
-                            .font(DesignSystem.Typography.micro.weight(.bold))
+                    if isAutoRun {
+                        Button {
+                            withAnimation { viewModel.toggleAutoRun(prompt) }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "bolt.fill")
+                                    .font(.system(size: 10, weight: .bold))
+                                Text("Auto-Run")
+                                    .font(DesignSystem.Typography.micro.weight(.bold))
+                            }
                             .foregroundStyle(DesignSystem.Colors.accentDark)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(DesignSystem.Colors.accentLight)
                             .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
                     } else if isHovered {
                         Button {
-                            withAnimation { viewModel.setAsDefault(prompt) }
+                            withAnimation { viewModel.toggleAutoRun(prompt) }
                         } label: {
                             HStack(spacing: 4) {
-                                Image(systemName: "star")
+                                Image(systemName: "bolt")
                                     .font(.system(size: 10, weight: .bold))
-                                Text("Set as Default")
+                                Text("Auto-Run")
                                     .font(DesignSystem.Typography.micro.weight(.bold))
                             }
                             .foregroundStyle(DesignSystem.Colors.textSecondary)
