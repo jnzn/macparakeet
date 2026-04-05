@@ -253,8 +253,11 @@ public final class HotkeyManager {
                 return outputs
             }
 
-            // Different physical key changed while our trigger is held — invalidate bare-tap
-            if targetModifierGestureIsActive {
+            // Different physical key changed while our trigger is held.
+            // Only interrupt for tracked modifier keys (not Caps Lock, etc.)
+            // to match the generic path's filtering via trackedModifierMasks.
+            if targetModifierGestureIsActive,
+               Self.sideSpecificModifierMasks[keyCode] != nil || keyCode == 63 {
                 bareTap = false
                 return gestureController.interrupted()
             }

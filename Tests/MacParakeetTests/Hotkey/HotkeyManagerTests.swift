@@ -272,6 +272,41 @@ final class HotkeyManagerTests: XCTestCase {
         )
     }
 
+    func testSideSpecificCapsLockDoesNotInterruptBareTap() {
+        let trigger = HotkeyTrigger(kind: .modifier, modifierName: "option", keyCode: nil, modifierKeyCode: 61)
+        let manager = HotkeyManager(trigger: trigger)
+
+        // Press right option
+        _ = manager.modifierFlagsChangedOutputsForTesting(
+            flags: sideSpecificFlags(
+                CGEventFlags.maskAlternate.rawValue,
+                rightOptionMask
+            ),
+            keyCode: 61,
+            timestampMs: 1_000
+        )
+
+        // Caps Lock toggled (keyCode 57) while right option is held — should NOT interrupt
+        let outputs = manager.modifierFlagsChangedOutputsForTesting(
+            flags: sideSpecificFlags(
+                CGEventFlags.maskAlternate.rawValue,
+                rightOptionMask,
+                UInt64(CGEventFlags.maskAlphaShift.rawValue)
+            ),
+            keyCode: 57,
+            timestampMs: 1_050
+        )
+        XCTAssertEqual(outputs, [])
+
+        // Release right option — should still be treated as bare tap
+        let releaseOutputs = manager.modifierFlagsChangedOutputsForTesting(
+            flags: CGEventFlags(rawValue: UInt64(CGEventFlags.maskAlphaShift.rawValue)),
+            keyCode: 61,
+            timestampMs: 1_100
+        )
+        XCTAssertEqual(releaseOutputs, [.cancelStartupDebounce, .cancelHoldWindow, .showReadyForSecondTap])
+    }
+
     func testGenericOptionStillTriggersOnEitherSide() {
         // Generic trigger (no modifierKeyCode) — both sides should work
         let manager = HotkeyManager(trigger: .option)
