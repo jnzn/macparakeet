@@ -496,8 +496,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self?.dictationFlowCoordinator?.cancelDictation(reason: .escape)
         }
 
-        manager.onDiscardRecording = { [weak self] in
-            self?.dictationFlowCoordinator?.discardProvisionalRecordingAndShowReadyPill()
+        manager.onDiscardRecording = { [weak self] showReadyPill in
+            self?.dictationFlowCoordinator?.discardProvisionalRecording(showReadyPill: showReadyPill)
         }
 
         manager.onReadyForSecondTap = { [weak self] in

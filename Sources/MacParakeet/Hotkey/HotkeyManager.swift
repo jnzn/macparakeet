@@ -10,15 +10,15 @@ public final class HotkeyManager {
     public var onStartRecording: ((FnKeyStateMachine.RecordingMode) -> Void)?
     public var onStopRecording: (() -> Void)?
     public var onCancelRecording: (() -> Void)?
-    public var onDiscardRecording: (() -> Void)?
+    public var onDiscardRecording: ((Bool) -> Void)?
     public var onReadyForSecondTap: (() -> Void)?
     public var onEscapeWhileIdle: (() -> Void)?
 
     private let stateMachine: FnKeyStateMachine
     private let trigger: HotkeyTrigger
     private let targetMask: CGEventFlags?
-    private let tapThresholdMs: Int
-    private let startupDebounceMs = FnKeyStateMachine.defaultStartupDebounceMs
+    public let tapThresholdMs: Int
+    private let startupDebounceMs: Int
     private var eventTap: CFMachPort?
     private var startupTimer: DispatchWorkItem?
     private var holdTimer: DispatchWorkItem?
@@ -51,6 +51,7 @@ public final class HotkeyManager {
     ) {
         self.trigger = trigger
         self.tapThresholdMs = FnKeyStateMachine.clampTapThresholdMs(tapThresholdMs)
+        self.startupDebounceMs = min(self.tapThresholdMs, FnKeyStateMachine.defaultStartupDebounceMs)
         self.stateMachine = FnKeyStateMachine(tapThresholdMs: self.tapThresholdMs)
         self.targetMask = trigger.kind == .modifier ? Self.mask(for: trigger) : nil
         self.requiredChordFlags = trigger.chordEventFlags
@@ -198,17 +199,17 @@ public final class HotkeyManager {
                 if bareTap {
                     let action = stateMachine.fnUp(timestampMs: timestampMs)
                     handleAction(action)
-                    if stateMachine.state == .waitingForSecondTap {
+                    if action == .none, stateMachine.state == .waitingForSecondTap {
                         onReadyForSecondTap?()
                     }
                 } else {
                     // Not a bare tap (e.g., Ctrl+C) — reset instead of treating as a gesture
                     if stateMachine.state == .holdToTalk {
                         handleAction(.cancelRecording)
+                        stateMachine.reset()
                     } else if stateMachine.state == .waitingForSecondTap {
-                        handleAction(.discardRecording)
+                        handleAction(stateMachine.interruptWaitingForSecondTap())
                     }
-                    stateMachine.reset()
                 }
                 bareTap = true
             }
@@ -246,8 +247,7 @@ public final class HotkeyManager {
                 // Gesture interruption: if waiting for second tap, a regular key press
                 // means the user is typing, not double-tapping the hotkey
                 if stateMachine.state == .waitingForSecondTap {
-                    handleAction(.discardRecording)
-                    stateMachine.reset()
+                    handleAction(stateMachine.interruptWaitingForSecondTap())
                     startupTimer?.cancel()
                     holdTimer?.cancel()
                 }
@@ -314,8 +314,7 @@ public final class HotkeyManager {
                 // Gesture interruption: if waiting for second tap, a regular key press
                 // means the user is typing, not double-tapping the hotkey
                 if stateMachine.state == .waitingForSecondTap {
-                    handleAction(.discardRecording)
-                    stateMachine.reset()
+                    handleAction(stateMachine.interruptWaitingForSecondTap())
                     startupTimer?.cancel()
                     holdTimer?.cancel()
                 }
@@ -331,7 +330,7 @@ public final class HotkeyManager {
                 holdTimer?.cancel()
                 let action = stateMachine.fnUp(timestampMs: timestampMs)
                 handleAction(action)
-                if stateMachine.state == .waitingForSecondTap {
+                if action == .none, stateMachine.state == .waitingForSecondTap {
                     onReadyForSecondTap?()
                 }
 
@@ -406,8 +405,7 @@ public final class HotkeyManager {
             } else {
                 // Gesture interruption
                 if stateMachine.state == .waitingForSecondTap {
-                    handleAction(.discardRecording)
-                    stateMachine.reset()
+                    handleAction(stateMachine.interruptWaitingForSecondTap())
                     startupTimer?.cancel()
                     holdTimer?.cancel()
                 }
@@ -422,7 +420,7 @@ public final class HotkeyManager {
                         holdTimer?.cancel()
                         let action = stateMachine.fnUp(timestampMs: timestampMs)
                         handleAction(action)
-                        if stateMachine.state == .waitingForSecondTap {
+                        if action == .none, stateMachine.state == .waitingForSecondTap {
                             onReadyForSecondTap?()
                         }
                     }
@@ -442,7 +440,7 @@ public final class HotkeyManager {
                     holdTimer?.cancel()
                     let action = stateMachine.fnUp(timestampMs: timestampMs)
                     handleAction(action)
-                    if stateMachine.state == .waitingForSecondTap {
+                    if action == .none, stateMachine.state == .waitingForSecondTap {
                         onReadyForSecondTap?()
                     }
                 }
@@ -480,8 +478,8 @@ public final class HotkeyManager {
             onStopRecording?()
         case .cancelRecording:
             onCancelRecording?()
-        case .discardRecording:
-            onDiscardRecording?()
+        case .discardRecording(let showReadyPill):
+            onDiscardRecording?(showReadyPill)
         }
     }
 
