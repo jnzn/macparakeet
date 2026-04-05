@@ -776,6 +776,12 @@ struct TranscriptResultView: View {
                         copiedSummaryID = nil
                     }
                 }
+                
+                Menu("Export Summary") {
+                    Button("Markdown (.md)") { exportSummaryToDownloads(summary: summary, format: .md) }
+                    Button("Plain Text (.txt)") { exportSummaryToDownloads(summary: summary, format: .txt) }
+                }
+                
                 Button("Delete Summary", role: .destructive) {
                     summaryViewModel.pendingDeleteSummary = summary
                 }
@@ -904,6 +910,19 @@ struct TranscriptResultView: View {
                             .foregroundStyle(isCopied ? DesignSystem.Colors.successGreen : .primary)
                         }
                         .buttonStyle(.bordered)
+                        .controlSize(.small)
+
+                        Menu {
+                            Button("Markdown (.md)") { exportSummaryToDownloads(summary: summary, format: .md) }
+                            Button("Plain Text (.txt)") { exportSummaryToDownloads(summary: summary, format: .txt) }
+                        } label: {
+                            HStack(spacing: DesignSystem.Spacing.xs) {
+                                Image(systemName: "arrow.down.doc")
+                                Text("Export")
+                            }
+                            .font(DesignSystem.Typography.caption)
+                        }
+                        .menuStyle(.borderedButton)
                         .controlSize(.small)
 
                         Button(role: .destructive) {
@@ -1980,6 +1999,55 @@ struct TranscriptResultView: View {
         }
         .padding(DesignSystem.Spacing.md)
         .frame(minWidth: 220)
+    }
+
+    private func exportSummaryToDownloads(summary: Summary, format: ExportFormat) {
+        let source = viewModel.currentTranscription ?? transcription
+        let baseStem = TranscriptSegmenter.sanitizedExportStem(from: source.fileName)
+        
+        let promptNameSafe = summary.promptName
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+            .joined(separator: "-")
+            
+        let stem = "\(baseStem)-\(promptNameSafe)"
+        
+        guard let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first else {
+            exportErrorMessage = "Your Downloads folder could not be found."
+            SoundManager.shared.play(.errorSoft)
+            return
+        }
+        
+        var fileURL = downloadsURL.appendingPathComponent("\(stem).\(format.rawValue)")
+
+        // Avoid overwriting
+        var counter = 1
+        while FileManager.default.fileExists(atPath: fileURL.path) {
+            fileURL = downloadsURL.appendingPathComponent("\(stem) (\(counter)).\(format.rawValue)")
+            counter += 1
+        }
+
+        do {
+            try summary.content.write(to: fileURL, atomically: true, encoding: .utf8)
+            Telemetry.send(.exportUsed(format: format.rawValue))
+        } catch {
+            exportErrorMessage = error.localizedDescription
+            SoundManager.shared.play(.errorSoft)
+            return
+        }
+
+        exportErrorMessage = nil
+        SoundManager.shared.play(.transcriptionComplete)
+
+        dismissTask?.cancel()
+        exportConfirmation = ExportConfirmation(url: fileURL, format: format.rawValue)
+
+        dismissTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(5.0))
+            guard !Task.isCancelled else { return }
+            exportConfirmation = nil
+        }
     }
 
     private func exportToDownloads(format: ExportFormat) {
