@@ -119,6 +119,8 @@ final class MeetingRecordingFlowCoordinator {
             let panelVM = panelViewModel ?? MeetingRecordingPanelViewModel()
             panelVM.state = .recording
             panelVM.elapsedSeconds = 0
+            panelVM.micLevel = 0
+            panelVM.systemLevel = 0
             panelVM.updatePreviewLines([])
             panelVM.onStop = { [weak self] in self?.toggleRecording() }
             panelVM.onClose = { [weak self] in self?.hideMeetingPanel() }
@@ -156,7 +158,11 @@ final class MeetingRecordingFlowCoordinator {
             stopPillPolling()
             stopTranscriptObservation()
             pillViewModel?.state = .transcribing
+            pillViewModel?.micLevel = 0
+            pillViewModel?.systemLevel = 0
             panelViewModel?.state = .transcribing
+            panelViewModel?.micLevel = 0
+            panelViewModel?.systemLevel = 0
             hideMeetingPanel()
 
         case .stopRecordingAndTranscribe:
@@ -265,9 +271,13 @@ final class MeetingRecordingFlowCoordinator {
                 pillViewModel?.systemLevel = systemLevel
                 pillViewModel?.elapsedSeconds = elapsedSeconds
                 panelViewModel?.elapsedSeconds = elapsedSeconds
+                panelViewModel?.micLevel = micLevel
+                panelViewModel?.systemLevel = systemLevel
                 if captureMode == .stopped, pillViewModel?.state == .recording {
                     pillViewModel?.micLevel = 0
                     pillViewModel?.systemLevel = 0
+                    panelViewModel?.micLevel = 0
+                    panelViewModel?.systemLevel = 0
                 }
 
                 try? await Task.sleep(for: .milliseconds(150))

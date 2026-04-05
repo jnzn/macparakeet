@@ -12,6 +12,8 @@ public final class MeetingRecordingPanelViewModel {
 
     public var state: PanelState = .hidden
     public var elapsedSeconds: Int = 0
+    public var micLevel: Float = 0
+    public var systemLevel: Float = 0
     public var previewLines: [MeetingRecordingPreviewLine] = []
     public var onStop: (() -> Void)?
     public var onClose: (() -> Void)?
@@ -25,6 +27,8 @@ public final class MeetingRecordingPanelViewModel {
     public func reset() {
         state = .hidden
         elapsedSeconds = 0
+        micLevel = 0
+        systemLevel = 0
         previewLines = []
     }
 
@@ -68,5 +72,14 @@ public final class MeetingRecordingPanelViewModel {
             return false
         }
         return true
+    }
+
+    public var showsAudioLevels: Bool {
+        switch state {
+        case .recording, .transcribing:
+            return true
+        case .hidden, .error:
+            return false
+        }
     }
 }

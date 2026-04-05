@@ -33,9 +33,12 @@ final class MeetingRecordingPanelViewModelTests: XCTestCase {
         ]
 
         viewModel.state = .recording
+        viewModel.micLevel = 0.6
+        viewModel.systemLevel = 0.3
         viewModel.updatePreviewLines(lines)
 
         XCTAssertTrue(viewModel.canStop)
+        XCTAssertTrue(viewModel.showsAudioLevels)
         XCTAssertEqual(viewModel.previewLines, lines)
         XCTAssertEqual(viewModel.statusTitle, "Recording")
     }
@@ -72,6 +75,8 @@ final class MeetingRecordingPanelViewModelTests: XCTestCase {
 
         XCTAssertEqual(viewModel.state, .hidden)
         XCTAssertEqual(viewModel.elapsedSeconds, 0)
+        XCTAssertEqual(viewModel.micLevel, 0)
+        XCTAssertEqual(viewModel.systemLevel, 0)
         XCTAssertTrue(viewModel.previewLines.isEmpty)
     }
 }
