@@ -356,6 +356,11 @@ public final class DatabaseManager: Sendable {
             }
         }
 
+        // v0.7.3 - Ensure all Auto-Run prompts are visible (fixes trapped toggles)
+        migrator.registerMigration("v0.7.3-prompt-autorun-visibility") { db in
+            try db.execute(sql: "UPDATE prompts SET isVisible = 1 WHERE isAutoRun = 1")
+        }
+
         try migrator.migrate(dbQueue)
         try reconcileBuiltInPrompts()
     }

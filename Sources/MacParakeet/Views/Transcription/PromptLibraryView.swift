@@ -198,7 +198,6 @@ struct PromptLibraryView: View {
             .toggleStyle(.switch)
             .controlSize(.small)
             .tint(DesignSystem.Colors.accent)
-            .disabled(isAutoRun)
             .padding(.top, 2)
 
             VStack(alignment: .leading, spacing: 6) {

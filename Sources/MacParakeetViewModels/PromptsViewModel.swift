@@ -98,9 +98,6 @@ public final class PromptsViewModel {
 
     public func toggleVisibility(_ prompt: Prompt) {
         guard let repo else { return }
-        if prompt.isAutoRun && prompt.isVisible {
-            return
-        }
         do {
             try repo.toggleVisibility(id: prompt.id)
             errorMessage = nil

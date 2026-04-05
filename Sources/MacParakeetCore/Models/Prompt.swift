@@ -43,7 +43,8 @@ public struct Prompt: Codable, Identifiable, Sendable {
         self.updatedAt = updatedAt
     }
 
-    // Still used as a fallback if no prompt is set as default in the DB
+    // Used for migrations and compatibility paths that need a canonical built-in summary prompt.
+    // This is not a fallback for the explicit "no auto-run prompts enabled" state.
     public static var defaultPrompt: Prompt {
         builtInPrompts().first(where: { $0.isAutoRun }) ?? builtInPrompts()[0]
     }

@@ -73,6 +73,9 @@ public final class PromptRepository: PromptRepositoryProtocol {
         try dbQueue.write { db in
             guard var prompt = try Prompt.fetchOne(db, key: id) else { return }
             prompt.isVisible.toggle()
+            if !prompt.isVisible {
+                prompt.isAutoRun = false
+            }
             prompt.updatedAt = Date()
             try prompt.update(db)
         }
