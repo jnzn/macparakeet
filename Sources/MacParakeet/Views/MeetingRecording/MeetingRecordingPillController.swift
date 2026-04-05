@@ -11,15 +11,26 @@ private final class MeetingRecordingClickablePanel: NSPanel {
 final class MeetingRecordingPillController {
     private var panel: NSPanel?
     private let pillViewModel: MeetingRecordingPillViewModel
+    var onClick: (() -> Void)?
 
     init(viewModel: MeetingRecordingPillViewModel) {
         self.pillViewModel = viewModel
     }
 
     func show() {
-        if panel != nil { return }
+        if let panel {
+            panel.orderFront(nil)
+            return
+        }
 
-        let view = MeetingRecordingPillView(viewModel: pillViewModel)
+        let view = MeetingRecordingPillView(
+            viewModel: pillViewModel,
+            onTap: { [weak self] in
+                Task { @MainActor [weak self] in
+                    self?.onClick?()
+                }
+            }
+        )
         let hosting = NSHostingView(rootView: view)
 
         let panelWidth: CGFloat = 240
