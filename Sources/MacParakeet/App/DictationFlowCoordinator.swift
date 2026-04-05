@@ -52,6 +52,8 @@ final class DictationFlowCoordinator {
     private var pendingPostPasteAction: KeyAction?
     /// Error from the most recent entitlements check failure, consumed by presentEntitlementsAlert effect.
     private var lastEntitlementsError: Error?
+    /// Monotonic session token used to ignore stale cancel/discard tasks from earlier starts.
+    private var currentServiceSessionID: Int = 0
 
     private let readyPillDismissDelayMs = FnKeyStateMachine.defaultTapThresholdMs * 2
 
@@ -273,6 +275,8 @@ final class DictationFlowCoordinator {
         case .startRecording(let mode):
             let gen = stateMachine.generation
             let trigger = currentTrigger
+            currentServiceSessionID += 1
+            let sessionID = currentServiceSessionID
             // Launch in a new task that calls startRecording then runs audio level loop
             recordingTask = Task { @MainActor in
                 do {
@@ -281,8 +285,16 @@ final class DictationFlowCoordinator {
                     case .holdToTalk: .hold
                     }
                     try await self.dictationService.startRecording(
-                        context: DictationTelemetryContext(trigger: trigger, mode: telemetryMode)
+                        context: DictationTelemetryContext(trigger: trigger, mode: telemetryMode),
+                        sessionID: sessionID
                     )
+                    let serviceState = await self.dictationService.state
+                    guard case .recording = serviceState else {
+                        self.dictationLog.notice(
+                            "start_recording_aborted gen=\(gen) session=\(sessionID) flowState=\(self.describeState(self.stateMachine.state), privacy: .public) serviceState=\(self.describeServiceState(serviceState), privacy: .public)"
+                        )
+                        return
+                    }
                     guard !Task.isCancelled else { return }
                     self.sendEvent(.recordingStarted(generation: gen))
 
@@ -312,16 +324,23 @@ final class DictationFlowCoordinator {
                     }
                 } catch {
                     guard !Task.isCancelled else { return }
-                    self.dictationLog.error("start_recording_failed gen=\(gen) error=\(error.localizedDescription, privacy: .public)")
+                    self.dictationLog.error(
+                        "start_recording_failed gen=\(gen) session=\(sessionID) error=\(error.localizedDescription, privacy: .public)"
+                    )
                     self.sendEvent(.startFailed(generation: gen, message: error.localizedDescription))
                 }
             }
 
         case .stopRecordingAndTranscribe:
             let gen = stateMachine.generation
+            let sessionID = currentServiceSessionID
             actionTask = Task { @MainActor in
                 do {
-                    let result = try await self.dictationService.stopRecording()
+                    let serviceState = await self.dictationService.state
+                    self.dictationLog.notice(
+                        "stop_recording_requested gen=\(gen) session=\(sessionID) flowState=\(self.describeState(self.stateMachine.state), privacy: .public) serviceState=\(self.describeServiceState(serviceState), privacy: .public)"
+                    )
+                    let result = try await self.dictationService.stopRecording(sessionID: sessionID)
                     guard !Task.isCancelled else { return }
                     self.currentDictation = result.dictation
                     self.pendingPostPasteAction = result.postPasteAction
@@ -342,18 +361,21 @@ final class DictationFlowCoordinator {
             case .escape: .escape
             case .ui: .ui
             }
+            let sessionID = currentServiceSessionID
             Task {
-                await self.dictationService.cancelRecording(reason: telemetryReason)
+                await self.dictationService.cancelRecording(reason: telemetryReason, sessionID: sessionID)
             }
 
         case .confirmCancel:
+            let sessionID = currentServiceSessionID
             Task {
-                await self.dictationService.confirmCancel()
+                await self.dictationService.confirmCancel(sessionID: sessionID)
             }
 
         case .discardRecording:
+            let sessionID = currentServiceSessionID
             Task {
-                await self.dictationService.confirmCancel()
+                await self.dictationService.confirmCancel(sessionID: sessionID)
             }
 
         case .undoCancelAndTranscribe:
@@ -579,6 +601,17 @@ final class DictationFlowCoordinator {
             case .noSpeech: return "finishing.noSpeech"
             case .error: return "finishing.error"
             }
+        }
+    }
+
+    private func describeServiceState(_ state: DictationState) -> String {
+        switch state {
+        case .idle: return "idle"
+        case .recording: return "recording"
+        case .processing: return "processing"
+        case .cancelled: return "cancelled"
+        case .success: return "success"
+        case .error: return "error"
         }
     }
 }

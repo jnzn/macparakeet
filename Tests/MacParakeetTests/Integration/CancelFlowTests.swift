@@ -233,6 +233,32 @@ final class CancelFlowTests: XCTestCase {
         XCTAssertTrue(all.isEmpty, "Immediate discard should not save to database")
     }
 
+    func testStaleConfirmCancelDoesNotInterruptNewSessionStart() async throws {
+        await mockAudio.configureStartCaptureDelay(milliseconds: 100)
+
+        let startTask = Task {
+            try await self.dictationService.startRecording(
+                context: DictationTelemetryContext(),
+                sessionID: 2
+            )
+        }
+
+        try await Task.sleep(for: .milliseconds(20))
+        await dictationService.confirmCancel(sessionID: 1)
+
+        try await startTask.value
+
+        let captureStopped = await mockAudio.stopCaptureCalled
+        XCTAssertFalse(captureStopped, "Stale cancel should not stop the new session's capture")
+
+        let state = await dictationService.state
+        if case .recording = state {} else {
+            XCTFail("Expected recording state after stale cancel, got \(state)")
+        }
+
+        await dictationService.confirmCancel(sessionID: 2)
+    }
+
     func testStopRecordingWithEmptyTranscriptThrowsAndDoesNotSave() async throws {
         await mockSTT.configure(result: STTResult(text: "   "))
 
