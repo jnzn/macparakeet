@@ -1,3 +1,4 @@
+import AVFAudio
 import Foundation
 import OSLog
 
@@ -25,6 +26,7 @@ public protocol MeetingRecordingServiceProtocol: Sendable {
     var systemLevel: Float { get async }
     var elapsedSeconds: Int { get async }
     var captureMode: CaptureMode { get async }
+    var transcriptUpdates: AsyncStream<MeetingTranscriptUpdate> { get async }
 }
 
 public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
@@ -33,6 +35,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         let displayName: String
         let startedAt: Date
         let folderURL: URL
+        let chunkFolderURL: URL
         let microphoneAudioURL: URL
         let systemAudioURL: URL
         let mixedAudioURL: URL
@@ -41,20 +44,30 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
     private let logger = Logger(subsystem: "com.macparakeet.core", category: "MeetingRecordingService")
     private let audioCaptureService: MeetingAudioCaptureService
     private let audioConverter: AudioFileConverter
+    private let sttClient: STTClientProtocol
     private let fileManager: FileManager
 
     private var currentSession: Session?
     private var writer: MeetingAudioStorageWriter?
     private var processingTask: Task<Void, Never>?
+    private var pendingChunkTasks: [Task<Void, Never>] = []
+    private var microphoneChunker = AudioChunker()
+    private var systemChunker = AudioChunker()
+    private var transcriptAssembler = MeetingTranscriptAssembler()
     private var latestLevels = MeetingAudioLevels()
+
+    private var transcriptContinuation: AsyncStream<MeetingTranscriptUpdate>.Continuation?
+    private var cachedTranscriptUpdates: AsyncStream<MeetingTranscriptUpdate>?
 
     public init(
         audioCaptureService: MeetingAudioCaptureService = MeetingAudioCaptureService(),
         audioConverter: AudioFileConverter = AudioFileConverter(),
+        sttClient: STTClientProtocol = STTClient(),
         fileManager: FileManager = .default
     ) {
         self.audioCaptureService = audioCaptureService
         self.audioConverter = audioConverter
+        self.sttClient = sttClient
         self.fileManager = fileManager
     }
 
@@ -79,6 +92,20 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         currentSession == nil ? .stopped : .full
     }
 
+    public var transcriptUpdates: AsyncStream<MeetingTranscriptUpdate> {
+        if let cachedTranscriptUpdates {
+            return cachedTranscriptUpdates
+        }
+
+        var continuation: AsyncStream<MeetingTranscriptUpdate>.Continuation?
+        let stream = AsyncStream<MeetingTranscriptUpdate>(bufferingPolicy: .bufferingNewest(12)) {
+            continuation = $0
+        }
+        transcriptContinuation = continuation
+        cachedTranscriptUpdates = stream
+        return stream
+    }
+
     public func startRecording() async throws {
         guard currentSession == nil else {
             throw MeetingAudioError.alreadyRunning
@@ -88,11 +115,14 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         let folderURL = URL(fileURLWithPath: AppPaths.meetingRecordingsDir, isDirectory: true)
             .appendingPathComponent(sessionID.uuidString, isDirectory: true)
         let writer = try MeetingAudioStorageWriter(folderURL: folderURL)
+        let chunkFolderURL = folderURL.appendingPathComponent("chunks", isDirectory: true)
+        try fileManager.createDirectory(at: chunkFolderURL, withIntermediateDirectories: true)
         let session = Session(
             id: sessionID,
             displayName: Self.makeDisplayName(for: Date()),
             startedAt: Date(),
             folderURL: folderURL,
+            chunkFolderURL: chunkFolderURL,
             microphoneAudioURL: writer.microphoneAudioURL,
             systemAudioURL: writer.systemAudioURL,
             mixedAudioURL: writer.mixedAudioURL
@@ -102,6 +132,10 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         self.latestLevels = MeetingAudioLevels()
         self.writer = writer
         self.currentSession = session
+        self.pendingChunkTasks = []
+        await microphoneChunker.reset()
+        await systemChunker.reset()
+        transcriptAssembler.reset()
 
         processingTask = Task { [weak self] in
             guard let self else { return }
@@ -118,7 +152,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             processingTask = nil
             self.writer?.finalize()
             self.writer = nil
-            self.currentSession = nil
+            cleanupState()
             try? fileManager.removeItem(at: folderURL)
             throw error
         }
@@ -132,6 +166,12 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         await audioCaptureService.stop()
         await processingTask?.value
         processingTask = nil
+        await flushTranscriptChunkers(for: session)
+        let pendingTasks = pendingChunkTasks
+        pendingChunkTasks = []
+        for task in pendingTasks {
+            await task.value
+        }
         writer?.finalize()
         writer = nil
 
@@ -156,7 +196,8 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             mixedAudioURL: session.mixedAudioURL,
             microphoneAudioURL: session.microphoneAudioURL,
             systemAudioURL: session.systemAudioURL,
-            durationSeconds: durationSeconds
+            durationSeconds: durationSeconds,
+            preparedTranscript: transcriptAssembler.finalizedTranscript(durationMs: Int(durationSeconds * 1000))
         )
 
         cleanupState()
@@ -171,6 +212,12 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         processingTask?.cancel()
         await processingTask?.value
         processingTask = nil
+        let pendingTasks = pendingChunkTasks
+        pendingChunkTasks = []
+        for task in pendingTasks {
+            task.cancel()
+            await task.value
+        }
         writer?.finalize()
         writer = nil
         cleanupState()
@@ -178,12 +225,17 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         logger.info("Meeting recording cancelled: \(session.id.uuidString, privacy: .public)")
     }
 
-    private func handleCaptureEvent(_ event: MeetingAudioCaptureEvent) {
+    private func handleCaptureEvent(_ event: MeetingAudioCaptureEvent) async {
         switch event {
         case .microphoneBuffer(let buffer, _):
             do {
                 try writer?.write(buffer, source: .microphone)
                 latestLevels.microphone = buffer.rmsLevel
+                if let samples = AudioChunker.extractAndResample(from: buffer),
+                   let chunk = await microphoneChunker.addSamples(samples),
+                   let session = currentSession {
+                    enqueueTranscription(for: chunk, source: .microphone, session: session)
+                }
             } catch {
                 logger.error("Failed to write microphone audio: \(error.localizedDescription, privacy: .public)")
             }
@@ -191,12 +243,105 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             do {
                 try writer?.write(buffer, source: .system)
                 latestLevels.system = buffer.rmsLevel
+                if let samples = AudioChunker.extractAndResample(from: buffer),
+                   let chunk = await systemChunker.addSamples(samples),
+                   let session = currentSession {
+                    enqueueTranscription(for: chunk, source: .system, session: session)
+                }
             } catch {
                 logger.error("Failed to write system audio: \(error.localizedDescription, privacy: .public)")
             }
         case .error(let error):
             logger.error("Meeting capture event error: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    private func flushTranscriptChunkers(for session: Session) async {
+        if let chunk = await microphoneChunker.flush() {
+            enqueueTranscription(for: chunk, source: .microphone, session: session)
+        }
+        if let chunk = await systemChunker.flush() {
+            enqueueTranscription(for: chunk, source: .system, session: session)
+        }
+    }
+
+    private func enqueueTranscription(
+        for chunk: AudioChunker.AudioChunk,
+        source: AudioSource,
+        session: Session
+    ) {
+        let task = Task { [weak self] in
+            guard let self else { return }
+
+            do {
+                let result = try await self.transcribeChunk(chunk, source: source, session: session)
+                await self.handleChunkTranscriptionResult(result, chunk: chunk, source: source, sessionID: session.id)
+            } catch is CancellationError {
+                return
+            } catch {
+                await self.logChunkTranscriptionFailure(error)
+            }
+        }
+
+        pendingChunkTasks.append(task)
+    }
+
+    private func transcribeChunk(
+        _ chunk: AudioChunker.AudioChunk,
+        source: AudioSource,
+        session: Session
+    ) async throws -> STTResult {
+        let chunkURL = session.chunkFolderURL
+            .appendingPathComponent("\(source.rawValue)-\(chunk.startMs)-\(chunk.endMs).wav")
+        try writeChunkAudio(samples: chunk.samples, to: chunkURL)
+        defer { try? fileManager.removeItem(at: chunkURL) }
+        return try await sttClient.transcribe(audioPath: chunkURL.path, onProgress: nil)
+    }
+
+    private func writeChunkAudio(samples: [Float], to url: URL) throws {
+        guard let format = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 16000,
+            channels: 1,
+            interleaved: false
+        ) else {
+            throw MeetingAudioError.storageFailed("invalid chunk format")
+        }
+        guard let buffer = AVAudioPCMBuffer(
+            pcmFormat: format,
+            frameCapacity: AVAudioFrameCount(samples.count)
+        ) else {
+            throw MeetingAudioError.storageFailed("failed to allocate chunk buffer")
+        }
+        buffer.frameLength = AVAudioFrameCount(samples.count)
+        if let channelData = buffer.floatChannelData {
+            samples.withUnsafeBufferPointer { pointer in
+                channelData[0].update(from: pointer.baseAddress!, count: samples.count)
+            }
+        }
+
+        let file = try AVAudioFile(
+            forWriting: url,
+            settings: format.settings,
+            commonFormat: .pcmFormatFloat32,
+            interleaved: false
+        )
+        try file.write(from: buffer)
+    }
+
+    private func handleChunkTranscriptionResult(
+        _ result: STTResult,
+        chunk: AudioChunker.AudioChunk,
+        source: AudioSource,
+        sessionID: UUID
+    ) {
+        guard currentSession?.id == sessionID else { return }
+        let update = transcriptAssembler.apply(result: result, chunk: chunk, source: source)
+        transcriptContinuation?.yield(update)
+    }
+
+    private func logChunkTranscriptionFailure(_ error: Error) {
+        logger.error("Meeting chunk transcription failed: \(error.localizedDescription, privacy: .public)")
     }
 
     private func existingSourceURLs(for session: Session) throws -> [URL] {
@@ -210,7 +355,12 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
 
     private func cleanupState() {
         currentSession = nil
+        pendingChunkTasks = []
         latestLevels = MeetingAudioLevels()
+        transcriptAssembler.reset()
+        transcriptContinuation?.finish()
+        transcriptContinuation = nil
+        cachedTranscriptUpdates = nil
     }
 
     private static func makeDisplayName(for date: Date) -> String {

@@ -55,7 +55,7 @@ final class AppEnvironment {
         // Services
         sttClient = STTClient()
         audioProcessor = AudioProcessor()
-        meetingRecordingService = MeetingRecordingService()
+        meetingRecordingService = MeetingRecordingService(sttClient: sttClient)
         clipboardService = ClipboardService()
         exportService = ExportService()
         permissionService = PermissionService()
