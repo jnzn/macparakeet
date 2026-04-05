@@ -531,6 +531,10 @@ final class MockPromptRepository: PromptRepositoryProtocol, @unchecked Sendable 
         }
     }
 
+    func fetchDefault() throws -> Prompt? {
+        prompts.first(where: { $0.isDefault })
+    }
+
     func delete(id: UUID) throws -> Bool {
         let before = prompts.count
         prompts.removeAll { $0.id == id }
@@ -540,6 +544,16 @@ final class MockPromptRepository: PromptRepositoryProtocol, @unchecked Sendable 
     func toggleVisibility(id: UUID) throws {
         guard let index = prompts.firstIndex(where: { $0.id == id }) else { return }
         prompts[index].isVisible.toggle()
+        prompts[index].updatedAt = Date()
+    }
+
+    func setDefault(id: UUID) throws {
+        guard let index = prompts.firstIndex(where: { $0.id == id }) else { return }
+        for i in prompts.indices {
+            prompts[i].isDefault = false
+        }
+        prompts[index].isDefault = true
+        prompts[index].isVisible = true
         prompts[index].updatedAt = Date()
     }
 

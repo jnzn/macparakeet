@@ -6,8 +6,10 @@ public protocol PromptRepositoryProtocol: Sendable {
     func fetch(id: UUID) throws -> Prompt?
     func fetchAll() throws -> [Prompt]
     func fetchVisible(category: Prompt.Category?) throws -> [Prompt]
+    func fetchDefault() throws -> Prompt?
     func delete(id: UUID) throws -> Bool
     func toggleVisibility(id: UUID) throws
+    func setDefault(id: UUID) throws
     func restoreDefaults() throws
 }
 
@@ -50,6 +52,12 @@ public final class PromptRepository: PromptRepositoryProtocol {
         }
     }
 
+    public func fetchDefault() throws -> Prompt? {
+        try dbQueue.read { db in
+            try Prompt.filter(Prompt.Columns.isDefault == true).fetchOne(db)
+        }
+    }
+
     public func delete(id: UUID) throws -> Bool {
         try dbQueue.write { db in
             guard let prompt = try Prompt.fetchOne(db, key: id) else { return false }
@@ -64,6 +72,24 @@ public final class PromptRepository: PromptRepositoryProtocol {
             prompt.isVisible.toggle()
             prompt.updatedAt = Date()
             try prompt.update(db)
+        }
+    }
+
+    public func setDefault(id: UUID) throws {
+        try dbQueue.write { db in
+            guard var newDefault = try Prompt.fetchOne(db, key: id) else { return }
+            
+            // Unset all existing defaults
+            try db.execute(
+                sql: "UPDATE prompts SET isDefault = 0, updatedAt = ?",
+                arguments: [Date()]
+            )
+            
+            // Set the new default (and ensure it's visible)
+            newDefault.isDefault = true
+            newDefault.isVisible = true
+            newDefault.updatedAt = Date()
+            try newDefault.update(db)
         }
     }
 

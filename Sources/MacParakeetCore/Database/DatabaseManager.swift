@@ -266,6 +266,7 @@ public final class DatabaseManager: Sendable {
                 t.column("category", .text).notNull().defaults(to: "summary")
                 t.column("isBuiltIn", .boolean).notNull().defaults(to: false)
                 t.column("isVisible", .boolean).notNull().defaults(to: true)
+                t.column("isDefault", .boolean).notNull().defaults(to: false)
                 t.column("sortOrder", .integer).notNull().defaults(to: 0)
                 t.column("createdAt", .text).notNull()
                 t.column("updatedAt", .text).notNull()
@@ -321,6 +322,19 @@ public final class DatabaseManager: Sendable {
                     updatedAt: createdAt
                 )
                 try migratedSummary.insert(db)
+            }
+        }
+
+        // v0.7.1 - Safely add isDefault for users who already ran v0.7
+        migrator.registerMigration("v0.7.1-prompt-default") { db in
+            let columns = try db.columns(in: "prompts")
+            if !columns.contains(where: { $0.name == "isDefault" }) {
+                try db.alter(table: "prompts") { t in
+                    t.add(column: "isDefault", .boolean).notNull().defaults(to: false)
+                }
+                try db.execute(sql: """
+                    UPDATE prompts SET isDefault = 1 WHERE name = 'General Summary' AND isBuiltIn = 1
+                """)
             }
         }
 

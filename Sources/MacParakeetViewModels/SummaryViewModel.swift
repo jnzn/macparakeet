@@ -181,6 +181,10 @@ public final class SummaryViewModel {
         }
     }
 
+    private func fetchDefaultPrompt() -> Prompt {
+        (try? promptRepo?.fetchDefault()) ?? Prompt.defaultPrompt
+    }
+
     public func loadVisiblePrompts() {
         guard let promptRepo else { return }
         do {
@@ -189,7 +193,7 @@ public final class SummaryViewModel {
                let refreshed = visiblePrompts.first(where: { $0.id == selectedPrompt.id }) {
                 self.selectedPrompt = refreshed
             } else {
-                self.selectedPrompt = visiblePrompts.first(where: { $0.name == Prompt.defaultPrompt.name })
+                self.selectedPrompt = visiblePrompts.first(where: { $0.isDefault })
                     ?? visiblePrompts.first
             }
             errorMessage = nil
@@ -252,7 +256,7 @@ public final class SummaryViewModel {
 
     @discardableResult
     public func generateSummary(transcript: String, transcriptionId: UUID) -> UUID? {
-        let prompt = selectedPrompt ?? Prompt.defaultPrompt
+        let prompt = selectedPrompt ?? fetchDefaultPrompt()
         return enqueueGeneration(
             transcript: transcript,
             transcriptionId: transcriptionId,
@@ -284,7 +288,7 @@ public final class SummaryViewModel {
         return enqueueGeneration(
             transcript: transcript,
             transcriptionId: transcriptionId,
-            prompt: Prompt.defaultPrompt,
+            prompt: fetchDefaultPrompt(),
             extraInstructions: nil
         )
     }

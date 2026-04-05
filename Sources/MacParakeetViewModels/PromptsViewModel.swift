@@ -98,11 +98,22 @@ public final class PromptsViewModel {
 
     public func toggleVisibility(_ prompt: Prompt) {
         guard let repo else { return }
-        if prompt.name == Prompt.defaultPrompt.name && prompt.isBuiltIn && prompt.isVisible {
+        if prompt.isDefault && prompt.isVisible {
             return
         }
         do {
             try repo.toggleVisibility(id: prompt.id)
+            errorMessage = nil
+            loadPrompts()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    public func setAsDefault(_ prompt: Prompt) {
+        guard let repo else { return }
+        do {
+            try repo.setDefault(id: prompt.id)
             errorMessage = nil
             loadPrompts()
         } catch {
