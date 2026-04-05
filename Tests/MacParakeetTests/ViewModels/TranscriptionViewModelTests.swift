@@ -7,7 +7,7 @@ final class TranscriptionViewModelTests: XCTestCase {
     var viewModel: TranscriptionViewModel!
     var mockService: MockTranscriptionService!
     var mockRepo: MockTranscriptionRepository!
-    var mockSummaryRepo: MockSummaryRepository!
+    var mockPromptResultRepo: MockPromptResultRepository!
 
     private func waitUntil(
         timeout: Duration = .seconds(1),
@@ -30,7 +30,7 @@ final class TranscriptionViewModelTests: XCTestCase {
     override func setUp() {
         mockService = MockTranscriptionService()
         mockRepo = MockTranscriptionRepository()
-        mockSummaryRepo = MockSummaryRepository()
+        mockPromptResultRepo = MockPromptResultRepository()
         viewModel = TranscriptionViewModel()
     }
 
@@ -685,8 +685,8 @@ final class TranscriptionViewModelTests: XCTestCase {
 
     func testShowTabsTrueWhenSavedSummaryExists() {
         let transcription = Transcription(fileName: "test.mp3", status: .completed)
-        mockSummaryRepo.summaries = [
-            Summary(
+        mockPromptResultRepo.promptResults = [
+            PromptResult(
                 transcriptionId: transcription.id,
                 promptName: "Concise Summary",
                 promptContent: Prompt.defaultPrompt.content,
@@ -696,12 +696,12 @@ final class TranscriptionViewModelTests: XCTestCase {
         viewModel.configure(
             transcriptionService: mockService,
             transcriptionRepo: mockRepo,
-            summaryRepo: mockSummaryRepo
+            promptResultRepo: mockPromptResultRepo
         )
         viewModel.currentTranscription = transcription
         XCTAssertFalse(viewModel.llmAvailable)
         XCTAssertTrue(viewModel.showTabs)
-        XCTAssertTrue(viewModel.hasSummaryTabs)
+        XCTAssertTrue(viewModel.hasPromptResultTabs)
     }
 
     func testShowTabsTrueWhenHasConversations() {
@@ -747,13 +747,13 @@ final class TranscriptionViewModelTests: XCTestCase {
         viewModel.configure(
             transcriptionService: mockService,
             transcriptionRepo: mockRepo,
-            summaryRepo: mockSummaryRepo
+            promptResultRepo: mockPromptResultRepo
         )
         viewModel.currentTranscription = t
 
         mockRepo.transcriptions[0].summary = "DB summary"
-        mockSummaryRepo.summaries = [
-            Summary(
+        mockPromptResultRepo.promptResults = [
+            PromptResult(
                 transcriptionId: t.id,
                 promptName: "Concise Summary",
                 promptContent: Prompt.defaultPrompt.content,
@@ -764,7 +764,7 @@ final class TranscriptionViewModelTests: XCTestCase {
         viewModel.loadPersistedContent()
 
         XCTAssertEqual(viewModel.currentTranscription?.summary, "DB summary")
-        XCTAssertTrue(viewModel.hasSummaryTabs)
+        XCTAssertTrue(viewModel.hasPromptResultTabs)
     }
 
     // MARK: - Retranscribe

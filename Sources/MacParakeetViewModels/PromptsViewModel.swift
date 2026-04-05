@@ -51,7 +51,7 @@ public final class PromptsViewModel {
         let prompt = Prompt(
             name: trimmedName,
             content: trimmedContent,
-            category: .summary,
+            category: .result,
             isBuiltIn: false,
             isVisible: true,
             sortOrder: nextSortOrder

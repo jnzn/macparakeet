@@ -14,7 +14,7 @@ public struct Prompt: Codable, Identifiable, Sendable {
     public var updatedAt: Date
 
     public enum Category: String, Codable, Sendable {
-        case summary
+        case result = "summary"
         case transform
     }
 
@@ -22,7 +22,7 @@ public struct Prompt: Codable, Identifiable, Sendable {
         id: UUID = UUID(),
         name: String,
         content: String,
-        category: Category = .summary,
+        category: Category = .result,
         isBuiltIn: Bool = false,
         isVisible: Bool = true,
         isAutoRun: Bool = false,
@@ -58,7 +58,7 @@ public struct Prompt: Codable, Identifiable, Sendable {
             id: UUID(uuidString: id) ?? UUID(),
             name: name,
             content: content,
-            category: .summary,
+            category: .result,
             isBuiltIn: true,
             isAutoRun: name == "General Summary",
             sortOrder: sortOrder,

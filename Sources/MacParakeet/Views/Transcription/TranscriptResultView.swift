@@ -17,7 +17,7 @@ struct TranscriptResultView: View {
     let transcription: Transcription
     @Bindable var viewModel: TranscriptionViewModel
     var chatViewModel: TranscriptChatViewModel
-    @Bindable var summaryViewModel: SummaryViewModel
+    @Bindable var promptResultsViewModel: PromptResultsViewModel
     @Bindable var promptsViewModel: PromptsViewModel
     var onBack: (() -> Void)?
     var onRetranscribe: ((Transcription) -> Void)?
@@ -26,15 +26,15 @@ struct TranscriptResultView: View {
     @State private var headerExpanded = false
     @State private var speakerOverviewExpanded = false
     @State private var copied = false
-    @State private var copiedSummaryID: UUID?
-    @State private var copiedButtonSummaryID: UUID?
+    @State private var copiedResultID: UUID?
+    @State private var copiedButtonResultID: UUID?
     @State private var copiedMessageId: UUID?
     @State private var hoveredMessageId: UUID?
     @State private var exportConfirmation: ExportConfirmation?
     @State private var exportErrorMessage: String?
     @State private var copiedResetTask: Task<Void, Never>?
-    @State private var summaryCopiedResetTask: Task<Void, Never>?
-    @State private var summaryButtonCopiedResetTask: Task<Void, Never>?
+    @State private var resultCopiedResetTask: Task<Void, Never>?
+    @State private var resultButtonCopiedResetTask: Task<Void, Never>?
     @State private var dismissTask: Task<Void, Never>?
     @State private var editingSpeakerId: String?
     @State private var editingSpeakerLabel: String = ""
@@ -79,8 +79,8 @@ struct TranscriptResultView: View {
             }
             rebuildSegmentCache()
             viewModel.loadPersistedContent()
-            summaryViewModel.loadVisiblePrompts()
-            summaryViewModel.loadSummaries(transcriptionId: transcription.id)
+            promptResultsViewModel.loadVisiblePrompts()
+            promptResultsViewModel.loadPromptResults(transcriptionId: transcription.id)
             let text = viewModel.currentTranscription?.cleanTranscript ?? viewModel.currentTranscription?.rawTranscript ?? ""
             chatViewModel.loadTranscript(text, transcriptionId: viewModel.currentTranscription?.id)
         }
@@ -109,13 +109,13 @@ struct TranscriptResultView: View {
             viewModel.hasConversations = false
             viewModel.selectedTab = .transcript
             viewModel.loadPersistedContent()
-            summaryViewModel.loadSummaries(transcriptionId: transcription.id)
+            promptResultsViewModel.loadPromptResults(transcriptionId: transcription.id)
             let text = viewModel.currentTranscription?.cleanTranscript ?? viewModel.currentTranscription?.rawTranscript ?? ""
             chatViewModel.loadTranscript(text, transcriptionId: viewModel.currentTranscription?.id)
         }
         .onChange(of: viewModel.selectedTab) {
-            if case .summary(let id) = viewModel.selectedTab {
-                summaryViewModel.clearBadge(for: id)
+            if case .result(let id) = viewModel.selectedTab {
+                promptResultsViewModel.markPromptResultViewed(id)
             }
         }
         .onDisappear {
@@ -128,22 +128,22 @@ struct TranscriptResultView: View {
         }
         .sheet(isPresented: $showPromptLibrary, onDismiss: {
             promptsViewModel.loadPrompts()
-            summaryViewModel.loadVisiblePrompts()
+            promptResultsViewModel.loadVisiblePrompts()
         }) {
             PromptLibraryView(viewModel: promptsViewModel)
         }
         .alert(
             "Delete Result?",
             isPresented: Binding(
-                get: { summaryViewModel.pendingDeleteSummary != nil },
-                set: { if !$0 { summaryViewModel.pendingDeleteSummary = nil } }
+                get: { promptResultsViewModel.pendingDeletePromptResult != nil },
+                set: { if !$0 { promptResultsViewModel.pendingDeletePromptResult = nil } }
             )
         ) {
             Button("Delete", role: .destructive) {
-                summaryViewModel.confirmDelete()
+                promptResultsViewModel.confirmDelete()
             }
             Button("Cancel", role: .cancel) {
-                summaryViewModel.pendingDeleteSummary = nil
+                promptResultsViewModel.pendingDeletePromptResult = nil
             }
         } message: {
             Text("This action cannot be undone.")
@@ -244,8 +244,10 @@ struct TranscriptResultView: View {
         .onDisappear {
             copiedResetTask?.cancel()
             copiedResetTask = nil
-            summaryCopiedResetTask?.cancel()
-            summaryCopiedResetTask = nil
+            resultCopiedResetTask?.cancel()
+            resultCopiedResetTask = nil
+            resultButtonCopiedResetTask?.cancel()
+            resultButtonCopiedResetTask = nil
             dismissTask?.cancel()
             dismissTask = nil
         }
@@ -314,8 +316,10 @@ struct TranscriptResultView: View {
         .onDisappear {
             copiedResetTask?.cancel()
             copiedResetTask = nil
-            summaryCopiedResetTask?.cancel()
-            summaryCopiedResetTask = nil
+            resultCopiedResetTask?.cancel()
+            resultCopiedResetTask = nil
+            resultButtonCopiedResetTask?.cancel()
+            resultButtonCopiedResetTask = nil
             dismissTask?.cancel()
             dismissTask = nil
         }
@@ -579,15 +583,15 @@ struct TranscriptResultView: View {
                 switch viewModel.selectedTab {
                 case .transcript:
                     transcriptPane
-                case .summary(let id):
-                    if summaryViewModel.summaries.contains(where: { $0.id == id }) {
-                        summaryContentPane(summaryID: id)
+                case .result(let id):
+                    if promptResultsViewModel.promptResults.contains(where: { $0.id == id }) {
+                        promptResultContentPane(promptResultID: id)
                     } else {
                         transcriptPane
                             .onAppear { viewModel.selectedTab = .transcript }
                     }
                 case .generation(let id):
-                    if summaryViewModel.pendingGeneration(id: id) != nil {
+                    if promptResultsViewModel.pendingGeneration(id: id) != nil {
                         pendingGenerationPane(generationID: id)
                     } else {
                         transcriptPane
@@ -695,10 +699,10 @@ struct TranscriptResultView: View {
     private var orderedTabs: [TranscriptionViewModel.TranscriptTab] {
         var tabs: [TranscriptionViewModel.TranscriptTab] = [.transcript]
         // Generated content after transcript, oldest first so new tabs appear on the right
-        for summary in summaryViewModel.summaries.reversed() {
-            tabs.append(.summary(id: summary.id))
+        for promptResult in promptResultsViewModel.promptResults.reversed() {
+            tabs.append(.result(id: promptResult.id))
         }
-        for generation in summaryViewModel.pendingGenerations(for: transcription.id) {
+        for generation in promptResultsViewModel.pendingGenerations(for: transcription.id) {
             tabs.append(.generation(id: generation.id))
         }
         tabs.append(.chat)
@@ -712,7 +716,7 @@ struct TranscriptResultView: View {
                     tabCapsule(for: tab)
                 }
 
-                if summaryViewModel.hasSummaryGenerationCapability {
+                if promptResultsViewModel.hasPromptResultGenerationCapability {
                     generateTabButton
                 }
 
@@ -730,14 +734,14 @@ struct TranscriptResultView: View {
 
         let isStreamingTab = {
             if case .generation(let id) = tab,
-               let generation = summaryViewModel.pendingGeneration(id: id) {
+               let generation = promptResultsViewModel.pendingGeneration(id: id) {
                 return generation.state == .streaming
             }
             return false
         }()
 
         let isCopiedTab: Bool = {
-            if case .summary(let id) = tab { return copiedSummaryID == id }
+            if case .result(let id) = tab { return copiedResultID == id }
             return false
         }()
 
@@ -749,7 +753,7 @@ struct TranscriptResultView: View {
                 .font(DesignSystem.Typography.bodySmall.weight(isSelected ? .semibold : .regular))
                 .lineLimit(1)
 
-            if case .summary(let id) = tab, summaryViewModel.badgedSummaryID == id {
+            if case .result(let id) = tab, promptResultsViewModel.hasUnreadPromptResult(id) {
                 Circle()
                     .fill(DesignSystem.Colors.accent)
                     .frame(width: 6, height: 6)
@@ -775,32 +779,32 @@ struct TranscriptResultView: View {
             viewModel.selectedTab = tab
         }
         .contextMenu {
-            if case .summary(let id) = tab,
-               let summary = summaryViewModel.summaries.first(where: { $0.id == id }) {
+            if case .result(let id) = tab,
+               let promptResult = promptResultsViewModel.promptResults.first(where: { $0.id == id }) {
                 Button("Copy Result") {
                     NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(summary.content, forType: .string)
+                    NSPasteboard.general.setString(promptResult.content, forType: .string)
                     Telemetry.send(.copyToClipboard(source: .transcription))
-                    copiedSummaryID = id
-                    summaryCopiedResetTask?.cancel()
-                    summaryCopiedResetTask = Task {
+                    copiedResultID = id
+                    resultCopiedResetTask?.cancel()
+                    resultCopiedResetTask = Task {
                         try? await Task.sleep(for: .seconds(1.5))
-                        copiedSummaryID = nil
+                        copiedResultID = nil
                     }
                 }
                 
                 Menu("Export Document") {
-                    Button("Markdown (.md)") { exportGenerationToDownloads(summary: summary, format: .md) }
-                    Button("Plain Text (.txt)") { exportGenerationToDownloads(summary: summary, format: .txt) }
+                    Button("Markdown (.md)") { exportGenerationToDownloads(promptResult: promptResult, format: .md) }
+                    Button("Plain Text (.txt)") { exportGenerationToDownloads(promptResult: promptResult, format: .txt) }
                 }
                 
                 Button("Delete Result", role: .destructive) {
-                    summaryViewModel.pendingDeleteSummary = summary
+                    promptResultsViewModel.pendingDeletePromptResult = promptResult
                 }
             }
             if case .generation(let id) = tab {
                 Button("Remove", role: .destructive) {
-                    summaryViewModel.cancelGeneration(id: id)
+                    promptResultsViewModel.cancelGeneration(id: id)
                 }
             }
         }
@@ -817,16 +821,16 @@ struct TranscriptResultView: View {
             .padding(.vertical, 8)
             .contentShape(Rectangle())
             .foregroundStyle(
-                summaryViewModel.canGenerateSummary
+                promptResultsViewModel.canGeneratePromptResult
                     ? DesignSystem.Colors.textSecondary
                     : DesignSystem.Colors.textTertiary
             )
             .onTapGesture {
-                guard summaryViewModel.canGenerateSummary else { return }
+                guard promptResultsViewModel.canGeneratePromptResult else { return }
                 showGeneratePopover = true
             }
             .popover(isPresented: $showGeneratePopover) {
-                summaryGenerationPopover
+                promptGenerationPopover
                     .frame(width: 420)
                     .padding(DesignSystem.Spacing.lg)
             }
@@ -841,10 +845,10 @@ struct TranscriptResultView: View {
         switch tab {
         case .transcript:
             return "text.alignleft"
-        case .summary:
+        case .result:
             return "sparkles"
         case .generation(let id):
-            if summaryViewModel.pendingGeneration(id: id)?.state == .queued {
+            if promptResultsViewModel.pendingGeneration(id: id)?.state == .queued {
                 return "clock"
             }
             return "sparkles"
@@ -857,11 +861,11 @@ struct TranscriptResultView: View {
         switch tab {
         case .transcript:
             return "Transcript"
-        case .summary(let id):
-            guard let summary = summaryViewModel.summaries.first(where: { $0.id == id }) else { return "Summary" }
-            return label(for: summary.promptName, extraInstructions: summary.extraInstructions)
+        case .result(let id):
+            guard let promptResult = promptResultsViewModel.promptResults.first(where: { $0.id == id }) else { return "Result" }
+            return label(for: promptResult.promptName, extraInstructions: promptResult.extraInstructions)
         case .generation(let id):
-            guard let gen = summaryViewModel.pendingGeneration(id: id) else { return "Summary" }
+            guard let gen = promptResultsViewModel.pendingGeneration(id: id) else { return "Result" }
             return label(for: gen.promptName, extraInstructions: gen.extraInstructions)
         case .chat:
             return "Chat"
@@ -877,18 +881,18 @@ struct TranscriptResultView: View {
         return "\(promptName) + \"\(truncated)\""
     }
 
-    // MARK: - Summary Panes
+    // MARK: - Result Panes
 
-    private func summaryContentPane(summaryID: UUID) -> some View {
-        let summary = summaryViewModel.summaries.first(where: { $0.id == summaryID })
+    private func promptResultContentPane(promptResultID: UUID) -> some View {
+        let promptResult = promptResultsViewModel.promptResults.first(where: { $0.id == promptResultID })
         return ScrollView {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
-                if let summary {
+                if let promptResult {
                     HStack {
                         Spacer()
 
                         Button {
-                            if let generationID = summaryViewModel.regenerateSummary(summary, transcript: transcriptText) {
+                            if let generationID = promptResultsViewModel.regeneratePromptResult(promptResult, transcript: transcriptText) {
                                 viewModel.selectedTab = .generation(id: generationID)
                             }
                         } label: {
@@ -900,18 +904,18 @@ struct TranscriptResultView: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
-                        .disabled(!summaryViewModel.canGenerateSummary || transcriptText.isEmpty)
+                        .disabled(!promptResultsViewModel.canGeneratePromptResult || transcriptText.isEmpty)
 
-                        let isCopied = copiedButtonSummaryID == summaryID
+                        let isCopied = copiedButtonResultID == promptResultID
                         Button {
                             NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(summary.content, forType: .string)
+                            NSPasteboard.general.setString(promptResult.content, forType: .string)
                             Telemetry.send(.copyToClipboard(source: .transcription))
-                            copiedButtonSummaryID = summaryID
-                            summaryButtonCopiedResetTask?.cancel()
-                            summaryButtonCopiedResetTask = Task {
+                            copiedButtonResultID = promptResultID
+                            resultButtonCopiedResetTask?.cancel()
+                            resultButtonCopiedResetTask = Task {
                                 try? await Task.sleep(for: .seconds(1))
-                                copiedButtonSummaryID = nil
+                                copiedButtonResultID = nil
                             }
                         } label: {
                             HStack(spacing: DesignSystem.Spacing.xs) {
@@ -925,8 +929,8 @@ struct TranscriptResultView: View {
                         .controlSize(.small)
 
                         Menu {
-                            Button("Markdown (.md)") { exportGenerationToDownloads(summary: summary, format: .md) }
-                            Button("Plain Text (.txt)") { exportGenerationToDownloads(summary: summary, format: .txt) }
+                            Button("Markdown (.md)") { exportGenerationToDownloads(promptResult: promptResult, format: .md) }
+                            Button("Plain Text (.txt)") { exportGenerationToDownloads(promptResult: promptResult, format: .txt) }
                         } label: {
                             HStack(spacing: DesignSystem.Spacing.xs) {
                                 Image(systemName: "arrow.down.doc")
@@ -938,7 +942,7 @@ struct TranscriptResultView: View {
                         .controlSize(.small)
 
                         Button(role: .destructive) {
-                            summaryViewModel.pendingDeleteSummary = summary
+                            promptResultsViewModel.pendingDeletePromptResult = promptResult
                         } label: {
                             HStack(spacing: DesignSystem.Spacing.xs) {
                                 Image(systemName: "trash")
@@ -950,7 +954,7 @@ struct TranscriptResultView: View {
                         .controlSize(.small)
                     }
 
-                    MarkdownContentView(summary.content, font: DesignSystem.Typography.bodyLarge)
+                    MarkdownContentView(promptResult.content, font: DesignSystem.Typography.bodyLarge)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
@@ -969,18 +973,18 @@ struct TranscriptResultView: View {
 
     @ViewBuilder
     private func pendingGenerationPane(generationID: UUID) -> some View {
-        if let generation = summaryViewModel.pendingGeneration(id: generationID) {
+        if let generation = promptResultsViewModel.pendingGeneration(id: generationID) {
             generationPane(generation)
         }
     }
 
-    private func generationPane(_ generation: SummaryViewModel.PendingGeneration) -> some View {
+    private func generationPane(_ generation: PromptResultsViewModel.PendingGeneration) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
                 HStack {
                     Spacer()
                     Button {
-                        summaryViewModel.cancelGeneration(id: generation.id)
+                        promptResultsViewModel.cancelGeneration(id: generation.id)
                         viewModel.selectedTab = .transcript
                     } label: {
                         HStack(spacing: DesignSystem.Spacing.xs) {
@@ -1020,7 +1024,7 @@ struct TranscriptResultView: View {
             Label("Queued", systemImage: "clock")
                 .font(DesignSystem.Typography.caption.weight(.semibold))
                 .foregroundStyle(DesignSystem.Colors.accent)
-            Text("This summary will start automatically after the current generation finishes.")
+            Text("This result will start automatically after the current generation finishes.")
                 .font(DesignSystem.Typography.body)
                 .foregroundStyle(DesignSystem.Colors.textSecondary)
         }
@@ -1032,34 +1036,34 @@ struct TranscriptResultView: View {
         )
     }
 
-    private var summaryGenerationPopover: some View {
+    private var promptGenerationPopover: some View {
         VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
             // Prompt chips
             promptChips
 
             // Model selector
-            if !summaryViewModel.availableModels.isEmpty {
+            if !promptResultsViewModel.availableModels.isEmpty {
                 ModelSelectorView(
-                    currentModel: summaryViewModel.currentModelName,
-                    displayName: summaryViewModel.modelDisplayName,
-                    availableModels: summaryViewModel.availableModels,
-                    disabled: summaryViewModel.hasPendingGenerations,
-                    onSelect: { summaryViewModel.selectModel($0) }
+                    currentModel: promptResultsViewModel.currentModelName,
+                    displayName: promptResultsViewModel.modelDisplayName,
+                    availableModels: promptResultsViewModel.availableModels,
+                    disabled: promptResultsViewModel.hasPendingGenerations,
+                    onSelect: { promptResultsViewModel.selectModel($0) }
                 )
             }
 
             // Extra instructions
-            TextField("Extra instructions (optional)", text: $summaryViewModel.extraInstructions)
+            TextField("Extra instructions (optional)", text: $promptResultsViewModel.extraInstructions)
                 .textFieldStyle(.roundedBorder)
                 .font(DesignSystem.Typography.body)
 
-            if summaryViewModel.hasPendingGenerations {
+            if promptResultsViewModel.hasPendingGenerations {
                 Text(queueStatusText)
                     .font(DesignSystem.Typography.caption)
                     .foregroundStyle(DesignSystem.Colors.textSecondary)
             }
 
-            if let errorMessage = summaryViewModel.errorMessage {
+            if let errorMessage = promptResultsViewModel.errorMessage {
                 Text(errorMessage)
                     .font(DesignSystem.Typography.caption)
                     .foregroundStyle(DesignSystem.Colors.errorRed)
@@ -1080,7 +1084,7 @@ struct TranscriptResultView: View {
 
                 Button {
                     showGeneratePopover = false
-                    if let generationID = summaryViewModel.generateSummary(
+                    if let generationID = promptResultsViewModel.generatePromptResult(
                         transcript: transcriptText,
                         transcriptionId: transcription.id
                     ) {
@@ -1092,18 +1096,18 @@ struct TranscriptResultView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
                 .keyboardShortcut(.return, modifiers: .command)
-                .disabled(!summaryViewModel.canGenerateManualSummary || transcriptText.isEmpty)
+                .disabled(!promptResultsViewModel.canGenerateManualPromptResult || transcriptText.isEmpty)
             }
         }
     }
 
     private var promptChips: some View {
-        let prompts = summaryViewModel.visiblePrompts
+        let prompts = promptResultsViewModel.visiblePrompts
         return FlowLayout(spacing: 8) {
             ForEach(prompts) { prompt in
-                let isSelected = summaryViewModel.selectedPrompt?.id == prompt.id
-                let hasExisting = summaryViewModel.summaries.contains { $0.promptName == prompt.name }
-                    || summaryViewModel.hasPendingGeneration(
+                let isSelected = promptResultsViewModel.selectedPrompt?.id == prompt.id
+                let hasExisting = promptResultsViewModel.promptResults.contains { $0.promptName == prompt.name }
+                    || promptResultsViewModel.hasPendingGeneration(
                         promptName: prompt.name,
                         transcriptionId: transcription.id
                     )
@@ -1132,7 +1136,7 @@ struct TranscriptResultView: View {
                 .contentShape(Capsule())
                 .onTapGesture {
                     withAnimation(DesignSystem.Animation.selectionChange) {
-                        summaryViewModel.selectedPrompt = prompt
+                        promptResultsViewModel.selectedPrompt = prompt
                     }
                 }
                 .onHover { hovering in
@@ -1143,13 +1147,13 @@ struct TranscriptResultView: View {
     }
 
     private var queueStatusText: String {
-        if summaryViewModel.isStreaming && summaryViewModel.queuedGenerationCount > 0 {
-            return "1 generating, \(summaryViewModel.queuedGenerationCount) queued"
+        if promptResultsViewModel.isStreaming && promptResultsViewModel.queuedGenerationCount > 0 {
+            return "1 generating, \(promptResultsViewModel.queuedGenerationCount) queued"
         }
-        if summaryViewModel.isStreaming {
-            return "Generating summary"
+        if promptResultsViewModel.isStreaming {
+            return "Generating result"
         }
-        return "\(summaryViewModel.queuedGenerationCount) queued"
+        return "\(promptResultsViewModel.queuedGenerationCount) queued"
     }
 
     // MARK: - Chat Pane
@@ -2016,11 +2020,11 @@ struct TranscriptResultView: View {
         .frame(minWidth: 220)
     }
 
-    private func exportGenerationToDownloads(summary: Summary, format: ExportFormat) {
+    private func exportGenerationToDownloads(promptResult: PromptResult, format: ExportFormat) {
         let source = viewModel.currentTranscription ?? transcription
         let baseStem = TranscriptSegmenter.sanitizedExportStem(from: source.fileName)
         
-        let promptNameSafe = summary.promptName
+        let promptNameSafe = promptResult.promptName
             .lowercased()
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { !$0.isEmpty }
@@ -2044,7 +2048,7 @@ struct TranscriptResultView: View {
         }
 
         do {
-            try summary.content.write(to: fileURL, atomically: true, encoding: .utf8)
+            try promptResult.content.write(to: fileURL, atomically: true, encoding: .utf8)
             Telemetry.send(.exportUsed(format: format.rawValue))
         } catch {
             exportErrorMessage = error.localizedDescription

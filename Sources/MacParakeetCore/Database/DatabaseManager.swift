@@ -313,7 +313,7 @@ public final class DatabaseManager: Sendable {
                 }
 
                 let createdAt = Date.fromDatabaseValue(row["createdAt"] as DatabaseValue) ?? now
-                let migratedSummary = Summary(
+                let migratedSummary = PromptResult(
                     transcriptionId: transcriptionId,
                     promptName: Prompt.defaultPrompt.name,
                     promptContent: Prompt.defaultPrompt.content,
