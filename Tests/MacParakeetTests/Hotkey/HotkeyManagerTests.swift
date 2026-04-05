@@ -1,8 +1,16 @@
 import XCTest
+import IOKit.hidsystem
 @testable import MacParakeet
 @testable import MacParakeetCore
 
 final class HotkeyManagerTests: XCTestCase {
+    private let leftOptionMask = UInt64(NX_DEVICELALTKEYMASK)
+    private let rightOptionMask = UInt64(NX_DEVICERALTKEYMASK)
+
+    private func sideSpecificFlags(_ masks: UInt64...) -> CGEventFlags {
+        CGEventFlags(rawValue: masks.reduce(0, |))
+    }
+
     func testAdditionalModifierInterruptsBareFnBeforeStartup() {
         let manager = HotkeyManager(trigger: .fn)
 
@@ -75,7 +83,10 @@ final class HotkeyManagerTests: XCTestCase {
         // Right option pressed (keyCode 61) — should trigger
         XCTAssertEqual(
             manager.modifierFlagsChangedOutputsForTesting(
-                flags: [.maskAlternate],
+                flags: sideSpecificFlags(
+                    CGEventFlags.maskAlternate.rawValue,
+                    rightOptionMask
+                ),
                 keyCode: 61,
                 timestampMs: 1_000
             ),
@@ -93,7 +104,10 @@ final class HotkeyManagerTests: XCTestCase {
         // Left option pressed (keyCode 58) — should NOT trigger
         XCTAssertEqual(
             manager.modifierFlagsChangedOutputsForTesting(
-                flags: [.maskAlternate],
+                flags: sideSpecificFlags(
+                    CGEventFlags.maskAlternate.rawValue,
+                    leftOptionMask
+                ),
                 keyCode: 58,
                 timestampMs: 1_000
             ),
@@ -107,7 +121,10 @@ final class HotkeyManagerTests: XCTestCase {
 
         // Press right option
         _ = manager.modifierFlagsChangedOutputsForTesting(
-            flags: [.maskAlternate],
+            flags: sideSpecificFlags(
+                CGEventFlags.maskAlternate.rawValue,
+                rightOptionMask
+            ),
             keyCode: 61,
             timestampMs: 1_000
         )
@@ -129,18 +146,131 @@ final class HotkeyManagerTests: XCTestCase {
 
         // Press right option
         _ = manager.modifierFlagsChangedOutputsForTesting(
-            flags: [.maskAlternate],
+            flags: sideSpecificFlags(
+                CGEventFlags.maskAlternate.rawValue,
+                rightOptionMask
+            ),
             keyCode: 61,
             timestampMs: 1_000
         )
 
         // Left option pressed while right is held — should interrupt bare-tap
         let outputs = manager.modifierFlagsChangedOutputsForTesting(
-            flags: [.maskAlternate],
+            flags: sideSpecificFlags(
+                CGEventFlags.maskAlternate.rawValue,
+                leftOptionMask,
+                rightOptionMask
+            ),
             keyCode: 58,
             timestampMs: 1_050
         )
-        XCTAssertEqual(outputs, [.cancelStartupDebounce, .cancelHoldWindow])
+        XCTAssertEqual(outputs, [.cancelStartupDebounce, .cancelHoldWindow] as [HotkeyGestureController.Output])
+    }
+
+    func testSideSpecificRightOptionIgnoresPressWhenLeftOptionAlreadyHeld() {
+        let trigger = HotkeyTrigger(kind: .modifier, modifierName: "option", keyCode: nil, modifierKeyCode: 61)
+        let manager = HotkeyManager(trigger: trigger)
+
+        _ = manager.modifierFlagsChangedOutputsForTesting(
+            flags: sideSpecificFlags(
+                CGEventFlags.maskAlternate.rawValue,
+                leftOptionMask
+            ),
+            keyCode: 58,
+            timestampMs: 1_000
+        )
+
+        XCTAssertEqual(
+            manager.modifierFlagsChangedOutputsForTesting(
+                flags: sideSpecificFlags(
+                    CGEventFlags.maskAlternate.rawValue,
+                    leftOptionMask,
+                    rightOptionMask
+                ),
+                keyCode: 61,
+                timestampMs: 1_050
+            ),
+            []
+        )
+
+        XCTAssertEqual(
+            manager.modifierFlagsChangedOutputsForTesting(
+                flags: sideSpecificFlags(
+                    CGEventFlags.maskAlternate.rawValue,
+                    leftOptionMask
+                ),
+                keyCode: 61,
+                timestampMs: 1_100
+            ),
+            []
+        )
+    }
+
+    func testSideSpecificRightOptionReleaseWhileHeldAtStartupDoesNotInvertState() {
+        let trigger = HotkeyTrigger(kind: .modifier, modifierName: "option", keyCode: nil, modifierKeyCode: 61)
+        let manager = HotkeyManager(trigger: trigger)
+
+        manager.syncModifierPressedStateForTesting(
+            flags: sideSpecificFlags(
+                CGEventFlags.maskAlternate.rawValue,
+                rightOptionMask
+            )
+        )
+
+        XCTAssertEqual(
+            manager.modifierFlagsChangedOutputsForTesting(
+                flags: [],
+                keyCode: 61,
+                timestampMs: 1_000
+            ),
+            []
+        )
+
+        XCTAssertEqual(
+            manager.modifierFlagsChangedOutputsForTesting(
+                flags: sideSpecificFlags(
+                    CGEventFlags.maskAlternate.rawValue,
+                    rightOptionMask
+                ),
+                keyCode: 61,
+                timestampMs: 1_050
+            ),
+            [
+                .scheduleStartupDebounce(milliseconds: FnKeyStateMachine.defaultStartupDebounceMs),
+                .scheduleHoldWindow(milliseconds: FnKeyStateMachine.defaultTapThresholdMs),
+            ]
+        )
+    }
+
+    func testSideSpecificRightOptionResyncAfterMissedReleaseAllowsNextPress() {
+        let trigger = HotkeyTrigger(kind: .modifier, modifierName: "option", keyCode: nil, modifierKeyCode: 61)
+        let manager = HotkeyManager(trigger: trigger)
+
+        _ = manager.modifierFlagsChangedOutputsForTesting(
+            flags: sideSpecificFlags(
+                CGEventFlags.maskAlternate.rawValue,
+                rightOptionMask
+            ),
+            keyCode: 61,
+            timestampMs: 1_000
+        )
+
+        manager.syncModifierPressedStateForTesting(flags: [])
+
+        XCTAssertEqual(
+            manager.modifierFlagsChangedOutputsForTesting(
+                flags: sideSpecificFlags(
+                    CGEventFlags.maskAlternate.rawValue,
+                    rightOptionMask
+                ),
+                keyCode: 61,
+                timestampMs: 1_050
+            ),
+            [
+                .scheduleStartupDebounce(milliseconds: FnKeyStateMachine.defaultStartupDebounceMs),
+                .scheduleHoldWindow(milliseconds: FnKeyStateMachine.defaultTapThresholdMs),
+            ]
+        )
     }
 
     func testGenericOptionStillTriggersOnEitherSide() {
