@@ -27,8 +27,8 @@ final class PromptResultsViewModelTests: XCTestCase {
             transcriptionRepo: transcriptionRepo
         )
 
-        XCTAssertEqual(viewModel.visiblePrompts.count, 7)
-        XCTAssertEqual(viewModel.selectedPrompt?.name, "General Summary")
+        XCTAssertEqual(viewModel.visiblePrompts.count, 6)
+        XCTAssertEqual(viewModel.selectedPrompt?.name, "Summary")
         XCTAssertTrue(viewModel.canGeneratePromptResult)
         XCTAssertTrue(viewModel.canGenerateManualPromptResult)
     }
