@@ -43,9 +43,8 @@ public actor AudioRecorder {
     private var _deviceInfo: RecordingDeviceInfo?
 
     /// Minimum samples before sending to STT.
-    /// Safety floor to filter accidental taps. FluidAudio handles short audio
-    /// gracefully (returns empty text, caught by emptyTranscript check).
-    private static let minimumSamples = 4_800
+    /// FluidAudio requires at least 1 second of 16kHz audio (16,000 samples).
+    private static let minimumSamples = 16_000
 
     public init() {}
 
