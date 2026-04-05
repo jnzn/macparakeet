@@ -50,16 +50,7 @@ struct PromptLibraryView: View {
                     // Built-In Prompts Section
                     sectionContainer(
                         title: "Built-In Prompts",
-                        subtitle: "Shipped with MacParakeet and kept in sync with the app's built-in prompt set.",
-                        headerTrailing: {
-                            HStack(spacing: DesignSystem.Spacing.md) {
-                                if let url = URL(string: "https://github.com/moona3k/macparakeet/blob/main/Sources/MacParakeetCore/Resources/community-prompts.json") {
-                                    Link("View prompt source", destination: url)
-                                        .font(DesignSystem.Typography.caption.weight(.medium))
-                                        .foregroundStyle(DesignSystem.Colors.accent)
-                                }
-                            }
-                        }
+                        subtitle: "Shipped with MacParakeet and kept in sync with the app's built-in prompt set."
                     ) {
                         cardGroup {
                             let builtIns = viewModel.prompts.filter(\.isBuiltIn)
@@ -223,6 +214,7 @@ struct PromptLibraryView: View {
                             .clipShape(Capsule())
                         }
                         .buttonStyle(.plain)
+                        .help("Automatically runs this prompt when a transcription completes.")
                     } else if isHovered {
                         Button {
                             withAnimation { viewModel.toggleAutoRun(prompt) }
@@ -244,6 +236,7 @@ struct PromptLibraryView: View {
                         }
                         .buttonStyle(.plain)
                         .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                        .help("Automatically runs this prompt when a transcription completes.")
                     }
 
                     Spacer()
