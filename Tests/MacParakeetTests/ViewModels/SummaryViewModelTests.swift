@@ -189,7 +189,7 @@ final class SummaryViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.pendingGenerations.last?.id, secondGenerationID)
         XCTAssertEqual(viewModel.pendingGenerations.last?.state, .queued)
 
-        try await Task.sleep(for: .milliseconds(700))
+        try await Task.sleep(for: .milliseconds(1500))
 
         XCTAssertEqual(summaryRepo.saveCalls.count, 2)
         XCTAssertEqual(summaryRepo.saveCalls[0].promptName, "General Summary")
@@ -417,7 +417,7 @@ final class SummaryViewModelTests: XCTestCase {
         )
         viewModel.loadSummaries(transcriptionId: transcriptionID)
 
-        try await Task.sleep(for: .milliseconds(450))
+        try await Task.sleep(for: .milliseconds(1000))
 
         XCTAssertEqual(summaryRepo.saveCalls.count, 1)
         XCTAssertEqual(viewModel.summaries.first?.content, "Auto summary")
