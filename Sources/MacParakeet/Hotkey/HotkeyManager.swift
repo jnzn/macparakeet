@@ -43,6 +43,10 @@ public final class HotkeyManager {
 
     /// Required modifier flags for `.chord` triggers, precomputed from `trigger.chordEventFlags`.
     private let requiredChordFlags: UInt64
+    /// The modifier bits that participate in bare-modifier gesture detection.
+    private static let trackedModifierMasks: CGEventFlags = [
+        .maskSecondaryFn, .maskControl, .maskAlternate, .maskShift, .maskCommand,
+    ]
 
     public init(
         trigger: HotkeyTrigger = .fn,
@@ -161,50 +165,108 @@ public final class HotkeyManager {
     private func handleModifierEvent(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         let timestampMs = UInt64(event.timestamp / 1_000_000)
 
-        if type == .flagsChanged, let mask = targetMask {
-            let flags = event.flags
-            let isPressed = flags.contains(mask)
+        if type == .flagsChanged {
+            handleOutputs(
+                modifierFlagsChangedOutputs(
+                    flags: event.flags,
+                    timestampMs: timestampMs
+                )
+            )
+        } else if type == .keyDown {
+            let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+            handleOutputs(
+                modifierKeyDownOutputs(
+                    keyCode: keyCode,
+                    timestampMs: timestampMs
+                )
+            )
+        }
 
-            // Edge detection: only act on actual transitions of the target modifier
-            guard isPressed != targetModifierWasPressed else {
-                return Unmanaged.passUnretained(event)
-            }
+        return Unmanaged.passUnretained(event)
+    }
+
+    private func modifierFlagsChangedOutputs(
+        flags: CGEventFlags,
+        timestampMs: UInt64
+    ) -> [HotkeyGestureController.Output] {
+        guard let mask = targetMask else { return [] }
+
+        let isPressed = flags.contains(mask)
+        if isPressed != targetModifierWasPressed {
             targetModifierWasPressed = isPressed
 
             if isPressed {
                 // Modifier down — start bare-tap tracking
                 bareTap = true
-                handleOutputs(gestureController.triggerPressed(timestampMs: timestampMs))
-            } else {
-                // Modifier up
-                if bareTap {
-                    handleOutputs(gestureController.triggerReleased(timestampMs: timestampMs))
-                } else {
-                    handleOutputs(gestureController.nonBareTriggerReleased())
-                }
-                bareTap = true
+                return gestureController.triggerPressed(timestampMs: timestampMs)
             }
-        } else if type == .keyDown {
-            let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-            if keyCode == 53 { // Escape
-                handleOutputs(gestureController.escapePressed())
-            } else if keyCode != 63 && keyCode != 179 {
-                // Skip Fn/Globe key (63/179) — macOS generates a synthetic keyDown
-                // with keyCode 179 when Fn is released (for "Change Input Source" or
-                // "Show Emoji & Symbols"). Without this guard, that keyDown resets
-                // the state machine between the first and second tap of a double-tap.
-                // Non-Escape key pressed — invalidate bare-tap if modifier is held
-                if targetModifierWasPressed {
-                    bareTap = false
-                }
 
-                // Gesture interruption: if waiting for second tap, a regular key press
-                // means the user is typing, not double-tapping the hotkey
-                handleOutputs(gestureController.interrupted())
+            let outputs: [HotkeyGestureController.Output]
+            if bareTap {
+                outputs = gestureController.triggerReleased(timestampMs: timestampMs)
+            } else {
+                outputs = gestureController.nonBareTriggerReleased()
             }
+            bareTap = true
+            return outputs
         }
 
-        return Unmanaged.passUnretained(event)
+        // Additional modifier changes while the trigger is still held invalidate the
+        // "bare modifier" assumption just like a regular keyDown would.
+        guard targetModifierWasPressed else { return [] }
+        let activeTrackedModifiers = flags.intersection(Self.trackedModifierMasks)
+        let nonTargetTrackedModifiers = activeTrackedModifiers.subtracting(mask)
+        guard !nonTargetTrackedModifiers.isEmpty else { return [] }
+
+        bareTap = false
+        return gestureController.interrupted()
+    }
+
+    private func modifierKeyDownOutputs(
+        keyCode: Int64,
+        timestampMs: UInt64
+    ) -> [HotkeyGestureController.Output] {
+        if keyCode == 53 { // Escape
+            return gestureController.escapePressed()
+        } else if keyCode != 63 && keyCode != 179 {
+            // Skip Fn/Globe key (63/179) — macOS generates a synthetic keyDown
+            // with keyCode 179 when Fn is released (for "Change Input Source" or
+            // "Show Emoji & Symbols"). Without this guard, that keyDown resets
+            // the state machine between the first and second tap of a double-tap.
+            // Non-Escape key pressed — invalidate bare-tap if modifier is held
+            if targetModifierWasPressed {
+                bareTap = false
+            }
+
+            // Gesture interruption: if waiting for second tap, a regular key press
+            // means the user is typing, not double-tapping the hotkey
+            return gestureController.interrupted()
+        }
+        return []
+    }
+
+    // Test seam: lets unit tests exercise the real modifier-path state logic
+    // without constructing CGEvents or arming timers.
+    func modifierFlagsChangedOutputsForTesting(
+        flags: CGEventFlags,
+        timestampMs: UInt64
+    ) -> [HotkeyGestureController.Output] {
+        modifierFlagsChangedOutputs(flags: flags, timestampMs: timestampMs)
+    }
+
+    func modifierKeyDownOutputsForTesting(
+        keyCode: Int64,
+        timestampMs: UInt64
+    ) -> [HotkeyGestureController.Output] {
+        modifierKeyDownOutputs(keyCode: keyCode, timestampMs: timestampMs)
+    }
+
+    func startupDebounceElapsedForTesting() -> [HotkeyGestureController.Output] {
+        gestureController.startupDebounceElapsed()
+    }
+
+    func holdWindowElapsedForTesting() -> [HotkeyGestureController.Output] {
+        gestureController.holdWindowElapsed()
     }
 
     // MARK: - KeyCode Trigger Path
