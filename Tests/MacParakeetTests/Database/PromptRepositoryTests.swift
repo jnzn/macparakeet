@@ -20,10 +20,10 @@ final class PromptRepositoryTests: XCTestCase {
 
     func testBuiltInPromptsSeededAfterMigration() throws {
         let prompts = try repo.fetchAll()
-        XCTAssertEqual(prompts.count, 7)
+        XCTAssertEqual(prompts.count, Prompt.builtInPrompts().count)
         XCTAssertTrue(prompts.allSatisfy(\.isBuiltIn))
         XCTAssertTrue(prompts.allSatisfy(\.isVisible))
-        XCTAssertEqual(prompts.first?.name, "General Summary")
+        XCTAssertEqual(prompts.first?.name, "Summary")
     }
 
     func testCommunityPromptArtifactMatchesBuiltInPrompts() throws {
@@ -54,7 +54,7 @@ final class PromptRepositoryTests: XCTestCase {
     }
 
     func testFetchVisibleFiltersHiddenPrompts() throws {
-        let prompt = try XCTUnwrap((try repo.fetchAll()).first(where: { $0.name == "Meeting Notes" }))
+        let prompt = try XCTUnwrap((try repo.fetchAll()).first(where: { $0.name == "Chapter Breakdown" }))
         try repo.toggleVisibility(id: prompt.id)
 
         let visible = try repo.fetchVisible(category: .result)
@@ -62,7 +62,7 @@ final class PromptRepositoryTests: XCTestCase {
     }
 
     func testRestoreDefaultsRevealsBuiltIns() throws {
-        let prompt = try XCTUnwrap((try repo.fetchAll()).first(where: { $0.name == "Meeting Notes" }))
+        let prompt = try XCTUnwrap((try repo.fetchAll()).first(where: { $0.name == "Chapter Breakdown" }))
         try repo.toggleVisibility(id: prompt.id)
         XCTAssertFalse(try repo.fetchVisible(category: .result).contains(where: { $0.id == prompt.id }))
 
@@ -72,7 +72,7 @@ final class PromptRepositoryTests: XCTestCase {
     }
 
     func testNameUniquenessConstraintIsCaseInsensitive() throws {
-        let duplicate = Prompt(name: "general summary", content: "Duplicate")
+        let duplicate = Prompt(name: "summary", content: "Duplicate")
 
         XCTAssertThrowsError(try repo.save(duplicate))
     }
@@ -82,16 +82,17 @@ final class PromptRepositoryTests: XCTestCase {
             .appendingPathComponent("prompt-reconcile-\(UUID().uuidString).sqlite")
         defer { try? FileManager.default.removeItem(at: dbURL) }
 
-        let expectedMeetingNotes = try XCTUnwrap(
-            Prompt.builtInPrompts().first(where: { $0.name == "Meeting Notes" })
+        let expectedChapter = try XCTUnwrap(
+            Prompt.builtInPrompts().first(where: { $0.name == "Chapter Breakdown" })
         )
-        let expectedExecutiveBrief = try XCTUnwrap(
-            Prompt.builtInPrompts().first(where: { $0.name == "Executive Brief" })
+        let expectedBlog = try XCTUnwrap(
+            Prompt.builtInPrompts().first(where: { $0.name == "Blog Post" })
         )
 
         do {
             let manager = try DatabaseManager(path: dbURL.path)
             try manager.dbQueue.write { db in
+                // Simulate a stale built-in with wrong ID and old content
                 try db.execute(
                     sql: """
                         UPDATE prompts
@@ -101,12 +102,13 @@ final class PromptRepositoryTests: XCTestCase {
                     arguments: [
                         UUID().uuidString,
                         "Stale content",
-                        "Meeting Notes",
+                        "Chapter Breakdown",
                     ]
                 )
+                // Simulate a deleted built-in
                 try db.execute(
                     sql: "DELETE FROM prompts WHERE name = ?",
-                    arguments: ["Executive Brief"]
+                    arguments: ["Blog Post"]
                 )
             }
         }
@@ -115,14 +117,14 @@ final class PromptRepositoryTests: XCTestCase {
         let reopenedRepo = PromptRepository(dbQueue: reopenedManager.dbQueue)
         let prompts = try reopenedRepo.fetchAll()
 
-        let meetingNotes = try XCTUnwrap(prompts.first(where: { $0.name == "Meeting Notes" }))
-        XCTAssertEqual(meetingNotes.id, expectedMeetingNotes.id)
-        XCTAssertEqual(meetingNotes.content, expectedMeetingNotes.content)
-        XCTAssertFalse(meetingNotes.isVisible)
+        let chapter = try XCTUnwrap(prompts.first(where: { $0.name == "Chapter Breakdown" }))
+        XCTAssertEqual(chapter.id, expectedChapter.id)
+        XCTAssertEqual(chapter.content, expectedChapter.content)
+        XCTAssertFalse(chapter.isVisible)
         XCTAssertEqual(prompts.count, Prompt.builtInPrompts().count)
         XCTAssertEqual(
-            prompts.first(where: { $0.name == "Executive Brief" })?.id,
-            expectedExecutiveBrief.id
+            prompts.first(where: { $0.name == "Blog Post" })?.id,
+            expectedBlog.id
         )
     }
 
@@ -132,14 +134,14 @@ final class PromptRepositoryTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: dbURL) }
 
         let customID = UUID()
-        let customContent = "My custom executive summary format."
+        let customContent = "My custom blog format."
 
         do {
             let manager = try DatabaseManager(path: dbURL.path)
             try manager.dbQueue.write { db in
                 try db.execute(
                     sql: "DELETE FROM prompts WHERE name = ?",
-                    arguments: ["Executive Brief"]
+                    arguments: ["Blog Post"]
                 )
                 try db.execute(
                     sql: """
@@ -149,7 +151,7 @@ final class PromptRepositoryTests: XCTestCase {
                         """,
                     arguments: [
                         customID.uuidString,
-                        "Executive Brief",
+                        "Blog Post",
                         customContent,
                         Prompt.Category.result.rawValue,
                         false,
@@ -167,10 +169,10 @@ final class PromptRepositoryTests: XCTestCase {
         let reopenedRepo = PromptRepository(dbQueue: reopenedManager.dbQueue)
         let prompts = try reopenedRepo.fetchAll()
 
-        let executiveBrief = try XCTUnwrap(prompts.first(where: { $0.name == "Executive Brief" }))
-        XCTAssertEqual(executiveBrief.id, customID)
-        XCTAssertEqual(executiveBrief.content, customContent)
-        XCTAssertFalse(executiveBrief.isBuiltIn)
-        XCTAssertEqual(prompts.filter { $0.name == "Executive Brief" }.count, 1)
+        let blogPost = try XCTUnwrap(prompts.first(where: { $0.name == "Blog Post" }))
+        XCTAssertEqual(blogPost.id, customID)
+        XCTAssertEqual(blogPost.content, customContent)
+        XCTAssertFalse(blogPost.isBuiltIn)
+        XCTAssertEqual(prompts.filter { $0.name == "Blog Post" }.count, 1)
     }
 }

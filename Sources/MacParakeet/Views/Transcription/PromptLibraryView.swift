@@ -11,9 +11,24 @@ struct PromptLibraryView: View {
     @State private var expandedPromptIds: Set<UUID> = []
 
     var body: some View {
-        VStack(spacing: 0) {
-            // MARK: - Header
-            HStack(alignment: .bottom) {
+        ZStack {
+            // Background Merkaba Watermark
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    MerkabaShape()
+                        .stroke(DesignSystem.Colors.textTertiary.opacity(0.08), lineWidth: 1.5)
+                        .frame(width: 400, height: 400)
+                        .offset(x: 100, y: 100)
+                        .rotationEffect(.degrees(15))
+                }
+            }
+            .ignoresSafeArea()
+            
+            VStack(spacing: 0) {
+                // MARK: - Header
+                HStack(alignment: .bottom) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Prompt Library")
                         .font(DesignSystem.Typography.heroTitle)
@@ -121,6 +136,9 @@ struct PromptLibraryView: View {
             if let prompt = viewModel.editingPrompt {
                 editSheet(prompt: prompt)
             }
+        }
+        .frame(width: 540, height: 500)
+        .background(DesignSystem.Colors.surface)
         }
     }
 
@@ -298,12 +316,11 @@ struct PromptLibraryView: View {
 
     private var emptyStateView: some View {
         VStack(spacing: DesignSystem.Spacing.md) {
-            Image(systemName: "wand.and.stars")
-                .font(.system(size: 32))
-                .foregroundStyle(DesignSystem.Colors.textTertiary)
+            MeditativeMerkabaView(size: 40, revolutionDuration: 12.0, tintColor: DesignSystem.Colors.accent)
             Text("No custom prompts yet")
                 .font(DesignSystem.Typography.bodyLarge.weight(.medium))
                 .foregroundStyle(DesignSystem.Colors.textPrimary)
+                .padding(.top, DesignSystem.Spacing.xs)
             Text("Create specific instructions for how you want your transcripts processed.")
                 .font(DesignSystem.Typography.body)
                 .foregroundStyle(DesignSystem.Colors.textSecondary)
@@ -488,8 +505,6 @@ struct PromptLibraryView: View {
             .padding(DesignSystem.Spacing.xl)
             .background(DesignSystem.Colors.surfaceElevated.opacity(0.3))
         }
-        .frame(width: 540, height: 500)
-        .background(DesignSystem.Colors.surface)
     }
 }
 
