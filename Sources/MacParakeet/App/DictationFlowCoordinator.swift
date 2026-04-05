@@ -55,7 +55,9 @@ final class DictationFlowCoordinator {
     /// Monotonic session token used to ignore stale cancel/discard tasks from earlier starts.
     private var currentServiceSessionID: Int = 0
 
-    private let readyPillDismissDelayMs = FnKeyStateMachine.defaultTapThresholdMs * 2
+    private var readyPillDismissDelayMs: Int {
+        (hotkeyManager?.tapThresholdMs ?? FnKeyStateMachine.defaultTapThresholdMs) * 2
+    }
 
     // MARK: - Init
 
@@ -121,8 +123,8 @@ final class DictationFlowCoordinator {
         sendEvent(.cancelRequested(reason: flowReason))
     }
 
-    func discardProvisionalRecordingAndShowReadyPill() {
-        sendEvent(.discardRequested)
+    func discardProvisionalRecording(showReadyPill: Bool) {
+        sendEvent(.discardRequested(showReadyPill: showReadyPill))
     }
 
     func dismissOverlayIfError() {

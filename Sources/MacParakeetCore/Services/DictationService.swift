@@ -132,8 +132,9 @@ public actor DictationService: DictationServiceProtocol {
             try await audioProcessor.startCapture()
             // Guard against reentrancy: cancel may have run during the await above
             guard case .recording = _state else {
-                if await audioProcessor.isRecording {
-                    let _ = try? await audioProcessor.stopCapture()
+                if await audioProcessor.isRecording,
+                   let audioURL = try? await audioProcessor.stopCapture() {
+                    try? FileManager.default.removeItem(at: audioURL)
                 }
                 recordingStartedAt = nil
                 logger.notice(

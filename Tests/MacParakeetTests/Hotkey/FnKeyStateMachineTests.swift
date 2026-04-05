@@ -208,7 +208,7 @@ final class FnKeyStateMachineTests: XCTestCase {
         _ = sm.startupTimerFired()
 
         let action = sm.fnUp(timestampMs: 1050)
-        XCTAssertEqual(action, .discardRecording)
+        XCTAssertEqual(action, .discardRecording(showReadyPill: true))
         XCTAssertEqual(sm.state, .waitingForSecondTap)
     }
 
@@ -235,6 +235,23 @@ final class FnKeyStateMachineTests: XCTestCase {
         let action = sm.fnUp(timestampMs: 1050)
         XCTAssertEqual(action, .none)
         XCTAssertEqual(sm.state, .waitingForSecondTap)
+    }
+
+    func testInterruptBeforeStartupTimerDoesNotDiscard() {
+        _ = sm.fnDown(timestampMs: 1000)
+
+        let action = sm.interruptWaitingForSecondTap()
+        XCTAssertEqual(action, .none)
+        XCTAssertEqual(sm.state, .idle)
+    }
+
+    func testInterruptAfterStartupTimerDiscardsSilently() {
+        _ = sm.fnDown(timestampMs: 1000)
+        _ = sm.startupTimerFired()
+
+        let action = sm.interruptWaitingForSecondTap()
+        XCTAssertEqual(action, .discardRecording(showReadyPill: false))
+        XCTAssertEqual(sm.state, .idle)
     }
 
     func testCancelledByUIBlocksFn() {

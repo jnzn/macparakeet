@@ -82,7 +82,7 @@ final class DictationFlowStateMachineTests: XCTestCase {
         let events: [DictationFlowEvent] = [
             .stopRequested,
             .cancelRequested(reason: .escape),
-            .discardRequested,
+            .discardRequested(showReadyPill: true),
             .undoRequested,
             .transcriptionCompleted(generation: 0),
             .recordingStarted(generation: 0),
@@ -229,11 +229,22 @@ final class DictationFlowStateMachineTests: XCTestCase {
         var m = makeMachine()
         _ = m.handle(.startRequested(mode: .holdToTalk))
 
-        let effects = m.handle(.discardRequested)
+        let effects = m.handle(.discardRequested(showReadyPill: true))
         XCTAssertEqual(m.state, .ready)
         XCTAssertTrue(effects.contains(.cancelRecordingTask))
         XCTAssertTrue(effects.contains(.showReadyPill))
         XCTAssertTrue(effects.contains(.startReadyDismissTimer))
+    }
+
+    func testCheckingEntitlementsDiscardRequestedSilentlyReturnsIdle() {
+        var m = makeMachine()
+        _ = m.handle(.startRequested(mode: .holdToTalk))
+
+        let effects = m.handle(.discardRequested(showReadyPill: false))
+        XCTAssertEqual(m.state, .idle)
+        XCTAssertTrue(effects.contains(.cancelRecordingTask))
+        XCTAssertTrue(effects.contains(.showIdlePill))
+        XCTAssertFalse(effects.contains(.showReadyPill))
     }
 
     func testCheckingEntitlementsDismissRequested() {
@@ -306,12 +317,27 @@ final class DictationFlowStateMachineTests: XCTestCase {
         let gen = m.generation
         _ = m.handle(.entitlementsGranted(generation: gen))
 
-        let effects = m.handle(.discardRequested)
+        let effects = m.handle(.discardRequested(showReadyPill: true))
         XCTAssertEqual(m.state, .ready)
         XCTAssertTrue(effects.contains(.cancelRecordingTask))
         XCTAssertTrue(effects.contains(.discardRecording))
         XCTAssertTrue(effects.contains(.showReadyPill))
         XCTAssertTrue(effects.contains(.updateMenuBar(.idle)))
+    }
+
+    func testStartingServiceDiscardRequestedSilentlyReturnsIdle() {
+        var m = makeMachine()
+        _ = m.handle(.startRequested(mode: .holdToTalk))
+        let gen = m.generation
+        _ = m.handle(.entitlementsGranted(generation: gen))
+
+        let effects = m.handle(.discardRequested(showReadyPill: false))
+        XCTAssertEqual(m.state, .idle)
+        XCTAssertTrue(effects.contains(.cancelRecordingTask))
+        XCTAssertTrue(effects.contains(.discardRecording))
+        XCTAssertTrue(effects.contains(.hideOverlay))
+        XCTAssertTrue(effects.contains(.showIdlePill))
+        XCTAssertFalse(effects.contains(.showReadyPill))
     }
 
     func testStartingServiceStaleRecordingStarted() {
@@ -363,12 +389,24 @@ final class DictationFlowStateMachineTests: XCTestCase {
     func testRecordingDiscardRequestedShowsReadyPill() {
         var m = machineInRecording(mode: .holdToTalk)
 
-        let effects = m.handle(.discardRequested)
+        let effects = m.handle(.discardRequested(showReadyPill: true))
         XCTAssertEqual(m.state, .ready)
         XCTAssertTrue(effects.contains(.cancelRecordingTask))
         XCTAssertTrue(effects.contains(.discardRecording))
         XCTAssertTrue(effects.contains(.showReadyPill))
         XCTAssertTrue(effects.contains(.updateMenuBar(.idle)))
+    }
+
+    func testRecordingDiscardRequestedSilentlyReturnsIdle() {
+        var m = machineInRecording(mode: .holdToTalk)
+
+        let effects = m.handle(.discardRequested(showReadyPill: false))
+        XCTAssertEqual(m.state, .idle)
+        XCTAssertTrue(effects.contains(.cancelRecordingTask))
+        XCTAssertTrue(effects.contains(.discardRecording))
+        XCTAssertTrue(effects.contains(.hideOverlay))
+        XCTAssertTrue(effects.contains(.showIdlePill))
+        XCTAssertFalse(effects.contains(.showReadyPill))
     }
 
     func testRecordingRapidRestart() {

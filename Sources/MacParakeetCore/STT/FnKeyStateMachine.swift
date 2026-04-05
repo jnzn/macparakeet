@@ -18,7 +18,7 @@ public final class FnKeyStateMachine {
         case startRecording(mode: RecordingMode)
         case stopRecording
         case cancelRecording
-        case discardRecording
+        case discardRecording(showReadyPill: Bool)
     }
 
     public enum RecordingMode: Equatable, Sendable {
@@ -61,7 +61,7 @@ public final class FnKeyStateMachine {
         case .waitingForSecondTap:
             // Second tap within threshold = double-tap
             let elapsed = timestampMs - firstTapTimestamp
-            if elapsed <= tapThresholdMs {
+            if elapsed <= UInt64(tapThresholdMs) {
                 state = .persistent
                 hasActiveProvisionalRecording = false
                 return .startRecording(mode: .persistent)
@@ -103,7 +103,7 @@ public final class FnKeyStateMachine {
         switch state {
         case .waitingForSecondTap:
             let holdDuration = timestampMs - fnDownTimestamp
-            if holdDuration >= tapThresholdMs {
+            if holdDuration >= UInt64(tapThresholdMs) {
                 state = .idle
                 let shouldStop = hasActiveProvisionalRecording
                 hasActiveProvisionalRecording = false
@@ -113,7 +113,7 @@ public final class FnKeyStateMachine {
             firstTapTimestamp = timestampMs
             let shouldDiscard = hasActiveProvisionalRecording
             hasActiveProvisionalRecording = false
-            return shouldDiscard ? .discardRecording : .none
+            return shouldDiscard ? .discardRecording(showReadyPill: true) : .none
 
         case .holdToTalk:
             // Release during hold-to-talk = stop and paste
@@ -144,6 +144,18 @@ public final class FnKeyStateMachine {
         default:
             return .none
         }
+    }
+
+    /// Called when some other input interrupts the first-press/double-tap window.
+    /// Returns a silent discard only if provisional recording had already started.
+    public func interruptWaitingForSecondTap() -> Action {
+        guard state == .waitingForSecondTap else { return .none }
+        state = .idle
+        fnDownTimestamp = 0
+        firstTapTimestamp = 0
+        let shouldDiscard = hasActiveProvisionalRecording
+        hasActiveProvisionalRecording = false
+        return shouldDiscard ? .discardRecording(showReadyPill: false) : .none
     }
 
     /// Called when Escape is pressed during recording or cancel window
