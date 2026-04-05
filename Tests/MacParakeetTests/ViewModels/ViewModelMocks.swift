@@ -102,6 +102,8 @@ final class MockTranscriptionRepository: TranscriptionRepositoryProtocol, @unche
     var transcriptions: [Transcription] = []
     var deleteCalledWith: [UUID] = []
     var deleteAllCalled = false
+    var deleteResult = true
+    var deleteError: Error?
     var updateSummaryCalls: [(id: UUID, summary: String?)] = []
     var updateChatMessagesCalls: [(id: UUID, chatMessages: [ChatMessage]?)] = []
     var updateSpeakersCalls: [(id: UUID, speakers: [SpeakerInfo]?)] = []
@@ -134,6 +136,10 @@ final class MockTranscriptionRepository: TranscriptionRepositoryProtocol, @unche
 
     func delete(id: UUID) throws -> Bool {
         deleteCalledWith.append(id)
+        if let deleteError {
+            throw deleteError
+        }
+        guard deleteResult else { return false }
         transcriptions.removeAll { $0.id == id }
         return true
     }

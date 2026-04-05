@@ -430,6 +430,31 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: audioURL.path))
     }
 
+    func testDeleteYouTubeTranscriptionKeepsStoredAudioWhenRepoDeleteFails() throws {
+        let audioURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("yt-audio-\(UUID().uuidString).m4a")
+        let created = FileManager.default.createFile(atPath: audioURL.path, contents: Data("audio".utf8))
+        XCTAssertTrue(created)
+        defer { try? FileManager.default.removeItem(at: audioURL) }
+
+        let t = Transcription(
+            fileName: "yt",
+            filePath: audioURL.path,
+            rawTranscript: "Hello",
+            status: .completed,
+            sourceURL: "https://youtu.be/dQw4w9WgXcQ",
+            sourceType: .youtube
+        )
+        mockRepo.transcriptions = [t]
+        mockRepo.deleteError = NSError(domain: "repo", code: 1)
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+        viewModel.deleteTranscription(t)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: audioURL.path))
+        XCTAssertEqual(viewModel.transcriptions.count, 1)
+    }
+
     func testDeleteCurrentTranscriptionClearsSelection() {
         let t = Transcription(fileName: "test.mp3", rawTranscript: "Hello", status: .completed)
         mockRepo.transcriptions = [t]
