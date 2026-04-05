@@ -55,6 +55,7 @@ struct TranscriptResultView: View {
     @State private var showPromptLibrary = false
     @State private var showGeneratePopover = false
     @State private var showingRetranscribeAlert = false
+    @State private var showingCancelGenerationAlert: UUID?
     @FocusState private var chatInputFocused: Bool
     @FocusState private var speakerRenameFocused: Bool
 
@@ -992,8 +993,7 @@ struct TranscriptResultView: View {
                 HStack {
                     Spacer()
                     Button {
-                        promptResultsViewModel.cancelGeneration(id: generation.id)
-                        viewModel.selectedTab = .transcript
+                        showingCancelGenerationAlert = generation.id
                     } label: {
                         HStack(spacing: DesignSystem.Spacing.xs) {
                             Image(systemName: generation.state == .queued ? "minus.circle" : "xmark")
@@ -1025,6 +1025,23 @@ struct TranscriptResultView: View {
             RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
                 .strokeBorder(DesignSystem.Colors.border.opacity(0.75), lineWidth: 0.5)
         )
+        .alert(
+            generation.state == .queued ? "Remove from queue?" : "Cancel generation?",
+            isPresented: Binding(
+                get: { showingCancelGenerationAlert == generation.id },
+                set: { if !$0 { showingCancelGenerationAlert = nil } }
+            )
+        ) {
+            Button("Keep", role: .cancel) { }
+            Button(generation.state == .queued ? "Remove" : "Cancel", role: .destructive) {
+                promptResultsViewModel.cancelGeneration(id: generation.id)
+                viewModel.selectedTab = .transcript
+            }
+        } message: {
+            Text(generation.state == .queued 
+                 ? "This will remove the prompt from the generation queue."
+                 : "This will stop the AI from generating the result.")
+        }
     }
 
     private var queuedGenerationCard: some View {
