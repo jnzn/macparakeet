@@ -56,6 +56,8 @@ public final class HotkeyGestureController {
 
         switch stateMachine.state {
         case .holdToTalk:
+            // Non-bare releases bypass outputs(for:) so the hotkey returns to idle
+            // immediately before we propagate the explicit cancel side effect.
             stateMachine.reset()
             results.append(.cancelRecording)
         case .waitingForSecondTap:
