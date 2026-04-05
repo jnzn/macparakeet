@@ -564,6 +564,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func setupMeetingHotkey() {
+        guard settingsViewModel.meetingHotkeyTrigger != settingsViewModel.hotkeyTrigger else {
+            meetingHotkeyManager = nil
+            return
+        }
+
         let manager = GlobalShortcutManager(trigger: settingsViewModel.meetingHotkeyTrigger)
         manager.onTrigger = { [weak self] in
             Task { @MainActor in
@@ -610,7 +615,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             Task { @MainActor in
                 self?.hotkeyManager?.stop()
                 self?.hotkeyManager = nil
+                self?.meetingHotkeyManager?.stop()
+                self?.meetingHotkeyManager = nil
                 self?.setupHotkey()
+                self?.setupMeetingHotkey()
                 self?.hotkeyMenuItem?.title = self?.hotkeyMenuTitle ?? ""
             }
         }
