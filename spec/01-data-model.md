@@ -215,6 +215,7 @@ CREATE TABLE prompts (
     category  TEXT NOT NULL DEFAULT 'summary',            -- .summary (extensible to .transform)
     isBuiltIn INTEGER NOT NULL DEFAULT 0,                 -- Community prompt — hide only, no edit/delete
     isVisible INTEGER NOT NULL DEFAULT 1,                 -- false = hidden from picker
+    isAutoRun INTEGER NOT NULL DEFAULT 0,                 -- true = auto-generate for new transcriptions
     sortOrder INTEGER NOT NULL DEFAULT 0,                 -- Display ordering
     createdAt TEXT NOT NULL,                              -- ISO 8601 timestamp
     updatedAt TEXT NOT NULL                               -- ISO 8601 timestamp
@@ -225,7 +226,8 @@ CREATE UNIQUE INDEX idx_prompts_name ON prompts(name COLLATE NOCASE);
 
 **Notes:**
 - `name` has a case-insensitive unique index — no duplicate names across community and custom prompts.
-- `isBuiltIn` prompts are seeded from `Prompt.builtInSummaryPrompts()` during migration. The repository layer enforces the hide-only invariant (delete returns `false` for built-in prompts).
+- `isBuiltIn` prompts are seeded from `Prompt.builtInPrompts()` during migration. The repository layer enforces the hide-only invariant (delete returns `false` for built-in prompts).
+- `isAutoRun` is independent of `isVisible`, but repository/UI behavior forces auto-run prompts visible while auto-run is enabled.
 - `category` scopes prompts to their use case (`.summary` today, `.transform` reserved for future).
 
 ---
@@ -254,7 +256,7 @@ CREATE INDEX idx_summaries_transcription_id ON summaries(transcriptionId);
 - `transcriptionId` has a cascading delete — deleting a transcription removes all its summaries.
 - `promptName` and `promptContent` are snapshots, not references to the `prompts` table. Editing or deleting a prompt after generation doesn't change the summary's metadata.
 - Legacy `transcriptions.summary` column is preserved and mirrors the newest completed summary for backward compatibility with existing export paths.
-- Migration from existing data: `transcriptions.summary` values migrate into `summaries` with the default community prompt's name and content.
+- Migration from existing data: `transcriptions.summary` values migrate into `summaries` with `General Summary` prompt metadata.
 
 ---
 

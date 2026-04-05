@@ -157,7 +157,7 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 - [x] Management sheet (hide built-in/community, CRUD custom)
 - [x] LLMService accepts custom system prompt
 - [x] Migration from `transcriptions.summary` → `summaries`
-- [x] Auto-summary uses default community prompt
+- [x] Auto-run uses selected prompt cards; zero auto-run cards is supported
 
 ## For AI Coding Assistants
 
