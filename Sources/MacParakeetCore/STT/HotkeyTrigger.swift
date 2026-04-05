@@ -3,7 +3,7 @@ import Foundation
 /// A hotkey trigger that supports both modifier keys and regular key codes.
 /// Replaces the old `TriggerKey` enum with an extensible struct.
 ///
-/// Only canonical identity (kind + modifierName/keyCode) is persisted.
+/// Only canonical identity (kind + modifierName/keyCode/modifierKeyCode) is persisted.
 /// Display names are derived at runtime from `KeyCodeNames` / modifier lookup.
 public struct HotkeyTrigger: Sendable {
 
