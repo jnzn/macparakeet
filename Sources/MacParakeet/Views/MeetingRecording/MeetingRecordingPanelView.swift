@@ -41,6 +41,13 @@ struct MeetingRecordingPanelView: View {
                     .font(DesignSystem.Typography.caption)
                     .foregroundStyle(DesignSystem.Colors.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
+
+                if viewModel.showsAudioLevels {
+                    DualAudioLevelView(
+                        micLevel: viewModel.micLevel,
+                        systemLevel: viewModel.systemLevel
+                    )
+                }
             }
 
             Spacer(minLength: 0)
