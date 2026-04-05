@@ -54,6 +54,7 @@ struct TranscriptResultView: View {
     @State private var scrollMonitor: Any?
     @State private var showPromptLibrary = false
     @State private var showGeneratePopover = false
+    @State private var showingRetranscribeAlert = false
     @FocusState private var chatInputFocused: Bool
     @FocusState private var speakerRenameFocused: Bool
 
