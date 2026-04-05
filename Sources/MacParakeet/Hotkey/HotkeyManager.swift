@@ -316,6 +316,7 @@ public final class HotkeyManager {
                 if stateMachine.state == .waitingForSecondTap {
                     handleAction(.discardRecording)
                     stateMachine.reset()
+                    startupTimer?.cancel()
                     holdTimer?.cancel()
                 }
             }
