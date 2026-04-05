@@ -228,6 +228,7 @@ actor MockTranscriptionService: TranscriptionServiceProtocol {
     var transcribeCallCount = 0
     var lastFileURL: URL?
     var lastSource: TelemetryTranscriptionSource?
+    var lastMeetingRecording: MeetingRecordingOutput?
     var transcribeProgressPhases: [TranscriptionProgress] = []
     var transcribeDelayMs: UInt64 = 0
     var transcribeURLCallCount = 0
@@ -286,6 +287,35 @@ actor MockTranscriptionService: TranscriptionServiceProtocol {
             fileName: fileURL.lastPathComponent,
             rawTranscript: "Mock transcription",
             status: .completed
+        )
+    }
+
+    func transcribeMeeting(
+        recording: MeetingRecordingOutput,
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
+    ) async throws -> Transcription {
+        transcribeCallCount += 1
+        lastMeetingRecording = recording
+        lastSource = .meeting
+
+        for phase in transcribeProgressPhases {
+            onProgress?(phase)
+        }
+
+        if transcribeDelayMs > 0 {
+            try await Task.sleep(nanoseconds: transcribeDelayMs * 1_000_000)
+        }
+
+        if let error = transcribeError {
+            throw error
+        }
+
+        return transcribeResult ?? Transcription(
+            fileName: recording.displayName,
+            filePath: recording.mixedAudioURL.path,
+            rawTranscript: "Mock meeting transcription",
+            status: .completed,
+            sourceType: .meeting
         )
     }
 
@@ -686,8 +716,10 @@ final class MockChatConversationRepository: ChatConversationRepositoryProtocol, 
 
 final class MockPermissionService: PermissionServiceProtocol, @unchecked Sendable {
     var microphonePermission: PermissionStatus = .granted
+    var screenRecordingPermission = true
     var accessibilityPermission: Bool = true
     var requestMicResult: Bool = true
+    var requestScreenRecordingResult: Bool = true
     var requestAccessibilityResult: Bool = true
 
     func checkMicrophonePermission() async -> PermissionStatus {
@@ -696,6 +728,15 @@ final class MockPermissionService: PermissionServiceProtocol, @unchecked Sendabl
 
     func requestMicrophonePermission() async -> Bool {
         requestMicResult
+    }
+
+    func checkScreenRecordingPermission() -> Bool {
+        screenRecordingPermission
+    }
+
+    func requestScreenRecordingPermission() -> Bool {
+        screenRecordingPermission = requestScreenRecordingResult
+        return screenRecordingPermission
     }
 
     func checkAccessibilityPermission() -> Bool {

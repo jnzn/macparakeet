@@ -285,10 +285,7 @@ public final class TranscriptionViewModel {
     public func deleteTranscription(_ transcription: Transcription) {
         guard let repo = transcriptionRepo else { return }
 
-        if transcription.sourceURL != nil, let audioPath = transcription.filePath {
-            do { try FileManager.default.removeItem(atPath: audioPath) }
-            catch { logger.warning("Failed to remove audio: \(error.localizedDescription, privacy: .public)") }
-        }
+        TranscriptionDeletionCleanup.removeOwnedAssets(for: transcription)
         do {
             _ = try repo.delete(id: transcription.id)
             Telemetry.send(.transcriptionDeleted)
@@ -326,16 +323,20 @@ public final class TranscriptionViewModel {
         transcriptionTask = nil
         activeTranscriptionTaskID = nil
         endTranscription()
-        currentTranscription = result
-        loadTranscriptions()
-        let text = result.cleanTranscript ?? result.rawTranscript ?? ""
-        promptResultsViewModel?.autoGeneratePromptResults(transcript: text, transcriptionId: result.id)
+        presentCompletedTranscription(result)
         autoSaveIfEnabled(result)
     }
 
     private func autoSaveIfEnabled(_ transcription: Transcription) {
         let service = AutoSaveService()
         service.saveIfEnabled(transcription)
+    }
+
+    public func presentCompletedTranscription(_ transcription: Transcription) {
+        currentTranscription = transcription
+        loadTranscriptions()
+        let text = transcription.cleanTranscript ?? transcription.rawTranscript ?? ""
+        promptResultsViewModel?.autoGeneratePromptResults(transcript: text, transcriptionId: transcription.id)
     }
 
     private func completeFailedTranscription(taskID: UUID, error: Error) {

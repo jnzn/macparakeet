@@ -6,7 +6,13 @@ public enum LibraryFilter: String, CaseIterable, Sendable {
     case all = "All"
     case youtube = "YouTube"
     case local = "Local"
+    case meeting = "Meetings"
     case favorites = "Favorites"
+}
+
+public enum TranscriptionLibraryScope: Sendable {
+    case all
+    case meetings
 }
 
 public enum LibrarySortOrder: Sendable {
@@ -25,20 +31,24 @@ public final class TranscriptionLibraryViewModel {
     public private(set) var filteredTranscriptions: [Transcription] = []
 
     private var transcriptionRepo: TranscriptionRepositoryProtocol?
+    public let scope: TranscriptionLibraryScope
 
-    public init() {}
+    public init(scope: TranscriptionLibraryScope = .all) {
+        self.scope = scope
+    }
 
     public func configure(transcriptionRepo: TranscriptionRepositoryProtocol) {
         self.transcriptionRepo = transcriptionRepo
     }
 
     private func recomputeFiltered() {
-        var result = transcriptions
+        var result = transcriptions.filter(matchesScope)
 
         switch filter {
         case .all: break
-        case .youtube: result = result.filter { $0.sourceURL != nil }
-        case .local: result = result.filter { $0.sourceURL == nil }
+        case .youtube: result = result.filter { $0.sourceType == .youtube }
+        case .local: result = result.filter { $0.sourceType == .file }
+        case .meeting: result = result.filter { $0.sourceType == .meeting }
         case .favorites: result = result.filter(\.isFavorite)
         }
 
@@ -59,6 +69,15 @@ public final class TranscriptionLibraryViewModel {
         }
 
         filteredTranscriptions = result
+    }
+
+    private func matchesScope(_ transcription: Transcription) -> Bool {
+        switch scope {
+        case .all:
+            return true
+        case .meetings:
+            return transcription.sourceType == .meeting
+        }
     }
 
     public func loadTranscriptions() {
@@ -86,6 +105,7 @@ public final class TranscriptionLibraryViewModel {
 
     public func deleteTranscription(_ transcription: Transcription) {
         do {
+            TranscriptionDeletionCleanup.removeOwnedAssets(for: transcription)
             _ = try transcriptionRepo?.delete(id: transcription.id)
             transcriptions.removeAll { $0.id == transcription.id }
             Telemetry.send(.transcriptionDeleted)

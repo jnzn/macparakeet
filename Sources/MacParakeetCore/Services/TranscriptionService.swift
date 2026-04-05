@@ -7,6 +7,10 @@ public protocol TranscriptionServiceProtocol: Sendable {
         source: TelemetryTranscriptionSource,
         onProgress: (@Sendable (TranscriptionProgress) -> Void)?
     ) async throws -> Transcription
+    func transcribeMeeting(
+        recording: MeetingRecordingOutput,
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)?
+    ) async throws -> Transcription
     func transcribeURL(urlString: String, onProgress: (@Sendable (TranscriptionProgress) -> Void)?) async throws -> Transcription
 }
 
@@ -24,6 +28,10 @@ extension TranscriptionServiceProtocol {
 
     public func transcribeURL(urlString: String) async throws -> Transcription {
         try await transcribeURL(urlString: urlString, onProgress: nil)
+    }
+
+    public func transcribeMeeting(recording: MeetingRecordingOutput) async throws -> Transcription {
+        try await transcribeMeeting(recording: recording, onProgress: nil)
     }
 }
 
@@ -74,18 +82,61 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         source: TelemetryTranscriptionSource = .file,
         onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
     ) async throws -> Transcription {
+        let sourceType: Transcription.SourceType = switch source {
+        case .youtube:
+            .youtube
+        case .meeting:
+            .meeting
+        case .file, .dragDrop:
+            .file
+        }
+        return try await transcribe(
+            fileURL: fileURL,
+            storedFileURL: fileURL,
+            displayFileName: nil,
+            source: source,
+            sourceType: sourceType,
+            onProgress: onProgress
+        )
+    }
+
+    public func transcribeMeeting(
+        recording: MeetingRecordingOutput,
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
+    ) async throws -> Transcription {
+        try await transcribe(
+            fileURL: recording.mixedAudioURL,
+            storedFileURL: recording.mixedAudioURL,
+            displayFileName: recording.displayName,
+            source: .meeting,
+            sourceType: .meeting,
+            onProgress: onProgress
+        )
+    }
+
+    private func transcribe(
+        fileURL: URL,
+        storedFileURL: URL?,
+        displayFileName: String?,
+        source: TelemetryTranscriptionSource,
+        sourceType: Transcription.SourceType,
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
+    ) async throws -> Transcription {
         if let entitlements {
             try await entitlements.assertCanTranscribe(now: Date())
         }
 
-        let fileName = fileURL.lastPathComponent
-        let fileSize = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? Int).flatMap { $0 }
+        let fileName = displayFileName ?? storedFileURL?.lastPathComponent ?? fileURL.lastPathComponent
+        let fileSize = storedFileURL.flatMap {
+            (try? FileManager.default.attributesOfItem(atPath: $0.path)[.size] as? Int).flatMap { $0 }
+        }
 
         var transcription = Transcription(
             fileName: fileName,
-            filePath: fileURL.path,
+            filePath: storedFileURL?.path,
             fileSizeBytes: fileSize,
-            status: .processing
+            status: .processing,
+            sourceType: sourceType
         )
         try transcriptionRepo.save(transcription)
         Telemetry.send(.transcriptionStarted(source: source, audioDurationSeconds: nil))
@@ -137,7 +188,8 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             sourceURL: urlString,
             thumbnailURL: downloadResult.thumbnailURL,
             channelName: downloadResult.channelName,
-            videoDescription: downloadResult.videoDescription
+            videoDescription: downloadResult.videoDescription,
+            sourceType: .youtube
         )
         try transcriptionRepo.save(transcription)
         Telemetry.send(.transcriptionStarted(source: .youtube, audioDurationSeconds: nil))

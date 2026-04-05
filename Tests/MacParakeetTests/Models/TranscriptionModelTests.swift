@@ -20,6 +20,7 @@ final class TranscriptionModelTests: XCTestCase {
         XCTAssertEqual(t.status, .processing)
         XCTAssertNil(t.errorMessage)
         XCTAssertNil(t.exportPath)
+        XCTAssertEqual(t.sourceType, .file)
     }
 
     func testStatusRawValues() {
@@ -188,6 +189,7 @@ final class TranscriptionModelTests: XCTestCase {
         XCTAssertNil(t.channelName)
         XCTAssertNil(t.videoDescription)
         XCTAssertEqual(t.isFavorite, false)
+        XCTAssertEqual(t.sourceType, .file)
     }
 
     func testVideoMetadataFieldsPopulate() {
@@ -197,7 +199,8 @@ final class TranscriptionModelTests: XCTestCase {
             thumbnailURL: "https://i.ytimg.com/vi/abc/maxresdefault.jpg",
             channelName: "Test Channel",
             videoDescription: "Great video",
-            isFavorite: true
+            isFavorite: true,
+            sourceType: .youtube
         )
         XCTAssertEqual(t.thumbnailURL, "https://i.ytimg.com/vi/abc/maxresdefault.jpg")
         XCTAssertEqual(t.channelName, "Test Channel")
@@ -228,6 +231,23 @@ final class TranscriptionModelTests: XCTestCase {
         XCTAssertEqual(decoded.channelName, "My Channel")
         XCTAssertEqual(decoded.videoDescription, "Description here")
         XCTAssertEqual(decoded.isFavorite, true)
+    }
+
+    func testDecodingWithoutSourceTypeInfersYouTubeFromSourceURL() throws {
+        let json = """
+        {
+            "id": "00000000-0000-0000-0000-000000000011",
+            "createdAt": "2026-03-01T00:00:00Z",
+            "fileName": "video.mp3",
+            "status": "completed",
+            "sourceURL": "https://youtube.com/watch?v=test",
+            "updatedAt": "2026-03-01T00:00:00Z"
+        }
+        """
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let t = try decoder.decode(Transcription.self, from: Data(json.utf8))
+        XCTAssertEqual(t.sourceType, .youtube)
     }
 
     func testDecodingWithoutIsFavoriteDefaultsToFalse() throws {
