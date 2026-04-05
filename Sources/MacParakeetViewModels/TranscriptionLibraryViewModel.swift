@@ -105,8 +105,9 @@ public final class TranscriptionLibraryViewModel {
 
     public func deleteTranscription(_ transcription: Transcription) {
         do {
+            let deleted = try transcriptionRepo?.delete(id: transcription.id) ?? false
+            guard deleted else { return }
             TranscriptionDeletionCleanup.removeOwnedAssets(for: transcription)
-            _ = try transcriptionRepo?.delete(id: transcription.id)
             transcriptions.removeAll { $0.id == transcription.id }
             Telemetry.send(.transcriptionDeleted)
         } catch {
