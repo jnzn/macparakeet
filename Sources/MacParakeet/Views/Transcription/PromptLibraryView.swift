@@ -186,7 +186,7 @@ struct PromptLibraryView: View {
 
     private func promptRow(_ prompt: Prompt, allowEdit: Bool) -> some View {
         let isHovered = hoveredPromptId == prompt.id
-        let isDefault = prompt.isBuiltIn && prompt.name == Prompt.defaultPrompt.name
+        let isDefault = prompt.isDefault
         let isExpanded = expandedPromptIds.contains(prompt.id)
 
         return HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
@@ -216,6 +216,27 @@ struct PromptLibraryView: View {
                             .padding(.vertical, 2)
                             .background(DesignSystem.Colors.accentLight)
                             .clipShape(Capsule())
+                    } else if isHovered {
+                        Button {
+                            withAnimation { viewModel.setAsDefault(prompt) }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "star")
+                                    .font(.system(size: 10, weight: .bold))
+                                Text("Set as Default")
+                                    .font(DesignSystem.Typography.micro.weight(.bold))
+                            }
+                            .foregroundStyle(DesignSystem.Colors.textSecondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(DesignSystem.Colors.surfaceElevated)
+                            .clipShape(Capsule())
+                            .overlay(
+                                Capsule().strokeBorder(DesignSystem.Colors.border, lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
                     }
 
                     Spacer()
