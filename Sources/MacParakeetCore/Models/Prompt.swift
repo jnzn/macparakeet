@@ -8,7 +8,7 @@ public struct Prompt: Codable, Identifiable, Sendable {
     public var category: Category
     public var isBuiltIn: Bool
     public var isVisible: Bool
-    public var isDefault: Bool
+    public var isAutoRun: Bool
     public var sortOrder: Int
     public var createdAt: Date
     public var updatedAt: Date
@@ -25,7 +25,7 @@ public struct Prompt: Codable, Identifiable, Sendable {
         category: Category = .summary,
         isBuiltIn: Bool = false,
         isVisible: Bool = true,
-        isDefault: Bool = false,
+        isAutoRun: Bool = false,
         sortOrder: Int = 0,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
@@ -36,7 +36,7 @@ public struct Prompt: Codable, Identifiable, Sendable {
         self.category = category
         self.isBuiltIn = isBuiltIn
         self.isVisible = isVisible
-        self.isDefault = isDefault
+        self.isAutoRun = isAutoRun
         self.sortOrder = sortOrder
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -44,7 +44,7 @@ public struct Prompt: Codable, Identifiable, Sendable {
 
     // Still used as a fallback if no prompt is set as default in the DB
     public static var defaultPrompt: Prompt {
-        builtInPrompts().first(where: { $0.isDefault }) ?? builtInPrompts()[0]
+        builtInPrompts().first(where: { $0.isAutoRun }) ?? builtInPrompts()[0]
     }
 
     private static func makeBuiltInPrompt(
@@ -60,7 +60,7 @@ public struct Prompt: Codable, Identifiable, Sendable {
             content: content,
             category: .summary,
             isBuiltIn: true,
-            isDefault: name == "General Summary",
+            isAutoRun: name == "General Summary",
             sortOrder: sortOrder,
             createdAt: now,
             updatedAt: now
@@ -128,6 +128,6 @@ extension Prompt: FetchableRecord, PersistableRecord {
     public static let databaseTableName = "prompts"
 
     public enum Columns: String, ColumnExpression {
-        case id, name, content, category, isBuiltIn, isVisible, isDefault, sortOrder, createdAt, updatedAt
+        case id, name, content, category, isBuiltIn, isVisible, isAutoRun, sortOrder, createdAt, updatedAt
     }
 }

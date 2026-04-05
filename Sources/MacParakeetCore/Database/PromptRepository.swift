@@ -6,10 +6,10 @@ public protocol PromptRepositoryProtocol: Sendable {
     func fetch(id: UUID) throws -> Prompt?
     func fetchAll() throws -> [Prompt]
     func fetchVisible(category: Prompt.Category?) throws -> [Prompt]
-    func fetchDefault() throws -> Prompt?
+    func fetchAutoRunPrompts() throws -> [Prompt]
     func delete(id: UUID) throws -> Bool
     func toggleVisibility(id: UUID) throws
-    func setDefault(id: UUID) throws
+    func toggleAutoRun(id: UUID) throws
     func restoreDefaults() throws
 }
 
@@ -52,9 +52,12 @@ public final class PromptRepository: PromptRepositoryProtocol {
         }
     }
 
-    public func fetchDefault() throws -> Prompt? {
+    public func fetchAutoRunPrompts() throws -> [Prompt] {
         try dbQueue.read { db in
-            try Prompt.filter(Prompt.Columns.isDefault == true).fetchOne(db)
+            try Prompt
+                .filter(Prompt.Columns.isAutoRun == true)
+                .order(Prompt.Columns.sortOrder.asc, Prompt.Columns.name.asc)
+                .fetchAll(db)
         }
     }
 
@@ -75,21 +78,17 @@ public final class PromptRepository: PromptRepositoryProtocol {
         }
     }
 
-    public func setDefault(id: UUID) throws {
+    public func toggleAutoRun(id: UUID) throws {
         try dbQueue.write { db in
-            guard var newDefault = try Prompt.fetchOne(db, key: id) else { return }
+            guard var prompt = try Prompt.fetchOne(db, key: id) else { return }
             
-            // Unset all existing defaults
-            try db.execute(
-                sql: "UPDATE prompts SET isDefault = 0, updatedAt = ?",
-                arguments: [Date()]
-            )
-            
-            // Set the new default (and ensure it's visible)
-            newDefault.isDefault = true
-            newDefault.isVisible = true
-            newDefault.updatedAt = Date()
-            try newDefault.update(db)
+            prompt.isAutoRun.toggle()
+            // Auto-run prompts must be visible
+            if prompt.isAutoRun {
+                prompt.isVisible = true
+            }
+            prompt.updatedAt = Date()
+            try prompt.update(db)
         }
     }
 

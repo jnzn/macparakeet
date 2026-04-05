@@ -531,8 +531,8 @@ final class MockPromptRepository: PromptRepositoryProtocol, @unchecked Sendable 
         }
     }
 
-    func fetchDefault() throws -> Prompt? {
-        prompts.first(where: { $0.isDefault })
+    func fetchAutoRunPrompts() throws -> [Prompt] {
+        prompts.filter(\.isAutoRun)
     }
 
     func delete(id: UUID) throws -> Bool {
@@ -547,13 +547,12 @@ final class MockPromptRepository: PromptRepositoryProtocol, @unchecked Sendable 
         prompts[index].updatedAt = Date()
     }
 
-    func setDefault(id: UUID) throws {
+    func toggleAutoRun(id: UUID) throws {
         guard let index = prompts.firstIndex(where: { $0.id == id }) else { return }
-        for i in prompts.indices {
-            prompts[i].isDefault = false
+        prompts[index].isAutoRun.toggle()
+        if prompts[index].isAutoRun {
+            prompts[index].isVisible = true
         }
-        prompts[index].isDefault = true
-        prompts[index].isVisible = true
         prompts[index].updatedAt = Date()
     }
 

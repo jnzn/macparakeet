@@ -182,7 +182,7 @@ public final class SummaryViewModel {
     }
 
     private func fetchDefaultPrompt() -> Prompt {
-        (try? promptRepo?.fetchDefault()) ?? Prompt.defaultPrompt
+        (try? promptRepo?.fetchAutoRunPrompts().first) ?? Prompt.defaultPrompt
     }
 
     public func loadVisiblePrompts() {
@@ -193,7 +193,7 @@ public final class SummaryViewModel {
                let refreshed = visiblePrompts.first(where: { $0.id == selectedPrompt.id }) {
                 self.selectedPrompt = refreshed
             } else {
-                self.selectedPrompt = visiblePrompts.first(where: { $0.isDefault })
+                self.selectedPrompt = visiblePrompts.first(where: { $0.isAutoRun })
                     ?? visiblePrompts.first
             }
             errorMessage = nil
@@ -283,14 +283,24 @@ public final class SummaryViewModel {
     }
 
     @discardableResult
-    public func autoSummarize(transcript: String, transcriptionId: UUID) -> UUID? {
-        guard transcript.count > Self.autoSummaryTranscriptLengthThreshold else { return nil }
-        return enqueueGeneration(
-            transcript: transcript,
-            transcriptionId: transcriptionId,
-            prompt: fetchDefaultPrompt(),
-            extraInstructions: nil
-        )
+    public func autoSummarize(transcript: String, transcriptionId: UUID) -> [UUID] {
+        guard transcript.count > Self.autoSummaryTranscriptLengthThreshold else { return [] }
+        
+        let autoPrompts = (try? promptRepo?.fetchAutoRunPrompts()) ?? [Prompt.defaultPrompt]
+        guard !autoPrompts.isEmpty else { return [] }
+        
+        var queuedIDs: [UUID] = []
+        for prompt in autoPrompts {
+            if let id = enqueueGeneration(
+                transcript: transcript,
+                transcriptionId: transcriptionId,
+                prompt: prompt,
+                extraInstructions: nil
+            ) {
+                queuedIDs.append(id)
+            }
+        }
+        return queuedIDs
     }
 
     public func cancelStreaming() {
