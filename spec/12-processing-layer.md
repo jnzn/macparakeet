@@ -87,6 +87,7 @@ public struct Prompt: Codable, Identifiable, Sendable {
     public var category: Category    // .summary (extensible)
     public var isBuiltIn: Bool       // community prompt — hide only, no edit/delete
     public var isVisible: Bool       // false = hidden from picker
+    public var isAutoRun: Bool       // true = auto-generate for new transcriptions
     public var sortOrder: Int        // display ordering
     public var createdAt: Date
     public var updatedAt: Date
@@ -106,6 +107,7 @@ CREATE TABLE prompts (
     category  TEXT NOT NULL DEFAULT 'summary',
     isBuiltIn INTEGER NOT NULL DEFAULT 0,
     isVisible INTEGER NOT NULL DEFAULT 1,
+    isAutoRun INTEGER NOT NULL DEFAULT 0,
     sortOrder INTEGER NOT NULL DEFAULT 0,
     createdAt TEXT NOT NULL,
     updatedAt TEXT NOT NULL
@@ -150,9 +152,9 @@ CREATE INDEX idx_summaries_transcription_id ON summaries(transcriptionId);
 
 ### Community Prompts
 
-The current branch seeds seven built-in/community prompts from `Prompt.builtInSummaryPrompts()` in Swift. `Sources/MacParakeetCore/Resources/community-prompts.json` exists as a contribution/reference file, but it is not yet the runtime source of truth for prompt seeding.
+The current branch seeds seven built-in/community prompts from `Prompt.builtInPrompts()` in Swift. `Sources/MacParakeetCore/Resources/community-prompts.json` exists as a contribution/reference file, but it is not yet the runtime source of truth for prompt seeding.
 
-The first prompt (sort order 0), `General Summary`, is the default — used for auto-summary and pre-selected in the picker. The shipped built-in list is: `General Summary`, `Meeting Notes`, `Action Items`, `Key Quotes`, `Study Notes`, `Bullet Points`, and `Executive Brief`.
+`General Summary` is seeded as the initial built-in auto-run prompt and remains the default fallback when prompt data is unavailable. The shipped built-in list is: `General Summary`, `Meeting Notes`, `Action Items`, `Key Quotes`, `Study Notes`, `Bullet Points`, and `Executive Brief`.
 
 ### System Prompt Assembly
 
@@ -180,11 +182,15 @@ You are a helpful assistant that processes transcripts. Follow the user's instru
 {extraInstructions}
 ```
 
-### Auto-Summary Behavior
+### Auto-Run Behavior
 
-Auto-summary after transcription always uses the default community prompt (first in sort order). No preset selection for auto-summary — keeps it simple and predictable. Users who want a different perspective generate manually via the summary popover.
+Prompt cards may be marked `isAutoRun = true` in the prompt library.
 
-Conditions unchanged: `llmAvailable && transcript.count > 500`.
+- When a new transcription finishes and `llmAvailable && transcript.count > 500`, the app auto-generates summaries for every prompt card with `isAutoRun = true`.
+- Multiple auto-run prompt cards are allowed.
+- Zero auto-run prompt cards is a valid configuration. In that state, transcription and chat still work, and users generate prompt tabs manually from the summary UI.
+- Auto-run prompt cards are forced visible while auto-run is enabled.
+- If prompt data cannot be loaded at all, the runtime falls back to `General Summary`.
 
 ---
 
@@ -199,6 +205,8 @@ The summary experience is tab-based rather than card-based.
 - Each pending generation gets its own tab immediately.
 - `Chat` remains the final tab.
 - A dedicated `Summarize` affordance opens the generation popover.
+
+If no prompt cards are marked auto-run, this summary affordance is how users add prompt tabs manually after transcription.
 
 #### Generation Popover
 
@@ -275,7 +283,7 @@ Opened via the management control in the summary generation popover. Follows the
 └───────────────────────────────────────────────────┘
 ```
 
-- **Community prompts:** Toggle visibility via checkbox. The default prompt (first in sort order) cannot be hidden (it's the auto-summary fallback). "Restore Defaults" unhides all community prompts. "Suggest a prompt" links to the JSON file on GitHub for contributors.
+- **Community prompts:** Toggle visibility via checkbox. Auto-run prompts stay visible while auto-run is enabled. Turning auto-run off makes the card manually-only and eligible to be hidden. "Restore Defaults" unhides all community prompts. "Suggest a prompt" links to the JSON file on GitHub for contributors.
 - **My Prompts:** Full CRUD. Edit opens a sheet with name + multi-line TextEditor (prompt text is too long for inline editing). Delete with confirmation alert.
 - **Add Prompt:** Name field + multi-line prompt content + Add button. Name must be unique (case-insensitive, across both community and custom).
 
@@ -325,7 +333,7 @@ The future design space for actions, workflows, agents, and voice control is doc
 2. **SummaryRepository:** CRUD operations, `fetchAll` ordering (newest first), cascade delete when transcription deleted, `hasSummaries` check.
 3. **LLMService:** Custom system prompt flows through to message array; default prompt used when nil.
 4. **PromptsViewModel:** CRUD operations, visibility toggle, validation (empty fields, duplicate names), restore defaults.
-5. **SummaryViewModel:** Generation flow (prompt assembly → stream → persist), multi-summary state, delete, auto-summary with default prompt.
+5. **SummaryViewModel:** Generation flow (prompt assembly → stream → persist), multi-summary state, delete, auto-run with selected prompt cards, and zero-auto-run behavior.
 
 ### What We Skip
 
@@ -345,6 +353,6 @@ The future design space for actions, workflows, agents, and voice control is doc
 6. Community prompts can be hidden but not edited or deleted.
 7. Custom prompts can be created, edited, and deleted via the management sheet.
 8. Prompt management is accessible from the generation popover.
-9. Auto-summary after transcription uses the default community prompt.
+9. Auto-run after transcription uses every prompt card marked `isAutoRun`, and zero auto-run cards is a supported state.
 10. Existing transcriptions with summaries display migrated data correctly.
 11. `swift test` passes with all new tests.

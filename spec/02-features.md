@@ -1476,9 +1476,11 @@ Prompt library and multi-summary system. Users control how AI processes transcri
 **Acceptance criteria:**
 - [x] Built-in/community prompts available on first launch from built-in seed
 - [x] Built-in/community prompts can be hidden but not edited or deleted
+- [x] Prompt cards can be marked auto-run independently of sort order
+- [x] Zero auto-run prompt cards is a supported configuration
 - [x] Custom prompts can be created, edited, and deleted via management sheet
 - [x] Prompt management accessible from the generation popover
-- [x] Default community prompt used for auto-summary
+- [x] Auto-run prompt cards stay visible while auto-run is enabled
 
 ### F29: Multi-Summary
 
@@ -1492,7 +1494,8 @@ Prompt library and multi-summary system. Users control how AI processes transcri
 - [x] Multiple summaries displayed as tabs, pending generations appear immediately
 - [x] User can add extra instructions layered on top of selected prompt
 - [x] Queued summary pipeline (single-worker, sequential execution)
-- [x] Auto-summary after transcription uses default community prompt
+- [x] Auto-run after transcription uses every prompt card marked auto-run
+- [x] If zero prompt cards are marked auto-run, transcription still completes normally and prompt tabs can be added manually
 - [x] Existing transcriptions with summaries display migrated data correctly
 
 ---

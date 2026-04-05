@@ -3,7 +3,7 @@
 > Status: **Accepted**
 > Date: 2026-04-03
 > Related: ADR-011 (LLM providers), spec/12-processing-layer.md
-> Implementation Note (2026-04-04): The current branch seeds built-in/community prompts from `Prompt.builtInSummaryPrompts()` in Swift. `community-prompts.json` exists as a contribution/reference artifact, but runtime JSON loading has not shipped.
+> Implementation Note (2026-04-04): The current branch seeds built-in/community prompts from `Prompt.builtInPrompts()` in Swift. `community-prompts.json` exists as a contribution/reference artifact, but runtime JSON loading has not shipped.
 
 ## Context
 
@@ -17,7 +17,7 @@ Additionally, this feature is the first building block for a future processing l
 
 ### 1. Prompt Library stored in SQLite
 
-Reusable prompt templates are stored in the `prompts` table (not UserDefaults). Each prompt has a name, content, category, and visibility flag. Built-in/community prompts are currently seeded from Swift constants in `Prompt.builtInSummaryPrompts()`. The JSON file at `Sources/MacParakeetCore/Resources/community-prompts.json` is kept as a contribution/reference artifact, not the active runtime seed source. Built-in/community prompts can be hidden but not edited or deleted. Custom prompts support full CRUD.
+Reusable prompt templates are stored in the `prompts` table (not UserDefaults). Each prompt has a name, content, category, visibility flag, and auto-run flag. Built-in/community prompts are currently seeded from Swift constants in `Prompt.builtInPrompts()`. The JSON file at `Sources/MacParakeetCore/Resources/community-prompts.json` is kept as a contribution/reference artifact, not the active runtime seed source. Built-in/community prompts can be hidden but not edited or deleted. Custom prompts support full CRUD.
 
 The table is named `prompts` (not `summary_presets`) because the model is general-purpose — the same prompt can serve summaries today, transforms tomorrow, and workflow steps later. A `category` enum field (`.summary`, `.transform`) scopes prompts to their use case.
 
@@ -45,9 +45,11 @@ Users can queue multiple summary requests from the same transcript, but the app 
 
 This preserves the responsive UX of “let me ask for several summaries now” without the reliability and state complexity of parallel LLM streaming.
 
-### 6. Auto-summary uses default prompt
+### 6. Auto-run uses selected prompt cards
 
-Auto-summary after transcription always uses the default community prompt (first in sort order). No configuration for auto-summary behavior. Users who want a different perspective generate manually.
+Auto-run after transcription uses every prompt card marked `isAutoRun = true`. This is user-configurable in the prompt library rather than fixed to the first built-in prompt.
+
+Zero auto-run prompt cards is a valid state. In that configuration, transcription still completes normally, chat remains available, and users add prompt tabs manually from the summary UI.
 
 ## Rationale
 
