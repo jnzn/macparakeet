@@ -4,7 +4,7 @@ import Foundation
 /// Detects double-tap (persistent mode) and hold (push-to-talk mode).
 /// Testable without CGEvent — operates on abstract key up/down events.
 public final class FnKeyStateMachine {
-    public enum State: Equatable {
+    public enum State: Equatable, Sendable {
         case idle
         case waitingForSecondTap   // Fn pressed once, waiting to see if double-tap
         case persistent            // Double-tap confirmed, recording
@@ -13,14 +13,14 @@ public final class FnKeyStateMachine {
         case blocked               // Fn blocked during cancel window
     }
 
-    public enum Action: Equatable {
+    public enum Action: Equatable, Sendable {
         case none
         case startRecording(mode: RecordingMode)
         case stopRecording
         case cancelRecording
     }
 
-    public enum RecordingMode: Equatable {
+    public enum RecordingMode: Equatable, Sendable {
         case persistent   // Double-tap: stays on until explicitly stopped
         case holdToTalk   // Hold: stops when Fn released
     }

@@ -6,6 +6,7 @@ import MacParakeetViewModels
 enum SidebarItem: String, CaseIterable, Identifiable {
     case transcribe = "Transcribe"
     case library = "Library"
+    case meetings = "Meetings"
     case dictations = "Dictations"
     case vocabulary = "Vocabulary"
     case feedback = "Feedback"
@@ -18,6 +19,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         switch self {
         case .transcribe: return "waveform"
         case .library: return "square.grid.2x2"
+        case .meetings: return "record.circle"
         case .dictations: return "clock.arrow.circlepath"
         case .vocabulary: return "book.fill"
         case .feedback: return "bubble.left.and.text.bubble.right"
@@ -27,7 +29,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
     }
 
     /// Primary features — the core things users do
-    static let primaryItems: [SidebarItem] = [.transcribe, .library, .dictations]
+    static let primaryItems: [SidebarItem] = [.transcribe, .library, .meetings, .dictations]
 
     /// Configuration and support items
     static let configItems: [SidebarItem] = [.vocabulary, .feedback, .settings]
@@ -51,7 +53,9 @@ struct MainWindowView: View {
     let feedbackViewModel: FeedbackViewModel
     let discoverViewModel: DiscoverViewModel
     let libraryViewModel: TranscriptionLibraryViewModel
+    let meetingsViewModel: TranscriptionLibraryViewModel
     let updater: SPUUpdater
+    let onRecordMeeting: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -97,6 +101,19 @@ struct MainWindowView: View {
                         TranscriptionLibraryView(viewModel: libraryViewModel) { transcription in
                             transcriptionViewModel.currentTranscription = transcription
                             state.navigateToTranscription(from: .library)
+                        }
+                    case .meetings:
+                        TranscriptionLibraryView(
+                            viewModel: meetingsViewModel,
+                            title: "Meetings",
+                            showsFilterBar: false,
+                            primaryActionTitle: "Record Meeting",
+                            onPrimaryAction: onRecordMeeting,
+                            emptyTitle: "No meetings recorded yet",
+                            emptyMessage: "Record a meeting to save it here with the rest of your transcript tools."
+                        ) { transcription in
+                            transcriptionViewModel.currentTranscription = transcription
+                            state.navigateToTranscription(from: .meetings)
                         }
                     case .dictations:
                         DictationHistoryView(viewModel: historyViewModel)

@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var appEnvironment: AppEnvironment?
     private var hotkeyManager: HotkeyManager?
     private var dictationFlowCoordinator: DictationFlowCoordinator?
+    private var meetingRecordingFlowCoordinator: MeetingRecordingFlowCoordinator?
 
     // MARK: - ViewModels
 
@@ -47,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let feedbackViewModel = FeedbackViewModel()
     private let discoverViewModel = DiscoverViewModel()
     private let libraryViewModel = TranscriptionLibraryViewModel()
+    private let meetingsViewModel = TranscriptionLibraryViewModel(scope: .meetings)
     private let llmSettingsViewModel = LLMSettingsViewModel()
     private let chatViewModel = TranscriptChatViewModel()
     private let promptResultsViewModel = PromptResultsViewModel()
@@ -64,6 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     )
     private var pasteLastMenuItem: NSMenuItem?
     private var recentDictationsMenuItem: NSMenuItem?
+    private var recordMeetingMenuItem: NSMenuItem?
     private var reopenOnboardingOnNextActivate = false
     private var hasPresentedHotkeyUnavailableAlert = false
 
@@ -292,6 +295,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             keyEquivalent: ""
         ))
 
+        let recordMeetingItem = NSMenuItem(
+            title: "Record Meeting",
+            action: #selector(toggleMeetingRecordingFromMenu),
+            keyEquivalent: ""
+        )
+        recordMeetingItem.target = self
+        menu.addItem(recordMeetingItem)
+        recordMeetingMenuItem = recordMeetingItem
+
         menu.addItem(NSMenuItem.separator())
 
         let hotkeyItem = NSMenuItem(
@@ -357,6 +369,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             )
             historyViewModel.configure(dictationRepo: env.dictationRepo)
             libraryViewModel.configure(transcriptionRepo: env.transcriptionRepo)
+            meetingsViewModel.configure(transcriptionRepo: env.transcriptionRepo)
             settingsViewModel.configure(
                 permissionService: env.permissionService,
                 dictationRepo: env.dictationRepo,
@@ -429,8 +442,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 return true
             }
             transcriptionViewModel.onTranscribingChanged = { [weak self] isTranscribing in
-                guard let self, !(self.dictationFlowCoordinator?.isDictationActive ?? false) else { return }
-                // Only update icon if dictation isn't active (dictation states take priority)
+                guard let self,
+                      !(self.dictationFlowCoordinator?.isDictationActive ?? false),
+                      !(self.meetingRecordingFlowCoordinator?.isMeetingRecordingActive ?? false) else { return }
+                // Only update icon if dictation/meeting recording isn't active (those states take priority)
                 self.updateMenuBarIcon(state: isTranscribing ? .processing : .idle)
             }
 
@@ -445,6 +460,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 onPresentEntitlementsAlert: { [weak self] error in self?.presentEntitlementsAlert(error) }
             )
             dictationFlowCoordinator = coordinator
+
+            let meetingCoordinator = MeetingRecordingFlowCoordinator(
+                meetingRecordingService: env.meetingRecordingService,
+                transcriptionService: env.transcriptionService,
+                permissionService: env.permissionService,
+                onMenuBarIconUpdate: { [weak self] state in self?.updateMenuBarIcon(state: state) },
+                onTranscriptionReady: { [weak self] transcription in
+                    guard let self else { return }
+                    self.transcriptionViewModel.presentCompletedTranscription(transcription)
+                    self.libraryViewModel.loadTranscriptions()
+                    self.meetingsViewModel.loadTranscriptions()
+                    self.mainWindowState.navigateToTranscription(from: .meetings)
+                    self.openMainWindow()
+                },
+                onRecordingBegan: { [weak self] in
+                    self?.dictationFlowCoordinator?.hideIdlePill()
+                },
+                onFlowReturnedToIdle: { [weak self] in
+                    self?.dictationFlowCoordinator?.showIdlePill()
+                }
+            )
+            meetingRecordingFlowCoordinator = meetingCoordinator
 
             maybeShowOnboarding()
         } catch {
@@ -485,6 +522,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let manager = HotkeyManager(trigger: HotkeyTrigger.current)
 
         manager.onStartRecording = { [weak self] mode in
+            guard self?.meetingRecordingFlowCoordinator?.isMeetingRecordingActive != true else { return }
             self?.dictationFlowCoordinator?.startDictation(mode: mode, trigger: .hotkey)
         }
 
@@ -756,6 +794,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         youtubeInputController.show()
     }
 
+    @objc private func toggleMeetingRecordingFromMenu() {
+        toggleMeetingRecording(originatesFromWindow: false)
+    }
+
+    private func toggleMeetingRecording(originatesFromWindow: Bool) {
+        guard appEnvironment != nil else { return }
+        if meetingRecordingFlowCoordinator?.isMeetingRecordingActive == true {
+            meetingRecordingFlowCoordinator?.toggleRecording()
+            return
+        }
+        guard dictationFlowCoordinator?.isDictationActive != true else {
+            presentMeetingRecordingBlockedAlert()
+            return
+        }
+
+        if originatesFromWindow {
+            openMainWindow()
+            mainWindowState.selectedItem = .meetings
+        }
+        meetingRecordingFlowCoordinator?.toggleRecording()
+    }
+
     private func rebuildRecentDictationsSubmenu(with dictations: [Dictation]) {
         guard let recentItem = recentDictationsMenuItem else { return }
         recentItem.isHidden = dictations.isEmpty
@@ -791,7 +851,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             feedbackViewModel: feedbackViewModel,
             discoverViewModel: discoverViewModel,
             libraryViewModel: libraryViewModel,
-            updater: updaterController.updater
+            meetingsViewModel: meetingsViewModel,
+            updater: updaterController.updater,
+            onRecordMeeting: { [weak self] in
+                self?.toggleMeetingRecording(originatesFromWindow: true)
+            }
         )
 
         let window = NSWindow(
@@ -905,6 +969,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         #endif
     }
+
+    private func presentMeetingRecordingBlockedAlert() {
+        NSApp.activate(ignoringOtherApps: true)
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Stop Dictation First"
+        alert.informativeText = "Meeting recording can’t start while dictation is active."
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
 }
 
 // MARK: - NSMenuDelegate
@@ -919,5 +994,8 @@ extension AppDelegate: NSMenuDelegate {
         let dictations = (try? env.dictationRepo.fetchAll(limit: 5)) ?? []
         pasteLastMenuItem?.isEnabled = !dictations.isEmpty
         rebuildRecentDictationsSubmenu(with: dictations)
+        recordMeetingMenuItem?.title = meetingRecordingFlowCoordinator?.isMeetingRecordingActive == true
+            ? "Stop Meeting Recording"
+            : "Record Meeting"
     }
 }

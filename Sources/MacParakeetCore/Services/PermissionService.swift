@@ -1,10 +1,13 @@
 import AVFoundation
 import ApplicationServices
+import CoreGraphics
 import Foundation
 
 public protocol PermissionServiceProtocol: Sendable {
     func checkMicrophonePermission() async -> PermissionStatus
     func requestMicrophonePermission() async -> Bool
+    func checkScreenRecordingPermission() -> Bool
+    func requestScreenRecordingPermission() -> Bool
     func checkAccessibilityPermission() -> Bool
     func requestAccessibilityPermission(prompt: Bool) -> Bool
 }
@@ -29,6 +32,14 @@ public final class PermissionService: PermissionServiceProtocol, Sendable {
 
     public func requestMicrophonePermission() async -> Bool {
         await AVCaptureDevice.requestAccess(for: .audio)
+    }
+
+    public func checkScreenRecordingPermission() -> Bool {
+        CGPreflightScreenCaptureAccess()
+    }
+
+    public func requestScreenRecordingPermission() -> Bool {
+        CGRequestScreenCaptureAccess()
     }
 
     public func checkAccessibilityPermission() -> Bool {

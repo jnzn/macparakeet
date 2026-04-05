@@ -250,6 +250,22 @@ public final class DatabaseManager: Sendable {
             }
         }
 
+        // v0.6 — Transcription source type (file / youtube / meeting)
+        migrator.registerMigration("v0.6-transcription-source-type") { db in
+            try db.alter(table: "transcriptions") { t in
+                t.add(column: "sourceType", .text).notNull().defaults(to: Transcription.SourceType.file.rawValue)
+            }
+
+            try db.execute(
+                sql: """
+                    UPDATE transcriptions
+                    SET sourceType = ?
+                    WHERE sourceURL IS NOT NULL
+                """,
+                arguments: [Transcription.SourceType.youtube.rawValue]
+            )
+        }
+
         // v0.7 — Keystroke action snippets (issue #40)
         migrator.registerMigration("v0.7-snippet-key-action") { db in
             try db.alter(table: "text_snippets") { t in

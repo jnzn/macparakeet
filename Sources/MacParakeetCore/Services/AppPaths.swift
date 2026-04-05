@@ -27,6 +27,11 @@ public enum AppPaths {
         "\(appSupportDir)/youtube-downloads"
     }
 
+    /// Audio storage directory for meeting recordings
+    public static var meetingRecordingsDir: String {
+        "\(appSupportDir)/meeting-recordings"
+    }
+
     /// Directory for managed helper binaries (e.g. yt-dlp).
     public static var binDir: String {
         "\(appSupportDir)/bin"
@@ -55,7 +60,7 @@ public enum AppPaths {
     /// Ensure all required directories exist
     public static func ensureDirectories() throws {
         let fm = FileManager.default
-        for dir in [appSupportDir, dictationsDir, youtubeDownloadsDir, binDir, thumbnailsDir, tempDir] {
+        for dir in [appSupportDir, dictationsDir, youtubeDownloadsDir, meetingRecordingsDir, binDir, thumbnailsDir, tempDir] {
             if !fm.fileExists(atPath: dir) {
                 try fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
             }

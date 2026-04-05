@@ -419,7 +419,8 @@ final class TranscriptionViewModelTests: XCTestCase {
             filePath: audioURL.path,
             rawTranscript: "Hello",
             status: .completed,
-            sourceURL: "https://youtu.be/dQw4w9WgXcQ"
+            sourceURL: "https://youtu.be/dQw4w9WgXcQ",
+            sourceType: .youtube
         )
         mockRepo.transcriptions = [t]
 

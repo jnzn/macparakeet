@@ -4,6 +4,12 @@ import MacParakeetViewModels
 
 struct TranscriptionLibraryView: View {
     @Bindable var viewModel: TranscriptionLibraryViewModel
+    var title: String = "Library"
+    var showsFilterBar: Bool = true
+    var primaryActionTitle: String? = nil
+    var onPrimaryAction: (() -> Void)? = nil
+    var emptyTitle: String = "No transcriptions yet"
+    var emptyMessage: String = "Transcribe a file or YouTube video to get started."
     var onSelect: (Transcription) -> Void
 
     @State private var pendingDelete: Transcription?
@@ -12,42 +18,50 @@ struct TranscriptionLibraryView: View {
         VStack(alignment: .leading, spacing: 0) {
             // Header
             HStack {
-                Text("Library")
+                Text(title)
                     .font(DesignSystem.Typography.pageTitle)
                     .foregroundStyle(DesignSystem.Colors.textPrimary)
 
                 Spacer()
+
+                if let primaryActionTitle, let onPrimaryAction {
+                    Button(primaryActionTitle, action: onPrimaryAction)
+                        .buttonStyle(.borderedProminent)
+                        .tint(DesignSystem.Colors.accent)
+                }
             }
             .padding(.horizontal, DesignSystem.Spacing.lg)
             .padding(.top, DesignSystem.Spacing.lg)
             .padding(.bottom, DesignSystem.Spacing.sm)
 
             // Filter bar
-            HStack(spacing: 0) {
-                ForEach(LibraryFilter.allCases, id: \.self) { filter in
-                    Button {
-                        viewModel.filter = filter
-                    } label: {
-                        Text(filter.rawValue)
-                            .font(DesignSystem.Typography.bodySmall.weight(
-                                viewModel.filter == filter ? .semibold : .regular
-                            ))
-                            .padding(.horizontal, DesignSystem.Spacing.md)
-                            .padding(.vertical, 8)
-                            .background(
-                                Capsule()
-                                    .fill(viewModel.filter == filter
-                                          ? DesignSystem.Colors.accent.opacity(0.12)
-                                          : .clear)
-                            )
+            if showsFilterBar {
+                HStack(spacing: 0) {
+                    ForEach(LibraryFilter.allCases, id: \.self) { filter in
+                        Button {
+                            viewModel.filter = filter
+                        } label: {
+                            Text(filter.rawValue)
+                                .font(DesignSystem.Typography.bodySmall.weight(
+                                    viewModel.filter == filter ? .semibold : .regular
+                                ))
+                                .padding(.horizontal, DesignSystem.Spacing.md)
+                                .padding(.vertical, 8)
+                                .background(
+                                    Capsule()
+                                        .fill(viewModel.filter == filter
+                                              ? DesignSystem.Colors.accent.opacity(0.12)
+                                              : .clear)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(viewModel.filter == filter ? DesignSystem.Colors.accent : DesignSystem.Colors.textSecondary)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(viewModel.filter == filter ? DesignSystem.Colors.accent : DesignSystem.Colors.textSecondary)
+                    Spacer()
                 }
-                Spacer()
+                .padding(.horizontal, DesignSystem.Spacing.lg)
+                .padding(.bottom, DesignSystem.Spacing.sm)
             }
-            .padding(.horizontal, DesignSystem.Spacing.lg)
-            .padding(.bottom, DesignSystem.Spacing.sm)
 
             // Grid
             if viewModel.filteredTranscriptions.isEmpty {
@@ -134,12 +148,12 @@ struct TranscriptionLibraryView: View {
                 .font(.system(size: 40, weight: .light))
                 .foregroundStyle(DesignSystem.Colors.textTertiary)
             Text(viewModel.searchText.isEmpty
-                 ? "No transcriptions yet"
+                 ? emptyTitle
                  : "No matching transcriptions")
                 .font(DesignSystem.Typography.body)
                 .foregroundStyle(DesignSystem.Colors.textSecondary)
             Text(viewModel.searchText.isEmpty
-                 ? "Transcribe a file or YouTube video to get started."
+                 ? emptyMessage
                  : "Try different words or clear your search.")
                 .font(DesignSystem.Typography.bodySmall)
                 .foregroundStyle(DesignSystem.Colors.textTertiary)
