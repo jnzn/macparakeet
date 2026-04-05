@@ -96,7 +96,7 @@ public struct Transcription: Codable, Identifiable, Sendable {
     }
 }
 
-public struct WordTimestamp: Codable, Sendable {
+public struct WordTimestamp: Codable, Sendable, Equatable {
     public var word: String
     public var startMs: Int
     public var endMs: Int
@@ -122,7 +122,7 @@ public struct SpeakerInfo: Codable, Sendable, Equatable {
     }
 }
 
-public struct DiarizationSegmentRecord: Codable, Sendable {
+public struct DiarizationSegmentRecord: Codable, Sendable, Equatable {
     public var speakerId: String
     public var startMs: Int
     public var endMs: Int

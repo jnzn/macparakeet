@@ -27,6 +27,7 @@ final class MeetingRecordingFlowCoordinator {
     private var actionTask: Task<Void, Never>?
     private var autoDismissTask: Task<Void, Never>?
     private var pillPollingTask: Task<Void, Never>?
+    private var transcriptObservationTask: Task<Void, Never>?
     private var completedTranscription: Transcription?
 
     init(
@@ -112,6 +113,7 @@ final class MeetingRecordingFlowCoordinator {
             let vm = pillViewModel ?? MeetingRecordingPillViewModel()
             vm.onStop = { [weak self] in self?.toggleRecording() }
             vm.state = .recording
+            vm.resetPreview()
             pillViewModel = vm
 
             if pillController == nil {
@@ -119,6 +121,7 @@ final class MeetingRecordingFlowCoordinator {
             }
             pillController?.show()
             startPillPolling()
+            startTranscriptObservation()
 
         case .startRecording:
             let gen = stateMachine.generation
@@ -133,6 +136,7 @@ final class MeetingRecordingFlowCoordinator {
 
         case .showTranscribingState:
             stopPillPolling()
+            stopTranscriptObservation()
             pillViewModel?.state = .transcribing
 
         case .stopRecordingAndTranscribe:
@@ -150,14 +154,17 @@ final class MeetingRecordingFlowCoordinator {
 
         case .showCompleted:
             stopPillPolling()
+            stopTranscriptObservation()
             pillViewModel?.state = .completed
 
         case .showError(let message):
             stopPillPolling()
+            stopTranscriptObservation()
             pillViewModel?.state = .error(message)
 
         case .hidePill:
             stopPillPolling()
+            stopTranscriptObservation()
             pillController?.hide()
             pillController = nil
             pillViewModel = nil
@@ -244,6 +251,45 @@ final class MeetingRecordingFlowCoordinator {
     private func stopPillPolling() {
         pillPollingTask?.cancel()
         pillPollingTask = nil
+    }
+
+    private func startTranscriptObservation() {
+        transcriptObservationTask?.cancel()
+        transcriptObservationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let stream = await meetingRecordingService.transcriptUpdates
+            for await update in stream {
+                guard !Task.isCancelled else { break }
+                pillViewModel?.updatePreviewLines(makePreviewLines(from: update))
+            }
+        }
+    }
+
+    private func stopTranscriptObservation() {
+        transcriptObservationTask?.cancel()
+        transcriptObservationTask = nil
+    }
+
+    private func makePreviewLines(from update: MeetingTranscriptUpdate) -> [MeetingRecordingPreviewLine] {
+        let speakerLabels = Dictionary(uniqueKeysWithValues: update.speakers.map { ($0.id, $0.label) })
+        let segments = TranscriptSegmenter.groupIntoSegments(words: update.words)
+        return Array(segments.suffix(3)).map { segment in
+            let source = segment.speakerId.flatMap(AudioSource.init(rawValue:))
+            return MeetingRecordingPreviewLine(
+                id: "\(segment.startMs)-\(segment.speakerId ?? "unknown")-\(segment.text)",
+                timestamp: format(milliseconds: segment.startMs),
+                speakerLabel: speakerLabels[segment.speakerId ?? ""] ?? source?.displayLabel ?? "Speaker",
+                text: segment.text,
+                source: source
+            )
+        }
+    }
+
+    private func format(milliseconds: Int) -> String {
+        let totalSeconds = max(0, milliseconds / 1000)
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        return String(format: "%d:%02d", minutes, seconds)
     }
 
     private func openSystemSettings(for reason: MeetingRecordingPermissionFailure) {

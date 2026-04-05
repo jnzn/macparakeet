@@ -27,41 +27,6 @@ private struct PulsingRecordDot: View {
     }
 }
 
-private struct MeetingAudioMeterGroup: View {
-    let systemName: String
-    let level: Float
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: systemName)
-                .font(DesignSystem.Typography.micro)
-                .foregroundStyle(.white.opacity(0.45))
-
-            HStack(spacing: 2) {
-                ForEach(0..<5, id: \.self) { index in
-                    RoundedRectangle(cornerRadius: 1)
-                        .fill(barColor(for: index))
-                        .frame(width: 3, height: 12)
-                        .scaleEffect(y: barScale(for: index), anchor: .bottom)
-                        .animation(.easeInOut(duration: 0.1), value: level)
-                }
-            }
-        }
-    }
-
-    private func barScale(for index: Int) -> CGFloat {
-        let threshold = CGFloat(index) / 5
-        let clamped = CGFloat(max(0, min(1, level)))
-        return max(0.18, min(1, (clamped - threshold * 0.5) * 1.5))
-    }
-
-    private func barColor(for index: Int) -> Color {
-        let threshold = CGFloat(index) / 5
-        let active = CGFloat(level) > threshold * 0.7
-        return active ? DesignSystem.Colors.accent : Color.white.opacity(0.18)
-    }
-}
-
 struct MeetingRecordingPillView: View {
     @Bindable var viewModel: MeetingRecordingPillViewModel
 
@@ -102,30 +67,58 @@ struct MeetingRecordingPillView: View {
     }
 
     private var recordingPill: some View {
-        HStack(spacing: 14) {
-            PulsingRecordDot()
+        VStack(alignment: .leading, spacing: viewModel.isExpanded && !viewModel.previewLines.isEmpty ? 10 : 0) {
+            HStack(spacing: 12) {
+                PulsingRecordDot()
 
-            Text(viewModel.formattedElapsed)
-                .font(.system(size: 12, weight: .semibold).monospacedDigit())
-                .foregroundStyle(.white.opacity(0.72))
-                .frame(width: 42, alignment: .leading)
+                Text(viewModel.formattedElapsed)
+                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.72))
+                    .frame(width: 42, alignment: .leading)
 
-            MeetingAudioMeterGroup(systemName: "mic.fill", level: viewModel.micLevel)
-            MeetingAudioMeterGroup(systemName: "speaker.wave.2.fill", level: viewModel.systemLevel)
+                DualAudioLevelView(micLevel: viewModel.micLevel, systemLevel: viewModel.systemLevel)
 
-            Button(action: { viewModel.onStop?() }) {
-                RoundedRectangle(cornerRadius: 2.5)
-                    .fill(Color.white)
-                    .frame(width: 9, height: 9)
-                    .padding(8)
-                    .background(
-                        Circle()
-                            .fill(DesignSystem.Colors.recordingRed.opacity(0.92))
-                            .shadow(color: DesignSystem.Colors.recordingRed.opacity(0.45), radius: 6)
-                    )
+                Spacer(minLength: 0)
+
+                if !viewModel.previewLines.isEmpty {
+                    Button {
+                        viewModel.isExpanded.toggle()
+                    } label: {
+                        Image(systemName: viewModel.isExpanded ? "chevron.down" : "chevron.up")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.7))
+                            .frame(width: 18, height: 18)
+                            .background(Circle().fill(Color.white.opacity(0.08)))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(viewModel.isExpanded ? "Collapse live transcript" : "Expand live transcript")
+                }
+
+                Button(action: { viewModel.onStop?() }) {
+                    RoundedRectangle(cornerRadius: 2.5)
+                        .fill(Color.white)
+                        .frame(width: 9, height: 9)
+                        .padding(8)
+                        .background(
+                            Circle()
+                                .fill(DesignSystem.Colors.recordingRed.opacity(0.92))
+                                .shadow(color: DesignSystem.Colors.recordingRed.opacity(0.45), radius: 6)
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Stop meeting recording")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Stop meeting recording")
+
+            if viewModel.isExpanded && !viewModel.previewLines.isEmpty {
+                Divider()
+                    .overlay(Color.white.opacity(0.08))
+
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(viewModel.previewLines) { line in
+                        previewLineView(line)
+                    }
+                }
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -146,12 +139,44 @@ struct MeetingRecordingPillView: View {
     }
 
     private var pillBackground: some View {
-        Capsule()
+        let cornerRadius: CGFloat = viewModel.isExpanded && !viewModel.previewLines.isEmpty ? 18 : 999
+        return RoundedRectangle(cornerRadius: cornerRadius)
             .fill(DesignSystem.Colors.pillBackground)
             .overlay(
-                Capsule()
+                RoundedRectangle(cornerRadius: cornerRadius)
                     .strokeBorder(DesignSystem.Colors.pillBorder, lineWidth: 1)
             )
             .shadow(color: .black.opacity(0.28), radius: 12, y: 6)
+    }
+
+    private func previewLineView(_ line: MeetingRecordingPreviewLine) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Text(line.timestamp)
+                    .font(DesignSystem.Typography.micro.monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.45))
+
+                Text(line.speakerLabel)
+                    .font(DesignSystem.Typography.micro.weight(.semibold))
+                    .foregroundStyle(color(for: line.source))
+            }
+
+            Text(line.text)
+                .font(DesignSystem.Typography.caption)
+                .foregroundStyle(.white.opacity(0.88))
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func color(for source: AudioSource?) -> Color {
+        switch source {
+        case .microphone:
+            return DesignSystem.Colors.accent
+        case .system:
+            return DesignSystem.Colors.successGreen
+        case nil:
+            return .white.opacity(0.7)
+        }
     }
 }

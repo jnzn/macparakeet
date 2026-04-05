@@ -104,7 +104,15 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         recording: MeetingRecordingOutput,
         onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
     ) async throws -> Transcription {
-        try await transcribe(
+        if let preparedTranscript = recording.preparedTranscript, !preparedTranscript.words.isEmpty {
+            return try await transcribePreparedMeeting(
+                recording: recording,
+                preparedTranscript: preparedTranscript,
+                onProgress: onProgress
+            )
+        }
+
+        return try await transcribe(
             fileURL: recording.mixedAudioURL,
             storedFileURL: recording.mixedAudioURL,
             displayFileName: recording.displayName,
@@ -220,6 +228,70 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
 
     // MARK: - Private
 
+    private func transcribePreparedMeeting(
+        recording: MeetingRecordingOutput,
+        preparedTranscript: MeetingRealtimeTranscript,
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
+    ) async throws -> Transcription {
+        if let entitlements {
+            try await entitlements.assertCanTranscribe(now: Date())
+        }
+
+        let fileSize = (try? FileManager.default.attributesOfItem(atPath: recording.mixedAudioURL.path)[.size] as? Int).flatMap { $0 }
+        var transcription = Transcription(
+            fileName: recording.displayName,
+            filePath: recording.mixedAudioURL.path,
+            fileSizeBytes: fileSize,
+            status: .processing,
+            sourceType: .meeting
+        )
+        try transcriptionRepo.save(transcription)
+        Telemetry.send(.transcriptionStarted(source: .meeting, audioDurationSeconds: recording.durationSeconds))
+
+        let processingStartedAt = Date()
+        do {
+            onProgress?(.transcribing(percent: 100))
+            transcription.rawTranscript = preparedTranscript.rawTranscript
+            transcription.wordTimestamps = preparedTranscript.words
+            transcription.durationMs = preparedTranscript.durationMs
+            transcription.speakerCount = preparedTranscript.speakerCount
+            transcription.speakers = preparedTranscript.speakers
+            transcription.diarizationSegments = preparedTranscript.diarizationSegments
+
+            return try await completeTranscription(
+                source: .meeting,
+                transcription: &transcription,
+                rawText: preparedTranscript.rawTranscript,
+                processingStartedAt: processingStartedAt
+            )
+        } catch {
+            let audioDurationSeconds = recording.durationSeconds
+            if error is CancellationError {
+                Telemetry.send(.transcriptionCancelled(
+                    source: .meeting,
+                    audioDurationSeconds: audioDurationSeconds
+                ))
+                try? transcriptionRepo.updateStatus(
+                    id: transcription.id,
+                    status: .cancelled,
+                    errorMessage: nil
+                )
+            } else {
+                Telemetry.send(.transcriptionFailed(
+                    source: .meeting,
+                    errorType: Self.errorType(for: error),
+                    errorDetail: TelemetryErrorClassifier.errorDetail(error)
+                ))
+                try? transcriptionRepo.updateStatus(
+                    id: transcription.id,
+                    status: .error,
+                    errorMessage: error.localizedDescription
+                )
+            }
+            throw error
+        }
+    }
+
     private func transcribeAudio(
         fileURL: URL,
         source: TelemetryTranscriptionSource,
@@ -296,40 +368,12 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                 }
             }
 
-            let mode = processingMode()
-            var customWords: [CustomWord] = []
-            var snippets: [TextSnippet] = []
-            if mode.usesDeterministicPipeline {
-                do { customWords = try customWordRepo?.fetchEnabled() ?? [] }
-                catch { logger.error("Failed to fetch custom words: \(error.localizedDescription, privacy: .public)") }
-                do { snippets = try snippetRepo?.fetchEnabled() ?? [] }
-                catch { logger.error("Failed to fetch snippets: \(error.localizedDescription, privacy: .public)") }
-            }
-            let refinement = await textRefinementService.refine(
-                rawText: result.text,
-                mode: mode,
-                customWords: customWords,
-                snippets: snippets
-            )
-            transcription.cleanTranscript = refinement.text
-
-            if !refinement.expandedSnippetIDs.isEmpty {
-                try? snippetRepo?.incrementUseCount(ids: refinement.expandedSnippetIDs)
-            }
-
-            transcription.status = .completed
-            transcription.updatedAt = Date()
-            try transcriptionRepo.save(transcription)
-
-            let wordCount = transcription.rawTranscript?.split(whereSeparator: \.isWhitespace).count ?? 0
-            let audioDurationSeconds = transcription.durationMs.map { Double($0) / 1000.0 }
-            let processingSeconds = Date().timeIntervalSince(processingStartedAt)
-            Telemetry.send(.transcriptionCompleted(
+            let completed = try await completeTranscription(
                 source: source,
-                audioDurationSeconds: audioDurationSeconds,
-                processingSeconds: processingSeconds,
-                wordCount: wordCount
-            ))
+                transcription: &transcription,
+                rawText: result.text,
+                processingStartedAt: processingStartedAt
+            )
 
             try? FileManager.default.removeItem(at: wavURL)
             if cleanUpDownloadedFiles {
@@ -338,7 +382,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                 }
             }
 
-            return transcription
+            return completed
         } catch {
             if let wavURL { try? FileManager.default.removeItem(at: wavURL) }
             if cleanUpDownloadedFiles {
@@ -385,6 +429,51 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             }
             throw error
         }
+    }
+
+    private func completeTranscription(
+        source: TelemetryTranscriptionSource,
+        transcription: inout Transcription,
+        rawText: String,
+        processingStartedAt: Date
+    ) async throws -> Transcription {
+        let mode = processingMode()
+        var customWords: [CustomWord] = []
+        var snippets: [TextSnippet] = []
+        if mode.usesDeterministicPipeline {
+            do { customWords = try customWordRepo?.fetchEnabled() ?? [] }
+            catch { logger.error("Failed to fetch custom words: \(error.localizedDescription, privacy: .public)") }
+            do { snippets = try snippetRepo?.fetchEnabled() ?? [] }
+            catch { logger.error("Failed to fetch snippets: \(error.localizedDescription, privacy: .public)") }
+        }
+
+        let refinement = await textRefinementService.refine(
+            rawText: rawText,
+            mode: mode,
+            customWords: customWords,
+            snippets: snippets
+        )
+        transcription.cleanTranscript = refinement.text
+
+        if !refinement.expandedSnippetIDs.isEmpty {
+            try? snippetRepo?.incrementUseCount(ids: refinement.expandedSnippetIDs)
+        }
+
+        transcription.status = .completed
+        transcription.updatedAt = Date()
+        try transcriptionRepo.save(transcription)
+
+        let wordCount = transcription.rawTranscript?.split(whereSeparator: \.isWhitespace).count ?? 0
+        let audioDurationSeconds = transcription.durationMs.map { Double($0) / 1000.0 }
+        let processingSeconds = Date().timeIntervalSince(processingStartedAt)
+        Telemetry.send(.transcriptionCompleted(
+            source: source,
+            audioDurationSeconds: audioDurationSeconds,
+            processingSeconds: processingSeconds,
+            wordCount: wordCount
+        ))
+
+        return transcription
     }
 
     private static func errorType(for error: Error) -> String {

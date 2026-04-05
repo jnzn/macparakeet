@@ -229,6 +229,54 @@ final class TranscriptionServiceTests: XCTestCase {
         XCTAssertTrue(phases.contains { if case .transcribing = $0 { true } else { false } })
     }
 
+    func testTranscribeMeetingUsesPreparedTranscriptWithoutSTT() async throws {
+        let recordingURL = try makeTempDownloadedAudio()
+        defer { try? FileManager.default.removeItem(at: recordingURL) }
+
+        let prepared = MeetingRealtimeTranscript(
+            rawTranscript: "Hello there Sounds good",
+            words: [
+                WordTimestamp(word: "Hello", startMs: 0, endMs: 300, confidence: 0.9, speakerId: "microphone"),
+                WordTimestamp(word: "there", startMs: 320, endMs: 650, confidence: 0.9, speakerId: "microphone"),
+                WordTimestamp(word: "Sounds", startMs: 900, endMs: 1_200, confidence: 0.9, speakerId: "system"),
+                WordTimestamp(word: "good", startMs: 1_250, endMs: 1_500, confidence: 0.9, speakerId: "system"),
+            ],
+            speakerCount: 2,
+            speakers: [
+                SpeakerInfo(id: "microphone", label: "Me"),
+                SpeakerInfo(id: "system", label: "Them"),
+            ],
+            diarizationSegments: [
+                DiarizationSegmentRecord(speakerId: "microphone", startMs: 0, endMs: 650),
+                DiarizationSegmentRecord(speakerId: "system", startMs: 900, endMs: 1_500),
+            ],
+            durationMs: 1_500
+        )
+
+        let recording = MeetingRecordingOutput(
+            sessionID: UUID(),
+            displayName: "Meeting Demo",
+            folderURL: recordingURL.deletingLastPathComponent(),
+            mixedAudioURL: recordingURL,
+            microphoneAudioURL: recordingURL,
+            systemAudioURL: recordingURL,
+            durationSeconds: 1.5,
+            preparedTranscript: prepared
+        )
+
+        let result = try await service.transcribeMeeting(recording: recording)
+        let sttCallCount = await mockSTT.transcribeCallCount
+        let convertCallCount = await mockAudio.convertCallCount
+
+        XCTAssertEqual(result.fileName, "Meeting Demo")
+        XCTAssertEqual(result.rawTranscript, prepared.rawTranscript)
+        XCTAssertEqual(result.speakerCount, 2)
+        XCTAssertEqual(result.speakers, prepared.speakers)
+        XCTAssertEqual(result.diarizationSegments, prepared.diarizationSegments)
+        XCTAssertEqual(sttCallCount, 0)
+        XCTAssertEqual(convertCallCount, 0)
+    }
+
     private func makeTempDownloadedAudio() throws -> URL {
         try AppPaths.ensureDirectories()
         let url = URL(fileURLWithPath: AppPaths.tempDir)

@@ -8,6 +8,7 @@ public struct MeetingRecordingOutput: Sendable, Equatable {
     public let microphoneAudioURL: URL
     public let systemAudioURL: URL
     public let durationSeconds: TimeInterval
+    public let preparedTranscript: MeetingRealtimeTranscript?
 
     public init(
         sessionID: UUID,
@@ -16,7 +17,8 @@ public struct MeetingRecordingOutput: Sendable, Equatable {
         mixedAudioURL: URL,
         microphoneAudioURL: URL,
         systemAudioURL: URL,
-        durationSeconds: TimeInterval
+        durationSeconds: TimeInterval,
+        preparedTranscript: MeetingRealtimeTranscript? = nil
     ) {
         self.sessionID = sessionID
         self.displayName = displayName
@@ -25,5 +27,6 @@ public struct MeetingRecordingOutput: Sendable, Equatable {
         self.microphoneAudioURL = microphoneAudioURL
         self.systemAudioURL = systemAudioURL
         self.durationSeconds = durationSeconds
+        self.preparedTranscript = preparedTranscript
     }
 }
