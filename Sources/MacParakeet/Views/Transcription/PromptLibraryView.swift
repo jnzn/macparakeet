@@ -2,7 +2,7 @@ import SwiftUI
 import MacParakeetCore
 import MacParakeetViewModels
 
-struct SummaryPromptsView: View {
+struct PromptLibraryView: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable var viewModel: PromptsViewModel
     @State private var editName: String = ""
@@ -186,7 +186,7 @@ struct SummaryPromptsView: View {
 
     private func promptRow(_ prompt: Prompt, allowEdit: Bool) -> some View {
         let isHovered = hoveredPromptId == prompt.id
-        let isDefault = prompt.isBuiltIn && prompt.name == Prompt.defaultSummaryPrompt.name
+        let isDefault = prompt.isBuiltIn && prompt.name == Prompt.defaultPrompt.name
         let isExpanded = expandedPromptIds.contains(prompt.id)
 
         return HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
@@ -206,6 +206,7 @@ struct SummaryPromptsView: View {
                     Text(prompt.name)
                         .font(DesignSystem.Typography.bodyLarge.weight(.semibold))
                         .foregroundStyle(prompt.isVisible ? DesignSystem.Colors.textPrimary : DesignSystem.Colors.textTertiary)
+                        .textSelection(.enabled)
                     
                     if isDefault {
                         Text("Default")
@@ -225,6 +226,7 @@ struct SummaryPromptsView: View {
                     .foregroundStyle(prompt.isVisible ? DesignSystem.Colors.textSecondary : DesignSystem.Colors.textTertiary)
                     .lineLimit(isExpanded ? nil : 2)
                     .lineSpacing(2)
+                    .textSelection(.enabled)
             }
             
             if allowEdit {
