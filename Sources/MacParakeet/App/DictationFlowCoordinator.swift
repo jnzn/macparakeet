@@ -272,24 +272,32 @@ final class DictationFlowCoordinator {
             }
 
         case .startRecording(let mode):
-            startRecordingTask(mode: mode, generation: stateMachine.generation)
+            let sessionID = serviceSession.reserveNextSessionID()
+            startRecordingTask(mode: mode, generation: stateMachine.generation, sessionID: sessionID)
 
         case .stopRecordingAndTranscribe:
-            stopRecordingTask(generation: stateMachine.generation)
+            let sessionID = serviceSession.currentSessionID
+            stopRecordingTask(generation: stateMachine.generation, sessionID: sessionID)
 
         case .cancelRecording(let reason):
-            Task {
-                await self.serviceSession.cancelRecording(reason: self.telemetryCancelReason(for: reason))
+            let sessionID = serviceSession.currentSessionID
+            Task { @MainActor in
+                await self.serviceSession.cancelRecording(
+                    reason: self.telemetryCancelReason(for: reason),
+                    sessionID: sessionID
+                )
             }
 
         case .confirmCancel:
-            Task {
-                await self.serviceSession.confirmCancel()
+            let sessionID = serviceSession.currentSessionID
+            Task { @MainActor in
+                await self.serviceSession.confirmCancel(sessionID: sessionID)
             }
 
         case .discardRecording:
-            Task {
-                await self.serviceSession.confirmCancel()
+            let sessionID = serviceSession.currentSessionID
+            Task { @MainActor in
+                await self.serviceSession.confirmCancel(sessionID: sessionID)
             }
 
         case .undoCancelAndTranscribe:
@@ -480,11 +488,16 @@ final class DictationFlowCoordinator {
         }
     }
 
-    private func startRecordingTask(mode: FnKeyStateMachine.RecordingMode, generation: Int) {
+    private func startRecordingTask(
+        mode: FnKeyStateMachine.RecordingMode,
+        generation: Int,
+        sessionID: Int
+    ) {
         let trigger = currentTrigger
         recordingTask = Task { @MainActor in
             do {
-                let sessionID = try await self.serviceSession.startRecording(
+                try await self.serviceSession.startRecording(
+                    sessionID: sessionID,
                     context: DictationTelemetryContext(trigger: trigger, mode: self.telemetryMode(for: mode))
                 )
                 let serviceState = await self.serviceSession.state
@@ -499,7 +512,6 @@ final class DictationFlowCoordinator {
                 await self.runRecordingLevelLoop()
             } catch {
                 guard !Task.isCancelled else { return }
-                let sessionID = await self.serviceSession.currentSessionID
                 self.dictationLog.error(
                     "start_recording_failed gen=\(generation) session=\(sessionID) error=\(error.localizedDescription, privacy: .public)"
                 )
@@ -508,15 +520,14 @@ final class DictationFlowCoordinator {
         }
     }
 
-    private func stopRecordingTask(generation: Int) {
+    private func stopRecordingTask(generation: Int, sessionID: Int) {
         actionTask = Task { @MainActor in
             do {
-                let sessionID = await self.serviceSession.currentSessionID
                 let serviceState = await self.serviceSession.state
                 self.dictationLog.notice(
                     "stop_recording_requested gen=\(generation) session=\(sessionID) flowState=\(self.describeState(self.stateMachine.state), privacy: .public) serviceState=\(self.describeServiceState(serviceState), privacy: .public)"
                 )
-                let result = try await self.serviceSession.stopRecording()
+                let result = try await self.serviceSession.stopRecording(sessionID: sessionID)
                 guard !Task.isCancelled else { return }
                 self.consumeDictationResult(result)
                 self.sendEvent(.transcriptionCompleted(generation: generation))

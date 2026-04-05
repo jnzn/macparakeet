@@ -1,6 +1,7 @@
 import XCTest
 @testable import MacParakeetCore
 
+@MainActor
 final class DictationServiceSessionTests: XCTestCase {
     var service: DictationService!
     var session: DictationServiceSession!
@@ -23,23 +24,26 @@ final class DictationServiceSessionTests: XCTestCase {
     }
 
     func testStartRecordingAssignsSessionIDsMonotonically() async throws {
-        let firstSessionID = try await session.startRecording(context: DictationTelemetryContext())
+        let firstSessionID = session.reserveNextSessionID()
+        try await session.startRecording(sessionID: firstSessionID, context: DictationTelemetryContext())
         XCTAssertEqual(firstSessionID, 1)
-        let currentAfterFirstStart = await session.currentSessionID
+        let currentAfterFirstStart = session.currentSessionID
         XCTAssertEqual(currentAfterFirstStart, 1)
 
-        await session.confirmCancel()
+        await session.confirmCancel(sessionID: firstSessionID)
 
-        let secondSessionID = try await session.startRecording(context: DictationTelemetryContext())
+        let secondSessionID = session.reserveNextSessionID()
+        try await session.startRecording(sessionID: secondSessionID, context: DictationTelemetryContext())
         XCTAssertEqual(secondSessionID, 2)
-        let currentAfterSecondStart = await session.currentSessionID
+        let currentAfterSecondStart = session.currentSessionID
         XCTAssertEqual(currentAfterSecondStart, 2)
     }
 
     func testConfirmCancelActsOnCurrentSession() async throws {
-        _ = try await session.startRecording(context: DictationTelemetryContext())
+        let sessionID = session.reserveNextSessionID()
+        try await session.startRecording(sessionID: sessionID, context: DictationTelemetryContext())
 
-        await session.confirmCancel()
+        await session.confirmCancel(sessionID: sessionID)
 
         let captureStopped = await mockAudio.stopCaptureCalled
         XCTAssertTrue(captureStopped)
@@ -48,5 +52,16 @@ final class DictationServiceSessionTests: XCTestCase {
         if case .idle = state {} else {
             XCTFail("Expected idle state after confirm cancel, got \(state)")
         }
+    }
+
+    func testConfirmCancelUsesCapturedSessionIDInsteadOfLatestReservedSession() async throws {
+        let firstSessionID = session.reserveNextSessionID()
+        try await session.startRecording(sessionID: firstSessionID, context: DictationTelemetryContext())
+
+        _ = session.reserveNextSessionID()
+        await session.confirmCancel(sessionID: firstSessionID)
+
+        let captureStopped = await mockAudio.stopCaptureCalled
+        XCTAssertTrue(captureStopped, "Confirm cancel should target the captured session, not the latest reserved one")
     }
 }

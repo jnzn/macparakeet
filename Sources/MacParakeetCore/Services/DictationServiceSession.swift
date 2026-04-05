@@ -1,8 +1,9 @@
 import Foundation
 
-/// Wraps DictationService with monotonic session ownership so callers do not
-/// need to thread session IDs through every lifecycle operation.
-public actor DictationServiceSession {
+/// Owns monotonic dictation session IDs and provides explicit, session-bound
+/// forwarding into DictationService for lifecycle operations.
+@MainActor
+public final class DictationServiceSession {
     private let service: DictationService
     private var activeSessionID: Int = 0
 
@@ -22,24 +23,32 @@ public actor DictationServiceSession {
         get async { await service.audioLevel }
     }
 
-    @discardableResult
-    public func startRecording(context: DictationTelemetryContext) async throws -> Int {
+    public func reserveNextSessionID() -> Int {
         activeSessionID += 1
-        let sessionID = activeSessionID
+        return activeSessionID
+    }
+
+    public func startRecording(
+        sessionID: Int,
+        context: DictationTelemetryContext
+    ) async throws {
+        try Task.checkCancellation()
         try await service.startRecording(context: context, sessionID: sessionID)
-        return sessionID
     }
 
-    public func stopRecording() async throws -> DictationResult {
-        try await service.stopRecording(sessionID: activeSessionID)
+    public func stopRecording(sessionID: Int) async throws -> DictationResult {
+        try await service.stopRecording(sessionID: sessionID)
     }
 
-    public func cancelRecording(reason: TelemetryDictationCancelReason?) async {
-        await service.cancelRecording(reason: reason, sessionID: activeSessionID)
+    public func cancelRecording(
+        reason: TelemetryDictationCancelReason?,
+        sessionID: Int
+    ) async {
+        await service.cancelRecording(reason: reason, sessionID: sessionID)
     }
 
-    public func confirmCancel() async {
-        await service.confirmCancel(sessionID: activeSessionID)
+    public func confirmCancel(sessionID: Int) async {
+        await service.confirmCancel(sessionID: sessionID)
     }
 
     public func undoCancel() async throws -> DictationResult {
