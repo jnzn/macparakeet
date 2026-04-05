@@ -12,6 +12,7 @@ private struct MeetingRecordingCheckmarkView: View {
 
 struct MeetingRecordingPillView: View {
     @Bindable var viewModel: MeetingRecordingPillViewModel
+    var onTap: (() -> Void)? = nil
     @State private var isHovered = false
 
     var body: some View {
@@ -22,6 +23,11 @@ struct MeetingRecordingPillView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .onHover { hovering in
             isHovered = hovering
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard case .recording = viewModel.state else { return }
+            onTap?()
         }
     }
 

@@ -24,6 +24,8 @@ final class MeetingRecordingFlowCoordinator {
     private var stateMachine = MeetingRecordingFlowStateMachine()
     private var pillController: MeetingRecordingPillController?
     private var pillViewModel: MeetingRecordingPillViewModel?
+    private var panelController: MeetingRecordingPanelController?
+    private var panelViewModel: MeetingRecordingPanelViewModel?
     private var actionTask: Task<Void, Never>?
     private var autoDismissTask: Task<Void, Never>?
     private var pillPollingTask: Task<Void, Never>?
@@ -113,11 +115,27 @@ final class MeetingRecordingFlowCoordinator {
             let vm = pillViewModel ?? MeetingRecordingPillViewModel()
             vm.onStop = { [weak self] in self?.toggleRecording() }
             vm.state = .recording
-            vm.resetPreview()
             pillViewModel = vm
+            let panelVM = panelViewModel ?? MeetingRecordingPanelViewModel()
+            panelVM.state = .recording
+            panelVM.elapsedSeconds = 0
+            panelVM.updatePreviewLines([])
+            panelVM.onStop = { [weak self] in self?.toggleRecording() }
+            panelVM.onClose = { [weak self] in self?.hideMeetingPanel() }
+            panelViewModel = panelVM
 
             if pillController == nil {
                 pillController = MeetingRecordingPillController(viewModel: vm)
+            }
+            pillController?.onClick = { [weak self] in
+                self?.showMeetingPanel()
+            }
+            if panelController == nil {
+                let controller = MeetingRecordingPanelController(viewModel: panelVM)
+                controller.onCloseRequested = { [weak self] in
+                    self?.hideMeetingPanel()
+                }
+                panelController = controller
             }
             pillController?.show()
             startPillPolling()
@@ -138,6 +156,8 @@ final class MeetingRecordingFlowCoordinator {
             stopPillPolling()
             stopTranscriptObservation()
             pillViewModel?.state = .transcribing
+            panelViewModel?.state = .transcribing
+            hideMeetingPanel()
 
         case .stopRecordingAndTranscribe:
             let gen = stateMachine.generation
@@ -156,11 +176,14 @@ final class MeetingRecordingFlowCoordinator {
             stopPillPolling()
             stopTranscriptObservation()
             pillViewModel?.state = .completed
+            panelViewModel?.state = .hidden
 
         case .showError(let message):
             stopPillPolling()
             stopTranscriptObservation()
             pillViewModel?.state = .error(message)
+            panelViewModel?.state = .error(message)
+            hideMeetingPanel()
 
         case .hidePill:
             stopPillPolling()
@@ -168,6 +191,9 @@ final class MeetingRecordingFlowCoordinator {
             pillController?.hide()
             pillController = nil
             pillViewModel = nil
+            panelController?.close()
+            panelController = nil
+            panelViewModel = nil
             completedTranscription = nil
             onFlowReturnedToIdle()
 
@@ -238,6 +264,7 @@ final class MeetingRecordingFlowCoordinator {
                 pillViewModel?.micLevel = micLevel
                 pillViewModel?.systemLevel = systemLevel
                 pillViewModel?.elapsedSeconds = elapsedSeconds
+                panelViewModel?.elapsedSeconds = elapsedSeconds
                 if captureMode == .stopped, pillViewModel?.state == .recording {
                     pillViewModel?.micLevel = 0
                     pillViewModel?.systemLevel = 0
@@ -260,7 +287,7 @@ final class MeetingRecordingFlowCoordinator {
             let stream = await meetingRecordingService.transcriptUpdates
             for await update in stream {
                 guard !Task.isCancelled else { break }
-                pillViewModel?.updatePreviewLines(makePreviewLines(from: update))
+                panelViewModel?.updatePreviewLines(makePreviewLines(from: update))
             }
         }
     }
@@ -301,5 +328,19 @@ final class MeetingRecordingFlowCoordinator {
         case .screenRecording:
             permissionService.openScreenRecordingSettings()
         }
+    }
+
+    private func showMeetingPanel() {
+        switch stateMachine.state {
+        case .starting, .recording:
+            break
+        case .idle, .checkingPermissions, .stopping, .transcribing, .finishing:
+            return
+        }
+        panelController?.show()
+    }
+
+    private func hideMeetingPanel() {
+        panelController?.hide()
     }
 }
