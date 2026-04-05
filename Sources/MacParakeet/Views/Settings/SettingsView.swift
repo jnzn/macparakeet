@@ -30,6 +30,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
                 headerCard
                 dictationCard
+                meetingRecordingCard
                 aiProviderCard
                 transcriptionCard
                 storageCard
@@ -220,6 +221,58 @@ struct SettingsView: View {
     }
 
     // MARK: - Transcription
+
+    private var meetingRecordingCard: some View {
+        settingsCard(
+            title: "Meeting Recording",
+            subtitle: "Dedicated controls for system-audio + mic capture.",
+            icon: "record.circle"
+        ) {
+            VStack(spacing: DesignSystem.Spacing.md) {
+                HStack(alignment: .center) {
+                    rowText(
+                        title: "Meeting hotkey",
+                        detail: "Global shortcut that immediately starts or stops meeting recording."
+                    )
+                    Spacer(minLength: DesignSystem.Spacing.md)
+                    HotkeyRecorderView(trigger: $viewModel.meetingHotkeyTrigger)
+                }
+
+                Divider()
+
+                HStack(alignment: .center) {
+                    rowText(
+                        title: "Default title prefix",
+                        detail: "New meetings start with this prefix before the recording date. You can rename each saved meeting afterward."
+                    )
+                    Spacer(minLength: DesignSystem.Spacing.md)
+                    TextField("Meeting", text: $viewModel.meetingTitlePrefix)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 220)
+                }
+
+                Divider()
+
+                HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
+                    Image(systemName: "folder.badge.plus")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(DesignSystem.Colors.accent)
+                        .frame(width: 20)
+
+                    Text("Saved meetings use the transcript auto-save destination configured below, so meeting recordings now export alongside your other completed transcripts.")
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(DesignSystem.Colors.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(DesignSystem.Spacing.sm)
+                .background(
+                    RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                        .fill(DesignSystem.Colors.surfaceElevated)
+                )
+            }
+        }
+    }
 
     private var transcriptionCard: some View {
         settingsCard(

@@ -61,6 +61,8 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.silenceDelay, 2.0, "silenceDelay should default to 2.0")
         XCTAssertTrue(viewModel.saveAudioRecordings, "saveAudioRecordings should default to true")
         XCTAssertTrue(viewModel.saveTranscriptionAudio, "saveTranscriptionAudio should default to true")
+        XCTAssertEqual(viewModel.meetingHotkeyTrigger, .chord(modifiers: ["command", "shift"], keyCode: 46))
+        XCTAssertEqual(viewModel.meetingTitlePrefix, "Meeting")
     }
 
     func testInitLoadsFromUserDefaults() {
@@ -72,6 +74,9 @@ final class SettingsViewModelTests: XCTestCase {
         testDefaults.set(3.0, forKey: "silenceDelay")
         testDefaults.set(false, forKey: "saveAudioRecordings")
         testDefaults.set(false, forKey: "saveTranscriptionAudio")
+        HotkeyTrigger.chord(modifiers: ["control", "option"], keyCode: 46)
+            .save(to: testDefaults, defaultsKey: HotkeyTrigger.meetingDefaultsKey)
+        testDefaults.set("Standup", forKey: AppPreferences.meetingTitlePrefixKey)
 
         let vm = SettingsViewModel(defaults: testDefaults)
 
@@ -82,6 +87,8 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(vm.silenceDelay, 3.0)
         XCTAssertFalse(vm.saveAudioRecordings)
         XCTAssertFalse(vm.saveTranscriptionAudio)
+        XCTAssertEqual(vm.meetingHotkeyTrigger, .chord(modifiers: ["control", "option"], keyCode: 46))
+        XCTAssertEqual(vm.meetingTitlePrefix, "Standup")
     }
 
     func testSilenceDelayDefaultsTo2WhenZero() {
@@ -176,6 +183,30 @@ final class SettingsViewModelTests: XCTestCase {
         viewModel.saveTranscriptionAudio = false
 
         XCTAssertFalse(testDefaults.bool(forKey: "saveTranscriptionAudio"))
+    }
+
+    func testMeetingHotkeyPersistsToDedicatedDefaultsKey() {
+        let trigger = HotkeyTrigger.chord(modifiers: ["control", "option"], keyCode: 46)
+        viewModel.meetingHotkeyTrigger = trigger
+
+        XCTAssertEqual(
+            HotkeyTrigger.current(defaults: testDefaults, defaultsKey: HotkeyTrigger.meetingDefaultsKey),
+            trigger
+        )
+    }
+
+    func testMeetingHotkeyPostsNotificationOnChange() {
+        let expectation = expectation(
+            forNotification: Notification.Name("macparakeet.meetingHotkeyTriggerDidChange"),
+            object: nil
+        )
+        viewModel.meetingHotkeyTrigger = .chord(modifiers: ["control", "option"], keyCode: 46)
+        wait(for: [expectation], timeout: 1.0)
+    }
+
+    func testMeetingTitlePrefixPersists() {
+        viewModel.meetingTitlePrefix = "Client Call"
+        XCTAssertEqual(testDefaults.string(forKey: AppPreferences.meetingTitlePrefixKey), "Client Call")
     }
 
     func testShowIdlePillDefaultsToTrue() {

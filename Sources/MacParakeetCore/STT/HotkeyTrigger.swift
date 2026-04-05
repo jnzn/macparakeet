@@ -241,7 +241,8 @@ public struct HotkeyTrigger: Sendable {
 
     // MARK: - Persistence
 
-    private static let defaultsKey = "hotkeyTrigger"
+    public static let defaultsKey = "hotkeyTrigger"
+    public static let meetingDefaultsKey = "meetingHotkeyTrigger"
 
     /// Legacy modifier names from the old TriggerKey enum.
     private static let legacyModifiers: [String: HotkeyTrigger] = [
@@ -251,7 +252,10 @@ public struct HotkeyTrigger: Sendable {
 
     /// Resolve the configured trigger from the provided defaults store.
     /// Tries JSON decode first, falls back to legacy string, defaults to `.fn`.
-    public static func current(defaults: UserDefaults = .standard) -> HotkeyTrigger {
+    public static func current(
+        defaults: UserDefaults = .standard,
+        defaultsKey: String = defaultsKey
+    ) -> HotkeyTrigger {
         guard let stored = defaults.object(forKey: defaultsKey) else {
             return .fn
         }
@@ -272,13 +276,16 @@ public struct HotkeyTrigger: Sendable {
 
     /// Convenience accessor using standard user defaults.
     public static var current: HotkeyTrigger {
-        current(defaults: .standard)
+        current(defaults: .standard, defaultsKey: defaultsKey)
     }
 
     /// Persist this trigger to the given defaults store as JSON.
-    public func save(to defaults: UserDefaults = .standard) {
+    public func save(
+        to defaults: UserDefaults = .standard,
+        defaultsKey: String = defaultsKey
+    ) {
         if let data = try? JSONEncoder().encode(self) {
-            defaults.set(data, forKey: Self.defaultsKey)
+            defaults.set(data, forKey: defaultsKey)
         }
     }
 }

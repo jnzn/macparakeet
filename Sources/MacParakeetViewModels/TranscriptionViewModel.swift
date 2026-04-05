@@ -334,8 +334,15 @@ public final class TranscriptionViewModel {
     }
 
     public func presentCompletedTranscription(_ transcription: Transcription) {
+        presentCompletedTranscription(transcription, autoSave: false)
+    }
+
+    public func presentCompletedTranscription(_ transcription: Transcription, autoSave: Bool) {
         currentTranscription = transcription
         loadTranscriptions()
+        if autoSave {
+            autoSaveIfEnabled(transcription)
+        }
         let text = transcription.cleanTranscript ?? transcription.rawTranscript ?? ""
         promptResultsViewModel?.autoGeneratePromptResults(transcript: text, transcriptionId: transcription.id)
     }
@@ -488,6 +495,23 @@ public final class TranscriptionViewModel {
             try transcriptionRepo?.updateSpeakers(id: transcription.id, speakers: speakers)
         } catch {
             logger.error("Failed to persist speaker rename error=\(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    public func renameCurrentTranscription(to newFileName: String) {
+        guard var transcription = currentTranscription else { return }
+        let trimmed = newFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != transcription.fileName else { return }
+
+        transcription.fileName = trimmed
+        currentTranscription = transcription
+        do {
+            try transcriptionRepo?.updateFileName(id: transcription.id, fileName: trimmed)
+            if let index = transcriptions.firstIndex(where: { $0.id == transcription.id }) {
+                transcriptions[index].fileName = trimmed
+            }
+        } catch {
+            logger.error("Failed to persist transcription rename error=\(error.localizedDescription, privacy: .public)")
         }
     }
 

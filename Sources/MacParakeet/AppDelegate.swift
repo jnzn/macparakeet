@@ -35,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private var appEnvironment: AppEnvironment?
     private var hotkeyManager: HotkeyManager?
+    private var meetingHotkeyManager: GlobalShortcutManager?
     private var dictationFlowCoordinator: DictationFlowCoordinator?
     private var meetingRecordingFlowCoordinator: MeetingRecordingFlowCoordinator?
 
@@ -58,6 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var onboardingObserver: Any?
     private var settingsObserver: Any?
     private var hotkeyTriggerObserver: Any?
+    private var meetingHotkeyTriggerObserver: Any?
     private var menuBarOnlyModeObserver: Any?
     private var showIdlePillObserver: Any?
     private var hotkeyMenuItem: NSMenuItem?
@@ -81,9 +83,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         setupMenuBar()
         setupEnvironment()
         setupHotkey()
+        setupMeetingHotkey()
         observeOpenOnboarding()
         observeOpenSettings()
         observeHotkeyTriggerChange()
+        observeMeetingHotkeyTriggerChange()
         observeMenuBarOnlyModeChange()
         observeShowIdlePillChange()
         applyActivationPolicyFromSettings()
@@ -97,9 +101,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // would send duplicate appQuit events and double the termination delay.
         dictationFlowCoordinator?.hideIdlePill()
         hotkeyManager?.stop()
+        meetingHotkeyManager?.stop()
         if let onboardingObserver { NotificationCenter.default.removeObserver(onboardingObserver) }
         if let settingsObserver { NotificationCenter.default.removeObserver(settingsObserver) }
         if let hotkeyTriggerObserver { NotificationCenter.default.removeObserver(hotkeyTriggerObserver) }
+        if let meetingHotkeyTriggerObserver { NotificationCenter.default.removeObserver(meetingHotkeyTriggerObserver) }
         if let menuBarOnlyModeObserver { NotificationCenter.default.removeObserver(menuBarOnlyModeObserver) }
         if let showIdlePillObserver { NotificationCenter.default.removeObserver(showIdlePillObserver) }
         // Block briefly for STT cleanup (ANE/CoreML resource release).
@@ -468,7 +474,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 onMenuBarIconUpdate: { [weak self] state in self?.updateMenuBarIcon(state: state) },
                 onTranscriptionReady: { [weak self] transcription in
                     guard let self else { return }
-                    self.transcriptionViewModel.presentCompletedTranscription(transcription)
+                    self.transcriptionViewModel.presentCompletedTranscription(transcription, autoSave: true)
                     self.libraryViewModel.loadTranscriptions()
                     self.meetingsViewModel.loadTranscriptions()
                     self.mainWindowState.navigateToTranscription(from: .meetings)
@@ -557,10 +563,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    private func setupMeetingHotkey() {
+        let manager = GlobalShortcutManager(trigger: settingsViewModel.meetingHotkeyTrigger)
+        manager.onTrigger = { [weak self] in
+            Task { @MainActor in
+                self?.toggleMeetingRecording(originatesFromWindow: false)
+            }
+        }
+
+        if manager.start() {
+            meetingHotkeyManager = manager
+            hasPresentedHotkeyUnavailableAlert = false
+        } else {
+            meetingHotkeyManager = nil
+            presentHotkeyUnavailableAlertIfNeeded()
+        }
+    }
+
     private func refreshHotkeyAfterPermissions() {
         hotkeyManager?.stop()
+        meetingHotkeyManager?.stop()
         hotkeyManager = nil
+        meetingHotkeyManager = nil
         setupHotkey()
+        setupMeetingHotkey()
     }
 
     private func observeOpenOnboarding() {
@@ -586,6 +612,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self?.hotkeyManager = nil
                 self?.setupHotkey()
                 self?.hotkeyMenuItem?.title = self?.hotkeyMenuTitle ?? ""
+            }
+        }
+    }
+
+    private func observeMeetingHotkeyTriggerChange() {
+        meetingHotkeyTriggerObserver = NotificationCenter.default.addObserver(
+            forName: .macParakeetMeetingHotkeyTriggerDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.meetingHotkeyManager?.stop()
+                self?.meetingHotkeyManager = nil
+                self?.setupMeetingHotkey()
             }
         }
     }
