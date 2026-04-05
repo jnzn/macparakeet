@@ -198,45 +198,14 @@ struct PromptLibraryView: View {
                         .foregroundStyle(prompt.isVisible ? DesignSystem.Colors.textPrimary : DesignSystem.Colors.textTertiary)
 
                     if isAutoRun {
-                        Button {
+                        AutoRunBadge(isAutoRun: true) {
                             withAnimation { viewModel.toggleAutoRun(prompt) }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "bolt.fill")
-                                    .font(.system(size: 10, weight: .bold))
-                                Text("Auto-Run")
-                                    .font(DesignSystem.Typography.micro.weight(.bold))
-                            }
-                            .foregroundStyle(DesignSystem.Colors.accentDark)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(DesignSystem.Colors.accentLight)
-                            .clipShape(Capsule())
                         }
-                        .buttonStyle(.plain)
-                        .help("Automatically runs this prompt when a transcription completes.")
                     } else if isHovered {
-                        Button {
+                        AutoRunBadge(isAutoRun: false) {
                             withAnimation { viewModel.toggleAutoRun(prompt) }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "bolt")
-                                    .font(.system(size: 10, weight: .bold))
-                                Text("Auto-Run")
-                                    .font(DesignSystem.Typography.micro.weight(.bold))
-                            }
-                            .foregroundStyle(DesignSystem.Colors.textSecondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(DesignSystem.Colors.surfaceElevated)
-                            .clipShape(Capsule())
-                            .overlay(
-                                Capsule().strokeBorder(DesignSystem.Colors.border, lineWidth: 1)
-                            )
                         }
-                        .buttonStyle(.plain)
                         .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                        .help("Automatically runs this prompt when a transcription completes.")
                     }
 
                     Spacer()
@@ -521,5 +490,72 @@ struct PromptLibraryView: View {
         }
         .frame(width: 540, height: 500)
         .background(DesignSystem.Colors.surface)
+    }
+}
+
+struct AutoRunBadge: View {
+    let isAutoRun: Bool
+    let action: () -> Void
+    
+    @State private var isHovered = false
+
+    var body: some View {
+        Button {
+            action()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: isAutoRun ? "bolt.fill" : "bolt")
+                    .font(.system(size: 10, weight: .bold))
+                Text("Auto-Run")
+                    .font(DesignSystem.Typography.micro.weight(.bold))
+            }
+            .foregroundStyle(isAutoRun ? DesignSystem.Colors.accentDark : DesignSystem.Colors.textSecondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(isAutoRun ? DesignSystem.Colors.accentLight : DesignSystem.Colors.surfaceElevated)
+            .clipShape(Capsule())
+            .overlay(
+                Capsule().strokeBorder(isAutoRun ? Color.clear : DesignSystem.Colors.border, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            // Use a tiny delay so it doesn't flash if you just mouse over quickly
+            if hovering {
+                withAnimation(.easeOut(duration: 0.15).delay(0.2)) {
+                    isHovered = true
+                }
+            } else {
+                withAnimation(.easeOut(duration: 0.1)) {
+                    isHovered = false
+                }
+            }
+        }
+        .overlay(alignment: .leading) {
+            if isHovered {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .foregroundStyle(DesignSystem.Colors.accent)
+                    Text("Runs automatically on new transcripts")
+                        .fixedSize()
+                }
+                .font(DesignSystem.Typography.caption.weight(.medium))
+                .foregroundStyle(DesignSystem.Colors.textPrimary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule()
+                        .fill(DesignSystem.Colors.surfaceElevated)
+                        .shadow(color: Color.black.opacity(0.15), radius: 4, x: 0, y: 2)
+                )
+                .overlay(
+                    Capsule().strokeBorder(DesignSystem.Colors.border, lineWidth: 0.5)
+                )
+                .offset(x: 80) // Place tooltip nicely to the right of the button
+                .zIndex(100)
+                .allowsHitTesting(false)
+                .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            }
+        }
     }
 }
