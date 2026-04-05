@@ -218,4 +218,53 @@ final class PromptResultsViewModelTests: XCTestCase {
         XCTAssertTrue(queuedIDs.isEmpty)
         XCTAssertTrue(viewModel.pendingGenerations.isEmpty)
     }
+
+    func testLoadPromptResultsClearsPendingGenerationsWhenSwitchingTranscriptions() {
+        let firstTranscriptionID = UUID()
+        let secondTranscriptionID = UUID()
+        llm.streamDelayNs = 1_000_000_000
+
+        viewModel.configure(
+            llmService: llm,
+            promptRepo: promptRepo,
+            promptResultRepo: promptResultRepo,
+            transcriptionRepo: transcriptionRepo
+        )
+
+        let transcript = String(repeating: "Long transcript ", count: 50)
+        _ = viewModel.generatePromptResult(transcript: transcript, transcriptionId: firstTranscriptionID)
+        _ = viewModel.generatePromptResult(transcript: transcript, transcriptionId: firstTranscriptionID)
+
+        XCTAssertEqual(viewModel.pendingGenerations.count, 2)
+        XCTAssertTrue(viewModel.hasPendingGenerations)
+
+        viewModel.loadPromptResults(transcriptionId: secondTranscriptionID)
+
+        XCTAssertTrue(viewModel.pendingGenerations.isEmpty)
+        XCTAssertFalse(viewModel.hasPendingGenerations)
+        XCTAssertEqual(viewModel.queuedGenerationCount, 0)
+        XCTAssertNil(viewModel.streamingPromptResultID)
+    }
+
+    func testAutoGeneratePromptResultsDoesNothingWhenNoAutoRunPromptsAreEnabled() {
+        for index in promptRepo.prompts.indices {
+            promptRepo.prompts[index].isAutoRun = false
+        }
+
+        viewModel.configure(
+            llmService: llm,
+            promptRepo: promptRepo,
+            promptResultRepo: promptResultRepo,
+            transcriptionRepo: transcriptionRepo
+        )
+
+        let queuedIDs = viewModel.autoGeneratePromptResults(
+            transcript: String(repeating: "Long transcript ", count: 50),
+            transcriptionId: UUID()
+        )
+
+        XCTAssertTrue(queuedIDs.isEmpty)
+        XCTAssertTrue(viewModel.pendingGenerations.isEmpty)
+        XCTAssertEqual(llm.summarizeCallCount, 0)
+    }
 }

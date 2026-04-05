@@ -544,6 +544,9 @@ final class MockPromptRepository: PromptRepositoryProtocol, @unchecked Sendable 
     func toggleVisibility(id: UUID) throws {
         guard let index = prompts.firstIndex(where: { $0.id == id }) else { return }
         prompts[index].isVisible.toggle()
+        if !prompts[index].isVisible {
+            prompts[index].isAutoRun = false
+        }
         prompts[index].updatedAt = Date()
     }
 

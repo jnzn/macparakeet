@@ -206,7 +206,7 @@ public final class PromptResultsViewModel {
 
     public func loadPromptResults(transcriptionId: UUID) {
         if currentTranscriptionID != transcriptionId {
-            cancelStreaming()
+            cancelAllGenerations()
         }
         currentTranscriptionID = transcriptionId
         do {
@@ -255,7 +255,11 @@ public final class PromptResultsViewModel {
             _ = try promptResultRepo.delete(id: promptResult.id)
             promptResults.removeAll { $0.id == promptResult.id }
             unreadPromptResultIDs.remove(promptResult.id)
-            try syncLegacySummary(for: promptResult.transcriptionId)
+            do {
+                try syncLegacySummary(for: promptResult.transcriptionId)
+            } catch {
+                logger.warning("Legacy summary sync failed after delete: \(error.localizedDescription, privacy: .public)")
+            }
             if let transcriptionID = currentTranscriptionID {
                 onPromptResultsChanged?(transcriptionID, !promptResults.isEmpty)
             }
@@ -429,8 +433,12 @@ public final class PromptResultsViewModel {
         } else {
             try promptResultRepo?.save(promptResult)
         }
-        try transcriptionRepo?.updateSummary(id: generation.transcriptionId, summary: promptResult.content)
-        onLegacySummaryChanged?(generation.transcriptionId, promptResult.content)
+        do {
+            try transcriptionRepo?.updateSummary(id: generation.transcriptionId, summary: promptResult.content)
+            onLegacySummaryChanged?(generation.transcriptionId, promptResult.content)
+        } catch {
+            logger.warning("Legacy summary sync failed, prompt result saved successfully: \(error.localizedDescription, privacy: .public)")
+        }
 
         pendingGenerations.remove(at: index)
         streamingTask = nil
