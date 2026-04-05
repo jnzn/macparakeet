@@ -170,7 +170,7 @@ struct HotkeyRecorderView: View {
 
                         // If all chord-eligible modifiers released, accept as bare modifier
                         if currentHeld.isEmpty {
-                            if let candidate = bareModifierTrigger(for: name) {
+                            if let candidate = bareModifierTrigger(for: name, keyCode: event.keyCode) {
                                 acceptTrigger(candidate, warning: nil)
                                 return event
                             }
@@ -193,15 +193,11 @@ struct HotkeyRecorderView: View {
         return modifiers
     }
 
-    /// Map a modifier name to its bare modifier trigger.
-    private func bareModifierTrigger(for name: String) -> HotkeyTrigger? {
-        switch name {
-        case "control": return .control
-        case "option": return .option
-        case "shift": return .shift
-        case "command": return .command
-        default: return nil
-        }
+    /// Map a modifier name + physical keyCode to a side-specific bare modifier trigger.
+    private func bareModifierTrigger(for name: String, keyCode: UInt16) -> HotkeyTrigger? {
+        let genericNames: Set<String> = ["control", "option", "shift", "command"]
+        guard genericNames.contains(name) else { return nil }
+        return HotkeyTrigger(kind: .modifier, modifierName: name, keyCode: nil, modifierKeyCode: keyCode)
     }
 
     private func stopRecording() {

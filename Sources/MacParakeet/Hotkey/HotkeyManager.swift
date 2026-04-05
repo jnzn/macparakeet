@@ -166,9 +166,11 @@ public final class HotkeyManager {
         let timestampMs = UInt64(event.timestamp / 1_000_000)
 
         if type == .flagsChanged {
+            let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
             handleOutputs(
                 modifierFlagsChangedOutputs(
                     flags: event.flags,
+                    keyCode: keyCode,
                     timestampMs: timestampMs
                 )
             )
@@ -187,10 +189,42 @@ public final class HotkeyManager {
 
     private func modifierFlagsChangedOutputs(
         flags: CGEventFlags,
+        keyCode: UInt16 = 0,
         timestampMs: UInt64
     ) -> [HotkeyGestureController.Output] {
         guard let mask = targetMask else { return [] }
 
+        if let targetKeyCode = trigger.modifierKeyCode {
+            // ── Side-specific detection (e.g. right-option only) ──
+            if keyCode == targetKeyCode {
+                // Toggle: each flagsChanged for our physical key means it went down or up
+                let isPressed = !targetModifierWasPressed
+                targetModifierWasPressed = isPressed
+
+                if isPressed {
+                    bareTap = true
+                    return gestureController.triggerPressed(timestampMs: timestampMs)
+                }
+
+                let outputs: [HotkeyGestureController.Output]
+                if bareTap {
+                    outputs = gestureController.triggerReleased(timestampMs: timestampMs)
+                } else {
+                    outputs = gestureController.nonBareTriggerReleased()
+                }
+                bareTap = true
+                return outputs
+            }
+
+            // Different physical key changed while our trigger is held — invalidate bare-tap
+            if targetModifierWasPressed {
+                bareTap = false
+                return gestureController.interrupted()
+            }
+            return []
+        }
+
+        // ── Generic detection (either side) ──
         let isPressed = flags.contains(mask)
         if isPressed != targetModifierWasPressed {
             targetModifierWasPressed = isPressed
@@ -249,9 +283,10 @@ public final class HotkeyManager {
     // without constructing CGEvents or arming timers.
     func modifierFlagsChangedOutputsForTesting(
         flags: CGEventFlags,
+        keyCode: UInt16 = 0,
         timestampMs: UInt64
     ) -> [HotkeyGestureController.Output] {
-        modifierFlagsChangedOutputs(flags: flags, timestampMs: timestampMs)
+        modifierFlagsChangedOutputs(flags: flags, keyCode: keyCode, timestampMs: timestampMs)
     }
 
     func modifierKeyDownOutputsForTesting(

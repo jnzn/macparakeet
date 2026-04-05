@@ -32,13 +32,20 @@ public struct HotkeyTrigger: Sendable {
     public let keyCode: UInt16?
     /// Modifier names for `.chord` kind (e.g. `["command"]`, `["command","shift"]`). Nil for other kinds.
     public let chordModifiers: [String]?
+    /// Physical keyCode for side-specific modifier triggers (e.g. 61 for right-option, 58 for left-option).
+    /// When nil, either side of the modifier triggers the hotkey (backwards-compatible default).
+    public let modifierKeyCode: UInt16?
 
     // MARK: - Computed Properties (derived at runtime)
 
-    /// Human-readable name for UI display (e.g., "Fn", "End", "F13", "Command+9").
+    /// Human-readable name for UI display (e.g., "Fn", "End", "F13", "Command+9", "Right Option").
     public var displayName: String {
         switch kind {
         case .modifier:
+            if let mkc = modifierKeyCode, let info = Self.modifierKeyCodeInfo[mkc],
+               let base = Self.modifierDisplayNames[info.modifier] {
+                return "\(info.side) \(base.displayName)"
+            }
             return Self.modifierDisplayNames[modifierName ?? ""]?.displayName ?? modifierName ?? "Unknown"
         case .keyCode:
             guard let code = keyCode else { return "Unknown" }
@@ -52,10 +59,14 @@ public struct HotkeyTrigger: Sendable {
         }
     }
 
-    /// Short symbol for compact display (e.g., "fn", "⌃", "End", "F13", "⌘9").
+    /// Short symbol for compact display (e.g., "fn", "⌃", "End", "F13", "⌘9", "R⌥").
     public var shortSymbol: String {
         switch kind {
         case .modifier:
+            if let mkc = modifierKeyCode, let info = Self.modifierKeyCodeInfo[mkc],
+               let base = Self.modifierDisplayNames[info.modifier] {
+                return "\(info.sideShort)\(base.shortSymbol)"
+            }
             return Self.modifierDisplayNames[modifierName ?? ""]?.shortSymbol ?? modifierName ?? "?"
         case .keyCode:
             guard let code = keyCode else { return "?" }
@@ -76,6 +87,18 @@ public struct HotkeyTrigger: Sendable {
         "option": ("Option", "⌥"),
         "shift": ("Shift", "⇧"),
         "command": ("Command", "⌘"),
+    ]
+
+    /// Physical keyCode → (side label, short prefix, generic modifier name) for side-specific display.
+    private static let modifierKeyCodeInfo: [UInt16: (side: String, sideShort: String, modifier: String)] = [
+        56: ("Left", "L", "shift"),
+        60: ("Right", "R", "shift"),
+        59: ("Left", "L", "control"),
+        62: ("Right", "R", "control"),
+        58: ("Left", "L", "option"),
+        61: ("Right", "R", "option"),
+        55: ("Left", "L", "command"),
+        54: ("Right", "R", "command"),
     ]
 
     /// Standard macOS modifier ordering: ⌃ ⌥ ⇧ ⌘
@@ -124,11 +147,12 @@ public struct HotkeyTrigger: Sendable {
 
     // MARK: - Init
 
-    public init(kind: Kind, modifierName: String?, keyCode: UInt16?, chordModifiers: [String]? = nil) {
+    public init(kind: Kind, modifierName: String?, keyCode: UInt16?, chordModifiers: [String]? = nil, modifierKeyCode: UInt16? = nil) {
         self.kind = kind
         self.modifierName = modifierName
         self.keyCode = keyCode
         self.chordModifiers = chordModifiers
+        self.modifierKeyCode = modifierKeyCode
     }
 
     // MARK: - Modifier Presets
@@ -289,6 +313,7 @@ extension HotkeyTrigger: Equatable {
     public static func == (lhs: HotkeyTrigger, rhs: HotkeyTrigger) -> Bool {
         lhs.kind == rhs.kind && lhs.modifierName == rhs.modifierName
             && lhs.keyCode == rhs.keyCode && lhs.chordModifiers == rhs.chordModifiers
+            && lhs.modifierKeyCode == rhs.modifierKeyCode
     }
 }
 
@@ -296,7 +321,7 @@ extension HotkeyTrigger: Equatable {
 
 extension HotkeyTrigger: Codable {
     private enum CodingKeys: String, CodingKey {
-        case kind, modifierName, keyCode, chordModifiers
+        case kind, modifierName, keyCode, chordModifiers, modifierKeyCode
     }
 
     public init(from decoder: Decoder) throws {
@@ -305,6 +330,7 @@ extension HotkeyTrigger: Codable {
         modifierName = try container.decodeIfPresent(String.self, forKey: .modifierName)
         keyCode = try container.decodeIfPresent(UInt16.self, forKey: .keyCode)
         chordModifiers = try container.decodeIfPresent([String].self, forKey: .chordModifiers)
+        modifierKeyCode = try container.decodeIfPresent(UInt16.self, forKey: .modifierKeyCode)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -313,5 +339,6 @@ extension HotkeyTrigger: Codable {
         try container.encodeIfPresent(modifierName, forKey: .modifierName)
         try container.encodeIfPresent(keyCode, forKey: .keyCode)
         try container.encodeIfPresent(chordModifiers, forKey: .chordModifiers)
+        try container.encodeIfPresent(modifierKeyCode, forKey: .modifierKeyCode)
     }
 }
