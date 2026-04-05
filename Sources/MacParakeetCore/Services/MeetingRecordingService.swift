@@ -415,6 +415,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         formatter.locale = .autoupdatingCurrent
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
-        return "Meeting \(formatter.string(from: date))"
+        let prefix = AppPreferences.meetingTitlePrefix()
+        return "\(prefix) \(formatter.string(from: date))"
     }
 }

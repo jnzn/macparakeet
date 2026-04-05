@@ -104,6 +104,7 @@ final class MockTranscriptionRepository: TranscriptionRepositoryProtocol, @unche
     var deleteAllCalled = false
     var deleteResult = true
     var deleteError: Error?
+    var updateFileNameCalls: [(id: UUID, fileName: String)] = []
     var updateSummaryCalls: [(id: UUID, summary: String?)] = []
     var updateChatMessagesCalls: [(id: UUID, chatMessages: [ChatMessage]?)] = []
     var updateSpeakersCalls: [(id: UUID, speakers: [SpeakerInfo]?)] = []
@@ -153,6 +154,14 @@ final class MockTranscriptionRepository: TranscriptionRepositoryProtocol, @unche
         if let idx = transcriptions.firstIndex(where: { $0.id == id }) {
             transcriptions[idx].status = status
             transcriptions[idx].errorMessage = errorMessage
+        }
+    }
+
+    func updateFileName(id: UUID, fileName: String) throws {
+        updateFileNameCalls.append((id: id, fileName: fileName))
+        if let idx = transcriptions.firstIndex(where: { $0.id == id }) {
+            transcriptions[idx].fileName = fileName
+            transcriptions[idx].updatedAt = Date()
         }
     }
 

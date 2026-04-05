@@ -701,6 +701,45 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.currentTranscription?.speakers?[0].label, "Alice")
     }
 
+    func testRenameCurrentTranscriptionUpdatesStateAndRepo() {
+        let t = Transcription(fileName: "Meeting Apr 5", status: .completed, sourceType: .meeting)
+        mockRepo.transcriptions = [t]
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+        viewModel.currentTranscription = t
+
+        viewModel.renameCurrentTranscription(to: "Design Review")
+
+        XCTAssertEqual(viewModel.currentTranscription?.fileName, "Design Review")
+        XCTAssertEqual(mockRepo.updateFileNameCalls.count, 1)
+        XCTAssertEqual(mockRepo.updateFileNameCalls[0].fileName, "Design Review")
+    }
+
+    func testRenameCurrentTranscriptionTrimsWhitespace() {
+        let t = Transcription(fileName: "Meeting Apr 5", status: .completed, sourceType: .meeting)
+        mockRepo.transcriptions = [t]
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+        viewModel.currentTranscription = t
+
+        viewModel.renameCurrentTranscription(to: "  Design Review  ")
+
+        XCTAssertEqual(viewModel.currentTranscription?.fileName, "Design Review")
+    }
+
+    func testRenameCurrentTranscriptionIgnoresEmptyName() {
+        let t = Transcription(fileName: "Meeting Apr 5", status: .completed, sourceType: .meeting)
+        mockRepo.transcriptions = [t]
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+        viewModel.currentTranscription = t
+
+        viewModel.renameCurrentTranscription(to: "   ")
+
+        XCTAssertEqual(viewModel.currentTranscription?.fileName, "Meeting Apr 5")
+        XCTAssertTrue(mockRepo.updateFileNameCalls.isEmpty)
+    }
+
     // MARK: - Tab Visibility
 
     func testShowTabsTrueWhenLLMAvailable() {

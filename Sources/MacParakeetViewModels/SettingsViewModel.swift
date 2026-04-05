@@ -56,6 +56,16 @@ public final class SettingsViewModel {
             Telemetry.send(.hotkeyCustomized)
         }
     }
+    public var meetingHotkeyTrigger: HotkeyTrigger {
+        didSet {
+            meetingHotkeyTrigger.save(to: defaults, defaultsKey: HotkeyTrigger.meetingDefaultsKey)
+            NotificationCenter.default.post(
+                name: Notification.Name("macparakeet.meetingHotkeyTriggerDidChange"),
+                object: nil
+            )
+            Telemetry.send(.settingChanged(setting: .meetingHotkey))
+        }
+    }
     public var silenceAutoStop: Bool {
         didSet { defaults.set(silenceAutoStop, forKey: "silenceAutoStop") }
     }
@@ -130,6 +140,12 @@ public final class SettingsViewModel {
         }
     }
     public var autoSaveFolderPath: String?
+    public var meetingTitlePrefix: String {
+        didSet {
+            defaults.set(meetingTitlePrefix, forKey: AppPreferences.meetingTitlePrefixKey)
+            Telemetry.send(.settingChanged(setting: .meetingTitlePrefix))
+        }
+    }
 
     // Permission status
     public var microphoneGranted = false
@@ -188,6 +204,7 @@ public final class SettingsViewModel {
         showIdlePill = defaults.object(forKey: "showIdlePill") as? Bool ?? true
         telemetryEnabled = AppPreferences.isTelemetryEnabled(defaults: defaults)
         hotkeyTrigger = HotkeyTrigger.current(defaults: defaults)
+        meetingHotkeyTrigger = Self.resolveMeetingHotkeyTrigger(defaults: defaults)
         silenceAutoStop = defaults.bool(forKey: "silenceAutoStop")
         let delay = defaults.double(forKey: "silenceDelay")
         silenceDelay = delay == 0 ? 2.0 : delay
@@ -201,6 +218,7 @@ public final class SettingsViewModel {
         autoSaveTranscripts = defaults.bool(forKey: AutoSaveService.enabledKey)
         autoSaveFormat = AutoSaveFormat(rawValue: defaults.string(forKey: AutoSaveService.formatKey) ?? "md") ?? .md
         autoSaveFolderPath = Self.resolveAutoSaveFolderPath(defaults: defaults)
+        meetingTitlePrefix = AppPreferences.meetingTitlePrefix(defaults: defaults)
     }
 
     /// Resolve the stored bookmark to a display path.
@@ -223,6 +241,14 @@ public final class SettingsViewModel {
     public func clearAutoSaveFolder() {
         AutoSaveService.clearFolder(defaults: defaults)
         autoSaveFolderPath = nil
+    }
+
+    private static func resolveMeetingHotkeyTrigger(defaults: UserDefaults) -> HotkeyTrigger {
+        if defaults.object(forKey: HotkeyTrigger.meetingDefaultsKey) != nil {
+            return HotkeyTrigger.current(defaults: defaults, defaultsKey: HotkeyTrigger.meetingDefaultsKey)
+        }
+
+        return .chord(modifiers: ["command", "shift"], keyCode: 46)
     }
 
     public func configure(
