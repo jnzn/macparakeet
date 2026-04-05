@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Block-level element parsed from a markdown string.
 private enum MarkdownBlock {
@@ -11,137 +12,282 @@ private enum MarkdownBlock {
     case thematicBreak
 }
 
-/// Renders markdown with full block-level support: headings, lists, code blocks, blockquotes.
+/// Renders markdown in a single NSTextView for full text selection and drag support.
 /// Inline formatting (bold, italic, code, links, strikethrough) is handled within each block
-/// via `AttributedString(markdown:)`.
-struct MarkdownContentView: View {
+/// via NSAttributedString markdown parsing.
+struct MarkdownContentView: NSViewRepresentable {
     let content: String
     let baseFont: Font
+    private let baseFontSize: CGFloat
 
     init(_ content: String, font: Font = DesignSystem.Typography.body) {
         self.content = content
         self.baseFont = font
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ForEach(Array(Self.parse(content).enumerated()), id: \.offset) { _, block in
-                blockView(block)
-            }
+        if font == DesignSystem.Typography.bodyLarge {
+            self.baseFontSize = 15
+        } else {
+            self.baseFontSize = 14
         }
-        .textSelection(.enabled)
     }
 
-    // MARK: - Block Rendering
+    func makeNSView(context: Context) -> SelfSizingTextView {
+        let wrapper = SelfSizingTextView()
+        let textView = wrapper.textView
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.drawsBackground = false
+        textView.isRichText = true
+        textView.usesAdaptiveColorMappingForDarkAppearance = true
+        textView.textContainerInset = .zero
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.widthTracksTextView = true
+        textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-    @ViewBuilder
-    private func blockView(_ block: MarkdownBlock) -> some View {
-        switch block {
-        case let .heading(level, text):
-            Text(inlineAttributedString(text))
-                .font(headingFont(level: level))
-                .foregroundStyle(DesignSystem.Colors.textPrimary)
-                .padding(.top, level <= 2 ? 4 : 2)
+        context.coordinator.wrapper = wrapper
+        updateContent(wrapper)
 
-        case let .paragraph(text):
-            Text(inlineAttributedString(text))
-                .font(baseFont)
-                .lineSpacing(4)
+        return wrapper
+    }
 
-        case let .unorderedList(items):
-            VStack(alignment: .leading, spacing: 5) {
-                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text("\u{2022}")
-                            .font(baseFont)
-                            .foregroundStyle(DesignSystem.Colors.textTertiary)
-                        Text(inlineAttributedString(item))
-                            .font(baseFont)
-                            .lineSpacing(3)
+    func updateNSView(_ wrapper: SelfSizingTextView, context: Context) {
+        if content != context.coordinator.lastContent {
+            context.coordinator.lastContent = content
+            updateContent(wrapper)
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    final class Coordinator {
+        var lastContent: String?
+        weak var wrapper: SelfSizingTextView?
+    }
+
+    private func updateContent(_ wrapper: SelfSizingTextView) {
+        let blocks = Self.parse(content)
+        let attributed = buildAttributedString(blocks: blocks)
+        wrapper.textView.textStorage?.setAttributedString(attributed)
+        wrapper.invalidateIntrinsicContentSize()
+    }
+
+    // MARK: - Attributed String Building
+
+    private func buildAttributedString(blocks: [MarkdownBlock]) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+
+        // Use dynamic NSColors that auto-adapt to light/dark mode.
+        // NSApp.effectiveAppearance is unreliable when the view isn't in the hierarchy yet.
+        let textColor = NSColor(name: nil) { appearance in
+            let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            return dark ? .white : NSColor(red: 0.10, green: 0.10, blue: 0.10, alpha: 1)
+        }
+        let secondaryColor = NSColor(name: nil) { appearance in
+            let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            return dark ? NSColor(red: 0.63, green: 0.63, blue: 0.65, alpha: 1)
+                        : NSColor(red: 0.42, green: 0.42, blue: 0.42, alpha: 1)
+        }
+        let tertiaryColor = NSColor(name: nil) { appearance in
+            let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            return dark ? NSColor(red: 0.39, green: 0.39, blue: 0.40, alpha: 1)
+                        : NSColor(red: 0.61, green: 0.61, blue: 0.61, alpha: 1)
+        }
+        let accentColor = NSColor(name: nil) { appearance in
+            let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            return dark ? NSColor(red: 1.0, green: 0.54, blue: 0.36, alpha: 1)
+                        : NSColor(red: 0.91, green: 0.42, blue: 0.23, alpha: 1)
+        }
+
+        let bodyFont = NSFont.systemFont(ofSize: baseFontSize)
+        let bodyParagraphStyle = NSMutableParagraphStyle()
+        bodyParagraphStyle.lineSpacing = 4
+        bodyParagraphStyle.paragraphSpacing = 10
+
+        for (index, block) in blocks.enumerated() {
+            switch block {
+            case let .heading(level, text):
+                let font: NSFont
+                switch level {
+                case 1: font = NSFont.systemFont(ofSize: 22, weight: .semibold)
+                case 2: font = NSFont.systemFont(ofSize: 17, weight: .semibold)
+                case 3: font = NSFont.systemFont(ofSize: 15, weight: .semibold)
+                default: font = NSFont.systemFont(ofSize: 14, weight: .semibold)
+                }
+                let style = NSMutableParagraphStyle()
+                style.paragraphSpacing = 6
+                if index > 0 { style.paragraphSpacingBefore = level <= 2 ? 12 : 8 }
+
+                let headingStr = inlineAttributedString(text, baseFont: font, color: textColor)
+                headingStr.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: headingStr.length))
+                result.append(headingStr)
+                result.append(NSAttributedString(string: "\n"))
+
+            case let .paragraph(text):
+                let paraStr = inlineAttributedString(text, baseFont: bodyFont, color: textColor)
+                paraStr.addAttribute(.paragraphStyle, value: bodyParagraphStyle, range: NSRange(location: 0, length: paraStr.length))
+                result.append(paraStr)
+                result.append(NSAttributedString(string: "\n"))
+
+            case let .unorderedList(items):
+                let listStyle = NSMutableParagraphStyle()
+                listStyle.lineSpacing = 3
+                listStyle.paragraphSpacing = 5
+                listStyle.headIndent = 20
+                listStyle.firstLineHeadIndent = 4
+                listStyle.tabStops = [NSTextTab(textAlignment: .natural, location: 20)]
+
+                for (i, item) in items.enumerated() {
+                    let bullet = NSMutableAttributedString(string: "\u{2022}\t", attributes: [
+                        .font: bodyFont,
+                        .foregroundColor: tertiaryColor,
+                        .paragraphStyle: listStyle
+                    ])
+                    let itemStr = inlineAttributedString(item, baseFont: bodyFont, color: textColor)
+                    itemStr.addAttribute(.paragraphStyle, value: listStyle, range: NSRange(location: 0, length: itemStr.length))
+                    bullet.append(itemStr)
+                    result.append(bullet)
+                    if i < items.count - 1 || index < blocks.count - 1 {
+                        result.append(NSAttributedString(string: "\n"))
                     }
                 }
-            }
-            .padding(.leading, 4)
+                if index < blocks.count - 1 {
+                    let spacer = NSMutableAttributedString(string: "\n")
+                    let spacerStyle = NSMutableParagraphStyle()
+                    spacerStyle.paragraphSpacing = 4
+                    spacer.addAttribute(.paragraphStyle, value: spacerStyle, range: NSRange(location: 0, length: 1))
+                    result.append(spacer)
+                }
 
-        case let .orderedList(items):
-            VStack(alignment: .leading, spacing: 5) {
-                ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("\(index + 1).")
-                            .font(baseFont)
-                            .foregroundStyle(DesignSystem.Colors.textTertiary)
-                            .frame(minWidth: 20, alignment: .trailing)
-                        Text(inlineAttributedString(item))
-                            .font(baseFont)
-                            .lineSpacing(3)
+            case let .orderedList(items):
+                let listStyle = NSMutableParagraphStyle()
+                listStyle.lineSpacing = 3
+                listStyle.paragraphSpacing = 5
+                listStyle.headIndent = 28
+                listStyle.firstLineHeadIndent = 4
+                listStyle.tabStops = [NSTextTab(textAlignment: .natural, location: 28)]
+
+                for (i, item) in items.enumerated() {
+                    let marker = NSMutableAttributedString(string: "\(i + 1).\t", attributes: [
+                        .font: bodyFont,
+                        .foregroundColor: tertiaryColor,
+                        .paragraphStyle: listStyle
+                    ])
+                    let itemStr = inlineAttributedString(item, baseFont: bodyFont, color: textColor)
+                    itemStr.addAttribute(.paragraphStyle, value: listStyle, range: NSRange(location: 0, length: itemStr.length))
+                    marker.append(itemStr)
+                    result.append(marker)
+                    if i < items.count - 1 || index < blocks.count - 1 {
+                        result.append(NSAttributedString(string: "\n"))
                     }
                 }
+                if index < blocks.count - 1 {
+                    let spacer = NSMutableAttributedString(string: "\n")
+                    let spacerStyle = NSMutableParagraphStyle()
+                    spacerStyle.paragraphSpacing = 4
+                    spacer.addAttribute(.paragraphStyle, value: spacerStyle, range: NSRange(location: 0, length: 1))
+                    result.append(spacer)
+                }
+
+            case let .codeBlock(_, code):
+                let codeFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+                let codeStyle = NSMutableParagraphStyle()
+                codeStyle.lineSpacing = 2
+                codeStyle.paragraphSpacing = 10
+
+                let codeStr = NSMutableAttributedString(string: code, attributes: [
+                    .font: codeFont,
+                    .foregroundColor: textColor,
+                    .paragraphStyle: codeStyle,
+                    .backgroundColor: NSColor(name: nil) { appearance in
+                        let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                        return dark ? NSColor(red: 0.23, green: 0.23, blue: 0.24, alpha: 0.7)
+                                    : NSColor(red: 0.96, green: 0.96, blue: 0.94, alpha: 0.7)
+                    }
+                ])
+                result.append(codeStr)
+                result.append(NSAttributedString(string: "\n"))
+
+            case let .blockquote(text):
+                let quoteStyle = NSMutableParagraphStyle()
+                quoteStyle.lineSpacing = 3
+                quoteStyle.paragraphSpacing = 10
+                quoteStyle.headIndent = 16
+                quoteStyle.firstLineHeadIndent = 16
+
+                let bar = NSMutableAttributedString(string: "\u{2503} ", attributes: [
+                    .font: bodyFont,
+                    .foregroundColor: accentColor.withAlphaComponent(0.4),
+                    .paragraphStyle: quoteStyle
+                ])
+                let quoteStr = inlineAttributedString(text, baseFont: bodyFont, color: secondaryColor)
+                quoteStr.addAttribute(.paragraphStyle, value: quoteStyle, range: NSRange(location: 0, length: quoteStr.length))
+                bar.append(quoteStr)
+                result.append(bar)
+                result.append(NSAttributedString(string: "\n"))
+
+            case .thematicBreak:
+                let hrStyle = NSMutableParagraphStyle()
+                hrStyle.paragraphSpacing = 10
+                hrStyle.paragraphSpacingBefore = 10
+                let hr = NSMutableAttributedString(string: "\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\n", attributes: [
+                    .font: NSFont.systemFont(ofSize: 8),
+                    .foregroundColor: tertiaryColor.withAlphaComponent(0.4),
+                    .paragraphStyle: hrStyle
+                ])
+                result.append(hr)
             }
-            .padding(.leading, 4)
-
-        case let .codeBlock(_, code):
-            ScrollView(.horizontal, showsIndicators: false) {
-                Text(code)
-                    .font(.system(size: 13, design: .monospaced))
-                    .foregroundStyle(DesignSystem.Colors.textPrimary)
-                    .lineSpacing(2)
-                    .fixedSize(horizontal: true, vertical: false)
-            }
-            .padding(DesignSystem.Spacing.sm + 4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(DesignSystem.Colors.surfaceElevated.opacity(0.7))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(DesignSystem.Colors.border.opacity(0.4), lineWidth: 0.5)
-            )
-
-        case let .blockquote(text):
-            HStack(alignment: .top, spacing: 0) {
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(DesignSystem.Colors.accent.opacity(0.4))
-                    .frame(width: 3)
-
-                Text(inlineAttributedString(text))
-                    .font(baseFont)
-                    .foregroundStyle(DesignSystem.Colors.textSecondary)
-                    .lineSpacing(3)
-                    .padding(.leading, 12)
-            }
-
-        case .thematicBreak:
-            Divider().padding(.vertical, 2)
         }
+
+        // Trim trailing newline
+        if result.length > 0, result.string.hasSuffix("\n") {
+            result.deleteCharacters(in: NSRange(location: result.length - 1, length: 1))
+        }
+
+        return result
     }
 
-    private func headingFont(level: Int) -> Font {
-        switch level {
-        case 1: return DesignSystem.Typography.pageTitle
-        case 2: return DesignSystem.Typography.sectionTitle
-        case 3: return .system(size: 15, weight: .semibold)
-        default: return .system(size: 14, weight: .semibold)
-        }
-    }
-
-    // MARK: - Inline Markdown
-
-    private func inlineAttributedString(_ source: String) -> AttributedString {
-        guard let attributed = try? AttributedString(
+    private func inlineAttributedString(_ source: String, baseFont: NSFont, color: NSColor) -> NSMutableAttributedString {
+        if let swiftAttr = try? AttributedString(
             markdown: source,
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        ) else {
-            return AttributedString(source)
+        ) {
+            let nsAttr = NSMutableAttributedString(swiftAttr)
+            let fullRange = NSRange(location: 0, length: nsAttr.length)
+            nsAttr.enumerateAttributes(in: fullRange) { attrs, range, _ in
+                nsAttr.addAttribute(.foregroundColor, value: color, range: range)
+
+                if let existingFont = attrs[.font] as? NSFont {
+                    let traits = existingFont.fontDescriptor.symbolicTraits
+                    var newFont = baseFont
+                    if traits.contains(.bold) && traits.contains(.italic) {
+                        newFont = NSFontManager.shared.convert(baseFont, toHaveTrait: [.boldFontMask, .italicFontMask])
+                    } else if traits.contains(.bold) {
+                        newFont = NSFont.systemFont(ofSize: baseFont.pointSize, weight: .semibold)
+                    } else if traits.contains(.italic) {
+                        newFont = NSFontManager.shared.convert(baseFont, toHaveTrait: .italicFontMask)
+                    }
+                    if existingFont.fontDescriptor.symbolicTraits.contains(.monoSpace) {
+                        newFont = NSFont.monospacedSystemFont(ofSize: baseFont.pointSize - 1, weight: .regular)
+                    }
+                    nsAttr.addAttribute(.font, value: newFont, range: range)
+                } else {
+                    nsAttr.addAttribute(.font, value: baseFont, range: range)
+                }
+            }
+            return nsAttr
         }
-        return attributed
+
+        return NSMutableAttributedString(string: source, attributes: [
+            .font: baseFont,
+            .foregroundColor: color
+        ])
     }
 
     // MARK: - Block Parser
 
-    /// Parses a markdown string into block-level elements. Handles headings, lists,
-    /// code blocks, blockquotes, thematic breaks, and paragraphs. Designed for
-    /// structured LLM output — handles all common patterns without external dependencies.
     private static func parse(_ content: String) -> [MarkdownBlock] {
         var blocks: [MarkdownBlock] = []
         let lines = content.replacingOccurrences(of: "\r\n", with: "\n")
@@ -152,13 +298,11 @@ struct MarkdownContentView: View {
             let line = lines[index]
             let trimmed = line.trimmingCharacters(in: .whitespaces)
 
-            // Blank line — skip
             if trimmed.isEmpty {
                 index += 1
                 continue
             }
 
-            // Fenced code block
             if trimmed.hasPrefix("```") {
                 let lang = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
                 var codeLines: [String] = []
@@ -178,21 +322,18 @@ struct MarkdownContentView: View {
                 continue
             }
 
-            // Thematic break (---, ***, ___) — check before lists to avoid false positives
             if isThematicBreak(trimmed) {
                 blocks.append(.thematicBreak)
                 index += 1
                 continue
             }
 
-            // Heading
             if let heading = parseHeading(trimmed) {
                 blocks.append(heading)
                 index += 1
                 continue
             }
 
-            // Unordered list
             if isUnorderedListItem(trimmed) {
                 var items: [String] = []
                 while index < lines.count {
@@ -203,7 +344,6 @@ struct MarkdownContentView: View {
                     } else if l.isEmpty {
                         break
                     } else {
-                        // Continuation line — append to current item
                         if !items.isEmpty {
                             items[items.count - 1] += " " + l
                         }
@@ -214,7 +354,6 @@ struct MarkdownContentView: View {
                 continue
             }
 
-            // Ordered list
             if isOrderedListItem(trimmed) {
                 var items: [String] = []
                 while index < lines.count {
@@ -235,7 +374,6 @@ struct MarkdownContentView: View {
                 continue
             }
 
-            // Blockquote
             if trimmed.hasPrefix(">") {
                 var quoteLines: [String] = []
                 while index < lines.count {
@@ -249,7 +387,6 @@ struct MarkdownContentView: View {
                 continue
             }
 
-            // Paragraph — collect lines until next block element or blank line
             var paraLines: [String] = []
             while index < lines.count {
                 let t = lines[index].trimmingCharacters(in: .whitespaces)
@@ -268,8 +405,6 @@ struct MarkdownContentView: View {
 
         return blocks
     }
-
-    // MARK: - Parser Helpers
 
     private static func parseHeading(_ line: String) -> MarkdownBlock? {
         var level = 0
@@ -310,5 +445,50 @@ struct MarkdownContentView: View {
         guard let dotIndex = line.firstIndex(of: "."),
               line.index(after: dotIndex) < line.endIndex else { return line }
         return String(line[line.index(dotIndex, offsetBy: 2)...])
+    }
+}
+
+// MARK: - Self-Sizing NSTextView Container
+
+/// An NSView that wraps an NSTextView and reports its intrinsic content size
+/// based on the text layout, so SwiftUI can size it correctly.
+final class SelfSizingTextView: NSView {
+    let textView: NSTextView = {
+        let tv = NSTextView()
+        tv.autoresizingMask = [.width]
+        tv.translatesAutoresizingMaskIntoConstraints = false
+        return tv
+    }()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        addSubview(textView)
+        NSLayoutConstraint.activate([
+            textView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            textView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            textView.topAnchor.constraint(equalTo: topAnchor),
+            textView.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var intrinsicContentSize: NSSize {
+        guard let layoutManager = textView.layoutManager,
+              let textContainer = textView.textContainer else {
+            return super.intrinsicContentSize
+        }
+        layoutManager.ensureLayout(for: textContainer)
+        let usedRect = layoutManager.usedRect(for: textContainer)
+        return NSSize(width: NSView.noIntrinsicMetric, height: usedRect.height)
+    }
+
+    override func layout() {
+        super.layout()
+        // When our width changes, the text reflows — recalculate height
+        textView.textContainer?.containerSize = NSSize(width: bounds.width, height: .greatestFiniteMagnitude)
+        invalidateIntrinsicContentSize()
     }
 }
