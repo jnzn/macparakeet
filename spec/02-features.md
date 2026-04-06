@@ -55,33 +55,14 @@ See [00-vision.md](./00-vision.md) for positioning and market context.
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  v0.5 - "Data & Reliability"                                     │
-│  "Foundations — data model maturity and open-source release"    │
+│  v0.5 - "Data, UI & Prompts"                                     │
+│  "Data maturity, video player, prompt library, open source"    │
 ├─────────────────────────────────────────────────────────────────┤
 │  • Private dictation, multi-conversation chat, favorites        │
 │  • YouTube metadata, FTS5 cleanup, GPL-3.0 open source          │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  v0.6 - "Video Player & UI Revamp"                               │
-│  "Embedded playback, library grid, polished detail view"        │
-├─────────────────────────────────────────────────────────────────┤
-│  • YouTube HLS streaming + local video/audio playback            │
-│  • Split-pane detail view with synced transcript highlighting    │
-│  • Transcription library with thumbnail grid, filters, search   │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  v0.7 - "Processing Layer"                                       │
-│  "Prompt library, multi-summary, custom instructions"            │
-├─────────────────────────────────────────────────────────────────┤
-│  • Prompt Library (community + custom, CRUD, visibility)         │
-│  • Multiple summaries per transcript (tab-based navigation)      │
-│  • Extra instructions field layered on selected prompt           │
-│  • Queued summary generation (single-worker pipeline)            │
-│  • Prompt management sheet                                       │
+│  • Video player (HLS streaming, local playback), split-pane     │
+│  • Library grid with thumbnails, filters, search                 │
+│  • Prompt Library (community + custom), multi-summary tabs       │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼

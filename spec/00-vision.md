@@ -28,12 +28,13 @@
 +-----------------------------------------------------------------------+
 ```
 
-Two modes. That is the entire product:
+Three modes. That is the entire product:
 
 1. **Dictate anywhere** -- Press Fn (or your configured hotkey), speak, release. Text appears where your cursor is.
 2. **Drop a file** -- Drag audio/video in. Get a transcript out.
+3. **Record a meeting** -- Capture system audio + mic, get a transcript when you stop.
 
-Everything else exists to make those two modes faster, smarter, and more useful.
+Everything else exists to make those three modes faster, smarter, and more useful.
 
 ---
 
@@ -46,13 +47,13 @@ Everything else exists to make those two modes faster, smarter, and more useful.
 | **Cloud services** (WisprFlow, Otter) | Fast | Your audio on their servers | $12+/mo forever | Simple |
 | **Local apps** (MacWhisper, Superwhisper) | Good | Private | $30-$250 | Complex or expensive |
 | **Apple Dictation** | Slow | Mostly local | Free | Very limited |
-| **MacParakeet** | **Fastest** | **Can be fully local** | **Free (GPL-3.0)** | **Two modes** |
+| **MacParakeet** | **Fastest** | **Can be fully local** | **Free (GPL-3.0)** | **Three modes** |
 
 No existing app nails all four: **Speed + Privacy + Simplicity + Fair Pricing**.
 
 Cloud services send your voice to remote servers, create accounts, charge monthly, and add server latency. Local apps either bury you in settings (MacWhisper has 50+ features) or charge a premium (Superwhisper at $250). Apple Dictation is free but slow, inaccurate, and has no custom vocabulary, no file transcription.
 
-**MacParakeet's answer:** Built from the ground up around Parakeet TDT -- the fastest, most accurate open-source STT model available. Fully local speech by default, with optional networked features. Two modes. Free. Done.
+**MacParakeet's answer:** Built from the ground up around Parakeet TDT -- the fastest, most accurate open-source STT model available. Fully local speech by default, with optional networked features. Three modes. Free. Done.
 
 ---
 
@@ -77,12 +78,13 @@ This is not privacy theater ("your data is encrypted in transit"). This is priva
 
 ### 3. Simplicity Over Features
 
-MacWhisper has 50+ features. MacParakeet has two modes.
+MacWhisper has 50+ features. MacParakeet has three modes.
 
 - **Dictate** -- Press Fn, speak, text appears at cursor. Works in any app.
 - **Transcribe** -- Drop a file, get text out. Audio, video, YouTube links.
+- **Record** -- Capture a meeting (system audio + mic), get a transcript.
 
-Every feature we add must pass the test: "Does this make dictation or transcription better?" If not, it does not ship.
+Every feature we add must pass the test: "Does this make dictation, transcription, or meeting recording better?" If not, it does not ship.
 
 ### 4. Modern, Not Minimalist
 
@@ -105,7 +107,7 @@ Every feature is available to everyone, forever. The code is public. Contributio
 | Attribute | Description |
 |-----------|-------------|
 | **Product type** | Native macOS app (menu bar + window) |
-| **Core function** | Voice dictation and file transcription |
+| **Core function** | Voice dictation, file transcription, and meeting recording |
 | **Target users** | Developers, professionals, writers who want fast private voice input |
 | **Key differentiators** | Parakeet speed + fully local speech option + free/open-source |
 | **Business model** | Free and open-source (GPL-3.0) |
@@ -115,7 +117,7 @@ Every feature is available to everyone, forever. The code is public. Contributio
 
 ## What MacParakeet Is Not
 
-- **Not a meeting app** -- That is Oatmeal. MacParakeet does not do calendar integration, entity extraction, meeting memory, or action items.
+- **Not a meeting intelligence app** -- MacParakeet records and transcribes meetings, but does not do calendar integration, entity extraction, meeting memory, or action items. That intelligence layer is Oatmeal.
 - **Not a note-taking app** -- It puts text where your cursor is. Your note app is your note app.
 - **Not a cloud service** -- No hosted transcription backend, no accounts, no sync product. Core speech stays local.
 - **Not an enterprise product** -- Single-user, single-Mac. No admin console, no team management (initially).
@@ -180,9 +182,30 @@ Every feature is available to everyone, forever. The code is public. Contributio
 - Multiple export formats: plain text, SRT subtitles, VTT, Markdown.
 - Transcription history with search.
 
-### ~~Mode 3: Command Mode (Pro)~~ — REMOVED
+### Mode 3: Record a Meeting
 
-> **REMOVED** (2026-02-23) — Command Mode and local LLM support removed. MacParakeet is focused on its two core strengths: fast local dictation and file transcription.
+```
++-----------------------------------------------------------------------+
+|  Capture system audio + mic. Transcribe locally.                      |
+|                                                                       |
+|  1. Click "Record Meeting" (or press meeting hotkey)                  |
+|  2. Grant Screen Recording permission (first time only)               |
+|  3. Meeting pill appears — recording system audio + mic               |
+|  4. Click Stop when done                                              |
+|  5. Parakeet transcribes the mixed audio (~23s per hour)              |
+|  6. Result saved to library with full export/prompt support            |
+|                                                                       |
+|  Runs concurrently with dictation (ADR-015).                          |
+|  Dictate a Slack message while your meeting is being recorded.        |
++-----------------------------------------------------------------------+
+```
+
+- Dual-stream capture: system audio (Core Audio Taps) + mic (AVAudioEngine)
+- Floating recording pill with elapsed timer and stop button
+- Results stored as `Transcription` with `sourceType = .meeting` — gets export, prompts, summaries, chat for free
+- Requires Screen Recording permission (macOS 14.2+)
+
+> **Historical note:** This slot was originally "Command Mode (Pro)" which was removed in 2026-02. Meeting recording replaced it as Mode 3 in v0.6.
 
 ---
 
@@ -246,6 +269,7 @@ Writers who think better out loud. Podcasters who need episode transcripts. Cont
 | **Privacy** | Local-first speech | Cloud | Local | Local | Mostly local |
 | **Dictation** | Yes | Yes | No | Yes | Yes |
 | **File transcription** | Yes | No | Yes | Limited | No |
+| **Meeting recording** | Yes | No | No | No | No |
 | **Smart cleanup** | Deterministic | Cloud AI | No | Cloud AI | No |
 | **Custom words** | Yes | Yes | Limited | No | No |
 | **Price** | Free (GPL-3.0) | $144-180/yr | $30 once | $250 once | Free |
@@ -288,7 +312,7 @@ In a market of subscriptions ($144-180/yr for WisprFlow) and premium pricing ($2
 
 ### 4. Focused Simplicity
 
-Two modes. Not twenty. Not fifty.
+Three modes. Not twenty. Not fifty.
 
 The product surface area is intentionally small. This means fewer bugs, faster iteration, easier onboarding, and a UI that does not require a tutorial. If a user cannot figure out MacParakeet in 30 seconds, we have failed.
 
@@ -319,10 +343,10 @@ MacParakeet and Oatmeal are **separate products** that share underlying technolo
 |                       |                                               |
 |  - Dictate anywhere   |  - Calendar integration                       |
 |  - Transcribe files   |  - Entity extraction                          |
-|  - Custom words       |  - Cross-meeting memory                       |
-|  - YouTube import     |  - Action items                               |
-|  - Export formats     |  - Knowledge graph                            |
-|                       |  - Pre-meeting briefs                         |
+|  - Record meetings    |  - Cross-meeting memory                       |
+|  - Custom words       |  - Action items                               |
+|  - YouTube import     |  - Knowledge graph                            |
+|  - Export formats     |  - Pre-meeting briefs                         |
 |  Simple, focused      |  Complex, powerful                            |
 |  Free (GPL-3.0)       |  TBD                                          |
 +-----------------------+-----------------------------------------------+
@@ -332,9 +356,9 @@ MacParakeet and Oatmeal are **separate products** that share underlying technolo
 
 | Dimension | MacParakeet | Oatmeal |
 |-----------|-------------|---------|
-| **Purpose** | Voice input and transcription | Meeting memory and knowledge |
-| **Scope** | Text in, text out | Meetings, entities, relationships, patterns |
-| **Complexity** | Two modes | Full knowledge system |
+| **Purpose** | Voice input, transcription, meeting recording | Meeting memory and knowledge |
+| **Scope** | Text in, text out, meetings transcribed | Meetings, entities, relationships, patterns |
+| **Complexity** | Three modes | Full knowledge system |
 | **User relationship** | Tool (use and forget) | System (compounds over time) |
 | **Codebase** | Independent | Independent |
 | **Revenue** | Free (GPL-3.0) | TBD |
@@ -342,7 +366,7 @@ MacParakeet and Oatmeal are **separate products** that share underlying technolo
 ### Strategic Relationship
 
 - **Standalone value**: MacParakeet is a complete product on its own. It does not require or reference Oatmeal.
-- **Funnel potential**: MacParakeet users who want meeting-specific features (calendar sync, entity extraction, memory) are natural Oatmeal prospects.
+- **Funnel potential**: MacParakeet records and transcribes meetings. Users who want intelligence on top (calendar sync, entity extraction, cross-meeting memory) are natural Oatmeal prospects.
 - **Adoption timing**: MacParakeet builds community and mindshare while Oatmeal matures. Simpler product = faster to market.
 - **Technology proving ground**: Parakeet integration and clean pipeline are battle-tested in MacParakeet before being used in Oatmeal.
 
@@ -452,6 +476,7 @@ The parakeet bird is known for mimicking speech -- a fitting metaphor for a voic
 |---------|--------------|----------------|
 | **Parakeet Speed** | 60 min audio in ~23 seconds | Transcription so fast it feels instant |
 | **System-wide Dictation** | Fn to dictate in any app | Voice input everywhere, not just our app |
+| **Meeting Recording** | Capture system audio + mic, transcribe locally | Record any call or meeting without cloud services |
 | **YouTube Transcription** | Paste a URL, get a transcript | File transcription for the YouTube era |
 | **Local-First STT** | Speech stays on-device; optional networked AI | Strong privacy claim without pretending the app never uses the network |
 | **Clean Pipeline** | Deterministic text cleanup | Professional output without LLM overhead |

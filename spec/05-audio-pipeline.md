@@ -2,7 +2,7 @@
 
 > Status: **ACTIVE** - Authoritative, current
 
-The audio pipeline handles all audio input for MacParakeet: microphone recording for dictation and file input for transcription.
+The audio pipeline handles all audio input for MacParakeet: microphone recording for dictation, file input for transcription, and dual-stream capture (system audio + mic) for meeting recording.
 
 ---
 

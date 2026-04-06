@@ -43,6 +43,17 @@
 | Stop requested before recording active | Stop key pressed while start flow is still in-flight and recorder has not reached `.recording` | Stop request is deferred until recording is active; no user action needed |
 | Recording was not active | Stop requested while service is not recording and startup is not in-flight (invalid transition) | Show explicit overlay error and ask user to start dictation again |
 
+### Meeting Recording Errors
+
+| Error | Cause | User Action |
+|-------|-------|-------------|
+| Screen Recording denied | User denied Screen & System Audio Recording permission | Show error + "Open System Settings" button, block recording |
+| System audio tap failed | Core Audio Tap creation failed (aggregate device error) | "System audio capture failed. Try restarting the app." |
+| Mic capture failed during meeting | AVAudioEngine failed to start for meeting mic | "Microphone capture failed. Check your microphone connection." |
+| Mix failed | FFmpeg failed to mix mic + system M4A files | Log error, attempt transcription of individual streams |
+| Chunk transcription backpressure | Live transcription can't keep pace with recording | Silent degradation: final batch transcription still produces full result |
+| Meeting hotkey conflict | Meeting hotkey same as dictation hotkey | Block in Settings UI; at runtime, log warning and skip conflicting trigger |
+
 ### Export / Storage Errors
 
 | Error | Cause | User Action |
