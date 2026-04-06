@@ -249,7 +249,7 @@ public final class SettingsViewModel {
         HotkeyTrigger.current(
             defaults: defaults,
             defaultsKey: HotkeyTrigger.meetingDefaultsKey,
-            fallback: .chord(modifiers: ["command", "shift"], keyCode: 46)
+            fallback: .defaultMeetingRecording
         )
     }
 
