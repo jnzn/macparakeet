@@ -42,8 +42,8 @@
 │  │  └──────────────────┬──────────────────┘  └────────────┬────────────┘   │  │
 │  │                               │                                           │  │
 │  │                     ┌─────────▼─────────┐  ┌────────────────────────────┐ │  │
-│  │                     │    STTClient      │  │  TextProcessingPipeline   │ │  │
-│  │                     │  (FluidAudio)     │  │  (Deterministic cleanup)  │ │  │
+│  │                     │   STT Scheduler   │  │  TextProcessingPipeline   │ │  │
+│  │                     │   + Runtime       │  │  (Deterministic cleanup)  │ │  │
 │  │                     └─────────┬─────────┘  └────────────────────────────┘ │  │
 │  │                               │                                           │  │
 │  │  ┌──────────────┐  ┌────────▼──────────────────────────────────────────┐ │  │
@@ -80,7 +80,7 @@
 │  │(Mic)     │  │ Hotkey)  │  │ Paste)      │  │ Control)     │  │Taps     ││
 │  └──────────┘  └──────────┘  └─────────────┘  └──────────────┘  └─────────┘│
 │                                                                                  │
-│  Total AI Memory: ~66 MB peak (Parakeet on ANE)                                │
+│  Parakeet working RAM: ~66 MB per active inference slot on ANE                │
 │  Recommended: 8 GB RAM (Apple Silicon only).                                    │
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -89,7 +89,7 @@
 
 ### Concurrency Model (ADR-015 + ADR-016)
 
-Dictation and meeting recording run concurrently as independent audio pipelines, but all STT work routes through one scheduler and one runtime:
+The diagram below shows the ADR-016 architecture. Dictation and meeting recording run concurrently as independent audio pipelines, while STT routes through one scheduler and one shared runtime owner:
 
 ```
 ┌─ Dictation Pipeline ──────────────────────┐
@@ -110,16 +110,18 @@ Dictation and meeting recording run concurrently as independent audio pipelines,
 
                 │
                 ▼
-      STT Scheduler / Broker (priority + backpressure)
+      STT Scheduler / Control Plane
+      ├── Interactive slot  → dictation
+      └── Background slot   → meeting + file transcription
                 │
                 ▼
-     STT Runtime (single AsrManager on CoreML / ANE)
+     STT Runtime (slot-scoped AsrManagers on CoreML / ANE)
 ```
 
 - **No shared audio engine** — dictation and meeting capture remain independent. macOS HAL multiplexes mic access.
 - **No mutual exclusion** — dictation and meeting recording can both be active.
-- **Centralized STT ownership** — one runtime owns model lifecycle, warm-up, and shutdown.
-- **Explicit scheduling** — dictation > meeting finalize > meeting live chunks > file transcription.
+- **Centralized STT ownership** — one runtime owner manages lifecycle, warm-up, and shutdown.
+- **Explicit scheduling** — the STT stack uses a reserved dictation slot plus a shared background slot; within the background slot, finalize beats live preview, and file transcription waits.
 - **Menu bar icon priority** — meeting > dictation > file-transcription > idle.
 
 ---
@@ -233,7 +235,7 @@ enum DictationState: Sendable {
 }
 ```
 
-**Dependencies:** `AudioProcessor`, `STTClient`, `DictationRepository`, `ClipboardService`
+**Dependencies:** `AudioProcessor`, shared `STTManaging` scheduler/runtime path, `DictationRepository`, `ClipboardService`
 
 **Data Flow:**
 ```
@@ -250,7 +252,7 @@ Hotkey released (or toggle stop)
     ▼
 DictationService.stopRecording()
     │ ── Writes buffer to temp WAV (16kHz mono)
-    │ ── Sends to STTClient
+    │ ── Submits a `dictation` job to the shared STT scheduler
     │ ── Receives raw transcript
     │ ── Runs TextProcessingPipeline (if mode == .clean)
     │ ── Saves to DictationRepository
@@ -262,7 +264,7 @@ DictationResult returned
 
 #### 2.2 TranscriptionService
 
-**Responsibility:** Orchestrates file and URL transcription: download/convert audio, run STT, apply optional deterministic cleanup, persist results, and emit UI progress phases.
+**Responsibility:** Orchestrates file and URL transcription: download/convert audio, run STT, apply optional deterministic cleanup, persist results, emit UI progress phases, and retranscribe saved library items.
 
 **Key Types/Protocols:**
 ```swift
@@ -272,7 +274,7 @@ protocol TranscriptionServiceProtocol: Sendable {
 }
 ```
 
-**Dependencies:** `AudioProcessor`, `STTClient`, `TranscriptionRepository`, `YouTubeDownloader`, storage prefs (`saveTranscriptionAudio`)
+**Dependencies:** `AudioProcessor`, shared `STTManaging` scheduler/runtime path, `TranscriptionRepository`, `YouTubeDownloader`, storage prefs (`saveTranscriptionAudio`)
 
 **Data Flow:**
 ```
@@ -283,13 +285,25 @@ File URL
 AudioProcessor.convert(fileURL:) → 16kHz mono WAV in temp dir
     │
     ▼
-STTClient.transcribe(audioPath:, onProgress:) → raw transcript + word timestamps
+STTScheduler.transcribe(audioPath:, job: .fileTranscription, onProgress:) → raw transcript + word timestamps
     │
     ▼
 TranscriptionRepository.save() → persisted to database
     │
     ▼
 Transcription returned to UI
+
+Saved meeting retranscription from the library:
+Saved meeting audio file
+    │
+    ▼
+AudioProcessor.convert(fileURL:) → 16kHz mono WAV in temp dir
+    │
+    ▼
+STTScheduler.transcribe(audioPath:, job: .fileTranscription, onProgress:) → queued background-slot work
+    │
+    ▼
+Updated Transcription persisted with sourceType still = .meeting
 
 YouTube URL transcription:
 YouTube URL
@@ -301,7 +315,7 @@ YouTubeDownloader.download(url:, onProgress:) → emits download %
 AudioProcessor.convert(fileURL:) → 16kHz mono WAV in temp dir
     │
     ▼
-STTClient.transcribe(audioPath:, onProgress:) → emits chunk %
+STTScheduler.transcribe(audioPath:, job: .fileTranscription, onProgress:) → emits chunk %
     │
     ▼
 TranscriptionRepository.save() with sourceURL (+ filePath when retention enabled)
@@ -358,18 +372,46 @@ protocol AudioProcessorProtocol: Sendable {
 - Audio buffer stored in memory during recording, flushed to disk on stop
 - Supports: MP3, WAV, M4A, FLAC, OGG, OPUS, MP4, MOV, MKV, WebM, AVI
 
-#### 2.5 STTClient
+#### 2.5 STT Runtime + Scheduler
 
-**Responsibility:** Native Swift wrapper around FluidAudio CoreML. Manages model lifecycle (download, load, transcribe, shutdown). Runs Parakeet TDT on the Neural Engine (ANE).
+**Responsibility:** The shared STT stack owns one process-wide Parakeet runtime actor plus one explicit scheduler. `STTRuntime` owns FluidAudio model lifecycle and the slot-scoped `AsrManager` set used by the interactive and background execution slots. `STTScheduler` owns admission, slot assignment, in-slot priority, backpressure, cancellation, and request-scoped progress. `STTClient` remains as a compatibility facade, not as an app-owned second runtime.
 
 **Key Types/Protocols:**
 ```swift
-protocol STTClientProtocol: Sendable {
-    func transcribe(audioPath: String, onProgress: (@Sendable (Int, Int) -> Void)?) async throws -> STTResult
-    func isReady() async -> Bool
+public enum STTJobKind: Sendable, Equatable {
+    case dictation
+    case meetingFinalize
+    case meetingLiveChunk
+    case fileTranscription
+}
+
+public enum STTWarmUpState: Sendable, Equatable {
+    case idle
+    case working(message: String, progress: Double?)
+    case ready
+    case failed(message: String)
+}
+
+public protocol STTTranscribing: Sendable {
+    func transcribe(
+        audioPath: String,
+        job: STTJobKind,
+        onProgress: (@Sendable (Int, Int) -> Void)?
+    ) async throws -> STTResult
+}
+
+public protocol STTRuntimeManaging: Sendable {
     func warmUp(onProgress: (@Sendable (String) -> Void)?) async throws
+    func backgroundWarmUp() async
+    func observeWarmUpProgress() async -> (id: UUID, stream: AsyncStream<STTWarmUpState>)
+    func removeWarmUpObserver(id: UUID) async
+    func clearModelCache() async
+    func isReady() async -> Bool
     func shutdown() async
 }
+
+public typealias STTManaging = STTTranscribing & STTRuntimeManaging
+public typealias STTClientProtocol = STTManaging
 
 struct STTResult: Sendable {
     let text: String
@@ -404,18 +446,19 @@ let result = try await manager.transcribe(samples, source: .system)
 // result.text, result.tokenTimings (word-level timestamps + confidence)
 ```
 
-**Ownership Model:**
+**Approved Target Ownership Model:**
 ```
-Feature services (Dictation / Meeting / File)
+Feature services (Dictation / Meeting / File / URL)
     │
     ▼
-STT Scheduler / Broker
+STTScheduler
+    ├── interactive slot → dictation
+    └── background slot  → meetingFinalize > meetingLiveChunk > fileTranscription
     │
     ▼
-STT Runtime
-    │
-    ▼
-AsrManager (single process-wide owner)
+STTRuntime
+    ├── interactive slot → AsrManager
+    └── background slot  → AsrManager
 ```
 
 **Model Lifecycle:**
@@ -423,19 +466,21 @@ AsrManager (single process-wide owner)
 App Launch
     │
     ▼
-STTRuntime.warmUp() called (lazy, on first use)
+STTRuntime.warmUp() called (lazy, on first use or from onboarding)
     │
     ├── Check: Are CoreML models downloaded?
     │     │
-    │     ├── Yes → AsrManager.initialize(models:) → Runtime ready (~162ms warm load)
+    │     ├── Yes → initialize slot managers → Runtime ready (~162ms warm load)
     │     │
     │     └── No ──► AsrModels.downloadAndLoad() (~6 GB download)
     │                  CoreML compilation (~3.4s first time)
-    │                  AsrManager.initialize(models:)
+    │                  initialize slot managers
     │
     ▼
-AsrManager ready — scheduler admits transcription jobs
+Slot managers ready — scheduler admits transcription jobs
 ```
+
+Product-level readiness can coordinate additional services beyond the two STT slots. In particular, speaker diarization remains outside the speech scheduler, but onboarding should still account for its required assets before declaring default-on file-transcription features fully ready.
 
 #### 2.6 ExportService
 
@@ -625,20 +670,21 @@ Native Swift, runs in the app process via FluidAudio CoreML on the Neural Engine
      │                     │  stopCapture() → WAV   │
      │                     │ ─────────────────────> │
      │                     │                        │
-     │                     │      ┌─────────┐       │
-     │                     │ ───> │STTClient│       │
-     │                     │      └────┬────┘       │
-     │                     │           │            │
-     │                     │           │  transcribe(wav)
-     │                     │           │ ────────────────────┐
+     │                     │      ┌──────────────┐   │
+     │                     │ ───> │STTScheduler  │   │
+     │                     │      └──────┬───────┘   │
+     │                     │             │           │
+     │                     │             │  transcribe(wav, .dictation)
+     │                     │             │ ────────────────────┐
      │                     │           │                     │
-     │                     │           │    ┌────────────────▼───┐
-     │                     │           │    │  Parakeet (ANE)   │
-     │                     │           │    └────────────────┬───┘
+     │                     │             │    ┌──────────────▼──────┐
+     │                     │             │    │ STTRuntime +        │
+     │                     │             │    │ Parakeet (ANE)      │
+     │                     │             │    └─────────────────────┘
      │                     │           │                     │
-     │                     │           │  raw transcript     │
-     │                     │           │ <───────────────────┘
-     │                     │           │
+     │                     │             │  raw transcript     │
+     │                     │             │ <───────────────────┘
+     │                     │             │
      │                     │  raw text │
      │                     │ <──────── │
      │                     │
@@ -674,9 +720,9 @@ Native Swift, runs in the app process via FluidAudio CoreML on the Neural Engine
        │                       │  16kHz mono WAV        │    input → WAV
        │                       │ <───────────────────── │
        │                       │
-       │                       │     ┌──────────┐
-       │                       │ ──> │STTClient │ ──> Parakeet (ANE)
-       │                       │     └─────┬────┘
+       │                       │     ┌──────────────┐
+       │                       │ ──> │STTScheduler  │ ──> STTRuntime + Parakeet (ANE)
+       │                       │     └─────┬────────┘
        │                       │           │
        │                       │  STTResult (text + timestamps)
        │                       │ <──────── │
@@ -733,7 +779,9 @@ Single SQLite file via GRDB. All data in one place. No external database process
 
 **Location:** `~/Library/Application Support/MacParakeet/macparakeet.db`
 
-### Schema
+### Representative Schema Excerpt
+
+See [01-data-model.md](01-data-model.md) for the full current schema. The excerpt below highlights the core tables and columns most relevant to the architecture discussion.
 
 ```sql
 -- Dictation history (voice-to-text sessions)
@@ -747,18 +795,13 @@ CREATE TABLE dictations (
     audioPath       TEXT,                   -- relative path to saved audio (nullable)
     pastedToApp     TEXT,                   -- bundle ID of target app
     processingMode  TEXT NOT NULL DEFAULT 'raw', -- 'raw' (v0.1) or 'clean' (v0.2 default via UserDefaults)
+    hidden          BOOLEAN NOT NULL DEFAULT 0,  -- private dictation mode (v0.5)
+    wordCount       INTEGER NOT NULL DEFAULT 0,  -- cached for voice stats (v0.5)
     status          TEXT NOT NULL DEFAULT 'completed', -- 'recording' | 'processing' | 'completed' | 'error'
     errorMessage    TEXT,                   -- non-null if status == 'error'
     updatedAt       TEXT NOT NULL
 );
 CREATE INDEX idx_dictations_created_at ON dictations(createdAt);
-
--- FTS5 external content table for full-text search
-CREATE VIRTUAL TABLE dictations_fts USING fts5(
-    rawTranscript, cleanTranscript,
-    content='dictations', content_rowid='rowid'
-);
--- + sync triggers (INSERT, DELETE, UPDATE)
 
 -- File transcription history
 CREATE TABLE transcriptions (
@@ -771,9 +814,11 @@ CREATE TABLE transcriptions (
     rawTranscript   TEXT,                   -- exact STT output
     cleanTranscript TEXT,                   -- after TextProcessingPipeline (v0.2+)
     wordTimestamps  TEXT,                   -- JSON: [{"word":...,"startMs":...,"endMs":...,"confidence":...}]
+    diarizationSegments TEXT,               -- JSON speaker segments (v0.4+)
     language        TEXT DEFAULT 'en',      -- detected language
     speakerCount    INTEGER,               -- number of speakers (v0.4+)
     speakers        TEXT,                   -- JSON: ["Speaker 1", ...] (v0.4+)
+    sourceType      TEXT NOT NULL DEFAULT 'file', -- file | youtube | meeting (v0.6)
     status          TEXT NOT NULL DEFAULT 'processing', -- 'processing' | 'completed' | 'error' | 'cancelled'
     errorMessage    TEXT,                   -- non-null if status == 'error'
     exportPath      TEXT,                   -- path to exported file
@@ -782,11 +827,8 @@ CREATE TABLE transcriptions (
 );
 CREATE INDEX idx_transcriptions_created_at ON transcriptions(createdAt);
 
--- Custom word corrections (v0.2+ — table not yet created)
--- CREATE TABLE custom_words ( ... )
-
--- Text snippet expansion (v0.2+ — table not yet created)
--- CREATE TABLE text_snippets ( ... )
+-- Additional active tables omitted here for brevity:
+-- custom_words, text_snippets, chat_conversations, prompts, summaries
 ```
 
 ### Migrations
@@ -810,7 +852,8 @@ migrator.registerMigration("v0.1-dictations") { db in
         t.column("errorMessage", .text)
         t.column("updatedAt", .text).notNull()
     }
-    // + FTS5 table + sync triggers
+    // Historical note: v0.1 also created an FTS5 table + sync triggers.
+    // Those were removed in v0.5 after the app standardized on LIKE search.
 }
 
 migrator.registerMigration("v0.1-transcriptions") { db in
@@ -1060,7 +1103,7 @@ Subsequent Launches ──> Window shown (fast)
                        Dictation runs immediately
 ```
 
-After initial warm-up, subsequent dictations are near-instant because the shared runtime keeps `AsrManager` initialized and ready between requests.
+After initial warm-up, subsequent dictations are near-instant because the shared runtime keeps its slot managers initialized and ready between requests.
 
 ### Transcription Speed
 
@@ -1075,7 +1118,7 @@ Parakeet TDT 0.6B-v3 throughput varies by device class: approximately 155x realt
 
 ### Memory Management
 
-- **Parakeet model:** One shared runtime keeps `AsrManager` initialized after first use. Uses ~66 MB working RAM on the ANE. Released when the app quits.
+- **Parakeet model:** One shared runtime owner keeps its managers initialized after first use. Budget ~66 MB working RAM per active inference slot on the ANE path. Real total memory depends on how many managers are loaded/active in the current implementation, whether the background capacity stays lazy in the final design, and whether diarization models are also resident.
 - **Audio buffers:** Ring buffer during recording, flushed to temp file on stop. No recording duration limit — local processing means no artificial caps.
 - **Database:** GRDB uses WAL mode by default. No connection pooling needed (single-user app).
 
@@ -1088,7 +1131,7 @@ First dictation completes
     │
     ▼
 Schedule background task (low priority):
-    └── If Parakeet model not loaded → initialize AsrManager
+    └── If Parakeet model not loaded → initialize the shared runtime's slot managers
 ```
 
 This ensures subsequent interactions feel instant without bloating initial startup.
@@ -1118,7 +1161,7 @@ MacParakeet has a small surface area compared to Oatmeal. Focus testing on the c
 - **Models** — Codable round-trip, validation, edge cases
 - **Repositories** — CRUD operations, search queries, migration correctness
 - **ExportService** — Format generation (TXT in v0.1; SRT, VTT, JSON in v0.3)
-- **STTClient** — FluidAudio wrapper (mock the STTClientProtocol interface)
+- **STT scheduler/runtime boundary** — mock the `STTClientProtocol` interface (`STTManaging`) rather than real FluidAudio
 - **AudioProcessor** — Format detection, conversion parameter correctness (mock FFmpeg)
 
 ### What We Skip
@@ -1150,12 +1193,25 @@ actor MockSTTClient: STTClientProtocol {
     func configure(result: STTResult) { transcribeResult = result; transcribeError = nil }
     func configure(error: Error) { transcribeError = error; transcribeResult = nil }
 
-    func transcribe(audioPath: String, onProgress: (@Sendable (Int, Int) -> Void)? = nil) async throws -> STTResult {
+    func transcribe(
+        audioPath: String,
+        job: STTJobKind,
+        onProgress: (@Sendable (Int, Int) -> Void)? = nil
+    ) async throws -> STTResult {
         if let error = transcribeError { throw error }
-        guard let result = transcribeResult else { throw STTError.modelNotReady }
+        guard let result = transcribeResult else { throw STTError.modelNotLoaded }
         return result
     }
-    func warmUp() async throws {}
+    func warmUp(onProgress: (@Sendable (String) -> Void)?) async throws {}
+    func backgroundWarmUp() async {}
+    func observeWarmUpProgress() async -> (id: UUID, stream: AsyncStream<STTWarmUpState>) {
+        (UUID(), AsyncStream { continuation in
+            continuation.yield(.idle)
+            continuation.finish()
+        })
+    }
+    func removeWarmUpObserver(id: UUID) async {}
+    func clearModelCache() async {}
     func isReady() async -> Bool { ready }
     func shutdown() async {}
 }

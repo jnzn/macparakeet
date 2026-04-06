@@ -91,7 +91,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 | ADR-013 | Prompt Library + multi-summary architecture | `spec/adr/013-prompt-library-multi-summary.md` |
 | ADR-014 | Meeting recording via Core Audio Taps | `spec/adr/014-meeting-recording.md` |
 | ADR-015 | Concurrent dictation and meeting recording | `spec/adr/015-concurrent-dictation-meeting.md` |
-| ADR-016 | Centralized STT runtime and scheduler | `spec/adr/016-centralized-stt-runtime-scheduler.md` |
+| ADR-016 | Centralized STT runtime and two-slot scheduler | `spec/adr/016-centralized-stt-runtime-scheduler.md` |
 
 > Historical ADRs (still in `spec/adr/`, kept for context): ADR-003 (one-time purchase pricing), ADR-006 (trial + license activation), ADR-008 (local LLM runtime). The app is now free/GPL-3.0.
 
@@ -116,7 +116,9 @@ MacParakeet has three primary modes that are equal in importance:
 2. **File transcription** -- Drag-drop audio/video files for full transcription (MacWhisper-style)
 3. **Meeting recording** -- Capture system audio + mic simultaneously, transcribe locally (simple Granola-style)
 
-All three modes share the same Parakeet STT backend but have different UI flows, audio sources, and data models. **Dictation and meeting recording run concurrently** (ADR-015) -- a user can dictate freely during a meeting recording. Each flow owns its own AVAudioEngine; macOS HAL handles mic multiplexing. All STT work routes through one process-wide runtime and scheduler (ADR-016), with dictation prioritized over meeting live preview and batch file work.
+All three modes share the same Parakeet STT backend but have different UI flows, audio sources, and data models. **Dictation and meeting recording run concurrently** (ADR-015) -- a user can dictate freely during a meeting recording. Each flow owns its own AVAudioEngine; macOS HAL handles mic multiplexing.
+
+ADR-016 defines the STT architecture as one process-wide runtime/scheduler path with a reserved dictation slot and a shared background slot where meeting work outranks file transcription.
 
 ### STT Integration (Parakeet via FluidAudio)
 
@@ -124,10 +126,12 @@ All three modes share the same Parakeet STT backend but have different UI flows,
 - Parakeet TDT 0.6B-v3 returns word-level timestamps + confidence scores
 - ~155x realtime on Apple Silicon (60 min audio in ~23 seconds)
 - ~2.5% Word Error Rate
-- ~66 MB working memory during inference (vs ~2 GB+ on GPU/MLX)
-- ~6 GB CoreML model bundle downloaded during onboarding
-- One process-wide STT runtime owns `AsrManager`
-- One scheduler owns priorities, backpressure, and job-scoped progress
+- ~66 MB working memory per active Parakeet inference slot (vs ~2 GB+ on GPU/MLX)
+- ~6 GB CoreML speech model bundle downloaded during onboarding
+- ~130 MB diarization asset bundle prepared alongside onboarding/default speaker-detection readiness
+- One process-wide `STTRuntime` owner manages model lifecycle for the app
+- The default STT topology uses 2 execution slots: reserved dictation + shared meeting/batch
+- One `STTScheduler` owns slot assignment, priority, backpressure, cancellation, and job-scoped progress
 
 **Swift API:**
 ```swift

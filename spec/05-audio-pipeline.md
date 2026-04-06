@@ -198,11 +198,11 @@ Meeting recording and dictation run concurrently as fully independent pipelines.
 
 macOS Core Audio's HAL natively multiplexes microphone access — multiple engines tapping the same physical mic is a supported pattern. There is no shared audio engine or audio broker.
 
-All STT work routes through a process-wide scheduler and a single Parakeet runtime (ADR-016). That keeps:
+All STT work routes through a process-wide scheduler and a single shared Parakeet runtime owner (ADR-016). That keeps:
 
-- dictation latency highest priority
-- meeting live preview best-effort under backlog
-- file / YouTube transcription architecturally compatible, but lower priority than interactive work
+- dictation on its own reserved interactive slot
+- meeting live preview best-effort under backlog, with immediate post-stop finalization prioritized on the shared background slot
+- file / YouTube transcription, plus saved-meeting retranscribes, queued behind meeting work on that same background slot
 
 The primary concurrency use case remains meeting recording + dictation. File transcription may coexist architecturally, but it should never degrade dictation responsiveness.
 

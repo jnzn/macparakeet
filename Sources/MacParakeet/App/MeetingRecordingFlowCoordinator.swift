@@ -120,7 +120,7 @@ final class MeetingRecordingFlowCoordinator {
             panelVM.elapsedSeconds = 0
             panelVM.micLevel = 0
             panelVM.systemLevel = 0
-            panelVM.updatePreviewLines([])
+            panelVM.updatePreviewLines([], isTranscriptionLagging: false)
             panelVM.onStop = { [weak self] in self?.toggleRecording() }
             panelVM.onClose = { [weak self] in self?.hideMeetingPanel() }
             panelViewModel = panelVM
@@ -337,7 +337,10 @@ final class MeetingRecordingFlowCoordinator {
                     Self.makePreviewLines(from: update)
                 }.value
                 guard !Task.isCancelled else { break }
-                panelViewModel?.updatePreviewLines(previewLines)
+                panelViewModel?.updatePreviewLines(
+                    previewLines,
+                    isTranscriptionLagging: update.isTranscriptionLagging
+                )
             }
         }
     }

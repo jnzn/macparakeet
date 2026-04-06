@@ -56,7 +56,7 @@ All ADRs live in `spec/adr/`. These are locked -- they record decisions already 
 | [ADR-013](adr/013-prompt-library-multi-summary.md) | Prompt Library + multi-summary architecture |
 | [ADR-014](adr/014-meeting-recording.md) | Meeting recording via Core Audio Taps |
 | [ADR-015](adr/015-concurrent-dictation-meeting.md) | Concurrent dictation and meeting recording |
-| [ADR-016](adr/016-centralized-stt-runtime-scheduler.md) | Centralized STT runtime and scheduler |
+| [ADR-016](adr/016-centralized-stt-runtime-scheduler.md) | Centralized STT runtime and two-slot scheduler |
 
 ## Version Roadmap
 
@@ -179,7 +179,7 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 - [x] Meeting title prefix + rename flow
 - [x] Hotkey conflict prevention (dictation vs meeting)
 - [x] Concurrent dictation during meeting recording (ADR-015)
-- [ ] Centralized STT runtime + scheduler (ADR-016)
+- [x] Centralized STT runtime + two-slot scheduler (ADR-016)
 
 ## For AI Coding Assistants
 

@@ -46,12 +46,10 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         let task: Task<Void, Never>
     }
 
-    private static let maxPendingChunkTasks = 24
-
     private let logger = Logger(subsystem: "com.macparakeet.core", category: "MeetingRecordingService")
     private let audioCaptureService: any MeetingAudioCapturing
     private let audioConverter: any AudioFileConverting
-    private let sttClient: STTClientProtocol
+    private let sttTranscriber: STTTranscribing
     private let fileManager: FileManager
 
     private var currentSession: Session?
@@ -65,6 +63,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
     private var chunkResultBuffer = MeetingChunkResultBuffer()
     private var transcriptAssembler = MeetingTranscriptAssembler()
     private var chunkTranscriptionFailed = false
+    private var isTranscriptionLagging = false
     private var captureFailed = false
     private var latestLevels = MeetingAudioLevels()
 
@@ -74,12 +73,12 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
     public init(
         audioCaptureService: any MeetingAudioCapturing = MeetingAudioCaptureService(),
         audioConverter: any AudioFileConverting = AudioFileConverter(),
-        sttClient: STTClientProtocol = STTClient(),
+        sttTranscriber: STTTranscribing,
         fileManager: FileManager = .default
     ) {
         self.audioCaptureService = audioCaptureService
         self.audioConverter = audioConverter
-        self.sttClient = sttClient
+        self.sttTranscriber = sttTranscriber
         self.fileManager = fileManager
     }
 
@@ -151,6 +150,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         chunkResultBuffer.reset()
         transcriptAssembler.reset()
         chunkTranscriptionFailed = false
+        isTranscriptionLagging = false
         captureFailed = false
 
         processingTask = Task { [weak self] in
@@ -183,10 +183,11 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         await processingTask?.value
         processingTask = nil
         await flushTranscriptChunkers(for: session)
-        let pendingTasks = pendingChunkTasks.map(\.task)
-        pendingChunkTasks = []
-        for task in pendingTasks {
-            await task.value
+        // Preserve any prepared speaker metadata that is already assembled, but
+        // stop waiting once live preview falls behind so finalize can take over.
+        let preparedTranscriptReady = await waitForPendingChunkTasksToDrain(timeout: .milliseconds(150))
+        if !preparedTranscriptReady {
+            await cancelPendingChunkTasks(waitForCancellation: false)
         }
         writer?.finalize()
         writer = nil
@@ -230,12 +231,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         processingTask?.cancel()
         await processingTask?.value
         processingTask = nil
-        let pendingTasks = pendingChunkTasks.map(\.task)
-        pendingChunkTasks = []
-        for task in pendingTasks {
-            task.cancel()
-            await task.value
-        }
+        await cancelPendingChunkTasks(waitForCancellation: true)
         writer?.finalize()
         writer = nil
         cleanupState()
@@ -325,12 +321,6 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         source: AudioSource,
         session: Session
     ) {
-        if pendingChunkTasks.count >= Self.maxPendingChunkTasks {
-            chunkTranscriptionFailed = true
-            logger.warning("Dropping live meeting chunk because the backlog exceeded \(Self.maxPendingChunkTasks, privacy: .public) tasks")
-            return
-        }
-
         let sequence = nextChunkSequence[source] ?? 0
         nextChunkSequence[source] = sequence + 1
 
@@ -348,7 +338,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
                     sessionID: session.id
                 )
             } catch is CancellationError {
-                return
+                // Cancellation is expected when stopRecording prioritizes finalize.
             } catch {
                 await self.handleChunkTranscriptionFailure(
                     error,
@@ -357,13 +347,11 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
                     sessionID: session.id
                 )
             }
+
+            await self.removePendingChunkTask(id: taskID)
         }
 
         pendingChunkTasks.append(PendingChunkTask(id: taskID, task: task))
-        Task { [weak self] in
-            await task.value
-            await self?.removePendingChunkTask(id: taskID)
-        }
     }
 
     private func transcribeChunk(
@@ -375,7 +363,11 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             .appendingPathComponent("\(source.rawValue)-\(chunk.startMs)-\(chunk.endMs).wav")
         try writeChunkAudio(samples: chunk.samples, to: chunkURL)
         defer { try? fileManager.removeItem(at: chunkURL) }
-        return try await sttClient.transcribe(audioPath: chunkURL.path, onProgress: nil)
+        return try await sttTranscriber.transcribe(
+            audioPath: chunkURL.path,
+            job: .meetingLiveChunk,
+            onProgress: nil
+        )
     }
 
     private func writeChunkAudio(samples: [Float], to url: URL) throws {
@@ -426,7 +418,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
 
         for ready in readyResults {
             let update = transcriptAssembler.apply(result: ready.result, chunk: ready.chunk, source: source)
-            transcriptContinuation?.yield(update)
+            yieldTranscriptUpdate(update)
         }
     }
 
@@ -436,14 +428,43 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         sequence: Int,
         sessionID: UUID
     ) {
-        logger.error("Meeting chunk transcription failed: \(error.localizedDescription, privacy: .public)")
         guard currentSession?.id == sessionID else { return }
-        chunkTranscriptionFailed = true
+
+        let droppedByBackpressure =
+            if case STTSchedulerError.droppedDueToBackpressure(job: .meetingLiveChunk) = error {
+                true
+            } else {
+                false
+            }
+
+        if droppedByBackpressure {
+            logger.notice("Meeting live chunk dropped by scheduler backpressure")
+            isTranscriptionLagging = true
+        } else {
+            logger.error("Meeting chunk transcription failed: \(error.localizedDescription, privacy: .public)")
+            chunkTranscriptionFailed = true
+        }
         let readyResults = chunkResultBuffer.receiveFailure(sequence: sequence, source: source)
         for ready in readyResults {
             let update = transcriptAssembler.apply(result: ready.result, chunk: ready.chunk, source: source)
-            transcriptContinuation?.yield(update)
+            yieldTranscriptUpdate(update)
         }
+    }
+
+    private func yieldTranscriptUpdate(_ update: MeetingTranscriptUpdate) {
+        if isTranscriptionLagging && !update.isTranscriptionLagging {
+            transcriptContinuation?.yield(
+                MeetingTranscriptUpdate(
+                    words: update.words,
+                    speakers: update.speakers,
+                    isTranscriptionLagging: true
+                )
+            )
+            isTranscriptionLagging = false
+            return
+        }
+
+        transcriptContinuation?.yield(update)
     }
 
     private func existingSourceURLs(for session: Session) throws -> [URL] {
@@ -453,6 +474,31 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             let size = try fileManager.attributesOfItem(atPath: url.path)[.size] as? NSNumber
             return (size?.intValue ?? 0) > 0
         }
+    }
+
+    private func cancelPendingChunkTasks(waitForCancellation: Bool) async {
+        let tasks = pendingChunkTasks.map(\.task)
+        pendingChunkTasks = []
+
+        for task in tasks {
+            task.cancel()
+        }
+
+        guard waitForCancellation else { return }
+        for task in tasks {
+            await task.value
+        }
+    }
+
+    private func waitForPendingChunkTasksToDrain(timeout: Duration) async -> Bool {
+        let startedAt = ContinuousClock.now
+        while !pendingChunkTasks.isEmpty {
+            if startedAt.duration(to: .now) > timeout {
+                return false
+            }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return true
     }
 
     private func removePendingChunkTask(id: UUID) {
@@ -468,6 +514,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         chunkResultBuffer.reset()
         transcriptAssembler.reset()
         chunkTranscriptionFailed = false
+        isTranscriptionLagging = false
         captureFailed = false
         transcriptContinuation?.finish()
         transcriptContinuation = nil
