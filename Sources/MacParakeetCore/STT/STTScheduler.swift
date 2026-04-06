@@ -16,6 +16,10 @@ public enum STTSchedulerError: Error, LocalizedError, Equatable {
 }
 
 /// Centralized broker for all STT work in the app process.
+///
+/// Jobs execute independently per lane so dictation can remain responsive while
+/// meeting transcription is active, and batch/file transcription no longer
+/// stalls meeting stop/finalize.
 public actor STTScheduler: STTManaging {
     private struct ScheduledJob: Sendable {
         let id: UUID
@@ -23,6 +27,17 @@ public actor STTScheduler: STTManaging {
         let job: STTJobKind
         let enqueueOrder: UInt64
         let onProgress: (@Sendable (Int, Int) -> Void)?
+
+        var lane: SchedulerLane {
+            SchedulerLane(job: job)
+        }
+    }
+
+    private struct LaneState {
+        var pendingJobs: [ScheduledJob] = []
+        var currentJob: ScheduledJob?
+        var currentExecutionTask: Task<STTResult, Error>?
+        var currentWaitTask: Task<Void, Never>?
     }
 
     private let logger = Logger(subsystem: "com.macparakeet.core", category: "STTScheduler")
@@ -30,16 +45,15 @@ public actor STTScheduler: STTManaging {
     private let meetingLiveChunkBacklogLimit: Int
 
     private var enqueueCounter: UInt64 = 0
-    private var pendingJobs: [ScheduledJob] = []
     private var continuations: [UUID: CheckedContinuation<STTResult, Error>] = [:]
-    private var currentJob: ScheduledJob?
-    private var currentExecutionTask: Task<STTResult, Error>?
-    private var currentWaitTask: Task<Void, Never>?
+    private var laneStates: [SchedulerLane: LaneState] = Dictionary(
+        uniqueKeysWithValues: SchedulerLane.allCases.map { ($0, LaneState()) }
+    )
     private var acceptsNewJobs = true
 
     /// - Parameter meetingLiveChunkBacklogLimit: Maximum pending live-preview chunks before the
     ///   oldest is dropped. 24 ≈ 4 minutes of 10-second chunks, enough to absorb a burst of
-    ///   dictation preemptions without losing meaningful meeting context.
+    ///   dictation activity without losing meaningful meeting context.
     public init(
         runtime: STTRuntime = STTRuntime(),
         meetingLiveChunkBacklogLimit: Int = 24
@@ -106,10 +120,7 @@ public actor STTScheduler: STTManaging {
         acceptsNewJobs = false
         defer { acceptsNewJobs = true }
         cancelAllPendingJobs()
-        if let currentWaitTask {
-            currentExecutionTask?.cancel()
-            await currentWaitTask.value
-        }
+        await cancelAndDrainRunningJobs()
         await runtime.clearModelCache()
     }
 
@@ -117,10 +128,7 @@ public actor STTScheduler: STTManaging {
         acceptsNewJobs = false
         defer { acceptsNewJobs = true }
         cancelAllPendingJobs()
-        if let currentWaitTask {
-            currentExecutionTask?.cancel()
-            await currentWaitTask.value
-        }
+        await cancelAndDrainRunningJobs()
         await runtime.shutdown()
     }
 
@@ -134,10 +142,11 @@ public actor STTScheduler: STTManaging {
         }
 
         continuations[job.id] = continuation
+        var laneState = laneState(for: job.lane)
 
         if job.job == .meetingLiveChunk,
-           pendingMeetingLiveJobCount >= meetingLiveChunkBacklogLimit,
-           let droppedJob = dropOldestPendingMeetingLiveJob() {
+           pendingMeetingLiveJobCount(in: laneState) >= meetingLiveChunkBacklogLimit,
+           let droppedJob = dropOldestPendingMeetingLiveJob(in: &laneState) {
             logger.notice(
                 "stt_backpressure drop_pending_meeting_live_chunk id=\(droppedJob.id.uuidString, privacy: .public)"
             )
@@ -146,8 +155,9 @@ public actor STTScheduler: STTManaging {
             )
         }
 
-        pendingJobs.append(job)
-        startNextJobIfNeeded()
+        laneState.pendingJobs.append(job)
+        setLaneState(laneState, for: job.lane)
+        startNextJobIfNeeded(in: job.lane)
     }
 
     private func nextEnqueueOrder() -> UInt64 {
@@ -155,41 +165,54 @@ public actor STTScheduler: STTManaging {
         return enqueueCounter
     }
 
-    private var pendingMeetingLiveJobCount: Int {
-        pendingJobs.reduce(into: 0) { count, job in
+    private func laneState(for lane: SchedulerLane) -> LaneState {
+        laneStates[lane, default: LaneState()]
+    }
+
+    private func setLaneState(_ laneState: LaneState, for lane: SchedulerLane) {
+        laneStates[lane] = laneState
+    }
+
+    private func pendingMeetingLiveJobCount(in laneState: LaneState) -> Int {
+        laneState.pendingJobs.reduce(into: 0) { count, job in
             if job.job == .meetingLiveChunk {
                 count += 1
             }
         }
     }
 
-    private func dropOldestPendingMeetingLiveJob() -> ScheduledJob? {
-        guard let index = pendingJobs.enumerated()
+    private func dropOldestPendingMeetingLiveJob(in laneState: inout LaneState) -> ScheduledJob? {
+        guard let index = laneState.pendingJobs.enumerated()
             .filter({ $0.element.job == .meetingLiveChunk })
             .min(by: { $0.element.enqueueOrder < $1.element.enqueueOrder })?
             .offset else {
             return nil
         }
-        return pendingJobs.remove(at: index)
+        return laneState.pendingJobs.remove(at: index)
     }
 
-    private func startNextJobIfNeeded() {
-        guard currentJob == nil else { return }
-        guard let next = dequeueNextJob() else { return }
+    private func startNextJobIfNeeded(in lane: SchedulerLane) {
+        var laneState = laneState(for: lane)
+        guard laneState.currentJob == nil else { return }
+        guard let next = dequeueNextJob(in: &laneState) else {
+            setLaneState(laneState, for: lane)
+            return
+        }
 
-        currentJob = next
-        currentExecutionTask = Task {
-            try await runtime.transcribe(audioPath: next.audioPath, onProgress: next.onProgress)
+        laneState.currentJob = next
+        laneState.currentExecutionTask = Task {
+            try await runtime.transcribe(audioPath: next.audioPath, job: next.job, onProgress: next.onProgress)
         }
-        currentWaitTask = Task { [weak self] in
-            await self?.awaitCurrentJobCompletion(jobID: next.id)
+        laneState.currentWaitTask = Task { [weak self] in
+            await self?.awaitCurrentJobCompletion(jobID: next.id, in: lane)
         }
+        setLaneState(laneState, for: lane)
     }
 
-    private func dequeueNextJob() -> ScheduledJob? {
-        guard let index = pendingJobs.indices.min(by: { lhs, rhs in
-            let left = pendingJobs[lhs]
-            let right = pendingJobs[rhs]
+    private func dequeueNextJob(in laneState: inout LaneState) -> ScheduledJob? {
+        guard let index = laneState.pendingJobs.indices.min(by: { lhs, rhs in
+            let left = laneState.pendingJobs[lhs]
+            let right = laneState.pendingJobs[rhs]
             if left.job.priorityRank != right.job.priorityRank {
                 return left.job.priorityRank < right.job.priorityRank
             }
@@ -197,11 +220,12 @@ public actor STTScheduler: STTManaging {
         }) else {
             return nil
         }
-        return pendingJobs.remove(at: index)
+        return laneState.pendingJobs.remove(at: index)
     }
 
-    private func awaitCurrentJobCompletion(jobID: UUID) async {
-        guard currentJob?.id == jobID, let executionTask = currentExecutionTask else { return }
+    private func awaitCurrentJobCompletion(jobID: UUID, in lane: SchedulerLane) async {
+        let laneState = laneState(for: lane)
+        guard laneState.currentJob?.id == jobID, let executionTask = laneState.currentExecutionTask else { return }
 
         let result: Result<STTResult, Error>
         do {
@@ -210,16 +234,18 @@ public actor STTScheduler: STTManaging {
             result = .failure(error)
         }
 
-        finishCurrentJob(jobID: jobID, result: result)
+        finishCurrentJob(jobID: jobID, in: lane, result: result)
     }
 
-    private func finishCurrentJob(jobID: UUID, result: Result<STTResult, Error>) {
-        guard currentJob?.id == jobID else { return }
+    private func finishCurrentJob(jobID: UUID, in lane: SchedulerLane, result: Result<STTResult, Error>) {
+        var laneState = laneState(for: lane)
+        guard laneState.currentJob?.id == jobID else { return }
 
         let continuation = continuations.removeValue(forKey: jobID)
-        currentJob = nil
-        currentExecutionTask = nil
-        currentWaitTask = nil
+        laneState.currentJob = nil
+        laneState.currentExecutionTask = nil
+        laneState.currentWaitTask = nil
+        setLaneState(laneState, for: lane)
 
         switch result {
         case .success(let value):
@@ -228,26 +254,64 @@ public actor STTScheduler: STTManaging {
             continuation?.resume(throwing: error)
         }
 
-        startNextJobIfNeeded()
+        startNextJobIfNeeded(in: lane)
     }
 
     private func cancel(jobID: UUID) {
-        if let index = pendingJobs.firstIndex(where: { $0.id == jobID }) {
-            pendingJobs.remove(at: index)
-            continuations.removeValue(forKey: jobID)?.resume(throwing: CancellationError())
-            return
-        }
+        for lane in SchedulerLane.allCases {
+            var laneState = laneState(for: lane)
+            if let index = laneState.pendingJobs.firstIndex(where: { $0.id == jobID }) {
+                laneState.pendingJobs.remove(at: index)
+                setLaneState(laneState, for: lane)
+                continuations.removeValue(forKey: jobID)?.resume(throwing: CancellationError())
+                return
+            }
 
-        if currentJob?.id == jobID {
-            currentExecutionTask?.cancel()
+            if laneState.currentJob?.id == jobID {
+                laneState.currentExecutionTask?.cancel()
+                setLaneState(laneState, for: lane)
+                return
+            }
         }
     }
 
     private func cancelAllPendingJobs() {
-        let pendingIDs = pendingJobs.map(\.id)
-        pendingJobs.removeAll()
+        let pendingIDs = SchedulerLane.allCases.flatMap { laneState(for: $0).pendingJobs.map(\.id) }
+        for lane in SchedulerLane.allCases {
+            var laneState = laneState(for: lane)
+            laneState.pendingJobs.removeAll()
+            setLaneState(laneState, for: lane)
+        }
         for id in pendingIDs {
             continuations.removeValue(forKey: id)?.resume(throwing: CancellationError())
+        }
+    }
+
+    private func cancelAndDrainRunningJobs() async {
+        let waitTasks = SchedulerLane.allCases.compactMap { lane -> Task<Void, Never>? in
+            let laneState = laneState(for: lane)
+            laneState.currentExecutionTask?.cancel()
+            return laneState.currentWaitTask
+        }
+        for task in waitTasks {
+            await task.value
+        }
+    }
+}
+
+private enum SchedulerLane: CaseIterable, Sendable {
+    case dictation
+    case meeting
+    case batch
+
+    init(job: STTJobKind) {
+        switch job {
+        case .dictation:
+            self = .dictation
+        case .meetingFinalize, .meetingLiveChunk:
+            self = .meeting
+        case .fileTranscription:
+            self = .batch
         }
     }
 }
@@ -258,11 +322,11 @@ private extension STTJobKind {
         case .dictation:
             0
         case .meetingFinalize:
-            1
+            0
         case .meetingLiveChunk:
-            2
+            1
         case .fileTranscription:
-            3
+            0
         }
     }
 }
