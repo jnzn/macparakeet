@@ -192,6 +192,83 @@ final class STTSchedulerTests: XCTestCase {
         XCTAssertTrue(startedPaths.isEmpty)
     }
 
+    func testShutdownCancelsActiveAndPendingJobs() async throws {
+        let runtime = MockSTTRuntime()
+        await runtime.block(path: "active")
+        let scheduler = STTScheduler(runtimeProvider: runtime, meetingLiveChunkBacklogLimit: 8)
+
+        // Start an active job in the meeting lane.
+        let activeTask = Task {
+            try await scheduler.transcribe(audioPath: "active", job: .meetingLiveChunk)
+        }
+        try await waitForStartedPaths(runtime: runtime, count: 1)
+
+        // Queue a pending job behind it in the same lane.
+        let pendingTask = Task {
+            try await scheduler.transcribe(audioPath: "pending", job: .meetingLiveChunk)
+        }
+        // Let the enqueue settle.
+        try await Task.sleep(for: .milliseconds(50))
+
+        // Shutdown should cancel both.
+        await scheduler.shutdown()
+
+        do {
+            _ = try await activeTask.value
+            XCTFail("Expected active job to be cancelled by shutdown")
+        } catch is CancellationError {
+            // Expected.
+        }
+
+        do {
+            _ = try await pendingTask.value
+            XCTFail("Expected pending job to be cancelled by shutdown")
+        } catch is CancellationError {
+            // Expected.
+        }
+
+        // Runtime shutdown was called.
+        let counts = await runtime.lifecycleCounts()
+        XCTAssertEqual(counts.shutdown, 1)
+    }
+
+    func testPendingJobCancelledBeforeExecution() async throws {
+        let runtime = MockSTTRuntime()
+        await runtime.block(path: "blocker")
+        let scheduler = STTScheduler(runtimeProvider: runtime, meetingLiveChunkBacklogLimit: 8)
+
+        // Block the batch lane with a long-running job.
+        let blockerTask = Task {
+            try await scheduler.transcribe(audioPath: "blocker", job: .fileTranscription)
+        }
+        try await waitForStartedPaths(runtime: runtime, count: 1)
+
+        // Queue a second job in the same lane — it will be pending.
+        let pendingTask = Task {
+            try await scheduler.transcribe(audioPath: "queued", job: .fileTranscription)
+        }
+        // Let the enqueue settle.
+        try await Task.sleep(for: .milliseconds(50))
+
+        // Cancel the pending task from the caller side.
+        pendingTask.cancel()
+
+        do {
+            _ = try await pendingTask.value
+            XCTFail("Expected pending job to throw CancellationError")
+        } catch is CancellationError {
+            // Expected.
+        }
+
+        // The cancelled job should never have reached the runtime.
+        let startedPaths = await runtime.startedPaths()
+        XCTAssertEqual(startedPaths, ["blocker"])
+
+        // Unblock and verify the original job still completes.
+        await runtime.release(path: "blocker")
+        _ = try await blockerTask.value
+    }
+
     private func waitForStartedPaths(
         runtime: MockSTTRuntime,
         count: Int,
@@ -210,7 +287,7 @@ final class STTSchedulerTests: XCTestCase {
 
 private actor MockSTTRuntime: STTRuntimeProtocol {
     private var blockedPaths: Set<String> = []
-    private var waitingContinuations: [String: CheckedContinuation<Void, Never>] = [:]
+    private var waitingContinuations: [String: CheckedContinuation<Void, any Error>] = [:]
     private var progressScripts: [String: [Int]] = [:]
     private var started: [String] = []
 
@@ -234,11 +311,16 @@ private actor MockSTTRuntime: STTRuntimeProtocol {
         }
 
         if blockedPaths.contains(audioPath) {
-            await withCheckedContinuation { continuation in
-                waitingContinuations[audioPath] = continuation
+            try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    waitingContinuations[audioPath] = continuation
+                }
+            } onCancel: {
+                Task { await self.cancelBlocked(path: audioPath) }
             }
         }
 
+        try Task.checkCancellation()
         return STTResult(text: "\(job):\(audioPath)", words: [])
     }
 
@@ -280,7 +362,11 @@ private actor MockSTTRuntime: STTRuntimeProtocol {
 
     func release(path: String) {
         blockedPaths.remove(path)
-        waitingContinuations.removeValue(forKey: path)?.resume()
+        waitingContinuations.removeValue(forKey: path)?.resume(returning: ())
+    }
+
+    private func cancelBlocked(path: String) {
+        waitingContinuations.removeValue(forKey: path)?.resume(throwing: CancellationError())
     }
 
     func setProgressScript(_ values: [Int], for path: String) {
