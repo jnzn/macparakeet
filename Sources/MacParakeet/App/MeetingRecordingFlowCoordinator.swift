@@ -168,15 +168,11 @@ final class MeetingRecordingFlowCoordinator {
             stopTranscriptObservation()
             pillViewModel?.micLevel = 0
             pillViewModel?.systemLevel = 0
+            pillViewModel?.transcriptionComplete = false
             pillViewModel?.state = .completing
             pillViewModel?.onCompletionAnimationFinished = { [weak self] in
                 guard let self else { return }
-                // If transcription already finished during animation, go straight to completed
-                if self.completedTranscription != nil {
-                    self.pillViewModel?.state = .completed
-                } else {
-                    self.pillViewModel?.state = .transcribing
-                }
+                self.sendEvent(.dismissRequested)
             }
             panelViewModel?.state = .transcribing
             panelViewModel?.micLevel = 0
@@ -199,11 +195,12 @@ final class MeetingRecordingFlowCoordinator {
         case .showCompleted:
             stopPillPolling()
             stopTranscriptObservation()
-            // If completion animation is still playing, let its callback handle the transition
-            if pillViewModel?.state != .completing {
-                pillViewModel?.state = .completed
-            }
+            // Signal the flower animation to show the checkmark
+            pillViewModel?.transcriptionComplete = true
             panelViewModel?.state = .hidden
+            // Cancel the state machine's auto-dismiss — the flower animation handles its own exit
+            autoDismissTask?.cancel()
+            autoDismissTask = nil
 
         case .showError(let message):
             stopPillPolling()

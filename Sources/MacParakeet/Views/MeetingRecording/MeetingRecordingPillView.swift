@@ -75,6 +75,10 @@ struct MeetingRecordingPillView: View {
         VStack(spacing: 0) {
             FlowerCompletionView(
                 stemCollapsed: $stemCollapsed,
+                transcriptionComplete: Binding(
+                    get: { viewModel.transcriptionComplete },
+                    set: { viewModel.transcriptionComplete = $0 }
+                ),
                 onFinished: {
                     viewModel.onCompletionAnimationFinished?()
                 }
