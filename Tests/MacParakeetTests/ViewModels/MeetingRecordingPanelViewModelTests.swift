@@ -41,6 +41,7 @@ final class MeetingRecordingPanelViewModelTests: XCTestCase {
         XCTAssertTrue(viewModel.showsAudioLevels)
         XCTAssertEqual(viewModel.previewLines, lines)
         XCTAssertEqual(viewModel.statusTitle, "Recording")
+        XCTAssertFalse(viewModel.showsLaggingIndicator)
     }
 
     func testTranscribingAndErrorStatesUpdateStatusSurface() {
@@ -57,19 +58,35 @@ final class MeetingRecordingPanelViewModelTests: XCTestCase {
         XCTAssertFalse(viewModel.showsElapsedTime)
     }
 
+    func testLaggingRecordingStateUpdatesStatusSurface() {
+        let viewModel = MeetingRecordingPanelViewModel()
+
+        viewModel.state = .recording
+        viewModel.updatePreviewLines([], isTranscriptionLagging: true)
+
+        XCTAssertTrue(viewModel.showsLaggingIndicator)
+        XCTAssertTrue(viewModel.statusMessage.contains("catching up"))
+
+        viewModel.state = .transcribing
+        XCTAssertFalse(viewModel.showsLaggingIndicator)
+    }
+
     func testResetClearsTranscriptPreview() {
         let viewModel = MeetingRecordingPanelViewModel()
         viewModel.state = .recording
         viewModel.elapsedSeconds = 42
-        viewModel.updatePreviewLines([
-            MeetingRecordingPreviewLine(
-                id: "1",
-                timestamp: "0:42",
-                speakerLabel: "Them",
-                text: "Reset should clear this",
-                source: .system
-            )
-        ])
+        viewModel.updatePreviewLines(
+            [
+                MeetingRecordingPreviewLine(
+                    id: "1",
+                    timestamp: "0:42",
+                    speakerLabel: "Them",
+                    text: "Reset should clear this",
+                    source: .system
+                )
+            ],
+            isTranscriptionLagging: true
+        )
 
         viewModel.reset()
 
@@ -78,5 +95,6 @@ final class MeetingRecordingPanelViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.micLevel, 0)
         XCTAssertEqual(viewModel.systemLevel, 0)
         XCTAssertTrue(viewModel.previewLines.isEmpty)
+        XCTAssertFalse(viewModel.isTranscriptionLagging)
     }
 }
