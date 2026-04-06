@@ -80,16 +80,16 @@
 │  │(Mic)     │  │ Hotkey)  │  │ Paste)      │  │ Control)     │  │Taps     ││
 │  └──────────┘  └──────────┘  └─────────────┘  └──────────────┘  └─────────┘│
 │                                                                                  │
-│  Total AI Memory: ~66 MB peak (Parakeet on ANE)                                │
+│  Parakeet working RAM: ~66 MB per active inference slot on ANE                │
 │  Recommended: 8 GB RAM (Apple Silicon only).                                    │
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Core STT runs on-device.** Optional LLM features use configured providers or Local CLI tools, and telemetry/crash reporting are opt-out. The app supports a fully local setup, but it is not network-free in every configuration.
 
-### Concurrency Model (ADR-015 + ADR-016)
+### Concurrency Model (ADR-015 + ADR-016 Target)
 
-Dictation and meeting recording run concurrently as independent audio pipelines, but all STT work routes through one scheduler and one shared runtime owner:
+The diagram below shows the **approved ADR-016 target architecture**. Dictation and meeting recording run concurrently as independent audio pipelines, while STT converges on one scheduler and one shared runtime owner:
 
 ```
 ┌─ Dictation Pipeline ──────────────────────┐
@@ -120,9 +120,11 @@ Dictation and meeting recording run concurrently as independent audio pipelines,
 
 - **No shared audio engine** — dictation and meeting capture remain independent. macOS HAL multiplexes mic access.
 - **No mutual exclusion** — dictation and meeting recording can both be active.
-- **Centralized STT ownership** — one runtime owns model lifecycle, warm-up, and shutdown.
-- **Explicit scheduling** — a reserved dictation slot plus a shared background slot; within the background slot, finalize beats live preview, and file transcription waits.
+- **Centralized STT ownership** — the approved end state has one runtime owner for lifecycle, warm-up, and shutdown.
+- **Explicit scheduling** — the approved end state uses a reserved dictation slot plus a shared background slot; within the background slot, finalize beats live preview, and file transcription waits.
 - **Menu bar icon priority** — meeting > dictation > file-transcription > idle.
+
+**Current branch implementation note:** this branch has already centralized STT ownership in `AppEnvironment`, but the checked-out code still uses an intermediate internal `dictation` / `meeting` / `batch` lane topology while converging to the target two-slot policy.
 
 ---
 
@@ -374,7 +376,9 @@ protocol AudioProcessorProtocol: Sendable {
 
 #### 2.5 STT Runtime + Scheduler
 
-**Responsibility:** The shared STT stack owns one process-wide Parakeet runtime actor plus one explicit scheduler. `STTRuntime` owns FluidAudio model lifecycle and the slot-scoped `AsrManager` set used by the interactive and background execution slots. `STTScheduler` owns admission, slot assignment, in-slot priority, backpressure, cancellation, and request-scoped progress. `STTClient` remains as a compatibility facade, not as an app-owned second runtime.
+**Responsibility:** The shared STT stack owns one process-wide Parakeet runtime actor plus one explicit scheduler. In the **approved target architecture**, `STTRuntime` owns FluidAudio model lifecycle and the slot-scoped `AsrManager` set used by the interactive and background execution slots. `STTScheduler` owns admission, slot assignment, in-slot priority, backpressure, cancellation, and request-scoped progress. `STTClient` remains as a compatibility facade, not as an app-owned second runtime.
+
+**Current branch implementation note:** the checked-out v0.6 code already centralizes ownership behind shared `STTRuntime` / `STTScheduler` instances, but it still routes execution through internal `dictation`, `meeting`, and `batch` lanes rather than the final two-slot policy documented here.
 
 **Key Types/Protocols:**
 ```swift
@@ -446,7 +450,7 @@ let result = try await manager.transcribe(samples, source: .system)
 // result.text, result.tokenTimings (word-level timestamps + confidence)
 ```
 
-**Ownership Model:**
+**Approved Target Ownership Model:**
 ```
 Feature services (Dictation / Meeting / File / URL)
     │
@@ -1118,7 +1122,7 @@ Parakeet TDT 0.6B-v3 throughput varies by device class: approximately 155x realt
 
 ### Memory Management
 
-- **Parakeet model:** One shared runtime keeps its slot managers initialized after first use. Uses ~66 MB working RAM per active inference slot on the ANE path and is released when the app quits.
+- **Parakeet model:** One shared runtime owner keeps its managers initialized after first use. Budget ~66 MB working RAM per active inference slot on the ANE path. Real total memory depends on how many managers are loaded/active in the current implementation, whether the background capacity stays lazy in the final design, and whether diarization models are also resident.
 - **Audio buffers:** Ring buffer during recording, flushed to temp file on stop. No recording duration limit — local processing means no artificial caps.
 - **Database:** GRDB uses WAL mode by default. No connection pooling needed (single-user app).
 

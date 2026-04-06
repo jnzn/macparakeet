@@ -66,7 +66,7 @@ MacParakeet runs NVIDIA's Parakeet TDT on Apple's Neural Engine via [FluidAudio]
 
 - ~155x realtime — 60 min of audio in ~23 seconds
 - ~2.5% word error rate (Parakeet TDT 0.6B-v3)
-- ~66 MB working memory during inference
+- ~66 MB working memory per active Parakeet inference slot
 - 25 European languages with auto-detection
 
 ### Limitations

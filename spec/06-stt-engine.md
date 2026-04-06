@@ -14,7 +14,7 @@ MacParakeet uses Parakeet TDT 0.6B-v3 via FluidAudio CoreML, running on Apple's 
 | Runtime | FluidAudio SDK (CoreML on ANE) |
 | Word Error Rate | ~2.5% (v3 multilingual) / ~2.1% (v2 English-only) |
 | Speed | ~155x realtime on Apple Silicon |
-| Peak working RAM | ~66 MB (~130 MB with custom vocabulary boosting) |
+| Peak working RAM | ~66 MB per active Parakeet inference slot (~130 MB with custom vocabulary boosting) |
 | Model download | ~6 GB CoreML bundle (one-time, during onboarding) |
 | Output | Word-level timestamps with per-word confidence scores |
 | Input format | 16kHz mono Float32 samples (FluidAudio's AudioConverter handles resampling) |
@@ -167,7 +167,7 @@ struct TimestampedWord: Sendable {
 
 ### Runtime and Scheduling
 
-ADR-016 defines MacParakeet's target STT architecture as:
+ADR-016 defines MacParakeet's **approved target STT architecture** as:
 
 - **One process-wide `STTRuntime` owner** for model lifecycle and warm-up/shutdown
 - **Two STT execution slots by default**
@@ -179,10 +179,12 @@ ADR-016 defines MacParakeet's target STT architecture as:
 The app does not treat "one service = one STT runtime" as a valid long-term architecture.
 `STTClient` remains only as a standalone compatibility facade for the CLI and tests; app code uses the shared `STTRuntime` + `STTScheduler` from `AppEnvironment`.
 
+**Current branch implementation note:** the checked-out v0.6 branch has already centralized app-owned STT wiring, but it still executes through internal `dictation` / `meeting` / `batch` lanes with one `AsrManager` per lane. Treat the two-slot policy below as the approved destination, not as a statement that the current code has fully converged yet.
+
 ### Lifecycle
 
-- **Lazy init**: The shared runtime is not loaded at app launch; loaded on first STT request or warm-up
-- **Keep loaded**: Once initialized, the runtime keeps its slot managers ready for subsequent requests
+- **Lazy init**: The shared runtime owner is not loaded at app launch; loaded on first STT request or warm-up
+- **Keep loaded**: Once initialized, the runtime keeps its currently loaded managers ready for subsequent requests
 - **Warm-up during onboarding**: Download models (~6 GB) + CoreML compilation (~3.4s first time)
 - **Graceful shutdown**: The shared runtime is released when the app quits
 - **Single owner**: Warm-up, readiness, shutdown, and cache clear happen once at the runtime layer
@@ -295,7 +297,7 @@ This replaces the previous Python venv bootstrap (~500 MB deps + ~2.5 GB model).
 - CoreML runs in-process (not a separate daemon) — no subprocess crash isolation
 - Wrap transcription calls in error handling
 - On CoreML failure, log the error, report to user, allow retry
-- Memory pressure: CoreML uses ~66 MB working RAM, far less likely to trigger OOM than the previous ~2 GB MLX path
+- Memory pressure: CoreML uses ~66 MB working RAM per active Parakeet inference slot, far less likely to trigger OOM than the previous ~2 GB MLX path
 
 ### Timeout Handling
 
@@ -329,22 +331,20 @@ For dictation (the primary use case), transcription time is imperceptible. For l
 
 ### Memory Budget
 
-```
-Parakeet STT (CoreML/ANE)      ~66 MB working RAM (~130 MB with vocab boosting)
-App process (UI + services)    ~100 MB
-Audio buffers                  ~50 MB
-────────────────────────────────────
-Total peak                     ~300 MB (without vocab boosting)
-
-Recommended: 8 GB RAM (Apple Silicon)
-```
+- Parakeet STT: ~66 MB working RAM per active slot (~130 MB with vocab boosting)
+- App process (UI + services): ~100 MB
+- Audio buffers: ~50 MB
+- Illustrative warm single-slot budget: ~200-250 MB before diarization
+- Real total memory depends on how many STT managers/slots are loaded and active, whether background capacity stays lazy in the final two-slot design, and whether diarization models are also resident
+- Recommended baseline: 8 GB RAM (Apple Silicon)
 
 ### Optimization Notes
 
-- The shared runtime keeps its slot managers initialized after first use — subsequent calls skip model loading
+- The shared runtime owner keeps its managers initialized after first use — subsequent calls skip model loading
 - Apple Silicon's unified memory means no CPU↔ANE transfer overhead
 - For dictation, latency is the primary concern — sub-100ms after warm-up
 - For file transcription, throughput matters more — it is intentionally lower-priority than dictation and meeting work in the shared background slot
+- The approved two-slot design assumes background capacity is a policy choice rather than a guaranteed always-hot third executor; benchmark any stronger concurrency claim before documenting it as fixed
 - ANE and GPU run simultaneously — STT never competes with LLM for processing cycles
 
 ---
