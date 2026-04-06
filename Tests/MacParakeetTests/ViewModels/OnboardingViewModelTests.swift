@@ -7,6 +7,7 @@ final class OnboardingViewModelTests: XCTestCase {
     private func makeViewModel(
         permissionService: PermissionServiceProtocol,
         sttClient: STTClientProtocol,
+        diarizationService: DiarizationServiceProtocol? = nil,
         defaults: UserDefaults,
         isRuntimeSupported: @escaping @Sendable () -> Bool = { true },
         availableDiskBytes: @escaping @Sendable () -> Int64? = { 20 * 1_024 * 1_024 * 1_024 },
@@ -16,6 +17,7 @@ final class OnboardingViewModelTests: XCTestCase {
         OnboardingViewModel(
             permissionService: permissionService,
             sttClient: sttClient,
+            diarizationService: diarizationService,
             isRuntimeSupported: isRuntimeSupported,
             availableDiskBytes: availableDiskBytes,
             isNetworkReachable: isNetworkReachable,
@@ -82,6 +84,29 @@ final class OnboardingViewModelTests: XCTestCase {
         let called = await stt.wasWarmUpCalled()
         XCTAssertTrue(called)
         XCTAssertTrue(vm.canContinueFromCurrentStep())
+    }
+
+    func testEngineWarmUpPreparesDiarizationModelsBeforeReady() async throws {
+        let perms = MockPermissionService()
+        let stt = MockSTTClient()
+        let diarization = MockDiarizationService()
+        let defaults = UserDefaults(suiteName: "com.macparakeet.tests.\(UUID().uuidString)")!
+        defaults.removePersistentDomain(forName: defaults.volatileDomainNames.first ?? "")
+
+        let vm = makeViewModel(
+            permissionService: perms,
+            sttClient: stt,
+            diarizationService: diarization,
+            defaults: defaults
+        )
+        vm.jump(to: .engine)
+
+        vm.startEngineWarmUp()
+        try await Task.sleep(for: .milliseconds(150))
+
+        XCTAssertEqual(vm.engineState, .ready)
+        let prepared = await diarization.prepareModelsCalled
+        XCTAssertTrue(prepared)
     }
 
     func testMarkOnboardingCompletedPersistsToDefaults() {

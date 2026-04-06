@@ -183,6 +183,7 @@ private actor MockSTTRuntime: STTRuntimeProtocol {
 
     func transcribe(
         audioPath: String,
+        job: STTJobKind,
         onProgress: (@Sendable (Int, Int) -> Void)?
     ) async throws -> STTResult {
         started.append(audioPath)
@@ -199,7 +200,7 @@ private actor MockSTTRuntime: STTRuntimeProtocol {
             }
         }
 
-        return STTResult(text: audioPath, words: [])
+        return STTResult(text: "\(job):\(audioPath)", words: [])
     }
 
     func warmUp(onProgress: (@Sendable (String) -> Void)?) async throws {

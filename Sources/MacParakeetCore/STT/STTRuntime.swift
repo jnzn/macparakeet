@@ -5,6 +5,7 @@ import os
 protocol STTRuntimeProtocol: Sendable {
     func transcribe(
         audioPath: String,
+        job: STTJobKind,
         onProgress: (@Sendable (Int, Int) -> Void)?
     ) async throws -> STTResult
     func warmUp(onProgress: (@Sendable (String) -> Void)?) async throws
@@ -18,7 +19,9 @@ protocol STTRuntimeProtocol: Sendable {
 
 /// Sole owner of the shared Parakeet runtime lifecycle.
 public actor STTRuntime: STTRuntimeProtocol {
-    private var manager: AsrManager?
+    private var dictationManager: AsrManager?
+    private var meetingManager: AsrManager?
+    private var batchManager: AsrManager?
     private var models: AsrModels?
     private var initializationTask: Task<Void, Error>?
     private var warmUpProgressHandler: (@Sendable (String) -> Void)?
@@ -35,11 +38,13 @@ public actor STTRuntime: STTRuntimeProtocol {
 
     public func transcribe(
         audioPath: String,
+        job: STTJobKind,
         onProgress: (@Sendable (Int, Int) -> Void)? = nil
     ) async throws -> STTResult {
         try await ensureInitialized()
 
-        guard let manager else {
+        let lane = route(for: job)
+        guard let manager = manager(for: lane) else {
             throw STTError.modelNotLoaded
         }
 
@@ -70,7 +75,7 @@ public actor STTRuntime: STTRuntimeProtocol {
 
         do {
             try Task.checkCancellation()
-            let result = try await manager.transcribe(audioURL, source: .system)
+            let result = try await manager.transcribe(audioURL)
             let words = Self.mergeTokenTimingsIntoWords(result.tokenTimings)
             onProgress?(100, 100)
             return STTResult(text: result.text, words: words)
@@ -153,16 +158,29 @@ public actor STTRuntime: STTRuntimeProtocol {
     }
 
     public func isReady() async -> Bool {
-        guard let manager else { return false }
-        return manager.isAvailable
+        guard let dictationManager, let meetingManager, let batchManager else { return false }
+        let dictationReady = await dictationManager.isAvailable
+        let meetingReady = await meetingManager.isAvailable
+        let batchReady = await batchManager.isAvailable
+        return dictationReady && meetingReady && batchReady
     }
 
     public func shutdown() async {
         invalidateBackgroundWarmUp()
         initializationTask?.cancel()
         initializationTask = nil
-        manager?.cleanup()
-        manager = nil
+        if let dictationManager {
+            await dictationManager.cleanup()
+        }
+        if let meetingManager {
+            await meetingManager.cleanup()
+        }
+        if let batchManager {
+            await batchManager.cleanup()
+        }
+        dictationManager = nil
+        meetingManager = nil
+        batchManager = nil
         models = nil
         warmUpProgressHandler = nil
         setBackgroundWarmUpState(.idle)
@@ -214,7 +232,10 @@ public actor STTRuntime: STTRuntimeProtocol {
     }
 
     private func ensureInitialized() async throws {
-        if let manager, manager.isAvailable {
+        if let dictationManager, let meetingManager, let batchManager,
+           await dictationManager.isAvailable,
+           await meetingManager.isAvailable,
+           await batchManager.isAvailable {
             return
         }
 
@@ -260,9 +281,18 @@ public actor STTRuntime: STTRuntimeProtocol {
                 version: version,
                 progressHandler: progressHandler
             )
-            let asrManager = AsrManager(config: .default)
-            try await asrManager.initialize(models: downloadedModels)
-            completeInitialization(models: downloadedModels, manager: asrManager)
+            let dictationManager = AsrManager(config: .default)
+            let meetingManager = AsrManager(config: .default)
+            let batchManager = AsrManager(config: .default)
+            try await dictationManager.loadModels(downloadedModels)
+            try await meetingManager.loadModels(downloadedModels)
+            try await batchManager.loadModels(downloadedModels)
+            await self.completeInitialization(
+                models: downloadedModels,
+                dictationManager: dictationManager,
+                meetingManager: meetingManager,
+                batchManager: batchManager
+            )
         }
 
         initializationTask = task
@@ -275,15 +305,43 @@ public actor STTRuntime: STTRuntimeProtocol {
         }
     }
 
-    private func completeInitialization(models: AsrModels, manager: AsrManager) {
+    private func completeInitialization(
+        models: AsrModels,
+        dictationManager: AsrManager,
+        meetingManager: AsrManager,
+        batchManager: AsrManager
+    ) async {
         guard !Task.isCancelled else {
-            manager.cleanup()
             initializationTask = nil
             return
         }
         self.models = models
-        self.manager = manager
+        self.dictationManager = dictationManager
+        self.meetingManager = meetingManager
+        self.batchManager = batchManager
         self.initializationTask = nil
+    }
+
+    private func manager(for lane: STTRuntimeLane) -> AsrManager? {
+        switch lane {
+        case .dictation:
+            dictationManager
+        case .meeting:
+            meetingManager
+        case .batch:
+            batchManager
+        }
+    }
+
+    private func route(for job: STTJobKind) -> STTRuntimeLane {
+        switch job {
+        case .dictation:
+            .dictation
+        case .meetingFinalize, .meetingLiveChunk:
+            .meeting
+        case .fileTranscription:
+            .batch
+        }
     }
 
     private nonisolated static func mapWarmUpError(_ error: Error) throws -> STTError {
@@ -415,4 +473,10 @@ public actor STTRuntime: STTRuntimeProtocol {
         flushCurrentWord()
         return words
     }
+}
+
+private enum STTRuntimeLane: Sendable {
+    case dictation
+    case meeting
+    case batch
 }
