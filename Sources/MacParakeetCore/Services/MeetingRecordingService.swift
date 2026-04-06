@@ -63,6 +63,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
     private var chunkResultBuffer = MeetingChunkResultBuffer()
     private var transcriptAssembler = MeetingTranscriptAssembler()
     private var chunkTranscriptionFailed = false
+    private var isTranscriptionLagging = false
     private var captureFailed = false
     private var latestLevels = MeetingAudioLevels()
 
@@ -149,6 +150,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         chunkResultBuffer.reset()
         transcriptAssembler.reset()
         chunkTranscriptionFailed = false
+        isTranscriptionLagging = false
         captureFailed = false
 
         processingTask = Task { [weak self] in
@@ -413,6 +415,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         sessionID: UUID
     ) {
         guard currentSession?.id == sessionID else { return }
+        isTranscriptionLagging = false
         let readyResults = chunkResultBuffer.receiveSuccess(
             sequence: sequence,
             source: source,
@@ -422,7 +425,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
 
         for ready in readyResults {
             let update = transcriptAssembler.apply(result: ready.result, chunk: ready.chunk, source: source)
-            transcriptContinuation?.yield(update)
+            yieldTranscriptUpdate(update)
         }
     }
 
@@ -434,6 +437,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
     ) {
         if case STTSchedulerError.droppedDueToBackpressure(job: .meetingLiveChunk) = error {
             logger.notice("Meeting live chunk dropped by scheduler backpressure")
+            isTranscriptionLagging = true
         } else {
             logger.error("Meeting chunk transcription failed: \(error.localizedDescription, privacy: .public)")
         }
@@ -442,8 +446,15 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         let readyResults = chunkResultBuffer.receiveFailure(sequence: sequence, source: source)
         for ready in readyResults {
             let update = transcriptAssembler.apply(result: ready.result, chunk: ready.chunk, source: source)
-            transcriptContinuation?.yield(update)
+            yieldTranscriptUpdate(update)
         }
+    }
+
+    private func yieldTranscriptUpdate(_ update: MeetingTranscriptUpdate) {
+        let adjusted = isTranscriptionLagging && !update.isTranscriptionLagging
+            ? MeetingTranscriptUpdate(words: update.words, speakers: update.speakers, isTranscriptionLagging: true)
+            : update
+        transcriptContinuation?.yield(adjusted)
     }
 
     private func existingSourceURLs(for session: Session) throws -> [URL] {
@@ -468,6 +479,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         chunkResultBuffer.reset()
         transcriptAssembler.reset()
         chunkTranscriptionFailed = false
+        isTranscriptionLagging = false
         captureFailed = false
         transcriptContinuation?.finish()
         transcriptContinuation = nil

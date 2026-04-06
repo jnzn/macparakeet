@@ -37,6 +37,9 @@ public actor STTScheduler: STTManaging {
     private var currentWaitTask: Task<Void, Never>?
     private var acceptsNewJobs = true
 
+    /// - Parameter meetingLiveChunkBacklogLimit: Maximum pending live-preview chunks before the
+    ///   oldest is dropped. 24 ≈ 4 minutes of 10-second chunks, enough to absorb a burst of
+    ///   dictation preemptions without losing meaningful meeting context.
     public init(
         runtime: STTRuntime = STTRuntime(),
         meetingLiveChunkBacklogLimit: Int = 24
@@ -101,24 +104,24 @@ public actor STTScheduler: STTManaging {
 
     public func clearModelCache() async {
         acceptsNewJobs = false
+        defer { acceptsNewJobs = true }
         cancelAllPendingJobs()
         if let currentWaitTask {
             currentExecutionTask?.cancel()
             await currentWaitTask.value
         }
         await runtime.clearModelCache()
-        acceptsNewJobs = true
     }
 
     public func shutdown() async {
         acceptsNewJobs = false
+        defer { acceptsNewJobs = true }
         cancelAllPendingJobs()
         if let currentWaitTask {
             currentExecutionTask?.cancel()
             await currentWaitTask.value
         }
         await runtime.shutdown()
-        acceptsNewJobs = true
     }
 
     private func enqueue(

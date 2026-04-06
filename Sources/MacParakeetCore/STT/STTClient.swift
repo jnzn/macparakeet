@@ -1,8 +1,12 @@
 import FluidAudio
 import Foundation
 
-/// Backwards-compatible facade for standalone callers that still construct an STT client.
-/// The app now owns `STTRuntime` + `STTScheduler` directly (ADR-016).
+/// Standalone STT facade for the CLI tool and test helpers.
+///
+/// - Warning: Each ``STTClient`` creates its **own** `STTRuntime` and `STTScheduler`,
+///   bypassing the process-wide singleton that ADR-016 requires.
+///   **App code must never instantiate this type directly.**
+///   Use the shared ``STTScheduler`` from `AppEnvironment` instead.
 public actor STTClient: STTManaging {
     private let scheduler: STTScheduler
 

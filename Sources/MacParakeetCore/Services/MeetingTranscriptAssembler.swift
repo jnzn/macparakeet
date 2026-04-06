@@ -3,10 +3,14 @@ import Foundation
 public struct MeetingTranscriptUpdate: Sendable, Equatable {
     public let words: [WordTimestamp]
     public let speakers: [SpeakerInfo]
+    /// `true` when live-preview chunks were recently dropped due to STT backpressure.
+    /// The UI can use this to show a "transcription lagging" indicator.
+    public let isTranscriptionLagging: Bool
 
-    public init(words: [WordTimestamp], speakers: [SpeakerInfo]) {
+    public init(words: [WordTimestamp], speakers: [SpeakerInfo], isTranscriptionLagging: Bool = false) {
         self.words = words
         self.speakers = speakers
+        self.isTranscriptionLagging = isTranscriptionLagging
     }
 }
 
