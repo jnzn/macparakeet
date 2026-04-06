@@ -2,41 +2,64 @@ import XCTest
 @testable import MacParakeetCore
 
 final class STTSchedulerTests: XCTestCase {
-    func testDictationBeatsQueuedMeetingLiveChunk() async throws {
+    func testDictationRunsWhileMeetingLaneIsBusy() async throws {
+        let runtime = MockSTTRuntime()
+        await runtime.block(path: "meeting-live")
+        let scheduler = STTScheduler(runtimeProvider: runtime, meetingLiveChunkBacklogLimit: 8)
+
+        let meetingTask = Task {
+            try await scheduler.transcribe(audioPath: "meeting-live", job: .meetingLiveChunk)
+        }
+        try await waitForStartedPaths(runtime: runtime, count: 1)
+
+        let dictationTask = Task {
+            try await scheduler.transcribe(audioPath: "dictation", job: .dictation)
+        }
+        try await waitForStartedPaths(runtime: runtime, count: 2)
+
+        let startedWhileMeetingBlocked = await runtime.startedPaths()
+        XCTAssertEqual(startedWhileMeetingBlocked, ["meeting-live", "dictation"])
+
+        _ = try await dictationTask.value
+        await runtime.release(path: "meeting-live")
+        _ = try await meetingTask.value
+    }
+
+    func testMeetingFinalizeRunsWhileBatchLaneIsBusy() async throws {
+        let runtime = MockSTTRuntime()
+        await runtime.block(path: "file")
+        let scheduler = STTScheduler(runtimeProvider: runtime, meetingLiveChunkBacklogLimit: 8)
+
+        let fileTask = Task {
+            try await scheduler.transcribe(audioPath: "file", job: .fileTranscription)
+        }
+        try await waitForStartedPaths(runtime: runtime, count: 1)
+
+        let finalizeTask = Task {
+            try await scheduler.transcribe(audioPath: "meeting-finalize", job: .meetingFinalize)
+        }
+        try await waitForStartedPaths(runtime: runtime, count: 2)
+
+        let startedWhileFileBlocked = await runtime.startedPaths()
+        XCTAssertEqual(startedWhileFileBlocked, ["file", "meeting-finalize"])
+
+        _ = try await finalizeTask.value
+        await runtime.release(path: "file")
+        _ = try await fileTask.value
+    }
+
+    func testMeetingFinalizeBeatsQueuedMeetingLiveChunkWithinMeetingLane() async throws {
         let runtime = MockSTTRuntime()
         await runtime.block(path: "seed")
         let scheduler = STTScheduler(runtimeProvider: runtime, meetingLiveChunkBacklogLimit: 8)
 
-        let seedTask = Task { try await scheduler.transcribe(audioPath: "seed", job: .fileTranscription) }
+        let seedTask = Task { try await scheduler.transcribe(audioPath: "seed", job: .meetingLiveChunk) }
         try await waitForStartedPaths(runtime: runtime, count: 1)
 
         let liveTask = Task { try await scheduler.transcribe(audioPath: "live", job: .meetingLiveChunk) }
-        let dictationTask = Task { try await scheduler.transcribe(audioPath: "dictation", job: .dictation) }
-
-        try await Task.sleep(for: .milliseconds(100))
-        let startedWhileSeedBlocked = await runtime.startedPaths()
-        XCTAssertEqual(startedWhileSeedBlocked, ["seed"])
-
-        await runtime.release(path: "seed")
-
-        _ = try await seedTask.value
-        _ = try await dictationTask.value
-        _ = try await liveTask.value
-
-        let finalStartedPaths = await runtime.startedPaths()
-        XCTAssertEqual(finalStartedPaths, ["seed", "dictation", "live"])
-    }
-
-    func testMeetingFinalizeBeatsQueuedFileTranscription() async throws {
-        let runtime = MockSTTRuntime()
-        await runtime.block(path: "seed")
-        let scheduler = STTScheduler(runtimeProvider: runtime, meetingLiveChunkBacklogLimit: 8)
-
-        let seedTask = Task { try await scheduler.transcribe(audioPath: "seed", job: .dictation) }
-        try await waitForStartedPaths(runtime: runtime, count: 1)
-
-        let fileTask = Task { try await scheduler.transcribe(audioPath: "file", job: .fileTranscription) }
-        let finalizeTask = Task { try await scheduler.transcribe(audioPath: "meeting-finalize", job: .meetingFinalize) }
+        let finalizeTask = Task {
+            try await scheduler.transcribe(audioPath: "meeting-finalize", job: .meetingFinalize)
+        }
 
         try await Task.sleep(for: .milliseconds(100))
         let startedWhileSeedBlocked = await runtime.startedPaths()
@@ -46,10 +69,10 @@ final class STTSchedulerTests: XCTestCase {
 
         _ = try await seedTask.value
         _ = try await finalizeTask.value
-        _ = try await fileTask.value
+        _ = try await liveTask.value
 
         let finalStartedPaths = await runtime.startedPaths()
-        XCTAssertEqual(finalStartedPaths, ["seed", "meeting-finalize", "file"])
+        XCTAssertEqual(finalStartedPaths, ["seed", "meeting-finalize", "live"])
     }
 
     func testLifecycleOperationsTargetSharedRuntime() async throws {
@@ -68,7 +91,7 @@ final class STTSchedulerTests: XCTestCase {
         XCTAssertEqual(counts.shutdown, 1)
     }
 
-    func testProgressIsScopedPerJob() async throws {
+    func testProgressIsScopedPerJobAcrossLanes() async throws {
         let runtime = MockSTTRuntime()
         await runtime.setProgressScript([10, 50], for: "file")
         await runtime.setProgressScript([20, 80], for: "dictation")
@@ -83,7 +106,6 @@ final class STTSchedulerTests: XCTestCase {
                 fileProgress.record(current)
             }
         }
-
         try await waitForStartedPaths(runtime: runtime, count: 1)
 
         let dictationTask = Task {
@@ -91,22 +113,17 @@ final class STTSchedulerTests: XCTestCase {
                 dictationProgress.record(current)
             }
         }
+        try await waitForStartedPaths(runtime: runtime, count: 2)
 
-        try await Task.sleep(for: .milliseconds(100))
+        _ = try await dictationTask.value
+
         let fileValuesWhileBlocked = fileProgress.currentValues()
         let dictationValuesWhileBlocked = dictationProgress.currentValues()
         XCTAssertEqual(fileValuesWhileBlocked, [10, 50])
-        XCTAssertEqual(dictationValuesWhileBlocked, [])
+        XCTAssertEqual(dictationValuesWhileBlocked, [20, 80])
 
         await runtime.release(path: "file")
-
         _ = try await fileTask.value
-        _ = try await dictationTask.value
-
-        let finalFileValues = fileProgress.currentValues()
-        let finalDictationValues = dictationProgress.currentValues()
-        XCTAssertEqual(finalFileValues, [10, 50])
-        XCTAssertEqual(finalDictationValues, [20, 80])
     }
 
     func testMeetingLiveChunkBackpressureDropsOldestPendingLiveChunk() async throws {
@@ -114,7 +131,7 @@ final class STTSchedulerTests: XCTestCase {
         await runtime.block(path: "seed")
         let scheduler = STTScheduler(runtimeProvider: runtime, meetingLiveChunkBacklogLimit: 1)
 
-        let seedTask = Task { try await scheduler.transcribe(audioPath: "seed", job: .fileTranscription) }
+        let seedTask = Task { try await scheduler.transcribe(audioPath: "seed", job: .meetingLiveChunk) }
         try await waitForStartedPaths(runtime: runtime, count: 1)
 
         let droppedTask = Task { try await scheduler.transcribe(audioPath: "live-1", job: .meetingLiveChunk) }
