@@ -24,6 +24,7 @@ final class DictationFlowCoordinator {
     private let entitlementsService: EntitlementsService
     private let dictationRepo: DictationRepository
     private let settingsViewModel: SettingsViewModel
+    private let shouldSuppressIdlePill: () -> Bool
     private let onMenuBarIconUpdate: (BreathWaveIcon.MenuBarState) -> Void
     private let onHistoryReload: () -> Void
     private let onPresentEntitlementsAlert: (Error) -> Void
@@ -66,6 +67,7 @@ final class DictationFlowCoordinator {
         entitlementsService: EntitlementsService,
         dictationRepo: DictationRepository,
         settingsViewModel: SettingsViewModel,
+        shouldSuppressIdlePill: @escaping () -> Bool = { false },
         onMenuBarIconUpdate: @escaping (BreathWaveIcon.MenuBarState) -> Void,
         onHistoryReload: @escaping () -> Void,
         onPresentEntitlementsAlert: @escaping (Error) -> Void
@@ -75,6 +77,7 @@ final class DictationFlowCoordinator {
         self.entitlementsService = entitlementsService
         self.dictationRepo = dictationRepo
         self.settingsViewModel = settingsViewModel
+        self.shouldSuppressIdlePill = shouldSuppressIdlePill
         self.onMenuBarIconUpdate = onMenuBarIconUpdate
         self.onHistoryReload = onHistoryReload
         self.onPresentEntitlementsAlert = onPresentEntitlementsAlert
@@ -86,6 +89,7 @@ final class DictationFlowCoordinator {
         guard settingsViewModel.showIdlePill else { return }
         guard idlePillController == nil else { return }
         guard overlayController == nil else { return }
+        guard !shouldSuppressIdlePill() else { return }
         let vm = IdlePillViewModel()
         vm.onStartDictation = { [weak self] in
             self?.startDictation(mode: .persistent, trigger: .pillClick)

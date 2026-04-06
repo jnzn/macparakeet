@@ -243,11 +243,19 @@ public final class TranscriptionViewModel {
         let url = URL(fileURLWithPath: filePath)
         let originalID = original.id
         let taskID = beginNewTranscription(source: .localFile, fileName: original.fileName, clearCurrent: true)
+        let retranscriptionSource: TelemetryTranscriptionSource = switch original.sourceType {
+        case .file:
+            .file
+        case .youtube:
+            .youtube
+        case .meeting:
+            .meeting
+        }
 
         transcriptionTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                var result = try await service.transcribe(fileURL: url, source: .file) { [weak self] phase in
+                var result = try await service.transcribe(fileURL: url, source: retranscriptionSource) { [weak self] phase in
                     Task { @MainActor [weak self] in
                         self?.updateProgress(with: phase, taskID: taskID)
                     }
@@ -255,6 +263,10 @@ public final class TranscriptionViewModel {
                 // Preserve original metadata
                 result.fileName = original.fileName
                 result.sourceURL = original.sourceURL
+                result.thumbnailURL = original.thumbnailURL
+                result.channelName = original.channelName
+                result.videoDescription = original.videoDescription
+                result.sourceType = original.sourceType
                 do {
                     try transcriptionRepo?.save(result)
                     // Delete the original to avoid duplicates
@@ -285,19 +297,18 @@ public final class TranscriptionViewModel {
     public func deleteTranscription(_ transcription: Transcription) {
         guard let repo = transcriptionRepo else { return }
 
-        if transcription.sourceURL != nil, let audioPath = transcription.filePath {
-            do { try FileManager.default.removeItem(atPath: audioPath) }
-            catch { logger.warning("Failed to remove audio: \(error.localizedDescription, privacy: .public)") }
-        }
         do {
-            _ = try repo.delete(id: transcription.id)
+            let deleted = try repo.delete(id: transcription.id)
+            guard deleted else { return }
+            TranscriptionDeletionCleanup.removeOwnedAssets(for: transcription)
             Telemetry.send(.transcriptionDeleted)
+            if currentTranscription?.id == transcription.id {
+                currentTranscription = nil
+            }
+            loadTranscriptions()
+        } catch {
+            logger.error("Failed to delete transcription: \(error.localizedDescription, privacy: .public)")
         }
-        catch { logger.error("Failed to delete transcription: \(error.localizedDescription, privacy: .public)") }
-        if currentTranscription?.id == transcription.id {
-            currentTranscription = nil
-        }
-        loadTranscriptions()
     }
 
     // MARK: - Progress State
@@ -326,16 +337,27 @@ public final class TranscriptionViewModel {
         transcriptionTask = nil
         activeTranscriptionTaskID = nil
         endTranscription()
-        currentTranscription = result
-        loadTranscriptions()
-        let text = result.cleanTranscript ?? result.rawTranscript ?? ""
-        promptResultsViewModel?.autoGeneratePromptResults(transcript: text, transcriptionId: result.id)
+        presentCompletedTranscription(result)
         autoSaveIfEnabled(result)
     }
 
     private func autoSaveIfEnabled(_ transcription: Transcription) {
         let service = AutoSaveService()
         service.saveIfEnabled(transcription)
+    }
+
+    public func presentCompletedTranscription(_ transcription: Transcription) {
+        presentCompletedTranscription(transcription, autoSave: false)
+    }
+
+    public func presentCompletedTranscription(_ transcription: Transcription, autoSave: Bool) {
+        currentTranscription = transcription
+        loadTranscriptions()
+        if autoSave {
+            autoSaveIfEnabled(transcription)
+        }
+        let text = transcription.cleanTranscript ?? transcription.rawTranscript ?? ""
+        promptResultsViewModel?.autoGeneratePromptResults(transcript: text, transcriptionId: transcription.id)
     }
 
     private func completeFailedTranscription(taskID: UUID, error: Error) {
@@ -486,6 +508,23 @@ public final class TranscriptionViewModel {
             try transcriptionRepo?.updateSpeakers(id: transcription.id, speakers: speakers)
         } catch {
             logger.error("Failed to persist speaker rename error=\(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    public func renameCurrentTranscription(to newFileName: String) {
+        guard var transcription = currentTranscription else { return }
+        let trimmed = newFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != transcription.fileName else { return }
+
+        transcription.fileName = trimmed
+        currentTranscription = transcription
+        do {
+            try transcriptionRepo?.updateFileName(id: transcription.id, fileName: trimmed)
+            if let index = transcriptions.firstIndex(where: { $0.id == transcription.id }) {
+                transcriptions[index].fileName = trimmed
+            }
+        } catch {
+            logger.error("Failed to persist transcription rename error=\(error.localizedDescription, privacy: .public)")
         }
     }
 

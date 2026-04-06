@@ -1,8 +1,15 @@
 import Foundation
 import os
 
+public protocol AudioFileConverting: Sendable {
+    func convert(fileURL: URL) async throws -> URL
+    func mixToM4A(inputURLs: [URL], outputURL: URL) async throws
+}
+
 /// Converts audio/video files to 16kHz mono WAV using FFmpeg subprocess.
-public final class AudioFileConverter: Sendable {
+public final class AudioFileConverter: AudioFileConverting, Sendable {
+    public init() {}
+
     /// Supported audio extensions
     public static let supportedAudioExtensions: Set<String> = [
         "mp3", "wav", "m4a", "flac", "ogg", "opus"
@@ -53,6 +60,36 @@ public final class AudioFileConverter: Sendable {
         }
     }
 
+    /// Mix one or more audio files down to a single 16kHz mono AAC file.
+    /// Used by meeting recording to combine microphone + system audio before STT.
+    public func mixToM4A(inputURLs: [URL], outputURL: URL) async throws {
+        guard !inputURLs.isEmpty else {
+            throw AudioProcessorError.conversionFailed("No audio files to mix")
+        }
+
+        let primaryPath = try findFFmpeg()
+
+        do {
+            try await runFFmpegMix(
+                ffmpegPath: primaryPath,
+                inputURLs: inputURLs,
+                outputURL: outputURL
+            )
+        } catch let error as AudioProcessorError {
+            guard case .conversionFailed(let reason) = error,
+                  reason.contains("dyld") || reason.contains("Library not loaded"),
+                  let fallbackPath = BinaryBootstrap.findSystemFFmpeg(),
+                  fallbackPath != primaryPath
+            else { throw error }
+
+            try await runFFmpegMix(
+                ffmpegPath: fallbackPath,
+                inputURLs: inputURLs,
+                outputURL: outputURL
+            )
+        }
+    }
+
     /// Build the FFmpeg command arguments (useful for testing)
     public func ffmpegArguments(inputPath: String, outputPath: String) -> [String] {
         [
@@ -65,6 +102,31 @@ public final class AudioFileConverter: Sendable {
             "-y",
             outputPath
         ]
+    }
+
+    public func ffmpegMixArguments(inputPaths: [String], outputPath: String) -> [String] {
+        var args = ["-nostdin"]
+        for inputPath in inputPaths {
+            args.append(contentsOf: ["-i", inputPath])
+        }
+
+        if inputPaths.count > 1 {
+            let inputRefs = inputPaths.indices.map { "[\($0):a]" }.joined()
+            args.append(contentsOf: [
+                "-filter_complex",
+                "\(inputRefs)amix=inputs=\(inputPaths.count):duration=longest:normalize=1"
+            ])
+        }
+
+        args.append(contentsOf: [
+            "-ar", "16000",
+            "-ac", "1",
+            "-c:a", "aac",
+            "-b:a", "64k",
+            "-y",
+            outputPath
+        ])
+        return args
     }
 
     // MARK: - Private
@@ -109,6 +171,38 @@ public final class AudioFileConverter: Sendable {
         }
 
         return outputURL
+    }
+
+    private func runFFmpegMix(
+        ffmpegPath: String,
+        inputURLs: [URL],
+        outputURL: URL
+    ) async throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: ffmpegPath)
+        process.arguments = ffmpegMixArguments(
+            inputPaths: inputURLs.map(\.path),
+            outputPath: outputURL.path
+        )
+
+        let tempDir = try ensureTempDir()
+        let stderrURL = tempDir.appendingPathComponent("ffmpeg-mix-stderr-\(UUID().uuidString).log")
+        defer { try? FileManager.default.removeItem(at: stderrURL) }
+        FileManager.default.createFile(atPath: stderrURL.path, contents: Data())
+        let stderrHandle = try FileHandle(forWritingTo: stderrURL)
+        defer { stderrHandle.closeFile() }
+
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = stderrHandle
+
+        try await runProcessAndWait(process, timeout: 600)
+
+        if process.terminationStatus != 0 {
+            stderrHandle.synchronizeFile()
+            let stderrStr = (try? String(contentsOf: stderrURL, encoding: .utf8)) ?? "Unknown error"
+            try? FileManager.default.removeItem(at: outputURL)
+            throw AudioProcessorError.conversionFailed(stderrStr)
+        }
     }
 
     private func ensureTempDir() throws -> URL {

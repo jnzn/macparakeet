@@ -35,7 +35,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private var appEnvironment: AppEnvironment?
     private var hotkeyManager: HotkeyManager?
+    private var meetingHotkeyManager: GlobalShortcutManager?
     private var dictationFlowCoordinator: DictationFlowCoordinator?
+    private var meetingRecordingFlowCoordinator: MeetingRecordingFlowCoordinator?
 
     // MARK: - ViewModels
 
@@ -47,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let feedbackViewModel = FeedbackViewModel()
     private let discoverViewModel = DiscoverViewModel()
     private let libraryViewModel = TranscriptionLibraryViewModel()
+    private let meetingsViewModel = TranscriptionLibraryViewModel(scope: .meetings)
     private let llmSettingsViewModel = LLMSettingsViewModel()
     private let chatViewModel = TranscriptChatViewModel()
     private let promptResultsViewModel = PromptResultsViewModel()
@@ -56,6 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var onboardingObserver: Any?
     private var settingsObserver: Any?
     private var hotkeyTriggerObserver: Any?
+    private var meetingHotkeyTriggerObserver: Any?
     private var menuBarOnlyModeObserver: Any?
     private var showIdlePillObserver: Any?
     private var hotkeyMenuItem: NSMenuItem?
@@ -64,6 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     )
     private var pasteLastMenuItem: NSMenuItem?
     private var recentDictationsMenuItem: NSMenuItem?
+    private var recordMeetingMenuItem: NSMenuItem?
     private var reopenOnboardingOnNextActivate = false
     private var hasPresentedHotkeyUnavailableAlert = false
 
@@ -78,9 +83,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         setupMenuBar()
         setupEnvironment()
         setupHotkey()
+        setupMeetingHotkey()
         observeOpenOnboarding()
         observeOpenSettings()
         observeHotkeyTriggerChange()
+        observeMeetingHotkeyTriggerChange()
         observeMenuBarOnlyModeChange()
         observeShowIdlePillChange()
         applyActivationPolicyFromSettings()
@@ -94,9 +101,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // would send duplicate appQuit events and double the termination delay.
         dictationFlowCoordinator?.hideIdlePill()
         hotkeyManager?.stop()
+        meetingHotkeyManager?.stop()
         if let onboardingObserver { NotificationCenter.default.removeObserver(onboardingObserver) }
         if let settingsObserver { NotificationCenter.default.removeObserver(settingsObserver) }
         if let hotkeyTriggerObserver { NotificationCenter.default.removeObserver(hotkeyTriggerObserver) }
+        if let meetingHotkeyTriggerObserver { NotificationCenter.default.removeObserver(meetingHotkeyTriggerObserver) }
         if let menuBarOnlyModeObserver { NotificationCenter.default.removeObserver(menuBarOnlyModeObserver) }
         if let showIdlePillObserver { NotificationCenter.default.removeObserver(showIdlePillObserver) }
         // Block briefly for STT cleanup (ANE/CoreML resource release).
@@ -292,6 +301,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             keyEquivalent: ""
         ))
 
+        let recordMeetingItem = NSMenuItem(
+            title: "Record Meeting",
+            action: #selector(toggleMeetingRecordingFromMenu),
+            keyEquivalent: ""
+        )
+        recordMeetingItem.target = self
+        menu.addItem(recordMeetingItem)
+        recordMeetingMenuItem = recordMeetingItem
+
         menu.addItem(NSMenuItem.separator())
 
         let hotkeyItem = NSMenuItem(
@@ -357,6 +375,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             )
             historyViewModel.configure(dictationRepo: env.dictationRepo)
             libraryViewModel.configure(transcriptionRepo: env.transcriptionRepo)
+            meetingsViewModel.configure(transcriptionRepo: env.transcriptionRepo)
             settingsViewModel.configure(
                 permissionService: env.permissionService,
                 dictationRepo: env.dictationRepo,
@@ -428,10 +447,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 }
                 return true
             }
-            transcriptionViewModel.onTranscribingChanged = { [weak self] isTranscribing in
-                guard let self, !(self.dictationFlowCoordinator?.isDictationActive ?? false) else { return }
-                // Only update icon if dictation isn't active (dictation states take priority)
-                self.updateMenuBarIcon(state: isTranscribing ? .processing : .idle)
+            transcriptionViewModel.onTranscribingChanged = { [weak self] _ in
+                self?.resolveAndUpdateMenuBarIcon()
             }
 
             let coordinator = DictationFlowCoordinator(
@@ -440,11 +457,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 entitlementsService: env.entitlementsService,
                 dictationRepo: env.dictationRepo,
                 settingsViewModel: settingsViewModel,
-                onMenuBarIconUpdate: { [weak self] state in self?.updateMenuBarIcon(state: state) },
+                shouldSuppressIdlePill: { [weak self] in
+                    self?.meetingRecordingFlowCoordinator?.isMeetingRecordingActive == true
+                },
+                onMenuBarIconUpdate: { [weak self] _ in self?.resolveAndUpdateMenuBarIcon() },
                 onHistoryReload: { [weak self] in self?.historyViewModel.loadDictations() },
                 onPresentEntitlementsAlert: { [weak self] error in self?.presentEntitlementsAlert(error) }
             )
             dictationFlowCoordinator = coordinator
+
+            let meetingCoordinator = MeetingRecordingFlowCoordinator(
+                meetingRecordingService: env.meetingRecordingService,
+                transcriptionService: env.transcriptionService,
+                permissionService: env.permissionService,
+                onMenuBarIconUpdate: { [weak self] _ in self?.resolveAndUpdateMenuBarIcon() },
+                onTranscriptionReady: { [weak self] transcription in
+                    guard let self else { return }
+                    self.transcriptionViewModel.presentCompletedTranscription(transcription, autoSave: true)
+                    self.libraryViewModel.loadTranscriptions()
+                    self.meetingsViewModel.loadTranscriptions()
+                    self.mainWindowState.navigateToTranscription(from: .meetings)
+                    self.openMainWindow()
+                },
+                onRecordingBegan: { [weak self] in
+                    self?.dictationFlowCoordinator?.hideIdlePill()
+                },
+                onFlowReturnedToIdle: { [weak self] in
+                    guard self?.dictationFlowCoordinator?.isDictationActive != true else { return }
+                    self?.dictationFlowCoordinator?.showIdlePill()
+                }
+            )
+            meetingRecordingFlowCoordinator = meetingCoordinator
 
             maybeShowOnboarding()
         } catch {
@@ -519,10 +562,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    private func setupMeetingHotkey() {
+        guard settingsViewModel.meetingHotkeyTrigger != settingsViewModel.hotkeyTrigger else {
+            meetingHotkeyManager = nil
+            return
+        }
+
+        let manager = GlobalShortcutManager(trigger: settingsViewModel.meetingHotkeyTrigger)
+        manager.onTrigger = { [weak self] in
+            Task { @MainActor in
+                self?.toggleMeetingRecording(originatesFromWindow: false)
+            }
+        }
+
+        if manager.start() {
+            meetingHotkeyManager = manager
+            hasPresentedHotkeyUnavailableAlert = false
+        } else {
+            meetingHotkeyManager = nil
+            presentHotkeyUnavailableAlertIfNeeded()
+        }
+    }
+
     private func refreshHotkeyAfterPermissions() {
         hotkeyManager?.stop()
+        meetingHotkeyManager?.stop()
         hotkeyManager = nil
+        meetingHotkeyManager = nil
         setupHotkey()
+        setupMeetingHotkey()
     }
 
     private func observeOpenOnboarding() {
@@ -546,8 +614,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             Task { @MainActor in
                 self?.hotkeyManager?.stop()
                 self?.hotkeyManager = nil
+                self?.meetingHotkeyManager?.stop()
+                self?.meetingHotkeyManager = nil
                 self?.setupHotkey()
+                self?.setupMeetingHotkey()
                 self?.hotkeyMenuItem?.title = self?.hotkeyMenuTitle ?? ""
+            }
+        }
+    }
+
+    private func observeMeetingHotkeyTriggerChange() {
+        meetingHotkeyTriggerObserver = NotificationCenter.default.addObserver(
+            forName: .macParakeetMeetingHotkeyTriggerDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.meetingHotkeyManager?.stop()
+                self?.meetingHotkeyManager = nil
+                self?.setupMeetingHotkey()
             }
         }
     }
@@ -669,6 +754,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     // MARK: - Menu Bar Icon State
 
+    /// Priority-based menu bar icon resolver (ADR-015).
+    /// Recording (meeting or dictation) > file transcription > idle.
+    private func resolveAndUpdateMenuBarIcon() {
+        if meetingRecordingFlowCoordinator?.isMeetingRecordingActive == true {
+            updateMenuBarIcon(state: .recording)
+        } else if dictationFlowCoordinator?.isDictationActive == true {
+            updateMenuBarIcon(state: .recording)
+        } else if transcriptionViewModel.isTranscribing {
+            updateMenuBarIcon(state: .processing)
+        } else {
+            updateMenuBarIcon(state: .idle)
+        }
+    }
+
     private func updateMenuBarIcon(state: BreathWaveIcon.MenuBarState) {
         statusItem?.button?.image = BreathWaveIcon.menuBarIcon(pointSize: 18, state: state)
     }
@@ -760,6 +859,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         youtubeInputController.show()
     }
 
+    @objc private func toggleMeetingRecordingFromMenu() {
+        toggleMeetingRecording(originatesFromWindow: false)
+    }
+
+    private func toggleMeetingRecording(originatesFromWindow: Bool) {
+        guard appEnvironment != nil else { return }
+        if meetingRecordingFlowCoordinator?.isMeetingRecordingActive == true {
+            meetingRecordingFlowCoordinator?.toggleRecording()
+            return
+        }
+
+        if originatesFromWindow {
+            openMainWindow()
+            mainWindowState.selectedItem = .meetings
+        }
+        meetingRecordingFlowCoordinator?.toggleRecording()
+    }
+
     private func rebuildRecentDictationsSubmenu(with dictations: [Dictation]) {
         guard let recentItem = recentDictationsMenuItem else { return }
         recentItem.isHidden = dictations.isEmpty
@@ -795,7 +912,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             feedbackViewModel: feedbackViewModel,
             discoverViewModel: discoverViewModel,
             libraryViewModel: libraryViewModel,
-            updater: updaterController.updater
+            meetingsViewModel: meetingsViewModel,
+            updater: updaterController.updater,
+            onRecordMeeting: { [weak self] in
+                self?.toggleMeetingRecording(originatesFromWindow: true)
+            }
         )
 
         let window = NSWindow(
@@ -909,6 +1030,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         #endif
     }
+
 }
 
 // MARK: - NSMenuDelegate
@@ -923,5 +1045,8 @@ extension AppDelegate: NSMenuDelegate {
         let dictations = (try? env.dictationRepo.fetchAll(limit: 5)) ?? []
         pasteLastMenuItem?.isEnabled = !dictations.isEmpty
         rebuildRecentDictationsSubmenu(with: dictations)
+        recordMeetingMenuItem?.title = meetingRecordingFlowCoordinator?.isMeetingRecordingActive == true
+            ? "Stop Meeting Recording"
+            : "Record Meeting"
     }
 }

@@ -13,6 +13,7 @@ struct HotkeyRecorderView: View {
     }
 
     @Binding var trigger: HotkeyTrigger
+    var additionalValidation: ((HotkeyTrigger) -> HotkeyTrigger.ValidationResult)? = nil
     @State private var isRecording = false
     @State private var validationMessage: String?
     @State private var validationIsBlocked = false
@@ -134,7 +135,7 @@ struct HotkeyRecorderView: View {
                 if !heldModifiers.isEmpty {
                     // Chord: modifier(s) + key
                     let candidate = HotkeyTrigger.chord(modifiers: heldModifiers, keyCode: keyCode)
-                    switch candidate.validation {
+                    switch combinedValidation(for: candidate) {
                     case .blocked(let msg):
                         pendingModifiers = []
                         validationMessage = msg
@@ -150,7 +151,7 @@ struct HotkeyRecorderView: View {
                 } else {
                     // Bare key (no modifiers held)
                     let candidate = HotkeyTrigger.fromKeyCode(keyCode)
-                    switch candidate.validation {
+                    switch combinedValidation(for: candidate) {
                     case .blocked(let msg):
                         validationMessage = msg
                         validationIsBlocked = true
@@ -178,8 +179,18 @@ struct HotkeyRecorderView: View {
                     if name == "fn" {
                         // Fn is bare modifier only — accept immediately on key-down
                         if event.modifierFlags.contains(.function) {
-                            acceptTrigger(.fn, warning: nil)
-                            return event
+                            switch combinedValidation(for: .fn) {
+                            case .blocked(let msg):
+                                validationMessage = msg
+                                validationIsBlocked = true
+                                return event
+                            case .warned(let msg):
+                                acceptTrigger(.fn, warning: msg)
+                                return event
+                            case .allowed:
+                                acceptTrigger(.fn, warning: nil)
+                                return event
+                            }
                         }
                     } else {
                         // Track held chord modifiers for preview
@@ -193,8 +204,18 @@ struct HotkeyRecorderView: View {
                                 keyCode: event.keyCode,
                                 captureMode: modifierCaptureMode
                             ) {
-                                acceptTrigger(candidate, warning: nil)
-                                return event
+                                switch combinedValidation(for: candidate) {
+                                case .blocked(let msg):
+                                    validationMessage = msg
+                                    validationIsBlocked = true
+                                    return event
+                                case .warned(let msg):
+                                    acceptTrigger(candidate, warning: msg)
+                                    return event
+                                case .allowed:
+                                    acceptTrigger(candidate, warning: nil)
+                                    return event
+                                }
                             }
                         }
                     }
@@ -248,5 +269,23 @@ struct HotkeyRecorderView: View {
         validationMessage = warning
         validationIsBlocked = false
         stopRecording()
+    }
+
+    private func combinedValidation(for candidate: HotkeyTrigger) -> HotkeyTrigger.ValidationResult {
+        let primary = candidate.validation
+        let secondary = additionalValidation?(candidate) ?? .allowed
+
+        switch (primary, secondary) {
+        case (.blocked(let message), _):
+            return .blocked(message)
+        case (_, .blocked(let message)):
+            return .blocked(message)
+        case (.warned(let message), _):
+            return .warned(message)
+        case (_, .warned(let message)):
+            return .warned(message)
+        default:
+            return .allowed
+        }
     }
 }

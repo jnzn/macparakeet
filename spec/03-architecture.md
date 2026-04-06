@@ -30,14 +30,16 @@
 │  │                        MacParakeetCore                                     │  │
 │  │                     (Library — No UI Deps)                                 │  │
 │  │                                                                            │  │
-│  │  ┌─────────────────┐  ┌──────────────────────┐                          │  │
-│  │  │ DictationService│  │ TranscriptionService │                          │  │
-│  │  └────────┬────────┘  └──────────┬───────────┘                          │  │
-│  │           │                      │                                       │  │
-│  │  ┌────────▼──────────────────────▼────────────────────────────────────┐  │  │
-│  │  │                        AudioProcessor                               │  │  │
-│  │  │            (Format conversion, resampling, buffering)               │  │  │
-│  │  └────────────────────────────┬────────────────────────────────────────┘  │  │
+│  │  ┌─────────────────┐  ┌────────────────────┐  ┌──────────────────┐      │  │
+│  │  │ DictationService│  │TranscriptionService│  │MeetingRecording  │      │  │
+│  │  └────────┬────────┘  └─────────┬──────────┘  │   Service        │      │  │
+│  │           │                     │              └────────┬─────────┘      │  │
+│  │           │                     │                       │                │  │
+│  │  ┌────────▼─────────────────────▼──────┐  ┌────────────▼────────────┐   │  │
+│  │  │         AudioProcessor              │  │  MeetingAudioCapture    │   │  │
+│  │  │  (Format conversion, resampling)    │  │  (Core Audio Taps +    │   │  │
+│  │  │                                     │  │   AVAudioEngine)       │   │  │
+│  │  └──────────────────┬──────────────────┘  └────────────┬────────────┘   │  │
 │  │                               │                                           │  │
 │  │                     ┌─────────▼─────────┐  ┌────────────────────────────┐ │  │
 │  │                     │    STTClient      │  │  TextProcessingPipeline   │ │  │
@@ -72,11 +74,11 @@
 ├──────────────────────────────────────────────────────────────────────────────────┤
 │                          SYSTEM INTEGRATIONS                                     │
 │                                                                                  │
-│  ┌──────────┐  ┌──────────┐  ┌─────────────┐  ┌──────────────┐               │
-│  │AVAudio   │  │ CGEvent  │  │NSPasteboard │  │Accessibility │               │
-│  │Engine    │  │(Global   │  │(Clipboard   │  │(Permission   │               │
-│  │(Mic)     │  │ Hotkey)  │  │ Paste)      │  │ Control)     │               │
-│  └──────────┘  └──────────┘  └─────────────┘  └──────────────┘               │
+│  ┌──────────┐  ┌──────────┐  ┌─────────────┐  ┌──────────────┐  ┌─────────┐│
+│  │AVAudio   │  │ CGEvent  │  │NSPasteboard │  │Accessibility │  │Core     ││
+│  │Engine    │  │(Global   │  │(Clipboard   │  │(Permission   │  │Audio    ││
+│  │(Mic)     │  │ Hotkey)  │  │ Paste)      │  │ Control)     │  │Taps     ││
+│  └──────────┘  └──────────┘  └─────────────┘  └──────────────┘  └─────────┘│
 │                                                                                  │
 │  Total AI Memory: ~66 MB peak (Parakeet on ANE)                                │
 │  Recommended: 8 GB RAM (Apple Silicon only).                                    │
@@ -84,6 +86,41 @@
 ```
 
 **Core STT runs on-device.** Optional LLM features use configured providers or Local CLI tools, and telemetry/crash reporting are opt-out. The app supports a fully local setup, but it is not network-free in every configuration.
+
+### Concurrency Model (ADR-015 + ADR-016)
+
+Dictation and meeting recording run concurrently as independent audio pipelines, but all STT work routes through one scheduler and one runtime:
+
+```
+┌─ Dictation Pipeline ──────────────────────┐
+│ AudioRecorder (own AVAudioEngine)         │
+│ → DictationService                        │
+└───────────────────────────────────────────┘
+
+┌─ Meeting Pipeline ────────────────────────┐
+│ MicrophoneCapture (own AVAudioEngine)     │
+│ + SystemAudioTap (Core Audio Taps)        │
+│ → MeetingRecordingService                 │
+└───────────────────────────────────────────┘
+
+┌─ File / URL Pipeline ─────────────────────┐
+│ FFmpeg / AudioConverter / yt-dlp          │
+│ → TranscriptionService                    │
+└───────────────────────────────────────────┘
+
+                │
+                ▼
+      STT Scheduler / Broker (priority + backpressure)
+                │
+                ▼
+     STT Runtime (single AsrManager on CoreML / ANE)
+```
+
+- **No shared audio engine** — dictation and meeting capture remain independent. macOS HAL multiplexes mic access.
+- **No mutual exclusion** — dictation and meeting recording can both be active.
+- **Centralized STT ownership** — one runtime owns model lifecycle, warm-up, and shutdown.
+- **Explicit scheduling** — dictation > meeting finalize > meeting live chunks > file transcription.
+- **Menu bar icon priority** — meeting > dictation > file-transcription > idle.
 
 ---
 
@@ -367,23 +404,37 @@ let result = try await manager.transcribe(samples, source: .system)
 // result.text, result.tokenTimings (word-level timestamps + confidence)
 ```
 
+**Ownership Model:**
+```
+Feature services (Dictation / Meeting / File)
+    │
+    ▼
+STT Scheduler / Broker
+    │
+    ▼
+STT Runtime
+    │
+    ▼
+AsrManager (single process-wide owner)
+```
+
 **Model Lifecycle:**
 ```
 App Launch
     │
     ▼
-STTClient.warmUp() called (lazy, on first use)
+STTRuntime.warmUp() called (lazy, on first use)
     │
     ├── Check: Are CoreML models downloaded?
     │     │
-    │     ├── Yes → AsrManager.initialize(models:) → Ready (~162ms warm load)
+    │     ├── Yes → AsrManager.initialize(models:) → Runtime ready (~162ms warm load)
     │     │
     │     └── No ──► AsrModels.downloadAndLoad() (~6 GB download)
     │                  CoreML compilation (~3.4s first time)
     │                  AsrManager.initialize(models:)
     │
     ▼
-AsrManager ready — STTClient accepts transcribe() calls
+AsrManager ready — scheduler admits transcription jobs
 ```
 
 #### 2.6 ExportService
@@ -942,6 +993,14 @@ Dictation ready
 5. **Audio storage is opt-in** — Dictation audio only saved if user enables "Keep audio" in settings
 6. **Local AI only** — All ML inference happens on-device: STT on the ANE via CoreML
 
+### Runtime Permissions
+
+| Permission | Required For | User Flow |
+|------------|--------------|-----------|
+| Microphone | Dictation, onboarding mic test, meeting recording mic capture | Requested on first dictation/meeting use |
+| Accessibility | Global hotkey paste simulation | Requested on first dictation use |
+| Screen & System Audio Recording | Core Audio Taps system-audio capture for meeting recording | Requested on first meeting recording attempt; recording stays blocked until granted |
+
 ### Sandboxing (App Store)
 
 For App Store distribution, the app needs:
@@ -1001,7 +1060,7 @@ Subsequent Launches ──> Window shown (fast)
                        Dictation runs immediately
 ```
 
-After initial warm-up, subsequent dictations are near-instant (AsrManager stays initialized, model stays loaded with idle timeout).
+After initial warm-up, subsequent dictations are near-instant because the shared runtime keeps `AsrManager` initialized and ready between requests.
 
 ### Transcription Speed
 
@@ -1016,7 +1075,7 @@ Parakeet TDT 0.6B-v3 throughput varies by device class: approximately 155x realt
 
 ### Memory Management
 
-- **Parakeet model:** AsrManager stays initialized after first use. Uses ~66 MB working RAM on the ANE. Released when app quits.
+- **Parakeet model:** One shared runtime keeps `AsrManager` initialized after first use. Uses ~66 MB working RAM on the ANE. Released when the app quits.
 - **Audio buffers:** Ring buffer during recording, flushed to temp file on stop. No recording duration limit — local processing means no artificial caps.
 - **Database:** GRDB uses WAL mode by default. No connection pooling needed (single-user app).
 

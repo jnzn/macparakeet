@@ -161,6 +161,16 @@ final class TranscriptionRepositoryTests: XCTestCase {
         XCTAssertNil(fetched?.summary)
     }
 
+    func testUpdateFileName() throws {
+        let transcription = Transcription(fileName: "Meeting Apr 5", status: .completed)
+        try repo.save(transcription)
+
+        try repo.updateFileName(id: transcription.id, fileName: "Design Review")
+
+        let fetched = try repo.fetch(id: transcription.id)
+        XCTAssertEqual(fetched?.fileName, "Design Review")
+    }
+
     // MARK: - Chat Messages Persistence
 
     func testUpdateChatMessages() throws {

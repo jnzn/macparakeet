@@ -17,7 +17,7 @@ MacParakeet uses **SQLite via GRDB** for all persistent storage. Single database
 
 ┌──────────────────┐       ┌─────────────────────────┐
 │  transcriptions  │◄──FK──│   chat_conversations    │  v0.5 — Multi-conversation chat
-│                  │◄──FK──│      summaries          │  v0.7 — Multi-summary per transcript
+│                  │◄──FK──│      summaries          │  v0.5 — Multi-summary per transcript
 └──────────────────┘       └─────────────────────────┘
    v0.1 — File transcription records
 
@@ -30,7 +30,7 @@ MacParakeet uses **SQLite via GRDB** for all persistent storage. Single database
 └──────────────────┘
 
 ┌──────────────────┐
-│     prompts      │   v0.7 — Reusable prompt templates
+│     prompts      │   v0.5 — Reusable prompt templates
 └──────────────────┘
 ```
 
@@ -104,6 +104,7 @@ CREATE TABLE transcriptions (
     channelName TEXT,                                   -- v0.5: YouTube channel name
     videoDescription TEXT,                              -- v0.5: YouTube video description
     isFavorite INTEGER NOT NULL DEFAULT 0,              -- v0.5: User favorite marker
+    sourceType TEXT NOT NULL DEFAULT 'file',            -- v0.6: 'file', 'youtube', or 'meeting'
     updatedAt TEXT NOT NULL                             -- ISO 8601 timestamp
 );
 
@@ -114,9 +115,11 @@ CREATE INDEX idx_transcriptions_created_at ON transcriptions(createdAt DESC);
 - `wordTimestamps` is a JSON text column, not a separate table. One transcription = one blob of timestamps. GRDB can decode this via `Codable`.
 - `speakerCount` and `speakers` are nullable, populated only when diarization is available (v0.4).
 - `filePath` is nullable because the original file may be moved or deleted after transcription.
+- For meeting recordings, `filePath` points to the mixed `meeting.m4a` artifact used for playback/export, while the per-source `microphone.m4a` and `system.m4a` files remain inside the same session folder.
 - `sourceURL` distinguishes URL-sourced transcriptions (YouTube) from local file transcriptions. Added in v0.3.
 - `thumbnailURL`, `channelName`, `videoDescription` store YouTube metadata fetched during download. Added in v0.5.
 - `isFavorite` enables user-marked favorites with filtered library view. Added in v0.5.
+- `sourceType` distinguishes the origin of a transcription: `'file'` (drag-drop), `'youtube'` (URL), or `'meeting'` (meeting recording). Added in v0.6. Default `'file'` for backward compatibility. Existing rows with `sourceURL IS NOT NULL` are backfilled to `'youtube'`.
 - No FTS on transcriptions in v0.1. Search by filename or scroll the list. Revisit if the list grows large.
 
 **Diarization data (v0.4):**
@@ -203,7 +206,7 @@ CREATE INDEX idx_chat_conversations_transcription_id ON chat_conversations(trans
 
 ---
 
-### `prompts` (v0.7)
+### `prompts` (v0.5)
 
 Reusable prompt templates for LLM-powered transcript processing. Community prompts are seeded during migration; custom prompts support full CRUD. Community prompts can be hidden but not edited or deleted.
 
@@ -232,7 +235,7 @@ CREATE UNIQUE INDEX idx_prompts_name ON prompts(name COLLATE NOCASE);
 
 ---
 
-### `summaries` (v0.7)
+### `summaries` (v0.5)
 
 Stores generated summaries per transcription. Each transcript can have multiple summaries from different prompts. Summaries snapshot the prompt content used at generation time for reproducibility.
 
@@ -335,6 +338,7 @@ struct Transcription: Codable, Identifiable {
     var errorMessage: String?
     var exportPath: String?
     var sourceURL: String?              // YouTube/web URL (v0.3, nullable)
+    var sourceType: SourceType          // v0.6 — file | youtube | meeting
     var thumbnailURL: String?           // v0.5 — YouTube video thumbnail URL
     var channelName: String?            // v0.5 — YouTube channel name
     var videoDescription: String?       // v0.5 — YouTube video description
@@ -365,6 +369,12 @@ struct Transcription: Codable, Identifiable {
         case completed
         case error
         case cancelled
+    }
+
+    enum SourceType: String, Codable {
+        case file
+        case youtube
+        case meeting
     }
 }
 
@@ -646,6 +656,19 @@ migrator.registerMigration("v0.5-transcription-video-metadata") { db in
         t.add(column: "isFavorite", .boolean).notNull().defaults(to: false)
     }
 }
+
+// v0.6 — Transcription source type (file / youtube / meeting)
+migrator.registerMigration("v0.6-transcription-source-type") { db in
+    try db.alter(table: "transcriptions") { t in
+        t.add(column: "sourceType", .text).notNull().defaults(to: "file")
+    }
+
+    try db.execute(sql: """
+        UPDATE transcriptions
+        SET sourceType = 'youtube'
+        WHERE sourceURL IS NOT NULL
+    """)
+}
 ```
 
 ### Migration Rules
@@ -677,9 +700,10 @@ migrator.registerMigration("v0.5-transcription-video-metadata") { db in
 | `transcriptions.channelName` | v0.5 | YouTube channel name |
 | `transcriptions.videoDescription` | v0.5 | YouTube video description |
 | `transcriptions.isFavorite` | v0.5 | User favorite marker |
-| `text_snippets.action` | v0.7 | Keystroke action type for snippet |
-| `prompts` | v0.7 | Reusable prompt templates (community + custom) |
-| `summaries` | v0.7 | Multi-summary per transcription (FK → transcriptions, cascade delete) |
+| `transcriptions.sourceType` | v0.6 | Origin of transcription: `file`, `youtube`, or `meeting` |
+| `text_snippets.action` | v0.5 | Keystroke action type for snippet |
+| `prompts` | v0.5 | Reusable prompt templates (community + custom) |
+| `summaries` | v0.5 | Multi-summary per transcription (FK → transcriptions, cascade delete) |
 
 ### Tables NOT Planned (YAGNI)
 

@@ -81,6 +81,7 @@ public enum TelemetryDictationCancelReason: String, Sendable, Equatable {
 public enum TelemetryTranscriptionSource: String, Sendable, Equatable {
     case file
     case youtube
+    case meeting
     case dragDrop = "drag_drop"
 }
 
@@ -93,6 +94,7 @@ public enum TelemetryCopySource: String, Sendable, Equatable {
 public enum TelemetryPermission: String, Sendable, Equatable {
     case microphone
     case accessibility
+    case screenRecording = "screen_recording"
 }
 
 public enum TelemetrySettingName: String, Sendable, Equatable {
@@ -103,6 +105,8 @@ public enum TelemetrySettingName: String, Sendable, Equatable {
     case saveTranscriptionAudio = "save_transcription_audio"
     case speakerDiarization = "speaker_diarization"
     case autoSave = "auto_save"
+    case meetingHotkey = "meeting_hotkey"
+    case meetingTitlePrefix = "meeting_title_prefix"
 }
 
 public enum TelemetryEventSpec: Sendable {

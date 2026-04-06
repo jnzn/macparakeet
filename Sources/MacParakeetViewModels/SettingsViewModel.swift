@@ -56,6 +56,16 @@ public final class SettingsViewModel {
             Telemetry.send(.hotkeyCustomized)
         }
     }
+    public var meetingHotkeyTrigger: HotkeyTrigger {
+        didSet {
+            meetingHotkeyTrigger.save(to: defaults, defaultsKey: HotkeyTrigger.meetingDefaultsKey)
+            NotificationCenter.default.post(
+                name: Notification.Name("macparakeet.meetingHotkeyTriggerDidChange"),
+                object: nil
+            )
+            Telemetry.send(.settingChanged(setting: .meetingHotkey))
+        }
+    }
     public var silenceAutoStop: Bool {
         didSet { defaults.set(silenceAutoStop, forKey: "silenceAutoStop") }
     }
@@ -130,6 +140,11 @@ public final class SettingsViewModel {
         }
     }
     public var autoSaveFolderPath: String?
+    public var meetingTitlePrefix: String {
+        didSet {
+            defaults.set(meetingTitlePrefix, forKey: AppPreferences.meetingTitlePrefixKey)
+        }
+    }
 
     // Permission status
     public var microphoneGranted = false
@@ -173,6 +188,7 @@ public final class SettingsViewModel {
     private let youtubeDownloadsDirPath: @Sendable () -> String
     private let isSpeechModelCached: @Sendable () -> Bool
     private var isApplyingLaunchAtLoginState = false
+    private var lastCommittedMeetingTitlePrefix: String
     private let logger = Logger(subsystem: "com.macparakeet.viewmodels", category: "SettingsViewModel")
 
     public init(
@@ -188,6 +204,7 @@ public final class SettingsViewModel {
         showIdlePill = defaults.object(forKey: "showIdlePill") as? Bool ?? true
         telemetryEnabled = AppPreferences.isTelemetryEnabled(defaults: defaults)
         hotkeyTrigger = HotkeyTrigger.current(defaults: defaults)
+        meetingHotkeyTrigger = Self.resolveMeetingHotkeyTrigger(defaults: defaults)
         silenceAutoStop = defaults.bool(forKey: "silenceAutoStop")
         let delay = defaults.double(forKey: "silenceDelay")
         silenceDelay = delay == 0 ? 2.0 : delay
@@ -198,9 +215,12 @@ public final class SettingsViewModel {
         saveAudioRecordings = defaults.object(forKey: "saveAudioRecordings") as? Bool ?? true
         saveTranscriptionAudio = defaults.object(forKey: "saveTranscriptionAudio") as? Bool ?? true
         speakerDiarization = defaults.object(forKey: "speakerDiarization") as? Bool ?? true
+        let initialMeetingTitlePrefix = AppPreferences.meetingTitlePrefix(defaults: defaults)
         autoSaveTranscripts = defaults.bool(forKey: AutoSaveService.enabledKey)
         autoSaveFormat = AutoSaveFormat(rawValue: defaults.string(forKey: AutoSaveService.formatKey) ?? "md") ?? .md
         autoSaveFolderPath = Self.resolveAutoSaveFolderPath(defaults: defaults)
+        meetingTitlePrefix = initialMeetingTitlePrefix
+        lastCommittedMeetingTitlePrefix = initialMeetingTitlePrefix
     }
 
     /// Resolve the stored bookmark to a display path.
@@ -223,6 +243,20 @@ public final class SettingsViewModel {
     public func clearAutoSaveFolder() {
         AutoSaveService.clearFolder(defaults: defaults)
         autoSaveFolderPath = nil
+    }
+
+    private static func resolveMeetingHotkeyTrigger(defaults: UserDefaults) -> HotkeyTrigger {
+        HotkeyTrigger.current(
+            defaults: defaults,
+            defaultsKey: HotkeyTrigger.meetingDefaultsKey,
+            fallback: .chord(modifiers: ["command", "shift"], keyCode: 46)
+        )
+    }
+
+    public func commitMeetingTitlePrefix() {
+        guard meetingTitlePrefix != lastCommittedMeetingTitlePrefix else { return }
+        lastCommittedMeetingTitlePrefix = meetingTitlePrefix
+        Telemetry.send(.settingChanged(setting: .meetingTitlePrefix))
     }
 
     public func configure(

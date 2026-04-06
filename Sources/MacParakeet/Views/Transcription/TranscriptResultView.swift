@@ -36,6 +36,8 @@ struct TranscriptResultView: View {
     @State private var resultCopiedResetTask: Task<Void, Never>?
     @State private var resultButtonCopiedResetTask: Task<Void, Never>?
     @State private var dismissTask: Task<Void, Never>?
+    @State private var editingMeetingTitle = false
+    @State private var meetingTitleDraft = ""
     @State private var editingSpeakerId: String?
     @State private var editingSpeakerLabel: String = ""
     @State private var showConversationPopover = false
@@ -57,6 +59,7 @@ struct TranscriptResultView: View {
     @State private var showingRetranscribeAlert = false
     @State private var showingCancelGenerationAlert: UUID?
     @FocusState private var chatInputFocused: Bool
+    @FocusState private var meetingTitleFocused: Bool
     @FocusState private var speakerRenameFocused: Bool
 
     private let suggestedPrompts = [
@@ -100,6 +103,8 @@ struct TranscriptResultView: View {
             rebuildSegmentCache()
             headerExpanded = false
             speakerOverviewExpanded = false
+            editingMeetingTitle = false
+            meetingTitleDraft = ""
             editingSpeakerId = nil
             editingSpeakerLabel = ""
             showConversationPopover = false
@@ -444,18 +449,15 @@ struct TranscriptResultView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(transcription.fileName)
-                        .font(headerExpanded ? DesignSystem.Typography.pageTitle : DesignSystem.Typography.sectionTitle)
-                        .foregroundStyle(DesignSystem.Colors.textPrimary)
-                        .lineLimit(headerExpanded ? 3 : 1)
+                    meetingTitleView
 
                     if !headerExpanded {
                         // Inline metadata in collapsed mode
                         HStack(spacing: 6) {
                             metadataChip(
-                                icon: transcription.sourceURL != nil ? "play.rectangle.fill" : "waveform",
-                                text: transcription.sourceURL != nil ? "YouTube" : "Local",
-                                tint: transcription.sourceURL != nil ? DesignSystem.Colors.youtubeRed : DesignSystem.Colors.accent
+                                icon: sourceChipIcon,
+                                text: sourceChipText,
+                                tint: sourceChipTint
                             )
 
                             if let durationMs = transcription.durationMs {
@@ -495,9 +497,9 @@ struct TranscriptResultView: View {
                 VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
                     HStack(spacing: DesignSystem.Spacing.sm) {
                         metadataChip(
-                            icon: transcription.sourceURL != nil ? "play.rectangle.fill" : "waveform",
-                            text: transcription.sourceURL != nil ? "YouTube source" : "Local file",
-                            tint: transcription.sourceURL != nil ? DesignSystem.Colors.youtubeRed : DesignSystem.Colors.accent
+                            icon: sourceChipIcon,
+                            text: expandedSourceChipText,
+                            tint: sourceChipTint
                         )
 
                         if let durationMs = transcription.durationMs {
@@ -567,6 +569,114 @@ struct TranscriptResultView: View {
             RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
                 .strokeBorder(DesignSystem.Colors.border.opacity(0.75), lineWidth: 0.5)
         )
+    }
+
+    @ViewBuilder
+    private var meetingTitleView: some View {
+        if editingMeetingTitle {
+            HStack(spacing: 8) {
+                TextField("Meeting title", text: $meetingTitleDraft)
+                    .textFieldStyle(.roundedBorder)
+                    .font(headerExpanded ? DesignSystem.Typography.pageTitle : DesignSystem.Typography.sectionTitle)
+                    .focused($meetingTitleFocused)
+                    .onSubmit(commitMeetingTitleRename)
+
+                Button(action: commitMeetingTitleRename) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(DesignSystem.Colors.successGreen)
+                }
+                .buttonStyle(.plain)
+
+                Button(action: cancelMeetingTitleRename) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(DesignSystem.Colors.textTertiary)
+                }
+                .buttonStyle(.plain)
+            }
+        } else {
+            HStack(spacing: 8) {
+                Text(displayedMeetingTitle)
+                    .font(headerExpanded ? DesignSystem.Typography.pageTitle : DesignSystem.Typography.sectionTitle)
+                    .foregroundStyle(DesignSystem.Colors.textPrimary)
+                    .lineLimit(headerExpanded ? 3 : 1)
+
+                if transcription.sourceType == .meeting {
+                    Button(action: beginMeetingTitleRename) {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(DesignSystem.Colors.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Rename meeting")
+                }
+            }
+        }
+    }
+
+    private var sourceChipIcon: String {
+        switch transcription.sourceType {
+        case .meeting:
+            return "record.circle.fill"
+        case .youtube:
+            return "play.rectangle.fill"
+        case .file:
+            return "waveform"
+        }
+    }
+
+    private var sourceChipText: String {
+        switch transcription.sourceType {
+        case .meeting:
+            return "Meeting"
+        case .youtube:
+            return "YouTube"
+        case .file:
+            return "Local"
+        }
+    }
+
+    private var expandedSourceChipText: String {
+        switch transcription.sourceType {
+        case .meeting:
+            return "Meeting recording"
+        case .youtube:
+            return "YouTube source"
+        case .file:
+            return "Local file"
+        }
+    }
+
+    private var sourceChipTint: Color {
+        switch transcription.sourceType {
+        case .meeting:
+            return DesignSystem.Colors.accent
+        case .youtube:
+            return DesignSystem.Colors.youtubeRed
+        case .file:
+            return DesignSystem.Colors.accent
+        }
+    }
+
+    private var displayedMeetingTitle: String {
+        viewModel.currentTranscription?.fileName ?? transcription.fileName
+    }
+
+    private func beginMeetingTitleRename() {
+        meetingTitleDraft = displayedMeetingTitle
+        editingMeetingTitle = true
+        Task { @MainActor in
+            meetingTitleFocused = true
+        }
+    }
+
+    private func cancelMeetingTitleRename() {
+        editingMeetingTitle = false
+        meetingTitleDraft = ""
+    }
+
+    private func commitMeetingTitleRename() {
+        viewModel.renameCurrentTranscription(to: meetingTitleDraft)
+        editingMeetingTitle = false
     }
 
     private func metadataChip(icon: String, text: String, tint: Color) -> some View {

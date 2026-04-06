@@ -51,6 +51,17 @@ final class AudioFileConverterTests: XCTestCase {
         XCTAssertTrue(args.contains("/tmp/output.wav"))
     }
 
+    func testFFmpegMixArgumentsNormalizeInputs() {
+        let converter = AudioFileConverter()
+        let args = converter.ffmpegMixArguments(
+            inputPaths: ["/tmp/mic.m4a", "/tmp/system.m4a"],
+            outputPath: "/tmp/meeting.m4a"
+        )
+
+        XCTAssertTrue(args.contains("-filter_complex"))
+        XCTAssertTrue(args.contains("[0:a][1:a]amix=inputs=2:duration=longest:normalize=1"))
+    }
+
     func testConvertUnsupportedFormat() async {
         let converter = AudioFileConverter()
         let url = URL(fileURLWithPath: "/tmp/test.txt")

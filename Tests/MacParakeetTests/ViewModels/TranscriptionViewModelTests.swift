@@ -407,7 +407,7 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertTrue(mockRepo.deleteCalledWith.contains(t.id))
     }
 
-    func testDeleteYouTubeTranscriptionRemovesStoredAudioFile() throws {
+    func testDeleteYouTubeTranscriptionRemovesStoredAudioFile() async throws {
         let audioURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("yt-audio-\(UUID().uuidString).m4a")
         let created = FileManager.default.createFile(atPath: audioURL.path, contents: Data("audio".utf8))
@@ -419,14 +419,66 @@ final class TranscriptionViewModelTests: XCTestCase {
             filePath: audioURL.path,
             rawTranscript: "Hello",
             status: .completed,
-            sourceURL: "https://youtu.be/dQw4w9WgXcQ"
+            sourceURL: "https://youtu.be/dQw4w9WgXcQ",
+            sourceType: .youtube
         )
         mockRepo.transcriptions = [t]
 
         viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
         viewModel.deleteTranscription(t)
 
+        try await waitForFileAbsence(at: audioURL)
         XCTAssertFalse(FileManager.default.fileExists(atPath: audioURL.path))
+    }
+
+    func testDeleteYouTubeTranscriptionKeepsStoredAudioWhenRepoDeleteFails() throws {
+        let audioURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("yt-audio-\(UUID().uuidString).m4a")
+        let created = FileManager.default.createFile(atPath: audioURL.path, contents: Data("audio".utf8))
+        XCTAssertTrue(created)
+        defer { try? FileManager.default.removeItem(at: audioURL) }
+
+        let t = Transcription(
+            fileName: "yt",
+            filePath: audioURL.path,
+            rawTranscript: "Hello",
+            status: .completed,
+            sourceURL: "https://youtu.be/dQw4w9WgXcQ",
+            sourceType: .youtube
+        )
+        mockRepo.transcriptions = [t]
+        mockRepo.deleteError = NSError(domain: "repo", code: 1)
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+        viewModel.deleteTranscription(t)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: audioURL.path))
+        XCTAssertEqual(viewModel.transcriptions.count, 1)
+    }
+
+    func testDeleteFailureKeepsCurrentSelection() {
+        let t = Transcription(fileName: "keep.mp3", rawTranscript: "Hello", status: .completed)
+        mockRepo.transcriptions = [t]
+        mockRepo.deleteError = NSError(domain: "repo", code: 1)
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+        viewModel.currentTranscription = t
+
+        viewModel.deleteTranscription(t)
+
+        XCTAssertEqual(viewModel.currentTranscription?.id, t.id)
+        XCTAssertEqual(viewModel.transcriptions.count, 1)
+    }
+
+    private func waitForFileAbsence(at url: URL, timeout: Duration = .seconds(1)) async throws {
+        let deadline = ContinuousClock.now + timeout
+        while FileManager.default.fileExists(atPath: url.path) {
+            guard ContinuousClock.now < deadline else {
+                XCTFail("Timed out waiting for file removal at \(url.path)")
+                return
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
     }
 
     func testDeleteCurrentTranscriptionClearsSelection() {
@@ -675,6 +727,45 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.currentTranscription?.speakers?[0].label, "Alice")
     }
 
+    func testRenameCurrentTranscriptionUpdatesStateAndRepo() {
+        let t = Transcription(fileName: "Meeting Apr 5", status: .completed, sourceType: .meeting)
+        mockRepo.transcriptions = [t]
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+        viewModel.currentTranscription = t
+
+        viewModel.renameCurrentTranscription(to: "Design Review")
+
+        XCTAssertEqual(viewModel.currentTranscription?.fileName, "Design Review")
+        XCTAssertEqual(mockRepo.updateFileNameCalls.count, 1)
+        XCTAssertEqual(mockRepo.updateFileNameCalls[0].fileName, "Design Review")
+    }
+
+    func testRenameCurrentTranscriptionTrimsWhitespace() {
+        let t = Transcription(fileName: "Meeting Apr 5", status: .completed, sourceType: .meeting)
+        mockRepo.transcriptions = [t]
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+        viewModel.currentTranscription = t
+
+        viewModel.renameCurrentTranscription(to: "  Design Review  ")
+
+        XCTAssertEqual(viewModel.currentTranscription?.fileName, "Design Review")
+    }
+
+    func testRenameCurrentTranscriptionIgnoresEmptyName() {
+        let t = Transcription(fileName: "Meeting Apr 5", status: .completed, sourceType: .meeting)
+        mockRepo.transcriptions = [t]
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+        viewModel.currentTranscription = t
+
+        viewModel.renameCurrentTranscription(to: "   ")
+
+        XCTAssertEqual(viewModel.currentTranscription?.fileName, "Meeting Apr 5")
+        XCTAssertTrue(mockRepo.updateFileNameCalls.isEmpty)
+    }
+
     // MARK: - Tab Visibility
 
     func testShowTabsTrueWhenLLMAvailable() {
@@ -780,7 +871,11 @@ final class TranscriptionViewModelTests: XCTestCase {
             filePath: tmpFile.path,
             rawTranscript: "Old transcript",
             status: .completed,
-            sourceURL: "https://youtube.com/watch?v=abc123"
+            sourceURL: "https://youtube.com/watch?v=abc123",
+            thumbnailURL: "https://img.youtube.com/vi/abc123/default.jpg",
+            channelName: "Channel",
+            videoDescription: "Description",
+            sourceType: .youtube
         )
         mockRepo.transcriptions = [original]
 
@@ -808,6 +903,48 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(saved.first?.fileName, "lecture.mp3", "Should preserve original fileName")
         XCTAssertEqual(saved.first?.sourceURL, "https://youtube.com/watch?v=abc123",
                        "Should preserve original sourceURL")
+        XCTAssertEqual(saved.first?.thumbnailURL, original.thumbnailURL)
+        XCTAssertEqual(saved.first?.channelName, original.channelName)
+        XCTAssertEqual(saved.first?.videoDescription, original.videoDescription)
+        XCTAssertEqual(saved.first?.sourceType, .youtube, "Should preserve original sourceType")
+
+        let lastSource = await mockService.lastSource
+        XCTAssertEqual(lastSource, .youtube, "Retranscribe should preserve original telemetry source")
+    }
+
+    func testRetranscribePreservesMeetingSourceType() async throws {
+        let tmpFile = FileManager.default.temporaryDirectory.appendingPathComponent("retranscribe-meeting-test.m4a")
+        FileManager.default.createFile(atPath: tmpFile.path, contents: Data([0]))
+        defer { try? FileManager.default.removeItem(at: tmpFile) }
+
+        let original = Transcription(
+            id: UUID(),
+            fileName: "Meeting Apr 5",
+            filePath: tmpFile.path,
+            rawTranscript: "Old meeting transcript",
+            status: .completed,
+            sourceType: .meeting
+        )
+        mockRepo.transcriptions = [original]
+
+        let newResult = Transcription(
+            fileName: tmpFile.lastPathComponent,
+            rawTranscript: "Updated meeting transcript",
+            status: .completed
+        )
+        await mockService.configure(result: newResult)
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+
+        viewModel.retranscribe(original)
+
+        try await Task.sleep(for: .milliseconds(300))
+
+        XCTAssertEqual(mockRepo.transcriptions.count, 1)
+        XCTAssertEqual(mockRepo.transcriptions.first?.sourceType, .meeting)
+
+        let lastSource = await mockService.lastSource
+        XCTAssertEqual(lastSource, .meeting)
     }
 
     func testRetranscribeDoesNothingWhenFileIsMissing() async throws {

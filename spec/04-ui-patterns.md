@@ -4,11 +4,13 @@
 
 ## Overview
 
-MacParakeet has four UI surfaces:
+MacParakeet has six UI surfaces:
 1. **Main Window** -- Sidebar + content area for history and transcriptions
-2. **Idle Pill** -- Persistent floating indicator, always visible when not dictating
+2. **Idle Pill** -- Persistent floating indicator, always visible when not dictating or meeting-recording
 3. **Dictation Overlay** -- Compact pill for recording state
-4. **Menu Bar** -- Quick access and status
+4. **Meeting Recording Pill** -- Persistent floating pill during meeting recording (sacred geometry icon)
+5. **Meeting Recording Panel** -- Floating panel with live transcript preview, audio levels, and stop controls
+6. **Menu Bar** -- Quick access and status
 
 Design philosophy: **Simple, native, stays out of the way.** No chrome, no clutter. The app should feel like part of macOS, not a web app in a wrapper.
 
@@ -26,8 +28,9 @@ Design philosophy: **Simple, native, stays out of the way.** No chrome, no clutt
 │  ────────────    │  ───────────────────────────────────────  │
 │                  │                                           │
 │  🎤 Transcribe   │  [Depends on sidebar selection]           │
-│  🕒 Dictations   │                                           │
-│  📖 Vocabulary   │  - Transcribe: Drop zone + recent list   │
+│  🎙 Meetings     │                                           │
+│  🕒 Dictations   │  - Transcribe: Drop zone + recent list   │
+│  📖 Vocabulary   │  - Meetings: Meeting recordings + record  │
 │  💬 Feedback     │  - Dictations: History list               │
 │  ⚙ Settings      │  - Vocabulary: Processing mode + manage   │
 │                  │  - Feedback: Form + community link        │
@@ -40,13 +43,14 @@ Minimum window width: 800pt.
 
 ### Sidebar
 
-The sidebar uses NavigationSplitView with five flat items (icon + label):
+The sidebar uses NavigationSplitView with flat items (icon + label):
 
 - **Transcribe** (`waveform`) -- Drop zone and recent transcriptions
+- **Meetings** (`record.circle`) -- Meeting recordings list + "Record Meeting" button
 - **Dictations** (`clock.arrow.circlepath`) -- Flat history list with bottom bar player
 - **Vocabulary** (`book.fill`) -- Processing mode, pipeline guide, custom words & snippets management
 - **Feedback** (`bubble.left.and.text.bubble.right`) -- Bug reports, feature requests, community link
-- **Settings** (`gearshape`) -- License, dictation prefs, storage, permissions
+- **Settings** (`gearshape`) -- Dictation prefs, meeting recording prefs, storage, permissions
 
 Column width: `min: 160, ideal: 180, max: 220`. Window minimum width: 800pt.
 
@@ -340,7 +344,82 @@ panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
 ---
 
-## Menu Bar (v0.1)
+## Meeting Recording Pill (v0.6)
+
+Persistent floating pill that appears during meeting recording. Uses the sacred-geometry Merkaba icon as the anchor. Clicking the pill opens the meeting recording panel.
+
+### Layout
+
+```
+┌──────────────────────────────────────┐
+│  [✿]  Recording  01:23:45  [■ Stop] │
+└──────────────────────────────────────┘
+
+- [✿]: Merkaba (sacred geometry) icon — animated rotating triangles
+- "Recording" label
+- Elapsed timer (HH:MM:SS)
+- [■ Stop] button — stops recording and triggers transcription
+```
+
+### Behavior
+
+- **Appears** when meeting recording starts (after permissions granted)
+- **Persists** for the entire recording session — does not auto-dismiss
+- **Click** anywhere on the pill opens the meeting recording panel
+- **Stays visible** during concurrent dictation — dictation overlay appears separately
+- **Hides** idle pill while visible (meeting pill replaces it)
+- **Disappears** when recording stops (transitions to transcription in library)
+
+### Panel: `NSPanel` (non-activating)
+
+Same `KeylessPanel` pattern as dictation overlay — never steals focus from the active app. `.floating` window level.
+
+---
+
+## Meeting Recording Panel (v0.6)
+
+Floating panel opened from the meeting recording pill. Shows live transcript preview, audio levels, and recording controls.
+
+### Layout
+
+```
+┌──────────────────────────────────────────┐
+│  Meeting Recording         01:23:45      │
+│  ──────────────────────────────────────  │
+│                                          │
+│  🎤 ██████████░░░░  Mic                  │
+│  🔊 ████████░░░░░░  System               │
+│                                          │
+│  Live Preview:                           │
+│  ──────────────────────────────────────  │
+│  [Me] So I think the approach should...  │
+│  [Them] Yeah, that makes sense for the   │
+│  deployment timeline we discussed...     │
+│  [Me] Exactly, and the migration can...  │
+│                                          │
+│  ──────────────────────────────────────  │
+│  [■ Stop Recording]                      │
+└──────────────────────────────────────────┘
+```
+
+### Components
+
+- **Elapsed timer** — updates every second
+- **Dual audio level meters** — mic and system audio levels (visual feedback that both streams are capturing)
+- **Live transcript preview** — scrolling list of transcribed chunks labeled by source ([Me] = mic, [Them] = system audio)
+- **Stop button** — stops recording, triggers batch transcription, navigates to result
+
+### Concurrent Operation (ADR-015)
+
+During concurrent dictation + meeting recording:
+- Meeting panel stays open and continues showing live preview
+- Dictation overlay appears/disappears independently
+- Both pills are visible simultaneously
+- Menu bar icon follows priority: meeting > dictation > file transcription > idle
+
+---
+
+## Menu Bar (v0.1, updated v0.6)
 
 ### Menu Structure
 
@@ -349,6 +428,7 @@ panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 │  MacParakeet                   │
 ├────────────────────────────────┤
 │  Start Dictation    (hotkey)  │
+│  Record Meeting     (hotkey)  │
 │  Open Window           ⌘O     │
 ├────────────────────────────────┤
 │  Recent Transcriptions   ►    │
@@ -360,6 +440,8 @@ panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 │  Quit MacParakeet      ⌘Q     │
 └────────────────────────────────┘
 ```
+
+- **Record Meeting** toggles meeting recording on/off. Label changes to "Stop Meeting" while recording is active.
 
 ### Menu Bar Icon
 

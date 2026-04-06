@@ -16,6 +16,7 @@ struct SettingsView: View {
     @State private var showClearYouTubeAudioAlert = false
     @State private var showResetPrivateStatsAlert = false
     @State private var copiedBuildIdentity = false
+    @FocusState private var meetingTitlePrefixFocused: Bool
 
     init(viewModel: SettingsViewModel, llmSettingsViewModel: LLMSettingsViewModel, updater: SPUUpdater) {
         self.viewModel = viewModel
@@ -30,6 +31,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
                 headerCard
                 dictationCard
+                meetingRecordingCard
                 aiProviderCard
                 transcriptionCard
                 storageCard
@@ -180,7 +182,16 @@ struct SettingsView: View {
                         detail: "System-wide key used to start and stop dictation."
                     )
                     Spacer(minLength: DesignSystem.Spacing.md)
-                    HotkeyRecorderView(trigger: $viewModel.hotkeyTrigger)
+                    VStack(alignment: .trailing, spacing: 4) {
+                        HotkeyRecorderView(trigger: $viewModel.hotkeyTrigger) { candidate in
+                            guard candidate == viewModel.meetingHotkeyTrigger else { return .allowed }
+                            return .blocked("Already used by meeting recording.")
+                        }
+
+                        if viewModel.hotkeyTrigger == viewModel.meetingHotkeyTrigger {
+                            hotkeyConflictText
+                        }
+                    }
                 }
 
                 Divider()
@@ -221,6 +232,76 @@ struct SettingsView: View {
 
     // MARK: - Transcription
 
+    private var meetingRecordingCard: some View {
+        settingsCard(
+            title: "Meeting Recording",
+            subtitle: "Dedicated controls for system-audio + mic capture.",
+            icon: "record.circle"
+        ) {
+            VStack(spacing: DesignSystem.Spacing.md) {
+                HStack(alignment: .center) {
+                    rowText(
+                        title: "Meeting hotkey",
+                        detail: "Global shortcut that immediately starts or stops meeting recording."
+                    )
+                    Spacer(minLength: DesignSystem.Spacing.md)
+                    VStack(alignment: .trailing, spacing: 4) {
+                        HotkeyRecorderView(trigger: $viewModel.meetingHotkeyTrigger) { candidate in
+                            guard candidate == viewModel.hotkeyTrigger else { return .allowed }
+                            return .blocked("Already used by dictation.")
+                        }
+
+                        if viewModel.hotkeyTrigger == viewModel.meetingHotkeyTrigger {
+                            hotkeyConflictText
+                        }
+                    }
+                }
+
+                Divider()
+
+                HStack(alignment: .center) {
+                    rowText(
+                        title: "Default title prefix",
+                        detail: "New meetings start with this prefix before the recording date. You can rename each saved meeting afterward."
+                    )
+                    Spacer(minLength: DesignSystem.Spacing.md)
+                    TextField("Meeting", text: $viewModel.meetingTitlePrefix)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 220)
+                        .focused($meetingTitlePrefixFocused)
+                        .onSubmit {
+                            viewModel.commitMeetingTitlePrefix()
+                        }
+                        .onChange(of: meetingTitlePrefixFocused) { _, isFocused in
+                            if !isFocused {
+                                viewModel.commitMeetingTitlePrefix()
+                            }
+                        }
+                }
+
+                Divider()
+
+                HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
+                    Image(systemName: "folder.badge.plus")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(DesignSystem.Colors.accent)
+                        .frame(width: 20)
+
+                    Text("Saved meetings use the transcript auto-save destination configured below, so meeting recordings now export alongside your other completed transcripts.")
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(DesignSystem.Colors.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(DesignSystem.Spacing.sm)
+                .background(
+                    RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                        .fill(DesignSystem.Colors.surfaceElevated)
+                )
+            }
+        }
+    }
+
     private var transcriptionCard: some View {
         settingsCard(
             title: "Transcription",
@@ -247,6 +328,16 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    private var hotkeyConflictText: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "xmark.circle.fill")
+                .font(.system(size: 10))
+            Text("Dictation and meeting recording cannot use the same shortcut.")
+                .font(DesignSystem.Typography.micro)
+        }
+        .foregroundStyle(DesignSystem.Colors.errorRed)
     }
 
     @ViewBuilder

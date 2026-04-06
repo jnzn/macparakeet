@@ -2,6 +2,12 @@ import Foundation
 import GRDB
 
 public struct Transcription: Codable, Identifiable, Sendable {
+    public enum SourceType: String, Codable, Sendable {
+        case file
+        case youtube
+        case meeting
+    }
+
     public var id: UUID
     public var createdAt: Date
     public var fileName: String
@@ -25,6 +31,7 @@ public struct Transcription: Codable, Identifiable, Sendable {
     public var channelName: String?
     public var videoDescription: String?
     public var isFavorite: Bool
+    public var sourceType: SourceType
     public var updatedAt: Date
 
     public enum TranscriptionStatus: String, Codable, Sendable {
@@ -58,6 +65,7 @@ public struct Transcription: Codable, Identifiable, Sendable {
         channelName: String? = nil,
         videoDescription: String? = nil,
         isFavorite: Bool = false,
+        sourceType: SourceType = .file,
         updatedAt: Date = Date()
     ) {
         self.id = id
@@ -83,11 +91,12 @@ public struct Transcription: Codable, Identifiable, Sendable {
         self.channelName = channelName
         self.videoDescription = videoDescription
         self.isFavorite = isFavorite
+        self.sourceType = sourceType
         self.updatedAt = updatedAt
     }
 }
 
-public struct WordTimestamp: Codable, Sendable {
+public struct WordTimestamp: Codable, Sendable, Equatable {
     public var word: String
     public var startMs: Int
     public var endMs: Int
@@ -113,7 +122,7 @@ public struct SpeakerInfo: Codable, Sendable, Equatable {
     }
 }
 
-public struct DiarizationSegmentRecord: Codable, Sendable {
+public struct DiarizationSegmentRecord: Codable, Sendable, Equatable {
     public var speakerId: String
     public var startMs: Int
     public var endMs: Int
@@ -133,7 +142,7 @@ extension Transcription: FetchableRecord, PersistableRecord {
         case rawTranscript, cleanTranscript, wordTimestamps, language
         case speakerCount, speakers, diarizationSegments, summary, chatMessages
         case status, errorMessage, exportPath, sourceURL
-        case thumbnailURL, channelName, videoDescription, isFavorite, updatedAt
+        case thumbnailURL, channelName, videoDescription, isFavorite, sourceType, updatedAt
     }
 
     /// Backward-compatible decoding: `speakers` column may contain old `[String]` JSON
@@ -174,6 +183,13 @@ extension Transcription: FetchableRecord, PersistableRecord {
         channelName = try container.decodeIfPresent(String.self, forKey: .channelName)
         videoDescription = try container.decodeIfPresent(String.self, forKey: .videoDescription)
         isFavorite = try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
+        if let decodedSourceType = try container.decodeIfPresent(SourceType.self, forKey: .sourceType) {
+            sourceType = decodedSourceType
+        } else if sourceURL != nil {
+            sourceType = .youtube
+        } else {
+            sourceType = .file
+        }
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
     }
 }

@@ -14,7 +14,7 @@ The Prompt Library established in [spec/12-processing-layer.md](12-processing-la
 This doc exists to:
 
 1. Preserve the design direction without making it look implemented.
-2. Separate stable v0.7 behavior from speculative workflow/agent work.
+2. Separate stable v0.5 behavior from speculative workflow/agent work.
 3. Surface the unresolved questions before schema and UX decisions get locked.
 
 ## Non-Goals
