@@ -11,6 +11,7 @@ public protocol TranscriptionRepositoryProtocol: Sendable {
     func delete(id: UUID) throws -> Bool
     func deleteAll() throws
     func updateStatus(id: UUID, status: Transcription.TranscriptionStatus, errorMessage: String?) throws
+    func updateFileName(id: UUID, fileName: String) throws
     func updateSummary(id: UUID, summary: String?) throws
     func updateChatMessages(id: UUID, chatMessages: [ChatMessage]?) throws
     func updateSpeakers(id: UUID, speakers: [SpeakerInfo]?) throws
@@ -24,6 +25,7 @@ extension TranscriptionRepositoryProtocol {
     public func count() throws -> Int { try fetchAll(limit: nil).count }
     public func search(query: String, limit: Int?) throws -> [Transcription] { [] }
     public func clearStoredAudioPathsForURLTranscriptions() throws {}
+    public func updateFileName(id: UUID, fileName: String) throws {}
     public func updateSummary(id: UUID, summary: String?) throws {}
     public func updateChatMessages(id: UUID, chatMessages: [ChatMessage]?) throws {}
     public func updateSpeakers(id: UUID, speakers: [SpeakerInfo]?) throws {}
@@ -133,6 +135,15 @@ public final class TranscriptionRepository: TranscriptionRepositoryProtocol {
             guard var transcription = try Transcription.fetchOne(db, key: id) else { return }
             transcription.status = status
             transcription.errorMessage = errorMessage
+            transcription.updatedAt = Date()
+            try transcription.update(db)
+        }
+    }
+
+    public func updateFileName(id: UUID, fileName: String) throws {
+        try dbQueue.write { db in
+            guard var transcription = try Transcription.fetchOne(db, key: id) else { return }
+            transcription.fileName = fileName
             transcription.updatedAt = Date()
             try transcription.update(db)
         }

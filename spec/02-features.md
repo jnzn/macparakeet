@@ -55,33 +55,27 @@ See [00-vision.md](./00-vision.md) for positioning and market context.
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  v0.5 - "Data & Reliability"                                     │
-│  "Foundations — data model maturity and open-source release"    │
+│  v0.5 - "Data, UI & Prompts"                                     │
+│  "Data maturity, video player, prompt library, open source"    │
 ├─────────────────────────────────────────────────────────────────┤
 │  • Private dictation, multi-conversation chat, favorites        │
 │  • YouTube metadata, FTS5 cleanup, GPL-3.0 open source          │
+│  • Video player (HLS streaming, local playback), split-pane     │
+│  • Library grid with thumbnails, filters, search                 │
+│  • Prompt Library (community + custom), multi-summary tabs       │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  v0.6 - "Video Player & UI Revamp"                               │
-│  "Embedded playback, library grid, polished detail view"        │
+│  v0.6 - "Meeting Recording"                                      │
+│  "Record meetings locally, transcribe with Parakeet"             │
 ├─────────────────────────────────────────────────────────────────┤
-│  • YouTube HLS streaming + local video/audio playback            │
-│  • Split-pane detail view with synced transcript highlighting    │
-│  • Transcription library with thumbnail grid, filters, search   │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  v0.7 - "Processing Layer"                                       │
-│  "Prompt library, multi-summary, custom instructions"            │
-├─────────────────────────────────────────────────────────────────┤
-│  • Prompt Library (community + custom, CRUD, visibility)         │
-│  • Multiple summaries per transcript (tab-based navigation)      │
-│  • Extra instructions field layered on selected prompt           │
-│  • Queued summary generation (single-worker pipeline)            │
-│  • Prompt management sheet                                       │
+│  • Meeting recording (system audio + mic via Core Audio Taps)    │
+│  • Concurrent with dictation (ADR-015) — dictate during meetings │
+│  • Recording pill UI (floating timer + stop button)              │
+│  • Results in transcription library (sourceType: meeting)        │
+│  • Prompt library + multi-summary work automatically             │
+│  • Screen Recording permission flow                              │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -1463,7 +1457,7 @@ Embedded video/audio playback, split-pane detail view, synced transcript highlig
 
 ---
 
-## v0.7 — Processing Layer (Implemented On Current Branch)
+## v0.5 — Processing Layer (Implemented)
 
 Prompt library and multi-summary system. Users control how AI processes transcripts via reusable prompts. See [spec/12-processing-layer.md](12-processing-layer.md) and [ADR-013](adr/013-prompt-library-multi-summary.md).
 
@@ -1669,7 +1663,7 @@ FluidAudio model download → Audio capture (AVAudioEngine)
 
 | Feature | Why Excluded |
 |---------|--------------|
-| Meeting recording (system audio) | That's Oatmeal, not MacParakeet |
+| AI meeting notes / memory / CRM-style enrichment | That's Oatmeal, not MacParakeet |
 | Calendar integration | Meeting app territory |
 | Entity extraction / memory | Meeting app territory |
 | Cloud processing | Privacy is the brand -- opt-in LLM providers only (ADR-011) |

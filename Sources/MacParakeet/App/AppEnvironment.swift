@@ -13,7 +13,9 @@ final class AppEnvironment {
     let promptRepo: PromptRepository
     let promptResultRepo: PromptResultRepository
     let sttClient: STTClient
+    let meetingSTTClient: STTClient
     let audioProcessor: AudioProcessor
+    let meetingRecordingService: MeetingRecordingService
     let dictationService: DictationService
     let transcriptionService: TranscriptionService
     let youtubeDownloader: YouTubeDownloader
@@ -53,7 +55,9 @@ final class AppEnvironment {
 
         // Services
         sttClient = STTClient()
+        meetingSTTClient = STTClient()
         audioProcessor = AudioProcessor()
+        meetingRecordingService = MeetingRecordingService(sttClient: meetingSTTClient)
         clipboardService = ClipboardService()
         exportService = ExportService()
         permissionService = PermissionService()

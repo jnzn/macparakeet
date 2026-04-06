@@ -102,6 +102,9 @@ final class MockTranscriptionRepository: TranscriptionRepositoryProtocol, @unche
     var transcriptions: [Transcription] = []
     var deleteCalledWith: [UUID] = []
     var deleteAllCalled = false
+    var deleteResult = true
+    var deleteError: Error?
+    var updateFileNameCalls: [(id: UUID, fileName: String)] = []
     var updateSummaryCalls: [(id: UUID, summary: String?)] = []
     var updateChatMessagesCalls: [(id: UUID, chatMessages: [ChatMessage]?)] = []
     var updateSpeakersCalls: [(id: UUID, speakers: [SpeakerInfo]?)] = []
@@ -134,8 +137,13 @@ final class MockTranscriptionRepository: TranscriptionRepositoryProtocol, @unche
 
     func delete(id: UUID) throws -> Bool {
         deleteCalledWith.append(id)
+        if let deleteError {
+            throw deleteError
+        }
+        guard deleteResult else { return false }
+        let before = transcriptions.count
         transcriptions.removeAll { $0.id == id }
-        return true
+        return transcriptions.count < before
     }
 
     func deleteAll() throws {
@@ -147,6 +155,14 @@ final class MockTranscriptionRepository: TranscriptionRepositoryProtocol, @unche
         if let idx = transcriptions.firstIndex(where: { $0.id == id }) {
             transcriptions[idx].status = status
             transcriptions[idx].errorMessage = errorMessage
+        }
+    }
+
+    func updateFileName(id: UUID, fileName: String) throws {
+        updateFileNameCalls.append((id: id, fileName: fileName))
+        if let idx = transcriptions.firstIndex(where: { $0.id == id }) {
+            transcriptions[idx].fileName = fileName
+            transcriptions[idx].updatedAt = Date()
         }
     }
 
@@ -228,6 +244,7 @@ actor MockTranscriptionService: TranscriptionServiceProtocol {
     var transcribeCallCount = 0
     var lastFileURL: URL?
     var lastSource: TelemetryTranscriptionSource?
+    var lastMeetingRecording: MeetingRecordingOutput?
     var transcribeProgressPhases: [TranscriptionProgress] = []
     var transcribeDelayMs: UInt64 = 0
     var transcribeURLCallCount = 0
@@ -286,6 +303,35 @@ actor MockTranscriptionService: TranscriptionServiceProtocol {
             fileName: fileURL.lastPathComponent,
             rawTranscript: "Mock transcription",
             status: .completed
+        )
+    }
+
+    func transcribeMeeting(
+        recording: MeetingRecordingOutput,
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
+    ) async throws -> Transcription {
+        transcribeCallCount += 1
+        lastMeetingRecording = recording
+        lastSource = .meeting
+
+        for phase in transcribeProgressPhases {
+            onProgress?(phase)
+        }
+
+        if transcribeDelayMs > 0 {
+            try await Task.sleep(nanoseconds: transcribeDelayMs * 1_000_000)
+        }
+
+        if let error = transcribeError {
+            throw error
+        }
+
+        return transcribeResult ?? Transcription(
+            fileName: recording.displayName,
+            filePath: recording.mixedAudioURL.path,
+            rawTranscript: "Mock meeting transcription",
+            status: .completed,
+            sourceType: .meeting
         )
     }
 
@@ -686,8 +732,10 @@ final class MockChatConversationRepository: ChatConversationRepositoryProtocol, 
 
 final class MockPermissionService: PermissionServiceProtocol, @unchecked Sendable {
     var microphonePermission: PermissionStatus = .granted
+    var screenRecordingPermission = true
     var accessibilityPermission: Bool = true
     var requestMicResult: Bool = true
+    var requestScreenRecordingResult: Bool = true
     var requestAccessibilityResult: Bool = true
 
     func checkMicrophonePermission() async -> PermissionStatus {
@@ -695,8 +743,22 @@ final class MockPermissionService: PermissionServiceProtocol, @unchecked Sendabl
     }
 
     func requestMicrophonePermission() async -> Bool {
-        requestMicResult
+        microphonePermission = requestMicResult ? .granted : .denied
+        return requestMicResult
     }
+
+    func checkScreenRecordingPermission() -> Bool {
+        screenRecordingPermission
+    }
+
+    func requestScreenRecordingPermission() -> Bool {
+        screenRecordingPermission = requestScreenRecordingResult
+        return screenRecordingPermission
+    }
+
+    func openMicrophoneSettings() {}
+
+    func openScreenRecordingSettings() {}
 
     func checkAccessibilityPermission() -> Bool {
         accessibilityPermission

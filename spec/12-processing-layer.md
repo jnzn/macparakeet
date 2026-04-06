@@ -4,7 +4,7 @@
 > Related: [spec/11-llm-integration.md](11-llm-integration.md) (LLM providers), [spec/13-agent-workflows.md](13-agent-workflows.md) (future workflows, agents, voice control), [ADR-011](adr/011-llm-cloud-and-local-providers.md) (cloud + local providers), [ADR-013](adr/013-prompt-library-multi-summary.md) (prompt library + multi-summary)
 > Triggered by: [GitHub issue #51](https://github.com/moona3k/macparakeet/issues/51), [VoiceInk PR #600](https://github.com/Beingpax/VoiceInk/pull/600) by @mitsuhiko
 
-This spec defines MacParakeet's current processing layer for v0.7: the Prompt Library and multi-summary system. It is intentionally limited to the data model, UX, and service/view-model behavior needed for prompt-driven summary generation today.
+This spec defines MacParakeet's current processing layer (shipped in v0.5): the Prompt Library and multi-summary system. It is intentionally limited to the data model, UX, and service/view-model behavior needed for prompt-driven summary generation today.
 
 ---
 
@@ -34,7 +34,7 @@ The processing layer currently consists of a reusable Prompt Library and immutab
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│  Prompt Library ← BUILD NOW (v0.7)                        │
+│  Prompt Library ← IMPLEMENTED (v0.5)                      │
 │  Prompt { id, name, content, category, visibility, ... }  │
 └──────────────────────────────┬─────────────────────────────┘
                                │ snapshot
@@ -69,7 +69,7 @@ Additional categories are future schema decisions and are not part of this spec.
 
 ---
 
-## Prompt Library + Multi-Summary (v0.7)
+## Prompt Library + Multi-Summary (v0.5)
 
 ### Concept
 
@@ -307,7 +307,7 @@ Provider architecture is unchanged. The Prompt Library changes what goes into th
 
 ## Boundaries & Sequencing
 
-| Build Now (v0.7) | Explore Later |
+| Implemented (v0.5) | Explore Later |
 |------------------|---------------|
 | `prompts` table + community prompt seeds | Action types beyond prompt-driven summarization |
 | `summaries` table (one-to-many) | Workflow engine / step chaining |

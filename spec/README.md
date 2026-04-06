@@ -21,7 +21,7 @@
 | 09 | [Testing](09-testing.md) | Testing strategy, patterns, guidelines | Active |
 | 10 | [AI Coding Method](10-ai-coding-method.md) | Spec-driven coding philosophy and kernel methodology | Active |
 | 11 | [LLM Integration](11-llm-integration.md) | LLM providers, summary, chat, transforms | Implemented (§1 summary superseded by spec/12) |
-| 12 | [Processing Layer](12-processing-layer.md) | Prompt library, multi-summary, current v0.7 implementation contract | Active |
+| 12 | [Processing Layer](12-processing-layer.md) | Prompt library, multi-summary, v0.5 implementation contract | Active |
 | 13 | [Agent Workflows](13-agent-workflows.md) | Future actions, workflows, agents, voice control, App Intents | Draft |
 
 ## Root Decisions (Locked)
@@ -54,6 +54,9 @@ All ADRs live in `spec/adr/`. These are locked -- they record decisions already 
 | [ADR-011](adr/011-llm-cloud-and-local-providers.md) | LLM via cloud API keys + optional local providers |
 | [ADR-012](adr/012-telemetry-system.md) | Self-hosted telemetry via Cloudflare (Worker + D1) |
 | [ADR-013](adr/013-prompt-library-multi-summary.md) | Prompt Library + multi-summary architecture |
+| [ADR-014](adr/014-meeting-recording.md) | Meeting recording via Core Audio Taps |
+| [ADR-015](adr/015-concurrent-dictation-meeting.md) | Concurrent dictation and meeting recording |
+| [ADR-016](adr/016-centralized-stt-runtime-scheduler.md) | Centralized STT runtime and scheduler |
 
 ## Version Roadmap
 
@@ -63,9 +66,8 @@ All ADRs live in `spec/adr/`. These are locked -- they record decisions already 
 | v0.2 | Clean Pipeline | Deterministic text processing, custom words, snippets | **Implemented** |
 | v0.3 | YouTube & Export | YouTube transcription, export formats | **Implemented** |
 | v0.4 | Polish & Launch | Diarization, custom hotkey, non-blocking progress, direct distribution | **Implemented** |
-| v0.5 | Data & Reliability | Private dictation, video metadata, multi-conversation chat, FTS5 cleanup, favorites | **Implemented** |
-| v0.6 | Video Player & UI Revamp | Embedded video playback, split-pane detail view, library grid, thumbnail cards | **Implemented** |
-| v0.7 | Prompt Library & Multi-Summary | Prompt library, multi-summary per transcript, custom instructions | **Implemented on current branch** |
+| v0.5 | Data, UI & Prompts | Private dictation, favorites, video player, split-pane detail, library grid, prompt library, multi-summary | **Implemented** |
+| v0.6 | Meeting Recording | System audio + mic capture, concurrent with dictation, local transcription, library integration | **In Progress** |
 
 ## Version Progress
 
@@ -115,7 +117,7 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 - [x] Non-blocking transcription progress (bottom bar UX)
 - [x] Distribution: Notarized DMG via macparakeet.com + LemonSqueezy, Sparkle auto-updates
 
-### v0.5 Data & Reliability (Implemented)
+### v0.5 Data, UI & Prompts (Implemented)
 
 - [x] Private dictation mode (hidden flag, excluded from history)
 - [x] Word count caching for voice stats dashboard
@@ -125,7 +127,7 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 - [x] FTS5 removal (unused search infrastructure dropped, search uses LIKE)
 - [x] Open-source release (GPL-3.0)
 
-### v0.6 Video Player & UI Revamp (Implemented)
+#### Video Player & UI Revamp
 
 - [x] YouTube video metadata expansion (thumbnailURL, channelName, videoDescription)
 - [x] Thumbnail cache service (download YouTube thumbnails, FFmpeg frame extraction for local video)
@@ -143,7 +145,7 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 - [x] Library filter bar (All/YouTube/Local/Favorites)
 - [x] Library search and sort
 
-### v0.7 Prompt Library & Multi-Summary (Implemented On Current Branch)
+#### Prompt Library & Multi-Summary
 
 - [x] `prompts` table + built-in/community prompt seeds
 - [x] `summaries` table (one-to-many per transcription, cascade delete)
@@ -158,6 +160,26 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 - [x] LLMService accepts custom system prompt
 - [x] Migration from `transcriptions.summary` → `summaries`
 - [x] Auto-run uses selected prompt cards; zero auto-run cards is supported
+
+### v0.6 Meeting Recording (In Progress)
+
+- [x] System audio capture via Core Audio Taps (macOS 14.2+), ported from Oatmeal
+- [x] Mic + system audio dual-stream recording (`MeetingAudioCaptureService`)
+- [x] `MeetingRecordingService` actor with protocol-based dependencies
+- [x] `MeetingRecordingFlowStateMachine` + coordinator (separate from dictation)
+- [x] Recording pill UI (floating NSPanel with timer + stop button)
+- [x] `sourceType` column on `transcriptions` table (file/youtube/meeting)
+- [x] "Meetings" sidebar item + "Record Meeting" in menu bar
+- [x] Library filter for meeting transcriptions
+- [x] Screen Recording permission handling (required, no mic-only fallback)
+- [x] Batch transcription after recording stops (Parakeet STT)
+- [x] Meeting recordings get prompt library, multi-summary, chat, and export automatically
+- [x] Live transcript preview via AudioChunker (chunked transcription during recording)
+- [x] Dedicated meeting hotkey + settings section
+- [x] Meeting title prefix + rename flow
+- [x] Hotkey conflict prevention (dictation vs meeting)
+- [x] Concurrent dictation during meeting recording (ADR-015)
+- [ ] Centralized STT runtime + scheduler (ADR-016)
 
 ## For AI Coding Assistants
 

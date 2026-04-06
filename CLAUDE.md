@@ -4,7 +4,7 @@
 
 ## What is MacParakeet?
 
-A **fast, private, local-first voice app** for macOS with two co-equal modes: system-wide dictation and file transcription. Powered by NVIDIA's Parakeet TDT via FluidAudio CoreML on the Neural Engine.
+A **fast, private, local-first voice app** for macOS with three co-equal modes: system-wide dictation, file transcription, and meeting recording. Powered by NVIDIA's Parakeet TDT via FluidAudio CoreML on the Neural Engine.
 
 **North Star:** Fast, local-first voice app for Mac.
 
@@ -45,19 +45,19 @@ A **fast, private, local-first voice app** for macOS with two co-equal modes: sy
 |-------|--------|-------|
 | Platform | macOS 14.2+ | Apple Silicon only |
 | Language | Swift 6.0 | SwiftUI for UI |
-| Database | SQLite | GRDB (single file, dictation history + transcriptions) |
+| Database | SQLite | GRDB (single file, dictation history + transcriptions + meeting recordings) |
 | STT | Parakeet TDT 0.6B-v3 | Via FluidAudio CoreML/ANE (~2.5% WER, 155x realtime, 25 European languages) |
-| Audio | AVAudioEngine + Core Audio | Mic capture for dictation; FFmpeg (bundled) for video file conversion |
+| Audio | AVAudioEngine + Core Audio + Core Audio Taps | Mic capture for dictation; Core Audio Taps for system audio (meeting recording); FFmpeg (bundled) for video file conversion |
 | YouTube | yt-dlp | Standalone macOS binary, weekly non-blocking auto-update via `--update` |
 | Auto-Update | Sparkle 2 | In-app updates via EdDSA-signed appcast (non-App Store) |
 
 ## Product Context
 
-MacParakeet is extracted from the OatFlow feature in Oatmeal but is **fully independent** -- no shared code, no shared packages, no monorepo dependencies.
+MacParakeet is extracted from the OatFlow feature in Oatmeal but is maintained independently -- no shared packages, no monorepo dependencies.
 
 | | MacParakeet | Oatmeal |
 |---|-------------|---------|
-| **Focus** | Voice dictation + file transcription | Meeting memory + calendar |
+| **Focus** | Voice dictation + file transcription + meeting recording | Meeting memory + calendar |
 | **Complexity** | Simple, focused | Complex, powerful |
 | **Pricing** | Free (GPL-3.0) | Freemium + Pro |
 | **Value prop** | "Fast local transcription" | "Remembers everything" |
@@ -89,31 +89,34 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 | ADR-011 | LLM via cloud API keys + optional local providers | `spec/adr/011-llm-cloud-and-local-providers.md` |
 | ADR-012 | Self-hosted telemetry via Cloudflare (Worker + D1) | `spec/adr/012-telemetry-system.md` |
 | ADR-013 | Prompt Library + multi-summary architecture | `spec/adr/013-prompt-library-multi-summary.md` |
+| ADR-014 | Meeting recording via Core Audio Taps | `spec/adr/014-meeting-recording.md` |
+| ADR-015 | Concurrent dictation and meeting recording | `spec/adr/015-concurrent-dictation-meeting.md` |
+| ADR-016 | Centralized STT runtime and scheduler | `spec/adr/016-centralized-stt-runtime-scheduler.md` |
 
 > Historical ADRs (still in `spec/adr/`, kept for context): ADR-003 (one-time purchase pricing), ADR-006 (trial + license activation), ADR-008 (local LLM runtime). The app is now free/GPL-3.0.
 
 ## Current Phase
 
-**v0.7 Complete** -- ~166 source files, ~87 test files, 1156 tests passing (`swift test` green)
+**v0.6 In Progress** -- ~166 source files, ~87 test files, 1268 tests passing (`swift test` green)
 
 - **v0.1** MVP -- System-wide dictation, file transcription, overlay, history, export, SQLite, CLI, STT engine
 - **v0.2** Clean Pipeline -- Text processing (filler removal, custom words, snippets), Vocabulary UI, feedback form
 - **v0.3** YouTube & Export -- YouTube URL transcription, DOCX/PDF/JSON export, drag-and-drop enhancements
 - **v0.4** Polish + Launch -- Diarization, custom hotkeys, Sparkle updates, LLM providers, voice stats, distribution
-- **v0.5** Data & Reliability -- Private dictation, multi-conversation chat, YouTube metadata, favorites, open-source release
-- **v0.6** Video Player & UI Revamp -- HLS streaming, thumbnails, media player, split-pane detail, synced transcript, library view
-- **v0.7** Prompt Library & Multi-Summary -- Prompt Library (6 built-in + custom), multi-summary per transcript (tab-based), extra instructions, prompt management sheet, `summaries` table migration
+- **v0.5** Data, UI & Prompts -- Private dictation, multi-conversation chat, favorites, video player, split-pane detail, library grid, prompt library, multi-summary, open-source release
+- **v0.6** Meeting Recording (in progress) -- System audio + mic capture via Core Audio Taps, concurrent with dictation (ADR-015), centralized STT runtime + scheduler (ADR-016), sacred-geometry recording pill + meeting panel, library integration, prompt/summary/chat support (ADR-014)
 
 ## Key Patterns
 
-### Two Co-Equal Modes
+### Three Co-Equal Modes
 
-MacParakeet has two primary modes that are equal in importance:
+MacParakeet has three primary modes that are equal in importance:
 
 1. **System-wide dictation** -- Press hotkey anywhere on macOS, speak, text is pasted (WisprFlow-style)
 2. **File transcription** -- Drag-drop audio/video files for full transcription (MacWhisper-style)
+3. **Meeting recording** -- Capture system audio + mic simultaneously, transcribe locally (simple Granola-style)
 
-Both modes share the same Parakeet STT backend but have different UI flows and data models.
+All three modes share the same Parakeet STT backend but have different UI flows, audio sources, and data models. **Dictation and meeting recording run concurrently** (ADR-015) -- a user can dictate freely during a meeting recording. Each flow owns its own AVAudioEngine; macOS HAL handles mic multiplexing. All STT work routes through one process-wide runtime and scheduler (ADR-016), with dictation prioritized over meeting live preview and batch file work.
 
 ### STT Integration (Parakeet via FluidAudio)
 
@@ -123,6 +126,8 @@ Both modes share the same Parakeet STT backend but have different UI flows and d
 - ~2.5% Word Error Rate
 - ~66 MB working memory during inference (vs ~2 GB+ on GPU/MLX)
 - ~6 GB CoreML model bundle downloaded during onboarding
+- One process-wide STT runtime owns `AsrManager`
+- One scheduler owns priorities, backpressure, and job-scoped progress
 
 **Swift API:**
 ```swift
@@ -151,11 +156,11 @@ ANE:  Parakeet STT (via FluidAudio/CoreML) -- dedicated ML chip
 
 - **Dictation**: AVAudioEngine tap on input node (microphone)
 - **File transcription**: FluidAudio's `AudioConverter` resamples audio; FFmpeg (bundled) demuxes video files
-- No system audio capture needed (that is Oatmeal's meeting recording domain)
+- **Meeting recording**: Core Audio Taps for system audio + AVAudioEngine for mic (dual-stream, ported from Oatmeal)
 
 ### GUI Structure
 
-MacParakeet is a **menu bar app** with four UI surfaces:
+MacParakeet is a **menu bar app** with these UI surfaces:
 
 ```
 Menu Bar Icon (always visible)
@@ -193,9 +198,18 @@ Menu Bar Icon (always visible)
     |   +-- Permissions
     |   +-- Auto-update preferences
     |
+    +-- Meetings Panel
+    |   +-- Start Meeting Recording button
+    |   +-- Past meeting recordings list
+    |
+    +-- Meeting Recording Pill (floating indicator)
+    |   +-- Red dot + elapsed timer
+    |   +-- Stop button
+    |   +-- Transcribing state
+    |
     +-- Library Panel
     |   +-- Transcription thumbnail grid
-    |   +-- Filter bar (All/YouTube/Local/Favorites)
+    |   +-- Filter bar (All/YouTube/Local/Meetings/Favorites)
     |   +-- Search and sort
     |
     +-- History Panel
@@ -207,6 +221,7 @@ Menu Bar Icon (always visible)
 View files organized by feature in `Sources/MacParakeet/Views/`:
 - `Transcription/` -- Main window, drop zone, transcript display, export
 - `Dictation/` -- Overlay, waveform, recording state
+- `MeetingRecording/` -- Meeting recording pill, meetings view, dual audio levels
 - `Discover/` -- Discover sidebar, curated content cards
 - `Vocabulary/` -- Processing mode, custom words, text snippets
 - `Feedback/` -- Feedback form, category selection, community link
@@ -252,7 +267,7 @@ macparakeet/
 
 - [macparakeet-website](https://github.com/moona3k/macparakeet-website) -- Marketing website (Astro + Tailwind), macparakeet.com
 - [macparakeet-community](https://github.com/moona3k/macparakeet-community) -- Archived; all issues now on moona3k/macparakeet
-- [oatmeal](https://github.com/moona3k/oatmeal) -- Sibling product (meeting memory app, shares no code)
+- [oatmeal](https://github.com/moona3k/oatmeal) -- Sibling product (meeting memory app); some meeting audio capture code was ported and adapted into MacParakeet
 
 ### Feedback & Community
 
@@ -270,8 +285,8 @@ In-app feedback creates GitHub Issues via a Cloudflare Pages Function. User emai
 2. **ADRs are locked** -- Don't second-guess architectural decisions in `spec/adr/`.
 3. **Never lose user data** -- Graceful degradation for dictation history and transcriptions.
 4. **UI philosophy** -- Minimal during dictation, rich for transcription results.
-5. **Local-first** -- Audio never leaves device. Period. No cloud option.
-6. **Simplicity is the product** -- Resist feature creep. MacParakeet does two things well.
+5. **Local-first** -- Speech recognition stays on-device by default. Optional network surfaces only run when the user enables or triggers them (for example YouTube downloads, telemetry, licensing, updates, or optional provider flows).
+6. **Simplicity is the product** -- Resist feature creep. MacParakeet does three things well.
 7. **Fast feedback loops for agents** -- Design everything so the agent can verify its own work: tests for logic, CLI for headless smoke-testing, build errors that surface immediately.
 8. **Bounded agent discretion** -- Agents should choose the simplest process that works, but behavior changes must follow `spec/10-ai-coding-method.md` kernel workflow.
 9. **Protect the context zone** -- For behavior changes, explicitly define in-scope requirements, out-of-scope behavior, and invariants before coding.
@@ -403,8 +418,9 @@ open Package.swift  # Select MacParakeet scheme
 
 | Permission | Reason | When Requested |
 |------------|--------|----------------|
-| Microphone | Dictation recording | First dictation use |
+| Microphone | Dictation + meeting recording | First dictation use |
 | Accessibility | Global hotkey, paste simulation | First dictation use |
+| Screen & System Audio Recording | System audio capture for meeting recording (Core Audio Taps) | First meeting recording use |
 
 1. **Offline-first** -- Dictation and file transcription work fully offline. Network used only for YouTube downloads and anonymous telemetry.
 2. **Temp files deleted** -- Audio removed after transcription (unless user saves)

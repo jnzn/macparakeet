@@ -83,6 +83,35 @@ The suite includes targeted regressions for progress behavior in URL transcripti
 - `TranscriptionServiceTests`: download-phase percentages are forwarded to `onProgress`
 - `TranscriptionViewModelTests`: phase text percent parsing updates UI progress and resets on non-percent phases
 
+### Meeting Recording Tests
+
+**What:** Meeting recording flow, state machine transitions, chunk ordering, audio pipeline.
+
+**How:** Protocol-based mocks for `MeetingAudioCaptureServiceProtocol` and `MeetingRecordingServiceProtocol`. In-memory SQLite for persistence. No real audio capture in tests.
+
+**Examples:**
+- `MeetingRecordingFlowStateMachineTests`: All state transitions (idle → recording → stopping → transcribing → completed), generation guards, error paths
+- `MeetingChunkResultBufferTests`: Chunk ordering, out-of-order completion, finalization guards
+- `MeetingTranscriptAssemblerTests`: Preview line assembly from chunk results
+- `MeetingRecordingPanelViewModelTests`: Live preview updates, elapsed time, audio levels
+- `AudioChunkerTests`: Chunk boundary timing, overlap handling, flush on stop
+- `GlobalShortcutManagerTests`: Meeting hotkey registration, conflict detection
+- `TranscriptionServiceTests`: Meeting transcription path (sourceType = .meeting)
+- `DatabaseManagerTests`: sourceType migration, meeting transcription CRUD
+
+### STT Scheduler Tests (ADR-016)
+
+**What:** Shared runtime ownership, request priority, backpressure, and progress isolation across concurrent producers.
+
+**How:** Protocol-based mocks for the STT runtime plus deterministic scheduler tests that assert execution order and dropped/coalesced work under backlog.
+
+**Examples:**
+- Dictation preempts pending meeting live chunk work
+- Meeting finalization runs ahead of new batch file transcription
+- File transcription yields to interactive dictation without corrupting progress callbacks
+- Meeting live chunks are dropped or coalesced when queue thresholds are exceeded
+- App warm-up, shutdown, and cache-clearing hit one shared runtime only
+
 ### CLI Tests
 
 **What:** Command parsing and prompt construction behavior for CLI surfaces.

@@ -7,6 +7,10 @@ public protocol TranscriptionServiceProtocol: Sendable {
         source: TelemetryTranscriptionSource,
         onProgress: (@Sendable (TranscriptionProgress) -> Void)?
     ) async throws -> Transcription
+    func transcribeMeeting(
+        recording: MeetingRecordingOutput,
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)?
+    ) async throws -> Transcription
     func transcribeURL(urlString: String, onProgress: (@Sendable (TranscriptionProgress) -> Void)?) async throws -> Transcription
 }
 
@@ -24,6 +28,10 @@ extension TranscriptionServiceProtocol {
 
     public func transcribeURL(urlString: String) async throws -> Transcription {
         try await transcribeURL(urlString: urlString, onProgress: nil)
+    }
+
+    public func transcribeMeeting(recording: MeetingRecordingOutput) async throws -> Transcription {
+        try await transcribeMeeting(recording: recording, onProgress: nil)
     }
 }
 
@@ -74,18 +82,63 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         source: TelemetryTranscriptionSource = .file,
         onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
     ) async throws -> Transcription {
+        let sourceType: Transcription.SourceType = switch source {
+        case .youtube:
+            .youtube
+        case .meeting:
+            .meeting
+        case .file, .dragDrop:
+            .file
+        }
+        return try await transcribe(
+            fileURL: fileURL,
+            storedFileURL: fileURL,
+            displayFileName: nil,
+            source: source,
+            sourceType: sourceType,
+            onProgress: onProgress
+        )
+    }
+
+    public func transcribeMeeting(
+        recording: MeetingRecordingOutput,
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
+    ) async throws -> Transcription {
+        return try await transcribe(
+            fileURL: recording.mixedAudioURL,
+            storedFileURL: recording.mixedAudioURL,
+            displayFileName: recording.displayName,
+            source: .meeting,
+            sourceType: .meeting,
+            meetingSpeakerMetadata: recording.preparedTranscript,
+            onProgress: onProgress
+        )
+    }
+
+    private func transcribe(
+        fileURL: URL,
+        storedFileURL: URL?,
+        displayFileName: String?,
+        source: TelemetryTranscriptionSource,
+        sourceType: Transcription.SourceType,
+        meetingSpeakerMetadata: MeetingRealtimeTranscript? = nil,
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
+    ) async throws -> Transcription {
         if let entitlements {
             try await entitlements.assertCanTranscribe(now: Date())
         }
 
-        let fileName = fileURL.lastPathComponent
-        let fileSize = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? Int).flatMap { $0 }
+        let fileName = displayFileName ?? storedFileURL?.lastPathComponent ?? fileURL.lastPathComponent
+        let fileSize = storedFileURL.flatMap {
+            (try? FileManager.default.attributesOfItem(atPath: $0.path)[.size] as? Int).flatMap { $0 }
+        }
 
         var transcription = Transcription(
             fileName: fileName,
-            filePath: fileURL.path,
+            filePath: storedFileURL?.path,
             fileSizeBytes: fileSize,
-            status: .processing
+            status: .processing,
+            sourceType: sourceType
         )
         try transcriptionRepo.save(transcription)
         Telemetry.send(.transcriptionStarted(source: source, audioDurationSeconds: nil))
@@ -109,6 +162,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             source: source,
             transcription: &transcription,
             tempFiles: [],
+            meetingSpeakerMetadata: meetingSpeakerMetadata,
             onProgress: onProgress
         )
     }
@@ -137,7 +191,8 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             sourceURL: urlString,
             thumbnailURL: downloadResult.thumbnailURL,
             channelName: downloadResult.channelName,
-            videoDescription: downloadResult.videoDescription
+            videoDescription: downloadResult.videoDescription,
+            sourceType: .youtube
         )
         try transcriptionRepo.save(transcription)
         Telemetry.send(.transcriptionStarted(source: .youtube, audioDurationSeconds: nil))
@@ -174,6 +229,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         transcription: inout Transcription,
         tempFiles: [URL],
         cleanUpDownloadedFiles: Bool = true,
+        meetingSpeakerMetadata: MeetingRealtimeTranscript? = nil,
         onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
     ) async throws -> Transcription {
         var wavURL: URL?
@@ -208,7 +264,19 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             transcription.wordTimestamps = words
             transcription.durationMs = result.words.last?.endMs
 
-            if let diarizationService, shouldDiarize() {
+            if source == .meeting, let meetingSpeakerMetadata {
+                let speakerSegments = meetingSpeakerMetadata.diarizationSegments.map {
+                    SpeakerSegment(speakerId: $0.speakerId, startMs: $0.startMs, endMs: $0.endMs)
+                }
+                let mergedWords = SpeakerMerger.mergeWordTimestampsWithSpeakers(
+                    words: words,
+                    segments: speakerSegments
+                )
+                transcription.wordTimestamps = mergedWords
+                transcription.speakerCount = meetingSpeakerMetadata.speakerCount
+                transcription.speakers = meetingSpeakerMetadata.speakers
+                transcription.diarizationSegments = Self.buildDiarizationSegments(from: mergedWords)
+            } else if let diarizationService, shouldDiarize() {
                 do {
                     onProgress?(.identifyingSpeakers)
                     Telemetry.send(.diarizationStarted(source: source))
@@ -244,40 +312,12 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                 }
             }
 
-            let mode = processingMode()
-            var customWords: [CustomWord] = []
-            var snippets: [TextSnippet] = []
-            if mode.usesDeterministicPipeline {
-                do { customWords = try customWordRepo?.fetchEnabled() ?? [] }
-                catch { logger.error("Failed to fetch custom words: \(error.localizedDescription, privacy: .public)") }
-                do { snippets = try snippetRepo?.fetchEnabled() ?? [] }
-                catch { logger.error("Failed to fetch snippets: \(error.localizedDescription, privacy: .public)") }
-            }
-            let refinement = await textRefinementService.refine(
-                rawText: result.text,
-                mode: mode,
-                customWords: customWords,
-                snippets: snippets
-            )
-            transcription.cleanTranscript = refinement.text
-
-            if !refinement.expandedSnippetIDs.isEmpty {
-                try? snippetRepo?.incrementUseCount(ids: refinement.expandedSnippetIDs)
-            }
-
-            transcription.status = .completed
-            transcription.updatedAt = Date()
-            try transcriptionRepo.save(transcription)
-
-            let wordCount = transcription.rawTranscript?.split(whereSeparator: \.isWhitespace).count ?? 0
-            let audioDurationSeconds = transcription.durationMs.map { Double($0) / 1000.0 }
-            let processingSeconds = Date().timeIntervalSince(processingStartedAt)
-            Telemetry.send(.transcriptionCompleted(
+            let completed = try await completeTranscription(
                 source: source,
-                audioDurationSeconds: audioDurationSeconds,
-                processingSeconds: processingSeconds,
-                wordCount: wordCount
-            ))
+                transcription: &transcription,
+                rawText: result.text,
+                processingStartedAt: processingStartedAt
+            )
 
             try? FileManager.default.removeItem(at: wavURL)
             if cleanUpDownloadedFiles {
@@ -286,7 +326,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                 }
             }
 
-            return transcription
+            return completed
         } catch {
             if let wavURL { try? FileManager.default.removeItem(at: wavURL) }
             if cleanUpDownloadedFiles {
@@ -335,8 +375,88 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         }
     }
 
+    private func completeTranscription(
+        source: TelemetryTranscriptionSource,
+        transcription: inout Transcription,
+        rawText: String,
+        processingStartedAt: Date
+    ) async throws -> Transcription {
+        let mode = processingMode()
+        var customWords: [CustomWord] = []
+        var snippets: [TextSnippet] = []
+        if mode.usesDeterministicPipeline {
+            do { customWords = try customWordRepo?.fetchEnabled() ?? [] }
+            catch { logger.error("Failed to fetch custom words: \(error.localizedDescription, privacy: .public)") }
+            do { snippets = try snippetRepo?.fetchEnabled() ?? [] }
+            catch { logger.error("Failed to fetch snippets: \(error.localizedDescription, privacy: .public)") }
+        }
+
+        let refinement = await textRefinementService.refine(
+            rawText: rawText,
+            mode: mode,
+            customWords: customWords,
+            snippets: snippets
+        )
+        transcription.cleanTranscript = refinement.text
+
+        if !refinement.expandedSnippetIDs.isEmpty {
+            try? snippetRepo?.incrementUseCount(ids: refinement.expandedSnippetIDs)
+        }
+
+        transcription.status = .completed
+        transcription.updatedAt = Date()
+        try transcriptionRepo.save(transcription)
+
+        let wordCount = transcription.rawTranscript?.split(whereSeparator: \.isWhitespace).count ?? 0
+        let audioDurationSeconds = transcription.durationMs.map { Double($0) / 1000.0 }
+        let processingSeconds = Date().timeIntervalSince(processingStartedAt)
+        Telemetry.send(.transcriptionCompleted(
+            source: source,
+            audioDurationSeconds: audioDurationSeconds,
+            processingSeconds: processingSeconds,
+            wordCount: wordCount
+        ))
+
+        return transcription
+    }
+
     private static func errorType(for error: Error) -> String {
         TelemetryErrorClassifier.classify(error)
+    }
+
+    private static func buildDiarizationSegments(from words: [WordTimestamp]) -> [DiarizationSegmentRecord] {
+        guard let firstWord = words.first, let firstSpeaker = firstWord.speakerId else {
+            return []
+        }
+
+        var segments: [DiarizationSegmentRecord] = []
+        var currentSpeaker = firstSpeaker
+        var currentStart = firstWord.startMs
+        var currentEnd = firstWord.endMs
+
+        for word in words.dropFirst() {
+            guard let speakerId = word.speakerId else { continue }
+
+            if speakerId == currentSpeaker, word.startMs - currentEnd <= 1500 {
+                currentEnd = max(currentEnd, word.endMs)
+            } else {
+                segments.append(DiarizationSegmentRecord(
+                    speakerId: currentSpeaker,
+                    startMs: currentStart,
+                    endMs: currentEnd
+                ))
+                currentSpeaker = speakerId
+                currentStart = word.startMs
+                currentEnd = word.endMs
+            }
+        }
+
+        segments.append(DiarizationSegmentRecord(
+            speakerId: currentSpeaker,
+            startMs: currentStart,
+            endMs: currentEnd
+        ))
+        return segments
     }
 
     private static let videoExtensions: Set<String> = ["mp4", "mov", "mkv", "avi", "webm", "m4v", "flv", "wmv"]
