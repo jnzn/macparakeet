@@ -56,7 +56,7 @@ Both flows update the menu bar icon. A priority aggregator resolves conflicts:
 ```
 Priority (highest → lowest):
 1. Meeting recording active  →  recording indicator
-2. Dictation active          →  breathing wave
+2. Dictation active          →  recording indicator
 3. File transcription        →  processing indicator
 4. Idle                      →  default icon
 ```
@@ -94,11 +94,11 @@ No deduplication is needed. Both representations are semantically accurate.
 
 ## Implementation
 
-### Remove mutual exclusion (3 changes)
+### Remove mutual exclusion and preserve idle pill suppression
 
 1. `DictationFlowCoordinator.startDictation()` — remove `guard !isMeetingRecordingActive()` check
 2. `AppDelegate.toggleMeetingRecording()` — remove `guard dictationFlowCoordinator?.isDictationActive != true` check and `presentMeetingRecordingBlockedAlert()`
-3. `DictationFlowCoordinator` — remove `isMeetingRecordingActive` closure from init and stored property
+3. `DictationFlowCoordinator` — rename the `isMeetingRecordingActive` closure to `shouldSuppressIdlePill`, keep it for idle pill suppression, and guard `showIdlePill()` so the idle pill does not reappear while meeting recording is active
 
 ### Add MenuBarIconAggregator
 
