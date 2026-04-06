@@ -1,4 +1,5 @@
 import XCTest
+import FluidAudio
 @testable import MacParakeetCore
 
 final class DiarizationServiceTests: XCTestCase {
@@ -89,5 +90,53 @@ final class DiarizationServiceTests: XCTestCase {
 
         XCTAssertFalse(DiarizationService.isModelCached(directory: tempDirectory))
         XCTAssertFalse(FileManager.default.fileExists(atPath: repoDirectory.path))
+    }
+
+    func testDiarizePreparesModelsUsingCustomDirectoryBeforeColdStartInference() async throws {
+        let customDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .standardizedFileURL
+        let manager = RecordingOfflineDiarizerManager(result: DiarizationResult(segments: [
+            TimedSpeakerSegment(
+                speakerId: "speaker_0",
+                embedding: [],
+                startTimeSeconds: 0,
+                endTimeSeconds: 1.2,
+                qualityScore: 0.9
+            ),
+        ]))
+        let service = DiarizationService(manager: manager, modelsDirectory: customDirectory)
+        let audioURL = URL(fileURLWithPath: "/tmp/test.wav")
+
+        let result = try await service.diarize(audioURL: audioURL)
+        let preparedDirectories = await manager.preparedDirectories
+        let processedAudioURLs = await manager.processedAudioURLs
+        let ready = await service.isReady()
+
+        XCTAssertEqual(preparedDirectories, [customDirectory])
+        XCTAssertEqual(processedAudioURLs, [audioURL])
+        XCTAssertEqual(result.speakerCount, 1)
+        XCTAssertEqual(result.speakers.map { $0.id }, ["S1"])
+        XCTAssertEqual(result.segments.map { $0.speakerId }, ["S1"])
+        XCTAssertTrue(ready)
+    }
+}
+
+private actor RecordingOfflineDiarizerManager: OfflineDiarizerManaging {
+    let result: DiarizationResult
+    var preparedDirectories: [URL] = []
+    var processedAudioURLs: [URL] = []
+
+    init(result: DiarizationResult) {
+        self.result = result
+    }
+
+    func prepareModels(at directory: URL) async throws {
+        preparedDirectories.append(directory)
+    }
+
+    func process(audioURL: URL) async throws -> DiarizationResult {
+        processedAudioURLs.append(audioURL)
+        return result
     }
 }

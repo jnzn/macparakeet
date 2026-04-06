@@ -79,7 +79,7 @@ final class MeetingRecordingServiceTests: XCTestCase {
         XCTAssertNil(output.preparedTranscript)
     }
 
-    func testStopRecordingPreservesPreparedTranscriptWhenPendingChunksTimeOut() async throws {
+    func testStopRecordingInvalidatesPreparedTranscriptWhenPendingChunksTimeOut() async throws {
         let captureService = MockMeetingAudioCaptureService()
         let audioConverter = MockMeetingAudioFileConverter()
         let sttClient = PrefixScriptedMeetingSTTClient(
@@ -122,9 +122,7 @@ final class MeetingRecordingServiceTests: XCTestCase {
         let output = try await service.stopRecording()
         defer { try? FileManager.default.removeItem(at: output.folderURL) }
 
-        let prepared = try XCTUnwrap(output.preparedTranscript)
-        XCTAssertEqual(prepared.words.map(\.word), ["mic"])
-        XCTAssertEqual(prepared.words.map(\.speakerId), ["microphone"])
+        XCTAssertNil(output.preparedTranscript)
     }
 
     func testBackpressureDropMarksNextTranscriptUpdateAsLagging() async throws {
