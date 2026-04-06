@@ -271,8 +271,11 @@ The CoreML model for `parakeet-tdt-0.6b-v3-coreml` is **~6 GB** on HuggingFace. 
 During onboarding:
 
 1. Download CoreML models (~6 GB) with progress indication
-2. One-time CoreML compilation (~3.4s)
-3. Short warm-up transcription to verify everything works
+2. If speaker detection is enabled, prepare diarization assets (~130 MB) on the separate diarization service path
+3. One-time CoreML compilation (~3.4s)
+4. Short warm-up transcription to verify everything works
+
+Onboarding should not report the speech stack as ready until the runtime owner is ready **and** any required default-on speaker-detection assets are available.
 
 This replaces the previous Python venv bootstrap (~500 MB deps + ~2.5 GB model).
 

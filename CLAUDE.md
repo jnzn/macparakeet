@@ -91,7 +91,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 | ADR-013 | Prompt Library + multi-summary architecture | `spec/adr/013-prompt-library-multi-summary.md` |
 | ADR-014 | Meeting recording via Core Audio Taps | `spec/adr/014-meeting-recording.md` |
 | ADR-015 | Concurrent dictation and meeting recording | `spec/adr/015-concurrent-dictation-meeting.md` |
-| ADR-016 | Centralized STT runtime and scheduler | `spec/adr/016-centralized-stt-runtime-scheduler.md` |
+| ADR-016 | Centralized STT runtime and two-slot scheduler | `spec/adr/016-centralized-stt-runtime-scheduler.md` |
 
 > Historical ADRs (still in `spec/adr/`, kept for context): ADR-003 (one-time purchase pricing), ADR-006 (trial + license activation), ADR-008 (local LLM runtime). The app is now free/GPL-3.0.
 
@@ -125,7 +125,8 @@ All three modes share the same Parakeet STT backend but have different UI flows,
 - ~155x realtime on Apple Silicon (60 min audio in ~23 seconds)
 - ~2.5% Word Error Rate
 - ~66 MB working memory during inference (vs ~2 GB+ on GPU/MLX)
-- ~6 GB CoreML model bundle downloaded during onboarding
+- ~6 GB CoreML speech model bundle downloaded during onboarding
+- ~130 MB diarization asset bundle prepared alongside onboarding/default speaker-detection readiness
 - One process-wide `STTRuntime` owner manages model lifecycle for the app
 - The default STT topology uses 2 execution slots: reserved dictation + shared meeting/batch
 - One `STTScheduler` owns slot assignment, priority, backpressure, cancellation, and job-scoped progress

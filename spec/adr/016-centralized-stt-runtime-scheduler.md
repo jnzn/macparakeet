@@ -111,6 +111,26 @@ This means:
 Only the immediate post-stop meeting path uses `meetingFinalize`.
 Archived meeting retranscribes remain `fileTranscription` even when their telemetry/source metadata remains `.meeting`.
 
+Reference shape:
+
+```text
+DictationService -----------┐
+MeetingRecordingService ----┼--> STTScheduler / Control Plane
+TranscriptionService -------┘
+                                  │
+                                  ├── Interactive slot
+                                  │     └── dictation
+                                  │
+                                  └── Background slot
+                                        ├── meetingFinalize
+                                        ├── meetingLiveChunk
+                                        └── fileTranscription
+                                               │
+                                               ▼
+                                        STTRuntime
+                                  (slot-scoped AsrManager instances)
+```
+
 ### 6. Backpressure is explicit
 
 Meeting live chunk transcription is best-effort and droppable under backlog.
@@ -151,6 +171,8 @@ It remains a separate service because:
 - it is usually post-STT enrichment rather than interactive inference
 
 The STT control plane may coordinate with diarization for lifecycle/UI/reporting purposes, but diarization capacity policy remains separate.
+
+Keeping diarization out of the speech-slot scheduler does **not** mean product readiness may ignore it. When speaker detection is enabled by default, onboarding and ready-state UX must account for diarization-model readiness before claiming file transcription is fully prepared.
 
 ### 9. Progress must be job-scoped
 
