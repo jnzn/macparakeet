@@ -161,8 +161,6 @@ enum DesignSystem {
         static let audioScrubberHeight: CGFloat = 44
         static let thumbnailCardMinWidth: CGFloat = 200
         static let thumbnailAspectRatio: CGFloat = 16 / 9
-        static let meetingPillWidth: CGFloat = 72
-        static let meetingPillHeight: CGFloat = 80
     }
 
     // MARK: - Animation

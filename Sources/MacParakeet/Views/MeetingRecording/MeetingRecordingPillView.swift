@@ -21,14 +21,6 @@ struct MeetingRecordingPillView: View {
         }
         .padding(.bottom, DesignSystem.Spacing.md - DesignSystem.Spacing.xs)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .onHover { hovering in
-            isHovered = hovering
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            guard case .recording = viewModel.state else { return }
-            onTap?()
-        }
     }
 
     @ViewBuilder
@@ -83,7 +75,8 @@ struct MeetingRecordingPillView: View {
                 audioLevel: max(viewModel.micLevel, viewModel.systemLevel)
             )
         }
-        .frame(width: DesignSystem.Layout.meetingPillWidth, height: DesignSystem.Layout.meetingPillHeight)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
         .background(
             Capsule()
                 .fill(isHovered ? DesignSystem.Colors.meetingPillBackgroundHover : DesignSystem.Colors.meetingPillBackground)
@@ -96,21 +89,42 @@ struct MeetingRecordingPillView: View {
                 )
                 .animation(DesignSystem.Animation.meetingPillHover, value: isHovered)
         )
-        .clipShape(Capsule())
+        .contentShape(Capsule())
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .onTapGesture {
+            onTap?()
+        }
         .scaleEffect(isHovered ? 1.05 : 1.0)
         .animation(DesignSystem.Animation.meetingPillHover, value: isHovered)
         .padding(DesignSystem.Spacing.sm)
         .overlay(alignment: .top) {
             if isHovered && viewModel.elapsedSeconds > 0 {
-                Text(viewModel.formattedElapsed)
-                    .font(DesignSystem.Typography.meetingPillBadge)
-                    .foregroundStyle(DesignSystem.Colors.meetingPillText)
-                    .padding(.horizontal, DesignSystem.Spacing.sm)
-                    .padding(.vertical, 3)
-                    .background(DesignSystem.Colors.meetingPillBadgeBackground)
-                    .clipShape(Capsule())
-                    .offset(y: -24)
-                    .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(DesignSystem.Colors.recordingRed)
+                        .frame(width: 5, height: 5)
+                        .shadow(color: .red.opacity(0.5), radius: 3)
+
+                    Text(viewModel.formattedElapsed)
+                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.92))
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(
+                    Capsule()
+                        .fill(.ultraThinMaterial)
+                        .environment(\.colorScheme, .dark)
+                )
+                .overlay(
+                    Capsule()
+                        .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5)
+                )
+                .shadow(color: .black.opacity(0.25), radius: 6, y: 2)
+                .offset(y: -24)
+                .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
         }
         .accessibilityElement(children: .combine)
