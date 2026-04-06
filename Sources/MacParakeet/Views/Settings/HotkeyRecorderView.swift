@@ -13,6 +13,7 @@ struct HotkeyRecorderView: View {
     }
 
     @Binding var trigger: HotkeyTrigger
+    var defaultTrigger: HotkeyTrigger = .fn
     var additionalValidation: ((HotkeyTrigger) -> HotkeyTrigger.ValidationResult)? = nil
     @State private var isRecording = false
     @State private var validationMessage: String?
@@ -59,6 +60,15 @@ struct HotkeyRecorderView: View {
             .buttonStyle(.bordered)
 
             Menu {
+                Button("Reset to Default (\(defaultTrigger.shortSymbol) \(defaultTrigger.displayName))") {
+                    trigger = defaultTrigger
+                    validationMessage = nil
+                    validationIsBlocked = false
+                }
+                .disabled(trigger == defaultTrigger)
+
+                Divider()
+
                 Button("Record Specific Modifier Side") {
                     startRecording(modifierCaptureMode: .sideSpecific)
                 }
@@ -67,7 +77,7 @@ struct HotkeyRecorderView: View {
                     .font(.system(size: 14))
             }
             .menuStyle(.borderlessButton)
-            .help("Advanced hotkey options, including recording a specific left or right modifier key.")
+            .help("Advanced hotkey options, including resetting to default or recording a specific modifier key.")
         }
     }
 

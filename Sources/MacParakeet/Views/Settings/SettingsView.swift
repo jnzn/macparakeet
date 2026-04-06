@@ -246,7 +246,10 @@ struct SettingsView: View {
                     )
                     Spacer(minLength: DesignSystem.Spacing.md)
                     VStack(alignment: .trailing, spacing: 4) {
-                        HotkeyRecorderView(trigger: $viewModel.meetingHotkeyTrigger) { candidate in
+                        HotkeyRecorderView(
+                            trigger: $viewModel.meetingHotkeyTrigger,
+                            defaultTrigger: .chord(modifiers: ["command", "shift"], keyCode: 46)
+                        ) { candidate in
                             guard candidate == viewModel.hotkeyTrigger else { return .allowed }
                             return .blocked("Already used by dictation.")
                         }
