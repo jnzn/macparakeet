@@ -1457,7 +1457,7 @@ Embedded video/audio playback, split-pane detail view, synced transcript highlig
 
 ---
 
-## v0.7 — Processing Layer (Implemented On Current Branch)
+## v0.5 — Processing Layer (Implemented)
 
 Prompt library and multi-summary system. Users control how AI processes transcripts via reusable prompts. See [spec/12-processing-layer.md](12-processing-layer.md) and [ADR-013](adr/013-prompt-library-multi-summary.md).
 

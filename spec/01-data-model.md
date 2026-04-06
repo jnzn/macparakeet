@@ -17,7 +17,7 @@ MacParakeet uses **SQLite via GRDB** for all persistent storage. Single database
 
 ┌──────────────────┐       ┌─────────────────────────┐
 │  transcriptions  │◄──FK──│   chat_conversations    │  v0.5 — Multi-conversation chat
-│                  │◄──FK──│      summaries          │  v0.7 — Multi-summary per transcript
+│                  │◄──FK──│      summaries          │  v0.5 — Multi-summary per transcript
 └──────────────────┘       └─────────────────────────┘
    v0.1 — File transcription records
 
@@ -30,7 +30,7 @@ MacParakeet uses **SQLite via GRDB** for all persistent storage. Single database
 └──────────────────┘
 
 ┌──────────────────┐
-│     prompts      │   v0.7 — Reusable prompt templates
+│     prompts      │   v0.5 — Reusable prompt templates
 └──────────────────┘
 ```
 
@@ -206,7 +206,7 @@ CREATE INDEX idx_chat_conversations_transcription_id ON chat_conversations(trans
 
 ---
 
-### `prompts` (v0.7)
+### `prompts` (v0.5)
 
 Reusable prompt templates for LLM-powered transcript processing. Community prompts are seeded during migration; custom prompts support full CRUD. Community prompts can be hidden but not edited or deleted.
 
@@ -235,7 +235,7 @@ CREATE UNIQUE INDEX idx_prompts_name ON prompts(name COLLATE NOCASE);
 
 ---
 
-### `summaries` (v0.7)
+### `summaries` (v0.5)
 
 Stores generated summaries per transcription. Each transcript can have multiple summaries from different prompts. Summaries snapshot the prompt content used at generation time for reproducibility.
 
@@ -701,9 +701,9 @@ migrator.registerMigration("v0.6-transcription-source-type") { db in
 | `transcriptions.videoDescription` | v0.5 | YouTube video description |
 | `transcriptions.isFavorite` | v0.5 | User favorite marker |
 | `transcriptions.sourceType` | v0.6 | Origin of transcription: `file`, `youtube`, or `meeting` |
-| `text_snippets.action` | v0.7 | Keystroke action type for snippet |
-| `prompts` | v0.7 | Reusable prompt templates (community + custom) |
-| `summaries` | v0.7 | Multi-summary per transcription (FK → transcriptions, cascade delete) |
+| `text_snippets.action` | v0.5 | Keystroke action type for snippet |
+| `prompts` | v0.5 | Reusable prompt templates (community + custom) |
+| `summaries` | v0.5 | Multi-summary per transcription (FK → transcriptions, cascade delete) |
 
 ### Tables NOT Planned (YAGNI)
 
