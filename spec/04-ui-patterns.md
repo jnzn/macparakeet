@@ -419,7 +419,7 @@ During concurrent dictation + meeting recording:
 
 ---
 
-## Menu Bar (v0.1)
+## Menu Bar (v0.1, updated v0.6)
 
 ### Menu Structure
 
@@ -428,6 +428,7 @@ During concurrent dictation + meeting recording:
 │  MacParakeet                   │
 ├────────────────────────────────┤
 │  Start Dictation    (hotkey)  │
+│  Record Meeting     (hotkey)  │
 │  Open Window           ⌘O     │
 ├────────────────────────────────┤
 │  Recent Transcriptions   ►    │
@@ -439,6 +440,8 @@ During concurrent dictation + meeting recording:
 │  Quit MacParakeet      ⌘Q     │
 └────────────────────────────────┘
 ```
+
+- **Record Meeting** toggles meeting recording on/off. Label changes to "Stop Meeting" while recording is active.
 
 ### Menu Bar Icon
 

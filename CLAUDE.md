@@ -45,7 +45,7 @@ A **fast, private, local-first voice app** for macOS with three co-equal modes: 
 |-------|--------|-------|
 | Platform | macOS 14.2+ | Apple Silicon only |
 | Language | Swift 6.0 | SwiftUI for UI |
-| Database | SQLite | GRDB (single file, dictation history + transcriptions) |
+| Database | SQLite | GRDB (single file, dictation history + transcriptions + meeting recordings) |
 | STT | Parakeet TDT 0.6B-v3 | Via FluidAudio CoreML/ANE (~2.5% WER, 155x realtime, 25 European languages) |
 | Audio | AVAudioEngine + Core Audio + Core Audio Taps | Mic capture for dictation; Core Audio Taps for system audio (meeting recording); FFmpeg (bundled) for video file conversion |
 | YouTube | yt-dlp | Standalone macOS binary, weekly non-blocking auto-update via `--update` |
@@ -57,7 +57,7 @@ MacParakeet is extracted from the OatFlow feature in Oatmeal but is maintained i
 
 | | MacParakeet | Oatmeal |
 |---|-------------|---------|
-| **Focus** | Voice dictation + file transcription | Meeting memory + calendar |
+| **Focus** | Voice dictation + file transcription + meeting recording | Meeting memory + calendar |
 | **Complexity** | Simple, focused | Complex, powerful |
 | **Pricing** | Free (GPL-3.0) | Freemium + Pro |
 | **Value prop** | "Fast local transcription" | "Remembers everything" |
