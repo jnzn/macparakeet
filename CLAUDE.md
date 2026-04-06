@@ -96,16 +96,14 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 
 ## Current Phase
 
-**v0.7 Complete** -- ~166 source files, ~87 test files, 1156 tests passing (`swift test` green)
+**v0.6 In Progress** -- ~166 source files, ~87 test files, 1268 tests passing (`swift test` green)
 
 - **v0.1** MVP -- System-wide dictation, file transcription, overlay, history, export, SQLite, CLI, STT engine
 - **v0.2** Clean Pipeline -- Text processing (filler removal, custom words, snippets), Vocabulary UI, feedback form
 - **v0.3** YouTube & Export -- YouTube URL transcription, DOCX/PDF/JSON export, drag-and-drop enhancements
 - **v0.4** Polish + Launch -- Diarization, custom hotkeys, Sparkle updates, LLM providers, voice stats, distribution
-- **v0.5** Data & Reliability -- Private dictation, multi-conversation chat, YouTube metadata, favorites, open-source release
-- **v0.6** Video Player & UI Revamp -- HLS streaming, thumbnails, media player, split-pane detail, synced transcript, library view
-- **v0.7** Prompt Library & Multi-Summary -- Prompt Library (6 built-in + custom), multi-summary per transcript (tab-based), extra instructions, prompt management sheet, `summaries` table migration
-- **v0.8 Meeting recording** -- System audio + mic capture via Core Audio Taps, sacred-geometry recording pill + meeting panel, library integration, prompt/summary/chat support (ADR-014)
+- **v0.5** Data, UI & Prompts -- Private dictation, multi-conversation chat, favorites, video player, split-pane detail, library grid, prompt library, multi-summary, open-source release
+- **v0.6** Meeting Recording (in progress) -- System audio + mic capture via Core Audio Taps, concurrent with dictation (ADR-015), sacred-geometry recording pill + meeting panel, library integration, prompt/summary/chat support (ADR-014)
 
 ## Key Patterns
 
