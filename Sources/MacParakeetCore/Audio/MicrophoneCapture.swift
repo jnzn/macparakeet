@@ -4,13 +4,20 @@ import OSLog
 
 public final class MicrophoneCapture: @unchecked Sendable {
     public typealias AudioBufferHandler = @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void
+    private enum LifecycleState {
+        case idle
+        case starting
+        case running
+        case stopping
+    }
 
     private let logger = Logger(subsystem: "com.macparakeet.core", category: "MicrophoneCapture")
-    private let lock = NSLock()
+    private let lifecycleQueue = DispatchQueue(label: "com.macparakeet.microphonecapture")
+    private let handlerLock = NSLock()
     private let audioEngine = AVAudioEngine()
     private let bufferSize: AVAudioFrameCount = 4096
 
-    private var isRunning = false
+    private var state: LifecycleState = .idle
     private var bufferHandler: AudioBufferHandler?
 
     public init() {}
@@ -29,48 +36,73 @@ public final class MicrophoneCapture: @unchecked Sendable {
     }
 
     public func start(handler: @escaping AudioBufferHandler) throws {
-        guard !lock.withLock({ isRunning }) else {
-            throw MeetingAudioError.alreadyRunning
+        var startError: Error?
+        var didStart = false
+
+        lifecycleQueue.sync {
+            guard state == .idle else {
+                startError = MeetingAudioError.alreadyRunning
+                return
+            }
+
+            guard Self.hasPermission else {
+                startError = MeetingAudioError.microphonePermissionDenied
+                return
+            }
+
+            let inputNode = audioEngine.inputNode
+            let format = inputNode.outputFormat(forBus: 0)
+            guard format.sampleRate > 0 else {
+                startError = MeetingAudioError.noMicrophoneAvailable
+                return
+            }
+
+            state = .starting
+            handlerLock.withLock { bufferHandler = handler }
+            inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: format) { [weak self] buffer, time in
+                guard let self,
+                      let callback = self.handlerLock.withLock({ self.bufferHandler }) else { return }
+                callback(buffer, time)
+            }
+
+            do {
+                try audioEngine.start()
+                state = .running
+                didStart = true
+            } catch {
+                inputNode.removeTap(onBus: 0)
+                handlerLock.withLock { bufferHandler = nil }
+                state = .idle
+                startError = MeetingAudioError.audioEngineStartFailed(error.localizedDescription)
+            }
         }
 
-        guard Self.hasPermission else {
-            throw MeetingAudioError.microphonePermissionDenied
+        if let startError {
+            throw startError
         }
-
-        let inputNode = audioEngine.inputNode
-        let format = inputNode.outputFormat(forBus: 0)
-        guard format.sampleRate > 0 else {
-            throw MeetingAudioError.noMicrophoneAvailable
+        if didStart {
+            logger.info("Microphone capture started")
         }
-
-        lock.withLock { bufferHandler = handler }
-        inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: format) { [weak self] buffer, time in
-            guard let self,
-                  let callback = self.lock.withLock({ self.bufferHandler }) else { return }
-            callback(buffer, time)
-        }
-
-        do {
-            try audioEngine.start()
-        } catch {
-            inputNode.removeTap(onBus: 0)
-            lock.withLock { bufferHandler = nil }
-            throw MeetingAudioError.audioEngineStartFailed(error.localizedDescription)
-        }
-
-        lock.withLock { isRunning = true }
-        logger.info("Microphone capture started")
     }
 
     public func stop() {
-        guard lock.withLock({ isRunning }) else { return }
+        var didStop = false
 
-        audioEngine.inputNode.removeTap(onBus: 0)
-        audioEngine.stop()
-        lock.withLock {
-            bufferHandler = nil
-            isRunning = false
+        lifecycleQueue.sync {
+            guard state != .idle else { return }
+            state = .stopping
+
+            audioEngine.inputNode.removeTap(onBus: 0)
+            audioEngine.stop()
+            handlerLock.withLock {
+                bufferHandler = nil
+            }
+            state = .idle
+            didStop = true
         }
-        logger.info("Microphone capture stopped")
+
+        if didStop {
+            logger.info("Microphone capture stopped")
+        }
     }
 }

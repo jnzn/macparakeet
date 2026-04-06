@@ -9,15 +9,17 @@ enum TranscriptionDeletionCleanup {
     )
 
     static func removeOwnedAssets(for transcription: Transcription) {
-        guard let filePath = transcription.filePath else { return }
+        Task.detached(priority: .utility) {
+            guard let filePath = transcription.filePath else { return }
 
-        switch transcription.sourceType {
-        case .youtube:
-            removeItem(at: URL(fileURLWithPath: filePath))
-        case .meeting:
-            removeMeetingFolder(containing: URL(fileURLWithPath: filePath))
-        case .file:
-            return
+            switch transcription.sourceType {
+            case .youtube:
+                removeItem(at: URL(fileURLWithPath: filePath))
+            case .meeting:
+                removeMeetingFolder(containing: URL(fileURLWithPath: filePath))
+            case .file:
+                return
+            }
         }
     }
 
@@ -27,7 +29,9 @@ enum TranscriptionDeletionCleanup {
         let folderURL = fileURL.deletingLastPathComponent().standardizedFileURL
 
         guard folderURL.path.hasPrefix(meetingRootURL.path + "/") else {
-            logger.warning("Refusing to remove meeting folder outside app support: \(folderURL.path, privacy: .public)")
+            logger.warning(
+                "Refusing to remove meeting folder outside app support: \(folderURL.path, privacy: .private)"
+            )
             return
         }
 
@@ -40,7 +44,9 @@ enum TranscriptionDeletionCleanup {
                 try FileManager.default.removeItem(at: url)
             }
         } catch {
-            logger.warning("Failed to remove transcription asset: \(error.localizedDescription, privacy: .public)")
+            logger.warning(
+                "Failed to remove transcription asset at \(url.path, privacy: .private): \(String(describing: error), privacy: .private)"
+            )
         }
     }
 }

@@ -302,12 +302,13 @@ public final class TranscriptionViewModel {
             guard deleted else { return }
             TranscriptionDeletionCleanup.removeOwnedAssets(for: transcription)
             Telemetry.send(.transcriptionDeleted)
+            if currentTranscription?.id == transcription.id {
+                currentTranscription = nil
+            }
+            loadTranscriptions()
+        } catch {
+            logger.error("Failed to delete transcription: \(error.localizedDescription, privacy: .public)")
         }
-        catch { logger.error("Failed to delete transcription: \(error.localizedDescription, privacy: .public)") }
-        if currentTranscription?.id == transcription.id {
-            currentTranscription = nil
-        }
-        loadTranscriptions()
     }
 
     // MARK: - Progress State

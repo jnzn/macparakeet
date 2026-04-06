@@ -115,6 +115,7 @@ CREATE INDEX idx_transcriptions_created_at ON transcriptions(createdAt DESC);
 - `wordTimestamps` is a JSON text column, not a separate table. One transcription = one blob of timestamps. GRDB can decode this via `Codable`.
 - `speakerCount` and `speakers` are nullable, populated only when diarization is available (v0.4).
 - `filePath` is nullable because the original file may be moved or deleted after transcription.
+- For meeting recordings, `filePath` points to the mixed `meeting.m4a` artifact used for playback/export, while the per-source `microphone.m4a` and `system.m4a` files remain inside the same session folder.
 - `sourceURL` distinguishes URL-sourced transcriptions (YouTube) from local file transcriptions. Added in v0.3.
 - `thumbnailURL`, `channelName`, `videoDescription` store YouTube metadata fetched during download. Added in v0.5.
 - `isFavorite` enables user-marked favorites with filtered library view. Added in v0.5.
@@ -337,6 +338,7 @@ struct Transcription: Codable, Identifiable {
     var errorMessage: String?
     var exportPath: String?
     var sourceURL: String?              // YouTube/web URL (v0.3, nullable)
+    var sourceType: SourceType          // v0.6 — file | youtube | meeting
     var thumbnailURL: String?           // v0.5 — YouTube video thumbnail URL
     var channelName: String?            // v0.5 — YouTube channel name
     var videoDescription: String?       // v0.5 — YouTube video description
@@ -367,6 +369,12 @@ struct Transcription: Codable, Identifiable {
         case completed
         case error
         case cancelled
+    }
+
+    enum SourceType: String, Codable {
+        case file
+        case youtube
+        case meeting
     }
 }
 
@@ -648,6 +656,19 @@ migrator.registerMigration("v0.5-transcription-video-metadata") { db in
         t.add(column: "isFavorite", .boolean).notNull().defaults(to: false)
     }
 }
+
+// v0.6 — Transcription source type (file / youtube / meeting)
+migrator.registerMigration("v0.6-transcription-source-type") { db in
+    try db.alter(table: "transcriptions") { t in
+        t.add(column: "sourceType", .text).notNull().defaults(to: "file")
+    }
+
+    try db.execute(sql: """
+        UPDATE transcriptions
+        SET sourceType = 'youtube'
+        WHERE sourceURL IS NOT NULL
+    """)
+}
 ```
 
 ### Migration Rules
@@ -679,6 +700,7 @@ migrator.registerMigration("v0.5-transcription-video-metadata") { db in
 | `transcriptions.channelName` | v0.5 | YouTube channel name |
 | `transcriptions.videoDescription` | v0.5 | YouTube video description |
 | `transcriptions.isFavorite` | v0.5 | User favorite marker |
+| `transcriptions.sourceType` | v0.6 | Origin of transcription: `file`, `youtube`, or `meeting` |
 | `text_snippets.action` | v0.7 | Keystroke action type for snippet |
 | `prompts` | v0.7 | Reusable prompt templates (community + custom) |
 | `summaries` | v0.7 | Multi-summary per transcription (FK → transcriptions, cascade delete) |

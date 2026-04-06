@@ -944,6 +944,14 @@ Dictation ready
 5. **Audio storage is opt-in** — Dictation audio only saved if user enables "Keep audio" in settings
 6. **Local AI only** — All ML inference happens on-device: STT on the ANE via CoreML
 
+### Runtime Permissions
+
+| Permission | Required For | User Flow |
+|------------|--------------|-----------|
+| Microphone | Dictation, onboarding mic test, meeting recording mic capture | Requested on first dictation/meeting use |
+| Accessibility | Global hotkey paste simulation | Requested on first dictation use |
+| Screen & System Audio Recording | Core Audio Taps system-audio capture for meeting recording | Requested on first meeting recording attempt; recording stays blocked until granted |
+
 ### Sandboxing (App Store)
 
 For App Store distribution, the app needs:

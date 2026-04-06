@@ -18,7 +18,7 @@ final class MeetingAudioStorageWriter {
 
     init(
         folderURL: URL,
-        sampleRate: Double = 16000,
+        sampleRate: Double = 48000,
         channels: AVAudioChannelCount = 1
     ) throws {
         guard let format = AVAudioFormat(

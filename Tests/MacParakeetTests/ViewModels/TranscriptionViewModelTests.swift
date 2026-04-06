@@ -407,7 +407,7 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertTrue(mockRepo.deleteCalledWith.contains(t.id))
     }
 
-    func testDeleteYouTubeTranscriptionRemovesStoredAudioFile() throws {
+    func testDeleteYouTubeTranscriptionRemovesStoredAudioFile() async throws {
         let audioURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("yt-audio-\(UUID().uuidString).m4a")
         let created = FileManager.default.createFile(atPath: audioURL.path, contents: Data("audio".utf8))
@@ -427,6 +427,7 @@ final class TranscriptionViewModelTests: XCTestCase {
         viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
         viewModel.deleteTranscription(t)
 
+        try await waitForFileAbsence(at: audioURL)
         XCTAssertFalse(FileManager.default.fileExists(atPath: audioURL.path))
     }
 
@@ -453,6 +454,31 @@ final class TranscriptionViewModelTests: XCTestCase {
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: audioURL.path))
         XCTAssertEqual(viewModel.transcriptions.count, 1)
+    }
+
+    func testDeleteFailureKeepsCurrentSelection() {
+        let t = Transcription(fileName: "keep.mp3", rawTranscript: "Hello", status: .completed)
+        mockRepo.transcriptions = [t]
+        mockRepo.deleteError = NSError(domain: "repo", code: 1)
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+        viewModel.currentTranscription = t
+
+        viewModel.deleteTranscription(t)
+
+        XCTAssertEqual(viewModel.currentTranscription?.id, t.id)
+        XCTAssertEqual(viewModel.transcriptions.count, 1)
+    }
+
+    private func waitForFileAbsence(at url: URL, timeout: Duration = .seconds(1)) async throws {
+        let deadline = ContinuousClock.now + timeout
+        while FileManager.default.fileExists(atPath: url.path) {
+            guard ContinuousClock.now < deadline else {
+                XCTFail("Timed out waiting for file removal at \(url.path)")
+                return
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
     }
 
     func testDeleteCurrentTranscriptionClearsSelection() {

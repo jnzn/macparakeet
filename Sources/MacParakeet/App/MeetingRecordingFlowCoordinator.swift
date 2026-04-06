@@ -111,7 +111,6 @@ final class MeetingRecordingFlowCoordinator {
             }
 
         case .showRecordingPill:
-            onRecordingBegan()
             let vm = pillViewModel ?? MeetingRecordingPillViewModel()
             vm.onStop = { [weak self] in self?.toggleRecording() }
             vm.state = .recording
@@ -148,6 +147,7 @@ final class MeetingRecordingFlowCoordinator {
             actionTask = Task { @MainActor in
                 do {
                     try await meetingRecordingService.startRecording()
+                    self.onRecordingBegan()
                     self.sendEvent(.recordingStarted(generation: gen))
                 } catch {
                     self.sendEvent(.startFailed(generation: gen, message: error.localizedDescription))
@@ -297,7 +297,11 @@ final class MeetingRecordingFlowCoordinator {
             let stream = await meetingRecordingService.transcriptUpdates
             for await update in stream {
                 guard !Task.isCancelled else { break }
-                panelViewModel?.updatePreviewLines(makePreviewLines(from: update))
+                let previewLines = await Task.detached(priority: .utility) {
+                    Self.makePreviewLines(from: update)
+                }.value
+                guard !Task.isCancelled else { break }
+                panelViewModel?.updatePreviewLines(previewLines)
             }
         }
     }
@@ -307,7 +311,7 @@ final class MeetingRecordingFlowCoordinator {
         transcriptObservationTask = nil
     }
 
-    private func makePreviewLines(from update: MeetingTranscriptUpdate) -> [MeetingRecordingPreviewLine] {
+    nonisolated private static func makePreviewLines(from update: MeetingTranscriptUpdate) -> [MeetingRecordingPreviewLine] {
         let speakerLabels = Dictionary(uniqueKeysWithValues: update.speakers.map { ($0.id, $0.label) })
         let segments = TranscriptSegmenter.groupIntoSegments(words: update.words)
         return Array(segments.suffix(3)).map { segment in
@@ -322,7 +326,7 @@ final class MeetingRecordingFlowCoordinator {
         }
     }
 
-    private func format(milliseconds: Int) -> String {
+    nonisolated private static func format(milliseconds: Int) -> String {
         let totalSeconds = max(0, milliseconds / 1000)
         let minutes = totalSeconds / 60
         let seconds = totalSeconds % 60
@@ -332,9 +336,7 @@ final class MeetingRecordingFlowCoordinator {
     private func openSystemSettings(for reason: MeetingRecordingPermissionFailure) {
         switch reason {
         case .microphone:
-            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
-                NSWorkspace.shared.open(url)
-            }
+            permissionService.openMicrophoneSettings()
         case .screenRecording:
             permissionService.openScreenRecordingSettings()
         }

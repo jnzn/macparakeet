@@ -254,10 +254,11 @@ public struct HotkeyTrigger: Sendable {
     /// Tries JSON decode first, falls back to legacy string, defaults to `.fn`.
     public static func current(
         defaults: UserDefaults = .standard,
-        defaultsKey: String = defaultsKey
+        defaultsKey: String = defaultsKey,
+        fallback: HotkeyTrigger = .fn
     ) -> HotkeyTrigger {
         guard let stored = defaults.object(forKey: defaultsKey) else {
-            return .fn
+            return fallback
         }
 
         // Try JSON data first (new format)
@@ -271,7 +272,7 @@ public struct HotkeyTrigger: Sendable {
             return trigger
         }
 
-        return .fn
+        return fallback
     }
 
     /// Convenience accessor using standard user defaults.

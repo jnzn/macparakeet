@@ -104,7 +104,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 - **v0.5** Data & Reliability -- Private dictation, multi-conversation chat, YouTube metadata, favorites, open-source release
 - **v0.6** Video Player & UI Revamp -- HLS streaming, thumbnails, media player, split-pane detail, synced transcript, library view
 - **v0.7** Prompt Library & Multi-Summary -- Prompt Library (6 built-in + custom), multi-summary per transcript (tab-based), extra instructions, prompt management sheet, `summaries` table migration
-- **Meeting recording** -- System audio + mic capture via Core Audio Taps, sacred-geometry recording pill + meeting panel, library integration, prompt/summary/chat support (ADR-014)
+- **v0.8 Meeting recording** -- System audio + mic capture via Core Audio Taps, sacred-geometry recording pill + meeting panel, library integration, prompt/summary/chat support (ADR-014)
 
 ## Key Patterns
 
@@ -283,7 +283,7 @@ In-app feedback creates GitHub Issues via a Cloudflare Pages Function. User emai
 2. **ADRs are locked** -- Don't second-guess architectural decisions in `spec/adr/`.
 3. **Never lose user data** -- Graceful degradation for dictation history and transcriptions.
 4. **UI philosophy** -- Minimal during dictation, rich for transcription results.
-5. **Local-first** -- Audio never leaves device. Period. No cloud option.
+5. **Local-first** -- Speech recognition stays on-device by default. Optional network surfaces only run when the user enables or triggers them (for example YouTube downloads, telemetry, licensing, updates, or optional provider flows).
 6. **Simplicity is the product** -- Resist feature creep. MacParakeet does three things well.
 7. **Fast feedback loops for agents** -- Design everything so the agent can verify its own work: tests for logic, CLI for headless smoke-testing, build errors that surface immediately.
 8. **Bounded agent discretion** -- Agents should choose the simplest process that works, but behavior changes must follow `spec/10-ai-coding-method.md` kernel workflow.

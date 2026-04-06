@@ -41,30 +41,38 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         let mixedAudioURL: URL
     }
 
+    private struct PendingChunkTask: Sendable {
+        let id: UUID
+        let task: Task<Void, Never>
+    }
+
+    private static let maxPendingChunkTasks = 24
+
     private let logger = Logger(subsystem: "com.macparakeet.core", category: "MeetingRecordingService")
-    private let audioCaptureService: MeetingAudioCaptureService
-    private let audioConverter: AudioFileConverter
+    private let audioCaptureService: any MeetingAudioCapturing
+    private let audioConverter: any AudioFileConverting
     private let sttClient: STTClientProtocol
     private let fileManager: FileManager
 
     private var currentSession: Session?
     private var writer: MeetingAudioStorageWriter?
     private var processingTask: Task<Void, Never>?
-    private var pendingChunkTasks: [Task<Void, Never>] = []
+    private var pendingChunkTasks: [PendingChunkTask] = []
     private var nextChunkSequence: [AudioSource: Int] = [:]
     private var microphoneChunker = AudioChunker()
     private var systemChunker = AudioChunker()
     private var chunkResultBuffer = MeetingChunkResultBuffer()
     private var transcriptAssembler = MeetingTranscriptAssembler()
     private var chunkTranscriptionFailed = false
+    private var captureFailed = false
     private var latestLevels = MeetingAudioLevels()
 
     private var transcriptContinuation: AsyncStream<MeetingTranscriptUpdate>.Continuation?
     private var cachedTranscriptUpdates: AsyncStream<MeetingTranscriptUpdate>?
 
     public init(
-        audioCaptureService: MeetingAudioCaptureService = MeetingAudioCaptureService(),
-        audioConverter: AudioFileConverter = AudioFileConverter(),
+        audioCaptureService: any MeetingAudioCapturing = MeetingAudioCaptureService(),
+        audioConverter: any AudioFileConverting = AudioFileConverter(),
         sttClient: STTClientProtocol = STTClient(),
         fileManager: FileManager = .default
     ) {
@@ -92,7 +100,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
     }
 
     public var captureMode: CaptureMode {
-        currentSession == nil ? .stopped : .full
+        (currentSession == nil || captureFailed) ? .stopped : .full
     }
 
     public var transcriptUpdates: AsyncStream<MeetingTranscriptUpdate> {
@@ -142,6 +150,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         chunkResultBuffer.reset()
         transcriptAssembler.reset()
         chunkTranscriptionFailed = false
+        captureFailed = false
 
         processingTask = Task { [weak self] in
             guard let self else { return }
@@ -173,7 +182,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         await processingTask?.value
         processingTask = nil
         await flushTranscriptChunkers(for: session)
-        let pendingTasks = pendingChunkTasks
+        let pendingTasks = pendingChunkTasks.map(\.task)
         pendingChunkTasks = []
         for task in pendingTasks {
             await task.value
@@ -220,7 +229,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         processingTask?.cancel()
         await processingTask?.value
         processingTask = nil
-        let pendingTasks = pendingChunkTasks
+        let pendingTasks = pendingChunkTasks.map(\.task)
         pendingChunkTasks = []
         for task in pendingTasks {
             task.cancel()
@@ -260,6 +269,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
                 logger.error("Failed to write system audio: \(error.localizedDescription, privacy: .public)")
             }
         case .error(let error):
+            captureFailed = true
             logger.error("Meeting capture event error: \(error.localizedDescription, privacy: .public)")
         }
     }
@@ -278,9 +288,16 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         source: AudioSource,
         session: Session
     ) {
+        if pendingChunkTasks.count >= Self.maxPendingChunkTasks {
+            chunkTranscriptionFailed = true
+            logger.warning("Dropping live meeting chunk because the backlog exceeded \(Self.maxPendingChunkTasks, privacy: .public) tasks")
+            return
+        }
+
         let sequence = nextChunkSequence[source] ?? 0
         nextChunkSequence[source] = sequence + 1
 
+        let taskID = UUID()
         let task = Task { [weak self] in
             guard let self else { return }
 
@@ -305,7 +322,11 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             }
         }
 
-        pendingChunkTasks.append(task)
+        pendingChunkTasks.append(PendingChunkTask(id: taskID, task: task))
+        Task { [weak self] in
+            await task.value
+            await self?.removePendingChunkTask(id: taskID)
+        }
     }
 
     private func transcribeChunk(
@@ -397,6 +418,10 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         }
     }
 
+    private func removePendingChunkTask(id: UUID) {
+        pendingChunkTasks.removeAll { $0.id == id }
+    }
+
     private func cleanupState() {
         currentSession = nil
         pendingChunkTasks = []
@@ -405,6 +430,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         chunkResultBuffer.reset()
         transcriptAssembler.reset()
         chunkTranscriptionFailed = false
+        captureFailed = false
         transcriptContinuation?.finish()
         transcriptContinuation = nil
         cachedTranscriptUpdates = nil

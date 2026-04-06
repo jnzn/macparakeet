@@ -7,10 +7,15 @@ import OSLog
 @available(macOS 14.2, *)
 public final class SystemAudioTap: @unchecked Sendable {
     public typealias AudioBufferHandler = @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void
+    private enum LifecycleState {
+        case idle
+        case starting
+        case running
+        case stopping
+    }
 
     private let logger = Logger(subsystem: "com.macparakeet.core", category: "SystemAudioTap")
     private let queue = DispatchQueue(label: "com.macparakeet.systemaudiotap", qos: .userInitiated)
-    private let lock = NSLock()
 
     private var tapID: AudioObjectID = .meetingUnknown
     private var aggregateDeviceID: AudioObjectID = .meetingUnknown
@@ -18,7 +23,7 @@ public final class SystemAudioTap: @unchecked Sendable {
     private var tapStreamDescription: AudioStreamBasicDescription?
     private var tapUUIDString: String?
 
-    private var isRunning = false
+    private var state: LifecycleState = .idle
     private var bufferHandler: AudioBufferHandler?
 
     public init() {}
@@ -28,30 +33,49 @@ public final class SystemAudioTap: @unchecked Sendable {
     }
 
     public func start(handler: @escaping AudioBufferHandler) throws {
-        guard !lock.withLock({ isRunning }) else {
-            throw MeetingAudioError.alreadyRunning
+        var startError: Error?
+        var didStart = false
+
+        queue.sync {
+            guard state == .idle else {
+                startError = MeetingAudioError.alreadyRunning
+                return
+            }
+
+            state = .starting
+            bufferHandler = handler
+
+            do {
+                try createProcessTap()
+                try createAggregateDevice()
+                try startDeviceIO()
+                state = .running
+                didStart = true
+            } catch {
+                tearDownResources(clearHandler: true)
+                startError = error
+            }
         }
 
-        lock.withLock { bufferHandler = handler }
-
-        do {
-            try createProcessTap()
-            try createAggregateDevice()
-            try startDeviceIO(handler: handler)
-            lock.withLock { isRunning = true }
+        if let startError {
+            throw startError
+        }
+        if didStart {
             logger.info("System audio tap started")
-        } catch {
-            tearDownResources(clearHandler: true)
-            throw error
         }
     }
 
     public func stop() {
-        let shouldStop = lock.withLock { isRunning || aggregateDeviceID.isMeetingValid || tapID.isMeetingValid }
-        guard shouldStop else { return }
-
-        tearDownResources(clearHandler: true)
-        logger.info("System audio tap stopped")
+        var didStop = false
+        queue.sync {
+            guard state != .idle || aggregateDeviceID.isMeetingValid || tapID.isMeetingValid else { return }
+            state = .stopping
+            tearDownResources(clearHandler: true)
+            didStop = true
+        }
+        if didStop {
+            logger.info("System audio tap stopped")
+        }
     }
 
     private func tearDownResources(clearHandler: Bool) {
@@ -71,12 +95,10 @@ public final class SystemAudioTap: @unchecked Sendable {
             tapID = .meetingUnknown
         }
 
-        lock.withLock {
-            if clearHandler {
-                bufferHandler = nil
-            }
-            isRunning = false
+        if clearHandler {
+            bufferHandler = nil
         }
+        state = .idle
         tapUUIDString = nil
     }
 
@@ -135,7 +157,7 @@ public final class SystemAudioTap: @unchecked Sendable {
         aggregateDeviceID = newDeviceID
     }
 
-    private func startDeviceIO(handler: @escaping AudioBufferHandler) throws {
+    private func startDeviceIO() throws {
         guard var streamDesc = tapStreamDescription,
               let format = AVAudioFormat(streamDescription: &streamDesc) else {
             throw MeetingAudioError.invalidTapFormat
@@ -143,7 +165,7 @@ public final class SystemAudioTap: @unchecked Sendable {
 
         let ioBlock: AudioDeviceIOBlock = { [weak self] inNow, inInputData, inInputTime, outOutputData, inOutputTime in
             guard let self,
-                  let callback = self.lock.withLock({ self.bufferHandler }),
+                  let callback = self.bufferHandler,
                   let buffer = AVAudioPCMBuffer(
                     pcmFormat: format,
                     bufferListNoCopy: inInputData,
@@ -169,7 +191,5 @@ public final class SystemAudioTap: @unchecked Sendable {
         guard status == noErr else {
             throw MeetingAudioError.aggregateDeviceCreationFailed(status)
         }
-
-        _ = handler
     }
 }

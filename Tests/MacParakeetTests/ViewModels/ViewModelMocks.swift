@@ -141,8 +141,9 @@ final class MockTranscriptionRepository: TranscriptionRepositoryProtocol, @unche
             throw deleteError
         }
         guard deleteResult else { return false }
+        let before = transcriptions.count
         transcriptions.removeAll { $0.id == id }
-        return true
+        return transcriptions.count < before
     }
 
     func deleteAll() throws {
@@ -742,7 +743,8 @@ final class MockPermissionService: PermissionServiceProtocol, @unchecked Sendabl
     }
 
     func requestMicrophonePermission() async -> Bool {
-        requestMicResult
+        microphonePermission = requestMicResult ? .granted : .denied
+        return requestMicResult
     }
 
     func checkScreenRecordingPermission() -> Bool {
@@ -753,6 +755,8 @@ final class MockPermissionService: PermissionServiceProtocol, @unchecked Sendabl
         screenRecordingPermission = requestScreenRecordingResult
         return screenRecordingPermission
     }
+
+    func openMicrophoneSettings() {}
 
     func openScreenRecordingSettings() {}
 

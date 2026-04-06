@@ -1681,7 +1681,7 @@ FluidAudio model download → Audio capture (AVAudioEngine)
 
 | Feature | Why Excluded |
 |---------|--------------|
-| Meeting recording (system audio) | That's Oatmeal, not MacParakeet |
+| AI meeting notes / memory / CRM-style enrichment | That's Oatmeal, not MacParakeet |
 | Calendar integration | Meeting app territory |
 | Entity extraction / memory | Meeting app territory |
 | Cloud processing | Privacy is the brand -- opt-in LLM providers only (ADR-011) |

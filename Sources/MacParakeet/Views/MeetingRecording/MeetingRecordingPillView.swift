@@ -5,7 +5,7 @@ import SwiftUI
 private struct MeetingRecordingCheckmarkView: View {
     var body: some View {
         Image(systemName: "checkmark.circle.fill")
-            .font(.system(size: 24, weight: .semibold))
+            .font(DesignSystem.Typography.meetingPillCheckmark)
             .foregroundStyle(DesignSystem.Colors.successGreen)
     }
 }
@@ -19,7 +19,7 @@ struct MeetingRecordingPillView: View {
         VStack(spacing: 0) {
             pillContent
         }
-        .padding(.bottom, 12)
+        .padding(.bottom, DesignSystem.Spacing.md - DesignSystem.Spacing.xs)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .onHover { hovering in
             isHovered = hovering
@@ -67,12 +67,12 @@ struct MeetingRecordingPillView: View {
         HStack(spacing: 10) {
             icon
             Text(title)
-                .font(DesignSystem.Typography.bodySmall.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.9))
+                .font(DesignSystem.Typography.meetingPillStatus)
+                .foregroundStyle(DesignSystem.Colors.meetingPillText)
                 .lineLimit(2)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, DesignSystem.Spacing.md)
+        .padding(.vertical, DesignSystem.Spacing.md - DesignSystem.Spacing.xs)
         .background(pillBackground)
     }
 
@@ -86,31 +86,34 @@ struct MeetingRecordingPillView: View {
                 compactLevelRow(systemName: "mic.fill", level: viewModel.micLevel)
                 compactLevelRow(systemName: "speaker.wave.2.fill", level: viewModel.systemLevel)
             }
-            .padding(.horizontal, 8)
-            .padding(.bottom, 8)
+            .padding(.horizontal, DesignSystem.Spacing.sm)
+            .padding(.bottom, DesignSystem.Spacing.sm)
         }
-        .frame(width: 72, height: 100)
+        .frame(width: DesignSystem.Layout.meetingPillWidth, height: DesignSystem.Layout.meetingPillHeight)
         .background(
             Capsule()
-                .fill(Color(white: isHovered ? 0.2 : 0.12).opacity(0.9))
+                .fill(isHovered ? DesignSystem.Colors.meetingPillBackgroundHover : DesignSystem.Colors.meetingPillBackground)
                 .overlay(
                     Capsule()
-                        .stroke(Color.white.opacity(isHovered ? 0.15 : 0.08), lineWidth: 0.5)
+                        .stroke(
+                            isHovered ? DesignSystem.Colors.meetingPillStrokeHover : DesignSystem.Colors.meetingPillStroke,
+                            lineWidth: 0.5
+                        )
                 )
-                .animation(.easeOut(duration: 0.15), value: isHovered)
+                .animation(DesignSystem.Animation.meetingPillHover, value: isHovered)
         )
         .clipShape(Capsule())
         .scaleEffect(isHovered ? 1.05 : 1.0)
-        .animation(.easeOut(duration: 0.15), value: isHovered)
-        .padding(8)
+        .animation(DesignSystem.Animation.meetingPillHover, value: isHovered)
+        .padding(DesignSystem.Spacing.sm)
         .overlay(alignment: .top) {
             if isHovered && viewModel.elapsedSeconds > 0 {
                 Text(viewModel.formattedElapsed)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 8)
+                    .font(DesignSystem.Typography.meetingPillBadge)
+                    .foregroundStyle(DesignSystem.Colors.meetingPillText)
+                    .padding(.horizontal, DesignSystem.Spacing.sm)
                     .padding(.vertical, 3)
-                    .background(Color.black.opacity(0.8))
+                    .background(DesignSystem.Colors.meetingPillBadgeBackground)
                     .clipShape(Capsule())
                     .offset(y: -24)
                     .transition(.opacity.combined(with: .scale(scale: 0.8)))
@@ -123,24 +126,24 @@ struct MeetingRecordingPillView: View {
     private func compactLevelRow(systemName: String, level: Float) -> some View {
         HStack(spacing: 4) {
             Image(systemName: systemName)
-                .font(.system(size: 8, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.55))
-                .frame(width: 10)
+                .font(DesignSystem.Typography.meetingPillLevelIcon)
+                .foregroundStyle(DesignSystem.Colors.meetingPillLevelIcon)
+                .frame(width: DesignSystem.Layout.meetingPillLevelIconWidth)
 
             GeometryReader { proxy in
                 let clamped = max(0, min(CGFloat(level), 1))
                 ZStack(alignment: .leading) {
                     Capsule()
-                        .fill(Color.white.opacity(0.12))
+                        .fill(DesignSystem.Colors.meetingPillLevelTrack)
 
                     Capsule()
                         .fill(DesignSystem.Colors.accent)
                         .frame(width: max(2, proxy.size.width * clamped))
                 }
             }
-            .frame(height: 4)
+            .frame(height: DesignSystem.Layout.meetingPillLevelBarHeight)
         }
-        .frame(height: 8)
+        .frame(height: DesignSystem.Layout.meetingPillLevelRowHeight)
     }
 
     private var pillBackground: some View {
@@ -150,6 +153,6 @@ struct MeetingRecordingPillView: View {
                 RoundedRectangle(cornerRadius: 999)
                     .strokeBorder(DesignSystem.Colors.pillBorder, lineWidth: 1)
             )
-            .shadow(color: .black.opacity(0.28), radius: 12, y: 6)
+            .cardShadow(DesignSystem.Shadows.meetingPill)
     }
 }

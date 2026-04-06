@@ -8,6 +8,12 @@ public enum MeetingAudioCaptureEvent: Sendable {
     case error(MeetingAudioError)
 }
 
+public protocol MeetingAudioCapturing: Sendable {
+    var events: AsyncStream<MeetingAudioCaptureEvent> { get async }
+    func start() async throws
+    func stop() async
+}
+
 protocol MeetingMicrophoneCapturing: Sendable {
     typealias AudioBufferHandler = @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void
     func start(handler: @escaping AudioBufferHandler) throws
@@ -30,7 +36,7 @@ public actor MeetingAudioCaptureService {
 
     private let logger = Logger(subsystem: "com.macparakeet.core", category: "MeetingAudioCaptureService")
     private let microphoneCapture: any MeetingMicrophoneCapturing
-    private let systemAudioTapFactory: @Sendable () -> any MeetingSystemAudioTapping
+    private let systemAudioTapFactory: @Sendable () throws -> any MeetingSystemAudioTapping
 
     private var systemAudioTap: (any MeetingSystemAudioTapping)?
     private var eventHandler: EventHandler?
@@ -42,16 +48,16 @@ public actor MeetingAudioCaptureService {
     public init() {
         self.microphoneCapture = MicrophoneCapture()
         self.systemAudioTapFactory = {
-            if #available(macOS 14.2, *) {
-                return SystemAudioTap()
+            guard #available(macOS 14.2, *) else {
+                throw MeetingAudioError.unsupportedPlatform
             }
-            fatalError("System audio tap requires macOS 14.2+")
+            return SystemAudioTap()
         }
     }
 
     init(
         microphoneCapture: any MeetingMicrophoneCapturing,
-        systemAudioTapFactory: @escaping @Sendable () -> any MeetingSystemAudioTapping
+        systemAudioTapFactory: @escaping @Sendable () throws -> any MeetingSystemAudioTapping
     ) {
         self.microphoneCapture = microphoneCapture
         self.systemAudioTapFactory = systemAudioTapFactory
@@ -83,7 +89,7 @@ public actor MeetingAudioCaptureService {
         }
 
         eventHandler = handler
-        let tap = systemAudioTapFactory()
+        let tap = try systemAudioTapFactory()
 
         do {
             try microphoneCapture.start { [weak self] buffer, time in
@@ -98,6 +104,7 @@ public actor MeetingAudioCaptureService {
         } catch {
             microphoneCapture.stop()
             tap.stop()
+            finishEventStream()
             eventHandler = nil
             throw error
         }
@@ -116,8 +123,7 @@ public actor MeetingAudioCaptureService {
         isCapturing = false
 
         eventContinuation?.finish()
-        eventContinuation = nil
-        cachedEvents = nil
+        finishEventStream()
         eventHandler = nil
         logger.info("Meeting audio capture stopped")
     }
@@ -128,6 +134,12 @@ public actor MeetingAudioCaptureService {
 
     private func yieldEvent(_ event: MeetingAudioCaptureEvent) {
         eventContinuation?.yield(event)
+    }
+
+    private func finishEventStream() {
+        eventContinuation?.finish()
+        eventContinuation = nil
+        cachedEvents = nil
     }
 
     private static func deepCopyBuffer(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
@@ -146,6 +158,10 @@ public actor MeetingAudioCaptureService {
                 dst[channel].update(from: src[channel], count: Int(buffer.frameLength))
             }
         } else if let src = buffer.int16ChannelData, let dst = copy.int16ChannelData {
+            for channel in 0..<Int(format.channelCount) {
+                dst[channel].update(from: src[channel], count: Int(buffer.frameLength))
+            }
+        } else if let src = buffer.int32ChannelData, let dst = copy.int32ChannelData {
             for channel in 0..<Int(format.channelCount) {
                 dst[channel].update(from: src[channel], count: Int(buffer.frameLength))
             }
@@ -176,6 +192,18 @@ extension AVAudioPCMBuffer {
             return min(1.0, sqrt(sum / Float(frameLength)) * 10)
         }
 
+        if let channelData = int32ChannelData, frameLength > 0 {
+            let samples = channelData[0]
+            var sum: Float = 0
+            for index in 0..<Int(frameLength) {
+                let normalized = Float(samples[index]) / Float(Int32.max)
+                sum += normalized * normalized
+            }
+            return min(1.0, sqrt(sum / Float(frameLength)) * 10)
+        }
+
         return 0
     }
 }
+
+extension MeetingAudioCaptureService: MeetingAudioCapturing {}

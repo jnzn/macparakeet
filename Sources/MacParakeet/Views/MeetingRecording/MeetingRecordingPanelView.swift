@@ -94,10 +94,14 @@ struct MeetingRecordingPanelView: View {
                     .padding(DesignSystem.Spacing.md)
                 }
                 .background(DesignSystem.Colors.background)
-                .onChange(of: viewModel.previewLines.count) { _, _ in
+                .onAppear {
                     guard autoScroll, let last = viewModel.previewLines.last else { return }
+                    proxy.scrollTo(last.id, anchor: .bottom)
+                }
+                .onChange(of: viewModel.previewLines.last?.id) { _, lastID in
+                    guard autoScroll, let lastID else { return }
                     withAnimation(.easeOut(duration: 0.2)) {
-                        proxy.scrollTo(last.id, anchor: .bottom)
+                        proxy.scrollTo(lastID, anchor: .bottom)
                     }
                 }
             }

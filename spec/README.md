@@ -67,7 +67,7 @@ All ADRs live in `spec/adr/`. These are locked -- they record decisions already 
 | v0.5 | Data & Reliability | Private dictation, video metadata, multi-conversation chat, FTS5 cleanup, favorites | **Implemented** |
 | v0.6 | Video Player & UI Revamp | Embedded video playback, split-pane detail view, library grid, thumbnail cards | **Implemented** |
 | v0.7 | Prompt Library & Multi-Summary | Prompt library, multi-summary per transcript, custom instructions | **Implemented** |
-| v0.6 | Meeting Recording | System audio + mic capture, local transcription, library integration | **Planned** |
+| v0.8 | Meeting Recording | System audio + mic capture, local transcription, library integration | **Planned** |
 
 ## Version Progress
 
@@ -161,7 +161,7 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 - [x] Migration from `transcriptions.summary` → `summaries`
 - [x] Auto-run uses selected prompt cards; zero auto-run cards is supported
 
-### v0.6 Meeting Recording (Planned)
+### v0.8 Meeting Recording (Planned)
 
 - [ ] System audio capture via Core Audio Taps (macOS 14.2+), ported from Oatmeal
 - [ ] Mic + system audio dual-stream recording (`MeetingAudioCaptureService`)
