@@ -183,8 +183,8 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         await processingTask?.value
         processingTask = nil
         await flushTranscriptChunkers(for: session)
-        // Preserve prepared speaker metadata when the preview tail drains quickly,
-        // but stop waiting once live preview falls behind so finalize can take over.
+        // Preserve any prepared speaker metadata that is already assembled, but
+        // stop waiting once live preview falls behind so finalize can take over.
         let preparedTranscriptReady = await waitForPendingChunkTasksToDrain(timeout: .milliseconds(150))
         if !preparedTranscriptReady {
             await cancelPendingChunkTasks(waitForCancellation: false)
@@ -214,7 +214,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             microphoneAudioURL: session.microphoneAudioURL,
             systemAudioURL: session.systemAudioURL,
             durationSeconds: durationSeconds,
-            preparedTranscript: (chunkTranscriptionFailed || !preparedTranscriptReady)
+            preparedTranscript: chunkTranscriptionFailed
                 ? nil
                 : transcriptAssembler.finalizedTranscript(durationMs: Int(durationSeconds * 1000))
         )
@@ -409,7 +409,6 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         sessionID: UUID
     ) {
         guard currentSession?.id == sessionID else { return }
-        isTranscriptionLagging = false
         let readyResults = chunkResultBuffer.receiveSuccess(
             sequence: sequence,
             source: source,
@@ -429,14 +428,21 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         sequence: Int,
         sessionID: UUID
     ) {
-        if case STTSchedulerError.droppedDueToBackpressure(job: .meetingLiveChunk) = error {
+        let droppedByBackpressure =
+            if case STTSchedulerError.droppedDueToBackpressure(job: .meetingLiveChunk) = error {
+                true
+            } else {
+                false
+            }
+
+        if droppedByBackpressure {
             logger.notice("Meeting live chunk dropped by scheduler backpressure")
             isTranscriptionLagging = true
         } else {
             logger.error("Meeting chunk transcription failed: \(error.localizedDescription, privacy: .public)")
+            chunkTranscriptionFailed = true
         }
         guard currentSession?.id == sessionID else { return }
-        chunkTranscriptionFailed = true
         let readyResults = chunkResultBuffer.receiveFailure(sequence: sequence, source: source)
         for ready in readyResults {
             let update = transcriptAssembler.apply(result: ready.result, chunk: ready.chunk, source: source)
@@ -445,10 +451,19 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
     }
 
     private func yieldTranscriptUpdate(_ update: MeetingTranscriptUpdate) {
-        let adjusted = isTranscriptionLagging && !update.isTranscriptionLagging
-            ? MeetingTranscriptUpdate(words: update.words, speakers: update.speakers, isTranscriptionLagging: true)
-            : update
-        transcriptContinuation?.yield(adjusted)
+        if isTranscriptionLagging && !update.isTranscriptionLagging {
+            transcriptContinuation?.yield(
+                MeetingTranscriptUpdate(
+                    words: update.words,
+                    speakers: update.speakers,
+                    isTranscriptionLagging: true
+                )
+            )
+            isTranscriptionLagging = false
+            return
+        }
+
+        transcriptContinuation?.yield(update)
     }
 
     private func existingSourceURLs(for session: Session) throws -> [URL] {
