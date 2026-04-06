@@ -248,7 +248,7 @@ struct SettingsView: View {
                     VStack(alignment: .trailing, spacing: 4) {
                         HotkeyRecorderView(
                             trigger: $viewModel.meetingHotkeyTrigger,
-                            defaultTrigger: HotkeyTrigger.chord(modifiers: ["command", "shift"], keyCode: 46)
+                            defaultTrigger: .defaultMeetingRecording
                         ) { candidate in
                             guard candidate == viewModel.hotkeyTrigger else { return .allowed }
                             return .blocked("Already used by dictation.")
