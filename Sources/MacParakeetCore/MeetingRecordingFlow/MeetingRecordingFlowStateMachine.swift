@@ -122,7 +122,7 @@ public struct MeetingRecordingFlowStateMachine: Equatable, Sendable {
         case (.finishing, .autoDismissExpired(let gen)):
             guard gen == generation else { return [] }
             state = .idle
-            return [.cancelAutoDismissTimer, .hidePill]
+            return [.hidePill]
 
         case (.recording, .dismissRequested),
              (.starting, .dismissRequested),

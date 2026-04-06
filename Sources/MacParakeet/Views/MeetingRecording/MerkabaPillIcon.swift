@@ -139,13 +139,11 @@ struct MerkabaPillIcon: View {
     }
 
     private var sacredGlow: Color {
-        Color(light: .init(red: 0.40, green: 0.85, blue: 0.40),
-              dark: .init(red: 0.46, green: 0.90, blue: 0.46))
+        DesignSystem.Colors.sacredGlow
     }
 
     private var sacredStem: Color {
-        Color(light: .init(red: 0.35, green: 0.65, blue: 0.35),
-              dark: .init(red: 0.43, green: 0.74, blue: 0.43))
+        DesignSystem.Colors.sacredStem
     }
 }
 

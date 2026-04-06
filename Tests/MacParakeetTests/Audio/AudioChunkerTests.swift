@@ -146,4 +146,38 @@ final class AudioChunkerTests: XCTestCase {
         XCTAssertEqual(samples?[2] ?? .nan, 0.0, accuracy: 0.0001)
         XCTAssertEqual(samples?[3] ?? .nan, 0.0, accuracy: 0.0001)
     }
+
+    func testExtractSamplesDownmixesInt32StereoBuffers() {
+        guard let format = AVAudioFormat(
+            commonFormat: .pcmFormatInt32,
+            sampleRate: 16_000,
+            channels: 2,
+            interleaved: false
+        ), let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4) else {
+            return XCTFail("Failed to create Int32 stereo buffer")
+        }
+
+        buffer.frameLength = 4
+        guard let channelData = buffer.int32ChannelData else {
+            return XCTFail("Missing Int32 channel data")
+        }
+
+        channelData[0][0] = Int32.max
+        channelData[0][1] = 0
+        channelData[0][2] = Int32.min + 1
+        channelData[0][3] = 536_870_912
+
+        channelData[1][0] = 0
+        channelData[1][1] = Int32.max
+        channelData[1][2] = Int32.max
+        channelData[1][3] = -536_870_912
+
+        let samples = AudioChunker.extractSamples(from: buffer)
+
+        XCTAssertEqual(samples?.count, 4)
+        XCTAssertEqual(samples?[0] ?? .nan, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(samples?[1] ?? .nan, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(samples?[2] ?? .nan, 0.0, accuracy: 0.0001)
+        XCTAssertEqual(samples?[3] ?? .nan, 0.0, accuracy: 0.0001)
+    }
 }

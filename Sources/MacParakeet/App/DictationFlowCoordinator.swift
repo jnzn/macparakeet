@@ -24,6 +24,7 @@ final class DictationFlowCoordinator {
     private let entitlementsService: EntitlementsService
     private let dictationRepo: DictationRepository
     private let settingsViewModel: SettingsViewModel
+    private let isMeetingRecordingActive: () -> Bool
     private let onMenuBarIconUpdate: (BreathWaveIcon.MenuBarState) -> Void
     private let onHistoryReload: () -> Void
     private let onPresentEntitlementsAlert: (Error) -> Void
@@ -66,6 +67,7 @@ final class DictationFlowCoordinator {
         entitlementsService: EntitlementsService,
         dictationRepo: DictationRepository,
         settingsViewModel: SettingsViewModel,
+        isMeetingRecordingActive: @escaping () -> Bool = { false },
         onMenuBarIconUpdate: @escaping (BreathWaveIcon.MenuBarState) -> Void,
         onHistoryReload: @escaping () -> Void,
         onPresentEntitlementsAlert: @escaping (Error) -> Void
@@ -75,6 +77,7 @@ final class DictationFlowCoordinator {
         self.entitlementsService = entitlementsService
         self.dictationRepo = dictationRepo
         self.settingsViewModel = settingsViewModel
+        self.isMeetingRecordingActive = isMeetingRecordingActive
         self.onMenuBarIconUpdate = onMenuBarIconUpdate
         self.onHistoryReload = onHistoryReload
         self.onPresentEntitlementsAlert = onPresentEntitlementsAlert
@@ -108,6 +111,10 @@ final class DictationFlowCoordinator {
         mode: FnKeyStateMachine.RecordingMode,
         trigger: TelemetryDictationTrigger = .hotkey
     ) {
+        guard !isMeetingRecordingActive() else {
+            dictationLog.notice("dictation_start_blocked meeting_recording_active")
+            return
+        }
         currentTrigger = trigger
         sendEvent(.startRequested(mode: mode))
     }

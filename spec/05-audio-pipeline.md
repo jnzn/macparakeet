@@ -145,9 +145,9 @@ Mic Input    → AVAudioEngine   → Input Node Tap   → Buffer Callback → M4
 
 - **System audio** is captured via Core Audio Taps (`CATapDescription` + `AudioHardwareCreateProcessTap`), available on macOS 14.2+
 - **Mic audio** is captured via `AVAudioEngine` input node tap (separate from the existing `AudioRecorder` used by dictation — `MicrophoneCapture` provides raw buffer callbacks, not WAV file output)
-- Both streams are independent — no synchronization between them. Timing comes from `AVAudioTime` host time on each buffer
+- Both streams are captured within the same meeting session and aligned by host time. The Core Audio Tap aggregate-device path keeps the system stream stable, and the preview/speaker-label pipeline uses per-buffer `AVAudioTime` host time for ordering.
 - Audio is stored as separate M4A files (AAC 64kbps, 16kHz mono) per source
-- After recording stops, system audio M4A is converted to 16kHz mono WAV via FFmpeg and transcribed with Parakeet
+- After recording stops, microphone + system M4As are mixed into `meeting.m4a`, then the standard batch transcription pipeline converts that mixed file to 16kHz mono WAV and transcribes it with Parakeet
 
 ### Key Components (ported from Oatmeal)
 
@@ -168,9 +168,10 @@ User clicks "Start Meeting Recording"
     → Show recording pill (red dot + elapsed timer + stop button)
     → Consume AsyncStream<CaptureEvent>, write buffers to M4A files
     → User clicks Stop
-    → Stop capture, finalize M4A files
-    → Convert system audio M4A → 16kHz mono WAV via FFmpeg
-    → Send to FluidAudio STT (CoreML/ANE) for batch transcription
+    → Stop capture, finalize `microphone.m4a` + `system.m4a`
+    → Mix both streams into `meeting.m4a`
+    → Convert mixed meeting audio → 16kHz mono WAV via FFmpeg
+    → Send the mixed WAV to FluidAudio STT (CoreML/ANE) for batch transcription
     → Save as Transcription with sourceType = .meeting
     → Navigate to transcription detail view
 ```
@@ -180,7 +181,8 @@ User clicks "Start Meeting Recording"
 ```
 ~/Library/Application Support/MacParakeet/meeting-recordings/{uuid}/
     ├── microphone.m4a    # Mic audio (AAC, 16kHz mono)
-    └── system.m4a        # System audio (AAC, 16kHz mono)
+    ├── system.m4a        # System audio (AAC, 16kHz mono)
+    └── meeting.m4a       # Mixed playback/transcription artifact saved as Transcription.filePath
 ```
 
 Audio files are kept by default. Users can delete manually from the transcription detail view.

@@ -143,7 +143,6 @@ public final class SettingsViewModel {
     public var meetingTitlePrefix: String {
         didSet {
             defaults.set(meetingTitlePrefix, forKey: AppPreferences.meetingTitlePrefixKey)
-            Telemetry.send(.settingChanged(setting: .meetingTitlePrefix))
         }
     }
 
@@ -189,6 +188,7 @@ public final class SettingsViewModel {
     private let youtubeDownloadsDirPath: @Sendable () -> String
     private let isSpeechModelCached: @Sendable () -> Bool
     private var isApplyingLaunchAtLoginState = false
+    private var lastCommittedMeetingTitlePrefix: String
     private let logger = Logger(subsystem: "com.macparakeet.viewmodels", category: "SettingsViewModel")
 
     public init(
@@ -215,10 +215,12 @@ public final class SettingsViewModel {
         saveAudioRecordings = defaults.object(forKey: "saveAudioRecordings") as? Bool ?? true
         saveTranscriptionAudio = defaults.object(forKey: "saveTranscriptionAudio") as? Bool ?? true
         speakerDiarization = defaults.object(forKey: "speakerDiarization") as? Bool ?? true
+        let initialMeetingTitlePrefix = AppPreferences.meetingTitlePrefix(defaults: defaults)
         autoSaveTranscripts = defaults.bool(forKey: AutoSaveService.enabledKey)
         autoSaveFormat = AutoSaveFormat(rawValue: defaults.string(forKey: AutoSaveService.formatKey) ?? "md") ?? .md
         autoSaveFolderPath = Self.resolveAutoSaveFolderPath(defaults: defaults)
-        meetingTitlePrefix = AppPreferences.meetingTitlePrefix(defaults: defaults)
+        meetingTitlePrefix = initialMeetingTitlePrefix
+        lastCommittedMeetingTitlePrefix = initialMeetingTitlePrefix
     }
 
     /// Resolve the stored bookmark to a display path.
@@ -244,11 +246,17 @@ public final class SettingsViewModel {
     }
 
     private static func resolveMeetingHotkeyTrigger(defaults: UserDefaults) -> HotkeyTrigger {
-        if defaults.object(forKey: HotkeyTrigger.meetingDefaultsKey) != nil {
-            return HotkeyTrigger.current(defaults: defaults, defaultsKey: HotkeyTrigger.meetingDefaultsKey)
-        }
+        HotkeyTrigger.current(
+            defaults: defaults,
+            defaultsKey: HotkeyTrigger.meetingDefaultsKey,
+            fallback: .chord(modifiers: ["command", "shift"], keyCode: 46)
+        )
+    }
 
-        return .chord(modifiers: ["command", "shift"], keyCode: 46)
+    public func commitMeetingTitlePrefix() {
+        guard meetingTitlePrefix != lastCommittedMeetingTitlePrefix else { return }
+        lastCommittedMeetingTitlePrefix = meetingTitlePrefix
+        Telemetry.send(.settingChanged(setting: .meetingTitlePrefix))
     }
 
     public func configure(

@@ -135,6 +135,10 @@ public extension AudioChunker {
             return downmixInt16Channels(channelData, frameCount: frameCount, channelCount: channelCount)
         }
 
+        if let channelData = buffer.int32ChannelData {
+            return downmixInt32Channels(channelData, frameCount: frameCount, channelCount: channelCount)
+        }
+
         return nil
     }
 
@@ -183,6 +187,32 @@ public extension AudioChunker {
             let channel = UnsafeBufferPointer(start: channelData[channelIndex], count: frameCount)
             for frameIndex in 0..<frameCount {
                 mixed[frameIndex] += Float(channel[frameIndex]) / Float(Int16.max)
+            }
+        }
+
+        let scale = 1 / Float(channelCount)
+        for frameIndex in 0..<frameCount {
+            mixed[frameIndex] *= scale
+        }
+        return mixed
+    }
+
+    private static func downmixInt32Channels(
+        _ channelData: UnsafePointer<UnsafeMutablePointer<Int32>>,
+        frameCount: Int,
+        channelCount: Int
+    ) -> [Float] {
+        if channelCount == 1 {
+            return Array(UnsafeBufferPointer(start: channelData[0], count: frameCount)).map {
+                Float($0) / Float(Int32.max)
+            }
+        }
+
+        var mixed = [Float](repeating: 0, count: frameCount)
+        for channelIndex in 0..<channelCount {
+            let channel = UnsafeBufferPointer(start: channelData[channelIndex], count: frameCount)
+            for frameIndex in 0..<frameCount {
+                mixed[frameIndex] += Float(channel[frameIndex]) / Float(Int32.max)
             }
         }
 

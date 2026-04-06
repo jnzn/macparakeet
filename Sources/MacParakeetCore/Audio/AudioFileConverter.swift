@@ -1,8 +1,13 @@
 import Foundation
 import os
 
+public protocol AudioFileConverting: Sendable {
+    func convert(fileURL: URL) async throws -> URL
+    func mixToM4A(inputURLs: [URL], outputURL: URL) async throws
+}
+
 /// Converts audio/video files to 16kHz mono WAV using FFmpeg subprocess.
-public final class AudioFileConverter: Sendable {
+public final class AudioFileConverter: AudioFileConverting, Sendable {
     public init() {}
 
     /// Supported audio extensions
@@ -109,7 +114,7 @@ public final class AudioFileConverter: Sendable {
             let inputRefs = inputPaths.indices.map { "[\($0):a]" }.joined()
             args.append(contentsOf: [
                 "-filter_complex",
-                "\(inputRefs)amix=inputs=\(inputPaths.count):duration=longest:normalize=0"
+                "\(inputRefs)amix=inputs=\(inputPaths.count):duration=longest:normalize=1"
             ])
         }
 

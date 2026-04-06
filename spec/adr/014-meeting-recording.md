@@ -1,6 +1,6 @@
 # ADR-014: Meeting Recording via Core Audio Taps
 
-> Status: **Accepted**
+> Status: IMPLEMENTED
 > Date: 2026-04-05
 > Related: ADR-001 (Parakeet STT), ADR-007 (FluidAudio CoreML), ADR-010 (speaker diarization), [GitHub #57](https://github.com/moona3k/macparakeet/issues/57)
 

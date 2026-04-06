@@ -126,7 +126,7 @@ final class MeetingRecordingFlowStateMachineTests: XCTestCase {
         let effects = machine.handle(.autoDismissExpired(generation: 1))
 
         XCTAssertEqual(machine.state, .idle)
-        XCTAssertEqual(effects, [.cancelAutoDismissTimer, .hidePill])
+        XCTAssertEqual(effects, [.hidePill])
     }
 
     func testStaleGenerationIsIgnored() {

@@ -461,6 +461,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 entitlementsService: env.entitlementsService,
                 dictationRepo: env.dictationRepo,
                 settingsViewModel: settingsViewModel,
+                isMeetingRecordingActive: { [weak self] in
+                    self?.meetingRecordingFlowCoordinator?.isMeetingRecordingActive == true
+                },
                 onMenuBarIconUpdate: { [weak self] state in self?.updateMenuBarIcon(state: state) },
                 onHistoryReload: { [weak self] in self?.historyViewModel.loadDictations() },
                 onPresentEntitlementsAlert: { [weak self] error in self?.presentEntitlementsAlert(error) }
@@ -528,7 +531,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let manager = HotkeyManager(trigger: HotkeyTrigger.current)
 
         manager.onStartRecording = { [weak self] mode in
-            guard self?.meetingRecordingFlowCoordinator?.isMeetingRecordingActive != true else { return }
             self?.dictationFlowCoordinator?.startDictation(mode: mode, trigger: .hotkey)
         }
 

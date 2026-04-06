@@ -8,6 +8,7 @@ public enum MeetingAudioError: Error, LocalizedError, Sendable {
     case tapCreationFailed(OSStatus)
     case aggregateDeviceCreationFailed(OSStatus)
     case invalidTapFormat
+    case unsupportedPlatform
     case alreadyRunning
     case notRunning
     case noAudioCaptured
@@ -30,6 +31,8 @@ public enum MeetingAudioError: Error, LocalizedError, Sendable {
             return "Failed to create aggregate audio device (error \(status))."
         case .invalidTapFormat:
             return "Invalid audio tap format."
+        case .unsupportedPlatform:
+            return "Meeting recording requires macOS 14.2 or later."
         case .alreadyRunning:
             return "Meeting recording is already running."
         case .notRunning:

@@ -78,10 +78,24 @@ enum DesignSystem {
         // YouTube badge
         static let youtubeRed = Color.red
 
-        // Legacy aliases — pill/overlay (UNTOUCHED, these stay as-is for the pill)
+        // Pill / overlay
         static let pillBackground = Color.black.opacity(0.9)
         static let pillBorder = Color.white.opacity(0.15)
         static let recordingRed = Color.red
+        static let sacredGlow = Color(light: .init(red: 0.40, green: 0.85, blue: 0.40),
+                                      dark: .init(red: 0.46, green: 0.90, blue: 0.46))
+        static let sacredStem = Color(light: .init(red: 0.35, green: 0.65, blue: 0.35),
+                                      dark: .init(red: 0.43, green: 0.74, blue: 0.43))
+        static let meetingPillBackground = Color(light: .black.opacity(0.88),
+                                                 dark: .black.opacity(0.90))
+        static let meetingPillBackgroundHover = Color(light: .black.opacity(0.90),
+                                                      dark: .init(red: 0.18, green: 0.18, blue: 0.19).opacity(0.95))
+        static let meetingPillStroke = Color.white.opacity(0.08)
+        static let meetingPillStrokeHover = Color.white.opacity(0.15)
+        static let meetingPillText = Color.white.opacity(0.9)
+        static let meetingPillBadgeBackground = Color.black.opacity(0.8)
+        static let meetingPillLevelTrack = Color.white.opacity(0.12)
+        static let meetingPillLevelIcon = Color.white.opacity(0.55)
 
         // Sidebar
         static let contentBackground = Color(nsColor: .textBackgroundColor)
@@ -119,6 +133,10 @@ enum DesignSystem {
         // Monospace
         static let timestamp = Font.system(size: 12).monospacedDigit()
         static let duration = Font.system(size: 11).monospacedDigit()
+        static let meetingPillStatus = Font.system(size: 13, weight: .semibold)
+        static let meetingPillBadge = Font.system(size: 10, weight: .medium, design: .monospaced)
+        static let meetingPillCheckmark = Font.system(size: 24, weight: .semibold)
+        static let meetingPillLevelIcon = Font.system(size: 8, weight: .semibold)
 
         // Legacy aliases (kept for existing references)
         static let headline = Font.system(size: 17, weight: .semibold, design: .rounded)
@@ -146,6 +164,11 @@ enum DesignSystem {
         static let audioScrubberHeight: CGFloat = 44
         static let thumbnailCardMinWidth: CGFloat = 200
         static let thumbnailAspectRatio: CGFloat = 16 / 9
+        static let meetingPillWidth: CGFloat = 72
+        static let meetingPillHeight: CGFloat = 100
+        static let meetingPillLevelIconWidth: CGFloat = 10
+        static let meetingPillLevelBarHeight: CGFloat = 4
+        static let meetingPillLevelRowHeight: CGFloat = 8
     }
 
     // MARK: - Animation
@@ -155,6 +178,7 @@ enum DesignSystem {
         static let hoverTransition: SwiftUI.Animation = .easeInOut(duration: 0.12)
         static let contentSwap: SwiftUI.Animation = .easeInOut(duration: 0.2)
         static let portalLift: SwiftUI.Animation = .spring(response: 0.3, dampingFraction: 0.7)
+        static let meetingPillHover: SwiftUI.Animation = .easeOut(duration: 0.15)
     }
 
     // MARK: - Shadows
@@ -163,6 +187,7 @@ enum DesignSystem {
         static let cardRest = ShadowStyle(color: .black.opacity(0.06), radius: 4, y: 2)
         static let cardHover = ShadowStyle(color: .black.opacity(0.10), radius: 12, y: 6)
         static let portalLift = ShadowStyle(color: .black.opacity(0.12), radius: 16, y: 8)
+        static let meetingPill = ShadowStyle(color: .black.opacity(0.28), radius: 12, y: 6)
     }
 }
 

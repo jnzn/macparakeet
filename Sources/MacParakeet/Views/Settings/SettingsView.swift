@@ -16,6 +16,7 @@ struct SettingsView: View {
     @State private var showClearYouTubeAudioAlert = false
     @State private var showResetPrivateStatsAlert = false
     @State private var copiedBuildIdentity = false
+    @FocusState private var meetingTitlePrefixFocused: Bool
 
     init(viewModel: SettingsViewModel, llmSettingsViewModel: LLMSettingsViewModel, updater: SPUUpdater) {
         self.viewModel = viewModel
@@ -267,6 +268,15 @@ struct SettingsView: View {
                     TextField("Meeting", text: $viewModel.meetingTitlePrefix)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 220)
+                        .focused($meetingTitlePrefixFocused)
+                        .onSubmit {
+                            viewModel.commitMeetingTitlePrefix()
+                        }
+                        .onChange(of: meetingTitlePrefixFocused) { _, isFocused in
+                            if !isFocused {
+                                viewModel.commitMeetingTitlePrefix()
+                            }
+                        }
                 }
 
                 Divider()

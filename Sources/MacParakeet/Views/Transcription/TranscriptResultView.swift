@@ -595,7 +595,7 @@ struct TranscriptResultView: View {
             }
         } else {
             HStack(spacing: 8) {
-                Text(transcription.fileName)
+                Text(displayedMeetingTitle)
                     .font(headerExpanded ? DesignSystem.Typography.pageTitle : DesignSystem.Typography.sectionTitle)
                     .foregroundStyle(DesignSystem.Colors.textPrimary)
                     .lineLimit(headerExpanded ? 3 : 1)
@@ -657,8 +657,12 @@ struct TranscriptResultView: View {
         }
     }
 
+    private var displayedMeetingTitle: String {
+        viewModel.currentTranscription?.fileName ?? transcription.fileName
+    }
+
     private func beginMeetingTitleRename() {
-        meetingTitleDraft = transcription.fileName
+        meetingTitleDraft = displayedMeetingTitle
         editingMeetingTitle = true
         Task { @MainActor in
             meetingTitleFocused = true
