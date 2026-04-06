@@ -289,6 +289,10 @@ public actor STTRuntime: STTRuntimeProtocol {
                 progressHandler: progressHandler
             )
             do {
+                // Keep one manager per scheduler lane. FluidAudio exposes progress
+                // as a manager-scoped single session, so separate managers avoid
+                // cross-lane progress/state crosstalk while still sharing one
+                // downloaded read-only model bundle.
                 let loadedDictationManager = AsrManager(config: .default)
                 let loadedMeetingManager = AsrManager(config: .default)
                 let loadedBatchManager = AsrManager(config: .default)

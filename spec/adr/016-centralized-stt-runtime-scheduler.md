@@ -168,3 +168,7 @@ This avoids crosstalk between:
 
 - The primary product use case remains **meeting recording + dictation**.
 - File transcription concurrency is worth supporting architecturally, even if it remains a lower-priority workflow in the UX and release messaging.
+- Upstream validation against the checked-out FluidAudio `0.13.6` dependency supports this design:
+  - `AsrManager` is documented as thread-safe/concurrent.
+  - `transcriptionProgressStream` is explicitly single-session per manager, which reinforces keeping progress isolated by lane instead of multiplexing unrelated jobs through one manager instance.
+  - `OfflineDiarizerManager.prepareModels()` short-circuits once models are prepared, so MacParakeet's single shared diarization wrapper matches the intended lifecycle.
