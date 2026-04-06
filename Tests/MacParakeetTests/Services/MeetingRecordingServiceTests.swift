@@ -79,6 +79,103 @@ final class MeetingRecordingServiceTests: XCTestCase {
         XCTAssertNil(output.preparedTranscript)
     }
 
+    func testStopRecordingPreservesPreparedTranscriptWhenPendingChunksTimeOut() async throws {
+        let captureService = MockMeetingAudioCaptureService()
+        let audioConverter = MockMeetingAudioFileConverter()
+        let sttClient = PrefixScriptedMeetingSTTClient(
+            microphoneSteps: [
+                .result(
+                    STTResult(text: "mic", words: [
+                        TimestampedWord(word: "mic", startMs: 0, endMs: 120, confidence: 0.9),
+                    ])
+                ),
+            ],
+            systemSteps: [
+                .result(
+                    STTResult(text: "sys", words: [
+                        TimestampedWord(word: "sys", startMs: 0, endMs: 120, confidence: 0.9),
+                    ]),
+                    delay: .seconds(1)
+                ),
+            ]
+        )
+        let service = MeetingRecordingService(
+            audioCaptureService: captureService,
+            audioConverter: audioConverter,
+            sttTranscriber: sttClient
+        )
+
+        try await service.startRecording()
+
+        let microphoneBuffer = try XCTUnwrap(makeMonoFloatBuffer(frameCount: 80_000, sampleValue: 0.25))
+        let systemBuffer = try XCTUnwrap(makeMonoFloatBuffer(frameCount: 80_000, sampleValue: 0.5))
+
+        await captureService.yield(.microphoneBuffer(
+            microphoneBuffer,
+            AVAudioTime(hostTime: AVAudioTime.hostTime(forSeconds: 100.0))
+        ))
+        await captureService.yield(.systemBuffer(
+            systemBuffer,
+            AVAudioTime(hostTime: AVAudioTime.hostTime(forSeconds: 100.150))
+        ))
+
+        let output = try await service.stopRecording()
+        defer { try? FileManager.default.removeItem(at: output.folderURL) }
+
+        let prepared = try XCTUnwrap(output.preparedTranscript)
+        XCTAssertEqual(prepared.words.map(\.word), ["mic"])
+        XCTAssertEqual(prepared.words.map(\.speakerId), ["microphone"])
+    }
+
+    func testBackpressureDropMarksNextTranscriptUpdateAsLagging() async throws {
+        let captureService = MockMeetingAudioCaptureService()
+        let audioConverter = MockMeetingAudioFileConverter()
+        let sttClient = PrefixScriptedMeetingSTTClient(
+            microphoneSteps: [
+                .result(
+                    STTResult(text: "first", words: [
+                        TimestampedWord(word: "first", startMs: 0, endMs: 120, confidence: 0.9),
+                    ]),
+                    delay: .milliseconds(200)
+                ),
+                .dropBackpressure,
+            ]
+        )
+        let service = MeetingRecordingService(
+            audioCaptureService: captureService,
+            audioConverter: audioConverter,
+            sttTranscriber: sttClient
+        )
+
+        let updates = await service.transcriptUpdates
+        let nextUpdate = Task {
+            var iterator = updates.makeAsyncIterator()
+            return await iterator.next()
+        }
+
+        try await service.startRecording()
+
+        let firstBuffer = try XCTUnwrap(makeMonoFloatBuffer(frameCount: 80_000, sampleValue: 0.25))
+        let secondBuffer = try XCTUnwrap(makeMonoFloatBuffer(frameCount: 64_000, sampleValue: 0.25))
+        await captureService.yield(.microphoneBuffer(
+            firstBuffer,
+            AVAudioTime(hostTime: AVAudioTime.hostTime(forSeconds: 100.0))
+        ))
+        await captureService.yield(.microphoneBuffer(
+            secondBuffer,
+            AVAudioTime(hostTime: AVAudioTime.hostTime(forSeconds: 104.0))
+        ))
+
+        let maybeUpdate = await nextUpdate.value
+        let update = try XCTUnwrap(maybeUpdate)
+        XCTAssertTrue(update.isTranscriptionLagging)
+        XCTAssertEqual(update.words.map(\.word), ["first"])
+
+        let output = try await service.stopRecording()
+        defer { try? FileManager.default.removeItem(at: output.folderURL) }
+        XCTAssertNotNil(output.preparedTranscript)
+    }
+
     private func waitForLiveChunkTranscriptionStart(
         _ client: SleepingMeetingSTTClient,
         timeout: Duration = .seconds(1)
@@ -204,6 +301,70 @@ private actor SleepingMeetingSTTClient: STTClientProtocol {
             try await Task.sleep(for: liveChunkDelay)
         }
         return STTResult(text: "", words: [])
+    }
+
+    func warmUp(onProgress: (@Sendable (String) -> Void)?) async throws {}
+
+    func backgroundWarmUp() async {}
+
+    func observeWarmUpProgress() async -> (id: UUID, stream: AsyncStream<STTWarmUpState>) {
+        let stream = AsyncStream<STTWarmUpState> { continuation in
+            continuation.yield(.ready)
+            continuation.finish()
+        }
+        return (UUID(), stream)
+    }
+
+    func removeWarmUpObserver(id: UUID) async {}
+
+    func isReady() async -> Bool { true }
+
+    func clearModelCache() async {}
+
+    func shutdown() async {}
+}
+
+private actor PrefixScriptedMeetingSTTClient: STTClientProtocol {
+    enum Step: Sendable {
+        case result(STTResult, delay: Duration = .zero)
+        case dropBackpressure
+    }
+
+    private var microphoneSteps: [Step]
+    private var systemSteps: [Step]
+
+    init(
+        microphoneSteps: [Step] = [],
+        systemSteps: [Step] = []
+    ) {
+        self.microphoneSteps = microphoneSteps
+        self.systemSteps = systemSteps
+    }
+
+    func transcribe(
+        audioPath: String,
+        job: STTJobKind,
+        onProgress: (@Sendable (Int, Int) -> Void)?
+    ) async throws -> STTResult {
+        let fileName = URL(fileURLWithPath: audioPath).lastPathComponent
+        let step: Step
+        if fileName.hasPrefix("microphone-"), !microphoneSteps.isEmpty {
+            step = microphoneSteps.removeFirst()
+        } else if fileName.hasPrefix("system-"), !systemSteps.isEmpty {
+            step = systemSteps.removeFirst()
+        } else {
+            step = .result(STTResult(text: "", words: []))
+        }
+
+        switch step {
+        case .result(let result, let delay):
+            if delay > .zero {
+                try await Task.sleep(for: delay)
+            }
+            return result
+        case .dropBackpressure:
+            throw STTSchedulerError.droppedDueToBackpressure(job: .meetingLiveChunk)
+        }
     }
 
     func warmUp(onProgress: (@Sendable (String) -> Void)?) async throws {}

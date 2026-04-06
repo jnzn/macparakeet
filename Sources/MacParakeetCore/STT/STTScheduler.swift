@@ -52,11 +52,11 @@ public actor STTScheduler: STTManaging {
     private var acceptsNewJobs = true
 
     /// - Parameter meetingLiveChunkBacklogLimit: Maximum pending live-preview chunks before the
-    ///   oldest is dropped. 24 ≈ 4 minutes of 10-second chunks, enough to absorb a burst of
-    ///   dictation activity without losing meaningful meeting context.
+    ///   oldest is dropped. 120 ≈ 4 minutes of dual-source 5-second chunks emitted every ~4
+    ///   seconds, enough to absorb a prolonged dictation burst before preview starts dropping.
     public init(
         runtime: STTRuntime = STTRuntime(),
-        meetingLiveChunkBacklogLimit: Int = 24
+        meetingLiveChunkBacklogLimit: Int = 120
     ) {
         self.runtime = runtime as STTRuntimeProtocol
         self.meetingLiveChunkBacklogLimit = meetingLiveChunkBacklogLimit
@@ -64,7 +64,7 @@ public actor STTScheduler: STTManaging {
 
     init(
         runtimeProvider: STTRuntimeProtocol,
-        meetingLiveChunkBacklogLimit: Int = 24
+        meetingLiveChunkBacklogLimit: Int = 120
     ) {
         self.runtime = runtimeProvider
         self.meetingLiveChunkBacklogLimit = meetingLiveChunkBacklogLimit
