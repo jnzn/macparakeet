@@ -79,7 +79,7 @@ MacParakeet runs NVIDIA's Parakeet TDT on Apple's Neural Engine via [FluidAudio]
 
 **Download:** Grab the [notarized DMG](https://downloads.macparakeet.com/MacParakeet.dmg) or visit [macparakeet.com](https://macparakeet.com). Drag to Applications, done.
 
-First launch downloads the speech model (~6 GB). After that, dictation, meeting recording, and transcription work fully offline.
+First launch downloads the speech model (~6 GB) plus speaker-detection assets (~130 MB) when that default-on feature remains enabled. After that, dictation, meeting recording, and transcription work fully offline.
 
 **Build from source:**
 

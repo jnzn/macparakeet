@@ -389,6 +389,7 @@ Floating panel opened from the meeting recording pill. Shows live transcript pre
 │                                          │
 │  🎤 ██████████░░░░  Mic                  │
 │  🔊 ████████░░░░░░  System               │
+│  ⚠ Live preview catching up...          │
 │                                          │
 │  Live Preview:                           │
 │  ──────────────────────────────────────  │
@@ -406,6 +407,7 @@ Floating panel opened from the meeting recording pill. Shows live transcript pre
 
 - **Elapsed timer** — updates every second
 - **Dual audio level meters** — mic and system audio levels (visual feedback that both streams are capturing)
+- **Lag notice** — appears when the scheduler has started dropping or delaying live-preview chunks; recording continues and the final saved meeting remains authoritative
 - **Live transcript preview** — scrolling list of transcribed chunks labeled by source ([Me] = mic, [Them] = system audio)
 - **Stop button** — stops recording, triggers batch transcription, navigates to result
 

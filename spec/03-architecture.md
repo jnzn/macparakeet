@@ -480,6 +480,8 @@ STTRuntime.warmUp() called (lazy, on first use or from onboarding)
 Slot managers ready — scheduler admits transcription jobs
 ```
 
+Product-level readiness can coordinate additional services beyond the two STT slots. In particular, speaker diarization remains outside the speech scheduler, but onboarding should still account for its required assets before declaring default-on file-transcription features fully ready.
+
 #### 2.6 ExportService
 
 **Responsibility:** Convert transcription results into various output formats.
@@ -777,7 +779,9 @@ Single SQLite file via GRDB. All data in one place. No external database process
 
 **Location:** `~/Library/Application Support/MacParakeet/macparakeet.db`
 
-### Schema
+### Representative Schema Excerpt
+
+See [01-data-model.md](01-data-model.md) for the full current schema. The excerpt below highlights the core tables and columns most relevant to the architecture discussion.
 
 ```sql
 -- Dictation history (voice-to-text sessions)
@@ -791,18 +795,13 @@ CREATE TABLE dictations (
     audioPath       TEXT,                   -- relative path to saved audio (nullable)
     pastedToApp     TEXT,                   -- bundle ID of target app
     processingMode  TEXT NOT NULL DEFAULT 'raw', -- 'raw' (v0.1) or 'clean' (v0.2 default via UserDefaults)
+    hidden          BOOLEAN NOT NULL DEFAULT 0,  -- private dictation mode (v0.5)
+    wordCount       INTEGER NOT NULL DEFAULT 0,  -- cached for voice stats (v0.5)
     status          TEXT NOT NULL DEFAULT 'completed', -- 'recording' | 'processing' | 'completed' | 'error'
     errorMessage    TEXT,                   -- non-null if status == 'error'
     updatedAt       TEXT NOT NULL
 );
 CREATE INDEX idx_dictations_created_at ON dictations(createdAt);
-
--- FTS5 external content table for full-text search
-CREATE VIRTUAL TABLE dictations_fts USING fts5(
-    rawTranscript, cleanTranscript,
-    content='dictations', content_rowid='rowid'
-);
--- + sync triggers (INSERT, DELETE, UPDATE)
 
 -- File transcription history
 CREATE TABLE transcriptions (
@@ -815,9 +814,11 @@ CREATE TABLE transcriptions (
     rawTranscript   TEXT,                   -- exact STT output
     cleanTranscript TEXT,                   -- after TextProcessingPipeline (v0.2+)
     wordTimestamps  TEXT,                   -- JSON: [{"word":...,"startMs":...,"endMs":...,"confidence":...}]
+    diarizationSegments TEXT,               -- JSON speaker segments (v0.4+)
     language        TEXT DEFAULT 'en',      -- detected language
     speakerCount    INTEGER,               -- number of speakers (v0.4+)
     speakers        TEXT,                   -- JSON: ["Speaker 1", ...] (v0.4+)
+    sourceType      TEXT NOT NULL DEFAULT 'file', -- file | youtube | meeting (v0.6)
     status          TEXT NOT NULL DEFAULT 'processing', -- 'processing' | 'completed' | 'error' | 'cancelled'
     errorMessage    TEXT,                   -- non-null if status == 'error'
     exportPath      TEXT,                   -- path to exported file
@@ -826,11 +827,8 @@ CREATE TABLE transcriptions (
 );
 CREATE INDEX idx_transcriptions_created_at ON transcriptions(createdAt);
 
--- Custom word corrections (v0.2+ — table not yet created)
--- CREATE TABLE custom_words ( ... )
-
--- Text snippet expansion (v0.2+ — table not yet created)
--- CREATE TABLE text_snippets ( ... )
+-- Additional active tables omitted here for brevity:
+-- custom_words, text_snippets, chat_conversations, prompts, summaries
 ```
 
 ### Migrations
@@ -854,7 +852,8 @@ migrator.registerMigration("v0.1-dictations") { db in
         t.column("errorMessage", .text)
         t.column("updatedAt", .text).notNull()
     }
-    // + FTS5 table + sync triggers
+    // Historical note: v0.1 also created an FTS5 table + sync triggers.
+    // Those were removed in v0.5 after the app standardized on LIKE search.
 }
 
 migrator.registerMigration("v0.1-transcriptions") { db in

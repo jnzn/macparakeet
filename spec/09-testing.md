@@ -44,7 +44,7 @@ func testDictationCreation() async throws {
 
 **Examples:**
 - Repository CRUD (create, read, update, delete)
-- Search queries (FTS5 full-text search on dictations)
+- Search queries (LIKE-based substring search on dictations)
 - Migration sequences (v1 -> v2 -> v3 apply cleanly)
 
 ### Integration Tests
@@ -113,6 +113,7 @@ The suite includes targeted regressions for progress behavior in URL transcripti
 - Already-cancelled jobs never enter the scheduler
 - Saved meeting retranscribes stay in the low-priority file-transcription class
 - App warm-up, shutdown, and cache-clearing hit one shared runtime only
+- Onboarding readiness does not report success until required default-on speaker-detection assets are also ready
 
 ### CLI Tests
 

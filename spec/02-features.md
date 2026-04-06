@@ -96,23 +96,23 @@ See [00-vision.md](./00-vision.md) for positioning and market context.
 
 ### F0: First-Run Onboarding
 
-**What:** A premium first-run setup window that guides users through permissions, hotkey basics, and local model setup so core dictation and file transcription are ready immediately.
+**What:** A premium first-run setup window that guides users through permissions, hotkey basics, and local speech-stack setup so core dictation and file transcription are ready immediately.
 
 **Goals:**
 - Reduce first-run friction (no mysterious permission failures).
 - Teach the core interaction model in under 60 seconds.
-- Download and warm up the local speech model (Parakeet STT) on first run.
+- Download and warm up the local speech stack on first run: Parakeet STT plus default-on speaker-detection assets.
 
 **Flow:**
 1. Welcome
 2. Microphone permission
 3. Accessibility permission
 4. Hotkey instructions (configurable trigger + Esc)
-5. Speech model setup (Parakeet, retry required)
+5. Speech stack setup (Parakeet + speaker detection, retry required)
 6. Ready
 
 **Model failure recovery:**
-- Before warm-up, onboarding runs lightweight preflight checks (runtime support + first-setup disk/network readiness).
+- Before warm-up, onboarding runs lightweight preflight checks (runtime support + first-setup disk/network readiness for both STT and any required default-on speaker-detection assets).
 - If local model setup fails, onboarding shows explicit recovery tips based on failure type.
 - Users get direct CTAs: `Retry` and `Open Settings` (to `Settings > Local Models > Repair`).
 

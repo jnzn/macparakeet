@@ -131,6 +131,8 @@ Skip diarization for: dictation (single speaker by design), or when the Settings
 
 **CLI:** `macparakeet-cli transcribe` runs diarization by default (backward compatibility). Use `--no-diarize` to skip. Text output shows speaker labels at turn changes; JSON output includes all speaker data via Codable.
 
+**Readiness contract:** Diarization remains a separate service from the STT scheduler, but when speaker detection is enabled by default the onboarding/ready-state path must account for diarization-model readiness before claiming file transcription is fully ready.
+
 ## Rationale
 
 ### Why the offline pipeline, not Sortformer
