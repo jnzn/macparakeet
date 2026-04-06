@@ -34,7 +34,7 @@ final class MeetingRecordingPillController {
         let hosting = NSHostingView(rootView: view)
 
         let panelWidth: CGFloat = 240
-        let panelHeight: CGFloat = 120
+        let panelHeight: CGFloat = 150
         hosting.frame = NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight)
 
         let panel = MeetingRecordingClickablePanel(
