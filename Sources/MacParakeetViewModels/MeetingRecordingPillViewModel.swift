@@ -5,6 +5,7 @@ public final class MeetingRecordingPillViewModel {
     public enum PillState: Equatable {
         case idle
         case recording
+        case completing
         case transcribing
         case completed
         case error(String)
@@ -15,6 +16,7 @@ public final class MeetingRecordingPillViewModel {
     public var micLevel: Float = 0
     public var systemLevel: Float = 0
     public var onStop: (() -> Void)?
+    public var onCompletionAnimationFinished: (() -> Void)?
 
     public init() {}
 

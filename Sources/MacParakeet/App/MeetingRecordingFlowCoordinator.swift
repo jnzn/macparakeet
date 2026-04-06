@@ -131,6 +131,15 @@ final class MeetingRecordingFlowCoordinator {
             pillController?.onClick = { [weak self] in
                 self?.showMeetingPanel()
             }
+            pillController?.onStopRecording = { [weak self] in
+                self?.sendEvent(.stopRequested)
+            }
+            pillController?.onOpenApp = {
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            pillController?.onCancelRecording = { [weak self] in
+                self?.sendEvent(.stopRequested)
+            }
             if panelController == nil {
                 let controller = MeetingRecordingPanelController(viewModel: panelVM)
                 controller.onCloseRequested = { [weak self] in
@@ -157,9 +166,18 @@ final class MeetingRecordingFlowCoordinator {
         case .showTranscribingState:
             stopPillPolling()
             stopTranscriptObservation()
-            pillViewModel?.state = .transcribing
             pillViewModel?.micLevel = 0
             pillViewModel?.systemLevel = 0
+            pillViewModel?.state = .completing
+            pillViewModel?.onCompletionAnimationFinished = { [weak self] in
+                guard let self else { return }
+                // If transcription already finished during animation, go straight to completed
+                if self.completedTranscription != nil {
+                    self.pillViewModel?.state = .completed
+                } else {
+                    self.pillViewModel?.state = .transcribing
+                }
+            }
             panelViewModel?.state = .transcribing
             panelViewModel?.micLevel = 0
             panelViewModel?.systemLevel = 0
@@ -181,7 +199,10 @@ final class MeetingRecordingFlowCoordinator {
         case .showCompleted:
             stopPillPolling()
             stopTranscriptObservation()
-            pillViewModel?.state = .completed
+            // If completion animation is still playing, let its callback handle the transition
+            if pillViewModel?.state != .completing {
+                pillViewModel?.state = .completed
+            }
             panelViewModel?.state = .hidden
 
         case .showError(let message):

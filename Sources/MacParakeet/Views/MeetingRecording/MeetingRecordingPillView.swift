@@ -14,6 +14,7 @@ struct MeetingRecordingPillView: View {
     @Bindable var viewModel: MeetingRecordingPillViewModel
     var onTap: (() -> Void)? = nil
     @State private var isHovered = false
+    @State private var stemCollapsed = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,6 +31,8 @@ struct MeetingRecordingPillView: View {
             EmptyView()
         case .recording:
             recordingPill
+        case .completing:
+            completingPill
         case .transcribing:
             statusPill(
                 icon: AnyView(ProgressView().controlSize(.small).tint(.white)),
@@ -66,6 +69,30 @@ struct MeetingRecordingPillView: View {
         .padding(.horizontal, DesignSystem.Spacing.md)
         .padding(.vertical, DesignSystem.Spacing.md - DesignSystem.Spacing.xs)
         .background(pillBackground)
+    }
+
+    private var completingPill: some View {
+        VStack(spacing: 0) {
+            FlowerCompletionView(
+                stemCollapsed: $stemCollapsed,
+                onFinished: {
+                    viewModel.onCompletionAnimationFinished?()
+                }
+            )
+        }
+        .padding(10)
+        .background(
+            Capsule()
+                .fill(DesignSystem.Colors.meetingPillBackground)
+                .overlay(
+                    Capsule()
+                        .stroke(DesignSystem.Colors.meetingPillStroke, lineWidth: 0.5)
+                )
+        )
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: stemCollapsed)
+        .padding(DesignSystem.Spacing.sm)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Recording complete")
     }
 
     private var sacredRecordingPill: some View {
