@@ -62,8 +62,9 @@ public final class OnboardingViewModel {
     private var refreshTask: Task<Void, Never>?
     private var warmUpObserverTask: Task<Void, Never>?
     private var warmUpObserverId: UUID?
-    private let engineWarmUpAttempts = 3
+    private var warmUpObservationToken: UUID?
     private let requiredFirstSetupDiskBytes: Int64 = 7 * 1_024 * 1_024 * 1_024
+    private let requiredDiarizationSetupDiskBytes: Int64 = 512 * 1_024 * 1_024
 
     public static let onboardingCompletedKey = "onboarding.completedAtISO"
 
@@ -84,7 +85,7 @@ public final class OnboardingViewModel {
         self.isRuntimeSupported = isRuntimeSupported ?? { Self.defaultRuntimeSupportedCheck() }
         self.availableDiskBytes = availableDiskBytes ?? { Self.defaultAvailableDiskBytes() }
         self.isNetworkReachable = isNetworkReachable ?? { await Self.defaultNetworkReachabilityCheck() }
-        self.isSpeechModelCached = isSpeechModelCached ?? { STTClient.isModelCached() }
+        self.isSpeechModelCached = isSpeechModelCached ?? { STTRuntime.isModelCached() }
         self.defaults = defaults
         self.now = now
     }
@@ -202,194 +203,131 @@ public final class OnboardingViewModel {
 
         engineGeneration += 1
         let generation = engineGeneration
+        let observationToken = UUID()
         isBusy = true
         engineState = .working(message: "Checking setup requirements...", progress: nil)
+        warmUpObservationToken = observationToken
 
         // Assign the outer Task immediately so re-entrant calls hit the
         // `warmUpObserverTask != nil` guard. Without this, the two `await`
         // actor hops below leave a window where a second call can proceed.
-        let outerTask = Task { [weak self] in
+        let outerTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            do {
-                try await runEnginePreflight()
-                guard self.engineGeneration == generation else { return }
-            } catch {
-                await MainActor.run {
-                    guard self.engineGeneration == generation else { return }
-                    self.engineState = .failed(message: error.localizedDescription)
-                    self.isBusy = false
+            let clearObservationIfCurrent = { [weak self] (observerId: UUID?) in
+                guard let self, self.warmUpObservationToken == observationToken else { return }
+                self.warmUpObserverTask = nil
+                self.warmUpObserverId = nil
+                self.warmUpObservationToken = nil
+                if let observerId {
+                    Task { [sttClient] in await sttClient.removeWarmUpObserver(id: observerId) }
                 }
-                return
             }
 
-            // Start background download on STTClient (survives ViewModel lifecycle)
-            guard let sttClient = self.sttClient as? STTClient else {
-                // Fallback for mock STTClient in tests — use old direct approach
-                await self.startDirectWarmUp(generation: generation)
+            do {
+                try await runEnginePreflight()
+                guard self.engineGeneration == generation, self.warmUpObservationToken == observationToken else { return }
+            } catch {
+                guard self.engineGeneration == generation, self.warmUpObservationToken == observationToken else { return }
+                self.engineState = .failed(message: error.localizedDescription)
+                self.isBusy = false
+                clearObservationIfCurrent(nil)
                 return
             }
 
             let warmUpStartedAt = Date()
             Telemetry.send(.modelDownloadStarted)
             await sttClient.backgroundWarmUp()
+            guard self.engineGeneration == generation, self.warmUpObservationToken == observationToken else { return }
 
             // Subscribe to progress updates
             let (observerId, stream) = await sttClient.observeWarmUpProgress()
-            await MainActor.run {
-                self.warmUpObserverId = observerId
-                self.warmUpObserverTask = Task { @MainActor [weak self] in
-                    // Ensure warmUpObserverTask is cleared when the loop exits
-                    // for any reason (cancellation, stream end, generation mismatch)
-                    // so the guard at the top of startEngineWarmUp() doesn't block
-                    // future calls with a stale completed Task handle.
-                    defer { self?.warmUpObserverTask = nil }
+            guard self.engineGeneration == generation, self.warmUpObservationToken == observationToken else {
+                await sttClient.removeWarmUpObserver(id: observerId)
+                return
+            }
 
-                    for await state in stream {
-                        guard let self, self.engineGeneration == generation else { break }
-                        switch state {
-                        case .idle:
-                            self.engineState = .working(message: "Preparing...", progress: nil)
-                        case .working(let message, let progress):
-                            self.engineState = .working(message: message, progress: progress)
-                        case .ready:
-                            let durationSeconds = Date().timeIntervalSince(warmUpStartedAt)
-                            Telemetry.send(.modelDownloadCompleted(durationSeconds: durationSeconds))
-                            self.engineState = .ready
-                            self.isBusy = false
-                            self.warmUpObserverTask?.cancel()
-                        case .failed(let message):
-                            Telemetry.send(.modelDownloadFailed(errorType: "BackgroundWarmUpError", errorDetail: message))
-                            self.engineState = .failed(message: message)
-                            self.isBusy = false
-                            self.warmUpObserverTask?.cancel()
-                        }
+            self.warmUpObserverId = observerId
+            defer { clearObservationIfCurrent(observerId) }
+
+            observationLoop: for await state in stream {
+                guard self.engineGeneration == generation, self.warmUpObservationToken == observationToken else { break }
+                switch state {
+                case .idle:
+                    self.engineState = .working(message: "Preparing...", progress: nil)
+                case .working(let message, let progress):
+                    self.engineState = .working(message: message, progress: progress)
+                case .ready:
+                    let durationSeconds = Date().timeIntervalSince(warmUpStartedAt)
+                    Telemetry.send(.modelDownloadCompleted(durationSeconds: durationSeconds))
+                    do {
+                        try await self.prepareDiarizationModelsIfNeeded(generation: generation)
+                    } catch is CancellationError {
+                        break observationLoop
+                    } catch {
+                        guard self.engineGeneration == generation, self.warmUpObservationToken == observationToken else { break observationLoop }
+                        self.engineState = .failed(message: error.localizedDescription)
+                        self.isBusy = false
+                        break observationLoop
                     }
+                    guard self.engineGeneration == generation, self.warmUpObservationToken == observationToken else { break observationLoop }
+                    self.engineState = .ready
+                    self.isBusy = false
+                    break observationLoop
+                case .failed(let message):
+                    Telemetry.send(.modelDownloadFailed(errorType: "BackgroundWarmUpError", errorDetail: message))
+                    self.engineState = .failed(message: message)
+                    self.isBusy = false
+                    break observationLoop
                 }
             }
         }
         warmUpObserverTask = outerTask
     }
 
-    /// Direct warm-up for mock STTClient in tests (no backgroundWarmUp support).
-    /// Includes retry logic matching the background path.
-    private func startDirectWarmUp(generation: Int) async {
-        let warmUpStartedAt = Date()
+    private func prepareDiarizationModelsIfNeeded(generation: Int) async throws {
+        guard let diarizationService else { return }
+        guard await diarizationService.isReady() == false else { return }
+
+        engineState = .working(message: "Speaker models: downloading...", progress: nil)
         do {
-            Telemetry.send(.modelDownloadStarted)
-            await MainActor.run {
-                guard self.engineGeneration == generation else { return }
-                self.engineState = .working(
-                    message: "Downloading speech model (~6 GB). This is a one-time download...",
-                    progress: nil
-                )
-            }
-
-            try await runWithRetry(maxAttempts: engineWarmUpAttempts, onRetry: { [weak self] attempt in
-                guard let self, self.engineGeneration == generation else { return }
-                self.engineState = .working(
-                    message: "Retrying speech model setup (attempt \(attempt)/\(self.engineWarmUpAttempts))...",
-                    progress: nil
-                )
-            }) {
-                guard self.engineGeneration == generation else { throw CancellationError() }
-                try await self.sttClient.warmUp { [weak self] progressMessage in
-                    Task { @MainActor [weak self] in
-                        guard let self, self.engineGeneration == generation else { return }
-                        let message = "Speech model: \(progressMessage)"
-                        let fraction = OnboardingProgressParser.parseProgressFraction(from: message)
-                        self.engineState = .working(message: message, progress: fraction)
-                    }
+            try await diarizationService.prepareModels(onProgress: { [weak self] message in
+                Task { @MainActor [weak self] in
+                    guard let self, self.engineGeneration == generation else { return }
+                    self.engineState = .working(message: "Speaker models: \(message)", progress: nil)
                 }
-            }
-
-            let loadTimeSeconds = Date().timeIntervalSince(warmUpStartedAt)
-            Telemetry.send(.modelDownloadCompleted(durationSeconds: loadTimeSeconds))
-
-            // Prepare diarization models (non-fatal)
-            if let diarizationService = self.diarizationService {
-                await MainActor.run {
-                    guard self.engineGeneration == generation else { return }
-                    self.engineState = .working(message: "Speaker models: downloading...", progress: nil)
-                }
-                do {
-                    try await diarizationService.prepareModels(onProgress: { [weak self] msg in
-                        Task { @MainActor [weak self] in
-                            guard let self, self.engineGeneration == generation else { return }
-                            self.engineState = .working(message: "Speaker models: \(msg)", progress: nil)
-                        }
-                    })
-                } catch {
-                    logger.error("diarization_model_prep_failed error=\(error.localizedDescription, privacy: .public)")
-                    Telemetry.send(.errorOccurred(
-                        domain: "diarization",
-                        code: "model_prep_failed",
-                        description: TelemetryErrorClassifier.errorDetail(error)
-                    ))
-                }
-            }
-
-            await MainActor.run {
-                guard self.engineGeneration == generation else { return }
-                self.engineState = .ready
-                self.isBusy = false
-            }
-        } catch is CancellationError {
-            // cancelled
+            })
         } catch {
-            Telemetry.send(.modelDownloadFailed(errorType: TelemetryErrorClassifier.classify(error), errorDetail: TelemetryErrorClassifier.errorDetail(error)))
-            await MainActor.run {
-                guard self.engineGeneration == generation else { return }
-                self.engineState = .failed(message: error.localizedDescription)
-                self.isBusy = false
-            }
+            logger.error("diarization_model_prep_failed error=\(error.localizedDescription, privacy: .public)")
+            Telemetry.send(.errorOccurred(
+                domain: "diarization",
+                code: "model_prep_failed",
+                description: TelemetryErrorClassifier.errorDetail(error)
+            ))
+            throw error
         }
     }
 
 
     public func retryEngineWarmUp() {
-        warmUpObserverTask?.cancel()
-        warmUpObserverTask = nil
-        warmUpObserverId = nil
+        cancelWarmUpObservation()
         engineState = .idle
         startEngineWarmUp()
     }
 
     /// Stop observing warm-up progress (e.g., when the window closes).
-    /// Does NOT cancel the background download on STTClient.
+    /// Does NOT cancel the shared background download.
     public func stopObservingWarmUp() {
-        warmUpObserverTask?.cancel()
-        warmUpObserverTask = nil
-        if let id = warmUpObserverId, let sttClient = sttClient as? STTClient {
-            Task { await sttClient.removeWarmUpObserver(id: id) }
-        }
-        warmUpObserverId = nil
+        cancelWarmUpObservation()
     }
 
-    private func runWithRetry(
-        maxAttempts: Int,
-        onRetry: @escaping (_ attempt: Int) -> Void,
-        operation: @escaping () async throws -> Void
-    ) async throws {
-        precondition(maxAttempts >= 1, "maxAttempts must be >= 1")
-
-        var backoffNs: UInt64 = 250_000_000
-        var lastError: Error?
-
-        for attempt in 1...maxAttempts {
-            do {
-                try await operation()
-                return
-            } catch {
-                lastError = error
-                guard attempt < maxAttempts else { break }
-                let nextAttempt = attempt + 1
-                onRetry(nextAttempt)
-                try await Task.sleep(nanoseconds: backoffNs)
-                backoffNs *= 2
-            }
+    private func cancelWarmUpObservation() {
+        warmUpObservationToken = nil
+        warmUpObserverTask?.cancel()
+        warmUpObserverTask = nil
+        if let id = warmUpObserverId {
+            Task { [sttClient] in await sttClient.removeWarmUpObserver(id: id) }
         }
-
-        throw lastError ?? STTError.engineStartFailed("Local model warm-up failed.")
+        warmUpObserverId = nil
     }
 
     private func runEnginePreflight() async throws {
@@ -397,24 +335,46 @@ public final class OnboardingViewModel {
             throw STTError.engineStartFailed("Local model runtime requires Apple Silicon with Metal support.")
         }
 
-        // Only gate on network/disk if the model still needs downloading.
-        // If the model is already cached, skip preflight regardless of onboarding state
-        // (e.g. user reset onboarding while offline — no download needed).
-        guard !isSpeechModelCached() else { return }
+        let speechModelCached = isSpeechModelCached()
+        let diarizationAssetsReady = await areDiarizationAssetsReadyForOnboarding()
+
+        guard !speechModelCached || !diarizationAssetsReady else { return }
+
+        let (requiredDiskBytes, setupLabel, networkRequirement) =
+            if speechModelCached {
+                (
+                    requiredDiarizationSetupDiskBytes,
+                    "speaker-model setup",
+                    "Internet connection is required to download speaker models. Check your network and retry."
+                )
+            } else {
+                (
+                    requiredFirstSetupDiskBytes,
+                    "first-time speech model setup",
+                    "Internet connection is required for first-time model download. Check your network and retry."
+                )
+            }
 
         guard let freeBytes = availableDiskBytes() else {
-            throw STTError.engineStartFailed("Unable to determine free disk space. Verify at least \(Self.formatGiB(requiredFirstSetupDiskBytes)) is available, then retry.")
+            throw STTError.engineStartFailed(
+                "Unable to determine free disk space. Verify at least \(Self.formatGiB(requiredDiskBytes)) is available for \(setupLabel), then retry."
+            )
         }
 
-        guard freeBytes >= requiredFirstSetupDiskBytes else {
+        guard freeBytes >= requiredDiskBytes else {
             throw STTError.engineStartFailed(
-                "Not enough free disk space for first-time model setup. Need at least \(Self.formatGiB(requiredFirstSetupDiskBytes)) (available: \(Self.formatGiB(freeBytes)))."
+                "Not enough free disk space for \(setupLabel). Need at least \(Self.formatGiB(requiredDiskBytes)) (available: \(Self.formatGiB(freeBytes)))."
             )
         }
 
         guard await isNetworkReachable() else {
-            throw STTError.engineStartFailed("Internet connection is required for first-time model download. Check your network and retry.")
+            throw STTError.engineStartFailed(networkRequirement)
         }
+    }
+
+    private func areDiarizationAssetsReadyForOnboarding() async -> Bool {
+        guard let diarizationService else { return true }
+        return await diarizationService.hasCachedModels()
     }
 
     private nonisolated static func formatGiB(_ bytes: Int64) -> String {

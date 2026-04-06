@@ -14,7 +14,7 @@ MacParakeet uses Parakeet TDT 0.6B-v3 via FluidAudio CoreML, running on Apple's 
 | Runtime | FluidAudio SDK (CoreML on ANE) |
 | Word Error Rate | ~2.5% (v3 multilingual) / ~2.1% (v2 English-only) |
 | Speed | ~155x realtime on Apple Silicon |
-| Peak working RAM | ~66 MB (~130 MB with custom vocabulary boosting) |
+| Peak working RAM | ~66 MB per active Parakeet inference slot (~130 MB with custom vocabulary boosting) |
 | Model download | ~6 GB CoreML bundle (one-time, during onboarding) |
 | Output | Word-level timestamps with per-word confidence scores |
 | Input format | 16kHz mono Float32 samples (FluidAudio's AudioConverter handles resampling) |
@@ -114,15 +114,43 @@ This runs a secondary CTC encoder (110M params) alongside the primary TDT encode
 
 ### Protocol Layer
 
-The `STTClientProtocol` interface is unchanged from v0.1. The runtime implementation uses FluidAudio/CoreML:
+The producer-facing STT contract was expanded in ADR-016 so callers declare job type explicitly and runtime lifecycle stays on the shared path:
 
 ```swift
-protocol STTClientProtocol: Sendable {
-    func transcribe(audioPath: String, onProgress: (@Sendable (Int, Int) -> Void)?) async throws -> STTResult
+public enum STTJobKind: Sendable, Equatable {
+    case dictation
+    case meetingFinalize
+    case meetingLiveChunk
+    case fileTranscription
+}
+
+public enum STTWarmUpState: Sendable, Equatable {
+    case idle
+    case working(message: String, progress: Double?)
+    case ready
+    case failed(message: String)
+}
+
+public protocol STTTranscribing: Sendable {
+    func transcribe(
+        audioPath: String,
+        job: STTJobKind,
+        onProgress: (@Sendable (Int, Int) -> Void)?
+    ) async throws -> STTResult
+}
+
+public protocol STTRuntimeManaging: Sendable {
     func warmUp(onProgress: (@Sendable (String) -> Void)?) async throws
+    func backgroundWarmUp() async
+    func observeWarmUpProgress() async -> (id: UUID, stream: AsyncStream<STTWarmUpState>)
+    func removeWarmUpObserver(id: UUID) async
     func isReady() async -> Bool
+    func clearModelCache() async
     func shutdown() async
 }
+
+public typealias STTManaging = STTTranscribing & STTRuntimeManaging
+public typealias STTClientProtocol = STTManaging
 
 struct STTResult: Sendable {
     let text: String
@@ -139,58 +167,78 @@ struct TimestampedWord: Sendable {
 
 ### Runtime and Scheduling
 
-As of ADR-016, MacParakeet's intended STT architecture is:
+ADR-016 defines MacParakeet's STT architecture as:
 
-- **One process-wide STT runtime** owning `AsrManager`
-- **One STT scheduler / broker** owning admission control, priorities, backpressure, cancellation, and job-scoped progress
+- **One process-wide `STTRuntime` owner** for model lifecycle and warm-up/shutdown
+- **Two STT execution slots by default**
+  - an **interactive slot** reserved for `dictation`
+  - a **background slot** shared by `meetingFinalize`, `meetingLiveChunk`, and `fileTranscription`
+- **One STT scheduler / control plane** owning admission, slot assignment, priority, backpressure, cancellation, and job-scoped progress
 - **Many producers** (`DictationService`, `MeetingRecordingService`, `TranscriptionService`) submitting jobs into the scheduler
 
 The app does not treat "one service = one STT runtime" as a valid long-term architecture.
+`STTClient` remains only as a standalone compatibility facade for the CLI and tests; app code uses the shared `STTRuntime` + `STTScheduler` from `AppEnvironment`.
 
 ### Lifecycle
 
-- **Lazy init**: The shared runtime is not loaded at app launch; loaded on first STT request or warm-up
-- **Keep loaded**: Once initialized, the shared `AsrManager` stays ready for subsequent requests
+- **Lazy init**: The shared runtime owner is not loaded at app launch; loaded on first STT request or warm-up
+- **Keep loaded**: Once initialized, the runtime keeps its currently loaded managers ready for subsequent requests
 - **Warm-up during onboarding**: Download models (~6 GB) + CoreML compilation (~3.4s first time)
 - **Graceful shutdown**: The shared runtime is released when the app quits
 - **Single owner**: Warm-up, readiness, shutdown, and cache clear happen once at the runtime layer
+- **Cancellation-safe init**: Shutdown/cache clear cancel in-flight initialization and wait for loaded managers to clean themselves up before returning
 
 ### Scheduling Policy
 
 The scheduler exists because STT is a scarce interactive resource even when audio capture is concurrent.
 
-Priority order:
+Default policy:
 
-1. `dictation`
-2. `meetingFinalize`
-3. `meetingLiveChunk`
-4. `fileTranscription`
+1. **Interactive slot**: reserved for `dictation`
+2. **Background slot**: shared by `meetingFinalize`, `meetingLiveChunk`, and `fileTranscription`
 
-Backpressure rules:
+Priority within the background slot:
 
-- Meeting live chunks are best-effort and may be dropped or coalesced under backlog
-- Dictation must remain responsive even while meetings or batch transcriptions exist
-- Long-running batch work should be segmented into bounded work units where practical
+1. `meetingFinalize`
+2. `meetingLiveChunk`
+3. `fileTranscription`
+
+Backpressure and queueing rules:
+
+- Meeting live chunks are best-effort and may be dropped under backlog
+- When a meeting stops, queued live-preview work may be cancelled/dropped so `meetingFinalize` runs next
+- Immediate post-stop meeting finalization uses `meetingFinalize`; archived meeting retranscribes remain `fileTranscription`
+- Dictation must not be queued behind meeting or batch work
+- File transcription is intentionally queued and single-job in v1; a running long batch job may delay meeting STT on the background slot
+- Long-running batch work should be segmented into bounded work units in a future iteration if we want it to yield more gracefully
 - Progress reporting must be fanned out per job, not broadcast globally from the raw runtime stream
+- Cancellation is checked before scheduler admission so fast user cancels do not race into successful transcriptions
+- Speaker diarization remains a separate service and is not part of the two-slot speech scheduler
 
 ### Data Flow
 
 ```
 Dictation:
-  AudioRecorder → AVAudioPCMBuffer → AudioConverter.resampleBuffer() → STTScheduler.submit(dictation) → STTRuntime.transcribe() → STTResult
+  AudioRecorder → AVAudioPCMBuffer → AudioConverter.resampleBuffer() → STTScheduler.transcribe(audioPath:, job: .dictation, onProgress:) → STTRuntime.transcribe() → STTResult
 
 File transcription (v0.4+):
-  FFmpeg (video demux) → .wav → AudioConverter.resampleAudioFile() → STTScheduler.submit(fileTranscription) → STTRuntime.transcribe() → STTResult
+  FFmpeg (video demux) → .wav → AudioConverter.resampleAudioFile() → STTScheduler.transcribe(audioPath:, job: .fileTranscription, onProgress:) → queued background-slot STTResult
                                                                                                              → OfflineDiarizerManager.process() → DiarizationResult
                                                                                                              → Merge word timestamps + speaker segments
 
 YouTube (v0.4+):
-  yt-dlp → .m4a → FFmpeg → AudioConverter.resampleAudioFile() → STTScheduler.submit(fileTranscription) → STTRuntime.transcribe() → STTResult
+  yt-dlp → .m4a → FFmpeg → AudioConverter.resampleAudioFile() → STTScheduler.transcribe(audioPath:, job: .fileTranscription, onProgress:) → queued background-slot STTResult
                                                                                                         → OfflineDiarizerManager.process() → DiarizationResult
                                                                                                         → Merge word timestamps + speaker segments
 
 Meeting live preview (v0.6):
-  MicrophoneCapture/SystemAudioTap → AudioChunker → STTScheduler.submit(meetingLiveChunk) → STTRuntime.transcribe() → live transcript update
+  MicrophoneCapture/SystemAudioTap → AudioChunker → STTScheduler.transcribe(audioPath:, job: .meetingLiveChunk, onProgress:) → background-slot STT → live transcript update
+
+Meeting stop / finalization:
+  Final mixed meeting artifact → STTScheduler.transcribe(audioPath:, job: .meetingFinalize, onProgress:) → background-slot STT → final saved meeting transcript
+
+Saved meeting retranscription from the library:
+  Existing meeting audio file → AudioConverter.resampleAudioFile() → STTScheduler.transcribe(audioPath:, job: .fileTranscription, onProgress:) → queued background-slot STT → updated meeting transcript
 ```
 
 ---
@@ -223,8 +271,11 @@ The CoreML model for `parakeet-tdt-0.6b-v3-coreml` is **~6 GB** on HuggingFace. 
 During onboarding:
 
 1. Download CoreML models (~6 GB) with progress indication
-2. One-time CoreML compilation (~3.4s)
-3. Short warm-up transcription to verify everything works
+2. If speaker detection is enabled, prepare diarization assets (~130 MB) on the separate diarization service path
+3. One-time CoreML compilation (~3.4s)
+4. Short warm-up transcription to verify everything works
+
+Onboarding should not report the speech stack as ready until the runtime owner is ready **and** any required default-on speaker-detection assets are available.
 
 This replaces the previous Python venv bootstrap (~500 MB deps + ~2.5 GB model).
 
@@ -244,7 +295,7 @@ This replaces the previous Python venv bootstrap (~500 MB deps + ~2.5 GB model).
 - CoreML runs in-process (not a separate daemon) — no subprocess crash isolation
 - Wrap transcription calls in error handling
 - On CoreML failure, log the error, report to user, allow retry
-- Memory pressure: CoreML uses ~66 MB working RAM, far less likely to trigger OOM than the previous ~2 GB MLX path
+- Memory pressure: CoreML uses ~66 MB working RAM per active Parakeet inference slot, far less likely to trigger OOM than the previous ~2 GB MLX path
 
 ### Timeout Handling
 
@@ -278,22 +329,20 @@ For dictation (the primary use case), transcription time is imperceptible. For l
 
 ### Memory Budget
 
-```
-Parakeet STT (CoreML/ANE)      ~66 MB working RAM (~130 MB with vocab boosting)
-App process (UI + services)    ~100 MB
-Audio buffers                  ~50 MB
-────────────────────────────────────
-Total peak                     ~300 MB (without vocab boosting)
-
-Recommended: 8 GB RAM (Apple Silicon)
-```
+- Parakeet STT: ~66 MB working RAM per active slot (~130 MB with vocab boosting)
+- App process (UI + services): ~100 MB
+- Audio buffers: ~50 MB
+- Illustrative warm single-slot budget: ~200-250 MB before diarization
+- Real total memory depends on how many STT managers/slots are loaded and active, whether background capacity stays lazy in the final two-slot design, and whether diarization models are also resident
+- Recommended baseline: 8 GB RAM (Apple Silicon)
 
 ### Optimization Notes
 
-- The shared `AsrManager` stays initialized after first use — subsequent calls skip model loading
+- The shared runtime owner keeps its managers initialized after first use — subsequent calls skip model loading
 - Apple Silicon's unified memory means no CPU↔ANE transfer overhead
 - For dictation, latency is the primary concern — sub-100ms after warm-up
-- For file transcription, throughput matters more — scheduler policy keeps interactive work responsive
+- For file transcription, throughput matters more — it is intentionally lower-priority than dictation and meeting work in the shared background slot
+- The approved two-slot design assumes background capacity is a policy choice rather than a guaranteed always-hot third executor; benchmark any stronger concurrency claim before documenting it as fixed
 - ANE and GPU run simultaneously — STT never competes with LLM for processing cycles
 
 ---

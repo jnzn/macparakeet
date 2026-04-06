@@ -23,6 +23,39 @@ private actor MockYouTubeDownloader: YouTubeDownloading {
     }
 }
 
+private final class TelemetrySpy: TelemetryServiceProtocol, @unchecked Sendable {
+    private let lock = NSLock()
+    private var events: [TelemetryEventSpec] = []
+
+    func send(_ event: TelemetryEventSpec) {
+        lock.lock()
+        events.append(event)
+        lock.unlock()
+    }
+
+    func flush() async {}
+
+    func flushForTermination() {}
+
+    func snapshot() -> [TelemetryEventSpec] {
+        lock.lock()
+        defer { lock.unlock() }
+        return events
+    }
+}
+
+private actor FailingYouTubeDownloader: YouTubeDownloading {
+    private let error: Error
+
+    init(error: Error) {
+        self.error = error
+    }
+
+    func download(url: String, onProgress: (@Sendable (Int) -> Void)?) async throws -> YouTubeDownloader.DownloadResult {
+        throw error
+    }
+}
+
 final class TranscriptionServiceTests: XCTestCase {
     var service: TranscriptionService!
     var mockAudio: MockAudioProcessor!
@@ -34,10 +67,11 @@ final class TranscriptionServiceTests: XCTestCase {
         mockAudio = MockAudioProcessor()
         mockSTT = MockSTTClient()
         transcriptionRepo = TranscriptionRepository(dbQueue: dbManager.dbQueue)
+        Telemetry.configure(NoOpTelemetryService())
 
         service = TranscriptionService(
             audioProcessor: mockAudio,
-            sttClient: mockSTT,
+            sttTranscriber: mockSTT,
             transcriptionRepo: transcriptionRepo
         )
     }
@@ -156,7 +190,7 @@ final class TranscriptionServiceTests: XCTestCase {
 
         let service = TranscriptionService(
             audioProcessor: mockAudio,
-            sttClient: mockSTT,
+            sttTranscriber: mockSTT,
             transcriptionRepo: transcriptionRepo,
             youtubeDownloader: downloader
         )
@@ -182,7 +216,7 @@ final class TranscriptionServiceTests: XCTestCase {
 
         let service = TranscriptionService(
             audioProcessor: mockAudio,
-            sttClient: mockSTT,
+            sttTranscriber: mockSTT,
             transcriptionRepo: transcriptionRepo,
             shouldKeepDownloadedAudio: { false },
             youtubeDownloader: downloader
@@ -211,7 +245,7 @@ final class TranscriptionServiceTests: XCTestCase {
 
         let service = TranscriptionService(
             audioProcessor: mockAudio,
-            sttClient: mockSTT,
+            sttTranscriber: mockSTT,
             transcriptionRepo: transcriptionRepo,
             youtubeDownloader: downloader
         )
@@ -229,7 +263,9 @@ final class TranscriptionServiceTests: XCTestCase {
         XCTAssertTrue(phases.contains { if case .transcribing = $0 { true } else { false } })
     }
 
-    func testTranscribeMeetingUsesBatchSTTAndAppliesPreparedSpeakerMetadata() async throws {
+    func testTranscribeMeetingUsesFinalizeLaneAndAppliesPreparedSpeakerMetadata() async throws {
+        let telemetry = TelemetrySpy()
+        Telemetry.configure(telemetry)
         let recordingURL = try makeTempDownloadedAudio()
         defer { try? FileManager.default.removeItem(at: recordingURL) }
 
@@ -276,6 +312,7 @@ final class TranscriptionServiceTests: XCTestCase {
 
         let result = try await service.transcribeMeeting(recording: recording)
         let sttCallCount = await mockSTT.transcribeCallCount
+        let lastJob = await mockSTT.lastJob
         let convertCallCount = await mockAudio.convertCallCount
 
         XCTAssertEqual(result.fileName, "Meeting Demo")
@@ -288,7 +325,70 @@ final class TranscriptionServiceTests: XCTestCase {
         ])
         XCTAssertEqual(result.wordTimestamps?.map(\.speakerId), ["microphone", "microphone", "system", "system"])
         XCTAssertEqual(sttCallCount, 1)
+        XCTAssertEqual(lastJob, .meetingFinalize)
         XCTAssertEqual(convertCallCount, 1)
+
+        let events = telemetry.snapshot()
+        guard case .transcriptionCompleted(
+            let source,
+            _,
+            _,
+            _,
+            let speakerCount,
+            let diarizationRequested,
+            let diarizationApplied,
+            let meetingPreparedTranscriptUsed
+        ) = try XCTUnwrap(events.last) else {
+            return XCTFail("Expected transcription_completed telemetry")
+        }
+        XCTAssertEqual(source, .meeting)
+        XCTAssertEqual(speakerCount, 2)
+        XCTAssertTrue(diarizationRequested)
+        XCTAssertTrue(diarizationApplied)
+        XCTAssertEqual(meetingPreparedTranscriptUsed, true)
+    }
+
+    func testMeetingSourceRetranscribeUsesBatchLane() async throws {
+        let expectedResult = STTResult(text: "Meeting archive retranscribe")
+        await mockSTT.configure(result: expectedResult)
+
+        let fileURL = URL(fileURLWithPath: "/tmp/meeting-archive.m4a")
+        _ = try await service.transcribe(fileURL: fileURL, source: .meeting)
+
+        let lastJob = await mockSTT.lastJob
+        XCTAssertEqual(lastJob, .fileTranscription)
+    }
+
+    func testTranscribeURLDownloadFailureEmitsDownloadStageTelemetry() async throws {
+        let telemetry = TelemetrySpy()
+        Telemetry.configure(telemetry)
+        let downloader = FailingYouTubeDownloader(
+            error: YouTubeDownloadError.downloadFailed("yt-dlp failed")
+        )
+
+        let service = TranscriptionService(
+            audioProcessor: mockAudio,
+            sttTranscriber: mockSTT,
+            transcriptionRepo: transcriptionRepo,
+            youtubeDownloader: downloader
+        )
+
+        do {
+            _ = try await service.transcribeURL(urlString: "https://youtu.be/dQw4w9WgXcQ")
+            XCTFail("Should have thrown")
+        } catch let error as YouTubeDownloadError {
+            guard case .downloadFailed = error else {
+                return XCTFail("Unexpected download error: \(error)")
+            }
+        }
+
+        let events = telemetry.snapshot()
+        guard case .transcriptionFailed(let source, let stage, let errorType, _) = try XCTUnwrap(events.last) else {
+            return XCTFail("Expected transcription_failed telemetry")
+        }
+        XCTAssertEqual(source, .youtube)
+        XCTAssertEqual(stage, .download)
+        XCTAssertEqual(errorType, "YouTubeDownloadError.downloadFailed")
     }
 
     private func makeTempDownloadedAudio() throws -> URL {

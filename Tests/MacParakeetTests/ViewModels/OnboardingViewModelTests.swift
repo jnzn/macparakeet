@@ -7,6 +7,7 @@ final class OnboardingViewModelTests: XCTestCase {
     private func makeViewModel(
         permissionService: PermissionServiceProtocol,
         sttClient: STTClientProtocol,
+        diarizationService: DiarizationServiceProtocol? = nil,
         defaults: UserDefaults,
         isRuntimeSupported: @escaping @Sendable () -> Bool = { true },
         availableDiskBytes: @escaping @Sendable () -> Int64? = { 20 * 1_024 * 1_024 * 1_024 },
@@ -16,6 +17,7 @@ final class OnboardingViewModelTests: XCTestCase {
         OnboardingViewModel(
             permissionService: permissionService,
             sttClient: sttClient,
+            diarizationService: diarizationService,
             isRuntimeSupported: isRuntimeSupported,
             availableDiskBytes: availableDiskBytes,
             isNetworkReachable: isNetworkReachable,
@@ -84,6 +86,52 @@ final class OnboardingViewModelTests: XCTestCase {
         XCTAssertTrue(vm.canContinueFromCurrentStep())
     }
 
+    func testEngineWarmUpPreparesDiarizationModelsBeforeReady() async throws {
+        let perms = MockPermissionService()
+        let stt = MockSTTClient()
+        let diarization = MockDiarizationService()
+        let defaults = UserDefaults(suiteName: "com.macparakeet.tests.\(UUID().uuidString)")!
+        defaults.removePersistentDomain(forName: defaults.volatileDomainNames.first ?? "")
+
+        let vm = makeViewModel(
+            permissionService: perms,
+            sttClient: stt,
+            diarizationService: diarization,
+            defaults: defaults
+        )
+        vm.jump(to: .engine)
+
+        vm.startEngineWarmUp()
+        try await Task.sleep(for: .milliseconds(150))
+
+        XCTAssertEqual(vm.engineState, .ready)
+        let prepared = await diarization.prepareModelsCalled
+        XCTAssertTrue(prepared)
+    }
+
+    func testEngineWarmUpFailsWhenDiarizationPreparationFails() async throws {
+        let perms = MockPermissionService()
+        let stt = MockSTTClient()
+        let diarization = MockDiarizationService()
+        await diarization.configurePrepareModels(error: STTError.modelDownloadFailed)
+        let defaults = UserDefaults(suiteName: "com.macparakeet.tests.\(UUID().uuidString)")!
+        defaults.removePersistentDomain(forName: defaults.volatileDomainNames.first ?? "")
+
+        let vm = makeViewModel(
+            permissionService: perms,
+            sttClient: stt,
+            diarizationService: diarization,
+            defaults: defaults
+        )
+        vm.jump(to: .engine)
+
+        vm.startEngineWarmUp()
+        try await Task.sleep(for: .milliseconds(150))
+
+        XCTAssertEqual(vm.engineState, .failed(message: STTError.modelDownloadFailed.localizedDescription))
+        XCTAssertFalse(vm.canContinueFromCurrentStep())
+    }
+
     func testMarkOnboardingCompletedPersistsToDefaults() {
         let perms = MockPermissionService()
         let stt = MockSTTClient()
@@ -139,7 +187,7 @@ final class OnboardingViewModelTests: XCTestCase {
         XCTAssertEqual(state, .working(message: "Downloading...", progress: 0.5))
     }
 
-    func testEngineWarmUpRetriesTransientSTTFailure() async throws {
+    func testEngineWarmUpFailsTransientSTTFailureWithoutImplicitRetry() async throws {
         let perms = MockPermissionService()
         let stt = MockSTTClient()
         await stt.configureWarmUpFailuresBeforeSuccess(2)
@@ -149,11 +197,32 @@ final class OnboardingViewModelTests: XCTestCase {
         vm.jump(to: .engine)
 
         vm.startEngineWarmUp()
-        try await Task.sleep(for: .milliseconds(1_100))
+        try await Task.sleep(for: .milliseconds(200))
+
+        XCTAssertEqual(vm.engineState, .failed(message: STTError.engineStartFailed("warm-up failed").localizedDescription))
+        let sttCalls = await stt.warmUpCallCount
+        XCTAssertEqual(sttCalls, 1)
+    }
+
+    func testRetryEngineWarmUpRecoversAfterFailedBackgroundWarmUp() async throws {
+        let perms = MockPermissionService()
+        let stt = MockSTTClient()
+        await stt.configureWarmUp(error: STTError.modelDownloadFailed)
+        let defaults = UserDefaults(suiteName: "com.macparakeet.tests.\(UUID().uuidString)")!
+
+        let vm = makeViewModel(permissionService: perms, sttClient: stt, defaults: defaults)
+        vm.jump(to: .engine)
+
+        vm.startEngineWarmUp()
+        try await Task.sleep(for: .milliseconds(900))
+
+        XCTAssertEqual(vm.engineState, .failed(message: STTError.modelDownloadFailed.localizedDescription))
+
+        await stt.configureWarmUp(error: nil)
+        vm.retryEngineWarmUp()
+        try await Task.sleep(for: .milliseconds(200))
 
         XCTAssertEqual(vm.engineState, .ready)
-        let sttCalls = await stt.warmUpCallCount
-        XCTAssertEqual(sttCalls, 3)
     }
 
     func testEngineWarmUpFailsPreflightWhenOfflineOnFirstSetup() async throws {
@@ -182,14 +251,18 @@ final class OnboardingViewModelTests: XCTestCase {
         XCTAssertEqual(sttCalls, 0)
     }
 
-    func testEngineWarmUpSkipsPreflightWhenSpeechCachedEvenIfOnboardingIncompleteAndOffline() async throws {
+    func testEngineWarmUpFailsPreflightWhenSpeechCachedButSpeakerModelsMissingAndOffline() async throws {
         let perms = MockPermissionService()
         let stt = MockSTTClient()
+        let diarization = MockDiarizationService()
+        await diarization.configureCachedModels(false)
+        await diarization.configureReady(false)
         let defaults = UserDefaults(suiteName: "com.macparakeet.tests.\(UUID().uuidString)")!
 
         let vm = makeViewModel(
             permissionService: perms,
             sttClient: stt,
+            diarizationService: diarization,
             defaults: defaults,
             isNetworkReachable: { false },
             isSpeechModelCached: { true }
@@ -198,10 +271,39 @@ final class OnboardingViewModelTests: XCTestCase {
         vm.startEngineWarmUp()
         try await Task.sleep(for: .milliseconds(120))
 
-        // Model is cached — should skip preflight and proceed to warm-up,
-        // even if onboarding hasn't completed and we're offline.
+        if case .failed(let message) = vm.engineState {
+            XCTAssertTrue(message.lowercased().contains("speaker models"))
+        } else {
+            XCTFail("Expected preflight failure when speaker models are missing")
+        }
+
         let sttCalls = await stt.warmUpCallCount
-        XCTAssertEqual(sttCalls, 1, "Should proceed to STT warm-up when model is cached")
+        XCTAssertEqual(sttCalls, 0, "Should fail before STT warm-up when speaker models are missing")
+    }
+
+    func testEngineWarmUpSkipsPreflightWhenSpeechAndSpeakerModelsAreCachedOffline() async throws {
+        let perms = MockPermissionService()
+        let stt = MockSTTClient()
+        let diarization = MockDiarizationService()
+        await diarization.configureCachedModels(true)
+        await diarization.configureReady(false)
+        let defaults = UserDefaults(suiteName: "com.macparakeet.tests.\(UUID().uuidString)")!
+
+        let vm = makeViewModel(
+            permissionService: perms,
+            sttClient: stt,
+            diarizationService: diarization,
+            defaults: defaults,
+            isNetworkReachable: { false },
+            isSpeechModelCached: { true }
+        )
+        vm.jump(to: .engine)
+        vm.startEngineWarmUp()
+        try await Task.sleep(for: .milliseconds(150))
+
+        XCTAssertEqual(vm.engineState, .ready)
+        let sttCalls = await stt.warmUpCallCount
+        XCTAssertEqual(sttCalls, 1, "Should proceed to STT warm-up when all required assets are cached")
     }
 
     func testEngineWarmUpFailsPreflightWhenDiskTooLowOnFirstSetup() async throws {

@@ -15,13 +15,18 @@ public final class MeetingRecordingPanelViewModel {
     public var micLevel: Float = 0
     public var systemLevel: Float = 0
     public var previewLines: [MeetingRecordingPreviewLine] = []
+    public var isTranscriptionLagging: Bool = false
     public var onStop: (() -> Void)?
     public var onClose: (() -> Void)?
 
     public init() {}
 
-    public func updatePreviewLines(_ lines: [MeetingRecordingPreviewLine]) {
+    public func updatePreviewLines(
+        _ lines: [MeetingRecordingPreviewLine],
+        isTranscriptionLagging: Bool = false
+    ) {
         previewLines = lines
+        self.isTranscriptionLagging = isTranscriptionLagging
     }
 
     public func reset() {
@@ -30,6 +35,7 @@ public final class MeetingRecordingPanelViewModel {
         micLevel = 0
         systemLevel = 0
         previewLines = []
+        isTranscriptionLagging = false
     }
 
     public var formattedElapsed: String {
@@ -59,12 +65,22 @@ public final class MeetingRecordingPanelViewModel {
     public var statusMessage: String {
         switch state {
         case .hidden, .recording:
+            if isTranscriptionLagging {
+                return "Live transcript preview is catching up. The final transcript will still include the full meeting."
+            }
             return "Live transcript preview updates while the flower pill stays pinned."
         case .transcribing:
             return "Meeting audio is being transcribed and saved to your library."
         case .error(let message):
             return message
         }
+    }
+
+    public var showsLaggingIndicator: Bool {
+        if case .recording = state {
+            return isTranscriptionLagging
+        }
+        return false
     }
 
     public var showsElapsedTime: Bool {

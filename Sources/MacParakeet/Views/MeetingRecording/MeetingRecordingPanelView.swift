@@ -42,6 +42,15 @@ struct MeetingRecordingPanelView: View {
                     .foregroundStyle(DesignSystem.Colors.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
 
+                if viewModel.showsLaggingIndicator {
+                    Label("Transcript preview is catching up", systemImage: "exclamationmark.triangle.fill")
+                        .font(DesignSystem.Typography.caption.weight(.semibold))
+                        .foregroundStyle(DesignSystem.Colors.warningAmber)
+                        .padding(.horizontal, DesignSystem.Spacing.sm)
+                        .padding(.vertical, 6)
+                        .background(Capsule().fill(DesignSystem.Colors.surfaceElevated))
+                }
+
                 if viewModel.showsAudioLevels {
                     DualAudioLevelView(
                         micLevel: viewModel.micLevel,

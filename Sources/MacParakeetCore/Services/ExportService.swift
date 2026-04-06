@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 
+@MainActor
 public protocol ExportServiceProtocol: Sendable {
     func exportToTxt(transcription: Transcription, url: URL) throws
     func exportToSRT(transcription: Transcription, url: URL) throws
