@@ -170,10 +170,18 @@ final class MeetingRecordingFlowCoordinator {
             pillViewModel?.systemLevel = 0
             pillViewModel?.state = .completing
             pillViewModel?.onCompletionAnimationFinished = { [weak self] in
-                guard let self else { return }
+                guard let self, self.pillViewModel?.state == .completing else { return }
                 // Flower collapsed — show merkaba spinner (or checkmark if already done)
                 if self.completedTranscription != nil {
                     self.pillViewModel?.state = .completed
+                    // Auto-dismiss was skipped during collapse — start it now
+                    self.autoDismissTask?.cancel()
+                    let gen = self.stateMachine.generation
+                    self.autoDismissTask = Task { @MainActor [weak self] in
+                        try? await Task.sleep(for: .seconds(2))
+                        guard !Task.isCancelled else { return }
+                        self?.sendEvent(.autoDismissExpired(generation: gen))
+                    }
                 } else {
                     self.pillViewModel?.state = .transcribing
                 }
