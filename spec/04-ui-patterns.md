@@ -28,8 +28,9 @@ Design philosophy: **Simple, native, stays out of the way.** No chrome, no clutt
 │  ────────────    │  ───────────────────────────────────────  │
 │                  │                                           │
 │  🎤 Transcribe   │  [Depends on sidebar selection]           │
-│  🕒 Dictations   │                                           │
-│  📖 Vocabulary   │  - Transcribe: Drop zone + recent list   │
+│  🎙 Meetings     │                                           │
+│  🕒 Dictations   │  - Transcribe: Drop zone + recent list   │
+│  📖 Vocabulary   │  - Meetings: Meeting recordings + record  │
 │  💬 Feedback     │  - Dictations: History list               │
 │  ⚙ Settings      │  - Vocabulary: Processing mode + manage   │
 │                  │  - Feedback: Form + community link        │
