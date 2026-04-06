@@ -116,7 +116,11 @@ MacParakeet has three primary modes that are equal in importance:
 2. **File transcription** -- Drag-drop audio/video files for full transcription (MacWhisper-style)
 3. **Meeting recording** -- Capture system audio + mic simultaneously, transcribe locally (simple Granola-style)
 
-All three modes share the same Parakeet STT backend but have different UI flows, audio sources, and data models. **Dictation and meeting recording run concurrently** (ADR-015) -- a user can dictate freely during a meeting recording. Each flow owns its own AVAudioEngine; macOS HAL handles mic multiplexing. All STT work routes through one process-wide runtime and scheduler (ADR-016), with a reserved dictation slot and a shared background slot where meeting work outranks file transcription.
+All three modes share the same Parakeet STT backend but have different UI flows, audio sources, and data models. **Dictation and meeting recording run concurrently** (ADR-015) -- a user can dictate freely during a meeting recording. Each flow owns its own AVAudioEngine; macOS HAL handles mic multiplexing.
+
+ADR-016 defines the **approved target architecture** as one process-wide runtime/scheduler path with a reserved dictation slot and a shared background slot where meeting work outranks file transcription.
+
+**Current branch note:** the checked-out v0.6 implementation has already centralized STT ownership in `AppEnvironment`, but it still uses an intermediate internal `dictation` / `meeting` / `batch` lane shape while converging toward the approved two-slot design. Read `spec/03-architecture.md` and `spec/06-stt-engine.md` as the source of truth for target-vs-current distinctions.
 
 ### STT Integration (Parakeet via FluidAudio)
 
@@ -124,11 +128,12 @@ All three modes share the same Parakeet STT backend but have different UI flows,
 - Parakeet TDT 0.6B-v3 returns word-level timestamps + confidence scores
 - ~155x realtime on Apple Silicon (60 min audio in ~23 seconds)
 - ~2.5% Word Error Rate
-- ~66 MB working memory during inference (vs ~2 GB+ on GPU/MLX)
+- ~66 MB working memory per active Parakeet inference slot (vs ~2 GB+ on GPU/MLX)
 - ~6 GB CoreML speech model bundle downloaded during onboarding
 - ~130 MB diarization asset bundle prepared alongside onboarding/default speaker-detection readiness
-- One process-wide `STTRuntime` owner manages model lifecycle for the app
-- The default STT topology uses 2 execution slots: reserved dictation + shared meeting/batch
+- Approved target: one process-wide `STTRuntime` owner manages model lifecycle for the app
+- Approved target: the default STT topology uses 2 execution slots: reserved dictation + shared meeting/batch
+- Current branch implementation: centralized ownership exists, but execution still routes through internal `dictation` / `meeting` / `batch` lanes while converging to the target shape
 - One `STTScheduler` owns slot assignment, priority, backpressure, cancellation, and job-scoped progress
 
 **Swift API:**
