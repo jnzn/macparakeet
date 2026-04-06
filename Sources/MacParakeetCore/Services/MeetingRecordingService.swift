@@ -183,8 +183,8 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         await processingTask?.value
         processingTask = nil
         await flushTranscriptChunkers(for: session)
-        // Preserve any prepared speaker metadata that is already assembled, but
-        // stop waiting once live preview falls behind so finalize can take over.
+        // If live preview falls behind, discard partial speaker metadata so
+        // finalization can rebuild speakers from the mixed recording instead.
         let preparedTranscriptReady = await waitForPendingChunkTasksToDrain(timeout: .milliseconds(150))
         if !preparedTranscriptReady {
             await cancelPendingChunkTasks(waitForCancellation: false)
@@ -214,7 +214,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             microphoneAudioURL: session.microphoneAudioURL,
             systemAudioURL: session.systemAudioURL,
             durationSeconds: durationSeconds,
-            preparedTranscript: chunkTranscriptionFailed
+            preparedTranscript: (chunkTranscriptionFailed || !preparedTranscriptReady)
                 ? nil
                 : transcriptAssembler.finalizedTranscript(durationMs: Int(durationSeconds * 1000))
         )

@@ -348,6 +348,58 @@ final class TranscriptionServiceTests: XCTestCase {
         XCTAssertEqual(meetingPreparedTranscriptUsed, true)
     }
 
+    func testTranscribeMeetingFallsBackToDiarizationWhenPreparedTranscriptMissing() async throws {
+        let recordingURL = try makeTempDownloadedAudio()
+        defer { try? FileManager.default.removeItem(at: recordingURL) }
+        let diarization = MockDiarizationService()
+        await diarization.configure(result: MacParakeetDiarizationResult(
+            segments: [
+                SpeakerSegment(speakerId: "S1", startMs: 0, endMs: 540),
+                SpeakerSegment(speakerId: "S2", startMs: 720, endMs: 1_260),
+            ],
+            speakerCount: 2,
+            speakers: [
+                SpeakerInfo(id: "S1", label: "Speaker 1"),
+                SpeakerInfo(id: "S2", label: "Speaker 2"),
+            ]
+        ))
+
+        await mockSTT.configure(result: STTResult(
+            text: "Final transcript from batch pass",
+            words: [
+                TimestampedWord(word: "Hello", startMs: 50, endMs: 260, confidence: 0.9),
+                TimestampedWord(word: "there", startMs: 300, endMs: 540, confidence: 0.9),
+                TimestampedWord(word: "Sounds", startMs: 720, endMs: 980, confidence: 0.9),
+                TimestampedWord(word: "good", startMs: 1_020, endMs: 1_260, confidence: 0.9),
+            ]
+        ))
+
+        let service = TranscriptionService(
+            audioProcessor: mockAudio,
+            sttTranscriber: mockSTT,
+            transcriptionRepo: transcriptionRepo,
+            diarizationService: diarization
+        )
+        let recording = MeetingRecordingOutput(
+            sessionID: UUID(),
+            displayName: "Meeting Demo",
+            folderURL: recordingURL.deletingLastPathComponent(),
+            mixedAudioURL: recordingURL,
+            microphoneAudioURL: recordingURL,
+            systemAudioURL: recordingURL,
+            durationSeconds: 1.5,
+            preparedTranscript: nil
+        )
+
+        let result = try await service.transcribeMeeting(recording: recording)
+        let diarizeCalled = await diarization.diarizeCalled
+
+        XCTAssertEqual(result.speakerCount, 2)
+        XCTAssertEqual(result.speakers?.map { $0.id }, ["S1", "S2"])
+        XCTAssertEqual(result.wordTimestamps?.map(\.speakerId), ["S1", "S1", "S2", "S2"])
+        XCTAssertTrue(diarizeCalled)
+    }
+
     func testMeetingSourceRetranscribeUsesBatchLane() async throws {
         let expectedResult = STTResult(text: "Meeting archive retranscribe")
         await mockSTT.configure(result: expectedResult)

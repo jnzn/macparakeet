@@ -42,8 +42,23 @@ extension DiarizationServiceProtocol {
     }
 }
 
+protocol OfflineDiarizerManaging: AnyObject {
+    func prepareModels(at directory: URL) async throws
+    func process(audioURL: URL) async throws -> DiarizationResult
+}
+
+extension OfflineDiarizerManager: OfflineDiarizerManaging {
+    func prepareModels(at directory: URL) async throws {
+        try await prepareModels(directory: directory)
+    }
+
+    func process(audioURL: URL) async throws -> DiarizationResult {
+        try await process(audioURL)
+    }
+}
+
 public actor DiarizationService: DiarizationServiceProtocol {
-    private let manager: OfflineDiarizerManager
+    private let manager: any OfflineDiarizerManaging
     private let modelsDirectory: URL
     private var modelsReady = false
 
@@ -51,14 +66,26 @@ public actor DiarizationService: DiarizationServiceProtocol {
         config: OfflineDiarizerConfig = .default,
         modelsDirectory: URL? = nil
     ) {
-        self.manager = OfflineDiarizerManager(config: config)
-        self.modelsDirectory = (modelsDirectory ?? OfflineDiarizerModels.defaultModelsDirectory()).standardizedFileURL
+        self.init(
+            manager: OfflineDiarizerManager(config: config),
+            modelsDirectory: modelsDirectory ?? OfflineDiarizerModels.defaultModelsDirectory()
+        )
+    }
+
+    init(
+        manager: any OfflineDiarizerManaging,
+        modelsDirectory: URL
+    ) {
+        self.manager = manager
+        self.modelsDirectory = modelsDirectory.standardizedFileURL
     }
 
     public func diarize(audioURL: URL) async throws -> MacParakeetDiarizationResult {
+        try await ensureModelsPrepared()
+
         let fluidResult: DiarizationResult
         do {
-            fluidResult = try await manager.process(audioURL)
+            fluidResult = try await manager.process(audioURL: audioURL)
         } catch let error as OfflineDiarizationError where error.isNoSpeechDetected {
             return MacParakeetDiarizationResult(segments: [], speakerCount: 0, speakers: [])
         }
@@ -97,9 +124,14 @@ public actor DiarizationService: DiarizationServiceProtocol {
 
     public func prepareModels(onProgress: (@Sendable (String) -> Void)? = nil) async throws {
         onProgress?("Downloading speaker models...")
-        try await manager.prepareModels(directory: modelsDirectory)
-        modelsReady = true
+        try await ensureModelsPrepared()
         onProgress?("Speaker models ready")
+    }
+
+    private func ensureModelsPrepared() async throws {
+        guard !modelsReady else { return }
+        try await manager.prepareModels(at: modelsDirectory)
+        modelsReady = true
     }
 
     public func isReady() async -> Bool {
