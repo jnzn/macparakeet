@@ -59,6 +59,7 @@ public final class PromptsViewModel {
 
         do {
             try repo.save(prompt)
+            Telemetry.send(.promptCreated)
             newName = ""
             newContent = ""
             errorMessage = nil
@@ -88,6 +89,7 @@ public final class PromptsViewModel {
 
         do {
             try repo.save(updated)
+            Telemetry.send(.promptUpdated)
             editingPrompt = nil
             errorMessage = nil
             loadPrompts()
@@ -128,6 +130,7 @@ public final class PromptsViewModel {
         guard let repo, !prompt.isBuiltIn else { return }
         do {
             _ = try repo.delete(id: prompt.id)
+            Telemetry.send(.promptDeleted)
             errorMessage = nil
             loadPrompts()
         } catch {
