@@ -181,6 +181,8 @@ public final class HotkeyManager {
         }
 
         switch trigger.kind {
+        case .disabled:
+            return Unmanaged.passUnretained(event)
         case .modifier:
             return handleModifierEvent(type: type, event: event)
         case .keyCode:

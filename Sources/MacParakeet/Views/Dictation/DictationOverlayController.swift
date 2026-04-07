@@ -148,7 +148,10 @@ final class DictationOverlayController {
             if overlayViewModel.sessionKind == .command {
                 overlayViewModel.hoverTooltip = "Stop & apply (Fn+Control)"
             } else {
-                overlayViewModel.hoverTooltip = "Stop & paste (\(HotkeyTrigger.current.displayName))"
+                let trigger = HotkeyTrigger.current
+                overlayViewModel.hoverTooltip = trigger.isDisabled
+                    ? "Stop & paste"
+                    : "Stop & paste (\(trigger.displayName))"
             }
         } else {
             overlayViewModel.hoverTooltip = nil
