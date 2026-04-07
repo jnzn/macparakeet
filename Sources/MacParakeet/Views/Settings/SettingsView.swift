@@ -183,11 +183,11 @@ struct SettingsView: View {
                     Spacer(minLength: DesignSystem.Spacing.md)
                     VStack(alignment: .trailing, spacing: 4) {
                         HotkeyRecorderView(trigger: $viewModel.hotkeyTrigger) { candidate in
-                            guard candidate == viewModel.meetingHotkeyTrigger else { return .allowed }
+                            guard !candidate.isDisabled, candidate == viewModel.meetingHotkeyTrigger else { return .allowed }
                             return .blocked("Already used by meeting recording.")
                         }
 
-                        if viewModel.hotkeyTrigger == viewModel.meetingHotkeyTrigger {
+                        if !viewModel.hotkeyTrigger.isDisabled, viewModel.hotkeyTrigger == viewModel.meetingHotkeyTrigger {
                             hotkeyConflictText
                         }
                     }
@@ -251,11 +251,11 @@ struct SettingsView: View {
                             trigger: $viewModel.meetingHotkeyTrigger,
                             defaultTrigger: .defaultMeetingRecording
                         ) { candidate in
-                            guard candidate == viewModel.hotkeyTrigger else { return .allowed }
+                            guard !candidate.isDisabled, candidate == viewModel.hotkeyTrigger else { return .allowed }
                             return .blocked("Already used by dictation.")
                         }
 
-                        if viewModel.hotkeyTrigger == viewModel.meetingHotkeyTrigger {
+                        if !viewModel.hotkeyTrigger.isDisabled, viewModel.hotkeyTrigger == viewModel.meetingHotkeyTrigger {
                             hotkeyConflictText
                         }
                     }
