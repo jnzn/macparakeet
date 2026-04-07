@@ -1,5 +1,4 @@
 import AppKit
-import MacParakeetCore
 import MacParakeetViewModels
 import SwiftUI
 
@@ -89,25 +88,29 @@ struct MeetingRecordingPanelView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .allowsHitTesting(false)
 
-            // Transcript text overlay
+            // Transcript rows
             if hasContent {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        Text(buildAttributedTranscript())
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, DesignSystem.Spacing.lg)
-                            .padding(.vertical, DesignSystem.Spacing.sm)
-                            .id("transcript-bottom")
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(Array(viewModel.previewLines.enumerated()), id: \.element.id) { index, line in
+                                let previousSource = index > 0 ? viewModel.previewLines[index - 1].source : nil
+                                let speakerChanged = line.source != previousSource
+                                TranscriptLineView(line: line, showSpeakerHeader: speakerChanged)
+                                    .id(line.id)
+                            }
+                        }
+                        .padding(.horizontal, DesignSystem.Spacing.lg)
+                        .padding(.vertical, DesignSystem.Spacing.sm)
                     }
                     .onAppear {
-                        guard autoScroll else { return }
-                        proxy.scrollTo("transcript-bottom", anchor: .bottom)
+                        guard autoScroll, let last = viewModel.previewLines.last else { return }
+                        proxy.scrollTo(last.id, anchor: .bottom)
                     }
-                    .onChange(of: viewModel.previewLines.count) { _, _ in
-                        guard autoScroll else { return }
+                    .onChange(of: viewModel.previewLines.last?.id) { _, lastID in
+                        guard autoScroll, let lastID else { return }
                         withAnimation(.easeOut(duration: 0.2)) {
-                            proxy.scrollTo("transcript-bottom", anchor: .bottom)
+                            proxy.scrollTo(lastID, anchor: .bottom)
                         }
                     }
                 }
@@ -148,56 +151,6 @@ struct MeetingRecordingPanelView: View {
         .padding(DesignSystem.Spacing.md)
     }
 
-    private func buildAttributedTranscript() -> AttributedString {
-        var result = AttributedString()
-        var previousSource: AudioSource? = nil
-
-        for line in viewModel.previewLines {
-            let speakerChanged = line.source != previousSource
-
-            if speakerChanged {
-                if !result.characters.isEmpty {
-                    result.append(AttributedString("\n"))
-                }
-                let color = sourceColor(for: line.source)
-                var dot = AttributedString("● ")
-                dot.font = .system(size: 10, weight: .medium)
-                dot.foregroundColor = NSColor(color)
-                result.append(dot)
-
-                var speaker = AttributedString("\(line.speakerLabel)  ")
-                speaker.font = .system(size: 11, weight: .medium)
-                speaker.foregroundColor = NSColor(color.opacity(0.85))
-                result.append(speaker)
-
-                var timestamp = AttributedString("\(line.timestamp)\n")
-                timestamp.font = .system(size: 10, weight: .regular).monospacedDigit()
-                timestamp.foregroundColor = NSColor(DesignSystem.Colors.textTertiary.opacity(0.5))
-                result.append(timestamp)
-            }
-
-            var text = AttributedString("\(line.text)\n")
-            text.font = .system(size: 13, weight: .regular, design: .serif)
-            text.foregroundColor = NSColor(DesignSystem.Colors.textPrimary.opacity(0.9))
-            result.append(text)
-
-            previousSource = line.source
-        }
-
-        return result
-    }
-
-    private func sourceColor(for source: AudioSource?) -> Color {
-        switch source {
-        case .microphone:
-            return DesignSystem.Colors.accent
-        case .system:
-            return DesignSystem.Colors.speakerColor(for: 0)
-        case .none:
-            return DesignSystem.Colors.textSecondary
-        }
-    }
-
     private func copyTranscript() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(viewModel.transcriptText, forType: .string)
@@ -223,6 +176,53 @@ struct MeetingRecordingPanelView: View {
         case .error:
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(DesignSystem.Colors.warningAmber)
+        }
+    }
+}
+
+/// Lightweight transcript row — speaker header + serif body text.
+private struct TranscriptLineView: View {
+    let line: MeetingRecordingPreviewLine
+    var showSpeakerHeader: Bool = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if showSpeakerHeader {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(sourceColor)
+                        .frame(width: 5, height: 5)
+
+                    Text(line.speakerLabel)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(sourceColor.opacity(0.85))
+
+                    Text(line.timestamp)
+                        .font(.system(size: 10, weight: .regular).monospacedDigit())
+                        .foregroundStyle(DesignSystem.Colors.textTertiary.opacity(0.5))
+                }
+                .padding(.top, 8)
+                .padding(.bottom, 3)
+            }
+
+            Text(line.text)
+                .font(.system(size: 13, weight: .regular, design: .serif))
+                .foregroundStyle(DesignSystem.Colors.textPrimary.opacity(0.9))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 11)
+        }
+        .padding(.vertical, 1)
+    }
+
+    private var sourceColor: Color {
+        switch line.source {
+        case .microphone:
+            return DesignSystem.Colors.accent
+        case .system:
+            return DesignSystem.Colors.speakerColor(for: 0)
+        case .none:
+            return DesignSystem.Colors.textSecondary
         }
     }
 }
