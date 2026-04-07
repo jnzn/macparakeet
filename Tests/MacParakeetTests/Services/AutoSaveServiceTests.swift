@@ -268,4 +268,105 @@ final class AutoSaveServiceTests: XCTestCase {
         let service = makeService()
         XCTAssertNil(service.resolveFolder())
     }
+
+    // MARK: - Meeting Scope
+
+    private func configureMeetingAutoSave(enabled: Bool = true, format: AutoSaveFormat = .md) {
+        defaults.set(enabled, forKey: AutoSaveScope.meeting.enabledKey)
+        defaults.set(format.rawValue, forKey: AutoSaveScope.meeting.formatKey)
+        let bookmarkData = try! tempDir.bookmarkData(
+            options: [],
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
+        defaults.set(bookmarkData, forKey: AutoSaveScope.meeting.folderBookmarkKey)
+    }
+
+    func testMeetingScopeWritesFile() {
+        configureMeetingAutoSave(enabled: true, format: .md)
+        let transcription = makeTranscription()
+        let service = makeService()
+
+        service.saveIfEnabled(transcription, scope: .meeting)
+
+        let files = try! FileManager.default.contentsOfDirectory(atPath: tempDir.path)
+        XCTAssertEqual(files.count, 1)
+        XCTAssertTrue(files[0].hasSuffix(".md"))
+    }
+
+    func testMeetingScopeDisabledDoesNothing() {
+        configureMeetingAutoSave(enabled: false)
+        let service = makeService()
+
+        service.saveIfEnabled(makeTranscription(), scope: .meeting)
+
+        let files = try! FileManager.default.contentsOfDirectory(atPath: tempDir.path)
+        XCTAssertEqual(files.count, 0)
+    }
+
+    func testMeetingScopeIndependentOfTranscriptionScope() {
+        // Transcription auto-save ON, meeting auto-save OFF
+        configureAutoSave(enabled: true, format: .txt)
+        // Meeting scope not configured (defaults to disabled)
+        let service = makeService()
+
+        service.saveIfEnabled(makeTranscription(), scope: .meeting)
+
+        // Meeting scope should not save — transcription settings don't leak
+        let files = try! FileManager.default.contentsOfDirectory(atPath: tempDir.path)
+        XCTAssertEqual(files.count, 0)
+    }
+
+    func testMeetingScopeFolderStoreAndResolve() {
+        let path = AutoSaveService.storeFolder(tempDir, scope: .meeting, defaults: defaults)
+        XCTAssertNotNil(path)
+
+        let service = makeService()
+        let resolved = service.resolveFolder(scope: .meeting)
+        XCTAssertNotNil(resolved)
+        XCTAssertEqual(resolved?.standardizedFileURL.path, tempDir.standardizedFileURL.path)
+
+        // Transcription scope should be unaffected
+        XCTAssertNil(service.resolveFolder(scope: .transcription))
+    }
+
+    func testMeetingScopeClearFolder() {
+        AutoSaveService.storeFolder(tempDir, scope: .meeting, defaults: defaults)
+        AutoSaveService.clearFolder(scope: .meeting, defaults: defaults)
+
+        let service = makeService()
+        XCTAssertNil(service.resolveFolder(scope: .meeting))
+    }
+
+    func testMeetingScopeUsesOwnFormat() {
+        // Meeting saves as TXT, transcription as MD
+        configureMeetingAutoSave(enabled: true, format: .txt)
+        configureAutoSave(enabled: true, format: .md)
+        let service = makeService()
+
+        // Create two separate temp dirs so files don't mix
+        let meetingDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let transcriptionDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try! FileManager.default.createDirectory(at: meetingDir, withIntermediateDirectories: true)
+        try! FileManager.default.createDirectory(at: transcriptionDir, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: meetingDir)
+            try? FileManager.default.removeItem(at: transcriptionDir)
+        }
+
+        // Reconfigure folders to separate dirs
+        AutoSaveService.storeFolder(meetingDir, scope: .meeting, defaults: defaults)
+        AutoSaveService.storeFolder(transcriptionDir, scope: .transcription, defaults: defaults)
+
+        service.saveIfEnabled(makeTranscription(), scope: .meeting)
+        service.saveIfEnabled(makeTranscription(), scope: .transcription)
+
+        let meetingFiles = try! FileManager.default.contentsOfDirectory(atPath: meetingDir.path)
+        let transcriptionFiles = try! FileManager.default.contentsOfDirectory(atPath: transcriptionDir.path)
+
+        XCTAssertEqual(meetingFiles.count, 1)
+        XCTAssertTrue(meetingFiles[0].hasSuffix(".txt"))
+        XCTAssertEqual(transcriptionFiles.count, 1)
+        XCTAssertTrue(transcriptionFiles[0].hasSuffix(".md"))
+    }
 }
