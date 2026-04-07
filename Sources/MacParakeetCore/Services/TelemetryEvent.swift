@@ -26,7 +26,9 @@ public enum TelemetryEventName: String, Sendable, CaseIterable {
     case hotkeyCustomized = "hotkey_customized"
     case processingModeChanged = "processing_mode_changed"
     case customWordAdded = "custom_word_added"
+    case customWordDeleted = "custom_word_deleted"
     case snippetAdded = "snippet_added"
+    case snippetDeleted = "snippet_deleted"
     case keystrokeSnippetFired = "keystroke_snippet_fired"
     case feedbackSubmitted = "feedback_submitted"
     case transcriptionDeleted = "transcription_deleted"
@@ -34,6 +36,10 @@ public enum TelemetryEventName: String, Sendable, CaseIterable {
     case transcriptionFavorited = "transcription_favorited"
     case dictationUndoUsed = "dictation_undo_used"
     case chatConversationCreated = "chat_conversation_created"
+    // Prompt library
+    case promptCreated = "prompt_created"
+    case promptUpdated = "prompt_updated"
+    case promptDeleted = "prompt_deleted"
     case settingChanged = "setting_changed"
     case telemetryOptedOut = "telemetry_opted_out"
     case onboardingCompleted = "onboarding_completed"
@@ -103,6 +109,7 @@ public enum TelemetryCopySource: String, Sendable, Equatable {
     case transcription
     case history
     case meeting
+    case discover
 }
 
 public enum TelemetryPermission: String, Sendable, Equatable {
@@ -122,6 +129,9 @@ public enum TelemetrySettingName: String, Sendable, Equatable {
     case meetingAutoSave = "meeting_auto_save"
     case meetingHotkey = "meeting_hotkey"
     case meetingTitlePrefix = "meeting_title_prefix"
+    case launchAtLogin = "launch_at_login"
+    case silenceAutoStop = "silence_auto_stop"
+    case voiceReturn = "voice_return"
 }
 
 public enum TelemetryEventSpec: Sendable {
@@ -168,7 +178,9 @@ public enum TelemetryEventSpec: Sendable {
     case hotkeyCustomized
     case processingModeChanged(mode: String)
     case customWordAdded
+    case customWordDeleted
     case snippetAdded
+    case snippetDeleted
     case settingChanged(setting: TelemetrySettingName)
     case telemetryOptedOut
     case onboardingCompleted(durationSeconds: Double?)
@@ -197,6 +209,10 @@ public enum TelemetryEventSpec: Sendable {
     case transcriptionFavorited(isFavorite: Bool)
     case dictationUndoUsed
     case chatConversationCreated
+    // Prompt library
+    case promptCreated
+    case promptUpdated
+    case promptDeleted
     // Keystroke actions
     case keystrokeSnippetFired(action: String)
     // Meeting recording
@@ -243,7 +259,9 @@ extension TelemetryEventSpec {
         case .hotkeyCustomized: return .hotkeyCustomized
         case .processingModeChanged: return .processingModeChanged
         case .customWordAdded: return .customWordAdded
+        case .customWordDeleted: return .customWordDeleted
         case .snippetAdded: return .snippetAdded
+        case .snippetDeleted: return .snippetDeleted
         case .settingChanged: return .settingChanged
         case .telemetryOptedOut: return .telemetryOptedOut
         case .onboardingCompleted: return .onboardingCompleted
@@ -269,6 +287,9 @@ extension TelemetryEventSpec {
         case .transcriptionFavorited: return .transcriptionFavorited
         case .dictationUndoUsed: return .dictationUndoUsed
         case .chatConversationCreated: return .chatConversationCreated
+        case .promptCreated: return .promptCreated
+        case .promptUpdated: return .promptUpdated
+        case .promptDeleted: return .promptDeleted
         case .keystrokeSnippetFired: return .keystrokeSnippetFired
         case .meetingRecordingStarted: return .meetingRecordingStarted
         case .meetingRecordingCompleted: return .meetingRecordingCompleted
@@ -286,12 +307,17 @@ extension TelemetryEventSpec {
              .historyReplayed,
              .hotkeyCustomized,
              .customWordAdded,
+             .customWordDeleted,
              .snippetAdded,
+             .snippetDeleted,
              .telemetryOptedOut,
              .transcriptionDeleted,
              .dictationDeleted,
              .dictationUndoUsed,
              .chatConversationCreated,
+             .promptCreated,
+             .promptUpdated,
+             .promptDeleted,
              .licenseActivated,
              .trialStarted,
              .trialExpired,
@@ -521,7 +547,9 @@ public enum TelemetryImplementedContract {
         .hotkeyCustomized: [],
         .processingModeChanged: ["mode"],
         .customWordAdded: [],
+        .customWordDeleted: [],
         .snippetAdded: [],
+        .snippetDeleted: [],
         .settingChanged: ["setting"],
         .telemetryOptedOut: [],
         .onboardingCompleted: [],
@@ -547,6 +575,9 @@ public enum TelemetryImplementedContract {
         .transcriptionFavorited: ["is_favorite"],
         .dictationUndoUsed: [],
         .chatConversationCreated: [],
+        .promptCreated: [],
+        .promptUpdated: [],
+        .promptDeleted: [],
         .keystrokeSnippetFired: ["action"],
         .meetingRecordingStarted: [],
         .meetingRecordingCompleted: ["duration_seconds", "live_word_count"],

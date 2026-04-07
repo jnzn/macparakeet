@@ -67,7 +67,10 @@ public final class SettingsViewModel {
         }
     }
     public var silenceAutoStop: Bool {
-        didSet { defaults.set(silenceAutoStop, forKey: "silenceAutoStop") }
+        didSet {
+            defaults.set(silenceAutoStop, forKey: "silenceAutoStop")
+            Telemetry.send(.settingChanged(setting: .silenceAutoStop))
+        }
     }
     public var silenceDelay: Double {
         didSet { defaults.set(silenceDelay, forKey: "silenceDelay") }
@@ -75,7 +78,10 @@ public final class SettingsViewModel {
 
     // Voice Return
     public var voiceReturnEnabled: Bool {
-        didSet { defaults.set(voiceReturnEnabled, forKey: "voiceReturnEnabled") }
+        didSet {
+            defaults.set(voiceReturnEnabled, forKey: "voiceReturnEnabled")
+            Telemetry.send(.settingChanged(setting: .voiceReturn))
+        }
     }
     public var voiceReturnTrigger: String {
         didSet { defaults.set(voiceReturnTrigger, forKey: "voiceReturnTrigger") }
@@ -583,6 +589,7 @@ public final class SettingsViewModel {
     private func applyLaunchAtLoginChange(_ enabled: Bool) {
         defaults.set(enabled, forKey: "launchAtLogin")
         launchAtLoginError = nil
+        Telemetry.send(.settingChanged(setting: .launchAtLogin))
 
         guard let service = launchAtLoginService else { return }
 
