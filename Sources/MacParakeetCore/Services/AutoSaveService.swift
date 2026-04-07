@@ -22,6 +22,33 @@ public enum AutoSaveFormat: String, Codable, CaseIterable, Sendable {
     public var fileExtension: String { rawValue }
 }
 
+/// Distinguishes transcription vs meeting auto-save settings.
+public enum AutoSaveScope: String, Sendable {
+    case transcription
+    case meeting
+
+    public var enabledKey: String {
+        switch self {
+        case .transcription: return "autoSaveTranscripts"
+        case .meeting: return "autoSaveMeetings"
+        }
+    }
+
+    public var formatKey: String {
+        switch self {
+        case .transcription: return "autoSaveFormat"
+        case .meeting: return "meetingAutoSaveFormat"
+        }
+    }
+
+    public var folderBookmarkKey: String {
+        switch self {
+        case .transcription: return "autoSaveFolderBookmark"
+        case .meeting: return "meetingAutoSaveFolderBookmark"
+        }
+    }
+}
+
 /// Automatically saves completed transcriptions to a user-chosen folder.
 /// Reads configuration from UserDefaults; does nothing when auto-save is disabled
 /// or no folder is configured.
@@ -31,28 +58,30 @@ public final class AutoSaveService {
     private let defaults: UserDefaults
     private let logger = Logger(subsystem: "com.macparakeet.core", category: "AutoSaveService")
 
-    public static let enabledKey = "autoSaveTranscripts"
-    public static let formatKey = "autoSaveFormat"
-    public static let folderBookmarkKey = "autoSaveFolderBookmark"
+    // Legacy keys kept for backward compatibility with existing SettingsViewModel references.
+    public static let enabledKey = AutoSaveScope.transcription.enabledKey
+    public static let formatKey = AutoSaveScope.transcription.formatKey
+    public static let folderBookmarkKey = AutoSaveScope.transcription.folderBookmarkKey
 
     public init(
         exportService: ExportServiceProtocol? = nil,
         defaults: UserDefaults = .standard
     ) {
+        Self.migrateLegacyMeetingSettingsIfNeeded(defaults: defaults)
         self.exportService = exportService ?? ExportService()
         self.defaults = defaults
     }
 
-    /// Save the transcription if auto-save is enabled and a folder is configured.
+    /// Save the transcription if auto-save is enabled for the given scope.
     /// Failures are logged but never surfaced to the user.
-    public func saveIfEnabled(_ transcription: Transcription) {
-        guard defaults.bool(forKey: Self.enabledKey) else { return }
-        guard let folderURL = resolveFolder() else {
-            logger.warning("Auto-save enabled but no valid folder configured.")
+    public func saveIfEnabled(_ transcription: Transcription, scope: AutoSaveScope = .transcription) {
+        guard defaults.bool(forKey: scope.enabledKey) else { return }
+        guard let folderURL = resolveFolder(scope: scope) else {
+            logger.warning("Auto-save enabled but no valid folder configured for \(scope.rawValue).")
             return
         }
 
-        let format = AutoSaveFormat(rawValue: defaults.string(forKey: Self.formatKey) ?? "md") ?? .md
+        let format = AutoSaveFormat(rawValue: defaults.string(forKey: scope.formatKey) ?? "md") ?? .md
         let fileURL = buildFileURL(for: transcription, format: format, in: folderURL)
 
         do {
@@ -67,18 +96,18 @@ public final class AutoSaveService {
             case .json: try exportService.exportToJSON(transcription: transcription, url: fileURL)
             }
 
-            logger.info("Auto-saved transcript to \(fileURL.lastPathComponent)")
+            logger.info("Auto-saved \(scope.rawValue) transcript to \(fileURL.lastPathComponent)")
         } catch {
-            logger.error("Auto-save failed: \(error.localizedDescription)")
+            logger.error("Auto-save failed for \(scope.rawValue): \(error.localizedDescription)")
         }
     }
 
     // MARK: - Folder Bookmark
 
-    /// Resolve the stored bookmark data back to a URL.
+    /// Resolve the stored bookmark data back to a URL for the given scope.
     /// Re-creates the bookmark if it has gone stale.
-    public func resolveFolder() -> URL? {
-        guard let bookmarkData = defaults.data(forKey: Self.folderBookmarkKey) else { return nil }
+    public func resolveFolder(scope: AutoSaveScope = .transcription) -> URL? {
+        guard let bookmarkData = defaults.data(forKey: scope.folderBookmarkKey) else { return nil }
         var isStale = false
         guard let url = try? URL(
             resolvingBookmarkData: bookmarkData,
@@ -87,23 +116,39 @@ public final class AutoSaveService {
 
         if isStale {
             if let refreshed = try? url.bookmarkData() {
-                defaults.set(refreshed, forKey: Self.folderBookmarkKey)
+                defaults.set(refreshed, forKey: scope.folderBookmarkKey)
             }
         }
         return url
     }
 
+    /// Upgraded installs may already have transcription auto-save configured before
+    /// meeting-specific settings existed. Copy those values once so meetings get
+    /// their own explicit settings without requiring the user to revisit Settings.
+    public static func migrateLegacyMeetingSettingsIfNeeded(defaults: UserDefaults = .standard) {
+        copyIfMissing(from: enabledKey, to: AutoSaveScope.meeting.enabledKey, defaults: defaults)
+        copyIfMissing(from: formatKey, to: AutoSaveScope.meeting.formatKey, defaults: defaults)
+        copyIfMissing(from: folderBookmarkKey, to: AutoSaveScope.meeting.folderBookmarkKey, defaults: defaults)
+    }
+
+    private static func copyIfMissing(from sourceKey: String, to destinationKey: String, defaults: UserDefaults) {
+        guard defaults.object(forKey: destinationKey) == nil,
+              let value = defaults.object(forKey: sourceKey)
+        else { return }
+        defaults.set(value, forKey: destinationKey)
+    }
+
     /// Store a folder URL as bookmark data. Returns the display path on success.
     @discardableResult
-    public static func storeFolder(_ url: URL, defaults: UserDefaults = .standard) -> String? {
+    public static func storeFolder(_ url: URL, scope: AutoSaveScope = .transcription, defaults: UserDefaults = .standard) -> String? {
         guard let data = try? url.bookmarkData() else { return nil }
-        defaults.set(data, forKey: folderBookmarkKey)
+        defaults.set(data, forKey: scope.folderBookmarkKey)
         return url.path
     }
 
     /// Clear the stored folder bookmark.
-    public static func clearFolder(defaults: UserDefaults = .standard) {
-        defaults.removeObject(forKey: folderBookmarkKey)
+    public static func clearFolder(scope: AutoSaveScope = .transcription, defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: scope.folderBookmarkKey)
     }
 
     // MARK: - Filename
@@ -111,7 +156,14 @@ public final class AutoSaveService {
     /// Build a deduplicated file URL for the given transcription.
     /// Format: `YYYY-MM-DD-HHmmss-<sanitized-name>.<ext>`
     func buildFileURL(for transcription: Transcription, format: AutoSaveFormat, in folder: URL) -> URL {
-        let stem = TranscriptSegmenter.sanitizedExportStem(from: transcription.fileName)
+        let stem: String
+        if transcription.sourceType == .meeting {
+            // Meeting display names already contain the date (e.g. "Meeting Apr 6, 2026 at 10:02 PM"),
+            // so use just the title prefix to avoid date duplication in the filename.
+            stem = "Meeting"
+        } else {
+            stem = TranscriptSegmenter.sanitizedExportStem(from: transcription.fileName)
+        }
         let dateStr = Self.dateFormatter.string(from: transcription.createdAt)
         let baseName = "\(dateStr)-\(stem)"
 

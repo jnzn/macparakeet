@@ -62,7 +62,6 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertTrue(viewModel.saveAudioRecordings, "saveAudioRecordings should default to true")
         XCTAssertTrue(viewModel.saveTranscriptionAudio, "saveTranscriptionAudio should default to true")
         XCTAssertEqual(viewModel.meetingHotkeyTrigger, .chord(modifiers: ["command", "shift"], keyCode: 46))
-        XCTAssertEqual(viewModel.meetingTitlePrefix, "Meeting")
     }
 
     func testInitLoadsFromUserDefaults() {
@@ -76,7 +75,6 @@ final class SettingsViewModelTests: XCTestCase {
         testDefaults.set(false, forKey: "saveTranscriptionAudio")
         HotkeyTrigger.chord(modifiers: ["control", "option"], keyCode: 46)
             .save(to: testDefaults, defaultsKey: HotkeyTrigger.meetingDefaultsKey)
-        testDefaults.set("Standup", forKey: AppPreferences.meetingTitlePrefixKey)
 
         let vm = SettingsViewModel(defaults: testDefaults)
 
@@ -88,7 +86,24 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertFalse(vm.saveAudioRecordings)
         XCTAssertFalse(vm.saveTranscriptionAudio)
         XCTAssertEqual(vm.meetingHotkeyTrigger, .chord(modifiers: ["control", "option"], keyCode: 46))
-        XCTAssertEqual(vm.meetingTitlePrefix, "Standup")
+    }
+
+    func testMeetingAutoSaveMigratesLegacyTranscriptionSettings() {
+        testDefaults.set(true, forKey: AutoSaveService.enabledKey)
+        testDefaults.set(AutoSaveFormat.json.rawValue, forKey: AutoSaveService.formatKey)
+        AutoSaveService.storeFolder(youtubeDownloadsTestDir, defaults: testDefaults)
+
+        let vm = SettingsViewModel(defaults: testDefaults)
+
+        XCTAssertTrue(vm.meetingAutoSave)
+        XCTAssertEqual(vm.meetingAutoSaveFormat, .json)
+        XCTAssertEqual(
+            vm.meetingAutoSaveFolderPath.map { URL(fileURLWithPath: $0).standardizedFileURL.path },
+            youtubeDownloadsTestDir.standardizedFileURL.path
+        )
+        XCTAssertEqual(testDefaults.object(forKey: AutoSaveScope.meeting.enabledKey) as? Bool, true)
+        XCTAssertEqual(testDefaults.string(forKey: AutoSaveScope.meeting.formatKey), AutoSaveFormat.json.rawValue)
+        XCTAssertNotNil(testDefaults.data(forKey: AutoSaveScope.meeting.folderBookmarkKey))
     }
 
     func testSilenceDelayDefaultsTo2WhenZero() {
@@ -202,11 +217,6 @@ final class SettingsViewModelTests: XCTestCase {
         )
         viewModel.meetingHotkeyTrigger = .chord(modifiers: ["control", "option"], keyCode: 46)
         wait(for: [expectation], timeout: 1.0)
-    }
-
-    func testMeetingTitlePrefixPersists() {
-        viewModel.meetingTitlePrefix = "Client Call"
-        XCTAssertEqual(testDefaults.string(forKey: AppPreferences.meetingTitlePrefixKey), "Client Call")
     }
 
     func testShowIdlePillDefaultsToTrue() {

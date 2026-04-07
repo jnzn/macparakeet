@@ -157,9 +157,14 @@ final class MeetingRecordingFlowCoordinator {
             actionTask = Task { @MainActor in
                 do {
                     try await meetingRecordingService.startRecording()
+                    Telemetry.send(.meetingRecordingStarted)
                     self.onRecordingBegan()
                     self.sendEvent(.recordingStarted(generation: gen))
                 } catch {
+                    Telemetry.send(.meetingRecordingFailed(
+                        errorType: TelemetryErrorClassifier.classify(error),
+                        errorDetail: TelemetryErrorClassifier.errorDetail(error)
+                    ))
                     self.sendEvent(.startFailed(generation: gen, message: error.localizedDescription))
                 }
             }
@@ -194,13 +199,24 @@ final class MeetingRecordingFlowCoordinator {
 
         case .stopRecordingAndTranscribe:
             let gen = stateMachine.generation
+            let liveWordCount = panelViewModel?.wordCount ?? 0
+            let liveTranscriptLagged = panelViewModel?.isTranscriptionLagging ?? false
             actionTask = Task { @MainActor in
                 do {
                     let output = try await meetingRecordingService.stopRecording()
+                    Telemetry.send(.meetingRecordingCompleted(
+                        durationSeconds: output.durationSeconds,
+                        liveWordCount: liveWordCount,
+                        liveTranscriptLagged: liveTranscriptLagged
+                    ))
                     let transcription = try await transcriptionService.transcribeMeeting(recording: output, onProgress: nil)
                     self.completedTranscription = transcription
                     self.sendEvent(.transcriptionCompleted(generation: gen, transcriptionID: transcription.id))
                 } catch {
+                    Telemetry.send(.meetingRecordingFailed(
+                        errorType: TelemetryErrorClassifier.classify(error),
+                        errorDetail: TelemetryErrorClassifier.errorDetail(error)
+                    ))
                     self.sendEvent(.transcriptionFailed(generation: gen, message: error.localizedDescription))
                 }
             }
@@ -216,9 +232,11 @@ final class MeetingRecordingFlowCoordinator {
             panelViewModel?.state = .hidden
 
         case .cancelRecording:
+            let durationSeconds = Double(panelViewModel?.elapsedSeconds ?? 0)
             actionTask?.cancel()
             actionTask = Task { @MainActor in
                 await meetingRecordingService.cancelRecording()
+                Telemetry.send(.meetingRecordingCancelled(durationSeconds: durationSeconds))
             }
 
         case .showError(let message):
@@ -376,10 +394,10 @@ final class MeetingRecordingFlowCoordinator {
     nonisolated private static func makePreviewLines(from update: MeetingTranscriptUpdate) -> [MeetingRecordingPreviewLine] {
         let speakerLabels = Dictionary(uniqueKeysWithValues: update.speakers.map { ($0.id, $0.label) })
         let segments = TranscriptSegmenter.groupIntoSegments(words: update.words)
-        return Array(segments.suffix(3)).map { segment in
+        return segments.map { segment in
             let source = segment.speakerId.flatMap(AudioSource.init(rawValue:))
             return MeetingRecordingPreviewLine(
-                id: "\(segment.startMs)-\(segment.speakerId ?? "unknown")-\(segment.text)",
+                id: "\(segment.startMs)-\(segment.speakerId ?? "unknown")",
                 timestamp: format(milliseconds: segment.startMs),
                 speakerLabel: speakerLabels[segment.speakerId ?? ""] ?? source?.displayLabel ?? "Speaker",
                 text: segment.text,

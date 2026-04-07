@@ -26,7 +26,9 @@ public enum TelemetryEventName: String, Sendable, CaseIterable {
     case hotkeyCustomized = "hotkey_customized"
     case processingModeChanged = "processing_mode_changed"
     case customWordAdded = "custom_word_added"
+    case customWordDeleted = "custom_word_deleted"
     case snippetAdded = "snippet_added"
+    case snippetDeleted = "snippet_deleted"
     case keystrokeSnippetFired = "keystroke_snippet_fired"
     case feedbackSubmitted = "feedback_submitted"
     case transcriptionDeleted = "transcription_deleted"
@@ -34,6 +36,10 @@ public enum TelemetryEventName: String, Sendable, CaseIterable {
     case transcriptionFavorited = "transcription_favorited"
     case dictationUndoUsed = "dictation_undo_used"
     case chatConversationCreated = "chat_conversation_created"
+    // Prompt library
+    case promptCreated = "prompt_created"
+    case promptUpdated = "prompt_updated"
+    case promptDeleted = "prompt_deleted"
     case settingChanged = "setting_changed"
     case telemetryOptedOut = "telemetry_opted_out"
     case onboardingCompleted = "onboarding_completed"
@@ -55,6 +61,11 @@ public enum TelemetryEventName: String, Sendable, CaseIterable {
     case modelDownloadStarted = "model_download_started"
     case modelDownloadCompleted = "model_download_completed"
     case modelDownloadFailed = "model_download_failed"
+    // Meeting recording
+    case meetingRecordingStarted = "meeting_recording_started"
+    case meetingRecordingCompleted = "meeting_recording_completed"
+    case meetingRecordingCancelled = "meeting_recording_cancelled"
+    case meetingRecordingFailed = "meeting_recording_failed"
     // Errors
     case errorOccurred = "error_occurred"
     // Crashes
@@ -97,6 +108,8 @@ public enum TelemetryCopySource: String, Sendable, Equatable {
     case dictation
     case transcription
     case history
+    case meeting
+    case discover
 }
 
 public enum TelemetryPermission: String, Sendable, Equatable {
@@ -113,8 +126,12 @@ public enum TelemetrySettingName: String, Sendable, Equatable {
     case saveTranscriptionAudio = "save_transcription_audio"
     case speakerDiarization = "speaker_diarization"
     case autoSave = "auto_save"
+    case meetingAutoSave = "meeting_auto_save"
     case meetingHotkey = "meeting_hotkey"
-    case meetingTitlePrefix = "meeting_title_prefix"
+
+    case launchAtLogin = "launch_at_login"
+    case silenceAutoStop = "silence_auto_stop"
+    case voiceReturn = "voice_return"
 }
 
 public enum TelemetryEventSpec: Sendable {
@@ -161,7 +178,9 @@ public enum TelemetryEventSpec: Sendable {
     case hotkeyCustomized
     case processingModeChanged(mode: String)
     case customWordAdded
+    case customWordDeleted
     case snippetAdded
+    case snippetDeleted
     case settingChanged(setting: TelemetrySettingName)
     case telemetryOptedOut
     case onboardingCompleted(durationSeconds: Double?)
@@ -190,8 +209,17 @@ public enum TelemetryEventSpec: Sendable {
     case transcriptionFavorited(isFavorite: Bool)
     case dictationUndoUsed
     case chatConversationCreated
+    // Prompt library
+    case promptCreated
+    case promptUpdated
+    case promptDeleted
     // Keystroke actions
     case keystrokeSnippetFired(action: String)
+    // Meeting recording
+    case meetingRecordingStarted
+    case meetingRecordingCompleted(durationSeconds: Double, liveWordCount: Int, liveTranscriptLagged: Bool)
+    case meetingRecordingCancelled(durationSeconds: Double)
+    case meetingRecordingFailed(errorType: String, errorDetail: String? = nil)
     // Errors
     case errorOccurred(domain: String, code: String, description: String)
     // Crashes
@@ -231,7 +259,9 @@ extension TelemetryEventSpec {
         case .hotkeyCustomized: return .hotkeyCustomized
         case .processingModeChanged: return .processingModeChanged
         case .customWordAdded: return .customWordAdded
+        case .customWordDeleted: return .customWordDeleted
         case .snippetAdded: return .snippetAdded
+        case .snippetDeleted: return .snippetDeleted
         case .settingChanged: return .settingChanged
         case .telemetryOptedOut: return .telemetryOptedOut
         case .onboardingCompleted: return .onboardingCompleted
@@ -257,7 +287,14 @@ extension TelemetryEventSpec {
         case .transcriptionFavorited: return .transcriptionFavorited
         case .dictationUndoUsed: return .dictationUndoUsed
         case .chatConversationCreated: return .chatConversationCreated
+        case .promptCreated: return .promptCreated
+        case .promptUpdated: return .promptUpdated
+        case .promptDeleted: return .promptDeleted
         case .keystrokeSnippetFired: return .keystrokeSnippetFired
+        case .meetingRecordingStarted: return .meetingRecordingStarted
+        case .meetingRecordingCompleted: return .meetingRecordingCompleted
+        case .meetingRecordingCancelled: return .meetingRecordingCancelled
+        case .meetingRecordingFailed: return .meetingRecordingFailed
         case .errorOccurred: return .errorOccurred
         case .crashOccurred: return .crashOccurred
         }
@@ -270,12 +307,17 @@ extension TelemetryEventSpec {
              .historyReplayed,
              .hotkeyCustomized,
              .customWordAdded,
+             .customWordDeleted,
              .snippetAdded,
+             .snippetDeleted,
              .telemetryOptedOut,
              .transcriptionDeleted,
              .dictationDeleted,
              .dictationUndoUsed,
              .chatConversationCreated,
+             .promptCreated,
+             .promptUpdated,
+             .promptDeleted,
              .licenseActivated,
              .trialStarted,
              .trialExpired,
@@ -414,6 +456,20 @@ extension TelemetryEventSpec {
             return ["is_favorite": isFavorite ? "true" : "false"]
         case .keystrokeSnippetFired(let action):
             return ["action": action]
+        case .meetingRecordingStarted:
+            return nil
+        case .meetingRecordingCompleted(let durationSeconds, let liveWordCount, let liveTranscriptLagged):
+            return [
+                "duration_seconds": Self.format(durationSeconds),
+                "live_word_count": "\(liveWordCount)",
+                "live_transcript_lagged": Self.boolString(liveTranscriptLagged),
+            ]
+        case .meetingRecordingCancelled(let durationSeconds):
+            return ["duration_seconds": Self.format(durationSeconds)]
+        case .meetingRecordingFailed(let errorType, let errorDetail):
+            var props = ["error_type": errorType]
+            if let errorDetail { props["error_detail"] = errorDetail }
+            return props
         case .errorOccurred(let domain, let code, let description):
             return ["domain": domain, "code": code, "description": String(description.prefix(512))]
         case .crashOccurred(let crashType, let signal, let name, let crashTimestamp,
@@ -491,7 +547,9 @@ public enum TelemetryImplementedContract {
         .hotkeyCustomized: [],
         .processingModeChanged: ["mode"],
         .customWordAdded: [],
+        .customWordDeleted: [],
         .snippetAdded: [],
+        .snippetDeleted: [],
         .settingChanged: ["setting"],
         .telemetryOptedOut: [],
         .onboardingCompleted: [],
@@ -517,7 +575,14 @@ public enum TelemetryImplementedContract {
         .transcriptionFavorited: ["is_favorite"],
         .dictationUndoUsed: [],
         .chatConversationCreated: [],
+        .promptCreated: [],
+        .promptUpdated: [],
+        .promptDeleted: [],
         .keystrokeSnippetFired: ["action"],
+        .meetingRecordingStarted: [],
+        .meetingRecordingCompleted: ["duration_seconds", "live_word_count", "live_transcript_lagged"],
+        .meetingRecordingCancelled: ["duration_seconds"],
+        .meetingRecordingFailed: ["error_type"],
         .errorOccurred: ["domain", "code", "description"],
         .crashOccurred: ["crash_type", "signal", "name", "crash_ts", "crash_app_ver"],
     ]

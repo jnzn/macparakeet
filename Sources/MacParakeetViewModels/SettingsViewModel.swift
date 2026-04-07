@@ -67,7 +67,10 @@ public final class SettingsViewModel {
         }
     }
     public var silenceAutoStop: Bool {
-        didSet { defaults.set(silenceAutoStop, forKey: "silenceAutoStop") }
+        didSet {
+            defaults.set(silenceAutoStop, forKey: "silenceAutoStop")
+            Telemetry.send(.settingChanged(setting: .silenceAutoStop))
+        }
     }
     public var silenceDelay: Double {
         didSet { defaults.set(silenceDelay, forKey: "silenceDelay") }
@@ -75,7 +78,10 @@ public final class SettingsViewModel {
 
     // Voice Return
     public var voiceReturnEnabled: Bool {
-        didSet { defaults.set(voiceReturnEnabled, forKey: "voiceReturnEnabled") }
+        didSet {
+            defaults.set(voiceReturnEnabled, forKey: "voiceReturnEnabled")
+            Telemetry.send(.settingChanged(setting: .voiceReturn))
+        }
     }
     public var voiceReturnTrigger: String {
         didSet { defaults.set(voiceReturnTrigger, forKey: "voiceReturnTrigger") }
@@ -127,7 +133,7 @@ public final class SettingsViewModel {
         }
     }
 
-    // Auto-save
+    // Auto-save (transcription)
     public var autoSaveTranscripts: Bool {
         didSet {
             defaults.set(autoSaveTranscripts, forKey: AutoSaveService.enabledKey)
@@ -140,11 +146,20 @@ public final class SettingsViewModel {
         }
     }
     public var autoSaveFolderPath: String?
-    public var meetingTitlePrefix: String {
+
+    // Auto-save (meeting)
+    public var meetingAutoSave: Bool {
         didSet {
-            defaults.set(meetingTitlePrefix, forKey: AppPreferences.meetingTitlePrefixKey)
+            defaults.set(meetingAutoSave, forKey: AutoSaveScope.meeting.enabledKey)
+            Telemetry.send(.settingChanged(setting: .meetingAutoSave))
         }
     }
+    public var meetingAutoSaveFormat: AutoSaveFormat {
+        didSet {
+            defaults.set(meetingAutoSaveFormat.rawValue, forKey: AutoSaveScope.meeting.formatKey)
+        }
+    }
+    public var meetingAutoSaveFolderPath: String?
 
     // Permission status
     public var microphoneGranted = false
@@ -188,7 +203,6 @@ public final class SettingsViewModel {
     private let youtubeDownloadsDirPath: @Sendable () -> String
     private let isSpeechModelCached: @Sendable () -> Bool
     private var isApplyingLaunchAtLoginState = false
-    private var lastCommittedMeetingTitlePrefix: String
     private let logger = Logger(subsystem: "com.macparakeet.viewmodels", category: "SettingsViewModel")
 
     public init(
@@ -196,6 +210,7 @@ public final class SettingsViewModel {
         youtubeDownloadsDirPath: @escaping @Sendable () -> String = { AppPaths.youtubeDownloadsDir },
         isSpeechModelCached: @escaping @Sendable () -> Bool = { STTRuntime.isModelCached() }
     ) {
+        AutoSaveService.migrateLegacyMeetingSettingsIfNeeded(defaults: defaults)
         self.defaults = defaults
         self.youtubeDownloadsDirPath = youtubeDownloadsDirPath
         self.isSpeechModelCached = isSpeechModelCached
@@ -215,34 +230,40 @@ public final class SettingsViewModel {
         saveAudioRecordings = defaults.object(forKey: "saveAudioRecordings") as? Bool ?? true
         saveTranscriptionAudio = defaults.object(forKey: "saveTranscriptionAudio") as? Bool ?? true
         speakerDiarization = defaults.object(forKey: "speakerDiarization") as? Bool ?? true
-        let initialMeetingTitlePrefix = AppPreferences.meetingTitlePrefix(defaults: defaults)
         autoSaveTranscripts = defaults.bool(forKey: AutoSaveService.enabledKey)
         autoSaveFormat = AutoSaveFormat(rawValue: defaults.string(forKey: AutoSaveService.formatKey) ?? "md") ?? .md
-        autoSaveFolderPath = Self.resolveAutoSaveFolderPath(defaults: defaults)
-        meetingTitlePrefix = initialMeetingTitlePrefix
-        lastCommittedMeetingTitlePrefix = initialMeetingTitlePrefix
+        autoSaveFolderPath = Self.resolveAutoSaveFolderPath(defaults: defaults, scope: .transcription)
+        meetingAutoSave = defaults.bool(forKey: AutoSaveScope.meeting.enabledKey)
+        meetingAutoSaveFormat = AutoSaveFormat(rawValue: defaults.string(forKey: AutoSaveScope.meeting.formatKey) ?? "md") ?? .md
+        meetingAutoSaveFolderPath = Self.resolveAutoSaveFolderPath(defaults: defaults, scope: .meeting)
     }
 
     /// Resolve the stored bookmark to a display path.
-    private static func resolveAutoSaveFolderPath(defaults: UserDefaults) -> String? {
-        guard let data = defaults.data(forKey: AutoSaveService.folderBookmarkKey) else { return nil }
-        var isStale = false
-        guard let url = try? URL(
-            resolvingBookmarkData: data,
-            bookmarkDataIsStale: &isStale
-        ) else { return nil }
-        return url.path
+    private static func resolveAutoSaveFolderPath(defaults: UserDefaults, scope: AutoSaveScope = .transcription) -> String? {
+        let service = AutoSaveService(defaults: defaults)
+        return service.resolveFolder(scope: scope)?.path
     }
 
     public func chooseAutoSaveFolder(url: URL) {
-        if let path = AutoSaveService.storeFolder(url, defaults: defaults) {
+        if let path = AutoSaveService.storeFolder(url, scope: .transcription, defaults: defaults) {
             autoSaveFolderPath = path
         }
     }
 
     public func clearAutoSaveFolder() {
-        AutoSaveService.clearFolder(defaults: defaults)
+        AutoSaveService.clearFolder(scope: .transcription, defaults: defaults)
         autoSaveFolderPath = nil
+    }
+
+    public func chooseMeetingAutoSaveFolder(url: URL) {
+        if let path = AutoSaveService.storeFolder(url, scope: .meeting, defaults: defaults) {
+            meetingAutoSaveFolderPath = path
+        }
+    }
+
+    public func clearMeetingAutoSaveFolder() {
+        AutoSaveService.clearFolder(scope: .meeting, defaults: defaults)
+        meetingAutoSaveFolderPath = nil
     }
 
     private static func resolveMeetingHotkeyTrigger(defaults: UserDefaults) -> HotkeyTrigger {
@@ -251,12 +272,6 @@ public final class SettingsViewModel {
             defaultsKey: HotkeyTrigger.meetingDefaultsKey,
             fallback: .defaultMeetingRecording
         )
-    }
-
-    public func commitMeetingTitlePrefix() {
-        guard meetingTitlePrefix != lastCommittedMeetingTitlePrefix else { return }
-        lastCommittedMeetingTitlePrefix = meetingTitlePrefix
-        Telemetry.send(.settingChanged(setting: .meetingTitlePrefix))
     }
 
     public func configure(
@@ -554,6 +569,7 @@ public final class SettingsViewModel {
     private func applyLaunchAtLoginChange(_ enabled: Bool) {
         defaults.set(enabled, forKey: "launchAtLogin")
         launchAtLoginError = nil
+        Telemetry.send(.settingChanged(setting: .launchAtLogin))
 
         guard let service = launchAtLoginService else { return }
 

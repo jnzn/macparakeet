@@ -283,6 +283,7 @@ struct DiscoverView: View {
         }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+        Telemetry.send(.copyToClipboard(source: .discover))
 
         withAnimation {
             copiedItemId = item.id

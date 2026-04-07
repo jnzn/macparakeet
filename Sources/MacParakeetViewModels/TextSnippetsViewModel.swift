@@ -88,6 +88,7 @@ public final class TextSnippetsViewModel {
         guard let repo else { return }
         do {
             _ = try repo.delete(id: snippet.id)
+            Telemetry.send(.snippetDeleted)
             loadSnippets()
         } catch {
             errorMessage = error.localizedDescription

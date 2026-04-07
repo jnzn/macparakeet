@@ -44,6 +44,42 @@ final class MeetingRecordingPanelViewModelTests: XCTestCase {
         XCTAssertFalse(viewModel.showsLaggingIndicator)
     }
 
+    func testWordCountUpdatesWhenExistingSegmentGrows() {
+        let viewModel = MeetingRecordingPanelViewModel()
+        let initialLines = [
+            MeetingRecordingPreviewLine(
+                id: "1",
+                timestamp: "0:05",
+                speakerLabel: "Me",
+                text: "Testing the panel",
+                source: .microphone
+            )
+        ]
+        let updatedLines = [
+            MeetingRecordingPreviewLine(
+                id: "1",
+                timestamp: "0:05",
+                speakerLabel: "Me",
+                text: "Testing the panel with more words",
+                source: .microphone
+            ),
+            MeetingRecordingPreviewLine(
+                id: "2",
+                timestamp: "0:07",
+                speakerLabel: "Them",
+                text: "Reply",
+                source: .system
+            )
+        ]
+
+        viewModel.updatePreviewLines(initialLines)
+        XCTAssertEqual(viewModel.wordCount, 3)
+
+        viewModel.updatePreviewLines(updatedLines)
+
+        XCTAssertEqual(viewModel.wordCount, 7)
+    }
+
     func testTranscribingAndErrorStatesUpdateStatusSurface() {
         let viewModel = MeetingRecordingPanelViewModel()
 

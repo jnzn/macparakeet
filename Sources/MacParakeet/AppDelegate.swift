@@ -484,6 +484,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     self?.dictationFlowCoordinator?.hideIdlePill()
                 },
                 onFlowReturnedToIdle: { [weak self] in
+                    self?.resolveAndUpdateMenuBarIcon()
                     guard self?.dictationFlowCoordinator?.isDictationActive != true else { return }
                     self?.dictationFlowCoordinator?.showIdlePill()
                 }
