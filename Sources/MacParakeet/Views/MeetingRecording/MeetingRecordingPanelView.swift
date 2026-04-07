@@ -64,45 +64,56 @@ struct MeetingRecordingPanelView: View {
 
     @ViewBuilder
     private var transcriptContent: some View {
-        if viewModel.previewLines.isEmpty {
+        let hasContent = !viewModel.previewLines.isEmpty
+
+        ZStack {
+            // Flower of life — always present, fades to watermark when text appears
             VStack(spacing: DesignSystem.Spacing.md) {
                 if viewModel.canStop {
                     BreathingEnsoView()
+                        .opacity(hasContent ? 0.15 : 1.0)
+                        .animation(.easeInOut(duration: 0.8), value: hasContent)
                 } else {
                     Image(systemName: "sparkles")
                         .font(.system(size: 20, weight: .light))
                         .foregroundStyle(DesignSystem.Colors.textTertiary.opacity(0.5))
                 }
 
-                Text(viewModel.canStop ? "Listening…" : "Transcription in progress…")
-                    .font(.system(size: 13, weight: .light, design: .default))
-                    .foregroundStyle(DesignSystem.Colors.textTertiary.opacity(0.6))
+                if !hasContent {
+                    Text(viewModel.canStop ? "Listening…" : "Transcription in progress…")
+                        .font(.system(size: 13, weight: .light, design: .default))
+                        .foregroundStyle(DesignSystem.Colors.textTertiary.opacity(0.6))
+                        .transition(.opacity)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(DesignSystem.Spacing.lg)
-        } else {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    Text(buildAttributedTranscript())
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, DesignSystem.Spacing.lg)
-                        .padding(.vertical, DesignSystem.Spacing.sm)
-                        .id("transcript-bottom")
-                }
-                .background(DesignSystem.Colors.background)
-                .onAppear {
-                    guard autoScroll else { return }
-                    proxy.scrollTo("transcript-bottom", anchor: .bottom)
-                }
-                .onChange(of: viewModel.previewLines.count) { _, _ in
-                    guard autoScroll else { return }
-                    withAnimation(.easeOut(duration: 0.2)) {
+            .allowsHitTesting(false)
+
+            // Transcript text overlay
+            if hasContent {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        Text(buildAttributedTranscript())
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, DesignSystem.Spacing.lg)
+                            .padding(.vertical, DesignSystem.Spacing.sm)
+                            .id("transcript-bottom")
+                    }
+                    .onAppear {
+                        guard autoScroll else { return }
                         proxy.scrollTo("transcript-bottom", anchor: .bottom)
+                    }
+                    .onChange(of: viewModel.previewLines.count) { _, _ in
+                        guard autoScroll else { return }
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            proxy.scrollTo("transcript-bottom", anchor: .bottom)
+                        }
                     }
                 }
             }
         }
+        .background(DesignSystem.Colors.background)
     }
 
     private var footer: some View {
@@ -234,33 +245,48 @@ struct MeetingRecordingPanelView: View {
     }
 }
 
-/// A gently breathing ensō circle for the empty listening state.
+/// A slowly rotating seed-of-life flower for the empty listening state.
+/// Matches the flower head from the recording pill, without the stem.
 private struct BreathingEnsoView: View {
-    @State private var breathing = false
+    @State private var rotation: Double = 0
+    @State private var glowBreathing = false
 
-    private let size: CGFloat = 36
+    private let size: CGFloat = 80
+    private let circleRadius: CGFloat = 16
+    private let strokeColor = DesignSystem.Colors.accent
 
     var body: some View {
         ZStack {
-            // Outer ensō ring
+            // Center glow
             Circle()
-                .stroke(
-                    DesignSystem.Colors.accent.opacity(breathing ? 0.35 : 0.12),
-                    lineWidth: 1.5
-                )
-                .frame(width: size, height: size)
-                .scaleEffect(breathing ? 1.08 : 0.95)
+                .fill(strokeColor.opacity(glowBreathing ? 0.5 : 0.2))
+                .frame(width: circleRadius * 2, height: circleRadius * 2)
+                .blur(radius: 8)
+                .scaleEffect(glowBreathing ? 1.2 : 0.9)
 
-            // Inner glow dot
+            // Center circle
             Circle()
-                .fill(DesignSystem.Colors.accent.opacity(breathing ? 0.25 : 0.08))
-                .frame(width: size * 0.3, height: size * 0.3)
-                .scaleEffect(breathing ? 1.15 : 0.85)
+                .stroke(strokeColor.opacity(0.7), lineWidth: 1.2)
+                .frame(width: circleRadius * 2, height: circleRadius * 2)
+
+            // 6 outer circles (seed of life)
+            ForEach(0..<6, id: \.self) { i in
+                Circle()
+                    .stroke(strokeColor.opacity(0.5), lineWidth: 1.2)
+                    .frame(width: circleRadius * 2, height: circleRadius * 2)
+                    .offset(x: circleRadius * CGFloat(cos(Double(i) * .pi / 3)),
+                            y: circleRadius * CGFloat(sin(Double(i) * .pi / 3)))
+            }
         }
-        .animation(
-            .easeInOut(duration: 2.5).repeatForever(autoreverses: true),
-            value: breathing
-        )
-        .onAppear { breathing = true }
+        .frame(width: size, height: size)
+        .rotationEffect(.degrees(rotation))
+        .onAppear {
+            withAnimation(.linear(duration: 18).repeatForever(autoreverses: false)) {
+                rotation = 360
+            }
+            withAnimation(.easeInOut(duration: 3).repeatForever(autoreverses: true)) {
+                glowBreathing = true
+            }
+        }
     }
 }
