@@ -50,44 +50,78 @@ struct HotkeyRecorderView: View {
 
     private var normalView: some View {
         HStack(spacing: 8) {
-            Text("\(trigger.shortSymbol) \(trigger.displayName)")
-                .font(DesignSystem.Typography.body)
-                .foregroundStyle(.primary)
+            if trigger.isDisabled {
+                Text("Disabled")
+                    .font(DesignSystem.Typography.body)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("\(trigger.shortSymbol) \(trigger.displayName)")
+                    .font(DesignSystem.Typography.body)
+                    .foregroundStyle(.primary)
+            }
 
-            Button("Change...") {
+            Button(trigger.isDisabled ? "Set Hotkey..." : "Change...") {
                 startRecording(modifierCaptureMode: .generic)
             }
             .buttonStyle(.bordered)
 
             Menu {
-                Button("Reset to Default (\(defaultTrigger.shortSymbol))") {
-                    switch combinedValidation(for: defaultTrigger) {
-                    case .blocked(let msg):
-                        validationMessage = msg
-                        validationIsBlocked = true
-                    case .warned(let msg):
-                        trigger = defaultTrigger
-                        validationMessage = msg
-                        validationIsBlocked = false
-                    case .allowed:
-                        trigger = defaultTrigger
+                if trigger.isDisabled {
+                    Button("Reset to Default (\(defaultTrigger.shortSymbol))") {
+                        switch combinedValidation(for: defaultTrigger) {
+                        case .blocked(let msg):
+                            validationMessage = msg
+                            validationIsBlocked = true
+                        case .warned(let msg):
+                            trigger = defaultTrigger
+                            validationMessage = msg
+                            validationIsBlocked = false
+                        case .allowed:
+                            trigger = defaultTrigger
+                            validationMessage = nil
+                            validationIsBlocked = false
+                        }
+                    }
+                } else {
+                    Button("Disable Hotkey") {
+                        trigger = .disabled
                         validationMessage = nil
                         validationIsBlocked = false
                     }
-                }
-                .disabled(trigger == defaultTrigger)
 
-                Divider()
+                    Divider()
 
-                Button("Record Specific Modifier Side") {
-                    startRecording(modifierCaptureMode: .sideSpecific)
+                    Button("Reset to Default (\(defaultTrigger.shortSymbol))") {
+                        switch combinedValidation(for: defaultTrigger) {
+                        case .blocked(let msg):
+                            validationMessage = msg
+                            validationIsBlocked = true
+                        case .warned(let msg):
+                            trigger = defaultTrigger
+                            validationMessage = msg
+                            validationIsBlocked = false
+                        case .allowed:
+                            trigger = defaultTrigger
+                            validationMessage = nil
+                            validationIsBlocked = false
+                        }
+                    }
+                    .disabled(trigger == defaultTrigger)
+
+                    Divider()
+
+                    Button("Record Specific Modifier Side") {
+                        startRecording(modifierCaptureMode: .sideSpecific)
+                    }
                 }
             } label: {
                 Image(systemName: "ellipsis.circle")
                     .font(.system(size: 14))
             }
             .menuStyle(.borderlessButton)
-            .help("Advanced hotkey options, including resetting to default or recording a specific modifier key.")
+            .help(trigger.isDisabled
+                ? "Hotkey options, including restoring the default shortcut."
+                : "Advanced hotkey options, including resetting to default or recording a specific modifier key.")
         }
     }
 

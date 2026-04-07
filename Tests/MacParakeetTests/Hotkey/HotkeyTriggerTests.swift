@@ -20,6 +20,52 @@ final class HotkeyTriggerTests: XCTestCase {
         super.tearDown()
     }
 
+    // MARK: - Disabled
+
+    func testDisabledKind() {
+        let trigger = HotkeyTrigger.disabled
+        XCTAssertEqual(trigger.kind, .disabled)
+        XCTAssertTrue(trigger.isDisabled)
+        XCTAssertNil(trigger.modifierName)
+        XCTAssertNil(trigger.keyCode)
+    }
+
+    func testDisabledDisplayName() {
+        XCTAssertEqual(HotkeyTrigger.disabled.displayName, "Disabled")
+    }
+
+    func testDisabledShortSymbol() {
+        XCTAssertEqual(HotkeyTrigger.disabled.shortSymbol, "—")
+    }
+
+    func testDisabledValidationIsAllowed() {
+        XCTAssertEqual(HotkeyTrigger.disabled.validation, .allowed)
+    }
+
+    func testDisabledIsNotEqualToFn() {
+        XCTAssertNotEqual(HotkeyTrigger.disabled, HotkeyTrigger.fn)
+    }
+
+    func testDisabledCodableRoundtrip() throws {
+        let data = try JSONEncoder().encode(HotkeyTrigger.disabled)
+        let decoded = try JSONDecoder().decode(HotkeyTrigger.self, from: data)
+        XCTAssertEqual(decoded, .disabled)
+        XCTAssertTrue(decoded.isDisabled)
+    }
+
+    func testDisabledPersistence() {
+        HotkeyTrigger.disabled.save(to: testDefaults)
+        let loaded = HotkeyTrigger.current(defaults: testDefaults)
+        XCTAssertEqual(loaded, .disabled)
+        XCTAssertTrue(loaded.isDisabled)
+    }
+
+    func testNonDisabledTriggersAreNotDisabled() {
+        XCTAssertFalse(HotkeyTrigger.fn.isDisabled)
+        XCTAssertFalse(HotkeyTrigger.fromKeyCode(105).isDisabled)
+        XCTAssertFalse(HotkeyTrigger.chord(modifiers: ["command"], keyCode: 25).isDisabled)
+    }
+
     // MARK: - Modifier Presets
 
     func testModifierPresetsHaveCorrectKind() {

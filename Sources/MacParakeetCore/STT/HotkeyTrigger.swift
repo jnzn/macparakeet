@@ -10,6 +10,7 @@ public struct HotkeyTrigger: Sendable {
     // MARK: - Kind
 
     public enum Kind: String, Codable, Sendable {
+        case disabled
         case modifier
         case keyCode
         case chord
@@ -38,9 +39,14 @@ public struct HotkeyTrigger: Sendable {
 
     // MARK: - Computed Properties (derived at runtime)
 
+    /// Whether this trigger is disabled (no hotkey assigned).
+    public var isDisabled: Bool { kind == .disabled }
+
     /// Human-readable name for UI display (e.g., "Fn", "End", "F13", "Command+9", "Right Option").
     public var displayName: String {
         switch kind {
+        case .disabled:
+            return "Disabled"
         case .modifier:
             if let mkc = modifierKeyCode, let info = Self.modifierKeyCodeInfo[mkc],
                let base = Self.modifierDisplayNames[info.modifier] {
@@ -62,6 +68,8 @@ public struct HotkeyTrigger: Sendable {
     /// Short symbol for compact display (e.g., "fn", "⌃", "End", "F13", "⌘9", "R⌥").
     public var shortSymbol: String {
         switch kind {
+        case .disabled:
+            return "—"
         case .modifier:
             if let mkc = modifierKeyCode, let info = Self.modifierKeyCodeInfo[mkc],
                let base = Self.modifierDisplayNames[info.modifier] {
@@ -155,6 +163,10 @@ public struct HotkeyTrigger: Sendable {
         self.modifierKeyCode = modifierKeyCode
     }
 
+    // MARK: - Disabled Preset
+
+    public static let disabled = HotkeyTrigger(kind: .disabled, modifierName: nil, keyCode: nil)
+
     // MARK: - Modifier Presets
 
     public static let fn = HotkeyTrigger(kind: .modifier, modifierName: "fn", keyCode: nil)
@@ -189,6 +201,8 @@ public struct HotkeyTrigger: Sendable {
 
     public var validation: ValidationResult {
         switch kind {
+        case .disabled:
+            return .allowed
         case .modifier:
             return .allowed
         case .keyCode:

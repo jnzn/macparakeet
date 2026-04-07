@@ -193,9 +193,11 @@ struct SettingsView: View {
                     }
                 }
 
-                Divider()
+                if !viewModel.hotkeyTrigger.isDisabled {
+                    Divider()
 
-                dictationModeGuide
+                    dictationModeGuide
+                }
 
                 Divider()
 

@@ -527,7 +527,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // MARK: - Hotkey
 
     private func setupHotkey() {
-        let manager = HotkeyManager(trigger: HotkeyTrigger.current)
+        let trigger = HotkeyTrigger.current
+        guard !trigger.isDisabled else {
+            hotkeyManager = nil
+            dictationFlowCoordinator?.hotkeyManager = nil
+            return
+        }
+
+        let manager = HotkeyManager(trigger: trigger)
 
         manager.onStartRecording = { [weak self] mode in
             self?.dictationFlowCoordinator?.startDictation(mode: mode, trigger: .hotkey)
@@ -686,7 +693,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var hotkeyMenuTitle: String {
-        "Hotkey: \(HotkeyTrigger.current.displayName) (double-tap / hold)"
+        let trigger = HotkeyTrigger.current
+        if trigger.isDisabled {
+            return "Hotkey: Disabled"
+        }
+        return "Hotkey: \(trigger.displayName) (double-tap / hold)"
     }
 
     /// Configures an NSMenuItem with the meeting hotkey shortcut.
