@@ -88,7 +88,7 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(vm.meetingHotkeyTrigger, .chord(modifiers: ["control", "option"], keyCode: 46))
     }
 
-    func testMeetingAutoSaveFallsBackToLegacyTranscriptionSettings() {
+    func testMeetingAutoSaveMigratesLegacyTranscriptionSettings() {
         testDefaults.set(true, forKey: AutoSaveService.enabledKey)
         testDefaults.set(AutoSaveFormat.json.rawValue, forKey: AutoSaveService.formatKey)
         AutoSaveService.storeFolder(youtubeDownloadsTestDir, defaults: testDefaults)
@@ -101,6 +101,9 @@ final class SettingsViewModelTests: XCTestCase {
             vm.meetingAutoSaveFolderPath.map { URL(fileURLWithPath: $0).standardizedFileURL.path },
             youtubeDownloadsTestDir.standardizedFileURL.path
         )
+        XCTAssertEqual(testDefaults.object(forKey: AutoSaveScope.meeting.enabledKey) as? Bool, true)
+        XCTAssertEqual(testDefaults.string(forKey: AutoSaveScope.meeting.formatKey), AutoSaveFormat.json.rawValue)
+        XCTAssertNotNil(testDefaults.data(forKey: AutoSaveScope.meeting.folderBookmarkKey))
     }
 
     func testSilenceDelayDefaultsTo2WhenZero() {
