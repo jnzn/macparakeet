@@ -117,51 +117,44 @@ struct MeetingRecordingPanelView: View {
     }
 
     private var footer: some View {
-        HStack(spacing: DesignSystem.Spacing.md) {
-            Button {
-                copyTranscript()
-            } label: {
-                Label(
-                    viewModel.showCopiedConfirmation ? "Copied" : "Copy",
-                    systemImage: viewModel.showCopiedConfirmation ? "checkmark" : "doc.on.doc"
-                )
-                .font(DesignSystem.Typography.caption)
-                .foregroundStyle(
-                    viewModel.showCopiedConfirmation
-                        ? DesignSystem.Colors.successGreen
-                        : DesignSystem.Colors.textTertiary
-                )
-                .contentTransition(.symbolEffect(.replace))
-            }
-            .buttonStyle(.plain)
-            .disabled(!viewModel.canCopy)
-            .help("Copy transcript to clipboard")
-
-            Spacer()
-
-            Button {
-                autoScroll.toggle()
-            } label: {
-                Label(autoScroll ? "Auto-scroll" : "Paused", systemImage: autoScroll ? "chevron.down.circle.fill" : "chevron.down.circle")
-                    .font(DesignSystem.Typography.caption)
-                    .foregroundStyle(autoScroll ? DesignSystem.Colors.accent : DesignSystem.Colors.textTertiary)
-            }
-            .buttonStyle(.plain)
-
-            Button(action: { viewModel.onStop?() }) {
-                Text(viewModel.canStop ? "Stop Recording" : "Recording Stopped")
-                    .font(DesignSystem.Typography.bodySmall.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, DesignSystem.Spacing.md)
-                    .padding(.vertical, 10)
-                    .background(
-                        Capsule()
-                            .fill(viewModel.canStop ? DesignSystem.Colors.errorRed : DesignSystem.Colors.textTertiary)
+        VStack(spacing: DesignSystem.Spacing.sm) {
+            HStack(spacing: DesignSystem.Spacing.md) {
+                Button {
+                    copyTranscript()
+                } label: {
+                    Label(
+                        viewModel.showCopiedConfirmation ? "Copied" : "Copy",
+                        systemImage: viewModel.showCopiedConfirmation ? "checkmark" : "doc.on.doc"
                     )
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(
+                        viewModel.showCopiedConfirmation
+                            ? DesignSystem.Colors.successGreen
+                            : DesignSystem.Colors.textTertiary
+                    )
+                    .contentTransition(.symbolEffect(.replace))
+                }
+                .buttonStyle(.plain)
+                .disabled(!viewModel.canCopy)
+                .help("Copy transcript to clipboard")
+
+                Spacer()
+
+                Button {
+                    autoScroll.toggle()
+                } label: {
+                    Label(autoScroll ? "Auto-scroll" : "Paused", systemImage: autoScroll ? "chevron.down.circle.fill" : "chevron.down.circle")
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(autoScroll ? DesignSystem.Colors.accent : DesignSystem.Colors.textTertiary)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
-            .disabled(!viewModel.canStop)
-            .help(viewModel.canStop ? "Stop meeting recording" : "Meeting recording is no longer active")
+
+            if viewModel.canStop {
+                SlideToStopView {
+                    viewModel.onStop?()
+                }
+            }
         }
         .padding(DesignSystem.Spacing.md)
     }
@@ -175,7 +168,7 @@ struct MeetingRecordingPanelView: View {
 
             if speakerChanged {
                 if !result.characters.isEmpty {
-                    result.append(AttributedString("\n"))
+                    result.append(AttributedString("\n\n"))
                 }
                 let color = sourceColor(for: line.source)
                 var dot = AttributedString("● ")
@@ -195,7 +188,7 @@ struct MeetingRecordingPanelView: View {
             }
 
             var text = AttributedString("\(line.text)\n")
-            text.font = .system(size: 13, weight: .regular)
+            text.font = .system(size: 13, weight: .regular, design: .serif)
             text.foregroundColor = NSColor(DesignSystem.Colors.textPrimary.opacity(0.9))
             result.append(text)
 
@@ -288,5 +281,74 @@ private struct BreathingEnsoView: View {
                 glowBreathing = true
             }
         }
+    }
+}
+
+/// Slide-to-stop control — drag the knob to the right to end the recording.
+private struct SlideToStopView: View {
+    var onStop: () -> Void
+
+    @State private var dragOffset: CGFloat = 0
+    @State private var completed = false
+
+    private let trackHeight: CGFloat = 40
+    private let knobSize: CGFloat = 34
+    private let knobPadding: CGFloat = 3
+
+    var body: some View {
+        GeometryReader { geo in
+            let maxOffset = geo.size.width - knobSize - knobPadding * 2
+            let progress = min(1, max(0, dragOffset / maxOffset))
+
+            ZStack(alignment: .leading) {
+                // Track background
+                Capsule()
+                    .fill(DesignSystem.Colors.errorRed.opacity(0.12))
+                    .overlay(
+                        Capsule()
+                            .stroke(DesignSystem.Colors.errorRed.opacity(0.2), lineWidth: 0.5)
+                    )
+
+                // Label
+                Text("Slide to end recording")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(DesignSystem.Colors.errorRed.opacity(0.5 * (1 - progress)))
+                    .frame(maxWidth: .infinity)
+
+                // Knob
+                Circle()
+                    .fill(completed ? DesignSystem.Colors.errorRed : DesignSystem.Colors.errorRed.opacity(0.8))
+                    .frame(width: knobSize, height: knobSize)
+                    .overlay(
+                        Image(systemName: completed ? "checkmark" : "stop.fill")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(.white)
+                    )
+                    .shadow(color: DesignSystem.Colors.errorRed.opacity(0.3), radius: 4)
+                    .offset(x: knobPadding + dragOffset)
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                guard !completed else { return }
+                                dragOffset = min(maxOffset, max(0, value.translation.width))
+                            }
+                            .onEnded { _ in
+                                guard !completed else { return }
+                                if dragOffset >= maxOffset * 0.85 {
+                                    completed = true
+                                    dragOffset = maxOffset
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                                        onStop()
+                                    }
+                                } else {
+                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                                        dragOffset = 0
+                                    }
+                                }
+                            }
+                    )
+            }
+        }
+        .frame(height: trackHeight)
     }
 }
