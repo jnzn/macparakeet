@@ -140,7 +140,14 @@ public final class AutoSaveService {
     /// Build a deduplicated file URL for the given transcription.
     /// Format: `YYYY-MM-DD-HHmmss-<sanitized-name>.<ext>`
     func buildFileURL(for transcription: Transcription, format: AutoSaveFormat, in folder: URL) -> URL {
-        let stem = TranscriptSegmenter.sanitizedExportStem(from: transcription.fileName)
+        let stem: String
+        if transcription.sourceType == .meeting {
+            // Meeting display names already contain the date (e.g. "Meeting Apr 6, 2026 at 10:02 PM"),
+            // so use just the title prefix to avoid date duplication in the filename.
+            stem = AppPreferences.meetingTitlePrefix()
+        } else {
+            stem = TranscriptSegmenter.sanitizedExportStem(from: transcription.fileName)
+        }
         let dateStr = Self.dateFormatter.string(from: transcription.createdAt)
         let baseName = "\(dateStr)-\(stem)"
 

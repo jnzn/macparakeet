@@ -31,7 +31,8 @@ final class AutoSaveServiceTests: XCTestCase {
     private func makeTranscription(
         fileName: String = "test-audio.mp3",
         rawTranscript: String = "Hello world",
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        sourceType: Transcription.SourceType = .file
     ) -> Transcription {
         Transcription(
             id: UUID(),
@@ -40,6 +41,7 @@ final class AutoSaveServiceTests: XCTestCase {
             rawTranscript: rawTranscript,
             status: .completed,
             isFavorite: false,
+            sourceType: sourceType,
             updatedAt: createdAt
         )
     }
@@ -284,7 +286,7 @@ final class AutoSaveServiceTests: XCTestCase {
 
     func testMeetingScopeWritesFile() {
         configureMeetingAutoSave(enabled: true, format: .md)
-        let transcription = makeTranscription()
+        let transcription = makeTranscription(sourceType: .meeting)
         let service = makeService()
 
         service.saveIfEnabled(transcription, scope: .meeting)
@@ -292,6 +294,23 @@ final class AutoSaveServiceTests: XCTestCase {
         let files = try! FileManager.default.contentsOfDirectory(atPath: tempDir.path)
         XCTAssertEqual(files.count, 1)
         XCTAssertTrue(files[0].hasSuffix(".md"))
+    }
+
+    func testMeetingFileNameUsesJustPrefixNotDisplayName() {
+        configureMeetingAutoSave(enabled: true, format: .md)
+        // Meeting display names contain the date, e.g. "Meeting Apr 6, 2026 at 10:02 PM"
+        let transcription = makeTranscription(
+            fileName: "Meeting Apr 6, 2026 at 10:02 PM",
+            sourceType: .meeting
+        )
+        let service = makeService()
+
+        let url = service.buildFileURL(for: transcription, format: .md, in: tempDir)
+        let name = url.lastPathComponent
+        // Should use just "Meeting" prefix, not the full display name with redundant date
+        XCTAssertTrue(name.contains("Meeting"), "Filename should contain the prefix")
+        XCTAssertFalse(name.contains("Apr"), "Filename should not contain the display name date")
+        XCTAssertTrue(name.hasSuffix(".md"))
     }
 
     func testMeetingScopeDisabledDoesNothing() {
