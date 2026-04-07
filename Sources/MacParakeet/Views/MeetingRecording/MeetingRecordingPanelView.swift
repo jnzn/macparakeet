@@ -21,7 +21,7 @@ struct MeetingRecordingPanelView: View {
 
     private var header: some View {
         VStack(spacing: DesignSystem.Spacing.xs) {
-            HStack(spacing: DesignSystem.Spacing.sm) {
+            HStack(alignment: .center, spacing: DesignSystem.Spacing.sm) {
                 if viewModel.showsAudioLevels {
                     DualAudioOrbView(
                         micLevel: viewModel.micLevel,
