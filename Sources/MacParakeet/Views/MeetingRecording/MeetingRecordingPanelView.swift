@@ -100,7 +100,7 @@ struct MeetingRecordingPanelView: View {
     }
 
     private var footer: some View {
-        HStack(spacing: DesignSystem.Spacing.sm) {
+        HStack(spacing: DesignSystem.Spacing.md) {
             FooterButton(
                 label: viewModel.showCopiedConfirmation ? "Copied" : "Copy",
                 icon: viewModel.showCopiedConfirmation ? "checkmark" : "doc.on.doc",
@@ -112,15 +112,15 @@ struct MeetingRecordingPanelView: View {
                 copyTranscript()
             }
 
-            Spacer()
-
-            FooterButton(
-                label: autoScroll ? "Auto-scroll" : "Paused",
+            FooterIconButton(
                 icon: autoScroll ? "chevron.down.circle.fill" : "chevron.down.circle",
-                activeColor: autoScroll ? DesignSystem.Colors.accent : nil
+                activeColor: autoScroll ? DesignSystem.Colors.accent : nil,
+                tooltip: autoScroll ? "Auto-scroll on" : "Auto-scroll paused"
             ) {
                 autoScroll.toggle()
             }
+
+            Spacer()
 
             if viewModel.canStop {
                 StopRecordingButton {
@@ -166,8 +166,8 @@ private struct BreathingEnsoView: View {
     @State private var rotation: Double = 0
     @State private var glowBreathing = false
 
-    private let size: CGFloat = 80
-    private let circleRadius: CGFloat = 16
+    private let size: CGFloat = 140
+    private let circleRadius: CGFloat = 28
     private let strokeColor = DesignSystem.Colors.accent
 
     var body: some View {
@@ -206,44 +206,94 @@ private struct BreathingEnsoView: View {
     }
 }
 
-/// Stop button with hover glow and press feedback.
+/// Stop button with inline "End?" confirmation.
+/// First click shows "End?" label. Second click within 3s confirms.
+/// Auto-reverts to icon if not confirmed.
 private struct StopRecordingButton: View {
     var onStop: () -> Void
 
     @State private var isHovered = false
-    @State private var isPressed = false
+    @State private var confirming = false
+    @State private var countdownProgress: CGFloat = 1.0
+    @State private var revertTask: Task<Void, Never>?
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 4)
-            .fill(isHovered ? DesignSystem.Colors.errorRed : DesignSystem.Colors.textTertiary.opacity(0.6))
-            .frame(width: 13, height: 13)
-            .padding(9)
-            .background(
-                Circle()
-                    .fill(isHovered
-                        ? DesignSystem.Colors.errorRed.opacity(0.15)
-                        : DesignSystem.Colors.surfaceElevated
-                    )
-                    .overlay(
-                        Circle()
-                            .stroke(isHovered ? DesignSystem.Colors.errorRed.opacity(0.3) : .clear, lineWidth: 0.5)
-                    )
-            )
-            .shadow(color: isHovered ? DesignSystem.Colors.errorRed.opacity(0.25) : .clear, radius: 6)
-            .scaleEffect(isPressed ? 0.9 : isHovered ? 1.08 : 1.0)
-            .animation(.easeOut(duration: 0.15), value: isHovered)
-            .animation(.easeOut(duration: 0.1), value: isPressed)
-            .onHover { hovering in
-                isHovered = hovering
-            }
-            .onTapGesture {
-                isPressed = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    isPressed = false
+        Group {
+            if confirming {
+                // Confirmation state — "End?" text button
+                Button {
+                    revertTask?.cancel()
+                    confirming = false
+                    onStop()
+                } label: {
+                    Text("Click to end")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(DesignSystem.Colors.errorRed)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(
+                            Capsule()
+                                .fill(DesignSystem.Colors.surfaceElevated)
+                                .overlay(
+                                    GeometryReader { geo in
+                                        Capsule()
+                                            .fill(DesignSystem.Colors.errorRed.opacity(0.2))
+                                            .frame(width: geo.size.width * countdownProgress)
+                                    }
+                                    .clipShape(Capsule())
+                                )
+                                .overlay(
+                                    Capsule()
+                                        .stroke(DesignSystem.Colors.errorRed.opacity(0.3), lineWidth: 0.5)
+                                )
+                        )
                 }
-                onStop()
+                .buttonStyle(.plain)
+                .transition(.scale(scale: 0.8).combined(with: .opacity))
+            } else {
+                // Default state — stop square icon
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(isHovered ? DesignSystem.Colors.errorRed : DesignSystem.Colors.textTertiary.opacity(0.6))
+                    .frame(width: 13, height: 13)
+                    .padding(9)
+                    .background(
+                        Circle()
+                            .fill(isHovered
+                                ? DesignSystem.Colors.errorRed.opacity(0.15)
+                                : DesignSystem.Colors.surfaceElevated
+                            )
+                            .overlay(
+                                Circle()
+                                    .stroke(isHovered ? DesignSystem.Colors.errorRed.opacity(0.3) : .clear, lineWidth: 0.5)
+                            )
+                    )
+                    .shadow(color: isHovered ? DesignSystem.Colors.errorRed.opacity(0.25) : .clear, radius: 6)
+                    .scaleEffect(isHovered ? 1.08 : 1.0)
+                    .animation(.easeOut(duration: 0.15), value: isHovered)
+                    .onHover { hovering in
+                        isHovered = hovering
+                    }
+                    .onTapGesture {
+                        countdownProgress = 1.0
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                            confirming = true
+                        }
+                        withAnimation(.linear(duration: 3)) {
+                            countdownProgress = 0
+                        }
+                        revertTask?.cancel()
+                        revertTask = Task { @MainActor in
+                            try? await Task.sleep(for: .seconds(3))
+                            guard !Task.isCancelled else { return }
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                confirming = false
+                            }
+                        }
+                    }
+                    .transition(.scale(scale: 0.8).combined(with: .opacity))
             }
-            .help("End recording & transcribe")
+        }
+        .help(confirming ? "Click to confirm" : "End recording")
     }
 }
 
@@ -290,6 +340,49 @@ private struct FooterButton: View {
             guard !disabled else { return }
             isHovered = hovering
         }
+    }
+}
+
+/// Icon-only footer button with hover effect and tooltip.
+private struct FooterIconButton: View {
+    let icon: String
+    var activeColor: Color?
+    var tooltip: String
+    var action: () -> Void
+
+    @State private var isHovered = false
+
+    private var foregroundColor: Color {
+        if let activeColor {
+            return activeColor
+        }
+        return isHovered
+            ? DesignSystem.Colors.textSecondary
+            : DesignSystem.Colors.textTertiary
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 14))
+                .foregroundStyle(foregroundColor)
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: 28, height: 28)
+                .background(
+                    Circle()
+                        .fill(isHovered
+                            ? DesignSystem.Colors.surfaceElevated
+                            : .clear
+                        )
+                )
+                .scaleEffect(isHovered ? 1.08 : 1.0)
+                .animation(.easeOut(duration: 0.15), value: isHovered)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .help(tooltip)
     }
 }
 
