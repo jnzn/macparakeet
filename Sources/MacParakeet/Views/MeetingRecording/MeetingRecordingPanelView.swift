@@ -71,27 +71,33 @@ struct MeetingRecordingPanelView: View {
     @ViewBuilder
     private var transcriptContent: some View {
         if viewModel.previewLines.isEmpty {
-            VStack(spacing: DesignSystem.Spacing.sm) {
-                Image(systemName: viewModel.canStop ? "waveform" : "sparkles")
-                    .font(.system(size: 22, weight: .medium))
-                    .foregroundStyle(DesignSystem.Colors.textTertiary)
+            VStack(spacing: DesignSystem.Spacing.md) {
+                if viewModel.canStop {
+                    BreathingEnsoView()
+                } else {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 20, weight: .light))
+                        .foregroundStyle(DesignSystem.Colors.textTertiary.opacity(0.5))
+                }
 
-                Text(viewModel.canStop ? "Listening for speech…" : "Transcript preview will stay here while the meeting finishes.")
-                    .font(DesignSystem.Typography.bodySmall)
-                    .foregroundStyle(DesignSystem.Colors.textTertiary)
+                Text(viewModel.canStop ? "Listening…" : "Transcription in progress…")
+                    .font(.system(size: 13, weight: .light, design: .default))
+                    .foregroundStyle(DesignSystem.Colors.textTertiary.opacity(0.6))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(DesignSystem.Spacing.lg)
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
-                        ForEach(viewModel.previewLines) { line in
-                            MeetingRecordingTranscriptRow(line: line)
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(viewModel.previewLines.enumerated()), id: \.element.id) { index, line in
+                            let previousSource = index > 0 ? viewModel.previewLines[index - 1].source : nil
+                            let speakerChanged = line.source != previousSource
+                            MeetingRecordingTranscriptRow(line: line, showSpeakerHeader: speakerChanged)
                                 .id(line.id)
                         }
                     }
-                    .padding(DesignSystem.Spacing.md)
+                    .padding(.vertical, DesignSystem.Spacing.sm)
                 }
                 .background(DesignSystem.Colors.background)
                 .onAppear {
@@ -193,34 +199,36 @@ struct MeetingRecordingPanelView: View {
 
 private struct MeetingRecordingTranscriptRow: View {
     let line: MeetingRecordingPreviewLine
+    var showSpeakerHeader: Bool = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
-            HStack(spacing: DesignSystem.Spacing.sm) {
-                Text(line.timestamp)
-                    .font(DesignSystem.Typography.timestamp)
-                    .foregroundStyle(DesignSystem.Colors.textTertiary)
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            // Thin colored left edge
+            Rectangle()
+                .fill(sourceColor.opacity(0.5))
+                .frame(width: 2)
+                .padding(.vertical, 1)
 
+            if showSpeakerHeader {
                 Text(line.speakerLabel)
                     .font(DesignSystem.Typography.caption.weight(.semibold))
                     .foregroundStyle(sourceColor)
+                    .padding(.leading, DesignSystem.Spacing.sm)
+
+                Text(line.timestamp)
+                    .font(DesignSystem.Typography.timestamp)
+                    .foregroundStyle(DesignSystem.Colors.textTertiary)
+                    .padding(.leading, 4)
             }
 
             Text(line.text)
-                .font(DesignSystem.Typography.body)
+                .font(DesignSystem.Typography.bodySmall)
                 .foregroundStyle(DesignSystem.Colors.textPrimary)
                 .textSelection(.enabled)
+                .padding(.leading, showSpeakerHeader ? DesignSystem.Spacing.sm : DesignSystem.Spacing.sm)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(DesignSystem.Spacing.md)
-        .background(
-            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
-                .fill(DesignSystem.Colors.cardBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
-                        .stroke(DesignSystem.Colors.border, lineWidth: 1)
-                )
-        )
+        .padding(.vertical, 2)
     }
 
     private var sourceColor: Color {
@@ -232,5 +240,36 @@ private struct MeetingRecordingTranscriptRow: View {
         case .none:
             return DesignSystem.Colors.textSecondary
         }
+    }
+}
+
+/// A gently breathing ensō circle for the empty listening state.
+private struct BreathingEnsoView: View {
+    @State private var breathing = false
+
+    private let size: CGFloat = 36
+
+    var body: some View {
+        ZStack {
+            // Outer ensō ring
+            Circle()
+                .stroke(
+                    DesignSystem.Colors.accent.opacity(breathing ? 0.35 : 0.12),
+                    lineWidth: 1.5
+                )
+                .frame(width: size, height: size)
+                .scaleEffect(breathing ? 1.08 : 0.95)
+
+            // Inner glow dot
+            Circle()
+                .fill(DesignSystem.Colors.accent.opacity(breathing ? 0.25 : 0.08))
+                .frame(width: size * 0.3, height: size * 0.3)
+                .scaleEffect(breathing ? 1.15 : 0.85)
+        }
+        .animation(
+            .easeInOut(duration: 2.5).repeatForever(autoreverses: true),
+            value: breathing
+        )
+        .onAppear { breathing = true }
     }
 }
