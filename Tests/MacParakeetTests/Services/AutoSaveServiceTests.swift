@@ -323,7 +323,7 @@ final class AutoSaveServiceTests: XCTestCase {
         XCTAssertEqual(files.count, 0)
     }
 
-    func testMeetingScopeFallsBackToLegacyTranscriptionScope() {
+    func testMeetingScopeMigratesLegacyTranscriptionScope() {
         configureAutoSave(enabled: true, format: .txt)
         let service = makeService()
 
@@ -332,6 +332,9 @@ final class AutoSaveServiceTests: XCTestCase {
         let files = try! FileManager.default.contentsOfDirectory(atPath: tempDir.path)
         XCTAssertEqual(files.count, 1)
         XCTAssertTrue(files[0].hasSuffix(".txt"))
+        XCTAssertEqual(defaults.object(forKey: AutoSaveScope.meeting.enabledKey) as? Bool, true)
+        XCTAssertEqual(defaults.string(forKey: AutoSaveScope.meeting.formatKey), AutoSaveFormat.txt.rawValue)
+        XCTAssertNotNil(defaults.data(forKey: AutoSaveScope.meeting.folderBookmarkKey))
     }
 
     func testMeetingScopeExplicitDisableOverridesLegacyTranscriptionScope() {
@@ -343,6 +346,16 @@ final class AutoSaveServiceTests: XCTestCase {
 
         let files = try! FileManager.default.contentsOfDirectory(atPath: tempDir.path)
         XCTAssertEqual(files.count, 0)
+    }
+
+    func testMigrationDoesNotOverwriteExistingMeetingSettings() {
+        configureAutoSave(enabled: true, format: .txt)
+        configureMeetingAutoSave(enabled: false, format: .json)
+
+        AutoSaveService.migrateLegacyMeetingSettingsIfNeeded(defaults: defaults)
+
+        XCTAssertEqual(defaults.object(forKey: AutoSaveScope.meeting.enabledKey) as? Bool, false)
+        XCTAssertEqual(defaults.string(forKey: AutoSaveScope.meeting.formatKey), AutoSaveFormat.json.rawValue)
     }
 
     func testMeetingScopeFolderStoreAndResolve() {
