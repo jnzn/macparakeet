@@ -376,7 +376,7 @@ final class MeetingRecordingFlowCoordinator {
     nonisolated private static func makePreviewLines(from update: MeetingTranscriptUpdate) -> [MeetingRecordingPreviewLine] {
         let speakerLabels = Dictionary(uniqueKeysWithValues: update.speakers.map { ($0.id, $0.label) })
         let segments = TranscriptSegmenter.groupIntoSegments(words: update.words)
-        return Array(segments.suffix(3)).map { segment in
+        return segments.map { segment in
             let source = segment.speakerId.flatMap(AudioSource.init(rawValue:))
             return MeetingRecordingPreviewLine(
                 id: "\(segment.startMs)-\(segment.speakerId ?? "unknown")-\(segment.text)",
