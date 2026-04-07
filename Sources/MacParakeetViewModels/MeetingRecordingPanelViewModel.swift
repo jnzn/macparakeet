@@ -16,6 +16,7 @@ public final class MeetingRecordingPanelViewModel {
     public var systemLevel: Float = 0
     public var previewLines: [MeetingRecordingPreviewLine] = []
     public var isTranscriptionLagging: Bool = false
+    public var showCopiedConfirmation: Bool = false
     public var onStop: (() -> Void)?
     public var onClose: (() -> Void)?
 
@@ -29,6 +30,14 @@ public final class MeetingRecordingPanelViewModel {
         self.isTranscriptionLagging = isTranscriptionLagging
     }
 
+    public var transcriptText: String {
+        previewLines.map { "[\($0.timestamp)] \($0.speakerLabel): \($0.text)" }.joined(separator: "\n")
+    }
+
+    public var canCopy: Bool {
+        !previewLines.isEmpty
+    }
+
     public func reset() {
         state = .hidden
         elapsedSeconds = 0
@@ -36,6 +45,7 @@ public final class MeetingRecordingPanelViewModel {
         systemLevel = 0
         previewLines = []
         isTranscriptionLagging = false
+        showCopiedConfirmation = false
     }
 
     public var formattedElapsed: String {

@@ -1,9 +1,11 @@
+import AppKit
 import MacParakeetViewModels
 import SwiftUI
 
 struct MeetingRecordingPanelView: View {
     @Bindable var viewModel: MeetingRecordingPanelViewModel
     @State private var autoScroll = true
+    @State private var copiedResetTask: Task<Void, Never>?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -123,6 +125,25 @@ struct MeetingRecordingPanelView: View {
                 .font(DesignSystem.Typography.caption)
                 .foregroundStyle(DesignSystem.Colors.textTertiary)
 
+            Button {
+                copyTranscript()
+            } label: {
+                Label(
+                    viewModel.showCopiedConfirmation ? "Copied" : "Copy",
+                    systemImage: viewModel.showCopiedConfirmation ? "checkmark" : "doc.on.doc"
+                )
+                .font(DesignSystem.Typography.caption)
+                .foregroundStyle(
+                    viewModel.showCopiedConfirmation
+                        ? DesignSystem.Colors.successGreen
+                        : DesignSystem.Colors.textTertiary
+                )
+                .contentTransition(.symbolEffect(.replace))
+            }
+            .buttonStyle(.plain)
+            .disabled(!viewModel.canCopy)
+            .help("Copy transcript to clipboard")
+
             Spacer()
 
             Button {
@@ -150,6 +171,18 @@ struct MeetingRecordingPanelView: View {
             .help(viewModel.canStop ? "Stop meeting recording" : "Meeting recording is no longer active")
         }
         .padding(DesignSystem.Spacing.md)
+    }
+
+    private func copyTranscript() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(viewModel.transcriptText, forType: .string)
+        viewModel.showCopiedConfirmation = true
+        copiedResetTask?.cancel()
+        copiedResetTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            viewModel.showCopiedConfirmation = false
+        }
     }
 
     @ViewBuilder
