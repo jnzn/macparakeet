@@ -16,7 +16,6 @@ struct SettingsView: View {
     @State private var showClearYouTubeAudioAlert = false
     @State private var showResetPrivateStatsAlert = false
     @State private var copiedBuildIdentity = false
-    @FocusState private var meetingTitlePrefixFocused: Bool
 
     init(viewModel: SettingsViewModel, llmSettingsViewModel: LLMSettingsViewModel, updater: SPUUpdater) {
         self.viewModel = viewModel
@@ -32,8 +31,8 @@ struct SettingsView: View {
                 headerCard
                 dictationCard
                 meetingRecordingCard
-                aiProviderCard
                 transcriptionCard
+                aiProviderCard
                 storageCard
                 generalCard
                 updatesCard
@@ -262,47 +261,28 @@ struct SettingsView: View {
 
                 Divider()
 
-                HStack(alignment: .center) {
-                    rowText(
-                        title: "Default title prefix",
-                        detail: "New meetings start with this prefix before the recording date. You can rename each saved meeting afterward."
-                    )
-                    Spacer(minLength: DesignSystem.Spacing.md)
-                    TextField("Meeting", text: $viewModel.meetingTitlePrefix)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 220)
-                        .focused($meetingTitlePrefixFocused)
-                        .onSubmit {
-                            viewModel.commitMeetingTitlePrefix()
-                        }
-                        .onChange(of: meetingTitlePrefixFocused) { _, isFocused in
-                            if !isFocused {
-                                viewModel.commitMeetingTitlePrefix()
-                            }
-                        }
-                }
-
-                Divider()
-
-                HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
-                    Image(systemName: "folder.badge.plus")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(DesignSystem.Colors.accent)
-                        .frame(width: 20)
-
-                    Text("Saved meetings use the transcript auto-save destination configured below, so meeting recordings now export alongside your other completed transcripts.")
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundStyle(DesignSystem.Colors.textSecondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(DesignSystem.Spacing.sm)
-                .background(
-                    RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
-                        .fill(DesignSystem.Colors.surfaceElevated)
+                settingsToggleRow(
+                    title: "Auto-save meetings to disk",
+                    detail: "Automatically write a file to the chosen folder after every meeting recording completes.",
+                    isOn: $viewModel.meetingAutoSave
                 )
+
+                if viewModel.meetingAutoSave {
+                    meetingAutoSaveOptionsView
+                }
             }
         }
+    }
+
+    private var meetingAutoSaveOptionsView: some View {
+        autoSaveOptions(
+            format: $viewModel.meetingAutoSaveFormat,
+            folderPath: viewModel.meetingAutoSaveFolderPath,
+            formatDetail: "File format for saved meetings.",
+            panelMessage: "Select a folder for auto-saved meeting recordings",
+            onChooseFolder: { viewModel.chooseMeetingAutoSaveFolder(url: $0) },
+            onClearFolder: { viewModel.clearMeetingAutoSaveFolder() }
+        )
     }
 
     private var transcriptionCard: some View {
@@ -343,28 +323,43 @@ struct SettingsView: View {
         .foregroundStyle(DesignSystem.Colors.errorRed)
     }
 
-    @ViewBuilder
     private var autoSaveOptionsView: some View {
+        autoSaveOptions(
+            format: $viewModel.autoSaveFormat,
+            folderPath: viewModel.autoSaveFolderPath,
+            formatDetail: "File format for saved transcripts.",
+            panelMessage: "Select a folder for auto-saved transcripts",
+            onChooseFolder: { viewModel.chooseAutoSaveFolder(url: $0) },
+            onClearFolder: { viewModel.clearAutoSaveFolder() }
+        )
+    }
+
+    private func autoSaveOptions(
+        format: Binding<AutoSaveFormat>,
+        folderPath: String?,
+        formatDetail: String,
+        panelMessage: String,
+        onChooseFolder: @escaping (URL) -> Void,
+        onClearFolder: @escaping () -> Void
+    ) -> some View {
         VStack(spacing: DesignSystem.Spacing.sm) {
-            // Format picker
             HStack {
-                rowText(title: "Format", detail: "File format for saved transcripts.")
+                rowText(title: "Format", detail: formatDetail)
                 Spacer(minLength: DesignSystem.Spacing.md)
-                Picker("", selection: $viewModel.autoSaveFormat) {
-                    ForEach(AutoSaveFormat.allCases, id: \.self) { format in
-                        Text(format.displayName).tag(format)
+                Picker("", selection: format) {
+                    ForEach(AutoSaveFormat.allCases, id: \.self) { fmt in
+                        Text(fmt.displayName).tag(fmt)
                     }
                 }
                 .labelsHidden()
                 .frame(width: 200)
             }
 
-            // Folder picker
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Folder")
                         .font(DesignSystem.Typography.body)
-                    if let path = viewModel.autoSaveFolderPath {
+                    if let path = folderPath {
                         Text(path)
                             .font(DesignSystem.Typography.caption)
                             .foregroundStyle(.secondary)
@@ -377,14 +372,21 @@ struct SettingsView: View {
                     }
                 }
                 Spacer(minLength: DesignSystem.Spacing.md)
-                if viewModel.autoSaveFolderPath != nil {
-                    Button("Clear") {
-                        viewModel.clearAutoSaveFolder()
-                    }
-                    .buttonStyle(.bordered)
+                if folderPath != nil {
+                    Button("Clear") { onClearFolder() }
+                        .buttonStyle(.bordered)
                 }
                 Button("Choose…") {
-                    chooseAutoSaveFolder()
+                    let panel = NSOpenPanel()
+                    panel.canChooseDirectories = true
+                    panel.canChooseFiles = false
+                    panel.canCreateDirectories = true
+                    panel.allowsMultipleSelection = false
+                    panel.prompt = "Choose"
+                    panel.message = panelMessage
+                    if panel.runModal() == .OK, let url = panel.url {
+                        onChooseFolder(url)
+                    }
                 }
                 .buttonStyle(.bordered)
             }
@@ -394,19 +396,6 @@ struct SettingsView: View {
             RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
                 .fill(DesignSystem.Colors.surfaceElevated)
         )
-    }
-
-    private func chooseAutoSaveFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Choose"
-        panel.message = "Select a folder for auto-saved transcripts"
-        if panel.runModal() == .OK, let url = panel.url {
-            viewModel.chooseAutoSaveFolder(url: url)
-        }
     }
 
     // MARK: - AI Provider
