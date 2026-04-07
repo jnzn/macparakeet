@@ -149,18 +149,9 @@ struct MeetingRecordingPanelView: View {
             .buttonStyle(.plain)
 
             if viewModel.canStop {
-                Button(action: { viewModel.onStop?() }) {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(DesignSystem.Colors.textTertiary.opacity(0.6))
-                        .frame(width: 14, height: 14)
-                        .padding(8)
-                        .background(
-                            Circle()
-                                .fill(DesignSystem.Colors.surfaceElevated)
-                        )
+                StopRecordingButton {
+                    viewModel.onStop?()
                 }
-                .buttonStyle(.plain)
-                .help("End recording")
             }
         }
         .padding(DesignSystem.Spacing.md)
@@ -288,6 +279,47 @@ private struct BreathingEnsoView: View {
                 glowBreathing = true
             }
         }
+    }
+}
+
+/// Stop button with hover glow and press feedback.
+private struct StopRecordingButton: View {
+    var onStop: () -> Void
+
+    @State private var isHovered = false
+    @State private var isPressed = false
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 4)
+            .fill(isHovered ? DesignSystem.Colors.errorRed : DesignSystem.Colors.textTertiary.opacity(0.6))
+            .frame(width: 13, height: 13)
+            .padding(9)
+            .background(
+                Circle()
+                    .fill(isHovered
+                        ? DesignSystem.Colors.errorRed.opacity(0.15)
+                        : DesignSystem.Colors.surfaceElevated
+                    )
+                    .overlay(
+                        Circle()
+                            .stroke(isHovered ? DesignSystem.Colors.errorRed.opacity(0.3) : .clear, lineWidth: 0.5)
+                    )
+            )
+            .shadow(color: isHovered ? DesignSystem.Colors.errorRed.opacity(0.25) : .clear, radius: 6)
+            .scaleEffect(isPressed ? 0.9 : isHovered ? 1.08 : 1.0)
+            .animation(.easeOut(duration: 0.15), value: isHovered)
+            .animation(.easeOut(duration: 0.1), value: isPressed)
+            .onHover { hovering in
+                isHovered = hovering
+            }
+            .onTapGesture {
+                isPressed = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    isPressed = false
+                }
+                onStop()
+            }
+            .help("End recording")
     }
 }
 
