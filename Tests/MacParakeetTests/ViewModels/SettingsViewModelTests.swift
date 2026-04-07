@@ -88,6 +88,21 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(vm.meetingHotkeyTrigger, .chord(modifiers: ["control", "option"], keyCode: 46))
     }
 
+    func testMeetingAutoSaveFallsBackToLegacyTranscriptionSettings() {
+        testDefaults.set(true, forKey: AutoSaveService.enabledKey)
+        testDefaults.set(AutoSaveFormat.json.rawValue, forKey: AutoSaveService.formatKey)
+        AutoSaveService.storeFolder(youtubeDownloadsTestDir, defaults: testDefaults)
+
+        let vm = SettingsViewModel(defaults: testDefaults)
+
+        XCTAssertTrue(vm.meetingAutoSave)
+        XCTAssertEqual(vm.meetingAutoSaveFormat, .json)
+        XCTAssertEqual(
+            vm.meetingAutoSaveFolderPath.map { URL(fileURLWithPath: $0).standardizedFileURL.path },
+            youtubeDownloadsTestDir.standardizedFileURL.path
+        )
+    }
+
     func testSilenceDelayDefaultsTo2WhenZero() {
         // When silenceDelay is not set, double(forKey:) returns 0, which should default to 2.0
         let vm = SettingsViewModel(defaults: testDefaults)
