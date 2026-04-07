@@ -98,6 +98,7 @@ struct MeetingRecordingPanelView: View {
                         }
                     }
                     .padding(.vertical, DesignSystem.Spacing.sm)
+                    .textSelection(.enabled)
                 }
                 .background(DesignSystem.Colors.background)
                 .onAppear {
@@ -202,33 +203,33 @@ private struct MeetingRecordingTranscriptRow: View {
     var showSpeakerHeader: Bool = true
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 0) {
-            // Thin colored left edge
-            Rectangle()
-                .fill(sourceColor.opacity(0.5))
-                .frame(width: 2)
-                .padding(.vertical, 1)
-
+        VStack(alignment: .leading, spacing: 0) {
             if showSpeakerHeader {
-                Text(line.speakerLabel)
-                    .font(DesignSystem.Typography.caption.weight(.semibold))
-                    .foregroundStyle(sourceColor)
-                    .padding(.leading, DesignSystem.Spacing.sm)
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(sourceColor)
+                        .frame(width: 5, height: 5)
 
-                Text(line.timestamp)
-                    .font(DesignSystem.Typography.timestamp)
-                    .foregroundStyle(DesignSystem.Colors.textTertiary)
-                    .padding(.leading, 4)
+                    Text(line.speakerLabel)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(sourceColor.opacity(0.85))
+
+                    Text(line.timestamp)
+                        .font(.system(size: 10, weight: .regular).monospacedDigit())
+                        .foregroundStyle(DesignSystem.Colors.textTertiary.opacity(0.5))
+                }
+                .padding(.top, 8)
+                .padding(.bottom, 3)
             }
 
             Text(line.text)
-                .font(DesignSystem.Typography.bodySmall)
-                .foregroundStyle(DesignSystem.Colors.textPrimary)
-                .textSelection(.enabled)
-                .padding(.leading, showSpeakerHeader ? DesignSystem.Spacing.sm : DesignSystem.Spacing.sm)
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(DesignSystem.Colors.textPrimary.opacity(0.9))
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 11)
         }
-        .padding(.vertical, 2)
+        .padding(.horizontal, DesignSystem.Spacing.md)
+        .padding(.vertical, 1)
     }
 
     private var sourceColor: Color {
