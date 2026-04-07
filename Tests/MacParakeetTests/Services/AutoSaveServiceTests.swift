@@ -323,15 +323,24 @@ final class AutoSaveServiceTests: XCTestCase {
         XCTAssertEqual(files.count, 0)
     }
 
-    func testMeetingScopeIndependentOfTranscriptionScope() {
-        // Transcription auto-save ON, meeting auto-save OFF
+    func testMeetingScopeFallsBackToLegacyTranscriptionScope() {
         configureAutoSave(enabled: true, format: .txt)
-        // Meeting scope not configured (defaults to disabled)
         let service = makeService()
 
-        service.saveIfEnabled(makeTranscription(), scope: .meeting)
+        service.saveIfEnabled(makeTranscription(sourceType: .meeting), scope: .meeting)
 
-        // Meeting scope should not save — transcription settings don't leak
+        let files = try! FileManager.default.contentsOfDirectory(atPath: tempDir.path)
+        XCTAssertEqual(files.count, 1)
+        XCTAssertTrue(files[0].hasSuffix(".txt"))
+    }
+
+    func testMeetingScopeExplicitDisableOverridesLegacyTranscriptionScope() {
+        configureAutoSave(enabled: true, format: .txt)
+        defaults.set(false, forKey: AutoSaveScope.meeting.enabledKey)
+        let service = makeService()
+
+        service.saveIfEnabled(makeTranscription(sourceType: .meeting), scope: .meeting)
+
         let files = try! FileManager.default.contentsOfDirectory(atPath: tempDir.path)
         XCTAssertEqual(files.count, 0)
     }

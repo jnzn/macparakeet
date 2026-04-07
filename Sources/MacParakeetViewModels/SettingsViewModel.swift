@@ -229,23 +229,17 @@ public final class SettingsViewModel {
         saveAudioRecordings = defaults.object(forKey: "saveAudioRecordings") as? Bool ?? true
         saveTranscriptionAudio = defaults.object(forKey: "saveTranscriptionAudio") as? Bool ?? true
         speakerDiarization = defaults.object(forKey: "speakerDiarization") as? Bool ?? true
-        autoSaveTranscripts = defaults.bool(forKey: AutoSaveService.enabledKey)
-        autoSaveFormat = AutoSaveFormat(rawValue: defaults.string(forKey: AutoSaveService.formatKey) ?? "md") ?? .md
+        autoSaveTranscripts = AutoSaveService.effectiveEnabled(for: .transcription, defaults: defaults)
+        autoSaveFormat = AutoSaveService.effectiveFormat(for: .transcription, defaults: defaults)
         autoSaveFolderPath = Self.resolveAutoSaveFolderPath(defaults: defaults, scope: .transcription)
-        meetingAutoSave = defaults.bool(forKey: AutoSaveScope.meeting.enabledKey)
-        meetingAutoSaveFormat = AutoSaveFormat(rawValue: defaults.string(forKey: AutoSaveScope.meeting.formatKey) ?? "md") ?? .md
+        meetingAutoSave = AutoSaveService.effectiveEnabled(for: .meeting, defaults: defaults)
+        meetingAutoSaveFormat = AutoSaveService.effectiveFormat(for: .meeting, defaults: defaults)
         meetingAutoSaveFolderPath = Self.resolveAutoSaveFolderPath(defaults: defaults, scope: .meeting)
     }
 
     /// Resolve the stored bookmark to a display path.
     private static func resolveAutoSaveFolderPath(defaults: UserDefaults, scope: AutoSaveScope = .transcription) -> String? {
-        guard let data = defaults.data(forKey: scope.folderBookmarkKey) else { return nil }
-        var isStale = false
-        guard let url = try? URL(
-            resolvingBookmarkData: data,
-            bookmarkDataIsStale: &isStale
-        ) else { return nil }
-        return url.path
+        AutoSaveService.resolveFolderURL(for: scope, defaults: defaults)?.path
     }
 
     public func chooseAutoSaveFolder(url: URL) {

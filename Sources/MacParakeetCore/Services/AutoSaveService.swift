@@ -23,10 +23,19 @@ public enum AutoSaveFormat: String, Codable, CaseIterable, Sendable {
 }
 
 /// Distinguishes transcription vs meeting auto-save settings.
-/// Each scope stores its own enabled flag, format, and folder bookmark in UserDefaults.
+/// Meeting scope falls back to transcription settings until a dedicated meeting setting is stored.
 public enum AutoSaveScope: String, Sendable {
     case transcription
     case meeting
+
+    var fallbackScope: AutoSaveScope? {
+        switch self {
+        case .transcription:
+            return nil
+        case .meeting:
+            return .transcription
+        }
+    }
 
     public var enabledKey: String {
         switch self {
@@ -75,13 +84,13 @@ public final class AutoSaveService {
     /// Save the transcription if auto-save is enabled for the given scope.
     /// Failures are logged but never surfaced to the user.
     public func saveIfEnabled(_ transcription: Transcription, scope: AutoSaveScope = .transcription) {
-        guard defaults.bool(forKey: scope.enabledKey) else { return }
+        guard Self.effectiveEnabled(for: scope, defaults: defaults) else { return }
         guard let folderURL = resolveFolder(scope: scope) else {
             logger.warning("Auto-save enabled but no valid folder configured for \(scope.rawValue).")
             return
         }
 
-        let format = AutoSaveFormat(rawValue: defaults.string(forKey: scope.formatKey) ?? "md") ?? .md
+        let format = Self.effectiveFormat(for: scope, defaults: defaults)
         let fileURL = buildFileURL(for: transcription, format: format, in: folderURL)
 
         do {
@@ -107,19 +116,61 @@ public final class AutoSaveService {
     /// Resolve the stored bookmark data back to a URL for the given scope.
     /// Re-creates the bookmark if it has gone stale.
     public func resolveFolder(scope: AutoSaveScope = .transcription) -> URL? {
-        guard let bookmarkData = defaults.data(forKey: scope.folderBookmarkKey) else { return nil }
+        guard let bookmark = Self.effectiveBookmark(for: scope, defaults: defaults) else { return nil }
         var isStale = false
         guard let url = try? URL(
-            resolvingBookmarkData: bookmarkData,
+            resolvingBookmarkData: bookmark.data,
             bookmarkDataIsStale: &isStale
         ) else { return nil }
 
         if isStale {
             if let refreshed = try? url.bookmarkData() {
-                defaults.set(refreshed, forKey: scope.folderBookmarkKey)
+                defaults.set(refreshed, forKey: bookmark.key)
             }
         }
         return url
+    }
+
+    public static func effectiveEnabled(
+        for scope: AutoSaveScope = .transcription,
+        defaults: UserDefaults = .standard
+    ) -> Bool {
+        if defaults.object(forKey: scope.enabledKey) != nil {
+            return defaults.bool(forKey: scope.enabledKey)
+        }
+        guard let fallbackScope = scope.fallbackScope else { return false }
+        return effectiveEnabled(for: fallbackScope, defaults: defaults)
+    }
+
+    public static func effectiveFormat(
+        for scope: AutoSaveScope = .transcription,
+        defaults: UserDefaults = .standard
+    ) -> AutoSaveFormat {
+        if let rawValue = defaults.string(forKey: scope.formatKey),
+           let format = AutoSaveFormat(rawValue: rawValue) {
+            return format
+        }
+        guard let fallbackScope = scope.fallbackScope else { return .md }
+        return effectiveFormat(for: fallbackScope, defaults: defaults)
+    }
+
+    public static func resolveFolderURL(
+        for scope: AutoSaveScope = .transcription,
+        defaults: UserDefaults = .standard
+    ) -> URL? {
+        let service = AutoSaveService(defaults: defaults)
+        return service.resolveFolder(scope: scope)
+    }
+
+    private static func effectiveBookmark(
+        for scope: AutoSaveScope,
+        defaults: UserDefaults
+    ) -> (data: Data, key: String)? {
+        if let data = defaults.data(forKey: scope.folderBookmarkKey) {
+            return (data, scope.folderBookmarkKey)
+        }
+        guard let fallbackScope = scope.fallbackScope else { return nil }
+        return effectiveBookmark(for: fallbackScope, defaults: defaults)
     }
 
     /// Store a folder URL as bookmark data. Returns the display path on success.
