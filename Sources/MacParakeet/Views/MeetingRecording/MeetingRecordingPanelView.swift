@@ -117,36 +117,27 @@ struct MeetingRecordingPanelView: View {
     }
 
     private var footer: some View {
-        HStack(spacing: DesignSystem.Spacing.md) {
-            Button {
+        HStack(spacing: DesignSystem.Spacing.sm) {
+            FooterButton(
+                label: viewModel.showCopiedConfirmation ? "Copied" : "Copy",
+                icon: viewModel.showCopiedConfirmation ? "checkmark" : "doc.on.doc",
+                activeColor: viewModel.showCopiedConfirmation
+                    ? DesignSystem.Colors.successGreen
+                    : nil,
+                disabled: !viewModel.canCopy
+            ) {
                 copyTranscript()
-            } label: {
-                Label(
-                    viewModel.showCopiedConfirmation ? "Copied" : "Copy",
-                    systemImage: viewModel.showCopiedConfirmation ? "checkmark" : "doc.on.doc"
-                )
-                .font(DesignSystem.Typography.caption)
-                .foregroundStyle(
-                    viewModel.showCopiedConfirmation
-                        ? DesignSystem.Colors.successGreen
-                        : DesignSystem.Colors.textTertiary
-                )
-                .contentTransition(.symbolEffect(.replace))
             }
-            .buttonStyle(.plain)
-            .disabled(!viewModel.canCopy)
-            .help("Copy transcript to clipboard")
 
             Spacer()
 
-            Button {
+            FooterButton(
+                label: autoScroll ? "Auto-scroll" : "Paused",
+                icon: autoScroll ? "chevron.down.circle.fill" : "chevron.down.circle",
+                activeColor: autoScroll ? DesignSystem.Colors.accent : nil
+            ) {
                 autoScroll.toggle()
-            } label: {
-                Label(autoScroll ? "Auto-scroll" : "Paused", systemImage: autoScroll ? "chevron.down.circle.fill" : "chevron.down.circle")
-                    .font(DesignSystem.Typography.caption)
-                    .foregroundStyle(autoScroll ? DesignSystem.Colors.accent : DesignSystem.Colors.textTertiary)
             }
-            .buttonStyle(.plain)
 
             if viewModel.canStop {
                 StopRecordingButton {
@@ -319,7 +310,53 @@ private struct StopRecordingButton: View {
                 }
                 onStop()
             }
-            .help("End recording")
+            .help("End recording & transcribe")
+    }
+}
+
+/// Polished footer button with hover background and press feedback.
+private struct FooterButton: View {
+    let label: String
+    let icon: String
+    var activeColor: Color?
+    var disabled: Bool = false
+    var action: () -> Void
+
+    @State private var isHovered = false
+
+    private var foregroundColor: Color {
+        if let activeColor {
+            return activeColor
+        }
+        return isHovered
+            ? DesignSystem.Colors.textSecondary
+            : DesignSystem.Colors.textTertiary
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Label(label, systemImage: icon)
+                .font(DesignSystem.Typography.caption)
+                .foregroundStyle(foregroundColor)
+                .contentTransition(.symbolEffect(.replace))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(
+                    Capsule()
+                        .fill(isHovered
+                            ? DesignSystem.Colors.surfaceElevated
+                            : .clear
+                        )
+                )
+                .scaleEffect(isHovered ? 1.03 : 1.0)
+                .animation(.easeOut(duration: 0.15), value: isHovered)
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .onHover { hovering in
+            guard !disabled else { return }
+            isHovered = hovering
+        }
     }
 }
 
