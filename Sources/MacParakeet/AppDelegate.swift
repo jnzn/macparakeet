@@ -572,12 +572,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func setupMeetingHotkey() {
-        guard settingsViewModel.meetingHotkeyTrigger != settingsViewModel.hotkeyTrigger else {
+        let trigger = settingsViewModel.meetingHotkeyTrigger
+        guard !trigger.isDisabled else {
+            meetingHotkeyManager = nil
+            return
+        }
+        guard trigger != settingsViewModel.hotkeyTrigger else {
             meetingHotkeyManager = nil
             return
         }
 
-        let manager = GlobalShortcutManager(trigger: settingsViewModel.meetingHotkeyTrigger)
+        let manager = GlobalShortcutManager(trigger: trigger)
         manager.onTrigger = { [weak self] in
             Task { @MainActor in
                 self?.toggleMeetingRecording(originatesFromWindow: false)
