@@ -72,6 +72,7 @@ struct TranscriptTextView: NSViewRepresentable {
     private func buildAttributedString() -> NSAttributedString {
         let result = NSMutableAttributedString()
         var previousSource: AudioSource? = nil
+        var isFirstLine = true
 
         let bodyFont = NSFont.systemFont(ofSize: 13, weight: .regular)
         let serifFont: NSFont = {
@@ -96,7 +97,8 @@ struct TranscriptTextView: NSViewRepresentable {
         headerParagraph.paragraphSpacingBefore = result.length > 0 ? 8 : 0
 
         for (index, line) in lines.enumerated() {
-            let speakerChanged = line.source != previousSource
+            let speakerChanged = isFirstLine || line.source != previousSource
+            isFirstLine = false
 
             if speakerChanged {
                 let headerPara = NSMutableParagraphStyle()
