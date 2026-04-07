@@ -379,7 +379,7 @@ final class MeetingRecordingFlowCoordinator {
         return segments.map { segment in
             let source = segment.speakerId.flatMap(AudioSource.init(rawValue:))
             return MeetingRecordingPreviewLine(
-                id: "\(segment.startMs)-\(segment.speakerId ?? "unknown")-\(segment.text)",
+                id: "\(segment.startMs)-\(segment.speakerId ?? "unknown")",
                 timestamp: format(milliseconds: segment.startMs),
                 speakerLabel: speakerLabels[segment.speakerId ?? ""] ?? source?.displayLabel ?? "Speaker",
                 text: segment.text,

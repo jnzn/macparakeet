@@ -14,7 +14,11 @@ public final class MeetingRecordingPanelViewModel {
     public var elapsedSeconds: Int = 0
     public var micLevel: Float = 0
     public var systemLevel: Float = 0
-    public var previewLines: [MeetingRecordingPreviewLine] = []
+    public var previewLines: [MeetingRecordingPreviewLine] = [] {
+        didSet {
+            wordCount = previewLines.reduce(0) { $0 + $1.text.split(separator: " ").count }
+        }
+    }
     public var isTranscriptionLagging: Bool = false
     public var showCopiedConfirmation: Bool = false
     public var onStop: (() -> Void)?
@@ -38,9 +42,7 @@ public final class MeetingRecordingPanelViewModel {
         !previewLines.isEmpty
     }
 
-    public var wordCount: Int {
-        previewLines.reduce(0) { $0 + $1.text.split(separator: " ").count }
-    }
+    public private(set) var wordCount: Int = 0
 
     public func reset() {
         state = .hidden
