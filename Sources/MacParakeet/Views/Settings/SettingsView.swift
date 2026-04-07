@@ -32,8 +32,8 @@ struct SettingsView: View {
                 headerCard
                 dictationCard
                 meetingRecordingCard
-                aiProviderCard
                 transcriptionCard
+                aiProviderCard
                 storageCard
                 generalCard
                 updatesCard
