@@ -363,43 +363,34 @@ private struct FooterIconButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 14))
-                .foregroundStyle(foregroundColor)
-                .contentTransition(.symbolEffect(.replace))
-                .frame(width: 28, height: 28)
-                .background(
-                    Circle()
-                        .fill(isHovered
-                            ? DesignSystem.Colors.surfaceElevated
-                            : .clear
-                        )
-                )
-                .scaleEffect(isHovered ? 1.08 : 1.0)
-                .animation(.easeOut(duration: 0.15), value: isHovered)
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 14))
+                    .foregroundStyle(foregroundColor)
+                    .contentTransition(.symbolEffect(.replace))
+
+                if isHovered {
+                    Text(tooltip)
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(foregroundColor)
+                        .transition(.opacity)
+                }
+            }
+            .padding(.horizontal, isHovered ? 8 : 0)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .fill(isHovered
+                        ? DesignSystem.Colors.surfaceElevated
+                        : .clear
+                    )
+            )
+            .animation(.easeInOut(duration: 0.3), value: isHovered)
         }
         .buttonStyle(.plain)
         .onHover { hovering in
             isHovered = hovering
         }
-        .overlay(alignment: .bottom) {
-            if isHovered {
-                Text(tooltip)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.9))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        Capsule()
-                            .fill(.black.opacity(0.75))
-                    )
-                    .offset(y: 28)
-                    .fixedSize()
-                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
-                    .allowsHitTesting(false)
-            }
-        }
-        .animation(.easeOut(duration: 0.12), value: isHovered)
     }
 }
 
