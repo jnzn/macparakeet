@@ -413,5 +413,34 @@ $(printf "%b" "$LICENSING_PLIST")
 </plist>
 EOF
 
+# Archive dSYM for crash symbolication.
+#
+# Every release build produces a dSYM with a unique UUID that matches the shipped
+# binary. Without the matching dSYM, crash report addresses (from CrashReporter)
+# cannot be mapped back to function names and line numbers. The dSYM is overwritten
+# on every build, so we archive it into dist/ alongside the .app.
+#
+# Usage:  atos -o dist/MacParakeet.dSYM -arch arm64 -l <slide> <address>
+echo "Archiving dSYM for crash symbolication…"
+DSYM_ARCHIVED=0
+if [[ "$BUILD_SYSTEM" == "xcodebuild" ]]; then
+  DSYM_SRC="$XCODE_DERIVED_DATA/Build/Products/Release/MacParakeet.dSYM"
+else
+  DSYM_SRC="$ROOT_DIR/.build/arm64-apple-macosx/release/MacParakeet.dSYM"
+fi
+
+if [[ -d "$DSYM_SRC" ]]; then
+  rm -rf "$DIST_DIR/MacParakeet.dSYM"
+  cp -R "$DSYM_SRC" "$DIST_DIR/MacParakeet.dSYM"
+  DSYM_UUID="$(dwarfdump --uuid "$DIST_DIR/MacParakeet.dSYM" 2>/dev/null | awk '{print $2}' | head -n 1)"
+  echo "Archived dSYM: $DIST_DIR/MacParakeet.dSYM (UUID: ${DSYM_UUID:-unknown})"
+  DSYM_ARCHIVED=1
+else
+  echo "Warning: dSYM not found at $DSYM_SRC — crash reports from this build cannot be symbolicated." >&2
+fi
+
 echo "[4/4] Done: $APP_DIR"
 echo "Metadata: version=$VERSION build=$BUILD_NUMBER commit=$BUILD_GIT_COMMIT built=$BUILD_DATE_UTC source=$BUILD_SOURCE"
+if [[ "$DSYM_ARCHIVED" == "1" ]]; then
+  echo "dSYM: $DIST_DIR/MacParakeet.dSYM (UUID: ${DSYM_UUID:-unknown})"
+fi
