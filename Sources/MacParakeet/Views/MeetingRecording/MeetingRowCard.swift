@@ -19,7 +19,11 @@ struct MeetingRowCard<MenuContent: View>: View {
 
     private var wordCount: Int {
         guard let text = transcript, !text.isEmpty else { return 0 }
-        return text.split(separator: " ").count
+        var count = 0
+        text.enumerateSubstrings(in: text.startIndex..<text.endIndex, options: .byWords) { _, _, _, _ in
+            count += 1
+        }
+        return count
     }
 
     private var speakerCount: Int {
@@ -55,12 +59,6 @@ struct MeetingRowCard<MenuContent: View>: View {
         }
         .buttonStyle(.plain)
         .contentShape(RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius))
-        .overlay(alignment: .topTrailing) {
-            moreButton
-                .padding(8)
-                .opacity(hovered ? 1 : 0)
-                .allowsHitTesting(hovered)
-        }
         .onHover { hovered = $0 }
         .animation(DesignSystem.Animation.hoverTransition, value: hovered)
         .contextMenu { menuContent() }
@@ -97,10 +95,14 @@ struct MeetingRowCard<MenuContent: View>: View {
 
                 Spacer(minLength: DesignSystem.Spacing.sm)
 
-                Text(transcription.createdAt.relativeFormatted)
-                    .font(DesignSystem.Typography.caption)
-                    .foregroundStyle(DesignSystem.Colors.textTertiary)
-                    .layoutPriority(1)
+                if hovered {
+                    moreButton
+                } else {
+                    Text(transcription.createdAt.relativeFormatted)
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(DesignSystem.Colors.textTertiary)
+                        .layoutPriority(1)
+                }
             }
 
             // Row 2: Metadata chips
@@ -175,12 +177,12 @@ struct MeetingRowCard<MenuContent: View>: View {
     // MARK: - Transcript Snippet
 
     private var transcriptSnippet: String? {
-        guard let text = transcript else { return nil }
-        let cleaned = text
+        guard let text = transcript, !text.isEmpty else { return nil }
+        let snippet = String(text.prefix(200))
             .replacingOccurrences(of: "\n", with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleaned.isEmpty else { return nil }
-        return String(cleaned.prefix(120))
+        guard !snippet.isEmpty else { return nil }
+        return String(snippet.prefix(120))
     }
 
     // MARK: - More Button
@@ -231,7 +233,7 @@ struct MeetingRowCard<MenuContent: View>: View {
 
 // MARK: - Compact Duration Formatter
 
-extension Int {
+fileprivate extension Int {
     /// Formats milliseconds as compact duration: "3s", "47s", "15m", "1h 2m".
     /// Optimized for meeting list scanning — shorter than `formattedDuration`.
     var formattedDurationCompact: String {
