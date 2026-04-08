@@ -205,7 +205,7 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow, window === mainWindow else { return }
         // Delay slightly so macOS finishes closing the window before we check visibility.
-        DispatchQueue.main.async { [weak self] in
+        Task { @MainActor [weak self] in
             self?.hideDockIconIfNeeded()
         }
     }
