@@ -70,6 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var recordMeetingMenuItem: NSMenuItem?
     private var reopenOnboardingOnNextActivate = false
     private var hasPresentedHotkeyUnavailableAlert = false
+    private var environmentSetupTask: Task<Void, Never>?
 
     // MARK: - App Lifecycle
 
@@ -78,11 +79,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             showMoveToApplicationsAlert()
             return
         }
+        startEnvironmentSetup()
         setupMainMenu()
         setupMenuBar()
-        setupEnvironment()
-        setupHotkey()
-        setupMeetingHotkey()
         observeOpenOnboarding()
         observeOpenSettings()
         observeHotkeyTriggerChange()
@@ -90,7 +89,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         observeMenuBarOnlyModeChange()
         observeShowIdlePillChange()
         applyActivationPolicyFromSettings()
-        dictationFlowCoordinator?.showIdlePill()
         setupDiscoverContent()
     }
 
@@ -106,16 +104,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let meetingHotkeyTriggerObserver { NotificationCenter.default.removeObserver(meetingHotkeyTriggerObserver) }
         if let menuBarOnlyModeObserver { NotificationCenter.default.removeObserver(menuBarOnlyModeObserver) }
         if let showIdlePillObserver { NotificationCenter.default.removeObserver(showIdlePillObserver) }
-        // Block briefly for STT cleanup (ANE/CoreML resource release).
-        // Must use Task.detached — a plain Task inherits @MainActor context and would
-        // deadlock because the main thread is blocked by semaphore.wait below.
-        let sttScheduler = appEnvironment?.sttScheduler
-        let semaphore = DispatchSemaphore(value: 0)
-        Task.detached {
-            await sttScheduler?.shutdown()
-            semaphore.signal()
+        environmentSetupTask?.cancel()
+
+        // Bound the wait so termination does not hang, while still giving shutdown
+        // a brief window to release resources cleanly.
+        if let sttScheduler = appEnvironment?.sttScheduler {
+            let done = DispatchSemaphore(value: 0)
+            Task.detached(priority: .utility) {
+                await sttScheduler.shutdown()
+                done.signal()
+            }
+            _ = done.wait(timeout: .now() + 0.35)
         }
-        _ = semaphore.wait(timeout: .now() + 2.0)
     }
 
     // MARK: - Disk Image Guard
@@ -347,6 +347,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     // MARK: - Environment Setup
 
+    private func startEnvironmentSetup() {
+        environmentSetupTask?.cancel()
+        environmentSetupTask = Task { @MainActor [weak self] in
+            self?.setupEnvironment()
+        }
+    }
+
     private func setupEnvironment() {
         do {
             let env = try AppEnvironment()
@@ -488,6 +495,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             )
             meetingRecordingFlowCoordinator = meetingCoordinator
             configureHotkeyCoordinatorIfNeeded()
+            setupHotkey()
+            setupMeetingHotkey()
+            dictationFlowCoordinator?.showIdlePill()
 
             maybeShowOnboarding()
         } catch {
