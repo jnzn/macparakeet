@@ -581,13 +581,13 @@ final class TranscriptionViewModelTests: XCTestCase {
 
         // Should not crash and should surface missing configuration
         XCTAssertFalse(viewModel.isTranscribing)
-        XCTAssertEqual(viewModel.errorMessage, "Transcription is still initializing. Please try again.")
+        XCTAssertEqual(viewModel.errorMessage, "Transcription services are unavailable. Please try again.")
     }
 
     func testLoadTranscriptionsBeforeConfigureIsNoOp() {
         viewModel.loadTranscriptions()
         XCTAssertTrue(viewModel.transcriptions.isEmpty)
-        XCTAssertEqual(viewModel.errorMessage, "Transcription is still initializing. Please try again.")
+        XCTAssertEqual(viewModel.errorMessage, "Transcription services are unavailable. Please try again.")
     }
 
     // MARK: - Initial State
