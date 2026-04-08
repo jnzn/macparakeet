@@ -450,7 +450,11 @@ struct DictationOverlayView: View {
             return ("Permission Required", "Grant access in System Settings > Privacy & Security.")
         }
         if lower.contains("not recording") {
-            return ("Not Recording", "Press \(HotkeyTrigger.current.displayName) to start recording first.")
+            let trigger = HotkeyTrigger.current
+            let hint = trigger.isDisabled
+                ? "Click the dictation pill to start recording."
+                : "Press \(trigger.displayName) to start recording first."
+            return ("Not Recording", hint)
         }
         if lower.contains("timeout") || lower.contains("timed out") {
             return ("Transcription Timed Out", "Try a shorter recording or restart the app.")

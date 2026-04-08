@@ -62,16 +62,24 @@ struct IdlePillView: View {
     // MARK: - Tooltip
 
     private var tooltip: some View {
-        HStack(spacing: 0) {
-            Text("Click or hold ")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.white.opacity(0.9))
-            Text(HotkeyTrigger.current.shortSymbol)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Color(nsColor: NSColor(red: 0.85, green: 0.55, blue: 0.75, alpha: 1.0)))
-            Text(" to start dictating")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.white.opacity(0.9))
+        Group {
+            if HotkeyTrigger.current.isDisabled {
+                Text("Click to start dictating")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.9))
+            } else {
+                HStack(spacing: 0) {
+                    Text("Click or hold ")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.9))
+                    Text(HotkeyTrigger.current.shortSymbol)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color(nsColor: NSColor(red: 0.85, green: 0.55, blue: 0.75, alpha: 1.0)))
+                    Text(" to start dictating")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+            }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 10)
