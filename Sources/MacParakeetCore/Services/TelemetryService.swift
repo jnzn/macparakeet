@@ -32,6 +32,8 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
     static let flushThreshold = 50
     static let flushInterval: TimeInterval = 60
     static let maxBatchSize = 100
+    static let terminationFlushMaxWait: TimeInterval = 0.4
+    static let terminationRequestTimeout: TimeInterval = 0.3
 
     /// Events that must be flushed immediately (not batched in memory).
     private static let immediateEvents: Set<TelemetryEventName> = [
@@ -109,7 +111,7 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
     public func flush() async {
         let events = takeQueuedEvents()
         guard !events.isEmpty else { return }
-        await sendBatches(events, using: session, timeoutInterval: 10, waitTimeout: nil)
+        await sendBatches(events, using: session, timeoutInterval: 10)
     }
 
     // MARK: - Internal (for testing)
@@ -157,7 +159,7 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
         lifecycleObserver = NotificationCenter.default.addObserver(
             forName: Notification.Name("NSApplicationWillTerminateNotification"),
             object: nil,
-            queue: .main
+            queue: nil
         ) { [weak self] _ in
             self?.flushForTermination()
         }
@@ -175,20 +177,23 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
         lock.unlock()
 
         guard !events.isEmpty else { return }
-
-        let bgSession = URLSession(
-            configuration: .ephemeral,
-            delegate: nil,
-            delegateQueue: OperationQueue()
-        )
-        sendBatchesSynchronously(events, using: bgSession, timeoutInterval: 3, waitTimeout: 3)
+        let completion = DispatchSemaphore(value: 0)
+        let session = self.session
+        Task.detached(priority: .utility) { [weak self] in
+            guard let self else {
+                completion.signal()
+                return
+            }
+            await self.sendBatches(events, using: session, timeoutInterval: Self.terminationRequestTimeout)
+            completion.signal()
+        }
+        _ = completion.wait(timeout: .now() + Self.terminationFlushMaxWait)
     }
 
     private func sendBatches(
         _ events: [TelemetryEvent],
         using session: URLSession,
-        timeoutInterval: TimeInterval,
-        waitTimeout: TimeInterval?
+        timeoutInterval: TimeInterval
     ) async {
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
@@ -209,11 +214,7 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
             request.httpBody = body
             request.timeoutInterval = timeoutInterval
 
-            if let waitTimeout {
-                sendSynchronously(request, using: session, waitTimeout: waitTimeout)
-            } else {
-                await sendAsync(request, using: session)
-            }
+            await sendAsync(request, using: session)
         }
     }
 
@@ -228,52 +229,6 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
         }
     }
 
-    private func sendSynchronously(
-        _ request: URLRequest,
-        using session: URLSession,
-        waitTimeout: TimeInterval
-    ) {
-        let semaphore = DispatchSemaphore(value: 0)
-        let task = session.dataTask(with: request) { _, response, error in
-            if let error {
-                self.logger.debug("Telemetry termination flush failed: \(error.localizedDescription)")
-            } else if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                self.logger.warning("Telemetry server returned \(http.statusCode)")
-            }
-            semaphore.signal()
-        }
-        task.resume()
-        _ = semaphore.wait(timeout: .now() + waitTimeout)
-    }
-
-    private func sendBatchesSynchronously(
-        _ events: [TelemetryEvent],
-        using session: URLSession,
-        timeoutInterval: TimeInterval,
-        waitTimeout: TimeInterval
-    ) {
-        let encoder = JSONEncoder()
-        encoder.keyEncodingStrategy = .convertToSnakeCase
-        let url = baseURL.appendingPathComponent("telemetry")
-
-        for batchStart in stride(from: 0, to: events.count, by: Self.maxBatchSize) {
-            let batchEnd = min(batchStart + Self.maxBatchSize, events.count)
-            let payload = TelemetryPayload(events: Array(events[batchStart..<batchEnd]))
-
-            guard let body = try? encoder.encode(payload) else {
-                logger.error("Failed to encode telemetry payload")
-                continue
-            }
-
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = body
-            request.timeoutInterval = timeoutInterval
-
-            sendSynchronously(request, using: session, waitTimeout: waitTimeout)
-        }
-    }
 }
 
 // MARK: - Static Convenience
