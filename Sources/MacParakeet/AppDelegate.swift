@@ -79,9 +79,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             showMoveToApplicationsAlert()
             return
         }
+        startEnvironmentSetup()
         setupMainMenu()
         setupMenuBar()
-        startEnvironmentSetup()
         observeOpenOnboarding()
         observeOpenSettings()
         observeHotkeyTriggerChange()
@@ -106,11 +106,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let showIdlePillObserver { NotificationCenter.default.removeObserver(showIdlePillObserver) }
         environmentSetupTask?.cancel()
 
-        // Best-effort async shutdown: avoid blocking app termination on main thread.
+        // Bound the wait so termination does not hang, while still giving shutdown
+        // a brief window to release resources cleanly.
         if let sttScheduler = appEnvironment?.sttScheduler {
+            let done = DispatchSemaphore(value: 0)
             Task.detached(priority: .utility) {
                 await sttScheduler.shutdown()
+                done.signal()
             }
+            _ = done.wait(timeout: .now() + 0.35)
         }
     }
 
@@ -346,8 +350,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func startEnvironmentSetup() {
         environmentSetupTask?.cancel()
         environmentSetupTask = Task { @MainActor [weak self] in
-            // Let launch complete before heavy setup work starts.
-            await Task.yield()
             self?.setupEnvironment()
         }
     }
