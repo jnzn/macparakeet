@@ -28,7 +28,7 @@
 │                                         ▼                                        │
 │  ┌────────────────────────────────────────────────────────────────────────────┐  │
 │  │                        MacParakeetCore                                     │  │
-│  │                     (Library — No UI Deps)                                 │  │
+│  │                     (Library — No SwiftUI Views)                           │  │
 │  │                                                                            │  │
 │  │  ┌─────────────────┐  ┌────────────────────┐  ┌──────────────────┐      │  │
 │  │  │ DictationService│  │TranscriptionService│  │MeetingRecording  │      │  │
@@ -207,9 +207,10 @@ File dropped → MainWindowView → TranscriptionService.transcribe(fileURL:)
 
 ---
 
-### 2. MacParakeetCore (Library — No UI Dependencies)
+### 2. MacParakeetCore (Library — No SwiftUI Dependencies)
 
-The shared core. All business logic, all data access, all service orchestration. Imported by the GUI app (and optionally by a future CLI).
+The shared core. All business logic, all data access, all service orchestration. Imported by the GUI app (and optionally by a future CLI).  
+Core may use AppKit for macOS system integrations (for example pasteboard, accessibility checks, document export), but does not own SwiftUI views.
 
 #### 2.1 DictationService
 

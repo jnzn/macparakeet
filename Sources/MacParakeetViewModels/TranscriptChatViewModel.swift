@@ -131,9 +131,6 @@ public final class TranscriptChatViewModel {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isStreaming, let llmService else { return }
 
-        inputText = ""
-        errorMessage = nil
-
         // Lazy conversation creation on first message
         if currentConversation == nil {
             guard let transcriptionId else {
@@ -157,6 +154,9 @@ public final class TranscriptChatViewModel {
                 return
             }
         }
+
+        inputText = ""
+        errorMessage = nil
 
         let userMessage = ChatDisplayMessage(role: .user, content: text)
         messages.append(userMessage)
