@@ -94,7 +94,7 @@ public final class TranscriptionViewModel {
     private var activeDropRequestID: UUID?
     private var dropPendingCount = 0
     private var dropAccepted = false
-    private static let configurationError = "Transcription is still initializing. Please try again."
+    private static let configurationError = "Transcription services are unavailable. Please try again."
     private let logger = Logger(subsystem: "com.macparakeet.viewmodels", category: "TranscriptionViewModel")
     public var promptResultsViewModel: PromptResultsViewModel?
 

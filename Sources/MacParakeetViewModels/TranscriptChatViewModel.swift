@@ -19,6 +19,8 @@ public struct ChatDisplayMessage: Identifiable, Equatable {
 @MainActor
 @Observable
 public final class TranscriptChatViewModel {
+    private static let storageUnavailableMessage = "Chat storage is unavailable. Please relaunch."
+
     public var messages: [ChatDisplayMessage] = []
     public var inputText: String = ""
     public var isStreaming: Bool = false
@@ -140,7 +142,7 @@ public final class TranscriptChatViewModel {
             }
             guard let conversationRepo else {
                 logger.error("Missing conversationRepo in sendMessage")
-                errorMessage = "Chat storage is unavailable. Please relaunch."
+                errorMessage = Self.storageUnavailableMessage
                 return
             }
             let title = String(text.prefix(50))
@@ -279,7 +281,7 @@ public final class TranscriptChatViewModel {
             chatHistory.removeAll()
             conversations.removeAll()
             currentConversation = nil
-            errorMessage = "Chat storage is unavailable. Please relaunch."
+            errorMessage = Self.storageUnavailableMessage
             inputText = ""
             return
         }
@@ -337,9 +339,20 @@ public final class TranscriptChatViewModel {
             cancelStreaming()
         }
 
-        if let conversationRepo {
-            _ = try? conversationRepo.delete(id: conversation.id)
+        guard let conversationRepo else {
+            logger.error("Missing conversationRepo in deleteConversation")
+            errorMessage = Self.storageUnavailableMessage
+            return
         }
+
+        do {
+            _ = try conversationRepo.delete(id: conversation.id)
+        } catch {
+            logger.error("Failed to delete conversation error=\(error.localizedDescription, privacy: .public)")
+            errorMessage = "Failed to delete conversation."
+            return
+        }
+
         conversations.removeAll { $0.id == conversation.id }
 
         if currentConversation?.id == conversation.id {
@@ -358,18 +371,30 @@ public final class TranscriptChatViewModel {
     /// Clears all conversations for the current transcript (used when retranscribing).
     public func clearHistory() {
         cancelStreaming()
+
+        // Delete all conversations for this transcript
+        if let transcriptionId {
+            guard let conversationRepo else {
+                logger.error("Missing conversationRepo in clearHistory")
+                errorMessage = Self.storageUnavailableMessage
+                return
+            }
+
+            do {
+                try conversationRepo.deleteAll(transcriptionId: transcriptionId)
+            } catch {
+                logger.error("Failed to clear conversations error=\(error.localizedDescription, privacy: .public)")
+                errorMessage = "Failed to clear chat history."
+                return
+            }
+
+            conversations.removeAll()
+        }
+
         messages.removeAll()
         chatHistory.removeAll()
         errorMessage = nil
         inputText = ""
-
-        // Delete all conversations for this transcript
-        if let transcriptionId {
-            if let conversationRepo {
-                try? conversationRepo.deleteAll(transcriptionId: transcriptionId)
-            }
-            conversations.removeAll()
-        }
         currentConversation = nil
 
         notifyConversationsChanged()
@@ -401,9 +426,20 @@ public final class TranscriptChatViewModel {
     private func discardEmptyCurrentConversation() {
         guard let current = currentConversation,
               current.messages == nil || current.messages?.isEmpty == true else { return }
-        if let conversationRepo {
-            _ = try? conversationRepo.delete(id: current.id)
+
+        guard let conversationRepo else {
+            logger.error("Missing conversationRepo in discardEmptyCurrentConversation")
+            errorMessage = Self.storageUnavailableMessage
+            return
         }
+
+        do {
+            _ = try conversationRepo.delete(id: current.id)
+        } catch {
+            logger.error("Failed to discard empty conversation error=\(error.localizedDescription, privacy: .public)")
+            return
+        }
+
         conversations.removeAll { $0.id == current.id }
     }
 
