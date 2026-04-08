@@ -72,7 +72,26 @@ final class TranscriptChatViewModelTests: XCTestCase {
         viewModel.sendMessage()
 
         XCTAssertTrue(viewModel.messages.isEmpty)
+        XCTAssertEqual(viewModel.inputText, "Question")
         XCTAssertEqual(viewModel.errorMessage, "Chat is unavailable until a transcript is loaded.")
+    }
+
+    func testSendMessageWithoutConversationRepoPreservesInput() {
+        let vm = TranscriptChatViewModel()
+        vm.configure(
+            llmService: mockService,
+            transcriptText: "Transcript",
+            transcriptionRepo: mockRepo,
+            conversationRepo: nil
+        )
+        vm.loadTranscript("Transcript", transcriptionId: UUID())
+        vm.inputText = "Question"
+
+        vm.sendMessage()
+
+        XCTAssertTrue(vm.messages.isEmpty)
+        XCTAssertEqual(vm.inputText, "Question")
+        XCTAssertEqual(vm.errorMessage, "Chat storage is unavailable. Please relaunch.")
     }
 
     func testSendMessageWhileStreamingDoesNotSend() async throws {

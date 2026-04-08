@@ -120,6 +120,12 @@ struct TranscriptResultView: View {
             let text = viewModel.currentTranscription?.cleanTranscript ?? viewModel.currentTranscription?.rawTranscript ?? ""
             chatViewModel.loadTranscript(text, transcriptionId: viewModel.currentTranscription?.id)
         }
+        .onChange(of: transcription.speakers) {
+            rebuildSegmentCache()
+        }
+        .onChange(of: transcription.wordTimestamps) {
+            rebuildSegmentCache()
+        }
         .onChange(of: viewModel.selectedTab) {
             if case .result(let id) = viewModel.selectedTab {
                 promptResultsViewModel.markPromptResultViewed(id)
