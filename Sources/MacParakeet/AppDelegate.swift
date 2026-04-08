@@ -370,7 +370,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 transcriptionService: env.transcriptionService,
                 transcriptionRepo: env.transcriptionRepo,
                 llmService: hasLLMConfig ? env.llmService : nil,
-                configStore: env.llmConfigStore,
                 promptResultRepo: env.promptResultRepo,
                 promptResultsViewModel: promptResultsViewModel
             )
