@@ -55,9 +55,114 @@ private struct CheckmarkShape: Shape {
     }
 }
 
+// MARK: - No Speech Content
+
+/// No-speech terminal animation: Merkaba dissolves inside a 46×46 circle, then
+/// the pill expands horizontally as the falling leaf + serif label bloom in.
+/// The `expanded` prop is driven by the parent so the pill's padding (circle ↔
+/// oval) stays in sync with this view's internal leaf/text animations.
+private struct NoSpeechContentView: View {
+    let isCommand: Bool
+    let expanded: Bool
+
+    @State private var leafVisible: Double = 0
+    @State private var leafDrift: CGFloat = -4
+    @State private var leafRotation: Double = -18
+    @State private var textOpacity: Double = 0
+
+    private var label: String {
+        isCommand ? "no command" : "more audio pls"
+    }
+
+    var body: some View {
+        HStack(spacing: expanded ? 4 : 0) {
+            // Sacred geometry + falling leaf — dissolving Merkaba inside a fixed 26×26 box.
+            ZStack {
+                MerkabaDissipateView(size: 26)
+
+                // Leaf drifts in as geometry fades — warm coral-orange (parakeet plumage).
+                // Hidden in phase 0 (circular) and blooms in phase 1 (expanded oval).
+                Image(systemName: "leaf.fill")
+                    .font(.system(size: 14, weight: .light))
+                    .foregroundStyle(DesignSystem.Colors.accent.opacity(leafVisible))
+                    .rotationEffect(.degrees(leafRotation))
+                    .offset(x: leafDrift * 0.5, y: leafDrift)
+            }
+            .frame(width: 26, height: 26)
+
+            // Elegant serif italic label — only present in the HStack once expanded,
+            // using `.fixedSize()` for its natural intrinsic width. The parent's
+            // `withAnimation` around the `noSpeechExpanded` flip smoothly animates
+            // the HStack's size change as the text view appears.
+            //
+            // IMPORTANT: do not use `.frame(maxWidth: .infinity)` here — it propagates
+            // up through the HStack → pill → overlay window and balloons the capsule
+            // to full window width. `fixedSize()` alone gives the correct tight width.
+            if expanded {
+                Text(label)
+                    .font(DesignSystem.Typography.dictationOverlayTerminalLabel)
+                    .foregroundStyle(.white.opacity(textOpacity))
+                    .fixedSize()
+                    .transition(.opacity)
+            }
+        }
+        .onChange(of: expanded) { _, isExpanded in
+            guard isExpanded else { return }
+            runBloomAnimations()
+        }
+    }
+
+    /// Resets animation state and runs the leaf + text bloom sequence. Called when
+    /// `expanded` flips to true (~0.4s after `.noSpeech` is entered, giving the
+    /// circular Merkaba time to settle / dissolve first).
+    private func runBloomAnimations() {
+        #if DEBUG
+        // Fail loudly in debug builds if someone shrinks the dismiss window below
+        // what the animation phases need to complete. This is the actual guard
+        // behind `NoSpeechAnimationTiming.isDismissWindowSufficient`.
+        assert(
+            NoSpeechAnimationTiming.isDismissWindowSufficient,
+            "No-speech dismiss window (\(NoSpeechAnimationTiming.dismissSeconds)s) is too short for " +
+            "estimated animation completion (\(NoSpeechAnimationTiming.estimatedAnimationCompletionSeconds)s) " +
+            "+ buffer (\(NoSpeechAnimationTiming.completionBufferSeconds)s)."
+        )
+        #endif
+
+        // Reset to baseline so repeated presentations replay deterministically.
+        leafVisible = 0
+        leafDrift = -4
+        leafRotation = -18
+        textOpacity = 0
+
+        // Leaf fades in as Merkaba finishes dissolving
+        withAnimation(.easeIn(duration: NoSpeechAnimationTiming.leafFadeInDuration)) {
+            leafVisible = 0.7
+        }
+        // Leaf gently drifts down + rotates (falling)
+        withAnimation(.easeInOut(duration: NoSpeechAnimationTiming.leafDriftDuration)) {
+            leafDrift = 6
+            leafRotation = 18
+        }
+        // Text fades in alongside the expansion
+        withAnimation(.easeIn(duration: NoSpeechAnimationTiming.textFadeInDuration).delay(0.15)) {
+            textOpacity = 0.95
+        }
+        // Leaf softly recedes so text reads clean
+        withAnimation(.easeOut(duration: NoSpeechAnimationTiming.leafRecedeDuration).delay(NoSpeechAnimationTiming.leafRecedeDelay - NoSpeechAnimationTiming.leafFadeInDelay)) {
+            leafVisible = 0.3
+        }
+    }
+}
+
 /// The dictation overlay — compact dark capsule during dictation, wider card for errors.
 struct DictationOverlayView: View {
     @Bindable var viewModel: DictationOverlayViewModel
+
+    /// Drives the no-speech pill's circle → oval width expansion. Starts `false`
+    /// so the pill begins at 46×46 (matching the processing spinner), then flips
+    /// to `true` after a short delay so the pill blooms horizontally as the leaf
+    /// + "more audio pls" label fade in. Reset whenever the pill state changes.
+    @State private var noSpeechExpanded: Bool = false
 
     /// Align tooltip above the hovered button: leading for cancel, trailing for stop.
     private var tooltipAlignment: Alignment {
@@ -82,6 +187,27 @@ struct DictationOverlayView: View {
         }
         .padding(.bottom, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .onChange(of: viewModel.pillStateKey) { _, newKey in
+            handlePillStateChange(to: newKey)
+        }
+    }
+
+    /// When entering any noSpeech state, start as a 46×46 circle and schedule the
+    /// oval expansion after a short delay so the Merkaba can begin dissolving in
+    /// its circular form before the pill blooms horizontally.
+    private func handlePillStateChange(to key: String) {
+        guard key.contains("noSpeech") else {
+            noSpeechExpanded = false
+            return
+        }
+        noSpeechExpanded = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            // Guard against stale transitions: only expand if we are still in noSpeech.
+            guard viewModel.pillStateKey.contains("noSpeech") else { return }
+            withAnimation(.easeOut(duration: 0.45)) {
+                noSpeechExpanded = true
+            }
+        }
     }
 
     @ViewBuilder
@@ -92,18 +218,45 @@ struct DictationOverlayView: View {
 
         default:
             let isReady = if case .ready = viewModel.state { true } else { false }
-            // Processing (non-command) and success show a single 26×26 icon — use equal
-            // padding so the Capsule background renders as a perfect circle, not an oval.
+            // Processing (non-command) and success show a single icon — use equal
+            // padding so the Capsule background renders as a perfect circle, not
+            // an oval. noSpeech starts as a circle (matching processing) and then
+            // blooms into an oval once `noSpeechExpanded` flips — so its label
+            // reads cleanly on a full dark background after the expansion.
             let isIconOnly: Bool = {
                 switch viewModel.state {
                 case .processing: return viewModel.sessionKind != .command
                 case .success: return true
+                case .noSpeech: return !noSpeechExpanded
                 default: return false
                 }
             }()
+            // noSpeech (expanded) uses tighter horizontal padding and smaller vertical
+            // padding than the circular phase, so the bloom animation stretches the
+            // 46×46 circle horizontally while also slimming down vertically into a
+            // low-profile terminal pill.
+            let isNoSpeechState = { if case .noSpeech = viewModel.state { return true } else { return false } }()
+            let isNoSpeechExpanded = isNoSpeechState && noSpeechExpanded
+            // Ready uses equal horizontal/vertical padding so the breathing
+            // ring sits inside a tight ~32×32 circular pill — distinctly
+            // smaller and lighter than the 46×46 processing / noSpeech
+            // circles, reinforcing that `.ready` is a brief, poised pause
+            // rather than active work.
+            let horizontalPadding: CGFloat = {
+                if isReady { return 7 }
+                if isIconOnly { return 10 }
+                if isNoSpeechExpanded { return 10 }
+                return 16
+            }()
+            let verticalPadding: CGFloat = {
+                if isReady { return 7 }
+                if isIconOnly { return 10 }
+                if isNoSpeechExpanded { return 5 }
+                return 7
+            }()
             pillContent
-                .padding(.horizontal, isReady ? 6 : (isIconOnly ? 10 : 16))
-                .padding(.vertical, isReady ? 4 : (isIconOnly ? 10 : 7))
+                .padding(.horizontal, horizontalPadding)
+                .padding(.vertical, verticalPadding)
                 .background(
                     Capsule()
                         .fill(DesignSystem.Colors.pillBackground)
@@ -114,6 +267,7 @@ struct DictationOverlayView: View {
                         .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
                 )
                 .animation(.easeInOut(duration: 0.25), value: viewModel.pillStateKey)
+                .animation(.easeOut(duration: 0.45), value: noSpeechExpanded)
         }
     }
 
@@ -162,9 +316,15 @@ struct DictationOverlayView: View {
 
     // MARK: - Ready State
 
+    /// Ready pill — a gentle breathing ring that appears briefly after the
+    /// first Fn tap while the state machine waits to see if a second tap lands
+    /// (double-tap = persistent recording) or the window elapses (back to
+    /// idle). The breath ring belongs to the same sacred-geometry family as
+    /// `SpinnerRingView` (processing) and `MerkabaDissipateView` (no speech),
+    /// but is the smallest and lightest member — a poised inhale rather than
+    /// active work or a terminal dissolve.
     private var readyContent: some View {
-        WaveformView(audioLevel: 0.15, barCount: 8)
-            .frame(width: 44, height: 14)
+        BreathingRingView(size: 18)
     }
 
     // MARK: - Hold-to-Talk State
@@ -335,34 +495,10 @@ struct DictationOverlayView: View {
     // MARK: - No Speech State
 
     private var noSpeechContent: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 7) {
-                Image(systemName: "waveform.slash")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.5))
-
-                Text(viewModel.sessionKind == .command ? "No command detected" : "No speech detected")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.7))
-            }
-
-            // Thin progress bar — track + fill, shrinks over 3s
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Color.white.opacity(0.12))
-                Capsule()
-                    .fill(Color.white.opacity(0.4))
-                    .scaleEffect(x: viewModel.noSpeechProgress, anchor: .trailing)
-                    .animation(.linear(duration: 3.0), value: viewModel.noSpeechProgress)
-            }
-            .frame(height: 2.5)
-            .onAppear {
-                // Trigger after the view renders so SwiftUI has a "from" value to animate
-                viewModel.noSpeechProgress = 0.0
-            }
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 2)
+        NoSpeechContentView(
+            isCommand: viewModel.sessionKind == .command,
+            expanded: noSpeechExpanded
+        )
     }
 
     // MARK: - Error Card
@@ -545,7 +681,6 @@ struct DictationOverlayView: View {
         DictationOverlayView(viewModel: {
             let vm = DictationOverlayViewModel()
             vm.state = .noSpeech
-            vm.noSpeechProgress = 0.6
             return vm
         }())
 
