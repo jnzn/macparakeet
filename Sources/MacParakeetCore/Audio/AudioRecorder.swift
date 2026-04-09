@@ -78,9 +78,10 @@ public actor AudioRecorder {
         let authStatus = AVCaptureDevice.authorizationStatus(for: .audio)
         logger.debug("mic_permission_status=\(authStatus.rawValue, privacy: .public)")
         guard authStatus == .authorized else {
-            throw AudioProcessorError.recordingFailed(
-                "Microphone permission not granted (status=\(authStatus.rawValue)). Grant access in System Settings → Privacy & Security → Microphone."
+            logger.error(
+                "mic_permission_not_granted status=\(authStatus.rawValue, privacy: .public)"
             )
+            throw AudioProcessorError.microphonePermissionDenied
         }
 
         logAvailableDevices()
@@ -226,7 +227,7 @@ public actor AudioRecorder {
 
         // Pre-validate that the format we just read is convertible to our
         // target. If this fails we want to bail fast before touching the tap.
-        guard AVAudioConverter(from: inputFormat, to: outputFormat) != nil else {
+        guard let initialConverter = AVAudioConverter(from: inputFormat, to: outputFormat) else {
             try? FileManager.default.removeItem(at: url)
             logger.error(
                 "failed_to_create_audio_converter from sr=\(inputFormat.sampleRate) ch=\(inputFormat.channelCount) to 16kHz 1ch"
@@ -244,11 +245,17 @@ public actor AudioRecorder {
         // Converter cache for the tap block. We pass `format: nil` to
         // installTap so AVFAudio delivers buffers in whatever format the bus
         // is currently producing (avoiding the aggregate-device format-drift
-        // NSException that caused issue #91), and build the converter lazily
-        // on the first buffer. Tap callbacks are serialized per bus so a plain
-        // reference-type cache is safe; `@unchecked Sendable` satisfies Swift 6
-        // concurrency checks.
+        // NSException that caused issue #91). Seed the cache with the
+        // converter we just created so the common case (bus format unchanged
+        // between `outputFormat(forBus:)` and the first tap callback) avoids
+        // a redundant `AVAudioConverter` allocation on the real-time audio
+        // thread. If the bus format drifts mid-stream the cache rebuilds it.
+        // Tap callbacks are serialized per bus so a plain reference-type
+        // cache is safe; `@unchecked Sendable` satisfies Swift 6 concurrency
+        // checks.
         let converterCache = TapConverterCache()
+        converterCache.converter = initialConverter
+        converterCache.sourceFormat = inputFormat
 
         // AVFAudio can raise NSException from installTap itself on aggregate
         // devices (e.g. "required condition is false:
@@ -286,6 +293,13 @@ public actor AudioRecorder {
                     // buffer and rebuild the converter if the format drifts
                     // mid-stream (rare, but cheap to handle).
                     let bufferFormat = buffer.format
+                    // Aggregate/virtual devices can occasionally deliver a
+                    // buffer whose format has sampleRate=0 or channelCount=0
+                    // during a hardware transition (Bluetooth HFP↔A2DP, USB
+                    // hot-plug, wake-from-sleep). Dividing by sampleRate below
+                    // would crash. Bail out quietly — the next buffer is
+                    // usually well-formed.
+                    guard bufferFormat.sampleRate > 0, bufferFormat.channelCount > 0 else { return }
                     if converterCache.sourceFormat == nil
                         || converterCache.sourceFormat?.sampleRate != bufferFormat.sampleRate
                         || converterCache.sourceFormat?.channelCount != bufferFormat.channelCount
