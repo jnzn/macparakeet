@@ -300,11 +300,11 @@ public actor AudioRecorder {
                     // would crash. Bail out quietly — the next buffer is
                     // usually well-formed.
                     guard bufferFormat.sampleRate > 0, bufferFormat.channelCount > 0 else { return }
-                    if converterCache.sourceFormat == nil
-                        || converterCache.sourceFormat?.sampleRate != bufferFormat.sampleRate
-                        || converterCache.sourceFormat?.channelCount != bufferFormat.channelCount
-                        || converterCache.sourceFormat?.commonFormat != bufferFormat.commonFormat
-                    {
+                    // Rebuild when the *full* AVAudioFormat identity changes
+                    // (including interleaving/layout), not just SR/ch/common.
+                    // Aggregate-device transitions can keep SR/ch/common stable
+                    // while flipping other format details.
+                    if converterCache.sourceFormat?.isEqual(bufferFormat) != true {
                         converterCache.converter = AVAudioConverter(from: bufferFormat, to: outputFormat)
                         converterCache.sourceFormat = bufferFormat
                     }
