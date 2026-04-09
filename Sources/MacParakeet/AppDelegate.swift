@@ -349,17 +349,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Menu Bar Icon State
 
     /// Priority-based menu bar icon resolver (ADR-015).
-    /// Recording (meeting or dictation) > file transcription > idle.
+    /// Meeting recording > dictation menu-bar preference > file transcription > idle.
+    ///
+    /// Uses `menuBarPreference` from the dictation flow (state-machine-aware) so
+    /// `.processing` can render correctly and terminal states do not linger red.
     private func resolveAndUpdateMenuBarIcon() {
-        if meetingRecordingFlowCoordinator?.isMeetingRecordingActive == true {
-            menuBarCoordinator.updateIcon(state: .recording)
-        } else if dictationFlowCoordinator?.isDictationActive == true {
-            menuBarCoordinator.updateIcon(state: .recording)
-        } else if transcriptionViewModel.isTranscribing {
-            menuBarCoordinator.updateIcon(state: .processing)
-        } else {
-            menuBarCoordinator.updateIcon(state: .idle)
+        let state = Self.resolveMenuBarState(
+            isMeetingRecordingActive: meetingRecordingFlowCoordinator?.isMeetingRecordingActive == true,
+            dictationMenuBarPreference: dictationFlowCoordinator?.menuBarPreference,
+            isTranscribing: transcriptionViewModel.isTranscribing
+        )
+        menuBarCoordinator.updateIcon(state: state)
+    }
+
+    static func resolveMenuBarState(
+        isMeetingRecordingActive: Bool,
+        dictationMenuBarPreference: BreathWaveIcon.MenuBarState?,
+        isTranscribing: Bool
+    ) -> BreathWaveIcon.MenuBarState {
+        if isMeetingRecordingActive {
+            return .recording
         }
+        if let dictationMenuBarPreference, dictationMenuBarPreference != .idle {
+            return dictationMenuBarPreference
+        }
+        if isTranscribing {
+            return .processing
+        }
+        return .idle
     }
 
     // MARK: - Meeting Recording

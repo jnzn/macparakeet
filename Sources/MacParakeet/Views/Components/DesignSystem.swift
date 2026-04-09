@@ -79,7 +79,7 @@ enum DesignSystem {
         static let youtubeRed = Color.red
 
         // Pill / overlay
-        static let pillBackground = Color.black.opacity(0.9)
+        static let pillBackground = Color.black.opacity(0.7)
         static let pillBorder = Color.white.opacity(0.15)
         static let recordingRed = Color.red
         static let sacredGlow = Color(light: .init(red: 0.40, green: 0.85, blue: 0.40),
@@ -134,6 +134,14 @@ enum DesignSystem {
         static let meetingPillStatus = Font.system(size: 13, weight: .semibold)
         static let meetingPillBadge = Font.system(size: 10, weight: .medium, design: .monospaced)
         static let meetingPillCheckmark = Font.system(size: 24, weight: .semibold)
+
+        /// Soft rounded label used inside the dictation overlay's no-speech terminal
+        /// pill (e.g. "More audio pls"). Uses `.rounded` to match the organic curves
+        /// of the falling leaf + Merkaba dissolve animation, and the same family as
+        /// the app's headline typography (`heroTitle`, `pageTitle`). Sized to sit
+        /// naturally beside the 26pt Merkaba glyph inside a low-profile horizontal
+        /// oval pill.
+        static let dictationOverlayTerminalLabel = Font.system(size: 9.5, weight: .medium, design: .rounded)
 
         // Legacy aliases (kept for existing references)
         static let headline = Font.system(size: 17, weight: .semibold, design: .rounded)

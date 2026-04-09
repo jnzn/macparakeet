@@ -9,10 +9,56 @@ final class DictationFlowCoordinator {
 
     // MARK: - Public Interface
 
-    /// Read by AppDelegate for menu bar icon guard.
-    /// Uses overlayController (not state machine) to match old behavior —
-    /// checkingEntitlements has no overlay yet, so isDictationActive should be false.
+    /// True whenever the dictation overlay is showing. Used by presentation-conflict
+    /// guards (e.g. the idle-pill suppressor when a meeting recording ends) to prevent
+    /// surfaces from colliding with the overlay.
+    ///
+    /// NOTE: this returns true during terminal display states (success checkmark,
+    /// no-speech leaf, error card). For menu bar icon decisions, use
+    /// `menuBarPreference` (or `isCapturingAudio` for capture-only semantics)
+    /// instead.
     var isDictationActive: Bool { overlayController != nil }
+
+    /// Preferred menu bar icon state for dictation, derived from flow state.
+    /// Returns nil when dictation has no visual preference and global resolver
+    /// should fall through to other subsystems (e.g. file transcription).
+    var menuBarPreference: BreathWaveIcon.MenuBarState? {
+        Self.menuBarPreference(for: stateMachine.state)
+    }
+
+    /// True only while audio is actively being captured or in-flight transcription
+    /// is running.
+    ///
+    /// Returns false for:
+    ///   - `.idle`, `.ready`, `.checkingEntitlements` — no overlay or audio yet
+    ///   - `.cancelCountdown` — capture already stopped via `.cancelRecording(reason:)`;
+    ///     state machine explicitly emits `.updateMenuBar(.idle)` at this transition
+    ///     (see `DictationFlowStateMachine.swift:299`)
+    ///   - `.finishing(...)` — terminal display states, audio already stopped
+    ///
+    var isCapturingAudio: Bool {
+        Self.isCapturingAudio(for: stateMachine.state)
+    }
+
+    static func menuBarPreference(for state: DictationFlowState) -> BreathWaveIcon.MenuBarState? {
+        switch state {
+        case .startingService, .recording, .pendingStop:
+            return .recording
+        case .processing:
+            return .processing
+        case .idle, .ready, .checkingEntitlements, .cancelCountdown, .finishing:
+            return nil
+        }
+    }
+
+    static func isCapturingAudio(for state: DictationFlowState) -> Bool {
+        switch state {
+        case .startingService, .recording, .pendingStop, .processing:
+            return true
+        case .idle, .ready, .checkingEntitlements, .cancelCountdown, .finishing:
+            return false
+        }
+    }
 
     /// Set after init; updated when hotkey manager is recreated
     var hotkeyManager: HotkeyManager?
@@ -235,10 +281,7 @@ final class DictationFlowCoordinator {
             overlayViewModel?.state = .success
 
         case .showNoSpeech:
-            if let vm = overlayViewModel {
-                vm.noSpeechProgress = 1.0
-                vm.state = .noSpeech
-            }
+            overlayViewModel?.state = .noSpeech
 
         case .showError(let message):
             overlayViewModel?.state = .error(message)

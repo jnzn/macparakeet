@@ -99,6 +99,198 @@ struct SpinnerRingView: View {
     }
 }
 
+// MARK: - Merkaba Dissipate (No-Speech Terminal)
+
+/// Merkaba wind-down for the "no speech detected" terminal state.
+/// The sacred geometry settles, dissolves, and fades — leaving space for
+/// an external text label to materialize over the top.
+///
+/// Sequence:
+///   Phase 1 — triangles slow and align into Star of David (stillness)
+///   Phase 2 — strokes and vertices dissolve
+///   Phase 3 — center nexus exhales and fades last
+struct MerkabaDissipateView: View {
+    var size: CGFloat = 26
+    var tintColor: Color = .white
+
+    /// Phase 1: triangles slow-rotate and align to Star of David
+    @State private var settled = false
+    /// Phase 2: strokes and vertex glow dissolve
+    @State private var dissolved = false
+    /// Phase 3: center nexus contracts and fades
+    @State private var exhaled = false
+
+    private var radius: CGFloat { size * 0.423 }
+
+    var body: some View {
+        ZStack {
+            // Outer guide ring
+            Circle()
+                .stroke(tintColor.opacity(dissolved ? 0 : 0.05), lineWidth: 0.5)
+                .frame(width: size, height: size)
+
+            // Triangle 1 — settles to 0° (upward-pointing)
+            triangleLayer(
+                rotation: settled ? 0 : 20,
+                strokeOpacity: dissolved ? 0 : 0.35,
+                vertexOpacity: dissolved ? 0 : 0.6
+            )
+
+            // Triangle 2 — settles to 60° (downward, forming Star of David)
+            triangleLayer(
+                rotation: settled ? 60 : 40,
+                strokeOpacity: dissolved ? 0 : 0.2,
+                vertexOpacity: dissolved ? 0 : 0.42
+            )
+
+            // Center nexus — last point of light before text takes over
+            Circle()
+                .fill(tintColor.opacity(exhaled ? 0 : 0.6))
+                .frame(width: size * 0.115, height: size * 0.115)
+                .shadow(color: tintColor.opacity(exhaled ? 0 : 0.3), radius: size * 0.154)
+                .scaleEffect(exhaled ? 0.3 : 1.0)
+        }
+        .frame(width: size, height: size)
+        .scaleEffect(settled ? 0.85 : 1.0)
+        .drawingGroup()
+        .onAppear {
+            // Reset to baseline so repeated presentations replay deterministically.
+            settled = false
+            dissolved = false
+            exhaled = false
+
+            // Phase 1: settle into Star of David alignment
+            withAnimation(.easeOut(duration: NoSpeechAnimationTiming.merkabaSettleDuration)) {
+                settled = true
+            }
+            // Phase 2: dissolve triangles and vertices
+            withAnimation(
+                .easeOut(duration: NoSpeechAnimationTiming.merkabaDissolveDuration)
+                    .delay(NoSpeechAnimationTiming.merkabaDissolveDelay)
+            ) {
+                dissolved = true
+            }
+            // Phase 3: center nexus exhales
+            withAnimation(
+                .easeOut(duration: NoSpeechAnimationTiming.merkabaExhaleDuration)
+                    .delay(NoSpeechAnimationTiming.merkabaExhaleDelay)
+            ) {
+                exhaled = true
+            }
+        }
+    }
+
+    private func triangleLayer(rotation: Double, strokeOpacity: Double, vertexOpacity: Double) -> some View {
+        ZStack {
+            TriangleShape()
+                .stroke(tintColor.opacity(strokeOpacity), lineWidth: 0.8)
+                .frame(width: radius * 2, height: radius * 2)
+
+            ForEach(0..<3, id: \.self) { i in
+                let angle = (Double(i) * 120.0 - 90.0) * .pi / 180.0
+                let x = Foundation.cos(angle) * radius
+                let y = Foundation.sin(angle) * radius
+
+                Circle()
+                    .fill(tintColor.opacity(vertexOpacity))
+                    .frame(width: size * 0.096, height: size * 0.096)
+                    .shadow(color: tintColor.opacity(vertexOpacity * 0.4), radius: size * 0.115)
+                    .offset(x: x, y: y)
+            }
+        }
+        .rotationEffect(.degrees(rotation))
+    }
+}
+
+// MARK: - Breathing Ring (Ready / Waiting)
+
+/// Gentle breath indicator for the dictation overlay's ephemeral `.ready`
+/// state — shown briefly (~800ms) between the first Fn tap and the double-tap
+/// window closing. A soft white ring inhales around a warm coral nexus: the
+/// smallest, lightest member of the sacred-geometry family, signalling
+/// "listening, poised, waiting" without competing with the active Merkaba
+/// (processing) or the dissolving Merkaba (no speech).
+///
+/// ## Motion
+/// A single intentional inhale — **not** a perpetual loop. The pill is
+/// typically visible for ~800ms, which is shorter than any natural breath
+/// cycle; a `repeatForever` animation would be cut off mid-rise and read as
+/// clipped rather than alive. Instead, ring and nexus bloom from rest to
+/// peak via a soft, near-critically-damped spring (~700ms) and then hold
+/// at peak until the pill dismisses. The entire visible duration reads as
+/// one elegant rise — drawing breath in and holding — with no risk of
+/// clipping.
+///
+/// ## Color hierarchy
+/// The ring is white (belongs to the Merkaba family), but the nexus uses
+/// `DesignSystem.Colors.accent` (coral-orange — MacParakeet's brand
+/// attention color). The coral glow bleeds out past the ring into the dark
+/// pill background, creating luminous depth. This is the only dictation
+/// overlay state that uses the brand accent: **`.ready` is "MacParakeet
+/// listening for you."**
+///
+/// ## Accessibility
+/// Honors `Reduce Motion` by presenting the peak state statically (no
+/// inhale animation, just the fully-bloomed ring + nexus). Exposed to
+/// VoiceOver as "Ready to record" — `.ready` is a poised pause, not an
+/// engaged mic, so we deliberately avoid "Listening".
+struct BreathingRingView: View {
+    var size: CGFloat = 18
+    var ringColor: Color = .white
+    var nexusColor: Color = DesignSystem.Colors.accent
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// 0 = rest, 1 = peak. One-shot: animates from 0 → 1 on appear via a
+    /// soft spring and then holds at 1 until the view disappears. Never
+    /// loops — the pill's brief visibility window is too short for a full
+    /// cycle to read cleanly, so a single intentional bloom is more honest.
+    @State private var breath: CGFloat = 0
+
+    var body: some View {
+        ZStack {
+            // White breathing ring — the halo of attention, sibling to the
+            // Merkaba family. Stroke opacity carries the primary breath
+            // signal; a subtle scale adds organic lift without visibly
+            // changing stroke weight.
+            Circle()
+                .stroke(ringColor.opacity(0.30 + 0.40 * Double(breath)), lineWidth: 0.9)
+                .frame(width: size, height: size)
+                .scaleEffect(0.88 + 0.14 * breath)
+
+            // Warm coral nexus — the heart of attention. Scales, brightens,
+            // and emits a coral glow that bleeds out past the ring to give
+            // the pill luminous depth on its dark background.
+            Circle()
+                .fill(nexusColor.opacity(0.55 + 0.40 * Double(breath)))
+                .frame(width: size * 0.18, height: size * 0.18)
+                .scaleEffect(0.80 + 0.25 * breath)
+                .shadow(color: nexusColor.opacity(0.50 * Double(breath)), radius: size * 0.22)
+        }
+        .frame(width: size, height: size)
+        .accessibilityElement()
+        .accessibilityLabel("Ready to record")
+        .onAppear {
+            // Reduce Motion: skip the inhale, present at peak statically.
+            // The user still sees the fully-bloomed state — they just don't
+            // see it move.
+            guard !reduceMotion else {
+                breath = 1
+                return
+            }
+
+            // One-shot inhale. Near-critically-damped spring
+            // (dampingFraction 0.95) for a soft, organic arrival — a
+            // whisper of warmth with a sub-perceptible overshoot. Response
+            // 0.70 gives ~700ms bloom, leaving ~100ms of hold at peak
+            // before the pill typically dismisses.
+            withAnimation(.spring(response: 0.70, dampingFraction: 0.95)) {
+                breath = 1
+            }
+        }
+    }
+}
+
 // MARK: - Meditative Merkaba (Large, Slow)
 
 /// Larger, slower merkaba for empty states and idle backgrounds.
