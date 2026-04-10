@@ -71,7 +71,7 @@ private struct NoSpeechContentView: View {
     @State private var textOpacity: Double = 0
 
     private var label: String {
-        isCommand ? "no command" : "more audio pls"
+        isCommand ? "no command" : "more audio please"
     }
 
     var body: some View {
@@ -161,7 +161,7 @@ struct DictationOverlayView: View {
     /// Drives the no-speech pill's circle → oval width expansion. Starts `false`
     /// so the pill begins at 46×46 (matching the processing spinner), then flips
     /// to `true` after a short delay so the pill blooms horizontally as the leaf
-    /// + "more audio pls" label fade in. Reset whenever the pill state changes.
+    /// + "more audio please" label fade in. Reset whenever the pill state changes.
     @State private var noSpeechExpanded: Bool = false
 
     /// Align tooltip above the hovered button: leading for cancel, trailing for stop.
