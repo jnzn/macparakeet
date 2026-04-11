@@ -189,12 +189,24 @@ public actor MeetingAudioCaptureService {
     }
 
     private static func deepCopyBuffer(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
-        guard let format = AVAudioFormat(
-            commonFormat: buffer.format.commonFormat,
-            sampleRate: buffer.format.sampleRate,
-            channels: buffer.format.channelCount,
-            interleaved: false
-        ), let copy = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: buffer.frameLength) else {
+        let format: AVAudioFormat
+        if buffer.format.isInterleaved {
+            guard let nonInterleavedFormat = AVAudioFormat(
+                commonFormat: buffer.format.commonFormat,
+                sampleRate: buffer.format.sampleRate,
+                channels: buffer.format.channelCount,
+                interleaved: false
+            ) else {
+                return nil
+            }
+            format = nonInterleavedFormat
+        } else {
+            // Preserve channel layout details from Core Audio (for example VPIO
+            // multichannel formats) instead of reconstructing from channel count.
+            format = buffer.format
+        }
+
+        guard let copy = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: buffer.frameLength) else {
             return nil
         }
 
