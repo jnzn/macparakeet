@@ -87,6 +87,15 @@ public final class VideoStreamService: Sendable {
         // If yt-dlp hangs and never closes stdout, the pipe read blocks forever
         // without this outer timeout.
         let result: (stdout: Data, stderr: Data) = try await withThrowingTaskGroup(of: (stdout: Data, stderr: Data).self) { group in
+            // Always clean up the loser path, even when `group.next()` throws.
+            // This keeps timeout as a hard upper bound and prevents orphaned yt-dlp processes.
+            defer {
+                group.cancelAll()
+                if process.isRunning {
+                    process.terminate()
+                }
+            }
+
             group.addTask {
                 // Read pipes on background threads (don't block cooperative pool)
                 let stdoutData: Data = await withCheckedContinuation { continuation in
@@ -132,14 +141,7 @@ public final class VideoStreamService: Sendable {
             }
 
             // First task to complete wins — either extraction finishes or timeout fires
-            let value = try await group.next()!
-            // Cancel the loser (timeout or extraction)
-            group.cancelAll()
-            // Kill yt-dlp if it's still running (timeout won the race)
-            if process.isRunning {
-                process.terminate()
-            }
-            return value
+            return try await group.next()!
         }
 
         let elapsed = ContinuousClock.now - startTime
