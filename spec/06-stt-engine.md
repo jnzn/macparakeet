@@ -232,9 +232,11 @@ YouTube (v0.4+):
                                                                                                         → Merge word timestamps + speaker segments
 
 Meeting live preview (v0.6):
-  MicrophoneCapture (meeting-only voice processing, raw fallback)/SystemAudioTap
+  MicrophoneCapture (raw)/SystemAudioTap
+    → MeetingAudioPairJoiner (paired frames + bounded lag)
+    → MeetingSoftwareAEC (mic cleaned against system reference)
     → AudioChunker
-    → residual echo gate (skip clearly system-dominant mic chunks for live preview only)
+    → dominant-system live guard (skip clearly system-dominant mic chunks for live preview only)
     → STTScheduler.transcribe(audioPath:, job: .meetingLiveChunk, onProgress:)
     → background-slot STT
     → live transcript update

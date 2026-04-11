@@ -175,8 +175,10 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 - [x] Batch transcription after recording stops (Parakeet STT)
 - [x] Meeting recordings get prompt library, multi-summary, chat, and export automatically
 - [x] Live transcript preview via AudioChunker (chunked transcription during recording)
-- [x] Meeting microphone voice processing (VPIO) with non-fatal raw fallback
-- [x] Residual echo suppression gate for live mic chunk transcription when system audio dominates
+- [x] Joined mic/system frame pairing with software AEC on meeting mic stream
+- [x] Dominant-system suppression gate for live mic chunk transcription while preserving recorded mic audio
+- [x] Joiner overflow diagnostics + sync-lag observability for long-running capture sessions
+- [x] Dual-source final meeting artifact keeps mic/system channel separation (stereo when both are present)
 - [x] One-line headphones guidance copy in Meetings empty state
 - [x] Dedicated meeting hotkey + settings section
 - [x] Meeting title prefix + rename flow

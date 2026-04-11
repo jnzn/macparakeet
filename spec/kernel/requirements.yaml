@@ -172,16 +172,21 @@ REQ-UI-005:
 # --- v0.6 Meeting Recording Hardening ---
 
 REQ-MEET-001:
-  description: Meeting mic capture enables voice processing with non-fatal raw fallback on unsupported audio setups
+  description: Meeting live mic processing applies software AEC against paired system-reference frames
   version: v0.6
   status: implemented
 
 REQ-MEET-002:
-  description: Meeting live transcription suppresses clearly system-dominant mic chunks while keeping recorded mic audio intact
+  description: Meeting stream joiner provides bounded-lag pairing with overflow diagnostics and sync observability for long sessions
   version: v0.6
   status: implemented
 
 REQ-MEET-003:
   description: Meetings empty state includes one-line headphones guidance for cleaner speaker separation
+  version: v0.6
+  status: implemented
+
+REQ-MEET-004:
+  description: Meeting final artifact preserves dual-source separation as stereo when both mic and system tracks exist
   version: v0.6
   status: implemented

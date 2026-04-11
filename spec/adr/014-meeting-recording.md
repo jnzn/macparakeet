@@ -3,7 +3,7 @@
 > Status: IMPLEMENTED
 > Date: 2026-04-05
 > Related: ADR-001 (Parakeet STT), ADR-007 (FluidAudio CoreML), ADR-010 (speaker diarization), [GitHub #57](https://github.com/moona3k/macparakeet/issues/57)
-> Amended: 2026-04-10 (meeting mic echo mitigation via VPIO + residual suppression gate)
+> Amended: 2026-04-10 (meeting mic echo mitigation via joined software AEC + observability hardening)
 
 ## Context
 
@@ -92,9 +92,11 @@ Keeping mic and system audio as separate streams enables "free" speaker attribut
 
 To reduce phantom "Me" fragments when users are on speakers:
 
-- `MicrophoneCapture` enables meeting-only voice processing (`setVoiceProcessingEnabled(true)`) before tap/start, with non-fatal fallback to raw capture when unavailable.
-- `MeetingRecordingService` applies a short-window residual echo gate for live mic chunk enqueue when recent system energy strongly dominates recent mic energy.
-- The gate affects live mic chunk transcription only; mic audio is still stored and included in the finalized mixed artifact.
+- Meeting mic/system buffers are paired in `MeetingAudioPairJoiner` with bounded lag handling and silence-fill fallback.
+- `MeetingRecordingService` runs `MeetingSoftwareAEC` (NLMS adaptive cancellation) on joined frames, using system audio as the far-end reference.
+- A short-window dominant-system guard remains in place for live mic chunk enqueue when recent system energy strongly dominates processed mic energy.
+- The guard affects live mic chunk transcription only; mic audio is still stored and included in the finalized meeting artifact.
+- Joiner queue overflow and sync-lag telemetry are logged for long-session observability.
 - Dictation capture remains raw and unchanged (ADR-015 isolation still applies).
 
 ## Rationale
@@ -125,6 +127,7 @@ Dictation has complex paste/cancel/undo behavior that meeting recording doesn't 
 - Clean architecture: parallel services, no coupling to existing dictation flow
 - Phase 2 free diarization provides speaker attribution without ML overhead
 - Speaker attribution quality improves on speakerphone calls by reducing echo-driven phantom "Me" chunks
+- Meeting dual-source final artifacts preserve source separation (`L=mic`, `R=system`) when both tracks are present
 
 ### Negative
 
@@ -132,7 +135,8 @@ Dictation has complex paste/cancel/undo behavior that meeting recording doesn't 
 - **Larger audio files:** Meeting recordings generate much larger files than dictations (50–100 MB for 60 minutes). Audio is kept by default.
 - **Product scope expansion:** MacParakeet goes from "two things well" to "three things well." Must resist further scope creep.
 - **Code ported from Oatmeal:** ~1,200 lines of audio capture code to adapt. Divergence over time will need to be managed.
-- **Threshold tradeoff:** residual echo gating may drop very quiet mic utterances during loud remote speech windows
+- **Adaptive-filter tuning tradeoff:** software AEC adds additional tuning/maintenance surface (filter length, adaptation rate, double-talk behavior).
+- **Residual suppression tradeoff:** dominant-system live gating may still drop very quiet mic utterances during loud remote speech windows.
 
 ## Phased Rollout
 

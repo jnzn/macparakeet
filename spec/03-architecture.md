@@ -119,7 +119,7 @@ The diagram below shows the ADR-016 architecture. Dictation and meeting recordin
 ```
 
 - **No shared audio engine** — dictation and meeting capture remain independent. macOS HAL multiplexes mic access.
-- **Meeting-only voice processing** — meeting mic capture can enable VPIO/AEC while dictation capture remains raw on its own engine.
+- **Meeting-only software AEC stage** — meeting mic capture remains raw, then `MeetingRecordingService` runs software AEC against paired system-reference frames; dictation capture remains raw on its own engine.
 - **No mutual exclusion** — dictation and meeting recording can both be active.
 - **Centralized STT ownership** — one runtime owner manages lifecycle, warm-up, and shutdown.
 - **Explicit scheduling** — the STT stack uses a reserved dictation slot plus a shared background slot; within the background slot, finalize beats live preview, and file transcription waits.

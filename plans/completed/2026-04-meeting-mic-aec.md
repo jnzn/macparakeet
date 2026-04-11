@@ -6,10 +6,23 @@
 > Related spec: `spec/05-audio-pipeline.md`
 > Implemented in: `238078d` (core AEC + gating), `b0f8a0d` (start-handler ordering cleanup)
 > Note: This document is preserved as a historical plan snapshot; some "current state" statements below reflect pre-implementation context.
+> Superseded by: `0561a04` (joined software AEC, joiner/sync observability, stereo dual-source final artifact)
 > Related files:
 > - `Sources/MacParakeetCore/Audio/MicrophoneCapture.swift`
 > - `Sources/MacParakeetCore/Audio/MeetingAudioCaptureService.swift`
 > - `Sources/MacParakeetCore/Services/MeetingRecordingService.swift`
+
+## Post-Implementation Amendment (Current Architecture)
+
+The shipped v0.6 hardening implementation diverged from this original VPIO-centric plan:
+
+- Meeting mic capture remains raw (`MicrophoneCapture`); there is no `setVoiceProcessingEnabled(true)` path.
+- Echo mitigation is handled in `MeetingRecordingService` through joined mic/system processing plus `MeetingSoftwareAEC` (NLMS).
+- A dominant-system live suppression guard remains as a fallback policy for live mic chunks only.
+- `MeetingAudioPairJoiner` now emits overflow diagnostics, and sync-lag EMA/warnings are logged for observability.
+- Final dual-source meeting artifacts preserve source separation as stereo (`L=mic`, `R=system`) when both tracks exist.
+
+All references below to VPIO represent historical planning context, not current implementation.
 
 ## Problem
 
