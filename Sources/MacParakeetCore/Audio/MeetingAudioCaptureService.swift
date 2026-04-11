@@ -107,8 +107,8 @@ public actor MeetingAudioCaptureService {
             throw MeetingAudioError.alreadyRunning
         }
 
-        eventSink.setHandler(handler)
         let tap = try systemAudioTapFactory()
+        eventSink.setHandler(handler)
 
         do {
             try microphoneCapture.start { [weak self] buffer, time in
