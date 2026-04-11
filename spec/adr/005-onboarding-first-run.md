@@ -1,14 +1,14 @@
 # ADR 005: First-Run Onboarding Window
 
 Date: 2026-02-10
-> Note: Core onboarding flow unchanged. Qwen LLM warm-up step referenced below was removed 2026-02-23. As of 2026-04-06, onboarding prepares the local speech stack: Parakeet STT plus any required default-on speaker-detection assets.
+> Note: Qwen LLM warm-up step referenced below was removed 2026-02-23. As of 2026-04-06, onboarding prepares the local speech stack: Parakeet STT plus any required default-on speaker-detection assets. Addendum 2026-04-10: onboarding now includes an optional Screen & System Audio Recording step for meeting capture.
 
 ## Context
 
 MacParakeet is a menu bar app with a configurable global hotkey (default: Fn) and paste automation. To deliver a premium first-run experience, we need to:
 
 - Explain the core interaction model (hotkey, stop/paste, cancel).
-- Acquire required permissions (Microphone, Accessibility).
+- Acquire permissions (Microphone, Accessibility, plus optional Screen Recording for meeting capture).
 - Prepare the local speech stack so dictation and default-on file-transcription features are ready on first use.
 
 Without onboarding, users encounter failures out of context (missing permissions, slow first warm-up) and the product feels brittle.
@@ -22,14 +22,16 @@ The onboarding flow is linear and step-based:
 1. Welcome
 2. Microphone permission
 3. Accessibility permission
-4. Hotkey instructions
-5. Speech stack setup (Parakeet + required speaker-detection assets, retry available)
-6. Ready
+4. Meeting recording permission (optional Screen & System Audio Recording)
+5. Hotkey instructions
+6. Speech stack setup (Parakeet + required speaker-detection assets, retry available)
+7. Ready
 
 The onboarding can also be launched manually from Settings.
 
 If onboarding is closed before completion, the app shows an explicit confirmation dialog. If the user exits setup anyway, onboarding is shown again on the next app activation until completion.
 During speech-stack setup, onboarding runs lightweight preflight checks (disk space + network readiness) before downloading required assets.
+While onboarding is visible, permission state is polled so changes made in System Settings are reflected automatically.
 
 ## Consequences
 

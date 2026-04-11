@@ -35,7 +35,12 @@ struct OnboardingFlowView: View {
         }
         .frame(width: windowWidth, height: windowHeight)
         .background(DesignSystem.Colors.background)
-        .onAppear { viewModel.refresh() }
+        .onAppear {
+            viewModel.startPermissionPolling()
+        }
+        .onDisappear {
+            viewModel.stopPermissionPolling()
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             viewModel.refresh()
         }
@@ -152,6 +157,7 @@ struct OnboardingFlowView: View {
         case .welcome: return "hand.wave"
         case .microphone: return "mic"
         case .accessibility: return "accessibility"
+        case .meetingRecording: return "record.circle"
         case .hotkey: return "keyboard"
         case .engine: return "cpu"
         case .done: return "checkmark.circle"
@@ -166,6 +172,8 @@ struct OnboardingFlowView: View {
             return viewModel.micStatus == .granted
         case .accessibility:
             return viewModel.accessibilityGranted
+        case .meetingRecording:
+            return viewModel.screenRecordingGranted || viewModel.meetingRecordingSkipped
         case .hotkey:
             return viewModel.step.rawValue > step.rawValue
         case .engine:
@@ -263,7 +271,7 @@ struct OnboardingFlowView: View {
                         onOpenMainApp()
                     }
                 } else {
-                    let disabled = !viewModel.canContinueFromCurrentStep() || viewModel.isBusy
+                    let disabled = continueButtonDisabled
                     accentButton(primaryButtonTitle(for: viewModel.step), icon: "arrow.right", large: false, disabled: disabled, isDefault: true) {
                         viewModel.goNext()
                     }
@@ -319,6 +327,8 @@ struct OnboardingFlowView: View {
                     openPrivacySettings(anchor: "Privacy_Accessibility")
                 }
             }
+        case .meetingRecording:
+            meetingRecordingStep
         case .hotkey:
             hotkeyStep
         case .engine:
@@ -376,6 +386,81 @@ struct OnboardingFlowView: View {
     }
 
     // MARK: - Hotkey Step
+
+    private var meetingRecordingStep: some View {
+        onboardingCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Meeting Recording (Optional)")
+                        .font(DesignSystem.Typography.sectionTitle)
+                    Spacer()
+                    Text(viewModel.screenRecordingGranted ? "Granted" : "Not granted")
+                        .font(DesignSystem.Typography.caption)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule().fill(
+                                viewModel.screenRecordingGranted
+                                ? DesignSystem.Colors.successGreen.opacity(0.15)
+                                : DesignSystem.Colors.warningAmber.opacity(0.15)
+                            )
+                        )
+                        .foregroundStyle(
+                            viewModel.screenRecordingGranted
+                            ? DesignSystem.Colors.successGreen
+                            : DesignSystem.Colors.warningAmber
+                        )
+                }
+
+                Text("To capture audio from calls, MacParakeet needs macOS's \"Screen & System Audio Recording\" permission.")
+                    .font(DesignSystem.Typography.bodySmall)
+                    .foregroundStyle(.secondary)
+
+                Text("MacParakeet never looks at or saves your screen. Apple bundles screen access into this permission, and it's the only way apps can capture system audio. We only use the audio.")
+                    .font(DesignSystem.Typography.bodySmall)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("You can skip this and enable it later if you don't plan to record meetings.")
+                    .font(DesignSystem.Typography.bodySmall)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 10) {
+                    accentButton(
+                        "Enable meeting recording",
+                        disabled: viewModel.isBusy || viewModel.screenRecordingGranted
+                    ) {
+                        viewModel.requestScreenRecordingAccess()
+                    }
+
+                    Button("Skip — I'll set this up later") {
+                        viewModel.skipMeetingRecordingStep()
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                if !viewModel.screenRecordingGranted {
+                    Button("Open System Settings") {
+                        viewModel.openScreenRecordingSystemSettings()
+                    }
+                    .buttonStyle(.link)
+                }
+
+                if viewModel.showRelaunchHint {
+                    Text("If the status doesn't update, quit and reopen MacParakeet. macOS sometimes requires a restart after granting this permission.")
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(DesignSystem.Spacing.sm)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                                .fill(DesignSystem.Colors.warningAmber.opacity(0.08))
+                        )
+                }
+            }
+            .padding(DesignSystem.Spacing.lg)
+        }
+    }
 
     @State private var doubleTapPhase = 0
     @State private var holdPhase: CGFloat = 0
@@ -823,6 +908,7 @@ struct OnboardingFlowView: View {
         case .welcome: return "Welcome to MacParakeet"
         case .microphone: return "Enable Microphone Access"
         case .accessibility: return "Enable Accessibility"
+        case .meetingRecording: return "Meeting Recording (Optional)"
         case .hotkey: return "Learn the Hotkey"
         case .engine: return "Prepare Speech Model"
         case .done: return "All Set"
@@ -837,6 +923,8 @@ struct OnboardingFlowView: View {
             return "MacParakeet needs microphone permission to record your voice."
         case .accessibility:
             return "Accessibility is required for the global hotkey and reliable paste automation."
+        case .meetingRecording:
+            return "Optional. This is only needed to capture system audio during meeting recording."
         case .hotkey:
             return "Two ways to dictate — pick whichever feels natural."
         case .engine:
@@ -851,6 +939,7 @@ struct OnboardingFlowView: View {
         case .welcome: return "Continue"
         case .microphone: return "Continue"
         case .accessibility: return "Continue"
+        case .meetingRecording: return "Continue"
         case .hotkey: return "Continue"
         case .engine: return "Continue"
         case .done: return "Finish"
@@ -973,10 +1062,19 @@ struct OnboardingFlowView: View {
             return "Grant microphone access to continue."
         case .accessibility:
             return "Enable Accessibility to continue."
+        case .meetingRecording:
+            return nil
         case .engine:
             return "Downloading — this can take several minutes. Everything works offline after setup."
         case .welcome, .hotkey, .done:
             return nil
         }
+    }
+
+    private var continueButtonDisabled: Bool {
+        if viewModel.step == .meetingRecording {
+            return viewModel.isBusy || !(viewModel.screenRecordingGranted || viewModel.meetingRecordingSkipped)
+        }
+        return !viewModel.canContinueFromCurrentStep() || viewModel.isBusy
     }
 }

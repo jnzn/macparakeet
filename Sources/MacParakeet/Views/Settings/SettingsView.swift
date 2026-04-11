@@ -71,10 +71,16 @@ struct SettingsView: View {
         }
         .onAppear {
             viewModel.refreshLaunchAtLoginStatus()
-            viewModel.refreshPermissions()
+            viewModel.startPermissionPolling()
             viewModel.refreshStats()
             viewModel.refreshEntitlements()
             viewModel.refreshModelStatus()
+        }
+        .onDisappear {
+            viewModel.stopPermissionPolling()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            viewModel.refreshPermissions()
         }
     }
 
@@ -516,7 +522,7 @@ struct SettingsView: View {
     private var permissionsCard: some View {
         settingsCard(
             title: "Permissions",
-            subtitle: "Required for dictation and pasting text into apps.",
+            subtitle: "Microphone and Accessibility are required. Screen Recording is optional for meetings.",
             icon: "lock.shield"
         ) {
             VStack(spacing: DesignSystem.Spacing.md) {
@@ -534,13 +540,41 @@ struct SettingsView: View {
                     permissionPill(granted: viewModel.accessibilityGranted)
                 }
 
-                if !viewModel.accessibilityGranted {
+                Divider()
+
+                HStack {
+                    rowText(
+                        title: "Screen & System Audio Recording",
+                        detail: "Optional. Only used for meeting audio capture. MacParakeet never records your screen."
+                    )
+                    Spacer()
+                    permissionPill(granted: viewModel.screenRecordingGranted)
+                }
+
+                if !viewModel.accessibilityGranted || !viewModel.screenRecordingGranted {
                     Divider()
-                    Button("Open System Settings") {
-                        openAccessibilitySettings()
+                    HStack(spacing: DesignSystem.Spacing.sm) {
+                        if !viewModel.accessibilityGranted {
+                            Button("Open Accessibility Settings") {
+                                openAccessibilitySettings()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(DesignSystem.Colors.accent)
+                        }
+
+                        if !viewModel.screenRecordingGranted {
+                            Button("Enable meeting recording") {
+                                viewModel.requestScreenRecordingAccess()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(DesignSystem.Colors.accent)
+
+                            Button("Open Screen Recording Settings") {
+                                viewModel.openScreenRecordingSystemSettings()
+                            }
+                            .buttonStyle(.bordered)
+                        }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(DesignSystem.Colors.accent)
                 }
             }
         }

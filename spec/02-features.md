@@ -107,9 +107,10 @@ See [00-vision.md](./00-vision.md) for positioning and market context.
 1. Welcome
 2. Microphone permission
 3. Accessibility permission
-4. Hotkey instructions (configurable trigger + Esc)
-5. Speech stack setup (Parakeet + speaker detection, retry required)
-6. Ready
+4. Meeting recording permission (optional Screen & System Audio Recording)
+5. Hotkey instructions (configurable trigger + Esc)
+6. Speech stack setup (Parakeet + speaker detection, retry required)
+7. Ready
 
 **Model failure recovery:**
 - Before warm-up, onboarding runs lightweight preflight checks (runtime support + first-setup disk/network readiness for both STT and any required default-on speaker-detection assets).
@@ -119,6 +120,7 @@ See [00-vision.md](./00-vision.md) for positioning and market context.
 **Dismiss behavior:**
 - Closing onboarding before completion shows a confirmation prompt.
 - If dismissed anyway, onboarding is re-opened on next app activation until setup is completed.
+- Permission status is polled while onboarding is visible so toggles changed in System Settings reflect in-app without manual re-check.
 
 ### F1: System-Wide Dictation
 
