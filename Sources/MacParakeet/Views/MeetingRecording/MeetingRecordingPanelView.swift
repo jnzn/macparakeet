@@ -69,7 +69,7 @@ struct MeetingRecordingPanelView: View {
             // Flower of life — always present, fades to watermark when text appears
             VStack(spacing: DesignSystem.Spacing.md) {
                 if viewModel.canStop {
-                    BreathingEnsoView()
+                    BreathingSeedOfLifeView()
                         .opacity(hasContent ? 0.15 : 1.0)
                         .animation(.easeInOut(duration: 0.8), value: hasContent)
                 } else {
@@ -155,10 +155,10 @@ struct MeetingRecordingPanelView: View {
     }
 }
 
-/// A slowly rotating seed-of-life flower for the empty listening state.
-/// Matches the flower head from the recording pill, without the stem.
-/// Also reused as the summary-generation loading indicator.
-struct BreathingEnsoView: View {
+/// A slowly rotating seed-of-life (1 center + 6 outer circles) for the
+/// empty listening state. Matches the flower head from the recording pill,
+/// without the stem. Also reused as the summary-generation loading indicator.
+struct BreathingSeedOfLifeView: View {
     @State private var rotation: Double = 0
     @State private var glowBreathing = false
 

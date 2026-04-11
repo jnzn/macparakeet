@@ -30,7 +30,7 @@ struct AIStreamingIndicator: View {
 struct SummarySkeletonView: View {
     var body: some View {
         VStack(spacing: DesignSystem.Spacing.lg) {
-            BreathingEnsoView()
+            BreathingSeedOfLifeView()
 
             AIStreamingIndicator()
         }
