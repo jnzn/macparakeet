@@ -33,7 +33,7 @@ extension SystemAudioTap: MeetingSystemAudioTapping {}
 
 public actor MeetingAudioCaptureService {
     public typealias EventHandler = @Sendable (MeetingAudioCaptureEvent) -> Void
-    typealias MeetingMicrophoneCaptureFactory = @Sendable (Bool) -> any MeetingMicrophoneCapturing
+    typealias MeetingMicrophoneCaptureFactory = @Sendable () -> any MeetingMicrophoneCapturing
 
     // A 48kHz system tap can deliver ~500 callbacks over 5 seconds if Core Audio
     // uses 480-frame buffers. The live transcription chunker needs that full span
@@ -53,7 +53,7 @@ public actor MeetingAudioCaptureService {
     private var cachedEvents: AsyncStream<MeetingAudioCaptureEvent>?
 
     public init() {
-        self.microphoneCapture = MicrophoneCapture(enableVoiceProcessing: true)
+        self.microphoneCapture = MicrophoneCapture()
         self.systemAudioTapFactory = {
             guard #available(macOS 14.2, *) else {
                 throw MeetingAudioError.unsupportedPlatform
@@ -66,7 +66,7 @@ public actor MeetingAudioCaptureService {
         microphoneCaptureFactory: @escaping MeetingMicrophoneCaptureFactory,
         systemAudioTapFactory: @escaping @Sendable () throws -> any MeetingSystemAudioTapping
     ) {
-        self.microphoneCapture = microphoneCaptureFactory(true)
+        self.microphoneCapture = microphoneCaptureFactory()
         self.systemAudioTapFactory = systemAudioTapFactory
     }
 

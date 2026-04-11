@@ -1,0 +1,57 @@
+import XCTest
+@testable import MacParakeetCore
+
+final class MeetingAudioPairJoinerTests: XCTestCase {
+    func testDrainPairsPadsToLongestFrameAndPreservesHostTimes() {
+        var joiner = MeetingAudioPairJoiner()
+        joiner.push(samples: [0.1, 0.2], hostTime: 100, source: .microphone)
+        joiner.push(samples: [0.3], hostTime: 200, source: .system)
+
+        let pairs = joiner.drainPairs()
+        XCTAssertEqual(pairs.count, 1)
+        XCTAssertEqual(pairs[0].microphoneSamples, [0.1, 0.2])
+        XCTAssertEqual(pairs[0].systemSamples, [0.3, 0.0])
+        XCTAssertEqual(pairs[0].microphoneHostTime, 100)
+        XCTAssertEqual(pairs[0].systemHostTime, 200)
+    }
+
+    func testDrainPairsEmitsMicWithSilenceAfterLagThreshold() {
+        var joiner = MeetingAudioPairJoiner()
+        for index in 0...(MeetingAudioPairJoiner.maxLag) {
+            joiner.push(samples: [Float(index)], hostTime: UInt64(index), source: .microphone)
+        }
+
+        let pairs = joiner.drainPairs()
+        XCTAssertEqual(pairs.count, MeetingAudioPairJoiner.maxLag + 1)
+        XCTAssertEqual(pairs[0].microphoneSamples, [0.0])
+        XCTAssertEqual(pairs[0].systemSamples, [0.0])
+        XCTAssertEqual(pairs[0].microphoneHostTime, 0)
+        XCTAssertNil(pairs[0].systemHostTime)
+    }
+
+    func testFlushRemainingEmitsPendingFramesWithoutLag() {
+        var joiner = MeetingAudioPairJoiner()
+        joiner.push(samples: [1.0, -1.0], hostTime: 123, source: .microphone)
+
+        let pairs = joiner.flushRemainingPairs()
+        XCTAssertEqual(pairs.count, 1)
+        XCTAssertEqual(pairs[0].microphoneSamples, [1.0, -1.0])
+        XCTAssertEqual(pairs[0].systemSamples, [0.0, 0.0])
+        XCTAssertEqual(pairs[0].microphoneHostTime, 123)
+        XCTAssertNil(pairs[0].systemHostTime)
+    }
+
+    func testPushDropsOldestFramesWhenQueueOverflows() {
+        var joiner = MeetingAudioPairJoiner()
+        for index in 0..<35 {
+            joiner.push(samples: [Float(index)], hostTime: UInt64(index), source: .microphone)
+        }
+
+        let pairs = joiner.flushRemainingPairs()
+        XCTAssertEqual(pairs.count, 30)
+        XCTAssertEqual(pairs.first?.microphoneSamples, [5.0])
+        XCTAssertEqual(pairs.first?.microphoneHostTime, 5)
+        XCTAssertEqual(pairs.last?.microphoneSamples, [34.0])
+        XCTAssertEqual(pairs.last?.microphoneHostTime, 34)
+    }
+}

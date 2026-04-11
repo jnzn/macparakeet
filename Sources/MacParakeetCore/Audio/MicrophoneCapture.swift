@@ -16,18 +16,11 @@ public final class MicrophoneCapture: @unchecked Sendable {
     private let handlerLock = NSLock()
     private let audioEngine = AVAudioEngine()
     private let bufferSize: AVAudioFrameCount = 4096
-    private let enableVoiceProcessing: Bool
 
     private var state: LifecycleState = .idle
     private var bufferHandler: AudioBufferHandler?
 
-    public init(enableVoiceProcessing: Bool = false) {
-        self.enableVoiceProcessing = enableVoiceProcessing
-    }
-
-    var isVoiceProcessingRequested: Bool {
-        enableVoiceProcessing
-    }
+    public init() {}
 
     deinit {
         stop()
@@ -68,32 +61,7 @@ public final class MicrophoneCapture: @unchecked Sendable {
             state = .starting
             handlerLock.withLock { bufferHandler = handler }
             do {
-                if enableVoiceProcessing {
-                    do {
-                        try catchingObjCException {
-                            try inputNode.setVoiceProcessingEnabled(true)
-                        }
-                    } catch {
-                        logger.warning("Voice processing unavailable, falling back to raw capture: \(error.localizedDescription, privacy: .public)")
-                    }
-                }
-
-                do {
-                    try installTapAndStartEngine(inputNode: inputNode)
-                } catch {
-                    guard enableVoiceProcessing else { throw error }
-
-                    logger.warning("Voice-processing mic start failed, retrying without voice processing: \(error.localizedDescription, privacy: .public)")
-                    audioEngine.stop()
-                    try? catchingObjCException {
-                        inputNode.removeTap(onBus: 0)
-                    }
-                    try? catchingObjCException {
-                        try inputNode.setVoiceProcessingEnabled(false)
-                    }
-                    try installTapAndStartEngine(inputNode: inputNode)
-                }
-
+                try installTapAndStartEngine(inputNode: inputNode)
                 state = .running
                 didStart = true
             } catch {

@@ -2,37 +2,36 @@ import AVFAudio
 import XCTest
 @testable import MacParakeetCore
 
-private final class RequestedVoiceProcessingBox: @unchecked Sendable {
+private final class FactoryInvocationBox: @unchecked Sendable {
     private let lock = NSLock()
-    private var value: Bool?
+    private var count = 0
 
-    func set(_ value: Bool) {
+    func increment() {
         lock.withLock {
-            self.value = value
+            count += 1
         }
     }
 
-    func get() -> Bool? {
-        lock.withLock { value }
+    func get() -> Int {
+        lock.withLock { count }
     }
 }
 
 final class MeetingAudioCaptureServiceTests: XCTestCase {
-    func testFactoryInitEnablesVoiceProcessingForMeetingMicrophone() {
+    func testFactoryInitUsesInjectedMicrophoneFactory() {
         let microphone = MockMeetingMicrophoneCapture()
         let systemTap = MockMeetingSystemAudioTap()
-        let requestedVoiceProcessing = RequestedVoiceProcessingBox()
+        let invocationCount = FactoryInvocationBox()
 
         _ = MeetingAudioCaptureService(
-            microphoneCaptureFactory: { enabled in
-                requestedVoiceProcessing.set(enabled)
+            microphoneCaptureFactory: {
+                invocationCount.increment()
                 return microphone
             },
             systemAudioTapFactory: { systemTap }
         )
 
-        let requested = requestedVoiceProcessing.get()
-        XCTAssertEqual(requested, true)
+        XCTAssertEqual(invocationCount.get(), 1)
     }
 
     func testStartHandlerCopiesInterleavedMicrophoneBuffersIntoUsablePCM() async throws {

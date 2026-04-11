@@ -59,6 +59,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
     private var pendingChunkTasks: [PendingChunkTask] = []
     private var nextChunkSequence: [AudioSource: Int] = [:]
     private var sourceTimelineOffsetsMs: [AudioSource: Int] = [:]
+    private var pairJoiner = MeetingAudioPairJoiner()
     private var microphoneChunker = AudioChunker()
     private var systemChunker = AudioChunker()
     private var chunkResultBuffer = MeetingChunkResultBuffer()
@@ -79,6 +80,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
     private static let systemActiveFloor: Float = 0.02
     private static let systemSignalFreshnessWindow: Duration = .milliseconds(750)
     private static let rmsEpsilon: Float = 0.0001
+    private static let chunkSignalFloor: Float = 0.0005
 
     public init(
         audioCaptureService: any MeetingAudioCapturing = MeetingAudioCaptureService(),
@@ -155,6 +157,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         self.currentSession = session
         self.pendingChunkTasks = []
         self.nextChunkSequence = [:]
+        pairJoiner.reset()
         await microphoneChunker.reset()
         await systemChunker.reset()
         chunkResultBuffer.reset()
@@ -195,6 +198,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         await audioCaptureService.stop()
         await processingTask?.value
         processingTask = nil
+        await flushPendingJoinedFrames(for: session)
         await flushTranscriptChunkers(for: session)
         // If live preview falls behind, discard partial speaker metadata so
         // finalization can rebuild speakers from the mixed recording instead.
@@ -260,17 +264,13 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
                 latestLevels.microphone = buffer.rmsLevel
                 updateMicrophoneRms(with: latestLevels.microphone)
                 if let samples = AudioChunker.extractAndResample(from: buffer),
-                   let chunk = offsetChunk(
-                    await microphoneChunker.addSamples(samples),
-                    source: .microphone,
-                    time: time
-                   ),
                    let session = currentSession {
-                    if shouldSuppressMicrophoneChunkTranscription() {
-                        logger.debug("Suppressing microphone chunk due to dominant recent system audio")
-                    } else {
-                        enqueueTranscription(for: chunk, source: .microphone, session: session)
-                    }
+                    await ingestResampledSamples(
+                        samples,
+                        source: .microphone,
+                        hostTime: time.isHostTimeValid ? time.hostTime : nil,
+                        session: session
+                    )
                 }
             } catch {
                 logger.error("Failed to write microphone audio: \(error.localizedDescription, privacy: .public)")
@@ -281,13 +281,13 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
                 latestLevels.system = buffer.rmsLevel
                 updateSystemRms(with: latestLevels.system)
                 if let samples = AudioChunker.extractAndResample(from: buffer),
-                   let chunk = offsetChunk(
-                    await systemChunker.addSamples(samples),
-                    source: .system,
-                    time: time
-                   ),
                    let session = currentSession {
-                    enqueueTranscription(for: chunk, source: .system, session: session)
+                    await ingestResampledSamples(
+                        samples,
+                        source: .system,
+                        hostTime: time.isHostTimeValid ? time.hostTime : nil,
+                        session: session
+                    )
                 }
             } catch {
                 logger.error("Failed to write system audio: \(error.localizedDescription, privacy: .public)")
@@ -298,26 +298,82 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         }
     }
 
+    private func ingestResampledSamples(
+        _ samples: [Float],
+        source: AudioSource,
+        hostTime: UInt64?,
+        session: Session
+    ) async {
+        pairJoiner.push(samples: samples, hostTime: hostTime, source: source)
+        for pair in pairJoiner.drainPairs() {
+            await processJoinedPair(pair, session: session)
+        }
+    }
+
+    private func processJoinedPair(_ pair: MeetingAudioPair, session: Session) async {
+        if pair.hasMicrophoneSignal {
+            if let microphoneChunk = offsetChunk(
+                await microphoneChunker.addSamples(pair.microphoneSamples),
+                source: .microphone,
+                hostTime: pair.microphoneHostTime
+            ) {
+                if !shouldTranscribeChunk(microphoneChunk) {
+                    logger.debug("Skipping low-signal microphone chunk")
+                } else if shouldSuppressMicrophoneChunkTranscription() {
+                    logger.debug("Suppressing microphone chunk due to dominant recent system audio")
+                } else {
+                    enqueueTranscription(for: microphoneChunk, source: .microphone, session: session)
+                }
+            }
+        }
+
+        if pair.hasSystemSignal {
+            if let systemChunk = offsetChunk(
+                await systemChunker.addSamples(pair.systemSamples),
+                source: .system,
+                hostTime: pair.systemHostTime
+            ) {
+                if shouldTranscribeChunk(systemChunk) {
+                    enqueueTranscription(for: systemChunk, source: .system, session: session)
+                } else {
+                    logger.debug("Skipping low-signal system chunk")
+                }
+            }
+        }
+    }
+
     private func flushTranscriptChunkers(for session: Session) async {
         if let chunk = offsetChunk(await microphoneChunker.flush(), source: .microphone) {
-            if shouldSuppressMicrophoneChunkTranscription() {
+            if !shouldTranscribeChunk(chunk) {
+                logger.debug("Skipping low-signal flushed microphone chunk")
+            } else if shouldSuppressMicrophoneChunkTranscription() {
                 logger.debug("Suppressing flushed microphone chunk due to dominant recent system audio")
             } else {
                 enqueueTranscription(for: chunk, source: .microphone, session: session)
             }
         }
         if let chunk = offsetChunk(await systemChunker.flush(), source: .system) {
-            enqueueTranscription(for: chunk, source: .system, session: session)
+            if shouldTranscribeChunk(chunk) {
+                enqueueTranscription(for: chunk, source: .system, session: session)
+            } else {
+                logger.debug("Skipping low-signal flushed system chunk")
+            }
+        }
+    }
+
+    private func flushPendingJoinedFrames(for session: Session) async {
+        for pair in pairJoiner.flushRemainingPairs() {
+            await processJoinedPair(pair, session: session)
         }
     }
 
     private func offsetChunk(
         _ chunk: AudioChunker.AudioChunk?,
         source: AudioSource,
-        time: AVAudioTime? = nil
+        hostTime: UInt64? = nil
     ) -> AudioChunker.AudioChunk? {
         guard let chunk else { return nil }
-        let offsetMs = timelineOffsetMs(for: source, time: time)
+        let offsetMs = timelineOffsetMs(for: source, hostTime: hostTime)
         guard offsetMs != 0 else { return chunk }
         return AudioChunker.AudioChunk(
             samples: chunk.samples,
@@ -326,15 +382,15 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         )
     }
 
-    private func timelineOffsetMs(for source: AudioSource, time: AVAudioTime?) -> Int {
+    private func timelineOffsetMs(for source: AudioSource, hostTime: UInt64?) -> Int {
         if let existing = sourceTimelineOffsetsMs[source] {
             return existing
         }
-        guard let time, time.isHostTimeValid else {
+        guard let hostTime else {
             return 0
         }
 
-        let offsetMs = Int((AVAudioTime.seconds(forHostTime: time.hostTime) * 1000).rounded())
+        let offsetMs = Int((AVAudioTime.seconds(forHostTime: hostTime) * 1000).rounded())
         sourceTimelineOffsetsMs[source] = offsetMs
         return offsetMs
     }
@@ -497,7 +553,18 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         return try candidates.filter { url in
             guard fileManager.fileExists(atPath: url.path) else { return false }
             let size = try fileManager.attributesOfItem(atPath: url.path)[.size] as? NSNumber
-            return (size?.intValue ?? 0) > 0
+            guard (size?.intValue ?? 0) > 0 else { return false }
+            return hasDecodableAudioFrames(at: url)
+        }
+    }
+
+    private func hasDecodableAudioFrames(at url: URL) -> Bool {
+        do {
+            let file = try AVAudioFile(forReading: url)
+            return file.length > 0
+        } catch {
+            logger.error("Failed to inspect recorded source audio: \(error.localizedDescription, privacy: .public)")
+            return false
         }
     }
 
@@ -555,11 +622,25 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         return ratio >= Self.systemDominanceRatio
     }
 
+    private func shouldTranscribeChunk(_ chunk: AudioChunker.AudioChunk) -> Bool {
+        chunkRms(for: chunk.samples) > Self.chunkSignalFloor
+    }
+
+    private func chunkRms(for samples: [Float]) -> Float {
+        guard !samples.isEmpty else { return 0 }
+        var sumSquares: Float = 0
+        for sample in samples {
+            sumSquares += sample * sample
+        }
+        return sqrt(sumSquares / Float(samples.count))
+    }
+
     private func cleanupState() {
         currentSession = nil
         pendingChunkTasks = []
         nextChunkSequence = [:]
         sourceTimelineOffsetsMs = [:]
+        pairJoiner.reset()
         latestLevels = MeetingAudioLevels()
         recentSystemRms = 0
         recentMicRms = 0

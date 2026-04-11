@@ -4,6 +4,29 @@ import XCTest
 @testable import MacParakeetCore
 
 final class MeetingRecordingServiceTests: XCTestCase {
+    func testStopRecordingThrowsNoAudioCapturedWhenRecordedFilesHaveNoFrames() async throws {
+        let captureService = MockMeetingAudioCaptureService()
+        let audioConverter = MockMeetingAudioFileConverter()
+        let sttClient = CountingMeetingSTTClient()
+        let service = MeetingRecordingService(
+            audioCaptureService: captureService,
+            audioConverter: audioConverter,
+            sttTranscriber: sttClient
+        )
+
+        try await service.startRecording()
+
+        do {
+            _ = try await service.stopRecording()
+            XCTFail("Expected stopRecording to throw noAudioCaptured")
+        } catch let error as MeetingAudioError {
+            guard case .noAudioCaptured = error else {
+                XCTFail("Expected noAudioCaptured, got \(error.localizedDescription)")
+                return
+            }
+        }
+    }
+
     func testStopRecordingPreservesCrossStreamHostTimeOffsetsInPreparedTranscript() async throws {
         let captureService = MockMeetingAudioCaptureService()
         let audioConverter = MockMeetingAudioFileConverter()
