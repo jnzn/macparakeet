@@ -42,7 +42,7 @@ extension DiarizationServiceProtocol {
     }
 }
 
-protocol OfflineDiarizerManaging: AnyObject {
+protocol OfflineDiarizerManaging: AnyObject, Sendable {
     func prepareModels(at directory: URL) async throws
     func process(audioURL: URL) async throws -> DiarizationResult
 }
@@ -56,6 +56,9 @@ extension OfflineDiarizerManager: OfflineDiarizerManaging {
         try await process(audioURL)
     }
 }
+
+// @unchecked Sendable: all access is serialized through DiarizationService actor isolation.
+extension OfflineDiarizerManager: @retroactive @unchecked Sendable {}
 
 public actor DiarizationService: DiarizationServiceProtocol {
     private let manager: any OfflineDiarizerManaging

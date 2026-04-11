@@ -51,6 +51,7 @@ private final class ClickablePanel: NSPanel {
 
 /// Manages the floating dictation overlay panel.
 /// Non-activating NSPanel that never steals focus from the active app.
+@MainActor
 final class DictationOverlayController {
     private var panel: NSPanel?
     private var hostingView: NSHostingView<DictationOverlayView>?
@@ -169,6 +170,7 @@ final class DictationOverlayController {
 }
 
 /// ViewModel for the dictation overlay
+@MainActor
 @Observable
 final class DictationOverlayViewModel {
     enum SessionKind {
