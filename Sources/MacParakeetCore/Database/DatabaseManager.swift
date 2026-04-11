@@ -4,26 +4,50 @@ import GRDB
 public final class DatabaseManager: Sendable {
     public let dbQueue: DatabaseQueue
 
+    #if DEBUG
+    private static let sqlTraceEnvKey = "MACPARAKEET_DEBUG_SQL"
+    #endif
+
     /// Create a DatabaseManager with a file-backed database
     public init(path: String) throws {
-        var config = Configuration()
-        config.foreignKeysEnabled = true
-        #if DEBUG
-        config.prepareDatabase { db in
-            db.trace { print("SQL: \($0)") }
-        }
-        #endif
+        let config = Self.makeConfiguration()
         dbQueue = try DatabaseQueue(path: path, configuration: config)
         try migrate()
     }
 
     /// Create a DatabaseManager with an in-memory database (for tests)
     public init() throws {
-        var config = Configuration()
-        config.foreignKeysEnabled = true
+        let config = Self.makeConfiguration()
         dbQueue = try DatabaseQueue(configuration: config)
         try migrate()
     }
+
+    private static func makeConfiguration() -> Configuration {
+        var config = Configuration()
+        config.foreignKeysEnabled = true
+        #if DEBUG
+        if sqlTraceEnabled {
+            config.prepareDatabase { db in
+                db.trace { print("SQL: \($0)") }
+            }
+        }
+        #endif
+        return config
+    }
+
+    #if DEBUG
+    private static var sqlTraceEnabled: Bool {
+        guard let rawValue = ProcessInfo.processInfo.environment[sqlTraceEnvKey] else {
+            return false
+        }
+        switch rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "1", "true", "yes", "on":
+            return true
+        default:
+            return false
+        }
+    }
+    #endif
 
     private func migrate() throws {
         var migrator = DatabaseMigrator()

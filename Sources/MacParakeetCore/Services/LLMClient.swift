@@ -669,8 +669,8 @@ public final class LLMClient: LLMClientProtocol, Sendable {
         // Ollama can emit {"error": "..."} mid-stream on OOM or model failure.
         // Detect and surface as a streaming error instead of silently dropping.
         if let streamError = try? JSONDecoder().decode(StreamErrorResponse.self, from: data),
-           streamError.error != nil {
-            return .error(streamError.error!)
+           let errorMessage = streamError.error {
+            return .error(errorMessage)
         }
 
         guard let chunk = try? JSONDecoder().decode(OpenAIStreamChunk.self, from: data) else {
