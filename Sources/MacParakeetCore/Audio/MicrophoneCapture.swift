@@ -16,11 +16,18 @@ public final class MicrophoneCapture: @unchecked Sendable {
     private let handlerLock = NSLock()
     private let audioEngine = AVAudioEngine()
     private let bufferSize: AVAudioFrameCount = 4096
+    private let enableVoiceProcessing: Bool
 
     private var state: LifecycleState = .idle
     private var bufferHandler: AudioBufferHandler?
 
-    public init() {}
+    public init(enableVoiceProcessing: Bool = false) {
+        self.enableVoiceProcessing = enableVoiceProcessing
+    }
+
+    var isVoiceProcessingRequested: Bool {
+        enableVoiceProcessing
+    }
 
     deinit {
         stop()
@@ -31,8 +38,15 @@ public final class MicrophoneCapture: @unchecked Sendable {
     }
 
     public var inputFormat: AVAudioFormat? {
-        let format = audioEngine.inputNode.outputFormat(forBus: 0)
-        return format.sampleRate > 0 ? format : nil
+        do {
+            let format = try catchingObjCException {
+                audioEngine.inputNode.outputFormat(forBus: 0)
+            }
+            return format.sampleRate > 0 ? format : nil
+        } catch {
+            logger.error("Failed to query microphone input format: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
     }
 
     public func start(handler: @escaping AudioBufferHandler) throws {
@@ -51,29 +65,45 @@ public final class MicrophoneCapture: @unchecked Sendable {
             }
 
             let inputNode = audioEngine.inputNode
-            let format = inputNode.outputFormat(forBus: 0)
-            guard format.sampleRate > 0 else {
-                startError = MeetingAudioError.noMicrophoneAvailable
-                return
-            }
-
             state = .starting
             handlerLock.withLock { bufferHandler = handler }
-            inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: format) { [weak self] buffer, time in
-                guard let self,
-                      let callback = self.handlerLock.withLock({ self.bufferHandler }) else { return }
-                callback(buffer, time)
-            }
-
             do {
-                try audioEngine.start()
+                if enableVoiceProcessing {
+                    do {
+                        try catchingObjCException {
+                            try inputNode.setVoiceProcessingEnabled(true)
+                        }
+                    } catch {
+                        logger.warning("Voice processing unavailable, falling back to raw capture: \(error.localizedDescription, privacy: .public)")
+                    }
+                }
+
+                do {
+                    try installTapAndStartEngine(inputNode: inputNode)
+                } catch {
+                    guard enableVoiceProcessing else { throw error }
+
+                    logger.warning("Voice-processing mic start failed, retrying without voice processing: \(error.localizedDescription, privacy: .public)")
+                    audioEngine.stop()
+                    try? catchingObjCException {
+                        inputNode.removeTap(onBus: 0)
+                    }
+                    try? catchingObjCException {
+                        try inputNode.setVoiceProcessingEnabled(false)
+                    }
+                    try installTapAndStartEngine(inputNode: inputNode)
+                }
+
                 state = .running
                 didStart = true
             } catch {
-                inputNode.removeTap(onBus: 0)
                 handlerLock.withLock { bufferHandler = nil }
                 state = .idle
-                startError = MeetingAudioError.audioEngineStartFailed(error.localizedDescription)
+                if let meetingError = error as? MeetingAudioError {
+                    startError = meetingError
+                } else {
+                    startError = MeetingAudioError.audioEngineStartFailed(error.localizedDescription)
+                }
             }
         }
 
@@ -92,7 +122,9 @@ public final class MicrophoneCapture: @unchecked Sendable {
             guard state != .idle else { return }
             state = .stopping
 
-            audioEngine.inputNode.removeTap(onBus: 0)
+            try? catchingObjCException {
+                audioEngine.inputNode.removeTap(onBus: 0)
+            }
             audioEngine.stop()
             handlerLock.withLock {
                 bufferHandler = nil
@@ -103,6 +135,48 @@ public final class MicrophoneCapture: @unchecked Sendable {
 
         if didStop {
             logger.info("Microphone capture stopped")
+        }
+    }
+
+    private func installTapAndStartEngine(inputNode: AVAudioInputNode) throws {
+        let format: AVAudioFormat
+        do {
+            format = try catchingObjCException {
+                inputNode.outputFormat(forBus: 0)
+            }
+        } catch {
+            throw MeetingAudioError.audioEngineStartFailed(
+                "Failed to query microphone format: \(error.localizedDescription)"
+            )
+        }
+
+        guard format.sampleRate > 0, format.channelCount > 0 else {
+            throw MeetingAudioError.noMicrophoneAvailable
+        }
+
+        do {
+            // Use `format: nil` so AVFAudio provides the bus's live format.
+            // This avoids aggregate-device format drift crashes.
+            try catchingObjCException {
+                inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: nil) { [weak self] buffer, time in
+                    guard let self,
+                          let callback = self.handlerLock.withLock({ self.bufferHandler }) else { return }
+                    callback(buffer, time)
+                }
+            }
+        } catch {
+            throw MeetingAudioError.audioEngineStartFailed(
+                "Failed to install microphone tap: \(error.localizedDescription)"
+            )
+        }
+
+        do {
+            try audioEngine.start()
+        } catch {
+            try? catchingObjCException {
+                inputNode.removeTap(onBus: 0)
+            }
+            throw MeetingAudioError.audioEngineStartFailed(error.localizedDescription)
         }
     }
 }

@@ -47,6 +47,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
     }
 
     private let logger = Logger(subsystem: "com.macparakeet.core", category: "MeetingRecordingService")
+    private let clock = ContinuousClock()
     private let audioCaptureService: any MeetingAudioCapturing
     private let audioConverter: any AudioFileConverting
     private let sttTranscriber: STTTranscribing
@@ -66,9 +67,18 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
     private var isTranscriptionLagging = false
     private var captureFailed = false
     private var latestLevels = MeetingAudioLevels()
+    private var recentSystemRms: Float = 0
+    private var recentMicRms: Float = 0
+    private var latestSystemSignalAt: ContinuousClock.Instant?
 
     private var transcriptContinuation: AsyncStream<MeetingTranscriptUpdate>.Continuation?
     private var cachedTranscriptUpdates: AsyncStream<MeetingTranscriptUpdate>?
+
+    private static let rmsEmaAlpha: Float = 0.3
+    private static let systemDominanceRatio: Float = 4.0
+    private static let systemActiveFloor: Float = 0.02
+    private static let systemSignalFreshnessWindow: Duration = .milliseconds(750)
+    private static let rmsEpsilon: Float = 0.0001
 
     public init(
         audioCaptureService: any MeetingAudioCapturing = MeetingAudioCaptureService(),
@@ -152,6 +162,9 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         chunkTranscriptionFailed = false
         isTranscriptionLagging = false
         captureFailed = false
+        recentSystemRms = 0
+        recentMicRms = 0
+        latestSystemSignalAt = nil
 
         processingTask = Task { [weak self] in
             guard let self else { return }
@@ -245,6 +258,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             do {
                 try writer?.write(buffer, source: .microphone)
                 latestLevels.microphone = buffer.rmsLevel
+                updateMicrophoneRms(with: latestLevels.microphone)
                 if let samples = AudioChunker.extractAndResample(from: buffer),
                    let chunk = offsetChunk(
                     await microphoneChunker.addSamples(samples),
@@ -252,7 +266,11 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
                     time: time
                    ),
                    let session = currentSession {
-                    enqueueTranscription(for: chunk, source: .microphone, session: session)
+                    if shouldSuppressMicrophoneChunkTranscription() {
+                        logger.debug("Suppressing microphone chunk due to dominant recent system audio")
+                    } else {
+                        enqueueTranscription(for: chunk, source: .microphone, session: session)
+                    }
                 }
             } catch {
                 logger.error("Failed to write microphone audio: \(error.localizedDescription, privacy: .public)")
@@ -261,6 +279,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             do {
                 try writer?.write(buffer, source: .system)
                 latestLevels.system = buffer.rmsLevel
+                updateSystemRms(with: latestLevels.system)
                 if let samples = AudioChunker.extractAndResample(from: buffer),
                    let chunk = offsetChunk(
                     await systemChunker.addSamples(samples),
@@ -281,7 +300,11 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
 
     private func flushTranscriptChunkers(for session: Session) async {
         if let chunk = offsetChunk(await microphoneChunker.flush(), source: .microphone) {
-            enqueueTranscription(for: chunk, source: .microphone, session: session)
+            if shouldSuppressMicrophoneChunkTranscription() {
+                logger.debug("Suppressing flushed microphone chunk due to dominant recent system audio")
+            } else {
+                enqueueTranscription(for: chunk, source: .microphone, session: session)
+            }
         }
         if let chunk = offsetChunk(await systemChunker.flush(), source: .system) {
             enqueueTranscription(for: chunk, source: .system, session: session)
@@ -507,12 +530,40 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         pendingChunkTasks.removeAll { $0.id == id }
     }
 
+    private func updateSystemRms(with bufferRms: Float) {
+        recentSystemRms = exponentialMovingAverage(previous: recentSystemRms, sample: bufferRms)
+        if bufferRms > Self.systemActiveFloor {
+            latestSystemSignalAt = clock.now
+        }
+    }
+
+    private func updateMicrophoneRms(with bufferRms: Float) {
+        recentMicRms = exponentialMovingAverage(previous: recentMicRms, sample: bufferRms)
+    }
+
+    private func exponentialMovingAverage(previous: Float, sample: Float) -> Float {
+        let alpha = Self.rmsEmaAlpha
+        return (previous * (1 - alpha)) + (sample * alpha)
+    }
+
+    private func shouldSuppressMicrophoneChunkTranscription() -> Bool {
+        guard recentSystemRms > Self.systemActiveFloor else { return false }
+        guard let latestSystemSignalAt else { return false }
+        guard latestSystemSignalAt.duration(to: clock.now) <= Self.systemSignalFreshnessWindow else { return false }
+
+        let ratio = recentSystemRms / max(recentMicRms, Self.rmsEpsilon)
+        return ratio >= Self.systemDominanceRatio
+    }
+
     private func cleanupState() {
         currentSession = nil
         pendingChunkTasks = []
         nextChunkSequence = [:]
         sourceTimelineOffsetsMs = [:]
         latestLevels = MeetingAudioLevels()
+        recentSystemRms = 0
+        recentMicRms = 0
+        latestSystemSignalAt = nil
         chunkResultBuffer.reset()
         transcriptAssembler.reset()
         chunkTranscriptionFailed = false

@@ -218,6 +218,93 @@ final class MeetingRecordingServiceTests: XCTestCase {
         XCTAssertEqual(prepared.words.map(\.speakerId), ["microphone"])
     }
 
+    func testSuppressesMicrophoneChunksWhenRecentSystemAudioDominates() async throws {
+        let captureService = MockMeetingAudioCaptureService()
+        let audioConverter = MockMeetingAudioFileConverter()
+        let sttClient = CountingMeetingSTTClient()
+        let service = MeetingRecordingService(
+            audioCaptureService: captureService,
+            audioConverter: audioConverter,
+            sttTranscriber: sttClient
+        )
+
+        try await service.startRecording()
+
+        let systemBuffer = try XCTUnwrap(makeMonoFloatBuffer(frameCount: 80_000, sampleValue: 0.6))
+        let micBuffer = try XCTUnwrap(makeMonoFloatBuffer(frameCount: 80_000, sampleValue: 0.005))
+        await captureService.yield(.systemBuffer(
+            systemBuffer,
+            AVAudioTime(hostTime: AVAudioTime.hostTime(forSeconds: 100.0))
+        ))
+        await captureService.yield(.microphoneBuffer(
+            micBuffer,
+            AVAudioTime(hostTime: AVAudioTime.hostTime(forSeconds: 100.1))
+        ))
+
+        let output = try await service.stopRecording()
+        defer { try? FileManager.default.removeItem(at: output.folderURL) }
+
+        let counts = await sttClient.callCounts
+        XCTAssertEqual(counts.microphone, 0)
+        XCTAssertGreaterThanOrEqual(counts.system, 1)
+    }
+
+    func testKeepsMicrophoneChunksWhenSystemAudioIsNotDominant() async throws {
+        let captureService = MockMeetingAudioCaptureService()
+        let audioConverter = MockMeetingAudioFileConverter()
+        let sttClient = CountingMeetingSTTClient()
+        let service = MeetingRecordingService(
+            audioCaptureService: captureService,
+            audioConverter: audioConverter,
+            sttTranscriber: sttClient
+        )
+
+        try await service.startRecording()
+
+        let systemBuffer = try XCTUnwrap(makeMonoFloatBuffer(frameCount: 80_000, sampleValue: 0.5))
+        let micBuffer = try XCTUnwrap(makeMonoFloatBuffer(frameCount: 80_000, sampleValue: 0.25))
+        await captureService.yield(.systemBuffer(
+            systemBuffer,
+            AVAudioTime(hostTime: AVAudioTime.hostTime(forSeconds: 100.0))
+        ))
+        await captureService.yield(.microphoneBuffer(
+            micBuffer,
+            AVAudioTime(hostTime: AVAudioTime.hostTime(forSeconds: 100.1))
+        ))
+
+        let output = try await service.stopRecording()
+        defer { try? FileManager.default.removeItem(at: output.folderURL) }
+
+        let counts = await sttClient.callCounts
+        XCTAssertGreaterThanOrEqual(counts.microphone, 1)
+    }
+
+    func testKeepsMicrophoneChunksWhenNoSystemAudioPresent() async throws {
+        let captureService = MockMeetingAudioCaptureService()
+        let audioConverter = MockMeetingAudioFileConverter()
+        let sttClient = CountingMeetingSTTClient()
+        let service = MeetingRecordingService(
+            audioCaptureService: captureService,
+            audioConverter: audioConverter,
+            sttTranscriber: sttClient
+        )
+
+        try await service.startRecording()
+
+        let micBuffer = try XCTUnwrap(makeMonoFloatBuffer(frameCount: 80_000, sampleValue: 0.25))
+        await captureService.yield(.microphoneBuffer(
+            micBuffer,
+            AVAudioTime(hostTime: AVAudioTime.hostTime(forSeconds: 100.0))
+        ))
+
+        let output = try await service.stopRecording()
+        defer { try? FileManager.default.removeItem(at: output.folderURL) }
+
+        let counts = await sttClient.callCounts
+        XCTAssertGreaterThanOrEqual(counts.microphone, 1)
+        XCTAssertEqual(counts.system, 0)
+    }
+
     private func waitForLiveChunkTranscriptionStart(
         _ client: SleepingMeetingSTTClient,
         timeout: Duration = .seconds(1)
@@ -498,4 +585,42 @@ private actor PathScriptedMeetingSTTClient: STTClientProtocol {
             try? await Task.sleep(for: .milliseconds(10))
         }
     }
+}
+
+private actor CountingMeetingSTTClient: STTClientProtocol {
+    private(set) var callCounts: (microphone: Int, system: Int) = (0, 0)
+
+    func transcribe(
+        audioPath: String,
+        job: STTJobKind,
+        onProgress: (@Sendable (Int, Int) -> Void)?
+    ) async throws -> STTResult {
+        let fileName = URL(fileURLWithPath: audioPath).lastPathComponent
+        if fileName.hasPrefix("microphone-") {
+            callCounts.microphone += 1
+        } else if fileName.hasPrefix("system-") {
+            callCounts.system += 1
+        }
+        return STTResult(text: "", words: [])
+    }
+
+    func warmUp(onProgress: (@Sendable (String) -> Void)?) async throws {}
+
+    func backgroundWarmUp() async {}
+
+    func observeWarmUpProgress() async -> (id: UUID, stream: AsyncStream<STTWarmUpState>) {
+        let stream = AsyncStream<STTWarmUpState> { continuation in
+            continuation.yield(.ready)
+            continuation.finish()
+        }
+        return (UUID(), stream)
+    }
+
+    func removeWarmUpObserver(id: UUID) async {}
+
+    func isReady() async -> Bool { true }
+
+    func clearModelCache() async {}
+
+    func shutdown() async {}
 }

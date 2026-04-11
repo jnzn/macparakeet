@@ -156,6 +156,13 @@ struct MeetingsView: View {
                 .foregroundStyle(DesignSystem.Colors.textTertiary)
                 .multilineTextAlignment(.center)
 
+            if viewModel.searchText.isEmpty {
+                Text("For the cleanest separation between you and other participants, use headphones.")
+                    .font(DesignSystem.Typography.bodySmall)
+                    .foregroundStyle(DesignSystem.Colors.textTertiary)
+                    .multilineTextAlignment(.center)
+            }
+
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
