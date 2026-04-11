@@ -27,6 +27,26 @@ final class MeetingRecordingServiceTests: XCTestCase {
         }
     }
 
+    func testRuntimeCaptureErrorTransitionsCaptureModeToStopped() async throws {
+        let captureService = MockMeetingAudioCaptureService()
+        let audioConverter = MockMeetingAudioFileConverter()
+        let sttClient = CountingMeetingSTTClient()
+        let service = MeetingRecordingService(
+            audioCaptureService: captureService,
+            audioConverter: audioConverter,
+            sttTranscriber: sttClient
+        )
+
+        try await service.startRecording()
+        await captureService.yield(.error(.captureRuntimeFailure("simulated runtime failure")))
+        try await Task.sleep(for: .milliseconds(50))
+
+        let mode = await service.captureMode
+        XCTAssertEqual(mode, .stopped)
+
+        await service.cancelRecording()
+    }
+
     func testStopRecordingPreservesCrossStreamHostTimeOffsetsInPreparedTranscript() async throws {
         let captureService = MockMeetingAudioCaptureService()
         let audioConverter = MockMeetingAudioFileConverter()
@@ -453,8 +473,14 @@ private actor MockMeetingAudioCaptureService: MeetingAudioCapturing {
         return stream
     }
 
-    func start() async throws {
+    func start() async throws -> MeetingAudioCaptureStartReport {
         _ = events
+        return MeetingAudioCaptureStartReport(
+            microphone: MeetingMicrophoneCaptureStartReport(
+                requestedMode: .vpioPreferred,
+                effectiveMode: .vpio
+            )
+        )
     }
 
     func stop() async {
