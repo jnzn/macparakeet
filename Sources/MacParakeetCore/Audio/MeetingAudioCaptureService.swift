@@ -33,6 +33,7 @@ extension SystemAudioTap: MeetingSystemAudioTapping {}
 
 public actor MeetingAudioCaptureService {
     public typealias EventHandler = @Sendable (MeetingAudioCaptureEvent) -> Void
+    typealias MeetingMicrophoneCaptureFactory = @Sendable (Bool) -> any MeetingMicrophoneCapturing
 
     // A 48kHz system tap can deliver ~500 callbacks over 5 seconds if Core Audio
     // uses 480-frame buffers. The live transcription chunker needs that full span
@@ -43,22 +44,30 @@ public actor MeetingAudioCaptureService {
     private let logger = Logger(subsystem: "com.macparakeet.core", category: "MeetingAudioCaptureService")
     private let microphoneCapture: any MeetingMicrophoneCapturing
     private let systemAudioTapFactory: @Sendable () throws -> any MeetingSystemAudioTapping
+    private let eventSink = EventSink()
 
     private var systemAudioTap: (any MeetingSystemAudioTapping)?
-    private var eventHandler: EventHandler?
     private var isCapturing = false
 
     private var eventContinuation: AsyncStream<MeetingAudioCaptureEvent>.Continuation?
     private var cachedEvents: AsyncStream<MeetingAudioCaptureEvent>?
 
     public init() {
-        self.microphoneCapture = MicrophoneCapture()
+        self.microphoneCapture = MicrophoneCapture(enableVoiceProcessing: true)
         self.systemAudioTapFactory = {
             guard #available(macOS 14.2, *) else {
                 throw MeetingAudioError.unsupportedPlatform
             }
             return SystemAudioTap()
         }
+    }
+
+    init(
+        microphoneCaptureFactory: @escaping MeetingMicrophoneCaptureFactory,
+        systemAudioTapFactory: @escaping @Sendable () throws -> any MeetingSystemAudioTapping
+    ) {
+        self.microphoneCapture = microphoneCaptureFactory(true)
+        self.systemAudioTapFactory = systemAudioTapFactory
     }
 
     init(
@@ -86,8 +95,10 @@ public actor MeetingAudioCaptureService {
     }
 
     public func start() async throws {
-        try await start { [weak self] event in
-            Task { await self?.yieldEvent(event) }
+        _ = events
+        let continuation = eventContinuation
+        try await start { event in
+            continuation?.yield(event)
         }
     }
 
@@ -96,13 +107,13 @@ public actor MeetingAudioCaptureService {
             throw MeetingAudioError.alreadyRunning
         }
 
-        eventHandler = handler
+        eventSink.setHandler(handler)
         let tap = try systemAudioTapFactory()
 
         do {
             try microphoneCapture.start { [weak self] buffer, time in
                 guard let copy = Self.deepCopyBuffer(buffer) else { return }
-                Task { await self?.handle(.microphoneBuffer(copy, time)) }
+                self?.eventSink.emit(.microphoneBuffer(copy, time))
             }
 
             try tap.start { [weak self] buffer, time in
@@ -111,13 +122,13 @@ public actor MeetingAudioCaptureService {
                         .warning("deepCopyBuffer nil for system tap: format=\(buffer.format.commonFormat.rawValue) rate=\(buffer.format.sampleRate) ch=\(buffer.format.channelCount) interleaved=\(buffer.format.isInterleaved) frames=\(buffer.frameLength)")
                     return
                 }
-                Task { await self?.handle(.systemBuffer(copy, time)) }
+                self?.eventSink.emit(.systemBuffer(copy, time))
             }
         } catch {
             microphoneCapture.stop()
             tap.stop()
             finishEventStream()
-            eventHandler = nil
+            eventSink.setHandler(nil)
             throw error
         }
 
@@ -136,16 +147,8 @@ public actor MeetingAudioCaptureService {
 
         eventContinuation?.finish()
         finishEventStream()
-        eventHandler = nil
+        eventSink.setHandler(nil)
         logger.info("Meeting audio capture stopped")
-    }
-
-    private func handle(_ event: MeetingAudioCaptureEvent) {
-        eventHandler?(event)
-    }
-
-    private func yieldEvent(_ event: MeetingAudioCaptureEvent) {
-        eventContinuation?.yield(event)
     }
 
     private func finishEventStream() {
@@ -215,6 +218,22 @@ public actor MeetingAudioCaptureService {
         }
 
         return copy
+    }
+}
+
+private final class EventSink: @unchecked Sendable {
+    private let lock = NSLock()
+    private var handler: MeetingAudioCaptureService.EventHandler?
+
+    func setHandler(_ handler: MeetingAudioCaptureService.EventHandler?) {
+        lock.withLock {
+            self.handler = handler
+        }
+    }
+
+    func emit(_ event: MeetingAudioCaptureEvent) {
+        let currentHandler = lock.withLock { handler }
+        currentHandler?(event)
     }
 }
 
