@@ -164,6 +164,7 @@ public final class SettingsViewModel {
     // Permission status
     public var microphoneGranted = false
     public var accessibilityGranted = false
+    public var screenRecordingGranted = false
 
     // Stats
     public var dictationCount = 0
@@ -202,18 +203,22 @@ public final class SettingsViewModel {
     private let defaults: UserDefaults
     private let youtubeDownloadsDirPath: @Sendable () -> String
     private let isSpeechModelCached: @Sendable () -> Bool
+    private let permissionPollingInterval: Duration
     private var isApplyingLaunchAtLoginState = false
+    private var permissionPollingTask: Task<Void, Never>?
     private let logger = Logger(subsystem: "com.macparakeet.viewmodels", category: "SettingsViewModel")
 
     public init(
         defaults: UserDefaults = .standard,
         youtubeDownloadsDirPath: @escaping @Sendable () -> String = { AppPaths.youtubeDownloadsDir },
-        isSpeechModelCached: @escaping @Sendable () -> Bool = { STTRuntime.isModelCached() }
+        isSpeechModelCached: @escaping @Sendable () -> Bool = { STTRuntime.isModelCached() },
+        permissionPollingInterval: Duration = .seconds(2)
     ) {
         AutoSaveService.migrateLegacyMeetingSettingsIfNeeded(defaults: defaults)
         self.defaults = defaults
         self.youtubeDownloadsDirPath = youtubeDownloadsDirPath
         self.isSpeechModelCached = isSpeechModelCached
+        self.permissionPollingInterval = permissionPollingInterval
         launchAtLogin = defaults.bool(forKey: "launchAtLogin")
         menuBarOnlyMode = AppPreferences.isMenuBarOnlyModeEnabled(defaults: defaults)
         showIdlePill = defaults.object(forKey: UserDefaultsAppRuntimePreferences.showIdlePillKey) as? Bool ?? true
@@ -317,10 +322,41 @@ public final class SettingsViewModel {
             if let service = permissionService {
                 let micStatus = await service.checkMicrophonePermission()
                 let accStatus = service.checkAccessibilityPermission()
+                let screenRecordingStatus = service.checkScreenRecordingPermission()
                 microphoneGranted = micStatus == .granted
                 accessibilityGranted = accStatus
+                screenRecordingGranted = screenRecordingStatus
             }
         }
+    }
+
+    public func requestScreenRecordingAccess() {
+        guard let permissionService else { return }
+        Telemetry.send(.permissionPrompted(permission: .screenRecording))
+        _ = permissionService.requestScreenRecordingPermission()
+        refreshPermissions()
+    }
+
+    public func openScreenRecordingSystemSettings() {
+        permissionService?.openScreenRecordingSettings()
+    }
+
+    public func startPermissionPolling() {
+        guard permissionPollingTask == nil else { return }
+        refreshPermissions()
+        permissionPollingTask = Task { [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: self.permissionPollingInterval)
+                guard !Task.isCancelled else { break }
+                self.refreshPermissions()
+            }
+        }
+    }
+
+    public func stopPermissionPolling() {
+        permissionPollingTask?.cancel()
+        permissionPollingTask = nil
     }
 
     public func refreshStats() {

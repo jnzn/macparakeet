@@ -13,6 +13,7 @@ public final class OnboardingViewModel {
         case welcome
         case microphone
         case accessibility
+        case meetingRecording
         case hotkey
         case engine
         case done
@@ -24,6 +25,7 @@ public final class OnboardingViewModel {
             case .welcome: return "Welcome"
             case .microphone: return "Microphone"
             case .accessibility: return "Accessibility"
+            case .meetingRecording: return "Meeting Recording"
             case .hotkey: return "Hotkey"
             case .engine: return "Speech Model"
             case .done: return "Ready"
@@ -45,6 +47,9 @@ public final class OnboardingViewModel {
     public private(set) var step: Step = .welcome
     public private(set) var micStatus: PermissionStatus = .notDetermined
     public private(set) var accessibilityGranted: Bool = false
+    public private(set) var screenRecordingGranted: Bool = false
+    public private(set) var meetingRecordingSkipped: Bool
+    public private(set) var showRelaunchHint: Bool = false
     public private(set) var engineState: EngineState = .idle
 
     public var isBusy: Bool = false
@@ -58,15 +63,22 @@ public final class OnboardingViewModel {
     private let isSpeechModelCached: @Sendable () -> Bool
     private let defaults: UserDefaults
     private let now: @Sendable () -> Date
+    private let permissionPollingInterval: Duration
+    private let relaunchHintDelay: TimeInterval
     private var engineGeneration: Int = 0
     private var refreshTask: Task<Void, Never>?
+    private var permissionPollingTask: Task<Void, Never>?
     private var warmUpObserverTask: Task<Void, Never>?
     private var warmUpObserverId: UUID?
     private var warmUpObservationToken: UUID?
+    private var screenRecordingGrantRequestedAt: Date?
+    private var hasLoadedInitialScreenRecordingState = false
+    private var hasEmittedScreenRecordingGranted = false
     private let requiredFirstSetupDiskBytes: Int64 = 7 * 1_024 * 1_024 * 1_024
     private let requiredDiarizationSetupDiskBytes: Int64 = 512 * 1_024 * 1_024
 
     public static let onboardingCompletedKey = "onboarding.completedAtISO"
+    public static let meetingRecordingSkippedKey = "onboarding.meetingRecordingSkipped"
 
     public init(
         permissionService: PermissionServiceProtocol,
@@ -77,7 +89,9 @@ public final class OnboardingViewModel {
         isNetworkReachable: (@Sendable () async -> Bool)? = nil,
         isSpeechModelCached: (@Sendable () -> Bool)? = nil,
         defaults: UserDefaults = .standard,
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() },
+        permissionPollingInterval: Duration = .seconds(2),
+        relaunchHintDelay: TimeInterval = 10
     ) {
         self.permissionService = permissionService
         self.sttClient = sttClient
@@ -88,6 +102,9 @@ public final class OnboardingViewModel {
         self.isSpeechModelCached = isSpeechModelCached ?? { STTRuntime.isModelCached() }
         self.defaults = defaults
         self.now = now
+        self.permissionPollingInterval = permissionPollingInterval
+        self.relaunchHintDelay = relaunchHintDelay
+        self.meetingRecordingSkipped = defaults.bool(forKey: Self.meetingRecordingSkippedKey)
     }
 
     public var hasCompletedOnboarding: Bool {
@@ -104,8 +121,11 @@ public final class OnboardingViewModel {
 
     public func resetOnboarding() {
         defaults.removeObject(forKey: Self.onboardingCompletedKey)
+        defaults.removeObject(forKey: Self.meetingRecordingSkippedKey)
         step = .welcome
         engineState = .idle
+        meetingRecordingSkipped = false
+        clearMeetingRecordingPendingState()
     }
 
     public func refresh() {
@@ -113,10 +133,22 @@ public final class OnboardingViewModel {
         refreshTask = Task {
             let mic = await permissionService.checkMicrophonePermission()
             let ax = permissionService.checkAccessibilityPermission()
+            let screenRecording = permissionService.checkScreenRecordingPermission()
             guard !Task.isCancelled else { return }
             await MainActor.run {
+                let previousScreenRecordingGranted = self.screenRecordingGranted
                 self.micStatus = mic
                 self.accessibilityGranted = ax
+                self.screenRecordingGranted = screenRecording
+                if self.hasLoadedInitialScreenRecordingState,
+                   !previousScreenRecordingGranted,
+                   screenRecording,
+                   !self.hasEmittedScreenRecordingGranted {
+                    self.hasEmittedScreenRecordingGranted = true
+                    Telemetry.send(.permissionGranted(permission: .screenRecording))
+                }
+                self.hasLoadedInitialScreenRecordingState = true
+                self.updateMeetingRecordingRelaunchHint(now: self.now())
                 self.refreshTask = nil
             }
         }
@@ -124,6 +156,9 @@ public final class OnboardingViewModel {
 
     public func goNext() {
         guard let next = Step(rawValue: step.rawValue + 1) else { return }
+        if step == .meetingRecording {
+            clearMeetingRecordingPendingState()
+        }
         step = next
         Telemetry.send(.onboardingStep(step: next.title.lowercased()))
         refresh()
@@ -131,11 +166,17 @@ public final class OnboardingViewModel {
 
     public func goBack() {
         guard let prev = Step(rawValue: step.rawValue - 1) else { return }
+        if step == .meetingRecording {
+            clearMeetingRecordingPendingState()
+        }
         step = prev
         refresh()
     }
 
     public func jump(to target: Step) {
+        if step == .meetingRecording, target != .meetingRecording {
+            clearMeetingRecordingPendingState()
+        }
         step = target
         refresh()
     }
@@ -148,6 +189,8 @@ public final class OnboardingViewModel {
             return micStatus == .granted
         case .accessibility:
             return accessibilityGranted
+        case .meetingRecording:
+            return true
         case .hotkey:
             return true
         case .engine:
@@ -194,6 +237,43 @@ public final class OnboardingViewModel {
         if accessibilityGranted {
             Telemetry.send(.permissionGranted(permission: .accessibility))
         }
+    }
+
+    public func requestScreenRecordingAccess() {
+        Telemetry.send(.permissionPrompted(permission: .screenRecording))
+        screenRecordingGrantRequestedAt = now()
+        showRelaunchHint = false
+        _ = permissionService.requestScreenRecordingPermission()
+        refresh()
+    }
+
+    public func skipMeetingRecordingStep() {
+        meetingRecordingSkipped = true
+        defaults.set(true, forKey: Self.meetingRecordingSkippedKey)
+        clearMeetingRecordingPendingState()
+        goNext()
+    }
+
+    public func openScreenRecordingSystemSettings() {
+        permissionService.openScreenRecordingSettings()
+    }
+
+    public func startPermissionPolling() {
+        guard permissionPollingTask == nil else { return }
+        refresh()
+        permissionPollingTask = Task { [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: self.permissionPollingInterval)
+                guard !Task.isCancelled else { break }
+                self.refresh()
+            }
+        }
+    }
+
+    public func stopPermissionPolling() {
+        permissionPollingTask?.cancel()
+        permissionPollingTask = nil
     }
 
     public func startEngineWarmUp() {
@@ -318,6 +398,26 @@ public final class OnboardingViewModel {
     /// Does NOT cancel the shared background download.
     public func stopObservingWarmUp() {
         cancelWarmUpObservation()
+        stopPermissionPolling()
+    }
+
+    private func clearMeetingRecordingPendingState() {
+        screenRecordingGrantRequestedAt = nil
+        showRelaunchHint = false
+    }
+
+    private func updateMeetingRecordingRelaunchHint(now currentTime: Date) {
+        guard !screenRecordingGranted else {
+            clearMeetingRecordingPendingState()
+            return
+        }
+
+        guard step == .meetingRecording, let requestTime = screenRecordingGrantRequestedAt else {
+            showRelaunchHint = false
+            return
+        }
+
+        showRelaunchHint = currentTime.timeIntervalSince(requestTime) >= relaunchHintDelay
     }
 
     private func cancelWarmUpObservation() {

@@ -254,6 +254,7 @@ final class SettingsViewModelTests: XCTestCase {
     func testRefreshPermissionsUpdatesGrantedState() async throws {
         mockPermissions.microphonePermission = .granted
         mockPermissions.accessibilityPermission = true
+        mockPermissions.screenRecordingPermission = true
 
         viewModel.configure(
             permissionService: mockPermissions,
@@ -267,11 +268,13 @@ final class SettingsViewModelTests: XCTestCase {
 
         XCTAssertTrue(viewModel.microphoneGranted)
         XCTAssertTrue(viewModel.accessibilityGranted)
+        XCTAssertTrue(viewModel.screenRecordingGranted)
     }
 
     func testRefreshPermissionsUpdatesNotGrantedState() async throws {
         mockPermissions.microphonePermission = .denied
         mockPermissions.accessibilityPermission = false
+        mockPermissions.screenRecordingPermission = false
 
         viewModel.configure(
             permissionService: mockPermissions,
@@ -285,6 +288,7 @@ final class SettingsViewModelTests: XCTestCase {
 
         XCTAssertFalse(viewModel.microphoneGranted)
         XCTAssertFalse(viewModel.accessibilityGranted)
+        XCTAssertFalse(viewModel.screenRecordingGranted)
     }
 
     func testMicrophoneNotDeterminedIsNotGranted() async throws {
