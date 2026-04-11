@@ -61,3 +61,11 @@ This matrix traces each requirement ID from `requirements.yaml` to its implement
 | REQ-UI-004 | `MacParakeet/Views/Transcription/TranscriptionDetailView.swift` | (ViewModel tests) |
 | REQ-LIB-001 | `MacParakeet/Views/Transcription/TranscriptionLibraryView.swift` | `TranscriptionRepositoryTests.swift` |
 | REQ-UI-005 | `MacParakeet/Views/Transcription/HomeView.swift` | (ViewModel tests) |
+
+## v0.6 Meeting Recording Hardening
+
+| Requirement | Source Files | Test Files |
+|------------|-------------|------------|
+| REQ-MEET-001 | `MacParakeetCore/Audio/MicrophoneCapture.swift`, `MacParakeetCore/Audio/MeetingAudioCaptureService.swift` | `MicrophoneCaptureTests.swift`, `MeetingAudioCaptureServiceTests.swift` |
+| REQ-MEET-002 | `MacParakeetCore/Services/MeetingRecordingService.swift` | `MeetingRecordingServiceTests.swift` |
+| REQ-MEET-003 | `MacParakeet/Views/MeetingRecording/MeetingsView.swift` | `TranscriptionLibraryViewModelTests.swift` |

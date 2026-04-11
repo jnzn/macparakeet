@@ -87,7 +87,7 @@ The suite includes targeted regressions for progress behavior in URL transcripti
 
 **What:** Meeting recording flow, state machine transitions, chunk ordering, audio pipeline.
 
-**How:** Protocol-based mocks for `MeetingAudioCaptureServiceProtocol` and `MeetingRecordingServiceProtocol`. In-memory SQLite for persistence. No real audio capture in tests.
+**How:** Protocol-based mocks for `MeetingAudioCapturing`, `MeetingMicrophoneCapturing` seams, and `MeetingRecordingServiceProtocol`. In-memory SQLite for persistence. No real audio capture in tests.
 
 **Examples:**
 - `MeetingRecordingFlowStateMachineTests`: All state transitions (idle → recording → stopping → transcribing → completed), generation guards, error paths
@@ -95,6 +95,9 @@ The suite includes targeted regressions for progress behavior in URL transcripti
 - `MeetingTranscriptAssemblerTests`: Preview line assembly from chunk results
 - `MeetingRecordingPanelViewModelTests`: Live preview updates, elapsed time, audio levels
 - `AudioChunkerTests`: Chunk boundary timing, overlap handling, flush on stop
+- `MicrophoneCaptureTests`: Meeting mic voice-processing wiring defaults (`false`) and opt-in enablement path
+- `MeetingAudioCaptureServiceTests`: Default meeting microphone path enables voice processing
+- `MeetingRecordingServiceTests`: Echo-dominant system windows suppress mic live chunks while normal/no-system windows keep mic chunks
 - `GlobalShortcutManagerTests`: Meeting hotkey registration, conflict detection
 - `TranscriptionServiceTests`: Meeting transcription path (sourceType = .meeting)
 - `DatabaseManagerTests`: sourceType migration, meeting transcription CRUD

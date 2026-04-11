@@ -3,6 +3,7 @@
 > Status: IMPLEMENTED
 > Date: 2026-04-05
 > Related: ADR-001 (Parakeet STT), ADR-007 (FluidAudio CoreML), ADR-010 (speaker diarization), [GitHub #57](https://github.com/moona3k/macparakeet/issues/57)
+> Amended: 2026-04-10 (meeting mic echo mitigation via VPIO + residual suppression gate)
 
 ## Context
 
@@ -31,7 +32,7 @@ System audio is captured via Core Audio Taps (`CATapDescription` + `AudioHardwar
 Implementation is ported from Oatmeal's `SystemAudioTap.swift` (same owner, GPL-3.0). Key components:
 - `SystemAudioTap` — Core Audio Taps wrapper, creates aggregate device with tap
 - `MicrophoneCapture` — AVAudioEngine input node tap (separate from existing `AudioRecorder`)
-- `MeetingAudioCaptureService` — Actor combining both streams into an `AsyncStream<CaptureEvent>`
+- `MeetingAudioCaptureService` — Actor combining both streams into an `AsyncStream<MeetingAudioCaptureEvent>`
 - `MeetingAudioStorageWriter` — Writes separate M4A files per source (mic + system)
 
 ### 3. Reuse Transcription model with sourceType column
@@ -87,6 +88,15 @@ Parakeet at 155x realtime transcribes 60 minutes of audio in ~23 seconds. Batch 
 
 Keeping mic and system audio as separate streams enables "free" speaker attribution without ML diarization: mic audio = "Me", system audio = "Them". This is ported from Oatmeal's approach and provides basic two-speaker diarization at zero computational cost.
 
+### 9. Meeting mic echo mitigation (v0.6 hardening)
+
+To reduce phantom "Me" fragments when users are on speakers:
+
+- `MicrophoneCapture` enables meeting-only voice processing (`setVoiceProcessingEnabled(true)`) before tap/start, with non-fatal fallback to raw capture when unavailable.
+- `MeetingRecordingService` applies a short-window residual echo gate for live mic chunk enqueue when recent system energy strongly dominates recent mic energy.
+- The gate affects live mic chunk transcription only; mic audio is still stored and included in the finalized mixed artifact.
+- Dictation capture remains raw and unchanged (ADR-015 isolation still applies).
+
 ## Rationale
 
 ### Why not keep meeting recording in Oatmeal only?
@@ -114,6 +124,7 @@ Dictation has complex paste/cancel/undo behavior that meeting recording doesn't 
 - Audio capture code is proven (already running in Oatmeal)
 - Clean architecture: parallel services, no coupling to existing dictation flow
 - Phase 2 free diarization provides speaker attribution without ML overhead
+- Speaker attribution quality improves on speakerphone calls by reducing echo-driven phantom "Me" chunks
 
 ### Negative
 
@@ -121,6 +132,7 @@ Dictation has complex paste/cancel/undo behavior that meeting recording doesn't 
 - **Larger audio files:** Meeting recordings generate much larger files than dictations (50–100 MB for 60 minutes). Audio is kept by default.
 - **Product scope expansion:** MacParakeet goes from "two things well" to "three things well." Must resist further scope creep.
 - **Code ported from Oatmeal:** ~1,200 lines of audio capture code to adapt. Divergence over time will need to be managed.
+- **Threshold tradeoff:** residual echo gating may drop very quiet mic utterances during loud remote speech windows
 
 ## Phased Rollout
 

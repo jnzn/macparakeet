@@ -128,11 +128,11 @@ User pastes YouTube URL
 
 ```
 System Audio → Core Audio Taps → Aggregate Device → Buffer Callback → M4A
-Mic Input    → AVAudioEngine   → Input Node Tap   → Buffer Callback → M4A
+Mic Input    → AVAudioEngine (meeting-only voice processing, best-effort) → Input Node Tap → Buffer Callback → M4A
                                                           │
                                                           ▼
                                               MeetingAudioCaptureService
-                                              (AsyncStream<CaptureEvent>)
+                                              (AsyncStream<MeetingAudioCaptureEvent>)
                                                           │
                                                           ▼
                                               MeetingAudioStorageWriter
@@ -144,10 +144,11 @@ Mic Input    → AVAudioEngine   → Input Node Tap   → Buffer Callback → M4
 ```
 
 - **System audio** is captured via Core Audio Taps (`CATapDescription` + `AudioHardwareCreateProcessTap`), available on macOS 14.2+
-- **Mic audio** is captured via `AVAudioEngine` input node tap (separate from the existing `AudioRecorder` used by dictation — `MicrophoneCapture` provides raw buffer callbacks, not WAV file output)
+- **Mic audio** is captured via `AVAudioEngine` input node tap (separate from the existing `AudioRecorder` used by dictation — `MicrophoneCapture` provides raw buffer callbacks, not WAV file output). Meeting recording enables `setVoiceProcessingEnabled(true)` on that engine before tap/start, with non-fatal fallback to raw capture when VPIO is unavailable.
 - Both streams are captured within the same meeting session and aligned by host time. The Core Audio Tap aggregate-device path keeps the system stream stable, and the preview/speaker-label pipeline uses per-buffer `AVAudioTime` host time for ordering.
 - Audio is stored as separate M4A files (AAC 64kbps, 16kHz mono) per source
 - After recording stops, microphone + system M4As are mixed into `meeting.m4a`, then the standard batch transcription pipeline converts that mixed file to 16kHz mono WAV and transcribes it with Parakeet
+- Live chunk enqueue applies an additional residual-echo guard: when recent system energy strongly dominates recent mic energy for a short freshness window, mic chunks are skipped for live transcription only. Mic audio is still written to disk and included in final mix/output.
 
 ### Key Components (ported from Oatmeal)
 
@@ -155,7 +156,7 @@ Mic Input    → AVAudioEngine   → Input Node Tap   → Buffer Callback → M4
 |-----------|---------|
 | `SystemAudioTap` | Core Audio Taps wrapper — creates aggregate device, provides buffer callback |
 | `MicrophoneCapture` | AVAudioEngine mic wrapper — raw buffer callback (not file output) |
-| `MeetingAudioCaptureService` | Actor combining both streams into `AsyncStream<CaptureEvent>` with `.bufferingNewest(32)` |
+| `MeetingAudioCaptureService` | Actor combining both streams into `AsyncStream<MeetingAudioCaptureEvent>` with `.bufferingNewest(2048)` to absorb 48kHz tap callback bursts without dropping early live-preview input |
 | `MeetingAudioStorageWriter` | Writes separate M4A files per source (mic + system) |
 
 ### Meeting Recording Flow
@@ -166,7 +167,7 @@ User clicks "Start Meeting Recording"
     → If denied: show error + "Open System Settings" button, block recording
     → Start MeetingAudioCaptureService (both streams)
     → Show recording pill (red dot + elapsed timer + stop button)
-    → Consume AsyncStream<CaptureEvent>, write buffers to M4A files
+    → Consume AsyncStream<MeetingAudioCaptureEvent>, write buffers to M4A files
     → User clicks Stop
     → Stop capture, finalize `microphone.m4a` + `system.m4a`
     → Mix both streams into `meeting.m4a`
@@ -194,7 +195,7 @@ Meeting recording and dictation run concurrently as fully independent pipelines.
 | Flow | Engine | Notes |
 |------|--------|-------|
 | Dictation | `AudioRecorder.audioEngine` | Created/destroyed per dictation session |
-| Meeting mic | `MicrophoneCapture.audioEngine` | Long-lived, runs for entire meeting |
+| Meeting mic | `MicrophoneCapture.audioEngine` | Long-lived, runs for entire meeting; meeting-only voice processing enabled with raw fallback |
 
 macOS Core Audio's HAL natively multiplexes microphone access — multiple engines tapping the same physical mic is a supported pattern. There is no shared audio engine or audio broker.
 
@@ -211,6 +212,7 @@ The primary concurrency use case remains meeting recording + dictation. File tra
 In Phase 2, an `AudioChunker` (ported from Oatmeal) buffers audio into 5-second chunks with 1-second overlap and sends them to Parakeet during recording. This provides:
 - Live transcript preview in the recording pill
 - Free speaker diarization: mic chunks → "Me", system chunks → "Them"
+- A residual-echo safeguard that suppresses clearly system-dominant mic chunks in live preview windows
 - Immediate transcript availability when recording stops
 
 ---
