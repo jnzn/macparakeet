@@ -23,6 +23,12 @@ enum NoSpeechAnimationTiming {
     static let leafRecedeDuration = 0.55
     static let leafRecedeDelay = 1.5
 
+    // NoSpeechLightDrift phase — slow horizontal light drift that finishes
+    // exactly as the dismiss timer fires. `delay + duration` is tuned so the
+    // band exits the right edge the moment the pill disappears.
+    static let lightDriftDelay = 0.5
+    static let lightDriftDuration = 1.6
+
     static let completionBufferSeconds = 0.2
 
     static let estimatedAnimationCompletionSeconds = max(
@@ -33,7 +39,10 @@ enum NoSpeechAnimationTiming {
                 leafFadeInDelay + leafFadeInDuration,
                 max(
                     leafDriftDelay + leafDriftDuration,
-                    max(textFadeInDelay + textFadeInDuration, leafRecedeDelay + leafRecedeDuration)
+                    max(
+                        textFadeInDelay + textFadeInDuration,
+                        max(leafRecedeDelay + leafRecedeDuration, lightDriftDelay + lightDriftDuration)
+                    )
                 )
             )
         )
