@@ -95,9 +95,11 @@ The suite includes targeted regressions for progress behavior in URL transcripti
 - `MeetingTranscriptAssemblerTests`: Preview line assembly from chunk results
 - `MeetingRecordingPanelViewModelTests`: Live preview updates, elapsed time, audio levels
 - `AudioChunkerTests`: Chunk boundary timing, overlap handling, flush on stop
-- `MicrophoneCaptureTests`: Meeting mic voice-processing wiring defaults (`false`) and opt-in enablement path
-- `MeetingAudioCaptureServiceTests`: Default meeting microphone path enables voice processing
-- `MeetingRecordingServiceTests`: Echo-dominant system windows suppress mic live chunks while normal/no-system windows keep mic chunks
+- `MicrophoneCaptureTests`: Lightweight construction/lifecycle seam coverage for the mic capture wrapper
+- `MeetingAudioCaptureServiceTests`: Interleaved-buffer deep-copy correctness + burst buffering retention for high-rate system tap callbacks
+- `MeetingSoftwareAECTests`: NLMS software AEC behavior and reset semantics
+- `MeetingAudioPairJoinerTests`: Pairing behavior, bounded-lag solo fallback, and overflow diagnostics
+- `MeetingRecordingServiceTests`: Host-time alignment, live chunk backpressure behavior, and dominant-system mic suppression guard behavior
 - `GlobalShortcutManagerTests`: Meeting hotkey registration, conflict detection
 - `TranscriptionServiceTests`: Meeting transcription path (sourceType = .meeting)
 - `DatabaseManagerTests`: sourceType migration, meeting transcription CRUD

@@ -50,7 +50,7 @@ MacParakeet runs NVIDIA's Parakeet TDT on Apple's Neural Engine via [FluidAudio]
 
 **File transcription** — Drag audio or video files, or paste a YouTube URL. Full transcript with word-level timestamps, speaker labels, and export to 7 formats (TXT, Markdown, SRT, VTT, DOCX, PDF, JSON).
 
-**Meeting recording** — Capture microphone + system audio together, watch a live transcript preview while recording, and save the finished meeting directly into the library with summaries, chat, search, and export support. The meeting mic path applies voice processing plus residual echo suppression to reduce phantom "Me" fragments when you're on speakers (headphones still give the cleanest separation).
+**Meeting recording** — Capture microphone + system audio together, watch a live transcript preview while recording, and save the finished meeting directly into the library with summaries, chat, search, and export support. The meeting pipeline pairs mic/system frames, runs software AEC on the mic path, and applies a conservative system-dominance gate for live mic chunks while preserving both recorded sources in the finalized artifact (headphones still give the cleanest separation).
 
 **Text cleanup** — Filler word removal, custom word replacements, text snippets with triggers. Deterministic pipeline, no LLM needed.
 
