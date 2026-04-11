@@ -11,6 +11,11 @@ public protocol DiscoverServiceProtocol: Sendable {
 // MARK: - Implementation
 
 public final class DiscoverService: DiscoverServiceProtocol {
+    private static let ioQueue = DispatchQueue(
+        label: "com.macparakeet.core.discover-io",
+        qos: .utility
+    )
+
     private let feedURL: URL
     private let cachePath: String
     private let fallbackData: Data
@@ -39,20 +44,28 @@ public final class DiscoverService: DiscoverServiceProtocol {
     private var cacheURL: URL { URL(fileURLWithPath: cachePath) }
 
     public func loadContent() async -> DiscoverFeed {
-        // Try cache first
-        if let data = try? Data(contentsOf: cacheURL),
-           let feed = try? JSONDecoder().decode(DiscoverFeed.self, from: data) {
-            return feed
+        let cacheURL = self.cacheURL
+        let fallbackData = self.fallbackData
+
+        let (feed, usedFallbackEmptyFeed) = await Self.runIO {
+            // Try cache first
+            if let data = try? Data(contentsOf: cacheURL),
+               let cachedFeed = try? JSONDecoder().decode(DiscoverFeed.self, from: data) {
+                return (cachedFeed, false)
+            }
+
+            // Fall back to bundled data
+            if let fallbackFeed = try? JSONDecoder().decode(DiscoverFeed.self, from: fallbackData) {
+                return (fallbackFeed, false)
+            }
+
+            return (DiscoverFeed(version: 0, items: []), true)
         }
 
-        // Fall back to bundled data
-        if let feed = try? JSONDecoder().decode(DiscoverFeed.self, from: fallbackData) {
-            return feed
+        if usedFallbackEmptyFeed {
+            log.warning("Failed to decode both cache and fallback discover feeds")
         }
-
-        // Empty feed as last resort
-        log.warning("Failed to decode both cache and fallback data")
-        return DiscoverFeed(version: 0, items: [])
+        return feed
     }
 
     public func fetchFresh() async -> DiscoverFeed? {
@@ -67,19 +80,40 @@ public final class DiscoverService: DiscoverServiceProtocol {
                 return nil
             }
 
-            let feed = try JSONDecoder().decode(DiscoverFeed.self, from: data)
+            let cacheURL = self.cacheURL
+            let decodedFeed = await Self.runIO { () -> DiscoverFeed? in
+                guard let feed = try? JSONDecoder().decode(DiscoverFeed.self, from: data) else {
+                    return nil
+                }
+                do {
+                    try FileManager.default.createDirectory(
+                        at: cacheURL.deletingLastPathComponent(),
+                        withIntermediateDirectories: true
+                    )
+                    try data.write(to: cacheURL, options: .atomic)
+                } catch {
+                    // Cache write failure should not block fresh content.
+                }
+                return feed
+            }
 
-            // Write to cache
-            try? FileManager.default.createDirectory(
-                at: cacheURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            try data.write(to: cacheURL, options: .atomic)
+            guard let decodedFeed else {
+                log.warning("Failed to decode discover feed response")
+                return nil
+            }
 
-            return feed
+            return decodedFeed
         } catch {
             log.warning("Failed to fetch discover feed: \(error.localizedDescription)")
             return nil
+        }
+    }
+
+    private static func runIO<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
+        await withCheckedContinuation { continuation in
+            ioQueue.async {
+                continuation.resume(returning: work())
+            }
         }
     }
 }

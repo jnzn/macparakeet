@@ -1,5 +1,8 @@
 import Foundation
 import OSLog
+#if canImport(AppKit)
+import AppKit
+#endif
 
 // MARK: - Protocol
 
@@ -34,6 +37,14 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
     static let maxBatchSize = 100
     static let terminationFlushMaxWait: TimeInterval = 0.4
     static let terminationRequestTimeout: TimeInterval = 0.3
+
+    private static var appWillTerminateNotification: Notification.Name {
+        #if canImport(AppKit)
+        NSApplication.willTerminateNotification
+        #else
+        Notification.Name("NSApplicationWillTerminateNotification")
+        #endif
+    }
 
     /// Events that must be flushed immediately (not batched in memory).
     private static let immediateEvents: Set<TelemetryEventName> = [
@@ -168,7 +179,7 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
 
     private func registerLifecycleObservers() {
         lifecycleObserver = NotificationCenter.default.addObserver(
-            forName: Notification.Name("NSApplicationWillTerminateNotification"),
+            forName: Self.appWillTerminateNotification,
             object: nil,
             queue: nil
         ) { [weak self] _ in
