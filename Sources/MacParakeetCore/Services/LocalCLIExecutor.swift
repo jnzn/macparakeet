@@ -198,6 +198,21 @@ public final class LocalCLIExecutor: Sendable {
         }
     }
 
+    private final class DataCapture: @unchecked Sendable {
+        private let lock = NSLock()
+        private var data = Data()
+
+        func set(_ data: Data) {
+            lock.withLock {
+                self.data = data
+            }
+        }
+
+        func get() -> Data {
+            lock.withLock { data }
+        }
+    }
+
     private let cachedPATH: OSAllocatedUnfairLock<String?>
 
     public init() {
@@ -361,18 +376,18 @@ public final class LocalCLIExecutor: Sendable {
                     // Read stdout/stderr concurrently with process execution to
                     // avoid pipe deadlock: if the pipe buffer fills (64KB), the
                     // process blocks writing and can never exit.
-                    var stdoutData = Data()
-                    var stderrData = Data()
+                    let stdoutCapture = DataCapture()
+                    let stderrCapture = DataCapture()
                     let readGroup = DispatchGroup()
 
                     readGroup.enter()
                     DispatchQueue.global(qos: .utility).async {
-                        stdoutData = (try? outputPipe.fileHandleForReading.readToEnd()) ?? Data()
+                        stdoutCapture.set((try? outputPipe.fileHandleForReading.readToEnd()) ?? Data())
                         readGroup.leave()
                     }
                     readGroup.enter()
                     DispatchQueue.global(qos: .utility).async {
-                        stderrData = (try? errorPipe.fileHandleForReading.readToEnd()) ?? Data()
+                        stderrCapture.set((try? errorPipe.fileHandleForReading.readToEnd()) ?? Data())
                         readGroup.leave()
                     }
 
@@ -449,8 +464,8 @@ public final class LocalCLIExecutor: Sendable {
 
                     Self.stopProcess(processID, state: state)
 
-                    let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
-                    let stderr = (String(data: stderrData, encoding: .utf8) ?? "")
+                    let stdout = String(data: stdoutCapture.get(), encoding: .utf8) ?? ""
+                    let stderr = (String(data: stderrCapture.get(), encoding: .utf8) ?? "")
                         .trimmingCharacters(in: .whitespacesAndNewlines)
 
                     let exitCode = Self.exitCode(from: terminationState.currentStatus() ?? 0)
@@ -829,11 +844,11 @@ public final class LocalCLIExecutor: Sendable {
             return nil
         }
 
-        var outputData = Data()
+        let outputCapture = DataCapture()
         let readGroup = DispatchGroup()
         readGroup.enter()
         DispatchQueue.global(qos: .utility).async {
-            outputData = (try? stdoutPipe.fileHandleForReading.readToEnd()) ?? Data()
+            outputCapture.set((try? stdoutPipe.fileHandleForReading.readToEnd()) ?? Data())
             readGroup.leave()
         }
 
@@ -855,7 +870,7 @@ public final class LocalCLIExecutor: Sendable {
 
         guard readGroup.wait(timeout: .now() + 1) == .success else { return nil }
 
-        return String(data: outputData, encoding: .utf8) ?? ""
+        return String(data: outputCapture.get(), encoding: .utf8) ?? ""
     }
 
     static func candidatePATHProbeShellURLs(
