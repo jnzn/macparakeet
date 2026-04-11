@@ -232,7 +232,12 @@ YouTube (v0.4+):
                                                                                                         → Merge word timestamps + speaker segments
 
 Meeting live preview (v0.6):
-  MicrophoneCapture/SystemAudioTap → AudioChunker → STTScheduler.transcribe(audioPath:, job: .meetingLiveChunk, onProgress:) → background-slot STT → live transcript update
+  MicrophoneCapture (meeting-only voice processing, raw fallback)/SystemAudioTap
+    → AudioChunker
+    → residual echo gate (skip clearly system-dominant mic chunks for live preview only)
+    → STTScheduler.transcribe(audioPath:, job: .meetingLiveChunk, onProgress:)
+    → background-slot STT
+    → live transcript update
 
 Meeting stop / finalization:
   Final mixed meeting artifact → STTScheduler.transcribe(audioPath:, job: .meetingFinalize, onProgress:) → background-slot STT → final saved meeting transcript

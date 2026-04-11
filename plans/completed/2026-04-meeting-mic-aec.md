@@ -1,9 +1,11 @@
 # Meeting Recording — Mic Acoustic Echo Cancellation
 
-> Status: **ACTIVE**
+> Status: **COMPLETED**
 > Date: 2026-04-10
 > Related ADRs: `spec/adr/014-meeting-recording.md`, `spec/adr/015-concurrent-dictation-meeting.md`
 > Related spec: `spec/05-audio-pipeline.md`
+> Implemented in: `238078d` (core AEC + gating), `b0f8a0d` (start-handler ordering cleanup)
+> Note: This document is preserved as a historical plan snapshot; some "current state" statements below reflect pre-implementation context.
 > Related files:
 > - `Sources/MacParakeetCore/Audio/MicrophoneCapture.swift`
 > - `Sources/MacParakeetCore/Audio/MeetingAudioCaptureService.swift`

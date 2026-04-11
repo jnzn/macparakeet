@@ -410,6 +410,7 @@ Floating panel opened from the meeting recording pill. Shows live transcript pre
 - **Lag notice** — appears when the scheduler has started dropping or delaying live-preview chunks; recording continues and the final saved meeting remains authoritative
 - **Live transcript preview** — scrolling list of transcribed chunks labeled by source ([Me] = mic, [Them] = system audio)
 - **Stop button** — stops recording, triggers batch transcription, navigates to result
+- **Meetings empty state copy** — one-line guidance: "For the cleanest separation between you and other participants, use headphones."
 
 ### Concurrent Operation (ADR-015)
 

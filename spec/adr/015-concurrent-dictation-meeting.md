@@ -4,6 +4,7 @@
 > Date: 2026-04-06
 > Related: ADR-014 (meeting recording), ADR-009 (custom hotkeys), ADR-016 (centralized STT runtime and scheduler), [GitHub #57](https://github.com/moona3k/macparakeet/issues/57)
 > Amended by: ADR-016 for STT runtime ownership, scheduling, and backpressure policy
+> Amendment note (2026-04-10): meeting mic capture may enable voice processing (VPIO/AEC) while dictation remains raw; concurrency isolation remains unchanged.
 
 ## Context
 
@@ -26,6 +27,8 @@ Each flow owns its own `AVAudioEngine` instance:
 | Dictation | `AudioRecorder.audioEngine` | `inputNode.installTap(onBus: 0)` |
 | Meeting (mic) | `MicrophoneCapture.audioEngine` | `inputNode.installTap(onBus: 0)` |
 | Meeting (system) | `SystemAudioTap` | Core Audio Taps (separate from AVAudioEngine) |
+
+Meeting mic hardening may enable voice processing on the meeting engine only. Dictation continues to use raw capture on its own engine.
 
 macOS Core Audio's Hardware Abstraction Layer (HAL) natively multiplexes microphone access across multiple clients. Multiple `AVAudioEngine` instances tapping the same physical mic is a supported, documented pattern — it's how multiple apps can record simultaneously.
 
