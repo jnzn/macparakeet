@@ -162,9 +162,11 @@ private struct NoSpeechContentView: View {
 /// completing its journey *is* the pill's goodbye — the motion and the
 /// disappearance are the same gesture.
 ///
-/// Timing is anchored to `NoSpeechAnimationTiming.dismissSeconds` so the drift
-/// always lands right at the dismiss boundary regardless of future tuning:
-/// `delay + duration ≈ dismissSeconds − expansionDelay`.
+/// Timing constants live in `NoSpeechAnimationTiming` alongside the leaf and
+/// Merkaba phases so the debug `isDismissWindowSufficient` assert covers them
+/// and future edits stay coordinated. With today's values the drift ends at
+/// ~2.1s after the oval expansion — exactly the 2.5s dismiss boundary once
+/// the 0.4s expansion delay is accounted for.
 private struct NoSpeechLightDrift: View {
     let active: Bool
 
@@ -196,9 +198,12 @@ private struct NoSpeechLightDrift: View {
         .onChange(of: active) { _, isActive in
             guard isActive else { return }
             // Reset off-left, then drift across with a slow easeInOut that
-            // lands right as the dismiss timer fires (~2.1s after expansion).
+            // lands right as the dismiss timer fires.
             phase = -1.2
-            withAnimation(.easeInOut(duration: 1.6).delay(0.5)) {
+            withAnimation(
+                .easeInOut(duration: NoSpeechAnimationTiming.lightDriftDuration)
+                    .delay(NoSpeechAnimationTiming.lightDriftDelay)
+            ) {
                 phase = 1.2
             }
         }
