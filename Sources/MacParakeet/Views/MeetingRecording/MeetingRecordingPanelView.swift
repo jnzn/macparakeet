@@ -157,7 +157,8 @@ struct MeetingRecordingPanelView: View {
 
 /// A slowly rotating seed-of-life flower for the empty listening state.
 /// Matches the flower head from the recording pill, without the stem.
-private struct BreathingEnsoView: View {
+/// Also reused as the summary-generation loading indicator.
+struct BreathingEnsoView: View {
     @State private var rotation: Double = 0
     @State private var glowBreathing = false
 

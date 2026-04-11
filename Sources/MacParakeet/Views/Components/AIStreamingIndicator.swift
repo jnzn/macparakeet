@@ -24,16 +24,13 @@ struct AIStreamingIndicator: View {
     }
 }
 
-/// Merkaba-centered skeleton for the summary loading state.
-/// A single, centered merkaba spinner — the card header provides context text.
+/// Seed-of-life skeleton for the summary loading state.
+/// Uses the same slowly rotating flower as the meeting recording "listening" view,
+/// paired with the breathing orb indicator underneath for activity signal.
 struct SummarySkeletonView: View {
     var body: some View {
         VStack(spacing: DesignSystem.Spacing.lg) {
-            MeditativeMerkabaView(
-                size: 72,
-                revolutionDuration: 5.0,
-                tintColor: DesignSystem.Colors.accent
-            )
+            BreathingEnsoView()
 
             AIStreamingIndicator()
         }
