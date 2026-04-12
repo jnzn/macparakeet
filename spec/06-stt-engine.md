@@ -73,6 +73,8 @@ let samples = try AudioConverter.resampleBuffer(buffer)
 
 **Critical:** Always use FluidAudio's `AudioConverter` — never manually decode audio. CoreML models require correctly resampled input; manual parsing silently corrupts it.
 
+For meeting recording specifically, this has an important consequence: the saved `meeting.m4a` artifact may preserve microphone/system channel separation as stereo, but the current final Parakeet path still converts that artifact to mono before STT. See `docs/research/meeting-dual-stream-transcription-pipeline.md` for the end-to-end meeting pipeline and why `preparedTranscript` still exists.
+
 ### Custom Vocabulary Boosting (v0.11.0+)
 
 FluidAudio's CTC-based keyword boosting maps to MacParakeet's `CustomWord` model:
