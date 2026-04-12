@@ -483,6 +483,9 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         if url == currentSession?.microphoneAudioURL {
             return .microphone
         }
+        if url != currentSession?.systemAudioURL {
+            assertionFailure("Unexpected URL passed to source(for:): \(url.path)")
+        }
         return .system
     }
 

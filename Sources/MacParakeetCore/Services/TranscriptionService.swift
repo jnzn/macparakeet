@@ -291,10 +291,16 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         let diarizationRequested = diarizationService != nil && shouldDiarize() && recording.sourceAlignment.system != nil
         var temporaryWavURLs: [URL] = []
         var sourceWavURLs: [AudioSource: URL] = [:]
+        defer {
+            for wavURL in temporaryWavURLs {
+                try? FileManager.default.removeItem(at: wavURL)
+            }
+        }
 
         do {
             let sourceResults = try await transcribeMeetingSources(
                 recording: recording,
+                lifecycleStage: &lifecycleStage,
                 temporaryWavURLs: &temporaryWavURLs,
                 sourceWavURLs: &sourceWavURLs,
                 onProgress: onProgress
@@ -333,16 +339,8 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                 diarizationApplied: systemDiarization != nil
             )
 
-            for wavURL in temporaryWavURLs {
-                try? FileManager.default.removeItem(at: wavURL)
-            }
-
             return completed
         } catch {
-            for wavURL in temporaryWavURLs {
-                try? FileManager.default.removeItem(at: wavURL)
-            }
-
             let audioDurationSeconds = transcription.durationMs.map { Double($0) / 1000.0 } ?? recording.durationSeconds
             if error is CancellationError {
                 Telemetry.send(.transcriptionCancelled(
@@ -387,22 +385,23 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
 
     private func transcribeMeetingSources(
         recording: MeetingRecordingOutput,
+        lifecycleStage: inout TelemetryTranscriptionStage,
         temporaryWavURLs: inout [URL],
         sourceWavURLs: inout [AudioSource: URL],
         onProgress: (@Sendable (TranscriptionProgress) -> Void)?
     ) async throws -> [MeetingTranscriptFinalizer.SourceTranscript] {
         var outputs: [MeetingTranscriptFinalizer.SourceTranscript] = []
-        let activeSources = [AudioSource.microphone, .system].compactMap { source -> AudioSource? in
-            recording.sourceAlignment.track(for: source) == nil ? nil : source
-        }
+        let activeSources = [AudioSource.microphone, .system].filter { recording.sourceAlignment.track(for: $0) != nil }
 
         for (index, source) in activeSources.enumerated() {
             let fileURL = meetingAudioURL(for: source, recording: recording)
+            lifecycleStage = .audioConversion
             onProgress?(.converting)
             let wavURL = try await audioProcessor.convert(fileURL: fileURL)
             temporaryWavURLs.append(wavURL)
             sourceWavURLs[source] = wavURL
 
+            lifecycleStage = .stt
             onProgress?(.transcribing(percent: Int((Double(index) / Double(max(activeSources.count, 1))) * 100)))
             let result = try await sttTranscriber.transcribe(
                 audioPath: wavURL.path,
