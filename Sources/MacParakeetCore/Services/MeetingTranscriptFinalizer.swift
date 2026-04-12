@@ -1,6 +1,13 @@
 import Foundation
 
 struct MeetingTranscriptFinalizer {
+    private struct WordRun {
+        let words: [WordTimestamp]
+
+        var startMs: Int { words.first?.startMs ?? 0 }
+        var endMs: Int { words.last?.endMs ?? 0 }
+    }
+
     struct SourceTranscript: Sendable {
         let source: AudioSource
         let result: STTResult
@@ -20,6 +27,12 @@ struct MeetingTranscriptFinalizer {
         let durationMs: Int?
     }
 
+    private static let runGapThresholdMs = 1_500
+    private static let echoLeadToleranceMs = 150
+    private static let echoLagThresholdMs = 1_200
+    private static let minimumEchoTokenMatches = 2
+    private static let minimumEchoCoverage = 0.6
+
     static func finalize(
         sourceTranscripts: [SourceTranscript],
         systemDiarization: SystemDiarization? = nil
@@ -31,26 +44,33 @@ struct MeetingTranscriptFinalizer {
             return lhs.startOffsetMs < rhs.startOffsetMs
         }
 
-        var mergedWords: [WordTimestamp] = []
-        mergedWords.reserveCapacity(normalized.reduce(0) { $0 + $1.result.words.count })
-
-        for sourceTranscript in normalized {
-            let sourceWords = shiftedWords(
-                for: sourceTranscript.result,
-                source: sourceTranscript.source,
-                offsetMs: sourceTranscript.startOffsetMs
-            )
-            if sourceTranscript.source == .system, let systemDiarization {
-                mergedWords.append(
-                    contentsOf: SpeakerMerger.mergeWordTimestampsWithSpeakers(
-                        words: sourceWords,
-                        segments: systemDiarization.segments
-                    )
+        let shiftedWordsBySource = Dictionary(uniqueKeysWithValues: normalized.map { sourceTranscript in
+            (
+                sourceTranscript.source,
+                shiftedWords(
+                    for: sourceTranscript.result,
+                    source: sourceTranscript.source,
+                    offsetMs: sourceTranscript.startOffsetMs
                 )
-            } else {
-                mergedWords.append(contentsOf: sourceWords)
-            }
+            )
+        })
+
+        let systemWords = shiftedWordsBySource[.system] ?? []
+        let microphoneWords = suppressMicrophoneEchoDuplicates(
+            microphoneWords: shiftedWordsBySource[.microphone] ?? [],
+            systemWords: systemWords
+        )
+        let finalizedSystemWords: [WordTimestamp]
+        if let systemDiarization {
+            finalizedSystemWords = SpeakerMerger.mergeWordTimestampsWithSpeakers(
+                words: systemWords,
+                segments: systemDiarization.segments
+            )
+        } else {
+            finalizedSystemWords = systemWords
         }
+
+        var mergedWords = microphoneWords + finalizedSystemWords
 
         mergedWords.sort {
             if $0.startMs == $1.startMs {
@@ -61,12 +81,7 @@ struct MeetingTranscriptFinalizer {
 
         let speakers = activeSpeakers(from: mergedWords, systemDiarization: systemDiarization)
         let diarizationSegments = buildDiarizationSegments(from: mergedWords)
-        let rawTranscript: String
-        if mergedWords.isEmpty {
-            rawTranscript = fallbackTranscriptText(from: normalized)
-        } else {
-            rawTranscript = transcriptText(from: mergedWords)
-        }
+        let rawTranscript = finalTranscriptText(from: normalized, mergedWords: mergedWords)
 
         return FinalizedTranscript(
             rawTranscript: rawTranscript,
@@ -104,12 +119,14 @@ struct MeetingTranscriptFinalizer {
             speakers.append(SpeakerInfo(id: AudioSource.microphone.rawValue, label: AudioSource.microphone.displayLabel))
         }
 
+        if activeIDs.contains(AudioSource.system.rawValue) {
+            speakers.append(SpeakerInfo(id: AudioSource.system.rawValue, label: AudioSource.system.displayLabel))
+        }
+
         if let systemDiarization {
             for speaker in systemDiarization.speakers where activeIDs.contains(speaker.id) {
                 speakers.append(speaker)
             }
-        } else if activeIDs.contains(AudioSource.system.rawValue) {
-            speakers.append(SpeakerInfo(id: AudioSource.system.rawValue, label: AudioSource.system.displayLabel))
         }
 
         return speakers
@@ -150,6 +167,26 @@ struct MeetingTranscriptFinalizer {
         return segments
     }
 
+    private static func finalTranscriptText(
+        from sourceTranscripts: [SourceTranscript],
+        mergedWords: [WordTimestamp]
+    ) -> String {
+        let nonEmptyTexts = sourceTranscripts
+            .map(\.result.text)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        if nonEmptyTexts.count == 1 {
+            return nonEmptyTexts[0]
+        }
+
+        if mergedWords.isEmpty {
+            return nonEmptyTexts.joined(separator: "\n\n")
+        }
+
+        return transcriptText(from: mergedWords)
+    }
+
     private static func transcriptText(from words: [WordTimestamp]) -> String {
         var parts: [String] = []
         parts.reserveCapacity(words.count)
@@ -168,17 +205,92 @@ struct MeetingTranscriptFinalizer {
         return parts.joined()
     }
 
-    private static func fallbackTranscriptText(from sourceTranscripts: [SourceTranscript]) -> String {
-        sourceTranscripts
-            .map(\.result.text)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .joined(separator: "\n\n")
-    }
-
     private static func shouldAttachWithoutLeadingSpace(_ token: String) -> Bool {
         guard let first = token.first else { return false }
         return ",.!?;:%)]}".contains(first)
+    }
+
+    private static func suppressMicrophoneEchoDuplicates(
+        microphoneWords: [WordTimestamp],
+        systemWords: [WordTimestamp]
+    ) -> [WordTimestamp] {
+        guard !microphoneWords.isEmpty, !systemWords.isEmpty else { return microphoneWords }
+
+        let systemRuns = buildRuns(from: systemWords)
+        let microphoneRuns = buildRuns(from: microphoneWords)
+
+        return microphoneRuns
+            .filter { run in
+                !systemRuns.contains { systemRun in
+                    shouldSuppressMicrophoneRun(run, against: systemRun)
+                }
+            }
+            .flatMap(\.words)
+    }
+
+    private static func buildRuns(from words: [WordTimestamp]) -> [WordRun] {
+        guard let firstWord = words.first else { return [] }
+
+        var runs: [WordRun] = []
+        var currentWords = [firstWord]
+
+        for word in words.dropFirst() {
+            if word.startMs - (currentWords.last?.endMs ?? word.startMs) <= runGapThresholdMs {
+                currentWords.append(word)
+            } else {
+                runs.append(WordRun(words: currentWords))
+                currentWords = [word]
+            }
+        }
+
+        runs.append(WordRun(words: currentWords))
+        return runs
+    }
+
+    private static func shouldSuppressMicrophoneRun(
+        _ microphoneRun: WordRun,
+        against systemRun: WordRun
+    ) -> Bool {
+        guard microphoneRun.startMs >= systemRun.startMs - echoLeadToleranceMs else { return false }
+        guard microphoneRun.startMs <= systemRun.endMs + echoLagThresholdMs else { return false }
+        guard microphoneRun.endMs <= systemRun.endMs + echoLagThresholdMs else { return false }
+
+        let microphoneTokens = normalizedTokens(from: microphoneRun.words)
+        let systemTokens = normalizedTokens(from: systemRun.words)
+        guard microphoneTokens.count >= minimumEchoTokenMatches else { return false }
+
+        let matchedTokenCount = multisetOverlap(lhs: microphoneTokens, rhs: systemTokens)
+        guard matchedTokenCount >= minimumEchoTokenMatches else { return false }
+
+        let coverage = Double(matchedTokenCount) / Double(max(microphoneTokens.count, systemTokens.count))
+        return coverage >= minimumEchoCoverage
+    }
+
+    private static func normalizedTokens(from words: [WordTimestamp]) -> [String] {
+        words
+            .map(\.word)
+            .map { token in
+                token
+                    .lowercased()
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .trimmingCharacters(in: .punctuationCharacters)
+            }
+            .filter { !$0.isEmpty }
+    }
+
+    private static func multisetOverlap(lhs: [String], rhs: [String]) -> Int {
+        var rhsCounts: [String: Int] = [:]
+        for token in rhs {
+            rhsCounts[token, default: 0] += 1
+        }
+
+        var overlap = 0
+        for token in lhs {
+            guard let count = rhsCounts[token], count > 0 else { continue }
+            overlap += 1
+            rhsCounts[token] = count - 1
+        }
+        return overlap
     }
 
     private static func sourceOrder(_ source: AudioSource) -> Int {
