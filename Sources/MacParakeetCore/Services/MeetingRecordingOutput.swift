@@ -29,4 +29,23 @@ public struct MeetingRecordingOutput: Sendable, Equatable {
         self.durationSeconds = durationSeconds
         self.sourceAlignment = sourceAlignment
     }
+
+    public static func loadArchived(
+        displayName: String,
+        mixedAudioURL: URL,
+        durationSeconds: TimeInterval
+    ) throws -> MeetingRecordingOutput {
+        let folderURL = mixedAudioURL.deletingLastPathComponent()
+        let metadata = try MeetingRecordingMetadataStore.load(from: folderURL)
+        return MeetingRecordingOutput(
+            sessionID: UUID(),
+            displayName: displayName,
+            folderURL: folderURL,
+            mixedAudioURL: mixedAudioURL,
+            microphoneAudioURL: folderURL.appendingPathComponent("microphone.m4a"),
+            systemAudioURL: folderURL.appendingPathComponent("system.m4a"),
+            durationSeconds: durationSeconds,
+            sourceAlignment: metadata.sourceAlignment
+        )
+    }
 }

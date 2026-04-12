@@ -67,6 +67,11 @@ enum MeetingRecordingMetadataStore {
         let data = try JSONEncoder.meetingRecordingMetadata.encode(metadata)
         try data.write(to: metadataURL(for: folderURL), options: .atomic)
     }
+
+    static func load(from folderURL: URL) throws -> MeetingRecordingMetadata {
+        let data = try Data(contentsOf: metadataURL(for: folderURL))
+        return try JSONDecoder.meetingRecordingMetadata.decode(MeetingRecordingMetadata.self, from: data)
+    }
 }
 
 private extension JSONEncoder {
@@ -74,6 +79,12 @@ private extension JSONEncoder {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return encoder
+    }()
+}
+
+private extension JSONDecoder {
+    static let meetingRecordingMetadata: JSONDecoder = {
+        JSONDecoder()
     }()
 }
 
