@@ -270,6 +270,6 @@ In Phase 2, an `AudioChunker` (ported from Oatmeal) buffers audio into 5-second 
 | STT input | WAV | 16kHz | Mono | Float32 |
 | Long-term storage (dictation) | WAV | 16kHz | Mono | Float32 |
 | File import (temp) | WAV | 16kHz | Mono | Float32 |
-| Meeting mic storage | M4A (AAC) | 16kHz | Mono | 64kbps |
-| Meeting system audio storage | M4A (AAC) | 16kHz | Mono | 64kbps |
+| Meeting mic storage | M4A (AAC) | 48kHz | Mono | 64kbps |
+| Meeting system audio storage | M4A (AAC) | 48kHz | Mono | 64kbps |
 | Meeting STT input (temp) | WAV | 16kHz | Mono | Float32 |

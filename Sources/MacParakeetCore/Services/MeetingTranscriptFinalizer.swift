@@ -29,7 +29,7 @@ struct MeetingTranscriptFinalizer {
 
     private static let runGapThresholdMs = 1_500
     private static let echoLeadToleranceMs = 150
-    private static let echoLagThresholdMs = 1_200
+    private static let echoLagToleranceMs = 250
     private static let minimumEchoTokenMatches = 2
     private static let minimumEchoCoverage = 0.6
 
@@ -88,7 +88,7 @@ struct MeetingTranscriptFinalizer {
             words: mergedWords,
             speakers: speakers,
             diarizationSegments: diarizationSegments,
-            durationMs: mergedWords.last?.endMs
+            durationMs: mergedWords.map(\.endMs).max()
         )
     }
 
@@ -184,6 +184,13 @@ struct MeetingTranscriptFinalizer {
             return nonEmptyTexts.joined(separator: "\n\n")
         }
 
+        if let orderedSourceTexts = orderedSourceTextsIfContiguous(
+            from: sourceTranscripts,
+            mergedWords: mergedWords
+        ) {
+            return orderedSourceTexts.joined(separator: " ")
+        }
+
         return transcriptText(from: mergedWords)
     }
 
@@ -252,8 +259,8 @@ struct MeetingTranscriptFinalizer {
         against systemRun: WordRun
     ) -> Bool {
         guard microphoneRun.startMs >= systemRun.startMs - echoLeadToleranceMs else { return false }
-        guard microphoneRun.startMs <= systemRun.endMs + echoLagThresholdMs else { return false }
-        guard microphoneRun.endMs <= systemRun.endMs + echoLagThresholdMs else { return false }
+        guard microphoneRun.startMs <= systemRun.endMs else { return false }
+        guard microphoneRun.endMs <= systemRun.endMs + echoLagToleranceMs else { return false }
 
         let microphoneTokens = normalizedTokens(from: microphoneRun.words)
         let systemTokens = normalizedTokens(from: systemRun.words)
@@ -262,7 +269,7 @@ struct MeetingTranscriptFinalizer {
         let matchedTokenCount = multisetOverlap(lhs: microphoneTokens, rhs: systemTokens)
         guard matchedTokenCount >= minimumEchoTokenMatches else { return false }
 
-        let coverage = Double(matchedTokenCount) / Double(max(microphoneTokens.count, systemTokens.count))
+        let coverage = Double(matchedTokenCount) / Double(microphoneTokens.count)
         return coverage >= minimumEchoCoverage
     }
 
@@ -312,6 +319,56 @@ struct MeetingTranscriptFinalizer {
             return 2
         default:
             return 3
+        }
+    }
+
+    private static func orderedSourceTextsIfContiguous(
+        from sourceTranscripts: [SourceTranscript],
+        mergedWords: [WordTimestamp]
+    ) -> [String]? {
+        let textsBySource = Dictionary(
+            uniqueKeysWithValues: sourceTranscripts.map { transcript in
+                (transcript.source, transcript.result.text.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+        )
+        let runSources = contiguousSources(from: mergedWords)
+        guard !runSources.isEmpty else { return nil }
+        guard Set(runSources).count == runSources.count else { return nil }
+
+        var orderedTexts: [String] = []
+        orderedTexts.reserveCapacity(runSources.count)
+        for source in runSources {
+            guard let text = textsBySource[source], !text.isEmpty else { return nil }
+            orderedTexts.append(text)
+        }
+        guard orderedTexts.count == runSources.count else { return nil }
+        return orderedTexts
+    }
+
+    private static func contiguousSources(from words: [WordTimestamp]) -> [AudioSource] {
+        var sources: [AudioSource] = []
+        var lastSource: AudioSource?
+
+        for word in words {
+            guard let source = source(for: word.speakerId) else { continue }
+            guard source != lastSource else { continue }
+            sources.append(source)
+            lastSource = source
+        }
+
+        return sources
+    }
+
+    private static func source(for speakerID: String?) -> AudioSource? {
+        switch speakerID {
+        case AudioSource.microphone.rawValue:
+            return .microphone
+        case AudioSource.system.rawValue:
+            return .system
+        case let value? where value.hasPrefix("\(AudioSource.system.rawValue):"):
+            return .system
+        default:
+            return nil
         }
     }
 }
