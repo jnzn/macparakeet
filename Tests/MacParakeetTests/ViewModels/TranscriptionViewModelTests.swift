@@ -977,9 +977,12 @@ final class TranscriptionViewModelTests: XCTestCase {
     }
 
     func testRetranscribeMeetingFallsBackToMixedAudioWhenArchivedMetadataIsMissing() async throws {
-        let tmpFile = FileManager.default.temporaryDirectory.appendingPathComponent("retranscribe-meeting-fallback-\(UUID().uuidString).m4a")
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("retranscribe-meeting-fallback-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        let tmpFile = tmpDir.appendingPathComponent("meeting.m4a")
         FileManager.default.createFile(atPath: tmpFile.path, contents: Data([0]))
-        defer { try? FileManager.default.removeItem(at: tmpFile) }
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
 
         let original = Transcription(
             id: UUID(),
@@ -1010,6 +1013,68 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertNil(lastMeetingRecording)
         let lastFileURL = await mockService.lastFileURL
         XCTAssertEqual(lastFileURL, tmpFile)
+    }
+
+    func testRetranscribeMeetingFallsBackToMixedAudioWhenArchivedSourceFileIsMissing() async throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("retranscribe-meeting-missing-source-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let mixedURL = tmpDir.appendingPathComponent("meeting.m4a")
+        FileManager.default.createFile(atPath: mixedURL.path, contents: Data([0]))
+        try MeetingRecordingMetadataStore.save(
+            MeetingRecordingMetadata(
+                sourceAlignment: MeetingSourceAlignment(
+                    meetingOriginHostTime: nil,
+                    microphone: .init(
+                        firstHostTime: nil,
+                        lastHostTime: nil,
+                        startOffsetMs: 0,
+                        writtenFrameCount: 24_000,
+                        sampleRate: 48_000
+                    ),
+                    system: .init(
+                        firstHostTime: nil,
+                        lastHostTime: nil,
+                        startOffsetMs: 150,
+                        writtenFrameCount: 24_000,
+                        sampleRate: 48_000
+                    )
+                )
+            ),
+            folderURL: tmpDir
+        )
+
+        let original = Transcription(
+            id: UUID(),
+            fileName: "Meeting Apr 5",
+            filePath: mixedURL.path,
+            rawTranscript: "Old meeting transcript",
+            status: .completed,
+            sourceType: .meeting
+        )
+        mockRepo.transcriptions = [original]
+
+        let newResult = Transcription(
+            fileName: mixedURL.lastPathComponent,
+            rawTranscript: "Updated meeting transcript",
+            status: .completed
+        )
+        await mockService.configure(result: newResult)
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+
+        viewModel.retranscribe(original)
+
+        try await Task.sleep(for: .milliseconds(300))
+
+        let lastSource = await mockService.lastSource
+        XCTAssertEqual(lastSource, .meeting)
+        let lastMeetingRecording = await mockService.lastMeetingRecording
+        XCTAssertNil(lastMeetingRecording)
+        let lastFileURL = await mockService.lastFileURL
+        XCTAssertEqual(lastFileURL, mixedURL)
     }
 
     func testRetranscribeDoesNothingWhenFileIsMissing() async throws {

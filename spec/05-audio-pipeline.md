@@ -208,7 +208,7 @@ User clicks "Start Meeting Recording"
 ~/Library/Application Support/MacParakeet/meeting-recordings/{uuid}/
     ├── microphone.m4a    # Mic audio (AAC, 48kHz mono)
     ├── system.m4a        # System audio (AAC, 48kHz mono)
-    ├── meeting.m4a       # Final playback/transcription artifact (stereo dual-source when both tracks exist)
+    ├── meeting.m4a       # Final playback/export artifact (stereo dual-source when both tracks exist; legacy fallback for downstream tools)
     └── meeting-recording-metadata.json  # Persisted source timing/alignment for post-stop merge
 ```
 
