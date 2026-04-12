@@ -30,6 +30,8 @@ The part that is easy to misunderstand:
 
 The live transcript still matters after stop because it can contribute **speaker/source structure** through `preparedTranscript`, even though the final text comes from a fresh batch STT pass.
 
+That is the **current** implementation, not the recommended long-term design. The recommended redesign is documented below.
+
 ## Why this doc exists
 
 There are several similar-but-not-identical concepts in the meeting pipeline:
@@ -370,6 +372,60 @@ What is not currently done:
 - comparison of prepared metadata quality vs diarization quality
 - channel-aware final STT directly from stereo `meeting.m4a`
 
+## Recommended redesign
+
+The strongest next architecture is:
+
+1. keep the live transcript as **live transcript only**
+2. do **not** feed live transcript metadata into finalization
+3. after stop, run a fresh batch STT pass on:
+   - `microphone.m4a`
+   - `system.m4a`
+4. merge those two fresh results by timestamp while preserving source identity
+5. keep diarization optional and additive, not the primary replacement for source structure
+
+Why this is cleaner:
+
+- it removes `preparedTranscript` from the final correctness path
+- it keeps final text fully batch-derived
+- it preserves the value of dual-stream capture instead of collapsing it prematurely
+- it avoids trusting lower-quality live metadata during finalization
+- it uses the strongest artifacts the app already has: the per-source recordings
+
+This is a better design than either of these alternatives:
+
+### Worse alternative 1: keep `preparedTranscript`
+
+This keeps a lower-trust live artifact in the finalization path. Even if the final text comes from the batch pass, the structural merge still depends on metadata gathered under live chunking, backpressure, suppression, and scheduler best-effort behavior.
+
+### Worse alternative 2: transcribe only `meeting.m4a` and rely on diarization
+
+This throws away source separation before final STT and asks diarization to reconstruct structure from a weaker artifact. Diarization is useful, but it is not a replacement for having true per-source recordings.
+
+## Is the separate post-stop merge tractable?
+
+Yes. This is a straightforward engineering problem compared with diarization or channel-aware one-pass ASR.
+
+The merge is conceptually:
+
+1. transcribe `microphone.m4a`
+2. transcribe `system.m4a`
+3. normalize both transcripts to a shared time origin
+4. merge-sort words or segments by time
+5. preserve source identity on the merged output
+6. optionally build diarization/source segments from contiguous same-source runs
+
+This is not "free," but it is a solved class of problem.
+
+The real implementation details to watch are:
+
+- start-offset alignment between the two recorded files
+- drift/skew over long meetings
+- duplicate semantic content if mic bleed still survives conditioning
+- choosing segment-level merge vs naive word-level interleave for readability
+
+These are engineering details, not research unknowns.
+
 ## What is true today vs common assumptions
 
 ### True
@@ -424,9 +480,9 @@ For the current codebase, the right mental model is:
 - **live transcription** is dual-stream and source-aware
 - **storage** preserves both source files and a stereo mixed artifact
 - **final Parakeet STT** is mono
-- **preparedTranscript** exists to carry source/speaker structure from the live dual-stream path into finalization
+- **preparedTranscript** is a transitional implementation detail, not the desired end state
 
-Any future redesign should keep those layers distinct and avoid language that implies the final batch pass is already channel-aware.
+Any future redesign should keep those layers distinct, avoid language that implies the final batch pass is already channel-aware, and prefer fresh post-stop per-source transcription over live-metadata reuse.
 
 ## Primary evidence used for this note
 
