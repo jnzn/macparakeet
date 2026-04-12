@@ -155,10 +155,12 @@ struct MeetingTranscriptFinalizer {
         from sourceTranscripts: [SourceTranscript],
         mergedWords: [WordTimestamp]
     ) -> String {
-        let nonEmptyTexts = sourceTranscripts
-            .map(\.result.text)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        let textualSourceTranscripts = sourceTranscripts.compactMap { sourceTranscript -> (source: AudioSource, text: String, hasWords: Bool)? in
+            let text = sourceTranscript.result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return nil }
+            return (sourceTranscript.source, text, !sourceTranscript.result.words.isEmpty)
+        }
+        let nonEmptyTexts = textualSourceTranscripts.map(\.text)
 
         if nonEmptyTexts.count == 1 {
             return nonEmptyTexts[0]
@@ -169,7 +171,7 @@ struct MeetingTranscriptFinalizer {
         }
 
         if let orderedSourceTexts = orderedSourceTextsIfContiguous(
-            from: sourceTranscripts,
+            from: textualSourceTranscripts,
             mergedWords: mergedWords
         ) {
             return orderedSourceTexts.joined(separator: " ")
@@ -224,25 +226,21 @@ struct MeetingTranscriptFinalizer {
     }
 
     private static func orderedSourceTextsIfContiguous(
-        from sourceTranscripts: [SourceTranscript],
+        from sourceTranscripts: [(source: AudioSource, text: String, hasWords: Bool)],
         mergedWords: [WordTimestamp]
     ) -> [String]? {
-        let textsBySource = Dictionary(
-            uniqueKeysWithValues: sourceTranscripts.map { transcript in
-                (transcript.source, transcript.result.text.trimmingCharacters(in: .whitespacesAndNewlines))
-            }
-        )
         let runSources = contiguousSources(from: mergedWords)
         guard !runSources.isEmpty else { return nil }
         guard Set(runSources).count == runSources.count else { return nil }
+        let timedTextSources = sourceTranscripts.filter(\.hasWords).map(\.source)
+        guard runSources == timedTextSources else { return nil }
 
         var orderedTexts: [String] = []
-        orderedTexts.reserveCapacity(runSources.count)
-        for source in runSources {
-            guard let text = textsBySource[source], !text.isEmpty else { return nil }
-            orderedTexts.append(text)
+        orderedTexts.reserveCapacity(sourceTranscripts.count)
+        for sourceTranscript in sourceTranscripts {
+            guard !sourceTranscript.text.isEmpty else { return nil }
+            orderedTexts.append(sourceTranscript.text)
         }
-        guard orderedTexts.count == runSources.count else { return nil }
         return orderedTexts
     }
 

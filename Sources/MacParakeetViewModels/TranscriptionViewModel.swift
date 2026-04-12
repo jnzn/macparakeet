@@ -330,7 +330,7 @@ public final class TranscriptionViewModel {
             )
         } catch {
             logger.notice(
-                "Meeting retranscribe falling back to mixed audio path file=\(original.fileName, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+                "Meeting retranscribe falling back to mixed audio path file=\(original.fileName, privacy: .private) error=\(error.localizedDescription, privacy: .private)"
             )
             return nil
         }

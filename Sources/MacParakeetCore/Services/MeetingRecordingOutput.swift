@@ -37,13 +37,26 @@ public struct MeetingRecordingOutput: Sendable, Equatable {
     ) throws -> MeetingRecordingOutput {
         let folderURL = mixedAudioURL.deletingLastPathComponent()
         let metadata = try MeetingRecordingMetadataStore.load(from: folderURL)
+        let microphoneAudioURL = folderURL.appendingPathComponent("microphone.m4a")
+        let systemAudioURL = folderURL.appendingPathComponent("system.m4a")
+
+        if metadata.sourceAlignment.microphone != nil,
+           !FileManager.default.fileExists(atPath: microphoneAudioURL.path) {
+            throw MeetingAudioError.storageFailed("Missing archived meeting source file: microphone.m4a")
+        }
+
+        if metadata.sourceAlignment.system != nil,
+           !FileManager.default.fileExists(atPath: systemAudioURL.path) {
+            throw MeetingAudioError.storageFailed("Missing archived meeting source file: system.m4a")
+        }
+
         return MeetingRecordingOutput(
             sessionID: UUID(),
             displayName: displayName,
             folderURL: folderURL,
             mixedAudioURL: mixedAudioURL,
-            microphoneAudioURL: folderURL.appendingPathComponent("microphone.m4a"),
-            systemAudioURL: folderURL.appendingPathComponent("system.m4a"),
+            microphoneAudioURL: microphoneAudioURL,
+            systemAudioURL: systemAudioURL,
             durationSeconds: durationSeconds,
             sourceAlignment: metadata.sourceAlignment
         )
