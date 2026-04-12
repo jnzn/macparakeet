@@ -527,7 +527,7 @@ final class TranscriptionServiceTests: XCTestCase {
         ])
     }
 
-    func testTranscribeMeetingSuppressesDuplicateMicrophoneEchoAgainstSystemTrack() async throws {
+    func testTranscribeMeetingPreservesOverlappingMicrophoneAndSystemSpeech() async throws {
         let recordingFolder = URL(fileURLWithPath: AppPaths.tempDir)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: recordingFolder, withIntermediateDirectories: true)
@@ -578,9 +578,12 @@ final class TranscriptionServiceTests: XCTestCase {
 
         let result = try await service.transcribeMeeting(recording: recording)
 
-        XCTAssertEqual(result.rawTranscript, "Can you hear me")
-        XCTAssertEqual(result.wordTimestamps?.map(\.speakerId), ["system", "system", "system", "system"])
+        XCTAssertEqual(result.rawTranscript, "Can Can you hear you hear me me")
+        XCTAssertEqual(result.wordTimestamps?.map(\.speakerId), [
+            "system", "microphone", "system", "system", "microphone", "microphone", "system", "microphone",
+        ])
         XCTAssertEqual(result.speakers, [
+            SpeakerInfo(id: "microphone", label: "Me"),
             SpeakerInfo(id: "system", label: "Others"),
         ])
     }
@@ -739,57 +742,6 @@ final class TranscriptionServiceTests: XCTestCase {
         let result = try await service.transcribeMeeting(recording: recording)
 
         XCTAssertEqual(result.rawTranscript, "Hello, there. Sounds good.")
-    }
-
-    func testTranscribeMeetingKeepsLegitimateMicrophoneRepeatAfterSystemTurn() async throws {
-        let recordingFolder = URL(fileURLWithPath: AppPaths.tempDir)
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: recordingFolder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: recordingFolder) }
-
-        let mixedURL = recordingFolder.appendingPathComponent("meeting.m4a")
-        let microphoneURL = recordingFolder.appendingPathComponent("microphone.m4a")
-        let systemURL = recordingFolder.appendingPathComponent("system.m4a")
-        XCTAssertTrue(FileManager.default.createFile(atPath: mixedURL.path, contents: Data("mixed".utf8)))
-        XCTAssertTrue(FileManager.default.createFile(atPath: microphoneURL.path, contents: Data("microphone".utf8)))
-        XCTAssertTrue(FileManager.default.createFile(atPath: systemURL.path, contents: Data("system".utf8)))
-
-        await mockSTT.configureSequence(results: [
-            STTResult(
-                text: "Sounds good",
-                words: [
-                    TimestampedWord(word: "Sounds", startMs: 600, endMs: 820, confidence: 0.9),
-                    TimestampedWord(word: "good", startMs: 860, endMs: 1_060, confidence: 0.9),
-                ]
-            ),
-            STTResult(
-                text: "Sounds good",
-                words: [
-                    TimestampedWord(word: "Sounds", startMs: 0, endMs: 220, confidence: 0.9),
-                    TimestampedWord(word: "good", startMs: 260, endMs: 460, confidence: 0.9),
-                ]
-            ),
-        ])
-
-        let recording = MeetingRecordingOutput(
-            sessionID: UUID(),
-            displayName: "Meeting Demo",
-            folderURL: recordingFolder,
-            mixedAudioURL: mixedURL,
-            microphoneAudioURL: microphoneURL,
-            systemAudioURL: systemURL,
-            durationSeconds: 2.0,
-            sourceAlignment: MeetingSourceAlignment(
-                meetingOriginHostTime: nil,
-                microphone: .init(firstHostTime: nil, lastHostTime: nil, startOffsetMs: 0, writtenFrameCount: 24_000, sampleRate: 48_000),
-                system: .init(firstHostTime: nil, lastHostTime: nil, startOffsetMs: 0, writtenFrameCount: 24_000, sampleRate: 48_000)
-            )
-        )
-
-        let result = try await service.transcribeMeeting(recording: recording)
-
-        XCTAssertEqual(result.wordTimestamps?.map(\.speakerId), ["system", "system", "microphone", "microphone"])
-        XCTAssertEqual(result.rawTranscript, "Sounds good Sounds good")
     }
 
     func testTranscribeMeetingSttFailureEmitsSttStageTelemetry() async throws {
