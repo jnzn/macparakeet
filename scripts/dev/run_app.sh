@@ -2,7 +2,11 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-DERIVED_DATA_DIR="$ROOT_DIR/.build/xcode-dev"
+# Build output must stay out of iCloud Drive: its fileprovider constantly
+# re-attaches com.apple.fileprovider.fpfs#P and com.apple.FinderInfo xattrs,
+# which codesign rejects as "resource fork, Finder information, or similar
+# detritus not allowed". Allow override for non-iCloud setups.
+DERIVED_DATA_DIR="${MACPARAKEET_DERIVED_DATA_DIR:-${TMPDIR:-/tmp}/macparakeet-xcode-dev}"
 PRODUCT_DIR="$DERIVED_DATA_DIR/Build/Products/Debug"
 APP_BIN="$PRODUCT_DIR/MacParakeet"
 APP_BUNDLE="$PRODUCT_DIR/MacParakeet-Dev.app"
@@ -157,6 +161,10 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
 </dict>
 </plist>
 PLIST
+
+# Strip extended attributes that iCloud / Finder add during the rsync/cp above.
+# codesign rejects bundles carrying resource forks or com.apple.metadata xattrs.
+xattr -cr "$APP_BUNDLE"
 
 # Re-sign the bundle so TCC can identify the dev build consistently.
 codesign --force --sign "$CODESIGN_IDENTITY" --deep "$APP_BUNDLE"
