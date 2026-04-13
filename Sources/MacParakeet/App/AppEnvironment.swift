@@ -119,6 +119,8 @@ final class AppEnvironment {
             )
         )
 
+        let streamingDictationTranscriber = StreamingEouDictationTranscriber()
+
         dictationService = DictationService(
             audioProcessor: audioProcessor,
             sttTranscriber: sttScheduler,
@@ -132,7 +134,10 @@ final class AppEnvironment {
             processingMode: processingModeClosure,
             llmService: llmService,
             shouldUseAIFormatter: aiFormatterEnabledClosure,
-            aiFormatterPromptTemplate: aiFormatterPromptClosure
+            aiFormatterPromptTemplate: aiFormatterPromptClosure,
+            streamingBroadcaster: audioProcessor,
+            streamingTranscriber: streamingDictationTranscriber,
+            streamingOverlayEnabled: { [runtimePreferences] in runtimePreferences.streamingOverlayEnabled }
         )
 
         telemetryService = TelemetryService()
