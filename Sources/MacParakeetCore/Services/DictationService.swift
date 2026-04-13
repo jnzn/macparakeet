@@ -433,19 +433,27 @@ public actor DictationService: DictationServiceProtocol {
                 }
 
                 if Task.isCancelled {
-                    await transcriber.cancel()
+                    // A new dictation session replaced this one. Don't touch
+                    // transcriber state — the incoming session's startSession()
+                    // cleans up stale state via its own `if sessionActive` path.
+                    // Racing a cancel here would clobber the new session's state.
+                    // Just cancel the partial consumer so its for-await exits.
+                    partialTask.cancel()
                 } else {
                     _ = try? await transcriber.finish()
+                    _ = await partialTask.value
                 }
-                _ = await partialTask.value
                 logger.debug("streaming_session_ended session=\(sessionID)")
             } catch is CancellationError {
-                await transcriber.cancel()
+                // Same reasoning as above — don't touch transcriber state on
+                // cancellation; let the next startSession clean up.
             } catch {
                 logger.warning(
                     "streaming_session_error session=\(sessionID) error=\(error.localizedDescription, privacy: .public)"
                 )
-                await transcriber.cancel()
+                // Don't clean up transcriber here either — avoids races with a
+                // subsequent startSession. Stale sessionActive=true is harmless;
+                // the next startSession's internal cancel() path handles it.
             }
         }
     }
