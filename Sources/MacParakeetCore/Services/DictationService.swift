@@ -1,3 +1,4 @@
+@preconcurrency import AVFoundation
 import Foundation
 import OSLog
 
@@ -45,6 +46,9 @@ extension DictationServiceProtocol {
 public actor DictationService: DictationServiceProtocol {
     private let logger = Logger(subsystem: "com.macparakeet.core", category: "DictationService")
     private let audioProcessor: AudioProcessorProtocol
+    private let streamingBroadcaster: StreamingAudioBroadcaster?
+    private let streamingTranscriber: StreamingDictationTranscriber?
+    private let streamingOverlayEnabled: @Sendable () -> Bool
     private let sttTranscriber: STTTranscribing
     private let dictationRepo: DictationRepositoryProtocol
     private let shouldSaveAudio: (@Sendable () -> Bool)?
@@ -67,6 +71,7 @@ public actor DictationService: DictationServiceProtocol {
     private var currentTelemetryContext = DictationTelemetryContext()
     private var recordingStartedAt: Date?
     private var activeSessionID: Int = 0
+    private var activeStreamingTask: Task<Void, Never>?
 
     public var state: DictationState {
         _state
@@ -90,7 +95,10 @@ public actor DictationService: DictationServiceProtocol {
         llmService: LLMServiceProtocol? = nil,
         shouldUseAIFormatter: (@Sendable () -> Bool)? = nil,
         aiFormatterPromptTemplate: (@Sendable () -> String)? = nil,
-        cancelWindow: Duration = .seconds(5)
+        cancelWindow: Duration = .seconds(5),
+        streamingBroadcaster: StreamingAudioBroadcaster? = nil,
+        streamingTranscriber: StreamingDictationTranscriber? = nil,
+        streamingOverlayEnabled: (@Sendable () -> Bool)? = nil
     ) {
         self.audioProcessor = audioProcessor
         self.sttTranscriber = sttTranscriber
@@ -107,6 +115,9 @@ public actor DictationService: DictationServiceProtocol {
         self.shouldUseAIFormatter = shouldUseAIFormatter ?? { false }
         self.aiFormatterPromptTemplate = aiFormatterPromptTemplate ?? { AIFormatter.defaultPromptTemplate }
         self.cancelWindow = cancelWindow
+        self.streamingBroadcaster = streamingBroadcaster
+        self.streamingTranscriber = streamingTranscriber
+        self.streamingOverlayEnabled = streamingOverlayEnabled ?? { false }
     }
 
     public func startRecording(context: DictationTelemetryContext = DictationTelemetryContext()) async throws {
@@ -172,6 +183,7 @@ public actor DictationService: DictationServiceProtocol {
             recordingStartedAt = Date()
             Telemetry.send(.dictationStarted(trigger: context.trigger, mode: context.mode))
             logger.debug("startRecording capture started session=\(requestedSessionID)")
+            startStreamingSessionIfEnabled(sessionID: requestedSessionID)
         } catch {
             let device = await audioProcessor.recordingDeviceInfo
             _state = .idle
@@ -279,6 +291,7 @@ public actor DictationService: DictationServiceProtocol {
         cancelGeneration += 1
         let generation = cancelGeneration
 
+        endStreamingSession()
         let audioURL = try? await audioProcessor.stopCapture()
         let device = await audioProcessor.recordingDeviceInfo
         pendingCancelledAudioURL = audioURL
@@ -313,6 +326,7 @@ public actor DictationService: DictationServiceProtocol {
         discardPendingCancelledAudio()
 
         if case .recording = _state {
+            endStreamingSession()
             if let url = try? await audioProcessor.stopCapture() {
                 try? FileManager.default.removeItem(at: url)
             }
@@ -362,6 +376,90 @@ public actor DictationService: DictationServiceProtocol {
             recordingStartedAt = nil
             throw error
         }
+    }
+
+    // MARK: - Streaming overlay (fork-only)
+
+    /// Spin up a background task that feeds audio buffers from the broadcaster into
+    /// the streaming transcriber and logs partial transcripts. Best-effort: errors
+    /// here never affect the authoritative batch dictation path.
+    private func startStreamingSessionIfEnabled(sessionID: Int) {
+        guard streamingOverlayEnabled(),
+              let broadcaster = streamingBroadcaster,
+              let transcriber = streamingTranscriber
+        else { return }
+
+        activeStreamingTask?.cancel()
+        // Subscribe to the broadcaster synchronously so buffers produced while the
+        // streaming model loads (worst case ~70 s on first-ever dictation) are
+        // dropped into the AsyncStream's bufferingNewest(200) window instead of
+        // missed entirely. Subsequent dictations load instantly from cache.
+        let audioStream = Task<AsyncStream<AVAudioPCMBuffer>, Never> {
+            await broadcaster.subscribeToAudioBuffers()
+        }
+        activeStreamingTask = Task { [weak self, logger = self.logger] in
+            let stream = await audioStream.value
+            do {
+                if await transcriber.isReady() == false {
+                    try await transcriber.loadModels()
+                }
+                let partialStream = try await transcriber.startSession()
+                logger.debug("streaming_session_started session=\(sessionID)")
+
+                let partialTask = Task { [weak self] in
+                    for await partial in partialStream {
+                        logger.info(
+                            "streaming_partial session=\(sessionID) chars=\(partial.count)"
+                        )
+                        #if DEBUG
+                        logger.debug(
+                            "streaming_partial_text session=\(sessionID) text=\(partial, privacy: .public)"
+                        )
+                        #endif
+                        await self?.reportStreamingPartial(partial, sessionID: sessionID)
+                    }
+                }
+
+                for await buffer in stream {
+                    if Task.isCancelled { break }
+                    do {
+                        try await transcriber.appendAudio(buffer)
+                    } catch {
+                        logger.warning(
+                            "streaming_append_error session=\(sessionID) error=\(error.localizedDescription, privacy: .public)"
+                        )
+                        break
+                    }
+                }
+
+                if Task.isCancelled {
+                    await transcriber.cancel()
+                } else {
+                    _ = try? await transcriber.finish()
+                }
+                _ = await partialTask.value
+                logger.debug("streaming_session_ended session=\(sessionID)")
+            } catch is CancellationError {
+                await transcriber.cancel()
+            } catch {
+                logger.warning(
+                    "streaming_session_error session=\(sessionID) error=\(error.localizedDescription, privacy: .public)"
+                )
+                await transcriber.cancel()
+            }
+        }
+    }
+
+    /// Reserved for future UI integration. Present now so the streaming task has a
+    /// stable delivery point; currently only logs the partial length.
+    private func reportStreamingPartial(_ partial: String, sessionID: Int) {
+        guard sessionID == activeSessionID else { return }
+        // Session 5 will route this into the overlay view model.
+    }
+
+    private func endStreamingSession() {
+        activeStreamingTask?.cancel()
+        activeStreamingTask = nil
     }
 
     // MARK: - Private

@@ -9,6 +9,8 @@ public protocol AppRuntimePreferencesProtocol: Sendable {
     var shouldDiarize: Bool { get }
     var aiFormatterEnabled: Bool { get }
     var aiFormatterPrompt: String { get }
+    /// Opt-in experimental flag for streaming dictation overlay (fork-only feature).
+    var streamingOverlayEnabled: Bool { get }
 }
 
 public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProtocol, @unchecked Sendable {
@@ -24,6 +26,7 @@ public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProto
     public static let speakerDiarizationKey = "speakerDiarization"
     public static let aiFormatterEnabledKey = "aiFormatterEnabled"
     public static let aiFormatterPromptKey = "aiFormatterPrompt"
+    public static let streamingOverlayEnabledKey = "streamingOverlayEnabled"
 
     private let defaults: UserDefaults
 
@@ -66,5 +69,9 @@ public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProto
     public var aiFormatterPrompt: String {
         let prompt = defaults.string(forKey: Self.aiFormatterPromptKey) ?? ""
         return AIFormatter.normalizedPromptTemplate(prompt)
+    }
+
+    public var streamingOverlayEnabled: Bool {
+        defaults.object(forKey: Self.streamingOverlayEnabledKey) as? Bool ?? false
     }
 }
