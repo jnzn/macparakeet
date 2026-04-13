@@ -354,19 +354,23 @@ final class DictationFlowCoordinator {
         case .showCancelCountdown:
             overlayViewModel?.stopTimer()
             overlayViewModel?.streamingPartialText = ""
+            overlayViewModel?.micDeviceName = nil
             overlayViewModel?.cancelTimeRemaining = 5.0
             overlayViewModel?.state = .cancelled(timeRemaining: 5.0)
 
         case .showSuccess:
             overlayViewModel?.streamingPartialText = ""
+            overlayViewModel?.micDeviceName = nil
             overlayViewModel?.state = .success
 
         case .showNoSpeech:
             overlayViewModel?.streamingPartialText = ""
+            overlayViewModel?.micDeviceName = nil
             overlayViewModel?.state = .noSpeech
 
         case .showError(let message):
             overlayViewModel?.streamingPartialText = ""
+            overlayViewModel?.micDeviceName = nil
             overlayViewModel?.state = .error(message)
 
         case .hideOverlay:
@@ -713,6 +717,10 @@ final class DictationFlowCoordinator {
 
             let level = snapshot.audioLevel
             overlayViewModel?.audioLevel = level
+            if let deviceName = snapshot.deviceName,
+               overlayViewModel?.micDeviceName != deviceName {
+                overlayViewModel?.micDeviceName = deviceName
+            }
 
             if autoStopEnabled {
                 let now = Date()

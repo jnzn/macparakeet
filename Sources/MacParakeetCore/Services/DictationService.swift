@@ -82,6 +82,14 @@ public actor DictationService: DictationServiceProtocol {
         get async { await audioProcessor.audioLevel }
     }
 
+    /// Human-readable name of the input device currently backing the recording,
+    /// or nil if no recording is in progress. Used by the overlay to show users
+    /// which mic actually got selected (particularly useful when the default
+    /// device failed and the built-in-mic fallback kicked in).
+    public var recordingDeviceName: String? {
+        get async { await audioProcessor.recordingDeviceInfo?.deviceName }
+    }
+
     public init(
         audioProcessor: AudioProcessorProtocol,
         sttTranscriber: STTTranscribing,

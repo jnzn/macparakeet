@@ -193,7 +193,24 @@ public enum AudioDeviceManager {
     /// For aggregate devices, resolves the transport type of the first active sub-device.
     /// Returns nil if the device is not aggregate or has no sub-devices.
     public static func subDeviceTransport(_ deviceID: AudioDeviceID) -> UInt32? {
-        // Only applies to aggregate devices
+        guard let firstID = firstActiveSubDeviceID(deviceID) else { return nil }
+        let subTransport = transportType(firstID)
+        guard subTransport != 0 else { return nil }
+        return subTransport
+    }
+
+    /// For aggregate devices, resolves the human-readable name of the first active
+    /// sub-device. Returns nil if the device is not aggregate, has no sub-devices,
+    /// or the sub-device name lookup fails. The macOS default input is exposed to
+    /// AVAudioEngine as an aggregate wrapper named "CADefaultDeviceAggregate-<pid>-<n>",
+    /// which is unhelpful in UI — the underlying hardware name (e.g. "Logitech BRIO",
+    /// "MacBook Pro Microphone") is what the user expects to see.
+    public static func subDeviceName(_ deviceID: AudioDeviceID) -> String? {
+        guard let firstID = firstActiveSubDeviceID(deviceID) else { return nil }
+        return deviceName(firstID)
+    }
+
+    private static func firstActiveSubDeviceID(_ deviceID: AudioDeviceID) -> AudioDeviceID? {
         guard transportType(deviceID) == kAudioDeviceTransportTypeAggregate else { return nil }
 
         var address = AudioObjectPropertyAddress(
@@ -210,10 +227,7 @@ public enum AudioDeviceManager {
         var subDeviceIDs = [AudioDeviceID](repeating: 0, count: count)
         status = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &dataSize, &subDeviceIDs)
         guard status == noErr, let firstID = subDeviceIDs.first else { return nil }
-
-        let subTransport = transportType(firstID)
-        guard subTransport != 0 else { return nil }
-        return subTransport
+        return firstID
     }
 
     // MARK: - Private

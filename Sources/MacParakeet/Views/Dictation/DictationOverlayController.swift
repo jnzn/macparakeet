@@ -215,6 +215,11 @@ final class DictationOverlayViewModel {
     /// feature). Empty when streaming is disabled or no speech has been detected
     /// yet. Cleared by the flow coordinator on state transitions out of `.recording`.
     var streamingPartialText: String = ""
+    /// Name of the microphone currently backing the active recording. Shown as
+    /// a small label above the pill while recording so users can confirm which
+    /// input got selected. Nil when not recording or before the audio engine
+    /// has reported back.
+    var micDeviceName: String?
 
     var onCancel: (() -> Void)?
     var onStop: (() -> Void)?
