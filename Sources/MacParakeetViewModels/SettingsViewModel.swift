@@ -125,6 +125,14 @@ public final class SettingsViewModel {
         }
     }
 
+    /// Fork-only experimental flag: show a live streaming transcript bubble
+    /// above the dictation pill while speaking. Default off.
+    public var streamingOverlayEnabled: Bool {
+        didSet {
+            defaults.set(streamingOverlayEnabled, forKey: UserDefaultsAppRuntimePreferences.streamingOverlayEnabledKey)
+        }
+    }
+
     // Transcription
     public var speakerDiarization: Bool {
         didSet {
@@ -234,6 +242,7 @@ public final class SettingsViewModel {
         saveDictationHistory = defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveDictationHistoryKey) as? Bool ?? true
         saveAudioRecordings = defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveAudioRecordingsKey) as? Bool ?? true
         saveTranscriptionAudio = defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveTranscriptionAudioKey) as? Bool ?? true
+        streamingOverlayEnabled = defaults.object(forKey: UserDefaultsAppRuntimePreferences.streamingOverlayEnabledKey) as? Bool ?? false
         speakerDiarization = defaults.object(forKey: UserDefaultsAppRuntimePreferences.speakerDiarizationKey) as? Bool ?? true
         autoSaveTranscripts = defaults.bool(forKey: AutoSaveService.enabledKey)
         autoSaveFormat = AutoSaveFormat(rawValue: defaults.string(forKey: AutoSaveService.formatKey) ?? "md") ?? .md
