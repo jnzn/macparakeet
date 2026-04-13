@@ -137,7 +137,14 @@ final class AppEnvironment {
             aiFormatterPromptTemplate: aiFormatterPromptClosure,
             streamingBroadcaster: audioProcessor,
             streamingTranscriber: streamingDictationTranscriber,
-            streamingOverlayEnabled: { [runtimePreferences] in runtimePreferences.streamingOverlayEnabled }
+            streamingOverlayEnabled: { [runtimePreferences] in runtimePreferences.streamingOverlayEnabled },
+            streamingPartialHandler: { partial in
+                NotificationCenter.default.post(
+                    name: .macParakeetStreamingPartial,
+                    object: nil,
+                    userInfo: ["text": partial]
+                )
+            }
         )
 
         telemetryService = TelemetryService()
