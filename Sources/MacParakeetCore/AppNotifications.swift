@@ -21,4 +21,10 @@ public extension Notification.Name {
     /// This exists mainly so observers can clear any formatter-scoped UI if
     /// the higher-level flow has already moved on.
     static let macParakeetAIFormatterDidFinish = Notification.Name("macparakeet.aiFormatterDidFinish")
+    /// Posted by `DictationService` each time the streaming dictation pipeline
+    /// emits a new cumulative partial transcript. Observed by the dictation
+    /// flow coordinator to feed the overlay's streaming text bubble.
+    ///
+    /// `userInfo["text"]` is the full cumulative partial (String).
+    static let macParakeetStreamingPartial = Notification.Name("macparakeet.streamingPartial")
 }

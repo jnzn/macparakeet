@@ -69,13 +69,22 @@ final class DictationOverlayController {
         let view = DictationOverlayView(viewModel: overlayViewModel)
         let hosting = NSHostingView(rootView: view)
 
-        // Start with generous size — SwiftUI content sizes itself, panel background is clear
-        let panelWidth: CGFloat = 300
-        let panelHeight: CGFloat = 160
+        // Sized generously so the streaming bubble can grow upward without
+        // clipping. Panel background is clear, so empty vertical space is
+        // invisible. Width must fit at least a 1/4-screen streaming bubble
+        // plus horizontal padding.
+        let screen = NSScreen.main?.visibleFrame
+        let quarterScreen = (screen?.width ?? 1440) * 0.25
+        let panelWidth: CGFloat = max(quarterScreen + 40, 380)
+        // Panel fills nearly the full visible height so the streaming bubble
+        // can grow upward without clipping against the panel's top edge.
+        // NSHostingView clips SwiftUI to its frame, so we need vast vertical
+        // runway even though most of it stays transparent.
+        let panelHeight: CGFloat = max((screen?.height ?? 900) - 30, 500)
         hosting.frame = NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight)
 
         let panel = ClickablePanel(
-            contentRect: NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight),
+            contentRect: hosting.frame,
             styleMask: [.nonactivatingPanel, .borderless],
             backing: .buffered,
             defer: false
@@ -202,6 +211,10 @@ final class DictationOverlayViewModel {
     var hoverTooltip: String?
     var commandPromptText: String = "Speak your command..."
     var commandSelectedText: String = ""
+    /// Live partial transcript from the streaming dictation pipeline (fork-only
+    /// feature). Empty when streaming is disabled or no speech has been detected
+    /// yet. Cleared by the flow coordinator on state transitions out of `.recording`.
+    var streamingPartialText: String = ""
 
     var onCancel: (() -> Void)?
     var onStop: (() -> Void)?

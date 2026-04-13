@@ -228,7 +228,12 @@ struct DictationOverlayView: View {
     }
 
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 6) {
+            // Streaming partial transcript bubble — grows upward from the pill
+            // as the streaming ASR pipeline emits text. Empty when streaming is
+            // disabled or before any speech is detected.
+            streamingBubble
+
             // Tooltip — changes per hovered element via NSTrackingArea
             tooltipLabel
                 .frame(maxWidth: .infinity, alignment: tooltipAlignment)
@@ -245,6 +250,35 @@ struct DictationOverlayView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .onChange(of: viewModel.pillStateKey) { _, newKey in
             handlePillStateChange(to: newKey)
+        }
+    }
+
+    /// Black translucent bubble that appears above the dictation pill during
+    /// streaming dictation. Word-wraps up to 1/4 screen width; height grows
+    /// freely. Visible only while text is non-empty; animates its own fade +
+    /// size on content change.
+    @ViewBuilder
+    private var streamingBubble: some View {
+        let text = viewModel.streamingPartialText
+        let maxWidth = (NSScreen.main?.visibleFrame.width ?? 1440) * 0.25
+
+        if !text.isEmpty {
+            Text(text)
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(.white.opacity(0.95))
+                .multilineTextAlignment(.leading)
+                .lineSpacing(2)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .frame(maxWidth: maxWidth, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.black.opacity(0.95))
+                        .shadow(color: .black.opacity(0.35), radius: 10, y: 4)
+                )
+                .transition(.opacity)
+        } else {
+            Color.clear.frame(height: 0)
         }
     }
 

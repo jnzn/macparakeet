@@ -128,6 +128,36 @@ final class DictationFlowCoordinator {
         self.onHistoryReload = onHistoryReload
         self.onPresentEntitlementsAlert = onPresentEntitlementsAlert
         observeFormatterNotifications()
+        observeStreamingPartialNotifications()
+    }
+
+    // MARK: - Streaming partial transcript delivery (fork-only)
+
+    /// Observer token for `.macParakeetStreamingPartial` — retained for the
+    /// lifetime of the coordinator so live transcripts from the streaming
+    /// dictation pipeline flow into the overlay's text bubble.
+    private var streamingPartialObserver: NSObjectProtocol?
+
+    private func observeStreamingPartialNotifications() {
+        streamingPartialObserver = NotificationCenter.default.addObserver(
+            forName: .macParakeetStreamingPartial,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let text = note.userInfo?["text"] as? String else { return }
+            Task { @MainActor [weak self] in
+                guard let vm = self?.overlayViewModel else { return }
+                // Only apply while the overlay is in recording or processing.
+                // Late partials arriving after .success / .noSpeech / .error
+                // would otherwise ghost the cleared bubble back into view.
+                switch vm.state {
+                case .recording, .processing, .formatting:
+                    vm.streamingPartialText = text
+                case .ready, .cancelled, .success, .noSpeech, .error:
+                    break
+                }
+            }
+        }
     }
 
     // MARK: - AI Formatter pill transitions
@@ -323,16 +353,20 @@ final class DictationFlowCoordinator {
 
         case .showCancelCountdown:
             overlayViewModel?.stopTimer()
+            overlayViewModel?.streamingPartialText = ""
             overlayViewModel?.cancelTimeRemaining = 5.0
             overlayViewModel?.state = .cancelled(timeRemaining: 5.0)
 
         case .showSuccess:
+            overlayViewModel?.streamingPartialText = ""
             overlayViewModel?.state = .success
 
         case .showNoSpeech:
+            overlayViewModel?.streamingPartialText = ""
             overlayViewModel?.state = .noSpeech
 
         case .showError(let message):
+            overlayViewModel?.streamingPartialText = ""
             overlayViewModel?.state = .error(message)
 
         case .hideOverlay:

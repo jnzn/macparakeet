@@ -49,6 +49,7 @@ public actor DictationService: DictationServiceProtocol {
     private let streamingBroadcaster: StreamingAudioBroadcaster?
     private let streamingTranscriber: StreamingDictationTranscriber?
     private let streamingOverlayEnabled: @Sendable () -> Bool
+    private let streamingPartialHandler: (@Sendable (String) -> Void)?
     private let sttTranscriber: STTTranscribing
     private let dictationRepo: DictationRepositoryProtocol
     private let shouldSaveAudio: (@Sendable () -> Bool)?
@@ -98,7 +99,8 @@ public actor DictationService: DictationServiceProtocol {
         cancelWindow: Duration = .seconds(5),
         streamingBroadcaster: StreamingAudioBroadcaster? = nil,
         streamingTranscriber: StreamingDictationTranscriber? = nil,
-        streamingOverlayEnabled: (@Sendable () -> Bool)? = nil
+        streamingOverlayEnabled: (@Sendable () -> Bool)? = nil,
+        streamingPartialHandler: (@Sendable (String) -> Void)? = nil
     ) {
         self.audioProcessor = audioProcessor
         self.sttTranscriber = sttTranscriber
@@ -118,6 +120,7 @@ public actor DictationService: DictationServiceProtocol {
         self.streamingBroadcaster = streamingBroadcaster
         self.streamingTranscriber = streamingTranscriber
         self.streamingOverlayEnabled = streamingOverlayEnabled ?? { false }
+        self.streamingPartialHandler = streamingPartialHandler
     }
 
     public func startRecording(context: DictationTelemetryContext = DictationTelemetryContext()) async throws {
@@ -458,11 +461,11 @@ public actor DictationService: DictationServiceProtocol {
         }
     }
 
-    /// Reserved for future UI integration. Present now so the streaming task has a
-    /// stable delivery point; currently only logs the partial length.
+    /// Deliver a streaming partial transcript to the overlay UI, guarded so stale
+    /// callbacks from a replaced session never overwrite the current session's text.
     private func reportStreamingPartial(_ partial: String, sessionID: Int) {
         guard sessionID == activeSessionID else { return }
-        // Session 5 will route this into the overlay view model.
+        streamingPartialHandler?(partial)
     }
 
     private func endStreamingSession() {
