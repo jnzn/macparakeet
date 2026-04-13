@@ -212,11 +212,21 @@ public actor AudioRecorder {
 
         // Capture device info for telemetry (before validation — we want info even on failure)
         if let resolvedID = AudioDeviceManager.currentInputDevice(of: engine) {
-            let name = AudioDeviceManager.deviceName(resolvedID) ?? "unknown"
+            let rawName = AudioDeviceManager.deviceName(resolvedID) ?? "unknown"
             let transport = AudioDeviceManager.transportType(resolvedID)
             let subTransport = AudioDeviceManager.subDeviceTransport(resolvedID)
+            // Aggregate wrappers expose names like "CADefaultDeviceAggregate-<pid>-<n>"
+            // which are useless in UI. Prefer the underlying hardware name when we're
+            // looking at an aggregate (Logitech BRIO, MacBook Pro Microphone, etc.).
+            let displayName: String
+            if transport == kAudioDeviceTransportTypeAggregate,
+               let sub = AudioDeviceManager.subDeviceName(resolvedID), !sub.isEmpty {
+                displayName = sub
+            } else {
+                displayName = rawName
+            }
             _deviceInfo = RecordingDeviceInfo(
-                deviceName: name,
+                deviceName: displayName,
                 transport: AudioDeviceManager.InputDevice.label(for: transport),
                 subTransport: subTransport.map { AudioDeviceManager.InputDevice.label(for: $0) },
                 sampleRate: inputFormat.sampleRate,

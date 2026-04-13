@@ -234,6 +234,11 @@ struct DictationOverlayView: View {
             // disabled or before any speech is detected.
             streamingBubble
 
+            // Mic device name — small label shown only during recording so the
+            // user can confirm which input got selected (default device vs
+            // built-in fallback).
+            micDeviceLabel
+
             // Tooltip — changes per hovered element via NSTrackingArea
             tooltipLabel
                 .frame(maxWidth: .infinity, alignment: tooltipAlignment)
@@ -277,6 +282,39 @@ struct DictationOverlayView: View {
                         .shadow(color: .black.opacity(0.35), radius: 10, y: 4)
                 )
                 .transition(.opacity)
+        } else {
+            Color.clear.frame(height: 0)
+        }
+    }
+
+    /// Small, unobtrusive label showing which microphone is actively capturing.
+    /// Visible only during recording states; trimmed + capped so long device
+    /// names ("CADefaultDeviceAggregate-42320-0") don't balloon the overlay.
+    @ViewBuilder
+    private var micDeviceLabel: some View {
+        let name = viewModel.micDeviceName?.trimmingCharacters(in: .whitespaces) ?? ""
+        let isRecording: Bool = {
+            if case .recording = viewModel.state { return true }
+            return false
+        }()
+        if isRecording, !name.isEmpty {
+            HStack(spacing: 4) {
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.45))
+                Text(name)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(
+                Capsule()
+                    .fill(Color.black.opacity(0.35))
+            )
+            .transition(.opacity)
         } else {
             Color.clear.frame(height: 0)
         }
