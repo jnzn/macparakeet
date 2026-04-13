@@ -42,6 +42,11 @@ public protocol StreamingDictationTranscriber: Sendable {
     /// Release loaded models and free memory. After calling, `loadModels()` must run
     /// again before new sessions.
     func shutdown() async
+
+    /// Run a tiny dummy inference to keep CoreML's ANE context warm. No-op if
+    /// models aren't loaded or a session is currently active (so it never
+    /// disrupts live dictation). Safe to call on a periodic timer.
+    func keepAlive() async
 }
 
 public enum StreamingDictationError: Error, LocalizedError, Equatable {

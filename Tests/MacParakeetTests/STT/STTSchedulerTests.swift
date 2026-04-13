@@ -413,6 +413,8 @@ private actor MockSTTRuntime: STTRuntimeProtocol {
         ready = false
     }
 
+    func keepAlive() async {}
+
     func block(path: String) {
         blockedPaths.insert(path)
     }
