@@ -103,18 +103,23 @@ final class DictationServiceStreamingTests: XCTestCase {
         await waitFor { await self.mockStreaming.finishCallCount == 1 }
     }
 
-    func test_streamingEnabled_cancelRecording_cancelsSession() async throws {
+    func test_streamingEnabled_cancelRecording_subsequentStartWorks() async throws {
+        // On cancel, the streaming task exits without touching transcriber state
+        // (to avoid actor-reentrancy races with a follow-up session). Verify
+        // that a subsequent startRecording still produces a working streaming
+        // session — which is the behavior that actually matters.
         service = makeService(streamingEnabled: true)
         try await service.startRecording()
         await waitFor { await self.mockStreaming.startSessionCallCount == 1 }
 
         await service.cancelRecording()
 
-        await waitFor {
-            let cancels = await self.mockStreaming.cancelCallCount
-            let finishes = await self.mockStreaming.finishCallCount
-            return cancels + finishes >= 1
-        }
+        try await service.startRecording()
+        await waitFor { await self.mockStreaming.startSessionCallCount == 2 }
+
+        let buffer = try makeBuffer(frames: 1600)
+        await mockAudio.emitBroadcastBuffer(buffer)
+        await waitFor { await self.mockStreaming.appendCallCount >= 1 }
     }
 
     func test_streamingDisabled_stopRecording_neverTouchesTranscriber() async throws {
