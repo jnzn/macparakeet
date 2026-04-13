@@ -127,6 +127,10 @@ public actor STTScheduler: STTManaging {
         await runtime.shutdown()
     }
 
+    public func keepAlive() async {
+        await runtime.keepAlive()
+    }
+
     private func enqueue(
         _ job: ScheduledJob,
         continuation: CheckedContinuation<STTResult, Error>

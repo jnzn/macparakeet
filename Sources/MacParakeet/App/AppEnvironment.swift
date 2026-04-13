@@ -14,6 +14,8 @@ final class AppEnvironment {
     let promptResultRepo: PromptResultRepository
     let sttRuntime: STTRuntime
     let sttScheduler: STTScheduler
+    let streamingDictationTranscriber: StreamingEouDictationTranscriber
+    private var modelKeepAliveTask: Task<Void, Never>?
     let audioProcessor: AudioProcessor
     let meetingRecordingService: MeetingRecordingService
     let dictationService: DictationService
@@ -146,6 +148,29 @@ final class AppEnvironment {
                 )
             }
         )
+        self.streamingDictationTranscriber = streamingDictationTranscriber
+
+        // Periodic keep-alive pings so CoreML doesn't page out the ANE context
+        // after idle periods. Fires every 2 min, skipping while dictation is
+        // actively in progress. Pings both the batch TDT model (via scheduler)
+        // and the streaming EOU model (if enabled).
+        modelKeepAliveTask = Task { [sttScheduler, streamingDictationTranscriber, dictationService, runtimePreferences] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(120))
+                if Task.isCancelled { break }
+                let state = await dictationService.state
+                switch state {
+                case .recording, .processing:
+                    continue
+                default:
+                    break
+                }
+                await sttScheduler.keepAlive()
+                if runtimePreferences.streamingOverlayEnabled {
+                    await streamingDictationTranscriber.keepAlive()
+                }
+            }
+        }
 
         telemetryService = TelemetryService()
         Telemetry.configure(telemetryService)

@@ -30,6 +30,9 @@ public protocol STTRuntimeManaging: Sendable {
     func isReady() async -> Bool
     func clearModelCache() async
     func shutdown() async
+    /// Run a short silence inference to keep CoreML's ANE context warm. No-op
+    /// if models aren't loaded. Safe to call periodically from a background timer.
+    func keepAlive() async
 }
 
 public typealias STTManaging = STTTranscribing & STTRuntimeManaging

@@ -98,6 +98,29 @@ public actor StreamingEouDictationTranscriber: StreamingDictationTranscriber {
         manager = nil
     }
 
+    public func keepAlive() async {
+        // Only ping when loaded and idle. If a session is active, live dictation
+        // is already keeping the model warm; interfering would mangle its state.
+        guard let manager, !sessionActive else { return }
+        do {
+            // 1 s of silence at 16 kHz mono Float32. process() runs the full
+            // encoder + decoder path on the silence, which is what keeps the
+            // ANE context resident. We reset() afterward so no residual
+            // buffer state leaks into the next real session.
+            let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
+            let frames: AVAudioFrameCount = 16000
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else { return }
+            buffer.frameLength = frames
+            // Buffer allocated fresh; channel data defaults to zeros. Skip explicit zeroing.
+            try await manager.appendAudio(buffer)
+            try await manager.processBufferedAudio()
+            try await manager.reset()
+            logger.debug("streaming_keep_alive_pinged")
+        } catch {
+            logger.warning("streaming_keep_alive_failed error=\(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     private func endSession() {
         partialContinuation?.finish()
         partialContinuation = nil
