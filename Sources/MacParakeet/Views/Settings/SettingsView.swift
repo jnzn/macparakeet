@@ -233,6 +233,14 @@ struct SettingsView: View {
                         .frame(width: 140)
                     }
                 }
+
+                Divider()
+
+                settingsToggleRow(
+                    title: "Live transcript overlay (experimental)",
+                    detail: "Show streaming partial text above the dictation pill while you speak. Uses a separate smaller model (~70s one-time download on first use); the pasted text still comes from the high-accuracy batch model.",
+                    isOn: $viewModel.streamingOverlayEnabled
+                )
             }
         }
     }
