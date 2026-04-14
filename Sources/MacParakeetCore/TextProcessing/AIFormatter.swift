@@ -21,6 +21,25 @@ public enum AIFormatter {
         {{TRANSCRIPT}}
         """
 
+    /// Previous conservative-cleanup default (was the default before V4).
+    /// Returned too-timid results when paired with models that see Parakeet's
+    /// already-decent output and decline to change much — swap users to V4
+    /// which prescribes the transformations explicitly.
+    static let legacyDefaultPromptTemplateV3 = """
+        Clean up ASR-transcribed text. Output ONLY the corrected text. No preamble, no reasoning, no explanations, no `<channel|>` tags, no markdown.
+
+        Rules:
+        - Fix punctuation and capitalization.
+        - Fix obvious word confusions (e.g., wood/would, their/there, two/to).
+        - Collapse ASR stutter where the same word repeats back-to-back unnaturally (e.g., "the the cat" → "the cat", "whisper whisper whisper flow" → "whisper flow"). Keep repetition that is clearly intentional for emphasis (e.g., "no no no", "very very slowly").
+        - Remove filler sounds like "um", "uh", "like" only when they're clearly filler, not when they carry meaning.
+        - Preserve the speaker's wording, tone, and meaning exactly.
+        - Do NOT paraphrase, summarize, or add content.
+        - If already correct, return unchanged.
+
+        Input: {{TRANSCRIPT}}
+        """
+
     /// Previous 12-rule default (paragraph-aware version). Upgraders who never
     /// customized their prompt should migrate silently to the current default
     /// that prioritizes conservative "fix typos only" semantics for ASR cleanup.
@@ -48,16 +67,25 @@ public enum AIFormatter {
         """
 
     public static let defaultPromptTemplate = """
-        Clean up ASR-transcribed text. Output ONLY the corrected text. No preamble, no reasoning, no explanations, no `<channel|>` tags, no markdown.
+        Clean up ASR-transcribed speech. Output ONLY the corrected text — no preamble, no reasoning, no explanations, no `<channel|>` tags, no markdown.
 
-        Rules:
-        - Fix punctuation and capitalization.
-        - Fix obvious word confusions (e.g., wood/would, their/there, two/to).
-        - Collapse ASR stutter where the same word repeats back-to-back unnaturally (e.g., "the the cat" → "the cat", "whisper whisper whisper flow" → "whisper flow"). Keep repetition that is clearly intentional for emphasis (e.g., "no no no", "very very slowly").
-        - Remove filler sounds like "um", "uh", "like" only when they're clearly filler, not when they carry meaning.
-        - Preserve the speaker's wording, tone, and meaning exactly.
-        - Do NOT paraphrase, summarize, or add content.
-        - If already correct, return unchanged.
+        Required transformations (do these every time, even if input looks OK):
+        - Split the run-on transcript into proper sentences. End each with `.` `?` or `!`.
+        - Capitalize the first word of every sentence.
+        - Capitalize proper nouns, product names, acronyms, and first-person "I".
+        - Insert commas where natural speech rhythm + English grammar demand them (lists, appositives, after intro phrases, before "but" / "and" in compound sentences).
+        - Fix obvious homophone errors from speech-to-text (wood↔would, their↔there↔they're, two↔to↔too, its↔it's, etc.).
+        - Collapse ASR stutter ("the the cat" → "the cat", "whisper whisper flow" → "whisper flow"). Keep intentional repetition ("no no no", "very very").
+        - Remove filler words ("um", "uh", sometimes "like") only when clearly filler, not when they carry meaning.
+
+        Preserve:
+        - The speaker's wording, word order, phrasing, and tone.
+        - The substance and order of ideas.
+
+        Never:
+        - Paraphrase, summarize, shorten, or add content.
+        - Change word choices beyond homophone correction.
+        - Explain your changes or output anything other than the cleaned text.
 
         Input: {{TRANSCRIPT}}
         """
@@ -69,6 +97,9 @@ public enum AIFormatter {
             return defaultPromptTemplate
         }
         if trimmed == legacyDefaultPromptTemplateV2.trimmingCharacters(in: .whitespacesAndNewlines) {
+            return defaultPromptTemplate
+        }
+        if trimmed == legacyDefaultPromptTemplateV3.trimmingCharacters(in: .whitespacesAndNewlines) {
             return defaultPromptTemplate
         }
         return trimmed
