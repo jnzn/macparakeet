@@ -21,7 +21,10 @@ public enum AIFormatter {
         {{TRANSCRIPT}}
         """
 
-    public static let defaultPromptTemplate = """
+    /// Previous 12-rule default (paragraph-aware version). Upgraders who never
+    /// customized their prompt should migrate silently to the current default
+    /// that prioritizes conservative "fix typos only" semantics for ASR cleanup.
+    static let legacyDefaultPromptTemplateV2 = """
         You are a transcription cleanup assistant.
 
         Convert the following raw transcript into polished, readable text.
@@ -44,10 +47,28 @@ public enum AIFormatter {
         {{TRANSCRIPT}}
         """
 
+    public static let defaultPromptTemplate = """
+        Clean up ASR-transcribed text. Output ONLY the corrected text. No preamble, no reasoning, no explanations, no `<channel|>` tags, no markdown.
+
+        Rules:
+        - Fix punctuation and capitalization.
+        - Fix obvious word confusions (e.g., wood/would, their/there, two/to).
+        - Collapse ASR stutter where the same word repeats back-to-back unnaturally (e.g., "the the cat" → "the cat", "whisper whisper whisper flow" → "whisper flow"). Keep repetition that is clearly intentional for emphasis (e.g., "no no no", "very very slowly").
+        - Remove filler sounds like "um", "uh", "like" only when they're clearly filler, not when they carry meaning.
+        - Preserve the speaker's wording, tone, and meaning exactly.
+        - Do NOT paraphrase, summarize, or add content.
+        - If already correct, return unchanged.
+
+        Input: {{TRANSCRIPT}}
+        """
+
     public static func normalizedPromptTemplate(_ promptTemplate: String) -> String {
         let trimmed = promptTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return defaultPromptTemplate }
         if trimmed == legacyDefaultPromptTemplateV1 {
+            return defaultPromptTemplate
+        }
+        if trimmed == legacyDefaultPromptTemplateV2.trimmingCharacters(in: .whitespacesAndNewlines) {
             return defaultPromptTemplate
         }
         return trimmed
