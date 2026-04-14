@@ -15,7 +15,7 @@ struct WaveformView: View {
                 RoundedRectangle(cornerRadius: 1)
                     .fill(Color.white.opacity(0.8))
                     .frame(width: 2, height: barHeight(forIndex: index))
-                    .animation(.easeOut(duration: 0.08), value: history[safe: index] ?? 0)
+                    .animation(.easeOut(duration: 0.04), value: history[safe: index] ?? 0)
             }
         }
         .frame(height: 20)
