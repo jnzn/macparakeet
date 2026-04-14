@@ -138,6 +138,9 @@ final class AppEnvironment {
             shouldUseAIFormatter: aiFormatterEnabledClosure,
             shouldFormatPasteWithAI: { [runtimePreferences] in runtimePreferences.formatPasteWithAI },
             aiFormatterPromptTemplate: aiFormatterPromptClosure,
+            resolveActiveProfile: {
+                AppProfile.resolve(bundleID: AppContextService.frontmostBundleID())
+            },
             streamingBroadcaster: audioProcessor,
             streamingTranscriber: streamingDictationTranscriber,
             streamingOverlayEnabled: { [runtimePreferences] in runtimePreferences.streamingOverlayEnabled },
