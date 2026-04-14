@@ -40,7 +40,23 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 DEFAULT_DB = Path.home() / "Library/Application Support/MacParakeet/macparakeet.db"
-DEFAULT_JSON = Path(__file__).with_name("bcbsma_acronyms.json")
+
+# JSON source list is intentionally NOT bundled in this public fork — it
+# contains BCBSMA-internal acronyms, role names, and coworker names that
+# shouldn't be published. The canonical list lives in the private
+# snowflake-docs-mirror repo. First match wins; override with a positional
+# path argument if yours lives somewhere else entirely.
+DEFAULT_JSON_CANDIDATES = [
+    Path.home() / "git/snowflake-docs-mirror/vocabulary/bcbsma_acronyms.json",
+    Path(__file__).with_name("bcbsma_acronyms.json"),  # fallback if colocated
+]
+
+
+def resolve_default_json() -> Path:
+    for p in DEFAULT_JSON_CANDIDATES:
+        if p.exists():
+            return p
+    return DEFAULT_JSON_CANDIDATES[0]  # reported as the path to use in --help
 
 
 def iso_now() -> str:
@@ -59,8 +75,9 @@ def load_entries(path: Path) -> list[dict]:
 
 
 def main() -> int:
+    default_json = resolve_default_json()
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("json_path", nargs="?", default=str(DEFAULT_JSON),
+    p.add_argument("json_path", nargs="?", default=str(default_json),
                    help="Path to JSON file of acronyms (default: %(default)s)")
     p.add_argument("--db", default=str(DEFAULT_DB),
                    help="Path to macparakeet.db (default: %(default)s)")
