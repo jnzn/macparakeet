@@ -71,6 +71,7 @@ final class DictationServiceTests: XCTestCase {
             dictationRepo: dictationRepo,
             llmService: mockLLMService,
             shouldUseAIFormatter: { true },
+            shouldFormatPasteWithAI: { true },
             aiFormatterPromptTemplate: { AIFormatter.defaultPromptTemplate }
         )
 
@@ -82,6 +83,33 @@ final class DictationServiceTests: XCTestCase {
         XCTAssertEqual(result.dictation.wordCount, 2)
         XCTAssertEqual(mockLLMService.formatTranscriptCallCount, 1)
         XCTAssertEqual(mockLLMService.lastFormattedTranscript, "hello world")
+    }
+
+    /// Paste-path LLM polish is opt-in (default off). When the AI Formatter
+    /// master toggle is on but the paste-polish flag isn't set, the formatter
+    /// must NOT run on the final transcript — Parakeet's raw output is pasted.
+    /// Regression guard for Item 1 (skip end-of-dictation refinement).
+    func testStopRecordingSkipsAIFormatterForPasteWhenFormatPasteFlagOff() async throws {
+        await mockSTT.configure(result: STTResult(text: "hello world"))
+        let mockLLMService = MockLLMService()
+        mockLLMService.formatTranscriptResult = "Hello, world."
+
+        service = DictationService(
+            audioProcessor: mockAudio,
+            sttTranscriber: mockSTT,
+            dictationRepo: dictationRepo,
+            llmService: mockLLMService,
+            shouldUseAIFormatter: { true },
+            shouldFormatPasteWithAI: { false },
+            aiFormatterPromptTemplate: { AIFormatter.defaultPromptTemplate }
+        )
+
+        try await service.startRecording()
+        let result = try await service.stopRecording()
+
+        XCTAssertEqual(result.dictation.rawTranscript, "hello world")
+        XCTAssertNil(result.dictation.cleanTranscript)
+        XCTAssertEqual(mockLLMService.formatTranscriptCallCount, 0)
     }
 
     func testStopRecordingFallsBackWhenAIFormatterFailsAndPostsWarning() async throws {
@@ -108,6 +136,7 @@ final class DictationServiceTests: XCTestCase {
             dictationRepo: dictationRepo,
             llmService: mockLLMService,
             shouldUseAIFormatter: { true },
+            shouldFormatPasteWithAI: { true },
             aiFormatterPromptTemplate: { AIFormatter.defaultPromptTemplate }
         )
 
@@ -146,6 +175,7 @@ final class DictationServiceTests: XCTestCase {
             dictationRepo: dictationRepo,
             llmService: mockLLMService,
             shouldUseAIFormatter: { true },
+            shouldFormatPasteWithAI: { true },
             aiFormatterPromptTemplate: { AIFormatter.defaultPromptTemplate }
         )
 
