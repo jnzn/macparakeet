@@ -21,7 +21,10 @@ public enum AIFormatter {
         {{TRANSCRIPT}}
         """
 
-    public static let defaultPromptTemplate = """
+    /// Previous 12-rule default (paragraph-aware version). Upgraders who never
+    /// customized their prompt should migrate silently to the current default
+    /// that prioritizes conservative "fix typos only" semantics for ASR cleanup.
+    static let legacyDefaultPromptTemplateV2 = """
         You are a transcription cleanup assistant.
 
         Convert the following raw transcript into polished, readable text.
@@ -44,10 +47,28 @@ public enum AIFormatter {
         {{TRANSCRIPT}}
         """
 
+    public static let defaultPromptTemplate = """
+        Clean up ASR-transcribed text. Output ONLY the corrected text. No preamble, no reasoning, no explanations, no `<channel|>` tags, no markdown.
+
+        Rules:
+        - Fix punctuation and capitalization.
+        - Fix obvious word confusions (e.g., wood/would, their/there, two/to).
+        - Collapse ASR stutter where the same word repeats back-to-back unnaturally (e.g., "the the cat" → "the cat", "whisper whisper whisper flow" → "whisper flow"). Keep repetition that is clearly intentional for emphasis (e.g., "no no no", "very very slowly").
+        - Remove filler sounds like "um", "uh", "like" only when they're clearly filler, not when they carry meaning.
+        - Preserve the speaker's wording, tone, and meaning exactly.
+        - Do NOT paraphrase, summarize, or add content.
+        - If already correct, return unchanged.
+
+        Input: {{TRANSCRIPT}}
+        """
+
     public static func normalizedPromptTemplate(_ promptTemplate: String) -> String {
         let trimmed = promptTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return defaultPromptTemplate }
         if trimmed == legacyDefaultPromptTemplateV1 {
+            return defaultPromptTemplate
+        }
+        if trimmed == legacyDefaultPromptTemplateV2.trimmingCharacters(in: .whitespacesAndNewlines) {
             return defaultPromptTemplate
         }
         return trimmed
@@ -69,7 +90,13 @@ public enum AIFormatter {
     }
 
     public static func normalizedFormattedOutput(_ output: String) -> String {
-        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Strip chain-of-thought / "thinking" delimiters that hybrid-thinking
+        // models (Gemma 4, Qwen3, DeepSeek-R1, etc.) leak into final output when
+        // thinking mode isn't fully suppressed by the chat template. We take
+        // everything after the LAST delimiter in each family — the final answer
+        // lives there by convention.
+        let stripped = stripThinkingDelimiters(output)
+        let trimmed = stripped.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return trimmed }
 
         var normalized = trimmed.replacingOccurrences(of: "\r\n", with: "\n")
@@ -88,5 +115,60 @@ public enum AIFormatter {
         }
 
         return normalized
+    }
+
+    /// Strip chain-of-thought delimiters from model output. Hybrid-thinking models
+    /// (Gemma 4 E2B/E4B, Qwen3, DeepSeek-R1) emit patterns like:
+    ///   `<channel|>reasoning text<channel|>final answer`
+    ///   `<think>reasoning</think>final answer`
+    ///   `<|think|>reasoning<|/think|>final answer`
+    /// For each family, the final answer lives after the LAST delimiter occurrence.
+    /// Returns the tail as-is if any pattern matches; otherwise returns input unchanged.
+    static func stripThinkingDelimiters(_ output: String) -> String {
+        // Heuristic for hybrid-thinking model output cleanup:
+        // - 2+ tag occurrences: convention is answer is in last channel (after
+        //   the last tag). Slice after.
+        // - 1 tag occurrence:
+        //     - if text after is non-empty: it's the answer. Slice after.
+        //     - if text after is empty/whitespace: the tag is a dangling
+        //       artifact appended after the answer. Slice before.
+        //   (Gemma 4 E2B emits `answer<channel|>` with a trailing tag even
+        //    when `think: false` is set on the native /api/chat endpoint.)
+        // - 0 occurrences: leave as-is.
+        let patterns = [
+            "<channel|>",
+            "<|channel|>",
+            "</think>",
+            "<|/think|>",
+            "<|think|>",
+        ]
+        var result = output
+        for pattern in patterns {
+            let occurrences = countOccurrences(of: pattern, in: result)
+            if occurrences == 0 { continue }
+            guard let lastRange = result.range(of: pattern, options: .backwards) else { continue }
+            let after = String(result[lastRange.upperBound...])
+            let afterTrim = after.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !afterTrim.isEmpty {
+                result = after
+            } else if occurrences == 1 {
+                // Single trailing tag with no content after — keep the text before it.
+                result = String(result[..<lastRange.lowerBound])
+            }
+            // Multi-tag with empty last-channel: fall through (leaves result
+            // as the whole string; another pattern may catch it or final
+            // empty-response fallback applies).
+        }
+        return result
+    }
+
+    private static func countOccurrences(of needle: String, in haystack: String) -> Int {
+        var count = 0
+        var searchRange = haystack.startIndex..<haystack.endIndex
+        while let found = haystack.range(of: needle, range: searchRange) {
+            count += 1
+            searchRange = found.upperBound..<haystack.endIndex
+        }
+        return count
     }
 }

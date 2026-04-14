@@ -128,6 +128,8 @@ private actor StubSTTClient: STTClientProtocol {
     }
 
     func shutdown() async {}
+
+    func keepAlive() async {}
 }
 
 private actor StubDiarizationService: DiarizationServiceProtocol {

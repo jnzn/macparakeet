@@ -182,6 +182,11 @@ public actor MockSTTClient: STTClientProtocol {
         shutdownCalled = true
     }
 
+    public var keepAliveCallCount = 0
+    public func keepAlive() async {
+        keepAliveCallCount += 1
+    }
+
     private func prepareWarmUpStateForRetry() {
         if case .failed = warmUpState {
             warmUpState = .idle

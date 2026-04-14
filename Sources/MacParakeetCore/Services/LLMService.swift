@@ -461,6 +461,9 @@ public final class LLMService: LLMServiceProtocol, Sendable {
         static let formatter = """
             You are a transcription formatting assistant. Follow the user's formatting \
             instructions exactly and return only the final formatted transcript.
+            Do not think out loud, do not produce reasoning steps, do not emit \
+            `<channel|>`, `<|channel|>`, `<think>`, or any other hidden-reasoning \
+            markers. Output nothing but the cleaned transcript text.
             """
     }
 

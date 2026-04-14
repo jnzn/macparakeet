@@ -15,6 +15,7 @@ protocol STTRuntimeProtocol: Sendable {
     func isReady() async -> Bool
     func shutdown() async
     func clearModelCache() async
+    func keepAlive() async
 }
 
 /// Sole owner of the shared Parakeet STT lifecycle.
@@ -204,6 +205,19 @@ public actor STTRuntime: STTRuntimeProtocol {
         await shutdown()
         DownloadUtils.clearAllModelCaches()
         setBackgroundWarmUpState(.idle)
+    }
+
+    /// Keep the interactive slot's model hot by running a 1 s silence inference.
+    /// No-op if models aren't loaded yet. Respects scheduler serialization —
+    /// if a real dictation is in flight it runs after.
+    public func keepAlive() async {
+        guard let manager = interactiveManager else { return }
+        do {
+            let silence = [Float](repeating: 0, count: 16_000)
+            _ = try await manager.transcribe(silence, source: .microphone)
+        } catch {
+            // Non-fatal — next real dictation will reload if CoreML unloaded.
+        }
     }
 
     public nonisolated static func isModelCached(version: AsrModelVersion = .v3) -> Bool {
