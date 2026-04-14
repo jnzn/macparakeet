@@ -104,12 +104,16 @@ public enum AIFormatter {
     /// For each family, the final answer lives after the LAST delimiter occurrence.
     /// Returns the tail as-is if any pattern matches; otherwise returns input unchanged.
     static func stripThinkingDelimiters(_ output: String) -> String {
-        // Aggressive strip: always take the text AFTER the last occurrence of
-        // each thinking delimiter. If that's empty, the caller will see an
-        // empty formatter response and fall back to raw STT — which is
-        // correct, because it means the model never produced a clean final
-        // answer (only reasoning). Preserving the thinking payload with tags
-        // intact would leak `<channel|>` into the UI, which is worse.
+        // Heuristic for hybrid-thinking model output cleanup:
+        // - 2+ tag occurrences: convention is answer is in last channel (after
+        //   the last tag). Slice after.
+        // - 1 tag occurrence:
+        //     - if text after is non-empty: it's the answer. Slice after.
+        //     - if text after is empty/whitespace: the tag is a dangling
+        //       artifact appended after the answer. Slice before.
+        //   (Gemma 4 E2B emits `answer<channel|>` with a trailing tag even
+        //    when `think: false` is set on the native /api/chat endpoint.)
+        // - 0 occurrences: leave as-is.
         let patterns = [
             "<channel|>",
             "<|channel|>",
@@ -119,10 +123,31 @@ public enum AIFormatter {
         ]
         var result = output
         for pattern in patterns {
-            if let range = result.range(of: pattern, options: .backwards) {
-                result = String(result[range.upperBound...])
+            let occurrences = countOccurrences(of: pattern, in: result)
+            if occurrences == 0 { continue }
+            guard let lastRange = result.range(of: pattern, options: .backwards) else { continue }
+            let after = String(result[lastRange.upperBound...])
+            let afterTrim = after.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !afterTrim.isEmpty {
+                result = after
+            } else if occurrences == 1 {
+                // Single trailing tag with no content after — keep the text before it.
+                result = String(result[..<lastRange.lowerBound])
             }
+            // Multi-tag with empty last-channel: fall through (leaves result
+            // as the whole string; another pattern may catch it or final
+            // empty-response fallback applies).
         }
         return result
+    }
+
+    private static func countOccurrences(of needle: String, in haystack: String) -> Int {
+        var count = 0
+        var searchRange = haystack.startIndex..<haystack.endIndex
+        while let found = haystack.range(of: needle, range: searchRange) {
+            count += 1
+            searchRange = found.upperBound..<haystack.endIndex
+        }
+        return count
     }
 }

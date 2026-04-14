@@ -604,6 +604,8 @@ public final class LLMSettingsViewModel {
             "qwen/qwen3.5-72b",
         ]
         case .ollama: return [
+            "gemma3:1b",
+            "gemma3:4b",
             "gemma4:e2b",
             "gemma4:e4b",
             "gemma4:26b",
@@ -611,7 +613,6 @@ public final class LLMSettingsViewModel {
             "qwen3.5:4b",
             "qwen3.5:9b",
             "llama4:8b",
-            "gemma3:4b",
             "deepseek-v3.2",
             "qwen3:8b",
             "mistral",
