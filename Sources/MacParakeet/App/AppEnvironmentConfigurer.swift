@@ -187,6 +187,7 @@ final class AppEnvironmentConfigurer {
             shouldSuppressIdlePill: {
                 coordinatorRefs.meeting?.isMeetingRecordingActive == true
             },
+            liveBubbleCleanupEnabled: { [env] in env.runtimePreferences.liveBubbleCleanupEnabled },
             onMenuBarIconUpdate: { _ in callbacks.onMenuBarIconUpdate() },
             onHistoryReload: { [weak self] in self?.historyViewModel.loadDictations() },
             onPresentEntitlementsAlert: callbacks.onPresentEntitlementsAlert

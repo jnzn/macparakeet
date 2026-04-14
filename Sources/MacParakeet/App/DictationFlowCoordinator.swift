@@ -71,6 +71,10 @@ final class DictationFlowCoordinator {
     private let dictationRepo: DictationRepository
     private let settingsViewModel: SettingsViewModel
     private let shouldSuppressIdlePill: () -> Bool
+    /// Whether to run live LLM cleanup on each dictation pause. When false,
+    /// the bubble shows raw streaming partials only; the end-of-dictation
+    /// AI Formatter still runs as configured by its own toggle.
+    private let liveBubbleCleanupEnabled: () -> Bool
     private let onMenuBarIconUpdate: (BreathWaveIcon.MenuBarState) -> Void
     private let onHistoryReload: () -> Void
     private let onPresentEntitlementsAlert: (Error) -> Void
@@ -114,6 +118,7 @@ final class DictationFlowCoordinator {
         dictationRepo: DictationRepository,
         settingsViewModel: SettingsViewModel,
         shouldSuppressIdlePill: @escaping () -> Bool = { false },
+        liveBubbleCleanupEnabled: @escaping () -> Bool = { true },
         onMenuBarIconUpdate: @escaping (BreathWaveIcon.MenuBarState) -> Void,
         onHistoryReload: @escaping () -> Void,
         onPresentEntitlementsAlert: @escaping (Error) -> Void
@@ -124,6 +129,7 @@ final class DictationFlowCoordinator {
         self.dictationRepo = dictationRepo
         self.settingsViewModel = settingsViewModel
         self.shouldSuppressIdlePill = shouldSuppressIdlePill
+        self.liveBubbleCleanupEnabled = liveBubbleCleanupEnabled
         self.onMenuBarIconUpdate = onMenuBarIconUpdate
         self.onHistoryReload = onHistoryReload
         self.onPresentEntitlementsAlert = onPresentEntitlementsAlert
@@ -221,6 +227,7 @@ final class DictationFlowCoordinator {
     /// Returned cleaned text replaces the bubble if still paused at same text;
     /// stale results are dropped.
     private func scheduleLiveCleanup(for text: String) {
+        guard liveBubbleCleanupEnabled() else { return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 3 else { return }
         if trimmed == pendingCleanupSnapshot, liveCleanupDebounceTask != nil {
