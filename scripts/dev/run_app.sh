@@ -158,6 +158,29 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
     <string>MacParakeet needs microphone access for voice dictation.</string>
     <key>NSAudioCaptureUsageDescription</key>
     <string>MacParakeet needs system audio recording access for meeting recording.</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <!-- Permit plaintext HTTP to RFC 1918 / Bonjour / link-local hosts.
+             Covers LAN Ollama / LM Studio instances reached on the local
+             network. Does NOT cover Tailscale CGNAT (100.64.0.0/10), which
+             is handled by the NSExceptionDomains entry below. -->
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+        <key>NSExceptionDomains</key>
+        <dict>
+            <!-- Tailscale MagicDNS hosts (*.ts.net). Allows http://
+                 connections to e.g. http://macstudio.wyrm-toad.ts.net:11434
+                 for private-tailnet Ollama endpoints. Traffic is
+                 WireGuard-encrypted by Tailscale below the HTTP layer. -->
+            <key>ts.net</key>
+            <dict>
+                <key>NSIncludesSubdomains</key>
+                <true/>
+                <key>NSExceptionAllowsInsecureHTTPLoads</key>
+                <true/>
+            </dict>
+        </dict>
+    </dict>
 </dict>
 </plist>
 PLIST
