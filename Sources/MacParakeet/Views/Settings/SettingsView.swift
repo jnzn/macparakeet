@@ -241,6 +241,16 @@ struct SettingsView: View {
                     detail: "Show streaming partial text above the dictation pill while you speak. Uses a separate smaller model (~70s one-time download on first use); the pasted text still comes from the high-accuracy batch model.",
                     isOn: $viewModel.streamingOverlayEnabled
                 )
+
+                if viewModel.streamingOverlayEnabled {
+                    Divider()
+
+                    settingsToggleRow(
+                        title: "Clean bubble text live (uses AI Formatter)",
+                        detail: "Requires AI Formatter enabled. While you speak, send the current partial transcript to the configured LLM on each pause and replace the bubble text with the cleaned version. Costs compute on each pause — free on local Ollama, but consumes tokens on API providers (OpenAI, Anthropic, OpenRouter, etc.). The final end-of-dictation cleanup still runs regardless.",
+                        isOn: $viewModel.liveBubbleCleanupEnabled
+                    )
+                }
             }
         }
     }

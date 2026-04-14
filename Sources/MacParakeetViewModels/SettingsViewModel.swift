@@ -133,6 +133,14 @@ public final class SettingsViewModel {
         }
     }
 
+    /// When AI Formatter is on, also clean the overlay bubble mid-dictation
+    /// (on pauses). Toggle off to get only the final end-of-dictation cleanup.
+    public var liveBubbleCleanupEnabled: Bool {
+        didSet {
+            defaults.set(liveBubbleCleanupEnabled, forKey: UserDefaultsAppRuntimePreferences.liveBubbleCleanupEnabledKey)
+        }
+    }
+
     // Transcription
     public var speakerDiarization: Bool {
         didSet {
@@ -243,6 +251,7 @@ public final class SettingsViewModel {
         saveAudioRecordings = defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveAudioRecordingsKey) as? Bool ?? true
         saveTranscriptionAudio = defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveTranscriptionAudioKey) as? Bool ?? true
         streamingOverlayEnabled = defaults.object(forKey: UserDefaultsAppRuntimePreferences.streamingOverlayEnabledKey) as? Bool ?? false
+        liveBubbleCleanupEnabled = defaults.object(forKey: UserDefaultsAppRuntimePreferences.liveBubbleCleanupEnabledKey) as? Bool ?? true
         speakerDiarization = defaults.object(forKey: UserDefaultsAppRuntimePreferences.speakerDiarizationKey) as? Bool ?? true
         autoSaveTranscripts = defaults.bool(forKey: AutoSaveService.enabledKey)
         autoSaveFormat = AutoSaveFormat(rawValue: defaults.string(forKey: AutoSaveService.formatKey) ?? "md") ?? .md
