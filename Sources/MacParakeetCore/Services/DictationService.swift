@@ -64,6 +64,10 @@ public actor DictationService: DictationServiceProtocol {
     private let shouldUseAIFormatter: @Sendable () -> Bool
     private let shouldFormatPasteWithAI: @Sendable () -> Bool
     private let aiFormatterPromptTemplate: @Sendable () -> String
+    /// Resolves the active `AppProfile` based on the frontmost app at the time
+    /// of dictation start. Called once per `startRecording`; the result is
+    /// captured in `activeProfile` and reused throughout the dictation.
+    private let resolveActiveProfile: @Sendable () -> AppProfile?
     private let cancelWindow: Duration
 
     private var _state: DictationState = .idle
@@ -74,6 +78,11 @@ public actor DictationService: DictationServiceProtocol {
     private var recordingStartedAt: Date?
     private var activeSessionID: Int = 0
     private var activeStreamingTask: Task<Void, Never>?
+    /// Profile resolved at the start of the current dictation, or nil if no
+    /// profile matched the frontmost app. Overrides the formatter prompt for
+    /// both live-bubble cleanup and paste-path polish. Cleared by the next
+    /// `startRecording` (overwritten) or on confirm-cancel.
+    private var activeProfile: AppProfile?
 
     public var state: DictationState {
         _state
@@ -106,6 +115,7 @@ public actor DictationService: DictationServiceProtocol {
         shouldUseAIFormatter: (@Sendable () -> Bool)? = nil,
         shouldFormatPasteWithAI: (@Sendable () -> Bool)? = nil,
         aiFormatterPromptTemplate: (@Sendable () -> String)? = nil,
+        resolveActiveProfile: (@Sendable () -> AppProfile?)? = nil,
         cancelWindow: Duration = .seconds(5),
         streamingBroadcaster: StreamingAudioBroadcaster? = nil,
         streamingTranscriber: StreamingDictationTranscriber? = nil,
@@ -127,6 +137,7 @@ public actor DictationService: DictationServiceProtocol {
         self.shouldUseAIFormatter = shouldUseAIFormatter ?? { false }
         self.shouldFormatPasteWithAI = shouldFormatPasteWithAI ?? { false }
         self.aiFormatterPromptTemplate = aiFormatterPromptTemplate ?? { AIFormatter.defaultPromptTemplate }
+        self.resolveActiveProfile = resolveActiveProfile ?? { nil }
         self.cancelWindow = cancelWindow
         self.streamingBroadcaster = streamingBroadcaster
         self.streamingTranscriber = streamingTranscriber
@@ -195,6 +206,12 @@ public actor DictationService: DictationServiceProtocol {
             }
             currentTelemetryContext = context
             recordingStartedAt = Date()
+            activeProfile = resolveActiveProfile()
+            if let profile = activeProfile {
+                logger.info(
+                    "active_profile session=\(requestedSessionID) id=\(profile.id, privacy: .public) name=\(profile.displayName, privacy: .public)"
+                )
+            }
             Telemetry.send(.dictationStarted(trigger: context.trigger, mode: context.mode))
             logger.debug("startRecording capture started session=\(requestedSessionID)")
             startStreamingSessionIfEnabled(sessionID: requestedSessionID)
@@ -611,9 +628,14 @@ public actor DictationService: DictationServiceProtocol {
             logger.info("live_cleanup_skipped reason=formatter_or_service_unavailable")
             return nil
         }
-        let template = aiFormatterPromptTemplate()
-        let defaultPromptUsed = AIFormatter.normalizedPromptTemplate(template) == AIFormatter.defaultPromptTemplate
-        logger.info("live_cleanup_start inputChars=\(text.count)")
+        let userTemplate = aiFormatterPromptTemplate()
+        let template = activeProfile?.promptOverride ?? userTemplate
+        // Mark as "default prompt used" only when no override applies AND the
+        // user template matches the shipped default. Profile overrides always
+        // read as custom prompts in telemetry.
+        let defaultPromptUsed = activeProfile?.promptOverride == nil
+            && AIFormatter.normalizedPromptTemplate(userTemplate) == AIFormatter.defaultPromptTemplate
+        logger.info("live_cleanup_start inputChars=\(text.count) profile=\(self.activeProfile?.id ?? "none", privacy: .public)")
         do {
             let formatted = try await llmService.formatTranscript(
                 transcript: text,
@@ -653,14 +675,16 @@ public actor DictationService: DictationServiceProtocol {
             )
         }
 
-        let promptTemplate = aiFormatterPromptTemplate()
+        let userTemplate = aiFormatterPromptTemplate()
+        let promptTemplate = activeProfile?.promptOverride ?? userTemplate
         // Normalize before comparing: `AIFormatter.renderPrompt` passes the
         // template through `normalizedPromptTemplate` before sending, which
         // trims whitespace and folds legacy-v1 prompts back onto the current
         // default. Raw comparison would report those cases as custom prompts
-        // even though the LLM sees the shipped default.
-        let defaultPromptUsed = AIFormatter.normalizedPromptTemplate(promptTemplate)
-            == AIFormatter.defaultPromptTemplate
+        // even though the LLM sees the shipped default. Profile overrides
+        // always read as custom prompts in telemetry.
+        let defaultPromptUsed = activeProfile?.promptOverride == nil
+            && AIFormatter.normalizedPromptTemplate(userTemplate) == AIFormatter.defaultPromptTemplate
         do {
             let formatted = try await llmService.formatTranscript(
                 transcript: text,

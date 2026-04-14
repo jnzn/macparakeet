@@ -112,6 +112,41 @@ final class DictationServiceTests: XCTestCase {
         XCTAssertEqual(mockLLMService.formatTranscriptCallCount, 0)
     }
 
+    /// When a resolved AppProfile has a promptOverride, the LLM formatter
+    /// should receive that override instead of the user's default template.
+    /// Item 2: per-app profiles MVP.
+    func testStopRecordingUsesProfilePromptOverrideWhenResolved() async throws {
+        await mockSTT.configure(result: STTResult(text: "hello world"))
+        let mockLLMService = MockLLMService()
+        mockLLMService.formatTranscriptResult = "Hello, world."
+
+        let profile = AppProfile(
+            id: "test-profile",
+            displayName: "Test",
+            bundleIDs: ["com.example.test"],
+            promptOverride: "profile-specific prompt with {{TRANSCRIPT}}"
+        )
+
+        service = DictationService(
+            audioProcessor: mockAudio,
+            sttTranscriber: mockSTT,
+            dictationRepo: dictationRepo,
+            llmService: mockLLMService,
+            shouldUseAIFormatter: { true },
+            shouldFormatPasteWithAI: { true },
+            aiFormatterPromptTemplate: { AIFormatter.defaultPromptTemplate },
+            resolveActiveProfile: { profile }
+        )
+
+        try await service.startRecording()
+        _ = try await service.stopRecording()
+
+        XCTAssertEqual(mockLLMService.formatTranscriptCallCount, 1)
+        XCTAssertEqual(mockLLMService.lastFormatterPromptTemplate, "profile-specific prompt with {{TRANSCRIPT}}")
+        // Profile overrides should never be reported as "default prompt".
+        XCTAssertEqual(mockLLMService.lastFormatterDefaultPromptUsed, false)
+    }
+
     func testStopRecordingFallsBackWhenAIFormatterFailsAndPostsWarning() async throws {
         await mockSTT.configure(result: STTResult(text: "hello world"))
         let mockLLMService = MockLLMService()
