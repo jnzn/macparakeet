@@ -137,6 +137,20 @@ final class DictationFlowCoordinator {
     /// lifetime of the coordinator so live transcripts from the streaming
     /// dictation pipeline flow into the overlay's text bubble.
     private var streamingPartialObserver: NSObjectProtocol?
+    /// Debounce task for live LLM cleanup on the bubble. Cancelled + rescheduled
+    /// on every new partial; fires only if speech pauses long enough to "settle".
+    private var liveCleanupDebounceTask: Task<Void, Never>?
+    /// Last partial text we scheduled cleanup for. Used to drop stale cleanup
+    /// responses when new partials have arrived mid-request.
+    private var pendingCleanupSnapshot: String = ""
+    /// Most recently applied cleaned text — the "stable prefix" for the bubble.
+    /// New raw partials after this are shown as: cleaned + " " + raw_delta.
+    /// Nil means no cleanup has landed yet this session; bubble shows raw.
+    private var stableCleanedText: String?
+    /// Raw partial text at the moment the current `stableCleanedText` landed.
+    /// Used to slice the "new words" from each subsequent raw partial so we
+    /// can append them to the cleaned prefix without duplicating content.
+    private var rawAtStableCleanup: String?
 
     private func observeStreamingPartialNotifications() {
         streamingPartialObserver = NotificationCenter.default.addObserver(
@@ -146,17 +160,101 @@ final class DictationFlowCoordinator {
         ) { [weak self] note in
             guard let text = note.userInfo?["text"] as? String else { return }
             Task { @MainActor [weak self] in
-                guard let vm = self?.overlayViewModel else { return }
-                // Only apply while the overlay is in recording or processing.
-                // Late partials arriving after .success / .noSpeech / .error
-                // would otherwise ghost the cleared bubble back into view.
+                guard let self, let vm = self.overlayViewModel else { return }
                 switch vm.state {
                 case .recording, .processing, .formatting:
-                    vm.streamingPartialText = text
+                    vm.streamingPartialText = self.composeDisplayText(for: text)
+                    self.scheduleLiveCleanup(for: text)
                 case .ready, .cancelled, .success, .noSpeech, .error:
                     break
                 }
             }
+        }
+    }
+
+    /// Build what the bubble should show: if we have a stable cleaned prefix and
+    /// the new raw starts with the same prefix of raw we already cleaned, append
+    /// only the new raw-tail words to the cleaned text. Otherwise (no cleanup
+    /// yet, or raw diverged) fall back to showing raw directly.
+    private func composeDisplayText(for rawPartial: String) -> String {
+        guard let cleaned = stableCleanedText, let rawBaseline = rawAtStableCleanup else {
+            return rawPartial
+        }
+        let rawTrimmed = rawPartial.trimmingCharacters(in: .whitespaces)
+        let baselineTrimmed = rawBaseline.trimmingCharacters(in: .whitespaces)
+        guard rawTrimmed.hasPrefix(baselineTrimmed) else {
+            // Speaker's raw text no longer starts with what we cleaned — maybe the
+            // streaming model revised earlier words. Drop the cleaned baseline
+            // and start fresh with raw until the next cleanup.
+            return rawPartial
+        }
+        let tailStart = rawTrimmed.index(rawTrimmed.startIndex, offsetBy: baselineTrimmed.count)
+        let tail = String(rawTrimmed[tailStart...]).trimmingCharacters(in: .whitespaces)
+        if tail.isEmpty {
+            return cleaned
+        }
+        return cleaned + " " + tail
+    }
+
+    private func resetStableCleanupState() {
+        stableCleanedText = nil
+        rawAtStableCleanup = nil
+    }
+
+    /// Fire a single LLM cleanup call after the user pauses for ~450 ms of
+    /// text-stable silence. If the incoming partial is identical to the one the
+    /// current debounce was already scheduled for, leave it running — EOU emits
+    /// the same cumulative text repeatedly during pauses, which would otherwise
+    /// reset the debounce forever. Only a *new* text value restarts the timer.
+    /// Returned cleaned text replaces the bubble if still paused at same text;
+    /// stale results are dropped.
+    private func scheduleLiveCleanup(for text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 3 else { return }
+        if trimmed == pendingCleanupSnapshot, liveCleanupDebounceTask != nil {
+            return
+        }
+        liveCleanupDebounceTask?.cancel()
+        pendingCleanupSnapshot = trimmed
+        dictationLog.info("live_cleanup_scheduled chars=\(trimmed.count, privacy: .public)")
+        liveCleanupDebounceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(450))
+            guard !Task.isCancelled, let self else { return }
+            self.liveCleanupDebounceTask = nil
+            await self.runLiveCleanup(snapshot: trimmed)
+        }
+    }
+
+    private func runLiveCleanup(snapshot: String) async {
+        guard pendingCleanupSnapshot == snapshot else {
+            dictationLog.info("live_cleanup_dropped reason=stale_snapshot")
+            return
+        }
+        guard let cleaned = await serviceSession.cleanupTextLive(snapshot),
+              !cleaned.isEmpty else {
+            dictationLog.info("live_cleanup_dropped reason=empty_response")
+            return
+        }
+        guard let vm = overlayViewModel else {
+            dictationLog.info("live_cleanup_dropped reason=no_vm")
+            return
+        }
+        // Only drop if a newer raw partial arrived during the LLM call. We
+        // intentionally do NOT check bubble text equality — after the first
+        // cleanup lands, the bubble shows `cleaned + raw_tail`, which by
+        // design never equals the raw snapshot.
+        guard pendingCleanupSnapshot == snapshot else {
+            dictationLog.info("live_cleanup_dropped reason=snapshot_changed_post_llm")
+            return
+        }
+        switch vm.state {
+        case .recording, .processing, .formatting:
+            stableCleanedText = cleaned
+            rawAtStableCleanup = snapshot
+            vm.streamingPartialText = cleaned
+            dictationLog.info("live_cleanup_applied outChars=\(cleaned.count, privacy: .public)")
+        case .ready, .cancelled, .success, .noSpeech, .error:
+            dictationLog.info("live_cleanup_dropped reason=terminal_state")
         }
     }
 
@@ -355,12 +453,24 @@ final class DictationFlowCoordinator {
             overlayViewModel?.stopTimer()
             overlayViewModel?.streamingPartialText = ""
             overlayViewModel?.micDeviceName = nil
+            resetStableCleanupState()
             overlayViewModel?.cancelTimeRemaining = 5.0
             overlayViewModel?.state = .cancelled(timeRemaining: 5.0)
 
         case .showSuccess:
-            overlayViewModel?.streamingPartialText = ""
             overlayViewModel?.micDeviceName = nil
+            resetStableCleanupState()
+            // Replace the streaming bubble with the authoritative final text
+            // (AI-formatted if available, otherwise the clean / raw transcript).
+            // The bubble stays open through the checkmark beat so the user sees
+            // the corrected version before it collapses. Cleared below on state
+            // transition out of .success.
+            if let final = currentDictation?.cleanTranscript ?? currentDictation?.rawTranscript,
+               !final.trimmingCharacters(in: .whitespaces).isEmpty {
+                overlayViewModel?.streamingPartialText = final
+            } else {
+                overlayViewModel?.streamingPartialText = ""
+            }
             overlayViewModel?.state = .success
 
         case .showNoSpeech:
