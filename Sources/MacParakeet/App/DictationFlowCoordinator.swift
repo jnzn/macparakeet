@@ -172,28 +172,40 @@ final class DictationFlowCoordinator {
         }
     }
 
-    /// Build what the bubble should show: if we have a stable cleaned prefix and
-    /// the new raw starts with the same prefix of raw we already cleaned, append
-    /// only the new raw-tail words to the cleaned text. Otherwise (no cleanup
-    /// yet, or raw diverged) fall back to showing raw directly.
+    /// Build what the bubble should show. Tries to preserve the stable cleaned
+    /// prefix and append only the new words from the latest raw partial.
+    /// - Fast path: raw literally starts with the baseline → slice the
+    ///   character tail after the baseline.
+    /// - Fallback: EOU sometimes revises earlier words mid-stream ("two" → "to"),
+    ///   so hasPrefix fails even though the content is still monotonically
+    ///   growing. When that happens, diff by *word count*: take the last
+    ///   (raw_words - baseline_words) words of the new raw and treat them as
+    ///   the new tail, so the cleaned prefix stays visible instead of
+    ///   vanishing back to raw.
     private func composeDisplayText(for rawPartial: String) -> String {
         guard let cleaned = stableCleanedText, let rawBaseline = rawAtStableCleanup else {
             return rawPartial
         }
         let rawTrimmed = rawPartial.trimmingCharacters(in: .whitespaces)
         let baselineTrimmed = rawBaseline.trimmingCharacters(in: .whitespaces)
-        guard rawTrimmed.hasPrefix(baselineTrimmed) else {
-            // Speaker's raw text no longer starts with what we cleaned — maybe the
-            // streaming model revised earlier words. Drop the cleaned baseline
-            // and start fresh with raw until the next cleanup.
-            return rawPartial
+
+        if rawTrimmed.hasPrefix(baselineTrimmed) {
+            let tailStart = rawTrimmed.index(rawTrimmed.startIndex, offsetBy: baselineTrimmed.count)
+            let tail = String(rawTrimmed[tailStart...]).trimmingCharacters(in: .whitespaces)
+            return tail.isEmpty ? cleaned : cleaned + " " + tail
         }
-        let tailStart = rawTrimmed.index(rawTrimmed.startIndex, offsetBy: baselineTrimmed.count)
-        let tail = String(rawTrimmed[tailStart...]).trimmingCharacters(in: .whitespaces)
-        if tail.isEmpty {
+
+        // hasPrefix failed — revised raw. Fall back to word-count diff so the
+        // cleaned prefix remains visible.
+        let rawWords = rawTrimmed.split(whereSeparator: \.isWhitespace)
+        let baselineWords = baselineTrimmed.split(whereSeparator: \.isWhitespace)
+        guard rawWords.count > baselineWords.count else {
+            // No new words detected (raw may be shorter or same-length variation).
+            // Keep showing the cleaned text; next cleanup will sync us.
             return cleaned
         }
-        return cleaned + " " + tail
+        let newTail = rawWords.suffix(rawWords.count - baselineWords.count).joined(separator: " ")
+        return newTail.isEmpty ? cleaned : cleaned + " " + newTail
     }
 
     private func resetStableCleanupState() {
