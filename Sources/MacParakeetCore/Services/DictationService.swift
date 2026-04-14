@@ -565,12 +565,17 @@ public actor DictationService: DictationServiceProtocol {
         let cleanTranscript = refinement.text
         let expandedSnippetIDs = refinement.expandedSnippetIDs
         let baseText = cleanTranscript ?? result.text
-        // Paste-path LLM polish is opt-in (default off). Parakeet TDT is accurate
-        // enough to paste directly, and the live bubble already shows cleaned
-        // text during dictation — running a second LLM pass at end-of-dictation
-        // adds user-visible latency for diminishing returns. The AI Formatter
-        // master toggle still gates live-bubble cleanup (`cleanupTextLive`).
-        let formattedTranscript = shouldFormatPasteWithAI()
+        // Paste-path LLM polish runs when:
+        //   1. the "Polish final paste" toggle is on (applies to every
+        //      dictation, profile or not), OR
+        //   2. an AppProfile resolved for the frontmost app and carries a
+        //      prompt override — profile activation is itself an opt-in
+        //      signal that the user wants per-app polish on the paste.
+        // No profile + toggle off = pure Parakeet raw (Item 1 default for
+        // unknown apps, keeps paste instant).
+        let shouldPolishPaste = shouldFormatPasteWithAI()
+            || activeProfile?.promptOverride != nil
+        let formattedTranscript = shouldPolishPaste
             ? try await formatTranscriptIfNeeded(baseText)
             : nil
         let finalText = formattedTranscript ?? baseText

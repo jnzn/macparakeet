@@ -147,6 +147,40 @@ final class DictationServiceTests: XCTestCase {
         XCTAssertEqual(mockLLMService.lastFormatterDefaultPromptUsed, false)
     }
 
+    /// When a profile's promptOverride is set, the paste path should run
+    /// through the formatter even when `shouldFormatPasteWithAI` is OFF.
+    /// Profile activation is itself an opt-in signal that the user wants
+    /// per-app polish on the paste. (Item 2 MVP semantic.)
+    func testStopRecordingRunsFormatterForProfileEvenWithPasteToggleOff() async throws {
+        await mockSTT.configure(result: STTResult(text: "hello world"))
+        let mockLLMService = MockLLMService()
+        mockLLMService.formatTranscriptResult = "Hello, world."
+
+        let profile = AppProfile(
+            id: "terminal",
+            displayName: "Terminal",
+            bundleIDs: ["com.apple.Terminal"],
+            promptOverride: "terminal-specific prompt {{TRANSCRIPT}}"
+        )
+
+        service = DictationService(
+            audioProcessor: mockAudio,
+            sttTranscriber: mockSTT,
+            dictationRepo: dictationRepo,
+            llmService: mockLLMService,
+            shouldUseAIFormatter: { true },
+            shouldFormatPasteWithAI: { false },  // toggle OFF
+            aiFormatterPromptTemplate: { AIFormatter.defaultPromptTemplate },
+            resolveActiveProfile: { profile }     // but a profile IS active
+        )
+
+        try await service.startRecording()
+        _ = try await service.stopRecording()
+
+        XCTAssertEqual(mockLLMService.formatTranscriptCallCount, 1, "Profile override should trigger paste polish even when toggle is off")
+        XCTAssertEqual(mockLLMService.lastFormatterPromptTemplate, "terminal-specific prompt {{TRANSCRIPT}}")
+    }
+
     func testStopRecordingFallsBackWhenAIFormatterFailsAndPostsWarning() async throws {
         await mockSTT.configure(result: STTResult(text: "hello world"))
         let mockLLMService = MockLLMService()

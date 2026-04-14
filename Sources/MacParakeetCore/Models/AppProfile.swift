@@ -125,25 +125,103 @@ extension AppProfile {
         ),
         AppProfile(
             id: "terminal",
-            displayName: "Terminal / IDE",
+            displayName: "Terminal / iTerm / Warp",
             bundleIDs: [
                 "com.apple.Terminal",
                 "com.googlecode.iterm2",
                 "dev.warp.Warp-Stable",
+            ],
+            promptOverride: """
+                Clean up speech dictated into a shell / terminal. Output ONLY the literal shell input the user dictated — no preamble, no explanation, no markdown, no code fences.
+
+                The user speaks shell commands: translate spoken symbol names and common phonetic command names to the literal characters and command names.
+
+                Symbol transliteration (spoken word → literal character):
+                - "slash" → /   "backslash" → \\   "dot" / "period" → .
+                - "dash" / "hyphen" → -   "underscore" → _   "tilde" → ~
+                - "dollar" → $   "at" / "at sign" → @   "hash" / "pound" → #
+                - "asterisk" / "star" → *   "pipe" → |   "ampersand" → &
+                - "plus" → +   "equals" → =   "colon" → :   "semicolon" → ;
+                - "question mark" → ?   "bang" / "exclamation" → !
+                - "quote" → "   "backtick" → `
+                - "open paren" → (   "close paren" → )
+                - "open bracket" → [   "close bracket" → ]
+                - "open brace" → {   "close brace" → }
+                - "less than" / "left angle" → <   "greater than" / "right angle" → >
+
+                Common phonetic command names:
+                - "see dee" → cd   "ell ess" → ls   "em kay dir" → mkdir
+                - "are em" → rm   "em vee" → mv   "see pee" → cp
+                - "pee dubya dee" → pwd   "grep" → grep   "git" → git
+                - "sudo" → sudo   "ssh" → ssh   "cat" → cat
+
+                File extension shorthand:
+                - "dot em dee" → .md   "dot tee ex tee" → .txt
+                - "dot pee dee ef" / "dot pee dee f" → .pdf
+                - "dot jay ess" → .js   "dot pee why" → .py
+                - "dot jay ess oh en" → .json   "dot ess h" → .sh
+                - "dot why ay em ell" / "dot yaml" → .yaml
+                - "dot ess dubya eye eff tee" → .swift
+
+                Spacing rule:
+                - Regular words are separated by spaces as usual.
+                - When a symbol word sits directly BETWEEN two words/letters, produce NO surrounding spaces. Examples: "hello dot em dee" → hello.md, "foo slash bar" → foo/bar, "read me dot tee ex tee" → readme.txt.
+                - Commands still have a space before their arguments: "see dee slash users" → cd /users (a command + path gets one space, but the internal slashes in the path do not).
+
+                Other rules:
+                - Do NOT capitalize the first word unless it is a proper noun.
+                - Do NOT add sentence-ending punctuation unless the user clearly dictates it — trailing periods break shell commands.
+                - Preserve flags verbatim ("dash ay" → -a, "dash el ay" → -la, "dash dash recursive" → --recursive).
+                - Fix obvious ASR stutter ("the the" → "the") and remove clear filler words only.
+                - Never paraphrase, summarize, or rewrite.
+
+                Examples:
+                Input: see dee slash users slash jensen slash dev
+                Output: cd /users/jensen/dev
+
+                Input: ell ess dash el ay
+                Output: ls -la
+
+                Input: read me dot em dee
+                Output: readme.md
+
+                Input: git commit dash em quote fix the bug quote
+                Output: git commit -m "fix the bug"
+
+                Input: are em dash are eff slash tmp slash cache
+                Output: rm -rf /tmp/cache
+
+                Input: echo hello world greater than hello dot tee ex tee
+                Output: echo hello world > hello.txt
+
+                Input: sudo apt dash get install python dot pee dee ef viewer
+                Output: sudo apt-get install python.pdf viewer
+
+                Input: curl dash ess capital lee https colon slash slash example dot com slash file dot pee dee f
+                Output: curl -sL https://example.com/file.pdf
+
+                Input: {{TRANSCRIPT}}
+                """
+        ),
+        AppProfile(
+            id: "ide",
+            displayName: "Code Editor (Xcode / Zed / VS Code)",
+            bundleIDs: [
                 "com.apple.dt.Xcode",
                 "dev.zed.Zed",
                 "com.microsoft.VSCode",
             ],
             promptOverride: """
-                Clean up ASR-transcribed speech for a terminal or code editor. Output ONLY the corrected text — no preamble, no markdown, no code fences.
+                Clean up speech dictated into a code editor. Output ONLY the corrected text — no preamble, no markdown, no code fences.
 
-                CRITICAL rules:
-                - Do NOT capitalize the first word unless it is an obvious proper noun. Shell commands, variable names, flags, and function names are often lowercase and must stay that way.
-                - Do NOT add sentence-ending punctuation unless the speaker clearly dictates it — trailing periods break commands.
-                - If the input looks like code, a shell command, a file path, or an identifier, preserve it verbatim.
-                - Fix obvious ASR stutter ("the the" → "the") and remove clear filler words, but otherwise preserve exactly.
+                Rules:
+                - If the input looks like prose (a code comment, commit message, or doc), apply normal cleanup: capitalize sentences, add punctuation, fix homophones.
+                - If the input looks like code — a function name, variable, identifier, file path, or shell-like fragment — preserve it verbatim with no capitalization or punctuation added.
+                - Do NOT transliterate spoken symbol words into characters. "slash" stays "slash" unless it is obviously part of a path.
+                - Fix obvious ASR stutter and remove clear filler words.
+                - Never paraphrase, summarize, or rewrite.
 
-                Never paraphrase, summarize, or rewrite.
+                Preserve the speaker's wording, word order, and intent.
 
                 Input: {{TRANSCRIPT}}
                 """

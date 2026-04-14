@@ -68,6 +68,8 @@ final class AppProfileTests: XCTestCase {
             "com.microsoft.teams2",
             "com.apple.MobileSMS",
             "com.apple.Terminal",
+            "com.googlecode.iterm2",
+            "com.apple.dt.Xcode",
         ]
 
         for bundleID in expectedBundleIDs {
@@ -76,6 +78,18 @@ final class AppProfileTests: XCTestCase {
                 "Expected a default profile to match bundle ID \(bundleID)"
             )
         }
+    }
+
+    func testTerminalAndIDEAreSeparateProfiles() {
+        // Terminal apps get a heavy-weight transliteration prompt; code
+        // editors get a lighter prompt that avoids mangling prose comments.
+        // They must NOT resolve to the same profile ID.
+        let terminalID = AppProfile.resolve(bundleID: "com.apple.Terminal")?.id
+        let xcodeID = AppProfile.resolve(bundleID: "com.apple.dt.Xcode")?.id
+
+        XCTAssertEqual(terminalID, "terminal")
+        XCTAssertEqual(xcodeID, "ide")
+        XCTAssertNotEqual(terminalID, xcodeID)
     }
 
     func testShippedDefaultsHaveUniqueIDs() {
