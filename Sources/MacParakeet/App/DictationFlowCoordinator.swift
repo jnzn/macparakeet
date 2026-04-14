@@ -218,7 +218,7 @@ final class DictationFlowCoordinator {
         pendingCleanupSnapshot = trimmed
         dictationLog.info("live_cleanup_scheduled chars=\(trimmed.count, privacy: .public)")
         liveCleanupDebounceTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(450))
+            try? await Task.sleep(for: .milliseconds(250))
             guard !Task.isCancelled, let self else { return }
             self.liveCleanupDebounceTask = nil
             await self.runLiveCleanup(snapshot: trimmed)
@@ -843,7 +843,7 @@ final class DictationFlowCoordinator {
                 }
             }
 
-            try? await Task.sleep(for: .milliseconds(50))
+            try? await Task.sleep(for: .milliseconds(33))
         }
     }
 
