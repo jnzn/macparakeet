@@ -69,7 +69,13 @@ public enum AIFormatter {
     }
 
     public static func normalizedFormattedOutput(_ output: String) -> String {
-        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Strip chain-of-thought / "thinking" delimiters that hybrid-thinking
+        // models (Gemma 4, Qwen3, DeepSeek-R1, etc.) leak into final output when
+        // thinking mode isn't fully suppressed by the chat template. We take
+        // everything after the LAST delimiter in each family — the final answer
+        // lives there by convention.
+        let stripped = stripThinkingDelimiters(output)
+        let trimmed = stripped.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return trimmed }
 
         var normalized = trimmed.replacingOccurrences(of: "\r\n", with: "\n")
@@ -88,5 +94,35 @@ public enum AIFormatter {
         }
 
         return normalized
+    }
+
+    /// Strip chain-of-thought delimiters from model output. Hybrid-thinking models
+    /// (Gemma 4 E2B/E4B, Qwen3, DeepSeek-R1) emit patterns like:
+    ///   `<channel|>reasoning text<channel|>final answer`
+    ///   `<think>reasoning</think>final answer`
+    ///   `<|think|>reasoning<|/think|>final answer`
+    /// For each family, the final answer lives after the LAST delimiter occurrence.
+    /// Returns the tail as-is if any pattern matches; otherwise returns input unchanged.
+    static func stripThinkingDelimiters(_ output: String) -> String {
+        // Aggressive strip: always take the text AFTER the last occurrence of
+        // each thinking delimiter. If that's empty, the caller will see an
+        // empty formatter response and fall back to raw STT — which is
+        // correct, because it means the model never produced a clean final
+        // answer (only reasoning). Preserving the thinking payload with tags
+        // intact would leak `<channel|>` into the UI, which is worse.
+        let patterns = [
+            "<channel|>",
+            "<|channel|>",
+            "</think>",
+            "<|/think|>",
+            "<|think|>",
+        ]
+        var result = output
+        for pattern in patterns {
+            if let range = result.range(of: pattern, options: .backwards) {
+                result = String(result[range.upperBound...])
+            }
+        }
+        return result
     }
 }

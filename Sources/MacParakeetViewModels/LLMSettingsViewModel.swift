@@ -604,6 +604,10 @@ public final class LLMSettingsViewModel {
             "qwen/qwen3.5-72b",
         ]
         case .ollama: return [
+            "gemma4:e2b",
+            "gemma4:e4b",
+            "gemma4:26b",
+            "gemma4:31b",
             "qwen3.5:4b",
             "qwen3.5:9b",
             "llama4:8b",

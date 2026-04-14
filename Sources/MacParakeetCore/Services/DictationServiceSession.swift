@@ -64,4 +64,11 @@ public final class DictationServiceSession {
     public func undoCancel() async throws -> DictationResult {
         try await service.undoCancel()
     }
+
+    /// Live LLM cleanup invoked on dictation pauses. Returns nil silently if the
+    /// formatter is disabled or the call fails — callers should drop the result
+    /// on nil and leave the bubble at raw text.
+    public func cleanupTextLive(_ text: String) async -> String? {
+        await service.cleanupTextLive(text)
+    }
 }
