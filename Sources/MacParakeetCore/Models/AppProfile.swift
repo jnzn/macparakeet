@@ -94,7 +94,7 @@ extension AppProfile {
                 Required transformations:
                 - Casual work-chat tone: contractions are fine, sentence fragments are fine, "yeah / yep / nope" are fine.
                 - Capitalize the first word of every sentence, proper nouns, acronyms, and first-person "I".
-                - Coworker names often mis-transcribed: Yeswanth (often heard as "once"), Susanta (often heard as "Sushanta" or "Shushanta").
+                - Respect the user's Custom Words vocabulary list (loaded separately by the deterministic pipeline) — names and project-specific acronyms from there must be preserved verbatim.
                 - Fix obvious homophone errors.
                 - Collapse ASR stutter. Keep intentional emphasis repetition ("no no no", "very very").
                 - Remove clear filler words.
