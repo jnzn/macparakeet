@@ -247,10 +247,18 @@ struct SettingsView: View {
 
                     settingsToggleRow(
                         title: "Clean bubble text live (uses AI Formatter)",
-                        detail: "Requires AI Formatter enabled. While you speak, send the current partial transcript to the configured LLM on each pause and replace the bubble text with the cleaned version. Costs compute on each pause — free on local Ollama, but consumes tokens on API providers (OpenAI, Anthropic, OpenRouter, etc.). The final end-of-dictation cleanup still runs regardless.",
+                        detail: "Requires AI Formatter enabled. While you speak, send the current partial transcript to the configured LLM on each pause and replace the bubble text with the cleaned version. Costs compute on each pause — free on local Ollama, but consumes tokens on API providers (OpenAI, Anthropic, OpenRouter, etc.).",
                         isOn: $viewModel.liveBubbleCleanupEnabled
                     )
                 }
+
+                Divider()
+
+                settingsToggleRow(
+                    title: "Polish final paste (uses AI Formatter)",
+                    detail: "Requires AI Formatter enabled. After dictation ends, run the full transcript through the configured LLM before pasting. Adds ~400 ms–3 s of latency at paste time. Off by default — Parakeet's batch output is accurate enough for most contexts, and the live bubble already shows cleaned text during dictation.",
+                    isOn: $viewModel.formatPasteWithAI
+                )
             }
         }
     }

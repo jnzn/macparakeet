@@ -141,6 +141,15 @@ public final class SettingsViewModel {
         }
     }
 
+    /// When AI Formatter is on, also run the LLM cleanup pass on the final
+    /// transcript before pasting. Default off: Parakeet's batch output is
+    /// pasted directly for lowest latency.
+    public var formatPasteWithAI: Bool {
+        didSet {
+            defaults.set(formatPasteWithAI, forKey: UserDefaultsAppRuntimePreferences.formatPasteWithAIKey)
+        }
+    }
+
     // Transcription
     public var speakerDiarization: Bool {
         didSet {
@@ -252,6 +261,7 @@ public final class SettingsViewModel {
         saveTranscriptionAudio = defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveTranscriptionAudioKey) as? Bool ?? true
         streamingOverlayEnabled = defaults.object(forKey: UserDefaultsAppRuntimePreferences.streamingOverlayEnabledKey) as? Bool ?? false
         liveBubbleCleanupEnabled = defaults.object(forKey: UserDefaultsAppRuntimePreferences.liveBubbleCleanupEnabledKey) as? Bool ?? true
+        formatPasteWithAI = defaults.object(forKey: UserDefaultsAppRuntimePreferences.formatPasteWithAIKey) as? Bool ?? false
         speakerDiarization = defaults.object(forKey: UserDefaultsAppRuntimePreferences.speakerDiarizationKey) as? Bool ?? true
         autoSaveTranscripts = defaults.bool(forKey: AutoSaveService.enabledKey)
         autoSaveFormat = AutoSaveFormat(rawValue: defaults.string(forKey: AutoSaveService.formatKey) ?? "md") ?? .md

@@ -16,6 +16,12 @@ public protocol AppRuntimePreferencesProtocol: Sendable {
     /// Default true when parent flag is on, so users who enable streaming +
     /// formatter get the full experience automatically.
     var liveBubbleCleanupEnabled: Bool { get }
+    /// Whether the end-of-dictation paste should also run through the AI
+    /// formatter. Default false: Parakeet TDT is accurate enough to paste raw,
+    /// and the live bubble already shows cleaned text during dictation — the
+    /// extra round-trip at paste-time adds user-visible latency for diminishing
+    /// returns. Opt-in for users who want the extra polish.
+    var formatPasteWithAI: Bool { get }
 }
 
 public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProtocol, @unchecked Sendable {
@@ -33,6 +39,7 @@ public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProto
     public static let aiFormatterPromptKey = "aiFormatterPrompt"
     public static let streamingOverlayEnabledKey = "streamingOverlayEnabled"
     public static let liveBubbleCleanupEnabledKey = "liveBubbleCleanupEnabled"
+    public static let formatPasteWithAIKey = "formatPasteWithAI"
 
     private let defaults: UserDefaults
 
@@ -83,5 +90,9 @@ public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProto
 
     public var liveBubbleCleanupEnabled: Bool {
         defaults.object(forKey: Self.liveBubbleCleanupEnabledKey) as? Bool ?? true
+    }
+
+    public var formatPasteWithAI: Bool {
+        defaults.object(forKey: Self.formatPasteWithAIKey) as? Bool ?? false
     }
 }

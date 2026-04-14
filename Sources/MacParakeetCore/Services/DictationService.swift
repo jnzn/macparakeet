@@ -62,6 +62,7 @@ public actor DictationService: DictationServiceProtocol {
     private let textRefinementService: TextRefinementService
     private let llmService: LLMServiceProtocol?
     private let shouldUseAIFormatter: @Sendable () -> Bool
+    private let shouldFormatPasteWithAI: @Sendable () -> Bool
     private let aiFormatterPromptTemplate: @Sendable () -> String
     private let cancelWindow: Duration
 
@@ -103,6 +104,7 @@ public actor DictationService: DictationServiceProtocol {
         processingMode: (@Sendable () -> Dictation.ProcessingMode)? = nil,
         llmService: LLMServiceProtocol? = nil,
         shouldUseAIFormatter: (@Sendable () -> Bool)? = nil,
+        shouldFormatPasteWithAI: (@Sendable () -> Bool)? = nil,
         aiFormatterPromptTemplate: (@Sendable () -> String)? = nil,
         cancelWindow: Duration = .seconds(5),
         streamingBroadcaster: StreamingAudioBroadcaster? = nil,
@@ -123,6 +125,7 @@ public actor DictationService: DictationServiceProtocol {
         self.textRefinementService = TextRefinementService()
         self.llmService = llmService
         self.shouldUseAIFormatter = shouldUseAIFormatter ?? { false }
+        self.shouldFormatPasteWithAI = shouldFormatPasteWithAI ?? { false }
         self.aiFormatterPromptTemplate = aiFormatterPromptTemplate ?? { AIFormatter.defaultPromptTemplate }
         self.cancelWindow = cancelWindow
         self.streamingBroadcaster = streamingBroadcaster
@@ -545,7 +548,14 @@ public actor DictationService: DictationServiceProtocol {
         let cleanTranscript = refinement.text
         let expandedSnippetIDs = refinement.expandedSnippetIDs
         let baseText = cleanTranscript ?? result.text
-        let formattedTranscript = try await formatTranscriptIfNeeded(baseText)
+        // Paste-path LLM polish is opt-in (default off). Parakeet TDT is accurate
+        // enough to paste directly, and the live bubble already shows cleaned
+        // text during dictation — running a second LLM pass at end-of-dictation
+        // adds user-visible latency for diminishing returns. The AI Formatter
+        // master toggle still gates live-bubble cleanup (`cleanupTextLive`).
+        let formattedTranscript = shouldFormatPasteWithAI()
+            ? try await formatTranscriptIfNeeded(baseText)
+            : nil
         let finalText = formattedTranscript ?? baseText
         let wc = finalText.split(whereSeparator: \.isWhitespace).count
         let saveHistory = shouldSaveDictationHistory?() ?? true

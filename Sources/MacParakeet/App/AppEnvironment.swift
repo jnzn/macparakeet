@@ -136,6 +136,7 @@ final class AppEnvironment {
             processingMode: processingModeClosure,
             llmService: llmService,
             shouldUseAIFormatter: aiFormatterEnabledClosure,
+            shouldFormatPasteWithAI: { [runtimePreferences] in runtimePreferences.formatPasteWithAI },
             aiFormatterPromptTemplate: aiFormatterPromptClosure,
             streamingBroadcaster: audioProcessor,
             streamingTranscriber: streamingDictationTranscriber,
