@@ -89,4 +89,9 @@ public actor MockStreamingDictationTranscriber: StreamingDictationTranscriber {
         await cancel()
         ready = false
     }
+
+    public var keepAliveCallCount = 0
+    public func keepAlive() async {
+        keepAliveCallCount += 1
+    }
 }

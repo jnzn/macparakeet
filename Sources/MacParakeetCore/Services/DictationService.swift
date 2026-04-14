@@ -590,6 +590,36 @@ public actor DictationService: DictationServiceProtocol {
         return DictationResult(dictation: dictation, postPasteAction: refinement.postPasteAction)
     }
 
+    /// Public entry point for *live* AI-formatter cleanup invoked from the flow
+    /// coordinator on dictation pauses. Returns nil if the formatter is disabled,
+    /// no LLM service is wired, or the call fails — callers should silently drop
+    /// the result. Does NOT post the formatter-start/finish notifications (those
+    /// are for the terminal batch pass; firing them here would flip the overlay
+    /// pill into `.formatting` state mid-dictation which is visually wrong).
+    public func cleanupTextLive(_ text: String) async -> String? {
+        guard shouldUseAIFormatter(), let llmService else {
+            logger.info("live_cleanup_skipped reason=formatter_or_service_unavailable")
+            return nil
+        }
+        let template = aiFormatterPromptTemplate()
+        let defaultPromptUsed = AIFormatter.normalizedPromptTemplate(template) == AIFormatter.defaultPromptTemplate
+        logger.info("live_cleanup_start inputChars=\(text.count)")
+        do {
+            let formatted = try await llmService.formatTranscript(
+                transcript: text,
+                promptTemplate: template,
+                source: .dictation,
+                defaultPromptUsed: defaultPromptUsed
+            )
+            let trimmed = formatted.trimmingCharacters(in: .whitespacesAndNewlines)
+            logger.info("live_cleanup_done outputChars=\(trimmed.count)")
+            return trimmed.isEmpty ? nil : trimmed
+        } catch {
+            logger.warning("live_cleanup_failed error=\(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
     private func formatTranscriptIfNeeded(_ text: String) async throws -> String? {
         guard shouldUseAIFormatter(), let llmService else {
             return nil

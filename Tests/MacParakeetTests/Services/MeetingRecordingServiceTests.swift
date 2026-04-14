@@ -564,6 +564,8 @@ private actor SequencedMeetingSTTClient: STTClientProtocol {
     func clearModelCache() async {}
 
     func shutdown() async {}
+
+    func keepAlive() async {}
 }
 
 private actor SleepingMeetingSTTClient: STTClientProtocol {
@@ -605,6 +607,8 @@ private actor SleepingMeetingSTTClient: STTClientProtocol {
     func clearModelCache() async {}
 
     func shutdown() async {}
+
+    func keepAlive() async {}
 }
 
 private actor PrefixScriptedMeetingSTTClient: STTClientProtocol {
@@ -669,6 +673,8 @@ private actor PrefixScriptedMeetingSTTClient: STTClientProtocol {
     func clearModelCache() async {}
 
     func shutdown() async {}
+
+    func keepAlive() async {}
 }
 
 private actor PathScriptedMeetingSTTClient: STTClientProtocol {
@@ -722,6 +728,8 @@ private actor PathScriptedMeetingSTTClient: STTClientProtocol {
 
     func shutdown() async {}
 
+    func keepAlive() async {}
+
     private func waitIgnoringCancellation(for delay: Duration) async {
         guard delay > .zero else { return }
         let startedAt = ContinuousClock.now
@@ -767,6 +775,8 @@ private actor CountingMeetingSTTClient: STTClientProtocol {
     func clearModelCache() async {}
 
     func shutdown() async {}
+
+    func keepAlive() async {}
 }
 
 private actor ChunkRangeRecordingMeetingSTTClient: STTClientProtocol {
@@ -833,4 +843,6 @@ private actor ChunkRangeRecordingMeetingSTTClient: STTClientProtocol {
     func clearModelCache() async {}
 
     func shutdown() async {}
+
+    func keepAlive() async {}
 }

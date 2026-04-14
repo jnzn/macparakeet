@@ -11,6 +11,11 @@ public protocol AppRuntimePreferencesProtocol: Sendable {
     var aiFormatterPrompt: String { get }
     /// Opt-in experimental flag for streaming dictation overlay (fork-only feature).
     var streamingOverlayEnabled: Bool { get }
+    /// When the AI Formatter is enabled, also run live LLM cleanup on the bubble
+    /// during dictation pauses. Independent of the final end-of-dictation pass.
+    /// Default true when parent flag is on, so users who enable streaming +
+    /// formatter get the full experience automatically.
+    var liveBubbleCleanupEnabled: Bool { get }
 }
 
 public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProtocol, @unchecked Sendable {
@@ -27,6 +32,7 @@ public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProto
     public static let aiFormatterEnabledKey = "aiFormatterEnabled"
     public static let aiFormatterPromptKey = "aiFormatterPrompt"
     public static let streamingOverlayEnabledKey = "streamingOverlayEnabled"
+    public static let liveBubbleCleanupEnabledKey = "liveBubbleCleanupEnabled"
 
     private let defaults: UserDefaults
 
@@ -73,5 +79,9 @@ public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProto
 
     public var streamingOverlayEnabled: Bool {
         defaults.object(forKey: Self.streamingOverlayEnabledKey) as? Bool ?? false
+    }
+
+    public var liveBubbleCleanupEnabled: Bool {
+        defaults.object(forKey: Self.liveBubbleCleanupEnabledKey) as? Bool ?? true
     }
 }

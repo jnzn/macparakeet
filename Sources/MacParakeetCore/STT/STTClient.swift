@@ -51,6 +51,10 @@ public actor STTClient: STTManaging {
         await scheduler.shutdown()
     }
 
+    public func keepAlive() async {
+        await scheduler.keepAlive()
+    }
+
     public nonisolated static func isModelCached(version: AsrModelVersion = .v3) -> Bool {
         STTRuntime.isModelCached(version: version)
     }
