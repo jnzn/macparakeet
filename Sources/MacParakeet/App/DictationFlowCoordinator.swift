@@ -843,7 +843,7 @@ final class DictationFlowCoordinator {
                 }
             }
 
-            try? await Task.sleep(for: .milliseconds(33))
+            try? await Task.sleep(for: .milliseconds(25))
         }
     }
 
