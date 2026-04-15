@@ -33,6 +33,7 @@ final class AppEnvironmentConfigurer {
     private let libraryViewModel: TranscriptionLibraryViewModel
     private let meetingsViewModel: TranscriptionLibraryViewModel
     private let llmSettingsViewModel: LLMSettingsViewModel
+    private let aiAssistantSettingsViewModel: AIAssistantSettingsViewModel
     private let chatViewModel: TranscriptChatViewModel
     private let promptResultsViewModel: PromptResultsViewModel
     private let promptsViewModel: PromptsViewModel
@@ -47,6 +48,7 @@ final class AppEnvironmentConfigurer {
         libraryViewModel: TranscriptionLibraryViewModel,
         meetingsViewModel: TranscriptionLibraryViewModel,
         llmSettingsViewModel: LLMSettingsViewModel,
+        aiAssistantSettingsViewModel: AIAssistantSettingsViewModel,
         chatViewModel: TranscriptChatViewModel,
         promptResultsViewModel: PromptResultsViewModel,
         promptsViewModel: PromptsViewModel,
@@ -60,6 +62,7 @@ final class AppEnvironmentConfigurer {
         self.libraryViewModel = libraryViewModel
         self.meetingsViewModel = meetingsViewModel
         self.llmSettingsViewModel = llmSettingsViewModel
+        self.aiAssistantSettingsViewModel = aiAssistantSettingsViewModel
         self.chatViewModel = chatViewModel
         self.promptResultsViewModel = promptResultsViewModel
         self.promptsViewModel = promptsViewModel
@@ -228,6 +231,7 @@ final class AppEnvironmentConfigurer {
 
         let hotkeyCoordinator = AppHotkeyCoordinator(
             settingsViewModel: settingsViewModel,
+            aiAssistantConfigStore: env.aiAssistantConfigStore,
             onStartDictation: { mode in
                 coordinatorRefs.dictation?.startDictation(mode: mode, trigger: .hotkey)
             },
@@ -253,6 +257,9 @@ final class AppEnvironmentConfigurer {
             onAIAssistantHotkeyRelease: { [weak aiAssistantCoordinator] in
                 aiAssistantCoordinator?.handleHotkeyRelease()
             },
+            onAIAssistantHotkeyDoubleTap: { [weak aiAssistantCoordinator] in
+                aiAssistantCoordinator?.handleHotkeyDoubleTap()
+            },
             onPrimaryHotkeyManagerChanged: { manager in
                 coordinatorRefs.dictation?.hotkeyManager = manager
             },
@@ -263,6 +270,15 @@ final class AppEnvironmentConfigurer {
         hotkeyCoordinator.setupPrimaryHotkey()
         hotkeyCoordinator.setupMeetingHotkey()
         hotkeyCoordinator.setupAIAssistantHotkey()
+
+        // When the user picks a new AI Assistant hotkey in Settings, persist
+        // the config and rebind the global shortcut without restart.
+        let assistantVM = aiAssistantSettingsViewModel
+        aiAssistantSettingsViewModel.onHotkeyChanged = { [weak hotkeyCoordinator] in
+            assistantVM.persistHotkeyIfChanged()
+            hotkeyCoordinator?.refreshAIAssistantHotkey()
+        }
+
         dictationCoordinator.showIdlePill()
 
         return Runtime(

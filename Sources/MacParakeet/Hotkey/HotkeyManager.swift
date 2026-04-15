@@ -189,6 +189,13 @@ public final class HotkeyManager {
             return handleKeyCodeEvent(type: type, event: event)
         case .chord:
             return handleChordEvent(type: type, event: event)
+        case .modifierCombo:
+            // Not implemented for the primary dictation hotkey — only
+            // the AI Assistant hotkey (GlobalShortcutManager) supports
+            // modifier combos today. If a user picks one here, the
+            // primary hotkey is effectively disabled until they switch
+            // back to a supported kind.
+            return Unmanaged.passUnretained(event)
         }
     }
 

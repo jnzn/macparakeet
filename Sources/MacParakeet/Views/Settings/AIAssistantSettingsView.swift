@@ -10,9 +10,57 @@ struct AIAssistantSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
-            Text("Hold Control+Shift+A to ask the agentic CLI (Claude Code or Codex) about your current selection. Hotkey is hardcoded in this build; a configurable picker lands later.")
+            Text("Hold the hotkey to ask the agentic CLI (Claude Code or Codex) about your current selection. Voice is transcribed while held; release submits.")
                 .font(DesignSystem.Typography.caption)
                 .foregroundStyle(.secondary)
+
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Hotkey").font(.callout)
+                    Text("Hold to speak; release to send.")
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: DesignSystem.Spacing.md)
+                HotkeyRecorderView(
+                    trigger: $viewModel.hotkeyTrigger,
+                    defaultTrigger: AIAssistantConfig.defaultHotkeyTrigger
+                )
+            }
+
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Bubble color").font(.callout)
+                    Text("Background of the AI Assistant bubble. Text contrast adapts automatically.")
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: DesignSystem.Spacing.md)
+                HStack(spacing: 8) {
+                    // Live preview swatch — shows the picked color over a
+                    // checkerboard-ish neutral so translucency is visible
+                    // before opening the bubble.
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(viewModel.bubbleBackgroundColor.toSwiftUIColor())
+                        .frame(width: 60, height: 30)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .stroke(Color.primary.opacity(0.15), lineWidth: 0.5)
+                        )
+                    ColorPicker(
+                        "Bubble color",
+                        selection: bubbleColorBinding,
+                        supportsOpacity: true
+                    )
+                    .labelsHidden()
+                    Button("Reset") {
+                        viewModel.resetBubbleColorToDefault()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("Reset bubble tint to the default (transparent — uses system material).")
+                }
+            }
 
             HStack {
                 Text("Provider").font(.callout)
@@ -77,6 +125,16 @@ struct AIAssistantSettingsView: View {
                 testStatusLabel
             }
         }
+    }
+
+    /// Bridges the viewmodel's `CodableColor` (UI-free) to a SwiftUI `Color`
+    /// binding for `ColorPicker`. Round-trips via the sRGB extension defined
+    /// in the app target.
+    private var bubbleColorBinding: Binding<Color> {
+        Binding(
+            get: { viewModel.bubbleBackgroundColor.toSwiftUIColor() },
+            set: { viewModel.bubbleBackgroundColor = $0.toCodableColor() }
+        )
     }
 
     @ViewBuilder

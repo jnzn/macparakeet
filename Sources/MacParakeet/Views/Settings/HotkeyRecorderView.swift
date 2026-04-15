@@ -13,7 +13,11 @@ struct HotkeyRecorderView: View {
     }
 
     @Binding var trigger: HotkeyTrigger
-    var defaultTrigger: HotkeyTrigger = .fn
+    /// Shown in the "Reset to Default" menu item and used when the user
+    /// hits that button. Callers pass the context-appropriate default
+    /// (`HotkeyTrigger.defaultDictation` for primary dictation,
+    /// `AIAssistantConfig.defaultHotkeyTrigger` for AI Assistant, etc.).
+    var defaultTrigger: HotkeyTrigger = .defaultDictation
     var additionalValidation: ((HotkeyTrigger) -> HotkeyTrigger.ValidationResult)? = nil
     @State private var isRecording = false
     @State private var validationMessage: String?
@@ -21,6 +25,11 @@ struct HotkeyRecorderView: View {
     @State private var eventMonitor: Any?
     /// Tracks held modifiers during recording for two-phase chord capture.
     @State private var pendingModifiers: [String] = []
+    /// Largest set of modifiers simultaneously held during this recording
+    /// session. Used to distinguish a bare single modifier (e.g. "Fn") from
+    /// a multi-modifier combo (e.g. Control+Option+Shift) when the user
+    /// releases everything without pressing a base key.
+    @State private var peakModifiers: Set<String> = []
     @State private var modifierCaptureMode: ModifierCaptureMode = .generic
 
     var body: some View {
@@ -145,6 +154,7 @@ struct HotkeyRecorderView: View {
         validationMessage = nil
         validationIsBlocked = false
         pendingModifiers = []
+        peakModifiers = []
         self.modifierCaptureMode = modifierCaptureMode
 
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [self] event in
@@ -224,14 +234,24 @@ struct HotkeyRecorderView: View {
                         // Track held chord modifiers for preview
                         let currentHeld = chordModifiersFromFlags(event.modifierFlags)
                         pendingModifiers = currentHeld
+                        peakModifiers.formUnion(currentHeld)
 
-                        // If all chord-eligible modifiers released, accept as bare modifier
+                        // If all chord-eligible modifiers released, pick the
+                        // right kind based on what was pressed at peak:
+                        //   - 2+ modifiers peaked → modifierCombo (Ctrl+Opt+Shift)
+                        //   - 1 modifier peaked  → bare modifier (legacy behavior)
                         if currentHeld.isEmpty {
-                            if let candidate = Self.bareModifierTrigger(
-                                for: name,
-                                keyCode: event.keyCode,
-                                captureMode: modifierCaptureMode
-                            ) {
+                            let candidate: HotkeyTrigger?
+                            if peakModifiers.count >= 2 {
+                                candidate = HotkeyTrigger.modifierCombo(Array(peakModifiers))
+                            } else {
+                                candidate = Self.bareModifierTrigger(
+                                    for: name,
+                                    keyCode: event.keyCode,
+                                    captureMode: modifierCaptureMode
+                                )
+                            }
+                            if let candidate {
                                 switch combinedValidation(for: candidate) {
                                 case .blocked(let msg):
                                     validationMessage = msg

@@ -67,6 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         libraryViewModel: libraryViewModel,
         meetingsViewModel: meetingsViewModel,
         llmSettingsViewModel: llmSettingsViewModel,
+        aiAssistantSettingsViewModel: aiAssistantSettingsViewModel,
         chatViewModel: chatViewModel,
         promptResultsViewModel: promptResultsViewModel,
         promptsViewModel: promptsViewModel,

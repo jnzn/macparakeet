@@ -30,6 +30,27 @@ final class AIAssistantFlowCoordinator {
     /// hotkey. Nil when no recording is in flight.
     private var isCapturingVoice: Bool = false
 
+    /// Gesture state machine, matching primary dictation's two-gesture model:
+    ///   hold-to-talk: press → record while held → release submits
+    ///   double-tap-to-lock: quick tap + quick tap → lock recording → single
+    ///                       tap again stops + submits
+    ///
+    /// `awaitingDoubleTap` is the bridge state between "user released quickly"
+    /// and "this was a one-shot quick tap" — we don't stop recording yet
+    /// because a second press within `doubleTapWindow` would upgrade the
+    /// gesture to a lock.
+    private enum Mode {
+        case idle
+        case holding
+        case awaitingDoubleTap
+        case locked
+    }
+    private var mode: Mode = .idle
+    private var pressStartedAt: Date?
+    private var pendingSubmitTask: Task<Void, Never>?
+    private static let holdThreshold: TimeInterval = 0.3
+    private static let doubleTapWindow: TimeInterval = 0.35
+
     init(
         service: AIAssistantServiceProtocol,
         accessibilityService: AccessibilityService,
@@ -43,17 +64,40 @@ final class AIAssistantFlowCoordinator {
         self.dictationService = dictationService
     }
 
-    // MARK: - Hotkey press / release
+    // MARK: - Hotkey press / release / doubleTap
 
-    /// Called on Control+Shift+A key-down. Grabs the current AX selection and
-    /// either opens an error bubble (nothing selected / AX unavailable) or
-    /// opens a listening bubble and begins voice capture.
+    /// Called on hotkey key-down. Dispatches through the gesture state
+    /// machine so that holds enter hold-to-talk and quick taps wait for a
+    /// possible double-tap upgrade.
     func handleHotkeyPress() {
-        if activeBubble?.isVisible == true {
-            // Guard against multi-press while bubble is up — ignore additional
-            // press events until the current session ends.
-            logger.info("hotkey_press ignored — bubble already open")
+        switch mode {
+        case .locked:
+            // Single tap while recording is locked → stop + submit.
+            logger.info("hotkey_press in locked mode → stop + submit")
+            mode = .idle
+            stopAndFinalize(submit: true)
             return
+        case .awaitingDoubleTap:
+            // Press arrived during the tap window but `onDoubleTap` already
+            // handled it — this is the onTrigger companion that
+            // GlobalShortcutManager no longer emits for the second press of
+            // a double-tap, so this branch should be unreachable. Guard
+            // anyway.
+            return
+        case .holding:
+            // Already holding (shouldn't see a second press without a
+            // release first). Ignore.
+            return
+        case .idle:
+            break
+        }
+
+        if activeBubble?.isVisible == true {
+            // Defensive: an error bubble is visible from a prior failed
+            // selection grab. Re-pressing should close it and start fresh.
+            logger.info("hotkey_press with error bubble open — dismissing first")
+            activeBubble?.dismiss()
+            activeBubble = nil
         }
 
         // Selection grab: tries AX first, falls back to Cmd+C probe for
@@ -85,6 +129,7 @@ final class AIAssistantFlowCoordinator {
         let bubble = AIAssistantBubbleController(
             selection: selection,
             service: service,
+            configStore: configStore,
             onDismissed: { [weak self] in
                 self?.activeBubble = nil
                 self?.isCapturingVoice = false
@@ -104,6 +149,10 @@ final class AIAssistantFlowCoordinator {
         // behavior observed when a user invokes primary dictation first to
         // "warm up" and then uses the AI hotkey.
         isCapturingVoice = true
+        mode = .holding
+        pressStartedAt = Date()
+        pendingSubmitTask?.cancel()
+        pendingSubmitTask = nil
         Task { [dictationService, logger] in
             do {
                 // Tell DictationService to bypass per-app profile polish
@@ -124,6 +173,7 @@ final class AIAssistantFlowCoordinator {
                     self?.activeBubble?.clearListening()
                     self?.activeBubble?.showError("Couldn't start voice capture: \(error.localizedDescription)")
                     self?.isCapturingVoice = false
+                    self?.mode = .idle
                 }
             }
         }
@@ -146,54 +196,101 @@ final class AIAssistantFlowCoordinator {
         }
     }
 
-    /// Called on Control+Shift+A key-up. Stops the voice capture, collects
-    /// the transcript, and auto-submits it to the CLI via the bubble.
+    /// Called on hotkey key-up. Distinguishes hold-to-talk (long press →
+    /// submit now) from quick tap (maybe the first half of a double-tap →
+    /// wait and see).
     func handleHotkeyRelease() {
-        guard isCapturingVoice else {
-            // Key-up for a press we never acted on (error bubble path, or
-            // pre-existing visible bubble). Nothing to do.
+        guard mode == .holding else {
+            // Release arrived in a non-holding mode: either the locked-mode
+            // press already transitioned us to .idle (and we're seeing the
+            // key-up of a tap that stopped the lock), or startRecording
+            // failed and mode is already .idle. Either way, nothing to do.
             return
         }
-        isCapturingVoice = false
 
-        guard let bubble = activeBubble else {
+        let duration = pressStartedAt.map { Date().timeIntervalSince($0) } ?? .infinity
+        pressStartedAt = nil
+
+        if duration >= Self.holdThreshold {
+            // Long hold → classic hold-to-talk. Stop + submit immediately.
+            logger.info("hotkey_release hold gesture duration=\(String(format: "%.2f", duration)) → submit")
+            mode = .idle
+            stopAndFinalize(submit: true)
+        } else {
+            // Quick tap → wait `doubleTapWindow` for a possible second press
+            // that'd upgrade this to a locked-recording gesture. Leave the
+            // bubble in listening state for now.
+            logger.info("hotkey_release quick tap duration=\(String(format: "%.2f", duration)) → awaiting double-tap")
+            mode = .awaitingDoubleTap
+            pendingSubmitTask = Task { [weak self] in
+                let windowMs = Int(Self.doubleTapWindow * 1000)
+                try? await Task.sleep(for: .milliseconds(windowMs))
+                await MainActor.run {
+                    guard let self, !Task.isCancelled else { return }
+                    guard self.mode == .awaitingDoubleTap else { return }
+                    self.logger.info("hotkey_release double-tap window expired → submit as single tap")
+                    self.mode = .idle
+                    self.stopAndFinalize(submit: true)
+                }
+            }
+        }
+    }
+
+    /// Called when GlobalShortcutManager detects two rapid presses within
+    /// `doubleTapWindowSeconds`. Upgrades the gesture to locked recording —
+    /// mic stays open until the user taps the hotkey once more (which routes
+    /// through `handleHotkeyPress` while `mode == .locked`).
+    func handleHotkeyDoubleTap() {
+        guard mode == .awaitingDoubleTap else {
+            logger.info("hotkey_doubleTap ignored — mode=\(String(describing: self.mode), privacy: .public)")
+            return
+        }
+        logger.info("hotkey_doubleTap → locked recording")
+        pendingSubmitTask?.cancel()
+        pendingSubmitTask = nil
+        mode = .locked
+        // Recording continues from the first press. Bubble keeps showing
+        // the listening indicator. User does a single tap to stop.
+    }
+
+    /// Shared stop path. If `submit == false`, cancels the recording and
+    /// dismisses the bubble (used for explicit cancel flows). If true,
+    /// submits the transcript via the bubble and leaves the bubble open
+    /// for the CLI response.
+    private func stopAndFinalize(submit: Bool) {
+        guard isCapturingVoice else { return }
+        isCapturingVoice = false
+        pendingSubmitTask?.cancel()
+        pendingSubmitTask = nil
+
+        guard let bubble = activeBubble, submit else {
             Task { [dictationService] in
                 await dictationService.cancelRecording(reason: nil)
                 await dictationService.confirmCancel()
+                await dictationService.setSuppressLLMPolish(false)
             }
             return
         }
 
-        logger.info("hotkey_release stopping voice capture")
-        Task { [dictationService, logger, weak self] in
+        logger.info("stop_and_finalize submit=\(submit, privacy: .public)")
+        Task { [dictationService, logger] in
             do {
                 let result = try await dictationService.stopRecording()
                 await dictationService.setSuppressLLMPolish(false)
-                // Always prefer rawTranscript here. With suppressLLMPolish
-                // set, cleanTranscript is just the deterministic-pipeline
-                // output (custom words + snippets + filler removal) — fine
-                // — but rawTranscript matches what the user actually spoke
-                // more closely and there's nothing to gain from running
-                // Parakeet output through the pipeline for a CLI prompt.
                 let transcript = result.dictation.rawTranscript
-                logger.info("hotkey_release transcript chars=\(transcript.count)")
+                logger.info("stop_and_finalize transcript chars=\(transcript.count)")
                 await MainActor.run {
                     bubble.submitVoiceTranscript(transcript)
                 }
             } catch {
                 await dictationService.setSuppressLLMPolish(false)
-                logger.info("hotkey_release stop failed (likely empty) error=\(error.localizedDescription, privacy: .private)")
-                await MainActor.run { [weak self] in
-                    // Empty transcript / short recording → just clear the
-                    // listening state. Bubble stays open so user can type.
+                logger.info("stop_and_finalize stop failed error=\(error.localizedDescription, privacy: .private)")
+                await MainActor.run {
                     bubble.clearListening()
-                    // If the error is something other than "no speech",
-                    // surface it for visibility.
                     if !Self.isNoSpeech(error) {
                         bubble.showError("Voice capture failed: \(error.localizedDescription)")
                     }
                 }
-                _ = self
             }
         }
     }
@@ -203,13 +300,18 @@ final class AIAssistantFlowCoordinator {
     /// Called from the app shutdown path so the bubble doesn't linger past
     /// termination.
     func dismissAny() {
+        pendingSubmitTask?.cancel()
+        pendingSubmitTask = nil
         if isCapturingVoice {
             Task { [dictationService] in
                 await dictationService.cancelRecording(reason: nil)
                 await dictationService.confirmCancel()
+                await dictationService.setSuppressLLMPolish(false)
             }
             isCapturingVoice = false
         }
+        mode = .idle
+        pressStartedAt = nil
         activeBubble?.dismiss()
         activeBubble = nil
     }
@@ -220,6 +322,7 @@ final class AIAssistantFlowCoordinator {
         let bubble = AIAssistantBubbleController(
             selection: "",
             service: service,
+            configStore: configStore,
             onDismissed: { [weak self] in
                 self?.activeBubble = nil
                 self?.isCapturingVoice = false
