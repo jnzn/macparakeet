@@ -12,12 +12,23 @@ final class AppHotkeyCoordinator {
     private let onReadyForSecondTap: () -> Void
     private let onEscapeWhileIdle: () -> Void
     private let onToggleMeetingRecording: () -> Void
+    private let onAIAssistantHotkeyPress: () -> Void
+    private let onAIAssistantHotkeyRelease: () -> Void
     private let onPrimaryHotkeyManagerChanged: (HotkeyManager?) -> Void
     private let onAnyHotkeyEnabled: () -> Void
     private let onHotkeyUnavailable: () -> Void
 
     private var hotkeyManager: HotkeyManager?
     private var meetingHotkeyManager: GlobalShortcutManager?
+    private var aiAssistantHotkeyManager: GlobalShortcutManager?
+
+    /// V1 default for the AI Assistant hotkey. Hardcoded for chunk B —
+    /// configurable via Settings in chunk C. Control+Shift+A is a rarely-used
+    /// chord so collisions should be minimal.
+    static let defaultAIAssistantTrigger: HotkeyTrigger = .chord(
+        modifiers: ["control", "shift"],
+        keyCode: 0  // 'a'
+    )
 
     init(
         settingsViewModel: SettingsViewModel,
@@ -28,6 +39,8 @@ final class AppHotkeyCoordinator {
         onReadyForSecondTap: @escaping () -> Void,
         onEscapeWhileIdle: @escaping () -> Void,
         onToggleMeetingRecording: @escaping () -> Void,
+        onAIAssistantHotkeyPress: @escaping () -> Void,
+        onAIAssistantHotkeyRelease: @escaping () -> Void,
         onPrimaryHotkeyManagerChanged: @escaping (HotkeyManager?) -> Void,
         onAnyHotkeyEnabled: @escaping () -> Void,
         onHotkeyUnavailable: @escaping () -> Void
@@ -40,6 +53,8 @@ final class AppHotkeyCoordinator {
         self.onReadyForSecondTap = onReadyForSecondTap
         self.onEscapeWhileIdle = onEscapeWhileIdle
         self.onToggleMeetingRecording = onToggleMeetingRecording
+        self.onAIAssistantHotkeyPress = onAIAssistantHotkeyPress
+        self.onAIAssistantHotkeyRelease = onAIAssistantHotkeyRelease
         self.onPrimaryHotkeyManagerChanged = onPrimaryHotkeyManagerChanged
         self.onAnyHotkeyEnabled = onAnyHotkeyEnabled
         self.onHotkeyUnavailable = onHotkeyUnavailable
@@ -122,14 +137,48 @@ final class AppHotkeyCoordinator {
         }
     }
 
+    func setupAIAssistantHotkey() {
+        let trigger = Self.defaultAIAssistantTrigger
+        guard !trigger.isDisabled,
+              trigger != settingsViewModel.hotkeyTrigger,
+              trigger != settingsViewModel.meetingHotkeyTrigger
+        else {
+            aiAssistantHotkeyManager = nil
+            return
+        }
+
+        let manager = GlobalShortcutManager(trigger: trigger)
+        manager.onTrigger = { [weak self] in
+            Task { @MainActor in
+                self?.onAIAssistantHotkeyPress()
+            }
+        }
+        manager.onRelease = { [weak self] in
+            Task { @MainActor in
+                self?.onAIAssistantHotkeyRelease()
+            }
+        }
+
+        if manager.start() {
+            aiAssistantHotkeyManager = manager
+            onAnyHotkeyEnabled()
+        } else {
+            aiAssistantHotkeyManager = nil
+            onHotkeyUnavailable()
+        }
+    }
+
     func refreshAllHotkeys() {
         hotkeyManager?.stop()
         meetingHotkeyManager?.stop()
+        aiAssistantHotkeyManager?.stop()
         hotkeyManager = nil
         meetingHotkeyManager = nil
+        aiAssistantHotkeyManager = nil
         onPrimaryHotkeyManagerChanged(nil)
         setupPrimaryHotkey()
         setupMeetingHotkey()
+        setupAIAssistantHotkey()
     }
 
     func refreshMeetingHotkey() {
@@ -163,8 +212,10 @@ final class AppHotkeyCoordinator {
     func stopAll() {
         hotkeyManager?.stop()
         meetingHotkeyManager?.stop()
+        aiAssistantHotkeyManager?.stop()
         hotkeyManager = nil
         meetingHotkeyManager = nil
+        aiAssistantHotkeyManager = nil
         onPrimaryHotkeyManagerChanged(nil)
     }
 }

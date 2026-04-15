@@ -121,8 +121,7 @@ public enum AIFormatter {
         guard !block.isEmpty else { return template }
 
         let preamble = """
-            App context from the frontmost window. Treat names visible here as ground truth — override the "preserve the speaker's wording" rule ONLY to fix names. When a garbled or phonetically-odd segment of the transcript plausibly refers to a name shown below (even loosely — e.g. transcript says "just one" but window title is "Chat with Janet" → use "Janet"; transcript says "Sue Shan" but window shows "Sue Chan" → use "Sue Chan"), replace it with the correct spelling from this context. Do NOT copy this context block itself into your output — it is reference material, not content to clean.
-
+            App context (reference only — do NOT copy into output). Use to fix ASR-mistranscribed names: replace garbled transcript words with the correct name from this context when phonetically plausible.
             \(block)
 
             """
