@@ -797,7 +797,7 @@ CREATE TABLE text_snippets (
 
 ### F8: AI Formatter
 
-> Status: **IMPLEMENTED ON CURRENT BRANCH** — Optional provider-based formatter for dictation and transcription. The old on-device Qwen3-8B mode presets were removed; formatting now runs through the configured LLM provider or local CLI.
+> Status: **IMPLEMENTED** — Optional provider-based formatter for dictation and file/YouTube transcription. The old on-device Qwen3-8B mode presets were removed; formatting now runs through the configured LLM provider or local CLI.
 
 **What:** Optional post-processing formatter that runs *after* deterministic cleanup when the user enables it in AI settings. It is intended to polish punctuation, capitalization, paragraphing, and obvious transcript errors without changing the underlying meaning.
 
@@ -813,14 +813,15 @@ Important constraints:
 
 - formatter is a separate toggle, not a dictation mode
 - formatter uses the shared `LLMService`
-- formatter can run for both dictation and file/meeting transcription
+- formatter runs for dictation and file/YouTube transcription flows; meeting transcripts currently use deterministic cleanup only (see `TelemetryFormatterSource` — `.dictation` and `.transcription` are the only emitter sources wired today)
 - formatter falls back to deterministic cleanup if the provider errors or times out
 - formatter prompt is user-editable in AI settings
 
 **Acceptance criteria:**
 - [x] Formatter can be enabled or disabled independently of Raw/Clean mode
 - [x] Formatter runs only after deterministic cleanup
-- [x] Formatter supports dictation and transcription flows
+- [x] Formatter supports dictation and file/YouTube transcription flows
+- [ ] Formatter supports meeting transcription (not yet wired — meeting path goes through `MeetingTranscriptFinalizer` without invoking `formatTranscript`)
 - [x] Formatter uses the configured provider or local CLI through shared LLM infrastructure
 - [x] Formatter prompt is editable and resettable from settings
 - [x] Graceful fallback to deterministic cleanup if formatting fails

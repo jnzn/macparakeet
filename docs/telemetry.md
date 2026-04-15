@@ -102,7 +102,6 @@ CREATE INDEX idx_events_session ON events(session);
 |---|---|---|
 | `app_launched` | — | How many active users? DAU/WAU/MAU? |
 | `app_quit` | `session_duration_seconds` | How long are sessions? |
-| `app_updated` | `from_version`, `to_version` | Are users updating? How fast? |
 | `onboarding_completed` | `duration_seconds` | How long does setup take? |
 | `onboarding_step` | `step` (permissions, model_download, etc.) | Where do people get stuck in onboarding? |
 
@@ -172,19 +171,18 @@ CREATE INDEX idx_events_session ON events(session);
 
 ### 6. Licensing — "Is the business working?"
 
-> Note: App is now free/GPL-3.0. Most licensing events are dead code (trial, purchase, restore). Only `license_activated` and `license_activation_failed` are wired — kept for the historical $0 LemonSqueezy product.
+> Note: App is now free/GPL-3.0. The licensing enum cases are kept in `TelemetryEventName` for the historical $0 LemonSqueezy product, but most are dead code — only `license_activated` and `license_activation_failed` are wired today.
 
 | Event | Props | Question It Answers |
 |---|---|---|
-| `trial_started` | — | When do trials begin? |
-| `trial_expired` | — | Are people hitting the trial wall? |
-| `paywall_viewed` | — | Are people seeing the paywall? |
-| `purchase_started` | — | Are people attempting to buy? |
+| `trial_started` | — | When do trials begin? (dead, free app) |
+| `trial_expired` | — | Are people hitting the trial wall? (dead, free app) |
+| `purchase_started` | — | Are people attempting to buy? (dead, free app) |
 | `license_activated` | — | Conversion! |
 | `license_activation_failed` | `error_type` | What blocks purchases? |
-| `restore_attempted` | — | Are people trying to restore? |
-| `restore_succeeded` | — | Restore success rate |
-| `restore_failed` | `error_type` | What blocks restores? |
+| `restore_attempted` | — | Are people trying to restore? (dead, free app) |
+| `restore_succeeded` | — | Restore success rate (dead, free app) |
+| `restore_failed` | `error_type` | What blocks restores? (dead, free app) |
 
 ### 7. Performance — "Is the app fast?"
 
