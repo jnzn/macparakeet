@@ -98,12 +98,20 @@ final class AIAssistantFlowCoordinator {
         isCapturingVoice = true
         Task { [dictationService, logger] in
             do {
+                // Tell DictationService to bypass per-app profile polish
+                // (terminal transliteration, email formality, etc.) for
+                // this recording. The spoken input is a direct instruction
+                // to the CLI agent — it should reach Claude/Codex as raw
+                // Parakeet output, not mangled by the Terminal profile's
+                // "see dee slash" → "cd /" rule.
+                await dictationService.setSuppressLLMPolish(true)
                 try await Self.startRecordingWithColdRetry(
                     service: dictationService,
                     logger: logger
                 )
             } catch {
                 logger.warning("hotkey_press startRecording failed error=\(error.localizedDescription, privacy: .private)")
+                await dictationService.setSuppressLLMPolish(false)
                 await MainActor.run { [weak self] in
                     self?.activeBubble?.clearListening()
                     self?.activeBubble?.showError("Couldn't start voice capture: \(error.localizedDescription)")
@@ -152,12 +160,20 @@ final class AIAssistantFlowCoordinator {
         Task { [dictationService, logger, weak self] in
             do {
                 let result = try await dictationService.stopRecording()
-                let transcript = result.dictation.cleanTranscript ?? result.dictation.rawTranscript
+                await dictationService.setSuppressLLMPolish(false)
+                // Always prefer rawTranscript here. With suppressLLMPolish
+                // set, cleanTranscript is just the deterministic-pipeline
+                // output (custom words + snippets + filler removal) — fine
+                // — but rawTranscript matches what the user actually spoke
+                // more closely and there's nothing to gain from running
+                // Parakeet output through the pipeline for a CLI prompt.
+                let transcript = result.dictation.rawTranscript
                 logger.info("hotkey_release transcript chars=\(transcript.count)")
                 await MainActor.run {
                     bubble.submitVoiceTranscript(transcript)
                 }
             } catch {
+                await dictationService.setSuppressLLMPolish(false)
                 logger.info("hotkey_release stop failed (likely empty) error=\(error.localizedDescription, privacy: .private)")
                 await MainActor.run { [weak self] in
                     // Empty transcript / short recording → just clear the

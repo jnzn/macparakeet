@@ -24,6 +24,7 @@ final class AIAssistantBubbleController {
     private var panel: AIAssistantBubblePanel?
     private var hostingView: NSHostingView<AIAssistantBubbleView>?
     private var resignObserver: NSObjectProtocol?
+    private var partialObserver: NSObjectProtocol?
     private var activeTask: Task<Void, Never>?
     private var isDismissed = false
 
@@ -50,7 +51,9 @@ final class AIAssistantBubbleController {
     /// voice capture is in progress.
     func showListening() {
         state.isListening = true
+        state.listeningPartialText = ""
         state.errorMessage = nil
+        subscribeToStreamingPartials()
         show()
     }
 
@@ -60,6 +63,8 @@ final class AIAssistantBubbleController {
     /// state but don't submit — matches the "no voice, no action" rule.
     func submitVoiceTranscript(_ transcript: String) {
         state.isListening = false
+        state.listeningPartialText = ""
+        unsubscribeFromStreamingPartials()
         let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         submit(question: trimmed)
@@ -69,6 +74,35 @@ final class AIAssistantBubbleController {
     /// transcript. Clears the listening state so the bubble doesn't hang.
     func clearListening() {
         state.isListening = false
+        state.listeningPartialText = ""
+        unsubscribeFromStreamingPartials()
+    }
+
+    /// Subscribe to `.macParakeetStreamingPartial` notifications so the
+    /// user sees live ASR text as they speak. Only flows when "Live
+    /// transcript overlay" is enabled in Settings (that's the gate on the
+    /// streaming EOU model being loaded). When disabled, the bubble stays
+    /// at just "Listening…" — no-op fallback.
+    private func subscribeToStreamingPartials() {
+        guard partialObserver == nil else { return }
+        partialObserver = NotificationCenter.default.addObserver(
+            forName: .macParakeetStreamingPartial,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let text = note.userInfo?["text"] as? String else { return }
+            Task { @MainActor in
+                guard let self, self.state.isListening else { return }
+                self.state.listeningPartialText = text
+            }
+        }
+    }
+
+    private func unsubscribeFromStreamingPartials() {
+        if let observer = partialObserver {
+            NotificationCenter.default.removeObserver(observer)
+            partialObserver = nil
+        }
     }
 
     var isVisible: Bool {
@@ -144,6 +178,7 @@ final class AIAssistantBubbleController {
             NotificationCenter.default.removeObserver(observer)
             resignObserver = nil
         }
+        unsubscribeFromStreamingPartials()
         panel?.orderOut(nil)
         panel = nil
         hostingView = nil

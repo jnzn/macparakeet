@@ -94,6 +94,15 @@ public actor DictationService: DictationServiceProtocol {
     /// to prepend a context block to both live-cleanup and paste-polish LLM
     /// prompts.
     private var activeAppContext: AppContext?
+    /// When true, skip all LLM polish paths (both live-bubble cleanup and
+    /// end-of-dictation paste formatting) for the current recording. Set via
+    /// `setSuppressLLMPolish(true)` before `startRecording` by the AI Assistant
+    /// flow coordinator, which consumes the raw Parakeet transcript directly
+    /// instead — the spoken input is an instruction TO Claude/Codex, not text
+    /// that should be rewritten by a per-app formatter prompt (which would,
+    /// e.g., terminal-transliterate "dot com" into ".com" inside a question).
+    /// Reset to false on `confirmCancel`.
+    private var suppressLLMPolish: Bool = false
 
     public var state: DictationState {
         _state
@@ -101,6 +110,14 @@ public actor DictationService: DictationServiceProtocol {
 
     public var audioLevel: Float {
         get async { await audioProcessor.audioLevel }
+    }
+
+    /// Called before `startRecording` by consumers (AI Assistant hotkey) that
+    /// want raw Parakeet output without profile-aware LLM polish. The flag
+    /// auto-clears on `confirmCancel` but persists across a single
+    /// start/stop cycle.
+    public func setSuppressLLMPolish(_ suppressed: Bool) {
+        self.suppressLLMPolish = suppressed
     }
 
     /// Human-readable name of the input device currently backing the recording,
@@ -387,6 +404,7 @@ public actor DictationService: DictationServiceProtocol {
         }
 
         recordingStartedAt = nil
+        suppressLLMPolish = false
         _state = .idle
     }
 
@@ -596,8 +614,14 @@ public actor DictationService: DictationServiceProtocol {
         //      signal that the user wants per-app polish on the paste.
         // No profile + toggle off = pure Parakeet raw (Item 1 default for
         // unknown apps, keeps paste instant).
-        let shouldPolishPaste = shouldFormatPasteWithAI()
-            || activeProfile?.promptOverride != nil
+        //
+        // `suppressLLMPolish` short-circuits both. AI Assistant dictations
+        // set it so the raw transcript flows verbatim to Claude/Codex —
+        // applying the Terminal profile's transliteration to a spoken
+        // question like "see dee slash" would mangle it into "cd /" before
+        // it ever reached the model.
+        let shouldPolishPaste = !suppressLLMPolish
+            && (shouldFormatPasteWithAI() || activeProfile?.promptOverride != nil)
         let formattedTranscript = shouldPolishPaste
             ? try await formatTranscriptIfNeeded(baseText)
             : nil
@@ -654,6 +678,13 @@ public actor DictationService: DictationServiceProtocol {
     public func cleanupTextLive(_ text: String) async -> String? {
         guard shouldUseAIFormatter(), let llmService else {
             logger.info("live_cleanup_skipped reason=formatter_or_service_unavailable")
+            return nil
+        }
+        // AI Assistant dictation path bypasses live cleanup entirely — we're
+        // capturing a direct instruction to the CLI, not text that should
+        // be stylistically polished.
+        guard !suppressLLMPolish else {
+            logger.info("live_cleanup_skipped reason=suppressed_for_assistant")
             return nil
         }
         let userTemplate = aiFormatterPromptTemplate()

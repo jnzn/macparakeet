@@ -10,6 +10,11 @@ final class AIAssistantBubbleState {
     var currentInput: String = ""
     var isThinking: Bool = false
     var isListening: Bool = false
+    /// Live ASR partial rendered under the "Listening…" indicator while the
+    /// user is holding the AI hotkey. Populated via the
+    /// `.macParakeetStreamingPartial` notification pipeline — only flows when
+    /// the user has "Live transcript overlay" enabled in Settings.
+    var listeningPartialText: String = ""
     var errorMessage: String? = nil
 }
 
@@ -23,23 +28,40 @@ struct AIAssistantBubbleView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(Array(state.history.enumerated()), id: \.offset) { idx, turn in
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            // User question — italic, muted, compact.
                             Text(turn.question)
-                                .font(.callout)
+                                .font(.callout.italic())
                                 .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            // LLM response — Apple's "New York" serif at
+                            // reading size. System-bundled on macOS; gives
+                            // the bubble a warm editorial feel without
+                            // shipping proprietary fonts (Claude's
+                            // Copernicus is not distributable).
                             Text(turn.response)
-                                .font(.body)
+                                .font(.system(size: 15, design: .serif))
+                                .foregroundStyle(.primary)
+                                .lineSpacing(3)
                                 .textSelection(.enabled)
                         }
                         if idx < state.history.count - 1 {
-                            Divider()
+                            Divider().padding(.vertical, 4)
                         }
                     }
                     if state.isListening {
-                        HStack(spacing: 8) {
-                            Image(systemName: "mic.fill")
-                                .foregroundStyle(.red)
-                            Text("Listening — release hotkey to send").font(.callout).foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "mic.fill")
+                                    .foregroundStyle(.red)
+                                Text("Listening — release hotkey to send").font(.callout).foregroundStyle(.secondary)
+                            }
+                            if !state.listeningPartialText.isEmpty {
+                                Text(state.listeningPartialText)
+                                    .font(.body)
+                                    .foregroundStyle(.primary.opacity(0.85))
+                                    .italic()
+                            }
                         }
                     }
                     if state.isThinking {
