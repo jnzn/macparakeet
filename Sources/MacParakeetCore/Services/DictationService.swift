@@ -68,6 +68,12 @@ public actor DictationService: DictationServiceProtocol {
     /// of dictation start. Called once per `startRecording`; the result is
     /// captured in `activeProfile` and reused throughout the dictation.
     private let resolveActiveProfile: @Sendable () -> AppProfile?
+    /// Captures an AX snapshot of the frontmost app (window title, focused
+    /// field value, selected text) at dictation start. Best-effort: returns
+    /// nil when AX is unavailable, the app is blocklisted, or nothing useful
+    /// came back. Injected into the cleanup LLM prompt so the model can
+    /// disambiguate ambiguous transcriptions using real context.
+    private let resolveAppContext: @Sendable () async -> AppContext?
     private let cancelWindow: Duration
 
     private var _state: DictationState = .idle
@@ -83,6 +89,11 @@ public actor DictationService: DictationServiceProtocol {
     /// both live-bubble cleanup and paste-path polish. Cleared by the next
     /// `startRecording` (overwritten) or on confirm-cancel.
     private var activeProfile: AppProfile?
+    /// AX snapshot captured at dictation start. Nil when context capture is
+    /// disabled, the app is blocklisted, or no useful signals came back. Used
+    /// to prepend a context block to both live-cleanup and paste-polish LLM
+    /// prompts.
+    private var activeAppContext: AppContext?
 
     public var state: DictationState {
         _state
@@ -116,6 +127,7 @@ public actor DictationService: DictationServiceProtocol {
         shouldFormatPasteWithAI: (@Sendable () -> Bool)? = nil,
         aiFormatterPromptTemplate: (@Sendable () -> String)? = nil,
         resolveActiveProfile: (@Sendable () -> AppProfile?)? = nil,
+        resolveAppContext: (@Sendable () async -> AppContext?)? = nil,
         cancelWindow: Duration = .seconds(5),
         streamingBroadcaster: StreamingAudioBroadcaster? = nil,
         streamingTranscriber: StreamingDictationTranscriber? = nil,
@@ -138,6 +150,7 @@ public actor DictationService: DictationServiceProtocol {
         self.shouldFormatPasteWithAI = shouldFormatPasteWithAI ?? { false }
         self.aiFormatterPromptTemplate = aiFormatterPromptTemplate ?? { AIFormatter.defaultPromptTemplate }
         self.resolveActiveProfile = resolveActiveProfile ?? { nil }
+        self.resolveAppContext = resolveAppContext ?? { nil }
         self.cancelWindow = cancelWindow
         self.streamingBroadcaster = streamingBroadcaster
         self.streamingTranscriber = streamingTranscriber
@@ -210,6 +223,16 @@ public actor DictationService: DictationServiceProtocol {
             if let profile = activeProfile {
                 logger.info(
                     "active_profile session=\(requestedSessionID) id=\(profile.id, privacy: .public) name=\(profile.displayName, privacy: .public)"
+                )
+            }
+            // Capture app context asynchronously — AX calls can block briefly
+            // on a busy target app. The resolver wraps them in `Task.detached`
+            // with a per-call AX timeout, so this await returns quickly and
+            // never blocks the actor beyond the timeout budget.
+            activeAppContext = await resolveAppContext()
+            if let ctx = activeAppContext {
+                logger.info(
+                    "app_context_captured session=\(requestedSessionID) hasTitle=\(ctx.windowTitle != nil) hasField=\(ctx.focusedFieldValue != nil) hasSelection=\(ctx.selectedText != nil)"
                 )
             }
             Telemetry.send(.dictationStarted(trigger: context.trigger, mode: context.mode))
@@ -634,13 +657,16 @@ public actor DictationService: DictationServiceProtocol {
             return nil
         }
         let userTemplate = aiFormatterPromptTemplate()
-        let template = activeProfile?.promptOverride ?? userTemplate
+        let baseTemplate = activeProfile?.promptOverride ?? userTemplate
+        let template = AIFormatter.injectContextIntoPrompt(template: baseTemplate, context: activeAppContext)
         // Mark as "default prompt used" only when no override applies AND the
         // user template matches the shipped default. Profile overrides always
-        // read as custom prompts in telemetry.
+        // read as custom prompts in telemetry. Context injection doesn't flip
+        // the bit either — it's a per-dictation prefix, not a user-configured
+        // change to the base prompt.
         let defaultPromptUsed = activeProfile?.promptOverride == nil
             && AIFormatter.normalizedPromptTemplate(userTemplate) == AIFormatter.defaultPromptTemplate
-        logger.info("live_cleanup_start inputChars=\(text.count) profile=\(self.activeProfile?.id ?? "none", privacy: .public)")
+        logger.info("live_cleanup_start inputChars=\(text.count) profile=\(self.activeProfile?.id ?? "none", privacy: .public) hasContext=\(self.activeAppContext != nil)")
         do {
             let formatted = try await llmService.formatTranscript(
                 transcript: text,
@@ -681,13 +707,15 @@ public actor DictationService: DictationServiceProtocol {
         }
 
         let userTemplate = aiFormatterPromptTemplate()
-        let promptTemplate = activeProfile?.promptOverride ?? userTemplate
+        let baseTemplate = activeProfile?.promptOverride ?? userTemplate
+        let promptTemplate = AIFormatter.injectContextIntoPrompt(template: baseTemplate, context: activeAppContext)
         // Normalize before comparing: `AIFormatter.renderPrompt` passes the
         // template through `normalizedPromptTemplate` before sending, which
         // trims whitespace and folds legacy-v1 prompts back onto the current
         // default. Raw comparison would report those cases as custom prompts
-        // even though the LLM sees the shipped default. Profile overrides
-        // always read as custom prompts in telemetry.
+        // even though the LLM sees the shipped default. Profile overrides and
+        // context injection don't flip the bit — context is a per-dictation
+        // prefix, not a user-configured change to the base prompt.
         let defaultPromptUsed = activeProfile?.promptOverride == nil
             && AIFormatter.normalizedPromptTemplate(userTemplate) == AIFormatter.defaultPromptTemplate
         do {

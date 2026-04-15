@@ -105,6 +105,60 @@ public enum AIFormatter {
         return trimmed
     }
 
+    /// Inject an `AppContext` hint block into a prompt template immediately
+    /// before the line containing `{{TRANSCRIPT}}`. Returns the template
+    /// unchanged when the context is nil/empty.
+    ///
+    /// The inserted block is clearly labeled as *context, not content to
+    /// rewrite* so profile prompts that say "Preserve the speaker's wording"
+    /// don't accidentally see the window title as text to clean.
+    public static func injectContextIntoPrompt(
+        template: String,
+        context: AppContext?
+    ) -> String {
+        guard let context, !context.isEmpty else { return template }
+        let block = context.asPromptBlock()
+        guard !block.isEmpty else { return template }
+
+        let preamble = """
+            App context from the frontmost window. Treat names visible here as ground truth — override the "preserve the speaker's wording" rule ONLY to fix names. When a garbled or phonetically-odd segment of the transcript plausibly refers to a name shown below (even loosely — e.g. transcript says "just one" but window title is "Chat with Janet" → use "Janet"; transcript says "Sue Shan" but window shows "Sue Chan" → use "Sue Chan"), replace it with the correct spelling from this context. Do NOT copy this context block itself into your output — it is reference material, not content to clean.
+
+            \(block)
+
+            """
+
+        // The transcript block in a prompt is always introduced by a label —
+        // either `Input: {{TRANSCRIPT}}` (same line) or `Raw transcript:\n
+        // {{TRANSCRIPT}}` (label on prior line). Walk back from the placeholder
+        // and split the template into prefix + transcript-block at the label
+        // boundary so the preamble lands *before* the label, never between it
+        // and the transcript itself.
+        guard let placeholderRange = template.range(of: transcriptPlaceholder) else {
+            return "\(preamble)\n\(template)"
+        }
+
+        let labelMarkers = ["Input: ", "Raw transcript:"]
+        let head = String(template[..<placeholderRange.lowerBound])
+        var splitIndex = template.startIndex
+        for marker in labelMarkers {
+            if let markerRange = head.range(of: marker, options: .backwards) {
+                splitIndex = markerRange.lowerBound
+                break
+            }
+        }
+        if splitIndex == template.startIndex {
+            // No labeled boundary found — fall back to inserting before the
+            // placeholder's own line so the preamble at least doesn't mangle
+            // the surrounding markup.
+            let priorNewline = template[..<placeholderRange.lowerBound].lastIndex(of: "\n")
+            splitIndex = priorNewline.map { template.index(after: $0) } ?? template.startIndex
+        }
+
+        var updated = template
+        updated.insert(contentsOf: preamble + "\n", at: splitIndex)
+        return updated
+    }
+
     public static func renderPrompt(template promptTemplate: String, transcript: String) -> String {
         let normalizedTemplate = normalizedPromptTemplate(promptTemplate)
         let normalizedTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)

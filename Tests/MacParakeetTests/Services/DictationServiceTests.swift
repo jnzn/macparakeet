@@ -257,4 +257,70 @@ final class DictationServiceTests: XCTestCase {
 
     // Note: Cancel flow tests, stop-when-not-recording, and STT error propagation
     // are covered in CancelFlowTests.swift to avoid duplication.
+
+    /// App-context resolver runs at dictation start; captured context must
+    /// appear in the prompt template passed to LLMService on the paste-path
+    /// formatter call so the LLM can use the window title / selected text to
+    /// disambiguate ambiguous transcriptions.
+    func testStopRecordingInjectsAppContextIntoFormatterPrompt() async throws {
+        await mockSTT.configure(result: STTResult(text: "just once"))
+        let mockLLMService = MockLLMService()
+        mockLLMService.formatTranscriptResult = "Yeswanth"
+
+        service = DictationService(
+            audioProcessor: mockAudio,
+            sttTranscriber: mockSTT,
+            dictationRepo: dictationRepo,
+            llmService: mockLLMService,
+            shouldUseAIFormatter: { true },
+            shouldFormatPasteWithAI: { true },
+            aiFormatterPromptTemplate: { AIFormatter.defaultPromptTemplate },
+            resolveAppContext: {
+                AppContext(
+                    bundleID: "com.microsoft.teams2",
+                    windowTitle: "Chat with Yeswanth",
+                    focusedFieldValue: nil,
+                    selectedText: nil
+                )
+            }
+        )
+
+        try await service.startRecording()
+        _ = try await service.stopRecording()
+
+        let sentTemplate = mockLLMService.lastFormatterPromptTemplate ?? ""
+        XCTAssertTrue(sentTemplate.contains("App context"),
+                      "Expected context preamble in prompt, got: \(sentTemplate)")
+        XCTAssertTrue(sentTemplate.contains("Chat with Yeswanth"),
+                      "Expected window title in prompt, got: \(sentTemplate)")
+        // The default prompt's `Input: {{TRANSCRIPT}}` marker must still be
+        // intact downstream — the transcript still needs to render.
+        XCTAssertTrue(sentTemplate.contains("Input: "))
+    }
+
+    /// No resolver wired = no context injection. Guards against accidental
+    /// leakage of context preamble text into prompts when the caller opted out.
+    func testStopRecordingSkipsContextWhenResolverReturnsNil() async throws {
+        await mockSTT.configure(result: STTResult(text: "hello world"))
+        let mockLLMService = MockLLMService()
+        mockLLMService.formatTranscriptResult = "Hello, world."
+
+        service = DictationService(
+            audioProcessor: mockAudio,
+            sttTranscriber: mockSTT,
+            dictationRepo: dictationRepo,
+            llmService: mockLLMService,
+            shouldUseAIFormatter: { true },
+            shouldFormatPasteWithAI: { true },
+            aiFormatterPromptTemplate: { AIFormatter.defaultPromptTemplate },
+            resolveAppContext: { nil }
+        )
+
+        try await service.startRecording()
+        _ = try await service.stopRecording()
+
+        let sentTemplate = mockLLMService.lastFormatterPromptTemplate ?? ""
+        XCTAssertFalse(sentTemplate.contains("App context"),
+                       "Did not expect context preamble when resolver returned nil, got: \(sentTemplate)")
+    }
 }

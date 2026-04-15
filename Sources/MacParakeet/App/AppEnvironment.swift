@@ -141,6 +141,10 @@ final class AppEnvironment {
             resolveActiveProfile: {
                 AppProfile.resolve(bundleID: AppContextService.frontmostBundleID())
             },
+            resolveAppContext: { [accessibilityService] in
+                let ctx = await AppContextService.captureContext(accessibility: accessibilityService)
+                return ctx.isEmpty ? nil : ctx
+            },
             streamingBroadcaster: audioProcessor,
             streamingTranscriber: streamingDictationTranscriber,
             streamingOverlayEnabled: { [runtimePreferences] in runtimePreferences.streamingOverlayEnabled },
