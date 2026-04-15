@@ -1,6 +1,29 @@
 import Foundation
 import OSLog
 
+// MARK: - CodableColor
+
+/// UI-free color representation. Stored in the Core layer (which must not
+/// depend on SwiftUI) and bridged to/from `SwiftUI.Color` in the app target.
+/// Components are sRGB 0.0–1.0; opacity is 0.0–1.0.
+public struct CodableColor: Codable, Sendable, Equatable {
+    public let red: Double
+    public let green: Double
+    public let blue: Double
+    public let opacity: Double
+
+    public init(red: Double, green: Double, blue: Double, opacity: Double) {
+        self.red = Self.clamp(red)
+        self.green = Self.clamp(green)
+        self.blue = Self.clamp(blue)
+        self.opacity = Self.clamp(opacity)
+    }
+
+    private static func clamp(_ value: Double) -> Double {
+        min(1.0, max(0.0, value))
+    }
+}
+
 // MARK: - Config
 
 /// Configuration for the AI Assistant hotkey — the second, separate-from-dictation
@@ -45,20 +68,52 @@ public struct AIAssistantConfig: Codable, Sendable, Equatable {
     public let commandTemplate: String
     public let modelName: String
     public let timeoutSeconds: Double
+    /// Global hotkey for activating the AI Assistant bubble (hold-to-talk).
+    /// Nil means "use the shipped default" — resolved to
+    /// `Self.defaultHotkeyTrigger` at read time. Stored separately so that
+    /// existing configs without a hotkey field decode cleanly after upgrade.
+    public let hotkeyTrigger: HotkeyTrigger?
+    /// User-picked translucent background for the bubble. Nil means "use the
+    /// shipped default" — resolved via `effectiveBubbleBackgroundColor`.
+    /// Optional so older configs without this field decode cleanly after
+    /// upgrade.
+    public let bubbleBackgroundColor: CodableColor?
 
     public static let minimumTimeout: Double = 5
     public static let defaultTimeout: Double = 120
+    /// Shipped default trigger: Control+Option+Shift held together, no
+    /// base key. Chosen because it doesn't collide with common app-level
+    /// shortcuts (those almost always include Command) and is easy to
+    /// reach with the left hand while the right hand holds the mouse.
+    public static let defaultHotkeyTrigger: HotkeyTrigger = .modifierCombo(
+        ["control", "option", "shift"]
+    )
+    /// Shipped default bubble tint — transparent, so the underlying liquid-
+    /// glass material does the work (system-appropriate light/dark adapts
+    /// automatically). Users pick a tint color via Settings to override;
+    /// the color is layered on top of the material at the chosen opacity
+    /// like a stained-glass pane.
+    public static let defaultBubbleBackgroundColor = CodableColor(
+        red: 0,
+        green: 0,
+        blue: 0,
+        opacity: 0
+    )
 
     public init(
         provider: Provider,
         commandTemplate: String? = nil,
         modelName: String? = nil,
-        timeoutSeconds: Double = Self.defaultTimeout
+        timeoutSeconds: Double = Self.defaultTimeout,
+        hotkeyTrigger: HotkeyTrigger? = nil,
+        bubbleBackgroundColor: CodableColor? = nil
     ) {
         self.provider = provider
         self.commandTemplate = commandTemplate ?? provider.defaultCommandTemplate
         self.modelName = modelName ?? provider.defaultModel
         self.timeoutSeconds = max(Self.minimumTimeout, timeoutSeconds)
+        self.hotkeyTrigger = hotkeyTrigger
+        self.bubbleBackgroundColor = bubbleBackgroundColor
     }
 
     public static var defaultClaude: AIAssistantConfig {
@@ -67,6 +122,18 @@ public struct AIAssistantConfig: Codable, Sendable, Equatable {
 
     public static var defaultCodex: AIAssistantConfig {
         AIAssistantConfig(provider: .codex)
+    }
+
+    /// Resolves `hotkeyTrigger` to the shipped default when nil, so callers
+    /// don't need to branch on presence.
+    public var effectiveHotkeyTrigger: HotkeyTrigger {
+        hotkeyTrigger ?? Self.defaultHotkeyTrigger
+    }
+
+    /// Resolves `bubbleBackgroundColor` to the shipped default when nil, so
+    /// callers don't need to branch on presence.
+    public var effectiveBubbleBackgroundColor: CodableColor {
+        bubbleBackgroundColor ?? Self.defaultBubbleBackgroundColor
     }
 
     /// The effective command passed to the shell, combining the user-editable

@@ -14,6 +14,9 @@ public struct HotkeyTrigger: Sendable {
         case modifier
         case keyCode
         case chord
+        /// 2+ modifier keys held simultaneously with no base key
+        /// (e.g. Control+Option+Shift). `chordModifiers` carries the list.
+        case modifierCombo
     }
 
     // MARK: - Validation
@@ -62,6 +65,9 @@ public struct HotkeyTrigger: Sendable {
             let keyPart = KeyCodeNames.name(for: code).displayName
             if modifierNames.isEmpty { return keyPart }
             return modifierNames.joined(separator: "+") + "+\(keyPart)"
+        case .modifierCombo:
+            let names = Self.sortedModifierDisplayNames(chordModifiers)
+            return names.isEmpty ? "Unknown" : names.joined(separator: "+")
         }
     }
 
@@ -85,6 +91,8 @@ public struct HotkeyTrigger: Sendable {
             let keyPart = KeyCodeNames.name(for: code).shortSymbol
             if modifierPart.isEmpty { return keyPart }
             return "\(modifierPart)\(keyPart)"
+        case .modifierCombo:
+            return Self.sortedModifierSymbols(chordModifiers)
         }
     }
 
@@ -180,7 +188,18 @@ public struct HotkeyTrigger: Sendable {
 
     // MARK: - Default Triggers
 
-    public static let defaultDictation: HotkeyTrigger = .fn
+    /// Shipped default for primary dictation. Right Option key, one finger
+    /// of the right hand. Pairs naturally with the AI Assistant's
+    /// left-hand modifier combo (ctrl+option+shift) so the two gestures
+    /// separate cleanly by hand. `FnKeyStateMachine` retains the
+    /// double-tap-to-lock + hold-to-talk gesture set — only the physical
+    /// key changed from Fn.
+    public static let defaultDictation: HotkeyTrigger = HotkeyTrigger(
+        kind: .modifier,
+        modifierName: "option",
+        keyCode: nil,
+        modifierKeyCode: 61  // 61 = physical right-option keyCode
+    )
     public static let defaultMeetingRecording: HotkeyTrigger = .chord(modifiers: ["command", "shift"], keyCode: 46)
 
     // MARK: - Factory
@@ -197,6 +216,19 @@ public struct HotkeyTrigger: Sendable {
         return HotkeyTrigger(kind: .chord, modifierName: nil, keyCode: keyCode, chordModifiers: sorted)
     }
 
+    /// Create a modifier-combination trigger (2+ modifiers held together
+    /// with no base key). Fires onTrigger when all the specified modifiers
+    /// are pressed simultaneously, onRelease when any one is lifted.
+    public static func modifierCombo(_ modifiers: [String]) -> HotkeyTrigger {
+        let sorted = modifierOrder.filter { modifiers.contains($0) }
+        return HotkeyTrigger(
+            kind: .modifierCombo,
+            modifierName: nil,
+            keyCode: nil,
+            chordModifiers: sorted
+        )
+    }
+
     // MARK: - Validation
 
     public var validation: ValidationResult {
@@ -209,7 +241,22 @@ public struct HotkeyTrigger: Sendable {
             return Self.validateKeyCode(keyCode)
         case .chord:
             return Self.validateChord(keyCode: keyCode, modifiers: chordModifiers)
+        case .modifierCombo:
+            return Self.validateModifierCombo(chordModifiers)
         }
+    }
+
+    private static func validateModifierCombo(_ modifiers: [String]?) -> ValidationResult {
+        guard let modifiers, modifiers.count >= 2 else {
+            return .blocked("Modifier combo requires at least two modifier keys.")
+        }
+        let valid: Set<String> = ["command", "option", "shift", "control"]
+        for modifier in modifiers {
+            if !valid.contains(modifier) {
+                return .blocked("Unsupported modifier: \(modifier).")
+            }
+        }
+        return .allowed
     }
 
     private static func validateKeyCode(_ keyCode: UInt16?) -> ValidationResult {
@@ -306,7 +353,7 @@ public struct HotkeyTrigger: Sendable {
     public static func current(
         defaults: UserDefaults = .standard,
         defaultsKey: String = defaultsKey,
-        fallback: HotkeyTrigger = .fn
+        fallback: HotkeyTrigger = .defaultDictation
     ) -> HotkeyTrigger {
         guard let stored = defaults.object(forKey: defaultsKey) else {
             return fallback

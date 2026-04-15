@@ -5,6 +5,7 @@ import MacParakeetViewModels
 @MainActor
 final class AppHotkeyCoordinator {
     private let settingsViewModel: SettingsViewModel
+    private let aiAssistantConfigStore: AIAssistantConfigStore
     private let onStartDictation: (FnKeyStateMachine.RecordingMode) -> Void
     private let onStopDictation: () -> Void
     private let onCancelDictation: () -> Void
@@ -14,6 +15,7 @@ final class AppHotkeyCoordinator {
     private let onToggleMeetingRecording: () -> Void
     private let onAIAssistantHotkeyPress: () -> Void
     private let onAIAssistantHotkeyRelease: () -> Void
+    private let onAIAssistantHotkeyDoubleTap: () -> Void
     private let onPrimaryHotkeyManagerChanged: (HotkeyManager?) -> Void
     private let onAnyHotkeyEnabled: () -> Void
     private let onHotkeyUnavailable: () -> Void
@@ -22,16 +24,14 @@ final class AppHotkeyCoordinator {
     private var meetingHotkeyManager: GlobalShortcutManager?
     private var aiAssistantHotkeyManager: GlobalShortcutManager?
 
-    /// V1 default for the AI Assistant hotkey. Hardcoded for chunk B —
-    /// configurable via Settings in chunk C. Control+Shift+A is a rarely-used
-    /// chord so collisions should be minimal.
-    static let defaultAIAssistantTrigger: HotkeyTrigger = .chord(
-        modifiers: ["control", "shift"],
-        keyCode: 0  // 'a'
-    )
+    /// Fallback used only when the config store isn't yet available (never
+    /// in practice — AppEnvironment constructs the store before the
+    /// coordinator). Kept as a compile-time anchor.
+    static let defaultAIAssistantTrigger: HotkeyTrigger = AIAssistantConfig.defaultHotkeyTrigger
 
     init(
         settingsViewModel: SettingsViewModel,
+        aiAssistantConfigStore: AIAssistantConfigStore,
         onStartDictation: @escaping (FnKeyStateMachine.RecordingMode) -> Void,
         onStopDictation: @escaping () -> Void,
         onCancelDictation: @escaping () -> Void,
@@ -41,11 +41,13 @@ final class AppHotkeyCoordinator {
         onToggleMeetingRecording: @escaping () -> Void,
         onAIAssistantHotkeyPress: @escaping () -> Void,
         onAIAssistantHotkeyRelease: @escaping () -> Void,
+        onAIAssistantHotkeyDoubleTap: @escaping () -> Void,
         onPrimaryHotkeyManagerChanged: @escaping (HotkeyManager?) -> Void,
         onAnyHotkeyEnabled: @escaping () -> Void,
         onHotkeyUnavailable: @escaping () -> Void
     ) {
         self.settingsViewModel = settingsViewModel
+        self.aiAssistantConfigStore = aiAssistantConfigStore
         self.onStartDictation = onStartDictation
         self.onStopDictation = onStopDictation
         self.onCancelDictation = onCancelDictation
@@ -55,6 +57,7 @@ final class AppHotkeyCoordinator {
         self.onToggleMeetingRecording = onToggleMeetingRecording
         self.onAIAssistantHotkeyPress = onAIAssistantHotkeyPress
         self.onAIAssistantHotkeyRelease = onAIAssistantHotkeyRelease
+        self.onAIAssistantHotkeyDoubleTap = onAIAssistantHotkeyDoubleTap
         self.onPrimaryHotkeyManagerChanged = onPrimaryHotkeyManagerChanged
         self.onAnyHotkeyEnabled = onAnyHotkeyEnabled
         self.onHotkeyUnavailable = onHotkeyUnavailable
@@ -138,7 +141,9 @@ final class AppHotkeyCoordinator {
     }
 
     func setupAIAssistantHotkey() {
-        let trigger = Self.defaultAIAssistantTrigger
+        // Load the user-configured trigger from the AI Assistant config.
+        // Falls back to the shipped default when no config is saved yet.
+        let trigger = (aiAssistantConfigStore.load() ?? AIAssistantConfig.defaultClaude).effectiveHotkeyTrigger
         guard !trigger.isDisabled,
               trigger != settingsViewModel.hotkeyTrigger,
               trigger != settingsViewModel.meetingHotkeyTrigger
@@ -156,6 +161,11 @@ final class AppHotkeyCoordinator {
         manager.onRelease = { [weak self] in
             Task { @MainActor in
                 self?.onAIAssistantHotkeyRelease()
+            }
+        }
+        manager.onDoubleTap = { [weak self] in
+            Task { @MainActor in
+                self?.onAIAssistantHotkeyDoubleTap()
             }
         }
 
@@ -178,6 +188,14 @@ final class AppHotkeyCoordinator {
         onPrimaryHotkeyManagerChanged(nil)
         setupPrimaryHotkey()
         setupMeetingHotkey()
+        setupAIAssistantHotkey()
+    }
+
+    /// Rebind only the AI Assistant hotkey (without touching primary /
+    /// meeting). Called when the user saves a new trigger from Settings.
+    func refreshAIAssistantHotkey() {
+        aiAssistantHotkeyManager?.stop()
+        aiAssistantHotkeyManager = nil
         setupAIAssistantHotkey()
     }
 

@@ -53,19 +53,69 @@ final class AIAssistantServiceTests: XCTestCase {
 
         XCTAssertNil(store.load())
 
+        let customColor = CodableColor(red: 0.2, green: 0.5, blue: 0.8, opacity: 0.75)
         let original = AIAssistantConfig(
             provider: .codex,
             commandTemplate: "codex custom --extra-flag",
             modelName: "gpt-5.2-pro",
-            timeoutSeconds: 240
+            timeoutSeconds: 240,
+            bubbleBackgroundColor: customColor
         )
         try store.save(original)
 
         let loaded = store.load()
         XCTAssertEqual(loaded, original)
+        XCTAssertEqual(loaded?.bubbleBackgroundColor, customColor)
 
         store.delete()
         XCTAssertNil(store.load())
+    }
+
+    /// Existing UserDefaults blobs predate the `bubbleBackgroundColor`
+    /// field. They must decode cleanly with `bubbleBackgroundColor == nil`,
+    /// at which point `effectiveBubbleBackgroundColor` resolves to the
+    /// shipped default. Guards against a regression where adding the field
+    /// inadvertently makes the decoder pick up the default and store it as
+    /// a non-nil value (which would defeat the optional pattern).
+    func testConfigStoreNilBubbleColorDecodesAsNilNotDefault() throws {
+        let defaults = UserDefaults(suiteName: "AIAssistantServiceTests.nilColor")!
+        defaults.removePersistentDomain(forName: "AIAssistantServiceTests.nilColor")
+        let store = AIAssistantConfigStore(defaults: defaults)
+
+        let original = AIAssistantConfig(provider: .claude)
+        XCTAssertNil(original.bubbleBackgroundColor)
+        try store.save(original)
+
+        let loaded = store.load()
+        XCTAssertNotNil(loaded)
+        XCTAssertNil(loaded?.bubbleBackgroundColor)
+        XCTAssertEqual(
+            loaded?.effectiveBubbleBackgroundColor,
+            AIAssistantConfig.defaultBubbleBackgroundColor
+        )
+    }
+
+    /// Synthesize a "legacy" JSON blob — one that was written before the
+    /// `bubbleBackgroundColor` field existed — and confirm it decodes
+    /// cleanly. Backwards-compat insurance for users upgrading across this
+    /// change.
+    func testLegacyConfigJSONDecodesWithoutBubbleColor() throws {
+        let legacyJSON = """
+            {
+                "provider": "claude",
+                "commandTemplate": "claude --dangerously-skip-permissions -p",
+                "modelName": "sonnet",
+                "timeoutSeconds": 120
+            }
+            """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(AIAssistantConfig.self, from: legacyJSON)
+        XCTAssertEqual(decoded.provider, .claude)
+        XCTAssertNil(decoded.bubbleBackgroundColor)
+        XCTAssertNil(decoded.hotkeyTrigger)
+        XCTAssertEqual(
+            decoded.effectiveBubbleBackgroundColor,
+            AIAssistantConfig.defaultBubbleBackgroundColor
+        )
     }
 
     // MARK: - Prompt rendering

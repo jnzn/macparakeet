@@ -580,6 +580,23 @@ final class DictationFlowCoordinator {
                 return
             }
             let transcript = dictation.cleanTranscript ?? dictation.rawTranscript
+
+            // Hook for the AI Assistant bubble: when the bubble is key,
+            // route the transcript into its text field instead of pasting
+            // to the user's previous app. Returns true iff consumed —
+            // when true, we still fast-path the state machine to .success
+            // (since the dictation completed successfully) but skip the
+            // CGEvent paste simulation entirely.
+            let interceptedAction = self.pendingPostPasteAction
+            if AIAssistantPasteInterceptor.shared.tryConsume(
+                transcript: transcript,
+                postPasteAction: interceptedAction
+            ) {
+                self.pendingPostPasteAction = nil
+                self.sendEvent(.pasteSucceeded(generation: gen))
+                return
+            }
+
             actionTask = Task { @MainActor in
                 // Brief pause so user sees the checkmark before paste
                 try? await Task.sleep(for: .milliseconds(200))

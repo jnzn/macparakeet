@@ -6,11 +6,22 @@ import MacParakeetCore
 /// meeting recording. Unlike `HotkeyManager`, this does not model hold or
 /// double-tap gestures.
 public final class GlobalShortcutManager {
+    /// Fired on every press (hotkey down). Together with `onRelease` this
+    /// enables hold-to-talk gestures.
     public var onTrigger: (() -> Void)?
-    /// Fired on key-up. Together with `onTrigger` this enables hold-to-talk
-    /// gestures (press → action, release → action). Nil means release is
-    /// ignored — behaves as the previous toggle-only semantics.
+    /// Fired on key-up for every press.
     public var onRelease: (() -> Void)?
+    /// Fired when the user double-taps the hotkey within
+    /// `doubleTapWindowSeconds`. When set, `onTrigger` still fires on each
+    /// press — consumers decide how to reconcile the two (typically:
+    /// ignore onTrigger while a bubble is open, use onDoubleTap to open
+    /// a locked-listening bubble, use onRelease of a long press for
+    /// hold-to-talk). Nil means double-taps are treated as regular
+    /// press/release pairs.
+    public var onDoubleTap: (() -> Void)?
+
+    /// Max interval between two press events to count as a double-tap.
+    public var doubleTapWindowSeconds: TimeInterval = 0.35
 
     private let trigger: HotkeyTrigger
     private let targetMask: CGEventFlags?
@@ -21,6 +32,8 @@ public final class GlobalShortcutManager {
     private var installedRunLoop: CFRunLoop?
     private var targetModifierWasPressed = false
     private var triggerKeyIsPressed = false
+    private var comboWasFullyPressed = false
+    private var lastPressAt: Date?
 
     public init(trigger: HotkeyTrigger) {
         self.trigger = trigger
@@ -91,6 +104,7 @@ public final class GlobalShortcutManager {
         installedRunLoop = nil
         targetModifierWasPressed = false
         triggerKeyIsPressed = false
+        comboWasFullyPressed = false
     }
 
     private func handleEvent(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
@@ -110,7 +124,70 @@ public final class GlobalShortcutManager {
             return handleKeyCodeEvent(type: type, event: event)
         case .chord:
             return handleChordEvent(type: type, event: event)
+        case .modifierCombo:
+            return handleModifierComboEvent(type: type, event: event)
         }
+    }
+
+    // MARK: - Modifier combo (2+ modifiers held together, no base key)
+
+    /// Tracks the all-required-modifiers-held state for a `.modifierCombo`
+    /// trigger. Fires onTrigger on the flagsChanged event that brings the
+    /// last required modifier down, onRelease on the event that lifts the
+    /// first required modifier.
+    private func handleModifierComboEvent(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+        guard type == .flagsChanged else {
+            return Unmanaged.passUnretained(event)
+        }
+        let allPressed = allModifierComboKeysPressed(flags: event.flags)
+        if allPressed != comboWasFullyPressed {
+            comboWasFullyPressed = allPressed
+            if allPressed {
+                emitPress()
+            } else {
+                onRelease?()
+            }
+        }
+        return Unmanaged.passUnretained(event)
+    }
+
+    /// Dispatch a press event. Detects double-taps: if this press lands
+    /// within `doubleTapWindowSeconds` of the previous press AND the
+    /// consumer registered an `onDoubleTap` handler, fire onDoubleTap ONLY
+    /// (suppress onTrigger for that second press) so flow coordinators
+    /// don't double-process the gesture. Otherwise fires onTrigger normally.
+    private func emitPress() {
+        let now = Date()
+        if let prev = lastPressAt,
+           now.timeIntervalSince(prev) <= doubleTapWindowSeconds,
+           onDoubleTap != nil {
+            onDoubleTap?()
+            lastPressAt = nil
+            return
+        }
+        lastPressAt = now
+        onTrigger?()
+    }
+
+    private func allModifierComboKeysPressed(flags: CGEventFlags) -> Bool {
+        guard let modifiers = trigger.chordModifiers, !modifiers.isEmpty else {
+            return false
+        }
+        for name in modifiers {
+            switch name {
+            case "command":
+                if !flags.contains(.maskCommand) { return false }
+            case "shift":
+                if !flags.contains(.maskShift) { return false }
+            case "control":
+                if !flags.contains(.maskControl) { return false }
+            case "option":
+                if !flags.contains(.maskAlternate) { return false }
+            default:
+                return false
+            }
+        }
+        return true
     }
 
     private func handleModifierEvent(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
@@ -122,7 +199,14 @@ public final class GlobalShortcutManager {
         if isPressed != targetModifierWasPressed {
             targetModifierWasPressed = isPressed
             if isPressed {
-                onTrigger?()
+                emitPress()
+            } else {
+                // Fire onRelease on modifier-key hotkeys too so hold-to-talk
+                // works when the user maps the AI Assistant trigger to a
+                // single modifier (e.g. "Left Control"). Without this the
+                // mic stays open forever because the release event never
+                // reaches the coordinator.
+                onRelease?()
             }
         }
 
@@ -140,7 +224,7 @@ public final class GlobalShortcutManager {
             guard keyCode == triggerCode else { return Unmanaged.passUnretained(event) }
             guard !triggerKeyIsPressed else { return nil }
             triggerKeyIsPressed = true
-            onTrigger?()
+            emitPress()
             return nil
         case .keyUp:
             guard keyCode == triggerCode else { return Unmanaged.passUnretained(event) }
@@ -181,7 +265,7 @@ public final class GlobalShortcutManager {
             guard flags == requiredChordFlags else { return false }
             guard !triggerKeyIsPressed else { return true }
             triggerKeyIsPressed = true
-            onTrigger?()
+            emitPress()
             return true
         case .keyUp:
             guard keyCode == triggerCode else { return false }
