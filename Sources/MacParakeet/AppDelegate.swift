@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkeyCoordinator: AppHotkeyCoordinator?
     private var dictationFlowCoordinator: DictationFlowCoordinator?
     private var meetingRecordingFlowCoordinator: MeetingRecordingFlowCoordinator?
+    private var aiAssistantFlowCoordinator: AIAssistantFlowCoordinator?
     private var hasPresentedHotkeyUnavailableAlert = false
     private var environmentSetupTask: Task<Void, Never>?
 
@@ -189,6 +190,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // NSApplicationWillTerminateNotification observer — calling it here too
         // would send duplicate appQuit events and double the termination delay.
         dictationFlowCoordinator?.hideIdlePill()
+        aiAssistantFlowCoordinator?.dismissAny()
         hotkeyCoordinator?.stopAll()
         settingsObserverCoordinator.stopObserving()
         environmentSetupTask?.cancel()
@@ -249,11 +251,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // dictate within 30–60 s, so prefetching while the UI boots turns the
         // first-dictation wait from 5–30 s into sub-second. Best-effort — any
         // failure surfaces later on the actual transcription path.
+        //
+        // Also warm up the AVAudioEngine / CoreAudio HAL. The first call to
+        // engine.start() in a process fails reliably with
+        // `com.apple.coreaudio.avfaudio error 2003329396` (cold-start race).
+        // A throwaway start → stop here primes the HAL so the user's first
+        // real dictation / AI-assistant invocation doesn't hit the error.
+        // Runs after a short delay so the UI doesn't compete with the audio
+        // engine for main-thread work during the first frame.
         Task.detached(priority: .utility) { [env] in
             await env.sttScheduler.backgroundWarmUp()
             if env.runtimePreferences.streamingOverlayEnabled {
                 try? await env.streamingDictationTranscriber.loadModels()
             }
+            try? await Task.sleep(for: .seconds(1))
+            await Self.warmUpAudioEngine(audioProcessor: env.audioProcessor)
         }
 
         let runtime = environmentConfigurer.configure(
@@ -282,11 +294,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         dictationFlowCoordinator = runtime.dictationFlowCoordinator
         meetingRecordingFlowCoordinator = runtime.meetingRecordingFlowCoordinator
+        aiAssistantFlowCoordinator = runtime.aiAssistantFlowCoordinator
         hotkeyCoordinator = runtime.hotkeyCoordinator
 
         menuBarCoordinator.refreshHotkeyTitle()
         menuBarCoordinator.refreshMeetingHotkeyShortcut()
         onboardingCoordinator.maybeShow(environment: env)
+    }
+
+    /// Primes the AVAudioEngine/CoreAudio HAL with a tiny start→stop cycle so
+    /// the user's first real dictation doesn't hit the cold-start 2003329396
+    /// error. Best-effort: mic permission may not be granted yet (pre-onboarding)
+    /// or the audio system may legitimately be in use — in either case we just
+    /// swallow the error and let the real dictation path handle it.
+    private static func warmUpAudioEngine(audioProcessor: AudioProcessor) async {
+        do {
+            try await audioProcessor.startCapture()
+            // Immediately stop. `stop()` throws `insufficientSamples` when
+            // the recording is < 1s — ignore that, we don't want the WAV.
+            let url = try? await audioProcessor.stopCapture()
+            if let url {
+                try? FileManager.default.removeItem(at: url)
+            }
+        } catch {
+            // Permission not granted, device in use, or another legit failure.
+            // Silent — real invocations surface their own errors.
+        }
     }
 
     private func presentEnvironmentSetupError(_ error: Error) {

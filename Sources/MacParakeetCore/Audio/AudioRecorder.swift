@@ -453,17 +453,44 @@ public actor AudioRecorder {
         // engine.start() is documented to throw Swift errors, but has been
         // observed to raise NSException in corner cases (stale CoreAudio state,
         // aggregate device teardown mid-start). Belt-and-braces wrap.
-        do {
+        //
+        // Cold-start race: the very first time a process touches the HAL,
+        // engine.start() can fail with kAudioUnitErr_CannotDoInCurrentContext
+        // ("error 2003329396"). A single re-try after ~150ms succeeds
+        // reliably. Without this, the first dictation / AI-assistant invocation
+        // after app launch silently errors and the user has to try again.
+        func tryStart() throws {
             try catchingObjCException {
                 try engine.start()
             }
+        }
+        do {
+            try tryStart()
         } catch {
-            // Clean up before propagating
-            inputNode.removeTap(onBus: 0)
-            try? FileManager.default.removeItem(at: url)
-            throw AudioProcessorError.recordingFailed(
-                "Audio engine failed to start: \(error.localizedDescription)"
-            )
+            let message = error.localizedDescription
+            let looksLikeColdStart = message.contains("2003329396")
+                || message.lowercased().contains("couldn't be completed")
+            if looksLikeColdStart {
+                logger.notice(
+                    "engine_start_cold_retry error=\(message, privacy: .public)"
+                )
+                usleep(150_000)
+                do {
+                    try tryStart()
+                } catch {
+                    inputNode.removeTap(onBus: 0)
+                    try? FileManager.default.removeItem(at: url)
+                    throw AudioProcessorError.recordingFailed(
+                        "Audio engine failed to start: \(error.localizedDescription)"
+                    )
+                }
+            } else {
+                inputNode.removeTap(onBus: 0)
+                try? FileManager.default.removeItem(at: url)
+                throw AudioProcessorError.recordingFailed(
+                    "Audio engine failed to start: \(error.localizedDescription)"
+                )
+            }
         }
 
         self.audioEngine = engine

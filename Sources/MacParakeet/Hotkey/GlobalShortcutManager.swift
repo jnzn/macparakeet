@@ -7,6 +7,10 @@ import MacParakeetCore
 /// double-tap gestures.
 public final class GlobalShortcutManager {
     public var onTrigger: (() -> Void)?
+    /// Fired on key-up. Together with `onTrigger` this enables hold-to-talk
+    /// gestures (press → action, release → action). Nil means release is
+    /// ignored — behaves as the previous toggle-only semantics.
+    public var onRelease: (() -> Void)?
 
     private let trigger: HotkeyTrigger
     private let targetMask: CGEventFlags?
@@ -140,7 +144,9 @@ public final class GlobalShortcutManager {
             return nil
         case .keyUp:
             guard keyCode == triggerCode else { return Unmanaged.passUnretained(event) }
+            let wasPressed = triggerKeyIsPressed
             triggerKeyIsPressed = false
+            if wasPressed { onRelease?() }
             return nil
         default:
             return Unmanaged.passUnretained(event)
@@ -181,6 +187,7 @@ public final class GlobalShortcutManager {
             guard keyCode == triggerCode else { return false }
             guard triggerKeyIsPressed else { return false }
             triggerKeyIsPressed = false
+            onRelease?()
             return true
         default:
             return false

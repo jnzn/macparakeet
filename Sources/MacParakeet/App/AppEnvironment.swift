@@ -34,6 +34,8 @@ final class AppEnvironment {
     let llmConfigStore: LLMConfigStore
     let llmService: LLMService
     let runtimePreferences: AppRuntimePreferencesProtocol
+    let aiAssistantConfigStore: AIAssistantConfigStore
+    let aiAssistantService: AIAssistantService
 
     init(databaseManager: DatabaseManager) throws {
         self.databaseManager = databaseManager
@@ -119,6 +121,20 @@ final class AppEnvironment {
                 configStore: llmConfigStore,
                 cliConfigStore: LocalCLIConfigStore()
             )
+        )
+
+        // AI Assistant (Item 6) — separate agentic-CLI service driven by the
+        // assistant hotkey. Config lives in its own UserDefaults blob so it's
+        // orthogonal to the LLM formatter config. Until a Settings UI exists
+        // (chunk C), fall back to the default Claude config when nothing is
+        // stored so the hotkey works out of the box as long as the `claude`
+        // CLI is on the user's PATH.
+        let aiAssistantConfigStore = AIAssistantConfigStore()
+        self.aiAssistantConfigStore = aiAssistantConfigStore
+        self.aiAssistantService = AIAssistantService(
+            configProvider: { [aiAssistantConfigStore] in
+                aiAssistantConfigStore.load() ?? AIAssistantConfig.defaultClaude
+            }
         )
 
         let streamingDictationTranscriber = StreamingEouDictationTranscriber()

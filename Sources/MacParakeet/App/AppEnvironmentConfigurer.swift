@@ -12,6 +12,7 @@ final class AppEnvironmentConfigurer {
     struct Runtime {
         let dictationFlowCoordinator: DictationFlowCoordinator
         let meetingRecordingFlowCoordinator: MeetingRecordingFlowCoordinator
+        let aiAssistantFlowCoordinator: AIAssistantFlowCoordinator
         let hotkeyCoordinator: AppHotkeyCoordinator
     }
 
@@ -218,6 +219,13 @@ final class AppEnvironmentConfigurer {
         )
         coordinatorRefs.meeting = meetingCoordinator
 
+        let aiAssistantCoordinator = AIAssistantFlowCoordinator(
+            service: env.aiAssistantService,
+            accessibilityService: env.accessibilityService,
+            configStore: env.aiAssistantConfigStore,
+            dictationService: env.dictationService
+        )
+
         let hotkeyCoordinator = AppHotkeyCoordinator(
             settingsViewModel: settingsViewModel,
             onStartDictation: { mode in
@@ -239,6 +247,12 @@ final class AppEnvironmentConfigurer {
                 coordinatorRefs.dictation?.dismissOverlayIfError()
             },
             onToggleMeetingRecording: callbacks.onToggleMeetingRecordingFromHotkey,
+            onAIAssistantHotkeyPress: { [weak aiAssistantCoordinator] in
+                aiAssistantCoordinator?.handleHotkeyPress()
+            },
+            onAIAssistantHotkeyRelease: { [weak aiAssistantCoordinator] in
+                aiAssistantCoordinator?.handleHotkeyRelease()
+            },
             onPrimaryHotkeyManagerChanged: { manager in
                 coordinatorRefs.dictation?.hotkeyManager = manager
             },
@@ -248,11 +262,13 @@ final class AppEnvironmentConfigurer {
 
         hotkeyCoordinator.setupPrimaryHotkey()
         hotkeyCoordinator.setupMeetingHotkey()
+        hotkeyCoordinator.setupAIAssistantHotkey()
         dictationCoordinator.showIdlePill()
 
         return Runtime(
             dictationFlowCoordinator: dictationCoordinator,
             meetingRecordingFlowCoordinator: meetingCoordinator,
+            aiAssistantFlowCoordinator: aiAssistantCoordinator,
             hotkeyCoordinator: hotkeyCoordinator
         )
     }
