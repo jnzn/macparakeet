@@ -67,6 +67,31 @@ public enum AppPaths {
         }
     }
 
+    /// Delete stale temp WAVs from prior sessions that outlived the
+    /// processCapturedAudio defer cleanup (crash, SIGKILL, or suspended
+    /// cancel window). Anything older than `maxAge` is assumed orphaned.
+    /// macOS purges TMPDIR on reboot but not on app restart, so transcripts
+    /// from crashed sessions can linger for days otherwise.
+    /// Best-effort: failures are silently ignored.
+    public static func cleanStaleTempAudio(olderThan maxAge: TimeInterval = 3600) {
+        let fm = FileManager.default
+        let dir = tempDir
+        guard let contents = try? fm.contentsOfDirectory(
+            at: URL(fileURLWithPath: dir, isDirectory: true),
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+
+        let cutoff = Date().addingTimeInterval(-maxAge)
+        for fileURL in contents {
+            guard fileURL.pathExtension.lowercased() == "wav" else { continue }
+            guard let modDate = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
+                  modDate < cutoff
+            else { continue }
+            try? fm.removeItem(at: fileURL)
+        }
+    }
+
     /// Resolve bundled FFmpeg binary path from app resources.
     /// Returns nil when running outside an app bundle or when ffmpeg is not present.
     public static func bundledFFmpegPath() -> String? {

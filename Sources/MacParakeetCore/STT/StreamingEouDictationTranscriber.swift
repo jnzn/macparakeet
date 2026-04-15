@@ -117,7 +117,7 @@ public actor StreamingEouDictationTranscriber: StreamingDictationTranscriber {
             try await manager.reset()
             logger.debug("streaming_keep_alive_pinged")
         } catch {
-            logger.warning("streaming_keep_alive_failed error=\(error.localizedDescription, privacy: .public)")
+            logger.warning("streaming_keep_alive_failed error=\(error.localizedDescription, privacy: .private)")
         }
     }
 

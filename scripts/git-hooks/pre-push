@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# Pre-push guard: block commits that contain known-sensitive strings from
+# reaching the public remote. Runs against the diff of outgoing commits only,
+# so it does not penalize already-pushed history. Install via:
+#
+#   ln -s ../../scripts/git-hooks/pre-push .git/hooks/pre-push
+#
+# Bypassable in an emergency with `git push --no-verify` — but don't.
+
+set -euo pipefail
+
+# Patterns that must never appear in new commits.
+# Add strings here when you learn a new sensitive identifier.
+# Anchor with word boundaries where reasonable to avoid matching substrings
+# in legitimate code (e.g. "ADH_RW" catches the role but "adh" alone would
+# false-positive on "adhere").
+PATTERNS=(
+  'BCBSMA'
+  'bcbsma\.com'
+  'ADH_RW'
+  'ADH_RO'
+  'ODH_RW'
+  'ODH_IICS_USER'
+  'QEDM'
+  'IICS_USER'
+  'FSTR[ _]PWR'
+  'HDM[ _]PWR'
+  'XDB[ _]SERVICE'
+  'DL_APPDBA'
+  'B-APPDBA'
+  'B-DAL'
+  'Yeswanth'
+  'Susanta'
+)
+
+remote="$1"
+url="$2"
+
+# Standard Git pre-push contract: reads refs being pushed from stdin.
+while read -r local_ref local_sha remote_ref remote_sha; do
+  # Skip deletion pushes (local_sha is all zeros).
+  if [[ "$local_sha" == 0000000000000000000000000000000000000000 ]]; then
+    continue
+  fi
+
+  # Determine range of new commits. For a brand-new branch, remote_sha is
+  # all zeros — compare against the nearest common ancestor with any
+  # remote branch (best-effort; falls back to full history).
+  if [[ "$remote_sha" == 0000000000000000000000000000000000000000 ]]; then
+    range="$local_sha"
+    base="$(git for-each-ref --format='%(refname)' refs/remotes/ \
+            | xargs -n 1 -I {} git merge-base "$local_sha" {} 2>/dev/null \
+            | sort -u | head -n 1 || true)"
+    if [[ -n "${base:-}" ]]; then
+      range="${base}..${local_sha}"
+    fi
+  else
+    range="${remote_sha}..${local_sha}"
+  fi
+
+  # Concatenate diff + commit messages for scanning. Exclude files that
+  # legitimately enumerate the sensitive strings as documentation (the
+  # security audit, the optimization audit, and this hook itself). Also
+  # filter the diff to additions only (lines starting with '+') so that
+  # REMOVING a sensitive string doesn't trigger the guard.
+  excludes=(
+    ':!docs/security.md'
+    ':!docs/optimization.md'
+    ':!scripts/git-hooks/pre-push'
+  )
+  additions="$(git diff "$range" -- "${excludes[@]}" 2>/dev/null | grep '^+' | grep -v '^+++' || true)"
+  messages="$(git log --format='%H%n%B' "$range" 2>/dev/null || true)"
+  new_content="${messages}${additions}"
+
+  hits=""
+  for pattern in "${PATTERNS[@]}"; do
+    if echo "$new_content" | grep -Eqw "$pattern"; then
+      hits+="$pattern"$'\n'
+    fi
+  done
+
+  if [[ -n "$hits" ]]; then
+    echo "" >&2
+    echo "=================================================================" >&2
+    echo "pre-push blocked: outgoing commits contain sensitive identifiers." >&2
+    echo "=================================================================" >&2
+    echo "" >&2
+    echo "Matched patterns:" >&2
+    echo "$hits" | sed 's/^/  - /' >&2
+    echo "" >&2
+    echo "Range: $range -> $remote_ref on $remote ($url)" >&2
+    echo "" >&2
+    echo "Move the sensitive content to the Custom Words DB, a private repo," >&2
+    echo "or strip from history with git filter-repo before retrying." >&2
+    echo "" >&2
+    echo "Emergency bypass (use sparingly): git push --no-verify" >&2
+    echo "" >&2
+    exit 1
+  fi
+done
+
+exit 0

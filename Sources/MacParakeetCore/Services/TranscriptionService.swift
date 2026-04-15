@@ -178,7 +178,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                 do {
                     _ = try await ThumbnailCacheService.shared.extractVideoFrame(from: path, for: transcriptionId)
                 } catch {
-                    logger.error("Thumbnail extraction failed for \(transcriptionId): \(error.localizedDescription, privacy: .public)")
+                    logger.error("Thumbnail extraction failed for \(transcriptionId): \(error.localizedDescription, privacy: .private)")
                 }
             }
         }
@@ -262,7 +262,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                 do {
                     _ = try await ThumbnailCacheService.shared.downloadThumbnail(from: thumbURL, for: transcriptionId)
                 } catch {
-                    logger.error("Thumbnail download failed for \(transcriptionId): \(error.localizedDescription, privacy: .public)")
+                    logger.error("Thumbnail download failed for \(transcriptionId): \(error.localizedDescription, privacy: .private)")
                 }
             }
         }
@@ -476,7 +476,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            logger.error("meeting_system_diarization_failed error=\(error.localizedDescription, privacy: .public)")
+            logger.error("meeting_system_diarization_failed error=\(error.localizedDescription, privacy: .private)")
             Telemetry.send(.diarizationFailed(
                 source: .meeting,
                 errorType: String(describing: type(of: error)),
@@ -589,7 +589,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                     throw CancellationError()
                 } catch {
                     diarizationApplied = false
-                    logger.error("diarization_failed error=\(error.localizedDescription, privacy: .public)")
+                    logger.error("diarization_failed error=\(error.localizedDescription, privacy: .private)")
                     Telemetry.send(.diarizationFailed(
                         source: source,
                         errorType: String(describing: type(of: error)),
@@ -681,9 +681,9 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         var snippets: [TextSnippet] = []
         if mode.usesDeterministicPipeline {
             do { customWords = try customWordRepo?.fetchEnabled() ?? [] }
-            catch { logger.error("Failed to fetch custom words: \(error.localizedDescription, privacy: .public)") }
+            catch { logger.error("Failed to fetch custom words: \(error.localizedDescription, privacy: .private)") }
             do { snippets = try snippetRepo?.fetchEnabled() ?? [] }
-            catch { logger.error("Failed to fetch snippets: \(error.localizedDescription, privacy: .public)") }
+            catch { logger.error("Failed to fetch snippets: \(error.localizedDescription, privacy: .private)") }
         }
 
         let refinement = await textRefinementService.refine(
@@ -747,7 +747,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             if error is CancellationError {
                 throw error
             }
-            logger.warning("AI formatter failed; falling back to standard cleanup error=\(error.localizedDescription, privacy: .public)")
+            logger.warning("AI formatter failed; falling back to standard cleanup error=\(error.localizedDescription, privacy: .private)")
             let message = "\(error.localizedDescription) Used standard cleanup."
             NotificationCenter.default.post(
                 name: .macParakeetAIFormatterWarning,

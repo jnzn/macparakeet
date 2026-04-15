@@ -9,6 +9,13 @@ final class AppStartupBootstrapper {
             try AppPaths.ensureDirectories()
             try Task.checkCancellation()
 
+            // Reap orphan temp WAVs left by prior sessions that crashed or
+            // were force-killed before processCapturedAudio's defer ran.
+            // Transcripts lingering in TMPDIR are a privacy surface — see
+            // docs/security.md surface 2.
+            AppPaths.cleanStaleTempAudio()
+            try Task.checkCancellation()
+
             let manager = try DatabaseManager(path: AppPaths.databasePath)
             try Task.checkCancellation()
 
