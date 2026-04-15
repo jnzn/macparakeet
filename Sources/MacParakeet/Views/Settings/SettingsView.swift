@@ -8,6 +8,7 @@ import MacParakeetViewModels
 struct SettingsView: View {
     @Bindable var viewModel: SettingsViewModel
     @Bindable var llmSettingsViewModel: LLMSettingsViewModel
+    @Bindable var aiAssistantSettingsViewModel: AIAssistantSettingsViewModel
     let updater: SPUUpdater
 
     @State private var automaticallyChecksForUpdates: Bool
@@ -17,9 +18,15 @@ struct SettingsView: View {
     @State private var showResetPrivateStatsAlert = false
     @State private var copiedBuildIdentity = false
 
-    init(viewModel: SettingsViewModel, llmSettingsViewModel: LLMSettingsViewModel, updater: SPUUpdater) {
+    init(
+        viewModel: SettingsViewModel,
+        llmSettingsViewModel: LLMSettingsViewModel,
+        aiAssistantSettingsViewModel: AIAssistantSettingsViewModel,
+        updater: SPUUpdater
+    ) {
         self.viewModel = viewModel
         self.llmSettingsViewModel = llmSettingsViewModel
+        self.aiAssistantSettingsViewModel = aiAssistantSettingsViewModel
         self.updater = updater
         self._automaticallyChecksForUpdates = State(initialValue: updater.automaticallyChecksForUpdates)
         self._automaticallyDownloadsUpdates = State(initialValue: updater.automaticallyDownloadsUpdates)
@@ -33,6 +40,7 @@ struct SettingsView: View {
                 meetingRecordingCard
                 transcriptionCard
                 aiProviderCard
+                aiAssistantCard
                 storageCard
                 generalCard
                 updatesCard
@@ -441,6 +449,18 @@ struct SettingsView: View {
             icon: "brain"
         ) {
             LLMSettingsView(viewModel: llmSettingsViewModel)
+        }
+    }
+
+    // MARK: - AI Assistant (Item 6)
+
+    private var aiAssistantCard: some View {
+        settingsCard(
+            title: "AI Assistant Hotkey",
+            subtitle: "Hold Control+Shift+A to ask an agentic CLI about your selection.",
+            icon: "wand.and.sparkles"
+        ) {
+            AIAssistantSettingsView(viewModel: aiAssistantSettingsViewModel)
         }
     }
 

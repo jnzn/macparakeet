@@ -45,6 +45,7 @@ struct MainWindowView: View {
     let historyViewModel: DictationHistoryViewModel
     let settingsViewModel: SettingsViewModel
     let llmSettingsViewModel: LLMSettingsViewModel
+    let aiAssistantSettingsViewModel: AIAssistantSettingsViewModel
     let chatViewModel: TranscriptChatViewModel
     let promptResultsViewModel: PromptResultsViewModel
     let promptsViewModel: PromptsViewModel
@@ -128,7 +129,12 @@ struct MainWindowView: View {
                     case .feedback:
                         FeedbackView(viewModel: feedbackViewModel)
                     case .settings:
-                        SettingsView(viewModel: settingsViewModel, llmSettingsViewModel: llmSettingsViewModel, updater: updater)
+                        SettingsView(
+                            viewModel: settingsViewModel,
+                            llmSettingsViewModel: llmSettingsViewModel,
+                            aiAssistantSettingsViewModel: aiAssistantSettingsViewModel,
+                            updater: updater
+                        )
                     case .discover:
                         DiscoverView(viewModel: discoverViewModel, thoughtsService: DiscoverThoughtsService())
                     }

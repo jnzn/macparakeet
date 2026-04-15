@@ -43,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let libraryViewModel = TranscriptionLibraryViewModel()
     private let meetingsViewModel = TranscriptionLibraryViewModel(scope: .meetings)
     private let llmSettingsViewModel = LLMSettingsViewModel()
+    private let aiAssistantSettingsViewModel = AIAssistantSettingsViewModel()
     private let chatViewModel = TranscriptChatViewModel()
     private let promptResultsViewModel = PromptResultsViewModel()
     private let promptsViewModel = PromptsViewModel()
@@ -93,6 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         historyViewModel: historyViewModel,
         settingsViewModel: settingsViewModel,
         llmSettingsViewModel: llmSettingsViewModel,
+        aiAssistantSettingsViewModel: aiAssistantSettingsViewModel,
         chatViewModel: chatViewModel,
         promptResultsViewModel: promptResultsViewModel,
         promptsViewModel: promptsViewModel,
