@@ -21,6 +21,7 @@ final class AIAssistantFlowCoordinator {
     private let logger = Logger(subsystem: "com.macparakeet.core", category: "AIAssistantFlow")
     private let service: AIAssistantServiceProtocol
     private let accessibilityService: AccessibilityService
+    private let selectionReader: SelectionReader
     private let configStore: AIAssistantConfigStore
     private let dictationService: DictationService
 
@@ -37,6 +38,7 @@ final class AIAssistantFlowCoordinator {
     ) {
         self.service = service
         self.accessibilityService = accessibilityService
+        self.selectionReader = SelectionReader(accessibility: accessibilityService)
         self.configStore = configStore
         self.dictationService = dictationService
     }
@@ -54,18 +56,24 @@ final class AIAssistantFlowCoordinator {
             return
         }
 
+        // Selection grab: tries AX first, falls back to Cmd+C probe for
+        // Electron / web apps that don't expose AX selection.
         let selection: String
         do {
-            selection = try accessibilityService.getSelectedText()
-        } catch {
-            let reason = Self.classify(error)
-            logger.info("hotkey_press selection_error reason=\(reason, privacy: .public)")
-            spawnErrorBubble(message: Self.errorMessage(for: error))
+            let result = try selectionReader.readSelection()
+            selection = result.text
+            logger.info("hotkey_press selection source=\(result.source.rawValue, privacy: .public) chars=\(selection.count)")
+        } catch SelectionReader.Error.noSelection {
+            logger.info("hotkey_press selection_error reason=no_selection")
+            spawnErrorBubble(message: Self.selectionErrorMessage(for: .noSelection))
             return
-        }
-        guard !selection.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            logger.info("hotkey_press selection_error reason=empty_selection")
-            spawnErrorBubble(message: Self.errorMessage(for: AccessibilityServiceError.noSelectedText))
+        } catch SelectionReader.Error.accessibilityPermissionRequired {
+            logger.info("hotkey_press selection_error reason=no_permission")
+            spawnErrorBubble(message: Self.selectionErrorMessage(for: .notAuthorized))
+            return
+        } catch {
+            logger.info("hotkey_press selection_error reason=probe_failed detail=\(error.localizedDescription, privacy: .public)")
+            spawnErrorBubble(message: Self.selectionErrorMessage(for: .probeFailed(error.localizedDescription)))
             return
         }
 
@@ -226,34 +234,22 @@ final class AIAssistantFlowCoordinator {
         return false
     }
 
-    private static func classify(_ error: Error) -> String {
-        if let axError = error as? AccessibilityServiceError {
-            switch axError {
-            case .notAuthorized: return "no_ax_permission"
-            case .noFocusedElement: return "no_focused_element"
-            case .noSelectedText: return "no_selected_text"
-            case .textTooLong: return "selection_too_long"
-            case .unsupportedElement: return "unsupported_element"
-            }
-        }
-        return "unknown"
+    /// Failure categories used to generate the user-facing error bubble
+    /// after `SelectionReader` has already tried AX + Cmd+C probe.
+    private enum SelectionFailure {
+        case noSelection
+        case notAuthorized
+        case probeFailed(String)
     }
 
-    /// User-facing copy for failed selection grabs. Calls out the Electron
-    /// gotcha specifically because that's the most common puzzling failure.
-    private static func errorMessage(for error: Error) -> String {
-        guard let axError = error as? AccessibilityServiceError else {
-            return "Couldn't read the selected text:\n\(error.localizedDescription)\n\nHighlight some text in another app and press the hotkey again."
-        }
-        switch axError {
+    private static func selectionErrorMessage(for failure: SelectionFailure) -> String {
+        switch failure {
+        case .noSelection:
+            return "No text is selected.\n\nHighlight (don't just click) the text you want to ask about, then press the hotkey again."
         case .notAuthorized:
             return "Accessibility permission is required to read selected text. Grant it to MacParakeet in System Settings → Privacy & Security → Accessibility, then press the hotkey again."
-        case .noFocusedElement, .unsupportedElement:
-            return "This app doesn't expose its text selection through macOS Accessibility — most commonly the case for Electron apps like VS Code, Discord, or Slack.\n\nNative apps (Mail, Messages, Notes, TextEdit, Xcode) work reliably."
-        case .noSelectedText:
-            return "No text is selected.\n\nHighlight (don't just click) the text you want to ask about, then press the hotkey again."
-        case .textTooLong(let max, let actual):
-            return "Selection is too long (\(actual) characters; max is \(max))."
+        case .probeFailed(let detail):
+            return "Couldn't read the selected text:\n\(detail)\n\nTry selecting the text again and pressing the hotkey."
         }
     }
 }

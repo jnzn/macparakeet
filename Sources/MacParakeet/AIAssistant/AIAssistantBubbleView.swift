@@ -39,7 +39,14 @@ struct AIAssistantBubbleView: View {
                             // the bubble a warm editorial feel without
                             // shipping proprietary fonts (Claude's
                             // Copernicus is not distributable).
-                            Text(turn.response)
+                            //
+                            // Renders inline markdown via AttributedString.
+                            // Covers **bold**, *italic*, `code`, links, and
+                            // ~~strikethrough~~. Headings, lists, block
+                            // code, tables fall back to literal characters —
+                            // upgrade to MarkdownUI package in a later pass
+                            // if richer rendering becomes important.
+                            Text(Self.renderMarkdown(turn.response))
                                 .font(.system(size: 15, design: .serif))
                                 .foregroundStyle(.primary)
                                 .lineSpacing(3)
@@ -125,5 +132,20 @@ struct AIAssistantBubbleView: View {
         let q = state.currentInput
         state.currentInput = ""
         onSubmit(q)
+    }
+
+    /// Parse Claude/Codex output as markdown so `**bold**`, `*italic*`,
+    /// `` `code` ``, and links render as formatted text. `.full` interprets
+    /// paragraph breaks and inline elements; `inlineOnlyPreservingWhitespace`
+    /// would strip newlines, which is wrong for multi-paragraph responses.
+    /// Falls back to plain text on parse failure.
+    private static func renderMarkdown(_ raw: String) -> AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(
+            interpretedSyntax: .full
+        )
+        if let parsed = try? AttributedString(markdown: raw, options: options) {
+            return parsed
+        }
+        return AttributedString(raw)
     }
 }
