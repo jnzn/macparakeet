@@ -175,6 +175,7 @@ final class AccessibilityServiceTests: XCTestCase {
 private struct MockAccessibilityBackend: AccessibilityBackend {
     let isTrustedValue: Bool
     let hasFocusedElement: Bool
+    let roleValue: String?
     let selectedTextValue: String?
     let selectedRangeValue: CFRange?
     let fullValueValue: String?
@@ -183,6 +184,7 @@ private struct MockAccessibilityBackend: AccessibilityBackend {
     init(
         isTrusted: Bool,
         focusedElement: AXUIElement? = AXUIElementCreateSystemWide(),
+        role: String? = nil,
         selectedText: String? = nil,
         selectedRange: CFRange? = nil,
         stringForRange: String? = nil,
@@ -190,6 +192,7 @@ private struct MockAccessibilityBackend: AccessibilityBackend {
     ) {
         self.isTrustedValue = isTrusted
         self.hasFocusedElement = focusedElement != nil
+        self.roleValue = role
         self.selectedTextValue = selectedText
         self.selectedRangeValue = selectedRange
         self.fullValueValue = fullValue
@@ -200,6 +203,7 @@ private struct MockAccessibilityBackend: AccessibilityBackend {
     func focusedElement() -> AXUIElement? {
         hasFocusedElement ? AXUIElementCreateSystemWide() : nil
     }
+    func role(of element: AXUIElement) -> String? { roleValue }
     func selectedText(of element: AXUIElement) -> String? { selectedTextValue }
     func selectedRange(of element: AXUIElement) -> CFRange? { selectedRangeValue }
     func fullValue(of element: AXUIElement) -> String? { fullValueValue }

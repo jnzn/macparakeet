@@ -48,6 +48,7 @@ public enum AccessibilityServiceError: Error, LocalizedError, Equatable {
 protocol AccessibilityBackend: Sendable {
     func isTrusted() -> Bool
     func focusedElement() -> AXUIElement?
+    func role(of element: AXUIElement) -> String?
     func selectedText(of element: AXUIElement) -> String?
     func selectedRange(of element: AXUIElement) -> CFRange?
     func fullValue(of element: AXUIElement) -> String?
@@ -72,6 +73,16 @@ struct SystemAccessibilityBackend: AccessibilityBackend {
             return nil
         }
         return unsafeBitCast(value, to: AXUIElement.self)
+    }
+
+    func role(of element: AXUIElement) -> String? {
+        guard let value = copyAttributeValue(
+            element: element,
+            attribute: kAXRoleAttribute as CFString
+        ) else {
+            return nil
+        }
+        return value as? String
     }
 
     func selectedText(of element: AXUIElement) -> String? {
@@ -166,6 +177,52 @@ public final class AccessibilityService: AccessibilityServiceProtocol, @unchecke
 
     public func getSelectedText(maxCharacters: Int?) throws -> String {
         try getSelectedTextWithSource(maxCharacters: maxCharacters).0
+    }
+
+    /// Best-effort read of the currently focused field's text value + its
+    /// selected substring. Returns nil fields for any failure (no permission,
+    /// no focused element, Electron-flavored empty AX tree, etc.) — never
+    /// throws. Intended for assembling `AppContext` as a cleanup-prompt hint;
+    /// the stricter `getSelectedText(maxCharacters:)` throws and is used by
+    /// features that actually depend on a selection existing.
+    ///
+    /// `timeoutSeconds` bounds any one AX call so a busy target app can't
+    /// stall the caller. Values that exceed the budget silently return nil.
+    public func captureFocusSnapshot(
+        timeoutSeconds: Float = 0.15,
+        maxCharacters: Int = 1_000
+    ) -> (focusedFieldValue: String?, selectedText: String?) {
+        guard backend.isTrusted(),
+              let element = backend.focusedElement() else {
+            return (nil, nil)
+        }
+        #if canImport(ApplicationServices)
+        AXUIElementSetMessagingTimeout(element, timeoutSeconds)
+        #endif
+
+        // Skip password fields regardless of other guards. AX exposes secure
+        // field values as empty anyway, but being explicit is cheap.
+        if let role = backend.role(of: element), role == "AXSecureTextField" {
+            return (nil, nil)
+        }
+
+        let field = backend.fullValue(of: element)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let selection = backend.selectedText(of: element)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let truncField = field.flatMap { Self.truncate($0, limit: maxCharacters) }
+        let truncSelection = selection.flatMap { Self.truncate($0, limit: maxCharacters) }
+        return (
+            (truncField?.isEmpty ?? true) ? nil : truncField,
+            (truncSelection?.isEmpty ?? true) ? nil : truncSelection
+        )
+    }
+
+    private static func truncate(_ text: String, limit: Int) -> String {
+        guard text.count > limit else { return text }
+        let idx = text.index(text.startIndex, offsetBy: limit)
+        return String(text[..<idx]) + "…"
     }
 
     public func getSelectedTextWithSource(maxCharacters: Int?) throws -> (String, AccessibilitySelectionSource) {
