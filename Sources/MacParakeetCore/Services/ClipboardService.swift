@@ -63,6 +63,14 @@ public final class ClipboardService: ClipboardServiceProtocol {
         // 2. Set transcript
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
+        // Hint to clipboard managers (Maccy, Pastebot, LaunchBar) not to record
+        // this entry. Transcripts often contain sensitive content the user
+        // does not want accumulating in a third-party clipboard history DB.
+        // See nspasteboard.org convention. Not honored by every manager
+        // (Raycast Clipboard History notably ignores it) — defense-in-depth
+        // only; the pasteboard is still the authoritative paste surface.
+        pasteboard.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
+        pasteboard.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
         let ourChangeCount = pasteboard.changeCount
 
         // Always attempt to restore the previous clipboard contents after a short delay.

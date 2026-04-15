@@ -862,7 +862,11 @@ final class DictationFlowCoordinator {
                 }
             }
 
-            try? await Task.sleep(for: .milliseconds(25))
+            // 33 ms ≈ 30 Hz. Waveform animates with easeOut(duration: 0.04),
+            // which visually absorbs any cadence above 25 Hz. Lower tick rate
+            // cuts SwiftUI @Observable invalidations on overlayViewModel by
+            // ~25% during recording with no perceptual change.
+            try? await Task.sleep(for: .milliseconds(33))
         }
     }
 

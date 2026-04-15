@@ -221,7 +221,7 @@ public actor DictationService: DictationServiceProtocol {
             recordingStartedAt = nil
             Telemetry.send(.dictationFailed(errorType: Self.errorType(for: error), errorDetail: TelemetryErrorClassifier.errorDetail(error), device: device))
             logger.error(
-                "startRecording failed session=\(requestedSessionID) error=\(error.localizedDescription, privacy: .public)"
+                "startRecording failed session=\(requestedSessionID) error=\(error.localizedDescription, privacy: .private)"
             )
             throw error
         }
@@ -297,7 +297,7 @@ public actor DictationService: DictationServiceProtocol {
             }
             recordingStartedAt = nil
             logger.error(
-                "stopRecording failed session=\(currentSession) error=\(error.localizedDescription, privacy: .public)"
+                "stopRecording failed session=\(currentSession) error=\(error.localizedDescription, privacy: .private)"
             )
             throw error
         }
@@ -457,7 +457,7 @@ public actor DictationService: DictationServiceProtocol {
                         try await transcriber.appendAudio(buffer)
                     } catch {
                         logger.warning(
-                            "streaming_append_error session=\(sessionID) error=\(error.localizedDescription, privacy: .public)"
+                            "streaming_append_error session=\(sessionID) error=\(error.localizedDescription, privacy: .private)"
                         )
                         break
                     }
@@ -480,7 +480,7 @@ public actor DictationService: DictationServiceProtocol {
                 // cancellation; let the next startSession clean up.
             } catch {
                 logger.warning(
-                    "streaming_session_error session=\(sessionID) error=\(error.localizedDescription, privacy: .public)"
+                    "streaming_session_error session=\(sessionID) error=\(error.localizedDescription, privacy: .private)"
                 )
                 // Don't clean up transcriber here either — avoids races with a
                 // subsequent startSession. Stale sessionActive=true is harmless;
@@ -594,7 +594,7 @@ public actor DictationService: DictationServiceProtocol {
 
         if saveHistory, shouldSaveAudio?() ?? false {
             do { try AppPaths.ensureDirectories() }
-            catch { logger.error("Failed to create directories: \(error.localizedDescription, privacy: .public)") }
+            catch { logger.error("Failed to create directories: \(error.localizedDescription, privacy: .private)") }
             let destURL = URL(fileURLWithPath: AppPaths.dictationsDir, isDirectory: true)
                 .appendingPathComponent("\(dictation.id.uuidString).wav")
 
@@ -652,7 +652,7 @@ public actor DictationService: DictationServiceProtocol {
             logger.info("live_cleanup_done outputChars=\(trimmed.count)")
             return trimmed.isEmpty ? nil : trimmed
         } catch {
-            logger.warning("live_cleanup_failed error=\(error.localizedDescription, privacy: .public)")
+            logger.warning("live_cleanup_failed error=\(error.localizedDescription, privacy: .private)")
             return nil
         }
     }
@@ -703,7 +703,7 @@ public actor DictationService: DictationServiceProtocol {
             if error is CancellationError {
                 throw error
             }
-            logger.warning("AI formatter failed; falling back to standard cleanup error=\(error.localizedDescription, privacy: .public)")
+            logger.warning("AI formatter failed; falling back to standard cleanup error=\(error.localizedDescription, privacy: .private)")
             let message = "\(error.localizedDescription) Used standard cleanup."
             NotificationCenter.default.post(
                 name: .macParakeetAIFormatterWarning,

@@ -243,6 +243,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupEnvironment(_ env: AppEnvironment) {
         appEnvironment = env
 
+        // Warm up the STT models in the background. Parakeet CoreML compilation
+        // takes ~3–5 s from disk cache, and the first actual inference adds
+        // ~500 ms–2 s for ANE JIT warmup. Users typically launch the app and
+        // dictate within 30–60 s, so prefetching while the UI boots turns the
+        // first-dictation wait from 5–30 s into sub-second. Best-effort — any
+        // failure surfaces later on the actual transcription path.
+        Task.detached(priority: .utility) { [env] in
+            await env.sttScheduler.backgroundWarmUp()
+            if env.runtimePreferences.streamingOverlayEnabled {
+                try? await env.streamingDictationTranscriber.loadModels()
+            }
+        }
+
         let runtime = environmentConfigurer.configure(
             environment: env,
             callbacks: .init(

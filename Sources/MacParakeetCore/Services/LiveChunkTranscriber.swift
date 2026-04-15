@@ -221,7 +221,7 @@ actor LiveChunkTranscriber {
             await emit(.backpressureDrop)
         } else {
             logger.error(
-                "meeting_live_chunk_failed source=\(source.rawValue, privacy: .public) seq=\(sequence) error=\(error.localizedDescription, privacy: .public)"
+                "meeting_live_chunk_failed source=\(source.rawValue, privacy: .public) seq=\(sequence) error=\(error.localizedDescription, privacy: .private)"
             )
             await emit(.transcriptionFailed(error.localizedDescription))
         }
