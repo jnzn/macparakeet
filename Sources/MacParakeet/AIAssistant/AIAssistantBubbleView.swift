@@ -670,6 +670,11 @@ struct AIAssistantBubbleView: View {
             // anti-aliased into a distinct band.
             bubbleShape.stroke(Color.primary.opacity(0.12), lineWidth: 0.6)
         )
+        .overlay(alignment: .topTrailing) {
+            closeButton
+                .padding(.top, bodyContentInsets.top + 10)
+                .padding(.trailing, bodyContentInsets.trailing + 10)
+        }
         .shadow(color: Color.black.opacity(0.25), radius: 24, x: 0, y: 12)
         // Open animation: scales up from 92% and fades in. Anchor on the
         // tail-facing edge so the bubble "grows" out of the selection
@@ -757,6 +762,24 @@ struct AIAssistantBubbleView: View {
     private var canSubmit: Bool {
         !state.currentInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !state.isThinking
+    }
+
+    private var closeButton: some View {
+        Button(action: onDismiss) {
+            Image(systemName: "xmark")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(foregroundMuted)
+                .frame(width: 20, height: 20)
+                .background(
+                    Circle().fill(Color.black.opacity(tintDominates ? 0.16 : 0.10))
+                )
+                .overlay(
+                    Circle().stroke(Color.white.opacity(0.10), lineWidth: 0.6)
+                )
+        }
+        .buttonStyle(.plain)
+        .help("Close")
+        .accessibilityLabel("Close")
     }
 
     private func submit() {
