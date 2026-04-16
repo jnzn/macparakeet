@@ -47,4 +47,14 @@ final class AIAssistantPasteInterceptor {
         bubble.appendDictationFollowUp(transcript, submitAfter: shouldSubmit)
         return true
     }
+
+    /// Predicate mirroring `tryConsume` — returns true iff a primary-
+    /// dictation transcript landing right now would be routed into the
+    /// AI bubble. Used by `DictationFlowCoordinator` to suppress its
+    /// overlay pill so the bubble doesn't duplicate the transcript
+    /// preview. Purely a UI-coordination hook; the actual paste decision
+    /// still runs through `tryConsume`.
+    var willInterceptPaste: Bool {
+        activeBubble?.isKey ?? false
+    }
 }

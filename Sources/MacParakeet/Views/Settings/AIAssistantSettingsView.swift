@@ -62,9 +62,15 @@ struct AIAssistantSettingsView: View {
                 }
             }
 
-            HStack {
-                Text("Provider").font(.callout)
-                Spacer()
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Default provider").font(.callout)
+                    Text("Used for the first turn. Switch mid-conversation via the bottom row of the bubble.")
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: DesignSystem.Spacing.md)
                 Picker("Provider", selection: $viewModel.provider) {
                     ForEach(AIAssistantConfig.Provider.allCases, id: \.self) { provider in
                         Text(provider.displayName).tag(provider)
@@ -73,6 +79,34 @@ struct AIAssistantSettingsView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .frame(maxWidth: 260)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Available in bubble").font(.callout)
+                Text("Turn off a provider to hide it from the bubble's bottom-row switcher. The default provider is always available.")
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 16) {
+                    ForEach(AIAssistantConfig.Provider.allCases, id: \.self) { provider in
+                        Toggle(isOn: Binding(
+                            get: { viewModel.isProviderEnabled(provider) },
+                            set: { viewModel.setProvider(provider, enabled: $0) }
+                        )) {
+                            HStack(spacing: 4) {
+                                let c = provider.brandColorComponents
+                                Image(systemName: provider.iconSystemName)
+                                    .foregroundStyle(Color(red: c.red, green: c.green, blue: c.blue))
+                                Text(provider.displayName)
+                            }
+                        }
+                        .toggleStyle(.checkbox)
+                        .disabled(provider == viewModel.provider)
+                        .help(provider == viewModel.provider
+                            ? "The default provider is always available."
+                            : "Show \(provider.displayName) in the bubble switcher.")
+                    }
+                }
             }
 
             HStack(alignment: .center) {

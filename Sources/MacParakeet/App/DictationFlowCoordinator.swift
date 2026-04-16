@@ -444,6 +444,12 @@ final class DictationFlowCoordinator {
             DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(readyPillDismissDelayMs), execute: timer)
 
         case .showRecordingOverlay(let mode):
+            // If the AI Assistant bubble is key and will consume the
+            // transcript, skip showing the dictation overlay — the bubble
+            // already shows the transcript preview and a redundant pill
+            // in the center of the screen reads as confusing duplication.
+            let suppressForAIBubble = AIAssistantPasteInterceptor.shared.willInterceptPaste
+
             // Reuse existing overlay if it's in ready state (seamless transition)
             let vm: DictationOverlayViewModel
             if let existingVM = overlayViewModel, case .ready = existingVM.state {
@@ -456,9 +462,11 @@ final class DictationFlowCoordinator {
                 vm.onDismiss = { [weak self] in self?.sendEvent(.dismissRequested) }
                 overlayViewModel = vm
 
-                let controller = DictationOverlayController(viewModel: vm)
-                controller.show()
-                overlayController = controller
+                if !suppressForAIBubble {
+                    let controller = DictationOverlayController(viewModel: vm)
+                    controller.show()
+                    overlayController = controller
+                }
             }
             vm.recordingMode = mode
             vm.state = .recording
