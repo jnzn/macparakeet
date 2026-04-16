@@ -75,6 +75,25 @@ struct AIAssistantSettingsView: View {
                 .frame(maxWidth: 260)
             }
 
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Auto-replace selection with first response").font(.callout)
+                    Text("Claude's first reply to the initial question pastes over your original selection. Later replies still require the per-turn Replace button.")
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: DesignSystem.Spacing.md)
+                Toggle("", isOn: Binding(
+                    get: { viewModel.autoReplaceSelection },
+                    set: { newValue in
+                        viewModel.autoReplaceSelection = newValue
+                        viewModel.save()
+                    }
+                ))
+                .labelsHidden()
+            }
+
             VStack(alignment: .leading, spacing: 4) {
                 Text("Command template").font(.callout)
                 TextField("", text: $viewModel.commandTemplate, axis: .vertical)

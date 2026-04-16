@@ -19,6 +19,13 @@ final class AIAssistantBubbleController {
     private let selection: String
     private let service: AIAssistantServiceProtocol
     private let configStore: AIAssistantConfigStore
+    private let selectionReplacer: SelectionReplacer
+    /// PID of the app that was frontmost when the user pressed the hotkey
+    /// — captured at session start so "Replace selection" can activate the
+    /// right window even if the user has since clicked to other apps.
+    /// Nil when the bubble was spawned outside a normal press flow (error
+    /// bubbles) — in that case the replace UI is suppressed.
+    private let sourceAppPID: pid_t?
     private let onDismissed: () -> Void
 
     private let state = AIAssistantBubbleState()
@@ -28,17 +35,26 @@ final class AIAssistantBubbleController {
     private var partialObserver: NSObjectProtocol?
     private var activeTask: Task<Void, Never>?
     private var isDismissed = false
+    /// True after the first auto-replace has fired. Prevents subsequent
+    /// responses from auto-replacing — only the initial "Claude, rewrite
+    /// my selection" turn gets auto-replaced.
+    private var hasAutoReplaced: Bool = false
 
     init(
         selection: String,
         service: AIAssistantServiceProtocol,
         configStore: AIAssistantConfigStore,
+        selectionReplacer: SelectionReplacer,
+        sourceAppPID: pid_t?,
         onDismissed: @escaping () -> Void
     ) {
         self.selection = selection
         self.service = service
         self.configStore = configStore
+        self.selectionReplacer = selectionReplacer
+        self.sourceAppPID = sourceAppPID
         self.onDismissed = onDismissed
+        self.state.canReplaceSelection = (sourceAppPID != nil)
     }
 
     /// Convenience: open a bubble in error state without a usable selection.
@@ -174,6 +190,9 @@ final class AIAssistantBubbleController {
             },
             onDismiss: { [weak self] in
                 self?.dismiss()
+            },
+            onReplaceSelection: { [weak self] turnIndex in
+                self?.replaceSelection(with: turnIndex)
             }
         )
         let hosting = NSHostingView(rootView: view)
@@ -283,6 +302,13 @@ final class AIAssistantBubbleController {
             question: trimmed,
             history: history
         )
+        // Check auto-replace intent before awaiting the LLM. Captured here
+        // so a mid-flight config edit in Settings doesn't change behavior
+        // for this turn — and so we only auto-replace the VERY FIRST turn
+        // of a session, not every follow-up.
+        let shouldAutoReplace = !hasAutoReplaced
+            && sourceAppPID != nil
+            && (configStore.load()?.effectiveAutoReplaceSelection ?? false)
 
         activeTask?.cancel()
         activeTask = Task { [service, weak self] in
@@ -292,6 +318,10 @@ final class AIAssistantBubbleController {
                     guard let self else { return }
                     self.state.history.append(AIAssistantTurn(question: trimmed, response: response))
                     self.state.isThinking = false
+                    if shouldAutoReplace {
+                        self.hasAutoReplaced = true
+                        self.replaceSelection(with: self.state.history.count - 1)
+                    }
                 }
             } catch is CancellationError {
                 await MainActor.run {
@@ -303,6 +333,31 @@ final class AIAssistantBubbleController {
                     self.state.errorMessage = error.localizedDescription
                     self.state.isThinking = false
                 }
+            }
+        }
+    }
+
+    /// Kick off the paste-to-source-app flow for the turn at `turnIndex`.
+    /// Dismisses the bubble first so its key-window doesn't swallow Cmd+V,
+    /// then activates the source app and pastes. Any failure is logged
+    /// silently — if the source app isn't reachable the user can copy the
+    /// response by hand (textSelection is enabled).
+    private func replaceSelection(with turnIndex: Int) {
+        guard let pid = sourceAppPID else { return }
+        guard state.history.indices.contains(turnIndex) else { return }
+        let responseText = state.history[turnIndex].response
+        let replacer = selectionReplacer
+
+        dismiss()
+
+        Task { [replacer] in
+            do {
+                try await replacer.replaceSelection(in: pid, with: responseText)
+            } catch {
+                // Silent failure — bubble is already dismissed, so there's
+                // no good surface to show the error beyond an NSAlert
+                // (which we don't want for a non-critical path). The
+                // unified log captures the failure via SelectionReplacer.
             }
         }
     }

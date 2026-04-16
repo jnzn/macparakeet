@@ -22,6 +22,7 @@ final class AIAssistantFlowCoordinator {
     private let service: AIAssistantServiceProtocol
     private let accessibilityService: AccessibilityService
     private let selectionReader: SelectionReader
+    private let selectionReplacer: SelectionReplacer
     private let configStore: AIAssistantConfigStore
     private let dictationService: DictationService
 
@@ -54,12 +55,14 @@ final class AIAssistantFlowCoordinator {
     init(
         service: AIAssistantServiceProtocol,
         accessibilityService: AccessibilityService,
+        clipboardService: ClipboardService,
         configStore: AIAssistantConfigStore,
         dictationService: DictationService
     ) {
         self.service = service
         self.accessibilityService = accessibilityService
         self.selectionReader = SelectionReader(accessibility: accessibilityService)
+        self.selectionReplacer = SelectionReplacer(clipboardService: clipboardService)
         self.configStore = configStore
         self.dictationService = dictationService
     }
@@ -125,11 +128,18 @@ final class AIAssistantFlowCoordinator {
             logger.info("hotkey_press opening with no config; service will error on first ask")
         }
 
+        // Capture source-app pid BEFORE we spawn the bubble so the
+        // SelectionReplacer can refocus the right window when the user
+        // triggers an inline-replace later.
+        let sourcePID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+
         logger.info("hotkey_press spawn listening bubble selectionChars=\(selection.count)")
         let bubble = AIAssistantBubbleController(
             selection: selection,
             service: service,
             configStore: configStore,
+            selectionReplacer: selectionReplacer,
+            sourceAppPID: sourcePID,
             onDismissed: { [weak self] in
                 self?.activeBubble = nil
                 self?.isCapturingVoice = false
@@ -319,10 +329,14 @@ final class AIAssistantFlowCoordinator {
     // MARK: - Private
 
     private func spawnErrorBubble(message: String) {
+        // Error bubbles have no source selection to replace; pass nil PID
+        // so the bubble suppresses the "Replace selection" button.
         let bubble = AIAssistantBubbleController(
             selection: "",
             service: service,
             configStore: configStore,
+            selectionReplacer: selectionReplacer,
+            sourceAppPID: nil,
             onDismissed: { [weak self] in
                 self?.activeBubble = nil
                 self?.isCapturingVoice = false

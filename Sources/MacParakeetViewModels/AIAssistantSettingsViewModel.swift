@@ -25,6 +25,10 @@ public final class AIAssistantSettingsViewModel {
     /// SwiftUI `ColorPicker` writes to this directly; persistence is opt-in
     /// via `save()` so the user can experiment without committing.
     public var bubbleBackgroundColor: CodableColor
+    /// When on, Claude/Codex's first response to the initial question
+    /// auto-pastes over the user's original selection in the source app.
+    /// Bound to a Settings toggle; persisted on `save()`.
+    public var autoReplaceSelection: Bool
 
     /// Feedback surface for test-connection calls. Cleared as the user edits
     /// the command.
@@ -53,6 +57,7 @@ public final class AIAssistantSettingsViewModel {
         self.timeoutSeconds = loaded.timeoutSeconds
         self.hotkeyTrigger = loaded.effectiveHotkeyTrigger
         self.bubbleBackgroundColor = loaded.effectiveBubbleBackgroundColor
+        self.autoReplaceSelection = loaded.effectiveAutoReplaceSelection
     }
 
     public var currentConfig: AIAssistantConfig {
@@ -62,7 +67,8 @@ public final class AIAssistantSettingsViewModel {
             modelName: modelName,
             timeoutSeconds: timeoutSeconds,
             hotkeyTrigger: hotkeyTrigger,
-            bubbleBackgroundColor: bubbleBackgroundColor
+            bubbleBackgroundColor: bubbleBackgroundColor,
+            autoReplaceSelection: autoReplaceSelection
         )
     }
 
