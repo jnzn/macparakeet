@@ -172,6 +172,19 @@ public struct AIAssistantConfig: Codable, Sendable, Equatable {
         opacity: 0
     )
 
+    private enum CodingKeys: String, CodingKey {
+        case provider
+        case commandTemplate
+        case modelName
+        case timeoutSeconds
+        case hotkeyTrigger
+        case bubbleBackgroundColor
+        case autoReplaceSelection
+        case enabledProviders
+        case providerCommandTemplates
+        case providerModelNames
+    }
+
     public init(
         provider: Provider,
         commandTemplate: String? = nil,
@@ -185,15 +198,50 @@ public struct AIAssistantConfig: Codable, Sendable, Equatable {
         providerModelNames: [String: String]? = nil
     ) {
         self.provider = provider
-        self.commandTemplate = commandTemplate ?? provider.defaultCommandTemplate
+        self.commandTemplate = Self.normalizedCommandTemplate(
+            commandTemplate ?? provider.defaultCommandTemplate,
+            for: provider
+        )
         self.modelName = modelName ?? provider.defaultModel
         self.timeoutSeconds = max(Self.minimumTimeout, timeoutSeconds)
         self.hotkeyTrigger = hotkeyTrigger
         self.bubbleBackgroundColor = bubbleBackgroundColor
         self.autoReplaceSelection = autoReplaceSelection
         self.enabledProviders = enabledProviders
-        self.providerCommandTemplates = providerCommandTemplates
+        self.providerCommandTemplates = Self.normalizedProviderCommandTemplates(
+            providerCommandTemplates
+        )
         self.providerModelNames = providerModelNames
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let provider = try container.decode(Provider.self, forKey: .provider)
+        self.init(
+            provider: provider,
+            commandTemplate: try container.decodeIfPresent(String.self, forKey: .commandTemplate),
+            modelName: try container.decodeIfPresent(String.self, forKey: .modelName),
+            timeoutSeconds: try container.decodeIfPresent(Double.self, forKey: .timeoutSeconds)
+                ?? Self.defaultTimeout,
+            hotkeyTrigger: try container.decodeIfPresent(HotkeyTrigger.self, forKey: .hotkeyTrigger),
+            bubbleBackgroundColor: try container.decodeIfPresent(
+                CodableColor.self,
+                forKey: .bubbleBackgroundColor
+            ),
+            autoReplaceSelection: try container.decodeIfPresent(
+                Bool.self,
+                forKey: .autoReplaceSelection
+            ),
+            enabledProviders: try container.decodeIfPresent([String].self, forKey: .enabledProviders),
+            providerCommandTemplates: try container.decodeIfPresent(
+                [String: String].self,
+                forKey: .providerCommandTemplates
+            ),
+            providerModelNames: try container.decodeIfPresent(
+                [String: String].self,
+                forKey: .providerModelNames
+            )
+        )
     }
 
     /// Resolved set of providers to surface as switchable icons in the
@@ -212,10 +260,11 @@ public struct AIAssistantConfig: Codable, Sendable, Equatable {
     /// to each provider's `defaultCommandTemplate` otherwise.
     public func commandTemplate(for provider: Provider) -> String {
         if provider == self.provider {
-            return commandTemplate
+            return Self.normalizedCommandTemplate(commandTemplate, for: provider)
         }
-        return providerCommandTemplates?[provider.rawValue]
+        let template = providerCommandTemplates?[provider.rawValue]
             ?? provider.defaultCommandTemplate
+        return Self.normalizedCommandTemplate(template, for: provider)
     }
 
     /// Model name for a given provider. Mirrors `commandTemplate(for:)`.
@@ -274,15 +323,44 @@ public struct AIAssistantConfig: Codable, Sendable, Equatable {
     /// specify one — presence of "--model" wins). Providers that bake the
     /// model directly into the command line (Ollama) skip the append.
     public var effectiveCommandTemplate: String {
-        if provider.bakesModelIntoCommand { return commandTemplate }
-        if commandTemplate.contains("--model") {
-            return commandTemplate
+        let template = Self.normalizedCommandTemplate(commandTemplate, for: provider)
+        if provider.bakesModelIntoCommand { return template }
+        if template.contains("--model") {
+            return template
         }
-        let trimmed = commandTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return commandTemplate }
+        let trimmed = template.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return template }
         let modelToken = modelName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !modelToken.isEmpty else { return commandTemplate }
+        guard !modelToken.isEmpty else { return template }
         return "\(trimmed) --model \(modelToken)"
+    }
+
+    private static func normalizedProviderCommandTemplates(
+        _ templates: [String: String]?
+    ) -> [String: String]? {
+        guard let templates else { return nil }
+        return templates.reduce(into: [String: String]()) { result, entry in
+            if let provider = Provider(rawValue: entry.key) {
+                result[entry.key] = normalizedCommandTemplate(entry.value, for: provider)
+            } else {
+                result[entry.key] = entry.value
+            }
+        }
+    }
+
+    private static func normalizedCommandTemplate(_ template: String, for provider: Provider) -> String {
+        guard provider == .gemini else { return template }
+        let pattern = #"--prompt(?=\s*(?:$|--))"#
+        let range = NSRange(template.startIndex..<template.endIndex, in: template)
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            return template
+        }
+        return regex.stringByReplacingMatches(
+            in: template,
+            options: [],
+            range: range,
+            withTemplate: "--prompt \"\""
+        )
     }
 }
 

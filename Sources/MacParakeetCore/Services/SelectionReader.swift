@@ -19,8 +19,9 @@ public final class SelectionReader {
     private let accessibility: AccessibilityServiceProtocol
 
     /// Max wait in milliseconds for Cmd+C-induced clipboard changeCount tick.
-    /// 300 ms is generous for even laggy Electron apps; typical is <50 ms.
-    private let cmdCMaxWaitMs: Int = 300
+    /// Safari/web content can take a little longer than Electron, especially
+    /// when the AI hotkey modifiers are still physically held during the probe.
+    private let cmdCMaxWaitMs: Int = 600
     private let cmdCPollIntervalMs: Int = 15
 
     public init(accessibility: AccessibilityServiceProtocol) {
@@ -160,7 +161,11 @@ public final class SelectionReader {
     }
 
     private func simulateCmdC() throws {
-        guard let source = CGEventSource(stateID: .hidSystemState) else {
+        // Use a private event source so held physical modifiers from the
+        // hotkey chord (Control+Option+Shift) do not leak into the synthetic
+        // Cmd+C we post for the clipboard probe. That leakage can turn copy
+        // into a different shortcut in Safari/web views.
+        guard let source = CGEventSource(stateID: .privateState) else {
             throw Error.clipboardProbeUnavailable("CGEventSource unavailable")
         }
         let cVirtualKey: UInt16 = 8  // 'c'
