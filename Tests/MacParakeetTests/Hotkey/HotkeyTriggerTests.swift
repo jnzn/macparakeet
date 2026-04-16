@@ -138,9 +138,9 @@ final class HotkeyTriggerTests: XCTestCase {
 
     // MARK: - Persistence
 
-    func testCurrentDefaultsToFn() {
+    func testCurrentDefaultsToShippedDictationTrigger() {
         testDefaults.removeObject(forKey: "hotkeyTrigger")
-        XCTAssertEqual(HotkeyTrigger.current(defaults: testDefaults), .fn)
+        XCTAssertEqual(HotkeyTrigger.current(defaults: testDefaults), .defaultDictation)
     }
 
     func testSaveAndLoad() throws {
@@ -194,9 +194,9 @@ final class HotkeyTriggerTests: XCTestCase {
         )
     }
 
-    func testLegacyStringInvalidFallsBackToFn() {
+    func testLegacyStringInvalidFallsBackToShippedDictationTrigger() {
         testDefaults.set("invalid_key", forKey: "hotkeyTrigger")
-        XCTAssertEqual(HotkeyTrigger.current(defaults: testDefaults), .fn)
+        XCTAssertEqual(HotkeyTrigger.current(defaults: testDefaults), .defaultDictation)
     }
 
     // MARK: - Validation

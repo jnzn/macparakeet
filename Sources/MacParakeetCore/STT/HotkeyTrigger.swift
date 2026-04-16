@@ -349,7 +349,8 @@ public struct HotkeyTrigger: Sendable {
     ]
 
     /// Resolve the configured trigger from the provided defaults store.
-    /// Tries JSON decode first, falls back to legacy string, defaults to `.fn`.
+    /// Tries JSON decode first, falls back to legacy string, then uses the
+    /// shipped default dictation trigger when nothing valid is stored.
     public static func current(
         defaults: UserDefaults = .standard,
         defaultsKey: String = defaultsKey,

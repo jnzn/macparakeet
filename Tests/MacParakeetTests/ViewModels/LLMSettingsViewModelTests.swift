@@ -54,7 +54,10 @@ final class LLMSettingsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.modelName, "gemini-3.1-pro-preview")
 
         viewModel.selectedProviderID = .ollama
-        XCTAssertEqual(viewModel.modelName, "qwen3.5:4b")
+        XCTAssertEqual(
+            viewModel.modelName,
+            LLMSettingsViewModel.defaultModelName(for: .ollama)
+        )
     }
 
     func testOllamaDoesNotRequireAPIKey() {

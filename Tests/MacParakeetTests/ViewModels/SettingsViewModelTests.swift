@@ -492,8 +492,8 @@ final class SettingsViewModelTests: XCTestCase {
 
     // MARK: - Hotkey Trigger
 
-    func testHotkeyTriggerDefaultsToFn() {
-        XCTAssertEqual(viewModel.hotkeyTrigger, .fn)
+    func testHotkeyTriggerDefaultsToShippedDictationTrigger() {
+        XCTAssertEqual(viewModel.hotkeyTrigger, .defaultDictation)
     }
 
     func testHotkeyTriggerPersistsKeyCode() {
