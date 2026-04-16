@@ -3,7 +3,9 @@ import MacParakeetCore
 
 /// ViewModel for the AI Assistant settings card. Mirrors the shape of
 /// `LLMSettingsViewModel` but writes to `AIAssistantConfigStore` and uses
-/// `AIAssistantConfig` as its source of truth.
+/// `AIAssistantConfig` as its source of truth. CLI providers still use
+/// `LocalCLIExecutor`; Ollama is routed through the formatter's configured
+/// HTTP endpoint via `AIAssistantOllamaExecutor`.
 @MainActor
 @Observable
 public final class AIAssistantSettingsViewModel {
@@ -46,14 +48,17 @@ public final class AIAssistantSettingsViewModel {
     }
 
     private let store: AIAssistantConfigStore
-    private let executor: any AIAssistantExecuting
+    private let cliExecutor: any AIAssistantExecuting
+    private let ollamaExecutor: any AIAssistantExecuting
 
     public init(
         store: AIAssistantConfigStore = AIAssistantConfigStore(),
-        executor: any AIAssistantExecuting = LocalCLIExecutor()
+        executor: any AIAssistantExecuting = LocalCLIExecutor(),
+        ollamaExecutor: any AIAssistantExecuting = AIAssistantOllamaExecutor()
     ) {
         self.store = store
-        self.executor = executor
+        self.cliExecutor = executor
+        self.ollamaExecutor = ollamaExecutor
         let loaded = store.load() ?? AIAssistantConfig.defaultClaude
         self.provider = loaded.provider
         self.commandTemplate = loaded.commandTemplate
@@ -109,24 +114,25 @@ public final class AIAssistantSettingsViewModel {
         save()
     }
 
-    /// Fire a minimal `Reply with OK`-style probe through the configured
-    /// CLI. Surfaces failure messages verbatim so the user can diagnose
-    /// "command not found" / bad flags etc.
+    /// Fire a minimal `Reply with OK`-style probe through the currently
+    /// selected provider. Surfaces failure messages verbatim so the user can
+    /// diagnose bad local CLI flags or an unreachable Ollama endpoint.
     public func testConnection() async {
         testStatus = .running
         let config = currentConfig
-        let cliConfig = LocalCLIConfig(
+        let executionConfig = LocalCLIConfig(
             commandTemplate: config.effectiveCommandTemplate,
             timeoutSeconds: min(30, config.timeoutSeconds)
         )
+        let executor = provider == .ollama ? ollamaExecutor : cliExecutor
         do {
             let output = try await executor.execute(
                 systemPrompt: "You are a connectivity test probe. Reply with the two letters OK and nothing else.",
                 userPrompt: "Reply OK",
-                config: cliConfig
+                config: executionConfig
             )
             let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-            testStatus = trimmed.isEmpty ? .failure("Empty response from CLI.") : .success
+            testStatus = trimmed.isEmpty ? .failure("Empty response from provider.") : .success
         } catch {
             testStatus = .failure(error.localizedDescription)
         }

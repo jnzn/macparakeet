@@ -98,13 +98,10 @@ public struct AIAssistantConfig: Codable, Sendable, Equatable {
                 // standard pipe mechanism.
                 return "gemini --yolo --prompt \"\""
             case .ollama:
-                // CLI fallback only used when `LLMConfigStore` has no
-                // Ollama entry. When the user has already configured
-                // Ollama for transcription cleanup in Settings → AI
-                // Provider, the HTTP executor reuses that base URL +
-                // model instead — critical for remote setups (e.g.
-                // Mac Air talking to a Mac Studio over Tailscale where
-                // the `ollama` binary isn't on the Air's PATH).
+                // Kept as a legacy placeholder for the AI Assistant
+                // config model, but the runtime Ollama path now ignores
+                // this template and talks to the configured Ollama HTTP
+                // endpoint from Settings -> AI Provider instead.
                 return "ollama run gemma4:e2b"
             }
         }
@@ -380,13 +377,16 @@ public protocol AIAssistantServiceProtocol: Sendable {
 public final class AIAssistantService: AIAssistantServiceProtocol, @unchecked Sendable {
     private let logger = Logger(subsystem: "com.macparakeet.core", category: "AIAssistantService")
     private let executor: any AIAssistantExecuting
+    private let ollamaExecutor: any AIAssistantExecuting
     private let configProvider: @Sendable () -> AIAssistantConfig?
 
     public init(
         executor: any AIAssistantExecuting = LocalCLIExecutor(),
+        ollamaExecutor: any AIAssistantExecuting = AIAssistantOllamaExecutor(),
         configProvider: @escaping @Sendable () -> AIAssistantConfig?
     ) {
         self.executor = executor
+        self.ollamaExecutor = ollamaExecutor
         self.configProvider = configProvider
     }
 
@@ -410,7 +410,8 @@ public final class AIAssistantService: AIAssistantServiceProtocol, @unchecked Se
         logger.info(
             "ask provider=\(resolvedProvider.rawValue, privacy: .public) override=\(request.providerOverride != nil, privacy: .public) selectionChars=\(request.selection.count) questionChars=\(request.question.count) historyTurns=\(request.history.count)"
         )
-        let output = try await executor.execute(
+        let resolvedExecutor = resolvedProvider == .ollama ? ollamaExecutor : executor
+        let output = try await resolvedExecutor.execute(
             systemPrompt: system,
             userPrompt: user,
             config: cliConfig

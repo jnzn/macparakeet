@@ -54,7 +54,7 @@ private final class ClickablePanel: NSPanel {
 @MainActor
 final class DictationOverlayController {
     private var panel: NSPanel?
-    private var hostingView: NSHostingView<DictationOverlayView>?
+    private var hostingView: NSHostingView<AnyView>?
     private var trackingView: MouseTrackingView?
 
     private let overlayViewModel: DictationOverlayViewModel
@@ -66,8 +66,10 @@ final class DictationOverlayController {
     func show() {
         if panel != nil { return }
 
-        let view = DictationOverlayView(viewModel: overlayViewModel)
-            .environment(\.colorScheme, .dark)
+        let view = AnyView(
+            DictationOverlayView(viewModel: overlayViewModel)
+                .environment(\.colorScheme, .dark)
+        )
         let hosting = NSHostingView(rootView: view)
 
         // Sized generously so the streaming bubble can grow upward without
