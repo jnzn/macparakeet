@@ -208,6 +208,53 @@ final class AIAssistantServiceTests: XCTestCase {
             XCTFail("Unexpected error: \(error)")
         }
     }
+
+    func testAskRoutesOllamaProviderToOllamaExecutor() async throws {
+        let cliExecutor = MockExecutor()
+        let ollamaExecutor = MockExecutor()
+        ollamaExecutor.stubbedResponse = "remote answer"
+        let service = AIAssistantService(
+            executor: cliExecutor,
+            ollamaExecutor: ollamaExecutor,
+            configProvider: {
+                AIAssistantConfig(provider: .ollama, timeoutSeconds: 45)
+            }
+        )
+
+        let output = try await service.ask(
+            AIAssistantRequest(selection: "x", question: "answer this")
+        )
+
+        XCTAssertEqual(output, "remote answer")
+        XCTAssertTrue(cliExecutor.invocations.isEmpty)
+        XCTAssertEqual(ollamaExecutor.invocations.count, 1)
+        XCTAssertEqual(ollamaExecutor.invocations[0].config.timeoutSeconds, 45)
+    }
+
+    func testAskRoutesOllamaOverrideToOllamaExecutor() async throws {
+        let cliExecutor = MockExecutor()
+        let ollamaExecutor = MockExecutor()
+        ollamaExecutor.stubbedResponse = "override answer"
+        let service = AIAssistantService(
+            executor: cliExecutor,
+            ollamaExecutor: ollamaExecutor,
+            configProvider: {
+                AIAssistantConfig(provider: .claude, timeoutSeconds: 30)
+            }
+        )
+
+        let output = try await service.ask(
+            AIAssistantRequest(
+                selection: "x",
+                question: "answer this",
+                providerOverride: .ollama
+            )
+        )
+
+        XCTAssertEqual(output, "override answer")
+        XCTAssertTrue(cliExecutor.invocations.isEmpty)
+        XCTAssertEqual(ollamaExecutor.invocations.count, 1)
+    }
 }
 
 // MARK: - Mock executor

@@ -3,14 +3,14 @@ import MacParakeetCore
 import MacParakeetViewModels
 
 /// Settings UI for the AI Assistant hotkey (Control+Shift+A). Lets the user
-/// pick provider, edit the command template + model, and smoke-test the
-/// connection. Persists to `AIAssistantConfigStore` on save.
+/// pick provider, edit provider-specific execution settings when applicable,
+/// and smoke-test the connection. Persists to `AIAssistantConfigStore` on save.
 struct AIAssistantSettingsView: View {
     @Bindable var viewModel: AIAssistantSettingsViewModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
-            Text("Hold the hotkey to ask the agentic CLI (Claude Code or Codex) about your current selection. Voice is transcribed while held; release submits.")
+            Text("Hold the hotkey to ask the selected assistant about your current selection. Voice is transcribed while held; release submits.")
                 .font(DesignSystem.Typography.caption)
                 .foregroundStyle(.secondary)
 
@@ -128,23 +128,35 @@ struct AIAssistantSettingsView: View {
                 .labelsHidden()
             }
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Command template").font(.callout)
-                TextField("", text: $viewModel.commandTemplate, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(.callout, design: .monospaced))
-                    .lineLimit(1...3)
-                Text("Includes the skip-permissions flag. Append --model only if you don't want the Model field applied.")
-                    .font(DesignSystem.Typography.caption)
-                    .foregroundStyle(.secondary)
+            if isOllamaSelected {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Ollama connection").font(.callout)
+                    Text("Ollama uses the AI Provider settings for its URL and model. Open Settings -> AI Provider to edit them.")
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Command template").font(.callout)
+                    TextField("", text: $viewModel.commandTemplate, axis: .vertical)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(.callout, design: .monospaced))
+                        .lineLimit(1...3)
+                    Text("Includes the skip-permissions flag. Append --model only if you don't want the Model field applied.")
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             HStack(spacing: DesignSystem.Spacing.md) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Model").font(.callout)
-                    TextField("", text: $viewModel.modelName)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(.callout, design: .monospaced))
+                if !isOllamaSelected {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Model").font(.callout)
+                        TextField("", text: $viewModel.modelName)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(.callout, design: .monospaced))
+                    }
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Timeout").font(.callout)
@@ -156,6 +168,7 @@ struct AIAssistantSettingsView: View {
                     }
                 }
                 .frame(width: 140, alignment: .leading)
+                Spacer(minLength: 0)
             }
 
             HStack(spacing: DesignSystem.Spacing.md) {
@@ -188,6 +201,10 @@ struct AIAssistantSettingsView: View {
             get: { viewModel.bubbleBackgroundColor.toSwiftUIColor() },
             set: { viewModel.bubbleBackgroundColor = $0.toCodableColor() }
         )
+    }
+
+    private var isOllamaSelected: Bool {
+        viewModel.provider == .ollama
     }
 
     @ViewBuilder
