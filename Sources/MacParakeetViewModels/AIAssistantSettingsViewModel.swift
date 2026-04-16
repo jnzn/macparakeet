@@ -29,6 +29,10 @@ public final class AIAssistantSettingsViewModel {
     /// auto-pastes over the user's original selection in the source app.
     /// Bound to a Settings toggle; persisted on `save()`.
     public var autoReplaceSelection: Bool
+    /// Set of providers that should appear as switchable icons in the
+    /// bubble's bottom row. The current default provider is always
+    /// implicitly enabled regardless of this set.
+    public var enabledProviders: Set<AIAssistantConfig.Provider>
 
     /// Feedback surface for test-connection calls. Cleared as the user edits
     /// the command.
@@ -58,18 +62,42 @@ public final class AIAssistantSettingsViewModel {
         self.hotkeyTrigger = loaded.effectiveHotkeyTrigger
         self.bubbleBackgroundColor = loaded.effectiveBubbleBackgroundColor
         self.autoReplaceSelection = loaded.effectiveAutoReplaceSelection
+        self.enabledProviders = Set(loaded.effectiveEnabledProviders)
     }
 
     public var currentConfig: AIAssistantConfig {
-        AIAssistantConfig(
+        // Always force-include the current default provider so the user
+        // can't lock themselves out of their own pick.
+        let providers = enabledProviders.union([provider])
+        let enabledRawValues = AIAssistantConfig.Provider.allCases
+            .filter { providers.contains($0) }
+            .map(\.rawValue)
+        return AIAssistantConfig(
             provider: provider,
             commandTemplate: commandTemplate,
             modelName: modelName,
             timeoutSeconds: timeoutSeconds,
             hotkeyTrigger: hotkeyTrigger,
             bubbleBackgroundColor: bubbleBackgroundColor,
-            autoReplaceSelection: autoReplaceSelection
+            autoReplaceSelection: autoReplaceSelection,
+            enabledProviders: enabledRawValues
         )
+    }
+
+    /// Whether a given provider should show as a switchable icon in the
+    /// bubble. Always returns true for the current default so the toggle
+    /// for it is visibly checked-and-disabled in the UI.
+    public func isProviderEnabled(_ p: AIAssistantConfig.Provider) -> Bool {
+        p == provider || enabledProviders.contains(p)
+    }
+
+    public func setProvider(_ p: AIAssistantConfig.Provider, enabled: Bool) {
+        if enabled {
+            enabledProviders.insert(p)
+        } else if p != provider {
+            enabledProviders.remove(p)
+        }
+        save()
     }
 
     public func save() {

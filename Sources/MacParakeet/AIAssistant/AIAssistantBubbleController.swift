@@ -55,6 +55,14 @@ final class AIAssistantBubbleController {
         self.sourceAppPID = sourceAppPID
         self.onDismissed = onDismissed
         self.state.canReplaceSelection = (sourceAppPID != nil)
+
+        // Seed provider-switcher state from the current config so the
+        // bubble opens with the user's default active. Enabled set
+        // honors the Settings toggle (falls back to "all providers" when
+        // unset).
+        let loaded = configStore.load() ?? AIAssistantConfig.defaultClaude
+        self.state.enabledProviders = loaded.effectiveEnabledProviders
+        self.state.activeProvider = loaded.provider
     }
 
     /// Convenience: open a bubble in error state without a usable selection.
@@ -72,7 +80,6 @@ final class AIAssistantBubbleController {
         state.isListening = true
         state.listeningPartialText = ""
         state.errorMessage = nil
-        subscribeToStreamingPartials()
         show()
     }
 
@@ -80,10 +87,11 @@ final class AIAssistantBubbleController {
     /// listening state and submits the dictated transcript as the first
     /// (or next) question to the CLI. Empty transcripts clear the listening
     /// state but don't submit — matches the "no voice, no action" rule.
+    /// Partial observer stays subscribed so follow-up primary dictation
+    /// can feed the live preview.
     func submitVoiceTranscript(_ transcript: String) {
         state.isListening = false
         state.listeningPartialText = ""
-        unsubscribeFromStreamingPartials()
         let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         submit(question: trimmed)
@@ -91,17 +99,22 @@ final class AIAssistantBubbleController {
 
     /// Called when voice capture is cancelled or errors out without a
     /// transcript. Clears the listening state so the bubble doesn't hang.
+    /// Partial observer stays alive — it routes future partials to the
+    /// dictation live preview when the user does a follow-up via the
+    /// primary hotkey.
     func clearListening() {
         state.isListening = false
         state.listeningPartialText = ""
-        unsubscribeFromStreamingPartials()
     }
 
     /// Subscribe to `.macParakeetStreamingPartial` notifications so the
-    /// user sees live ASR text as they speak. Only flows when "Live
-    /// transcript overlay" is enabled in Settings (that's the gate on the
-    /// streaming EOU model being loaded). When disabled, the bubble stays
-    /// at just "Listening…" — no-op fallback.
+    /// user sees live ASR text as they speak. Routes partials to:
+    ///   - `listeningPartialText` while the AI hotkey is actively
+    ///     listening (under the "Listening…" label)
+    ///   - `dictationLivePreview` when the bubble is key and the user is
+    ///     using the primary dictation hotkey for a follow-up
+    /// Only flows when "Live transcript overlay" is enabled in Settings —
+    /// otherwise no partials fire and both previews stay empty.
     private func subscribeToStreamingPartials() {
         guard partialObserver == nil else { return }
         partialObserver = NotificationCenter.default.addObserver(
@@ -111,8 +124,12 @@ final class AIAssistantBubbleController {
         ) { [weak self] note in
             guard let text = note.userInfo?["text"] as? String else { return }
             Task { @MainActor in
-                guard let self, self.state.isListening else { return }
-                self.state.listeningPartialText = text
+                guard let self else { return }
+                if self.state.isListening {
+                    self.state.listeningPartialText = text
+                } else if self.isKey {
+                    self.state.dictationLivePreview = text
+                }
             }
         }
     }
@@ -142,6 +159,8 @@ final class AIAssistantBubbleController {
     /// dictation ended with the user's Voice Return trigger (e.g. "press
     /// return", "go") so speaking a submit cue acts like hitting Enter.
     func appendDictationFollowUp(_ text: String, submitAfter: Bool = false) {
+        // Clear the live preview; the final (TDT) transcript replaces it.
+        state.dictationLivePreview = ""
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             if submitAfter, !state.currentInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -160,6 +179,45 @@ final class AIAssistantBubbleController {
         if submitAfter {
             submitCurrentInput()
         }
+    }
+
+    /// Switch the active provider for the rest of this bubble session AND
+    /// persist it as the new default so future bubbles start on the same
+    /// provider. Preserves per-provider command template + model
+    /// overrides by stashing the currently-default provider's values into
+    /// the overrides dict before promoting the new one.
+    private func selectProvider(_ provider: AIAssistantConfig.Provider) {
+        guard provider != state.activeProvider else { return }
+        state.activeProvider = provider
+
+        guard let current = configStore.load() else { return }
+        guard provider != current.provider else {
+            // Switching back to the persisted default — no store rewrite.
+            return
+        }
+
+        var templates = current.providerCommandTemplates ?? [:]
+        var models = current.providerModelNames ?? [:]
+        templates[current.provider.rawValue] = current.commandTemplate
+        models[current.provider.rawValue] = current.modelName
+        let newTemplate = templates[provider.rawValue] ?? provider.defaultCommandTemplate
+        let newModel = models[provider.rawValue] ?? provider.defaultModel
+        templates.removeValue(forKey: provider.rawValue)
+        models.removeValue(forKey: provider.rawValue)
+
+        let updated = AIAssistantConfig(
+            provider: provider,
+            commandTemplate: newTemplate,
+            modelName: newModel,
+            timeoutSeconds: current.timeoutSeconds,
+            hotkeyTrigger: current.hotkeyTrigger,
+            bubbleBackgroundColor: current.bubbleBackgroundColor,
+            autoReplaceSelection: current.autoReplaceSelection,
+            enabledProviders: current.enabledProviders,
+            providerCommandTemplates: templates.isEmpty ? nil : templates,
+            providerModelNames: models.isEmpty ? nil : models
+        )
+        try? configStore.save(updated)
     }
 
     private func submitCurrentInput() {
@@ -193,6 +251,9 @@ final class AIAssistantBubbleController {
             },
             onReplaceSelection: { [weak self] turnIndex in
                 self?.replaceSelection(with: turnIndex)
+            },
+            onSelectProvider: { [weak self] provider in
+                self?.selectProvider(provider)
             }
         )
         let hosting = NSHostingView(rootView: view)
@@ -253,6 +314,14 @@ final class AIAssistantBubbleController {
         // of pasting into the user's previous app.
         AIAssistantPasteInterceptor.shared.register(controller: self)
 
+        // Subscribe once for the bubble's entire lifetime. The callback
+        // routes partials to whichever preview is active: the AI-hotkey
+        // "Listening…" block while isListening, or the primary-dictation
+        // live preview otherwise. Avoids a re-subscribe race when the
+        // bubble transitions from AI-hotkey listening to the response
+        // display while the user's still holding the hotkey.
+        subscribeToStreamingPartials()
+
         // Deferred smart-positioning pass: runs off the event tap handler
         // thread so AX latency can't cause the hotkey's keyUp to be dropped.
         DispatchQueue.main.async { [weak self, weak newPanel] in
@@ -297,10 +366,12 @@ final class AIAssistantBubbleController {
         state.errorMessage = nil
 
         let history = state.history
+        let activeProvider = state.activeProvider
         let request = AIAssistantRequest(
             selection: selection,
             question: trimmed,
-            history: history
+            history: history,
+            providerOverride: activeProvider
         )
         // Check auto-replace intent before awaiting the LLM. Captured here
         // so a mid-flight config edit in Settings doesn't change behavior
@@ -382,7 +453,10 @@ final class AIAssistantBubbleController {
             return
         }
 
-        let gap: CGFloat = 12
+        // Gap between the bubble's tail tip and the selection's nearest
+        // edge. 28pt reads as "comfortably above" for arrow-above-line
+        // style tails without the bubble hovering over adjacent text.
+        let gap: CGFloat = 28
         let candidates = Self.positioningCandidatesWithTail(
             anchor: anchor,
             panelSize: panelSize,
@@ -406,6 +480,9 @@ final class AIAssistantBubbleController {
             panelSize: panelSize,
             anchor: anchor
         )
+
+        // Bracket connector retired — SpeechBubbleShape now integrates
+        // the tail into the bubble body as one continuous cartoon shape.
     }
 
     /// Ordered placement candidates in Cocoa screen coords. Above the

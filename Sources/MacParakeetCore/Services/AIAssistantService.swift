@@ -37,12 +37,47 @@ public struct AIAssistantConfig: Codable, Sendable, Equatable {
     public enum Provider: String, Codable, Sendable, CaseIterable {
         case claude
         case codex
+        case gemini
+        case ollama
 
         public var displayName: String {
             switch self {
             case .claude: return "Claude Code"
             case .codex: return "Codex"
+            case .gemini: return "Gemini"
+            case .ollama: return "Ollama"
             }
+        }
+
+        /// SF Symbol name used as the provider's icon in the bubble's
+        /// switcher row. Stand-in for each vendor's actual logo (which
+        /// is trademarked and not shippable without licensing).
+        public var iconSystemName: String {
+            switch self {
+            case .claude: return "sparkles"
+            case .codex: return "chevron.left.forwardslash.chevron.right"
+            case .gemini: return "sparkle"
+            case .ollama: return "cpu"
+            }
+        }
+
+        /// Approximate brand color for the icon chip. Light-mode friendly;
+        /// the bubble's foreground contrast handles dark mode.
+        public var brandColorComponents: (red: Double, green: Double, blue: Double) {
+            switch self {
+            case .claude: return (0.85, 0.46, 0.34)   // Anthropic-ish warm orange
+            case .codex:  return (0.10, 0.65, 0.40)   // OpenAI-ish green
+            case .gemini: return (0.33, 0.54, 0.93)   // Gemini blue
+            case .ollama: return (0.36, 0.40, 0.48)   // Neutral slate
+            }
+        }
+
+        /// Ollama bakes the model name directly into the command
+        /// (`ollama run MODEL`) rather than taking a `--model` flag, so
+        /// `effectiveCommandTemplate` should not append `--model` for it.
+        /// Other providers follow the append convention.
+        public var bakesModelIntoCommand: Bool {
+            self == .ollama
         }
 
         /// Default invocation template with skip-permissions flags baked in,
@@ -53,6 +88,24 @@ public struct AIAssistantConfig: Codable, Sendable, Equatable {
                 return "claude --dangerously-skip-permissions -p"
             case .codex:
                 return "codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check"
+            case .gemini:
+                // `--yolo` is the Gemini CLI's skip-permissions equivalent
+                // (auto-accept all actions). Unlike Claude's `-p` which
+                // reads stdin, Gemini's `--prompt` requires an explicit
+                // string argument — but it APPENDS stdin to that argument
+                // when stdin is a pipe. Passing `--prompt ""` lets the
+                // prompt come entirely from stdin via LocalCLIExecutor's
+                // standard pipe mechanism.
+                return "gemini --yolo --prompt \"\""
+            case .ollama:
+                // CLI fallback only used when `LLMConfigStore` has no
+                // Ollama entry. When the user has already configured
+                // Ollama for transcription cleanup in Settings → AI
+                // Provider, the HTTP executor reuses that base URL +
+                // model instead — critical for remote setups (e.g.
+                // Mac Air talking to a Mac Studio over Tailscale where
+                // the `ollama` binary isn't on the Air's PATH).
+                return "ollama run gemma4:e2b"
             }
         }
 
@@ -60,6 +113,8 @@ public struct AIAssistantConfig: Codable, Sendable, Equatable {
             switch self {
             case .claude: return "sonnet"
             case .codex: return "gpt-5.2"
+            case .gemini: return "gemini-2.5-pro"
+            case .ollama: return "gemma4:e2b"
             }
         }
     }
@@ -84,6 +139,20 @@ public struct AIAssistantConfig: Codable, Sendable, Equatable {
     /// "Replace selection" button regardless of this setting. Default
     /// false — non-destructive by default.
     public let autoReplaceSelection: Bool?
+    /// Providers the user wants available as in-bubble switchable
+    /// options. The `provider` field above is the default — the one
+    /// used for the first turn. Nil means "use the fallback set"
+    /// (all providers enabled). Stored as raw string values so the
+    /// JSON stays readable.
+    public let enabledProviders: [String]?
+    /// Per-provider command template overrides. Keyed by provider raw
+    /// value. Nil / missing key → use the provider's default template.
+    /// Lets the user customize each CLI's invocation without losing
+    /// the setting when they switch the default provider.
+    public let providerCommandTemplates: [String: String]?
+    /// Per-provider model overrides. Same pattern as
+    /// `providerCommandTemplates`.
+    public let providerModelNames: [String: String]?
 
     public static let minimumTimeout: Double = 5
     public static let defaultTimeout: Double = 120
@@ -113,7 +182,10 @@ public struct AIAssistantConfig: Codable, Sendable, Equatable {
         timeoutSeconds: Double = Self.defaultTimeout,
         hotkeyTrigger: HotkeyTrigger? = nil,
         bubbleBackgroundColor: CodableColor? = nil,
-        autoReplaceSelection: Bool? = nil
+        autoReplaceSelection: Bool? = nil,
+        enabledProviders: [String]? = nil,
+        providerCommandTemplates: [String: String]? = nil,
+        providerModelNames: [String: String]? = nil
     ) {
         self.provider = provider
         self.commandTemplate = commandTemplate ?? provider.defaultCommandTemplate
@@ -122,6 +194,55 @@ public struct AIAssistantConfig: Codable, Sendable, Equatable {
         self.hotkeyTrigger = hotkeyTrigger
         self.bubbleBackgroundColor = bubbleBackgroundColor
         self.autoReplaceSelection = autoReplaceSelection
+        self.enabledProviders = enabledProviders
+        self.providerCommandTemplates = providerCommandTemplates
+        self.providerModelNames = providerModelNames
+    }
+
+    /// Resolved set of providers to surface as switchable icons in the
+    /// bubble. When nothing is stored, all providers are available; the
+    /// default provider is always included regardless of the stored set
+    /// (so the user can't lock themselves out of their own default).
+    public var effectiveEnabledProviders: [Provider] {
+        let raw = enabledProviders ?? Provider.allCases.map(\.rawValue)
+        var set = Set(raw.compactMap(Provider.init(rawValue:)))
+        set.insert(provider)
+        return Provider.allCases.filter { set.contains($0) }
+    }
+
+    /// Command template to use for a given provider. Falls back to the
+    /// stored `commandTemplate` when asking for the default provider, and
+    /// to each provider's `defaultCommandTemplate` otherwise.
+    public func commandTemplate(for provider: Provider) -> String {
+        if provider == self.provider {
+            return commandTemplate
+        }
+        return providerCommandTemplates?[provider.rawValue]
+            ?? provider.defaultCommandTemplate
+    }
+
+    /// Model name for a given provider. Mirrors `commandTemplate(for:)`.
+    public func modelName(for provider: Provider) -> String {
+        if provider == self.provider {
+            return modelName
+        }
+        return providerModelNames?[provider.rawValue]
+            ?? provider.defaultModel
+    }
+
+    /// Effective command + model stitched together for a non-default
+    /// provider. Same rule as `effectiveCommandTemplate`: if the user's
+    /// template already contains `--model`, respect it; otherwise append
+    /// the configured model.
+    public func effectiveCommandTemplate(for provider: Provider) -> String {
+        let template = commandTemplate(for: provider)
+        if provider.bakesModelIntoCommand { return template }
+        if template.contains("--model") { return template }
+        let trimmed = template.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return template }
+        let model = modelName(for: provider).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !model.isEmpty else { return template }
+        return "\(trimmed) --model \(model)"
     }
 
     /// Effective value for `autoReplaceSelection` — false by default so
@@ -153,8 +274,10 @@ public struct AIAssistantConfig: Codable, Sendable, Equatable {
 
     /// The effective command passed to the shell, combining the user-editable
     /// template with the selected model (if the template doesn't already
-    /// specify one — presence of "--model" wins).
+    /// specify one — presence of "--model" wins). Providers that bake the
+    /// model directly into the command line (Ollama) skip the append.
     public var effectiveCommandTemplate: String {
+        if provider.bakesModelIntoCommand { return commandTemplate }
         if commandTemplate.contains("--model") {
             return commandTemplate
         }
@@ -215,11 +338,21 @@ public struct AIAssistantRequest: Sendable {
     public let selection: String
     public let question: String
     public let history: [AIAssistantTurn]
+    /// Optional per-turn provider override. When nil, the service uses
+    /// the config's default provider. The bubble's provider-switcher
+    /// sets this per ask so subsequent turns stay on the chosen CLI.
+    public let providerOverride: AIAssistantConfig.Provider?
 
-    public init(selection: String, question: String, history: [AIAssistantTurn] = []) {
+    public init(
+        selection: String,
+        question: String,
+        history: [AIAssistantTurn] = [],
+        providerOverride: AIAssistantConfig.Provider? = nil
+    ) {
         self.selection = selection
         self.question = question
         self.history = history
+        self.providerOverride = providerOverride
     }
 }
 
@@ -261,14 +394,21 @@ public final class AIAssistantService: AIAssistantServiceProtocol, @unchecked Se
         guard let config = configProvider() else {
             throw LocalCLIError.commandNotConfigured
         }
+        // Per-turn provider override lets the bubble switch CLIs mid-
+        // conversation. When nil, use the config's default provider.
+        let resolvedProvider = request.providerOverride ?? config.provider
+        let resolvedTemplate = request.providerOverride == nil
+            ? config.effectiveCommandTemplate
+            : config.effectiveCommandTemplate(for: resolvedProvider)
+
         let cliConfig = LocalCLIConfig(
-            commandTemplate: config.effectiveCommandTemplate,
+            commandTemplate: resolvedTemplate,
             timeoutSeconds: config.timeoutSeconds
         )
         let system = Self.renderSystemPrompt(selection: request.selection)
         let user = Self.renderUserPrompt(history: request.history, question: request.question)
         logger.info(
-            "ask provider=\(config.provider.rawValue, privacy: .public) selectionChars=\(request.selection.count) questionChars=\(request.question.count) historyTurns=\(request.history.count)"
+            "ask provider=\(resolvedProvider.rawValue, privacy: .public) override=\(request.providerOverride != nil, privacy: .public) selectionChars=\(request.selection.count) questionChars=\(request.question.count) historyTurns=\(request.history.count)"
         )
         let output = try await executor.execute(
             systemPrompt: system,
