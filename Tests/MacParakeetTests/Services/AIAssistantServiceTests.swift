@@ -44,6 +44,42 @@ final class AIAssistantServiceTests: XCTestCase {
         XCTAssertEqual(config.effectiveCommandTemplate, "claude -p --model haiku")
     }
 
+    func testGeminiLegacyPromptTemplateIsNormalizedForDefaultProvider() {
+        let config = AIAssistantConfig(
+            provider: .gemini,
+            commandTemplate: "gemini --yolo --prompt ",
+            modelName: "gemini-2.5-pro"
+        )
+
+        XCTAssertEqual(
+            config.effectiveCommandTemplate,
+            #"gemini --yolo --prompt "" --model gemini-2.5-pro"#
+        )
+    }
+
+    func testLegacyGeminiPromptTemplateNormalizesWhenDecodedFromStoredConfig() throws {
+        let legacyJSON = """
+            {
+                "provider": "claude",
+                "commandTemplate": "claude --dangerously-skip-permissions -p",
+                "modelName": "sonnet",
+                "timeoutSeconds": 120,
+                "providerCommandTemplates": {
+                    "gemini": "gemini --yolo --prompt "
+                },
+                "providerModelNames": {
+                    "gemini": "gemini-2.5-flash"
+                }
+            }
+            """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(AIAssistantConfig.self, from: legacyJSON)
+
+        XCTAssertEqual(
+            decoded.effectiveCommandTemplate(for: .gemini),
+            #"gemini --yolo --prompt "" --model gemini-2.5-flash"#
+        )
+    }
+
     // MARK: - Config store round-trip
 
     func testConfigStoreRoundTrip() throws {

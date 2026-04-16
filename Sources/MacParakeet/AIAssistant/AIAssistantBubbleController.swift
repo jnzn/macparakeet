@@ -276,7 +276,10 @@ final class AIAssistantBubbleController {
         )
         newPanel.isOpaque = false
         newPanel.backgroundColor = .clear
-        newPanel.hasShadow = true
+        // Keep only the bubble view's own SwiftUI shadow. The panel-level
+        // shadow draws around the transparent window bounds and reads as a
+        // dark border/ring around the glass bubble.
+        newPanel.hasShadow = false
         newPanel.level = .floating
         newPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         newPanel.isReleasedWhenClosed = false
