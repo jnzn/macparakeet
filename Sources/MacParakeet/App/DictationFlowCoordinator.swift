@@ -168,10 +168,10 @@ final class DictationFlowCoordinator {
             Task { @MainActor [weak self] in
                 guard let self, let vm = self.overlayViewModel else { return }
                 switch vm.state {
-                case .recording, .processing, .formatting:
+                case .recording:
                     vm.streamingPartialText = self.composeDisplayText(for: text)
                     self.scheduleLiveCleanup(for: text)
-                case .ready, .cancelled, .success, .noSpeech, .error:
+                case .ready, .processing, .formatting, .cancelled, .success, .noSpeech, .error:
                     break
                 }
             }
@@ -217,6 +217,12 @@ final class DictationFlowCoordinator {
     private func resetStableCleanupState() {
         stableCleanedText = nil
         rawAtStableCleanup = nil
+    }
+
+    private func cancelLiveCleanup() {
+        liveCleanupDebounceTask?.cancel()
+        liveCleanupDebounceTask = nil
+        pendingCleanupSnapshot = ""
     }
 
     /// Fire a single LLM cleanup call after the user pauses for ~450 ms of
@@ -267,12 +273,12 @@ final class DictationFlowCoordinator {
             return
         }
         switch vm.state {
-        case .recording, .processing, .formatting:
+        case .recording:
             stableCleanedText = cleaned
             rawAtStableCleanup = snapshot
             vm.streamingPartialText = cleaned
             dictationLog.info("live_cleanup_applied outChars=\(cleaned.count, privacy: .public)")
-        case .ready, .cancelled, .success, .noSpeech, .error:
+        case .ready, .processing, .formatting, .cancelled, .success, .noSpeech, .error:
             dictationLog.info("live_cleanup_dropped reason=terminal_state")
         }
     }
@@ -469,15 +475,19 @@ final class DictationFlowCoordinator {
                 }
             }
             vm.recordingMode = mode
+            cancelLiveCleanup()
+            resetStableCleanupState()
             vm.state = .recording
             vm.startTimer()
 
         case .showProcessingState:
             overlayViewModel?.stopTimer()
+            cancelLiveCleanup()
             overlayViewModel?.state = .processing
 
         case .showCancelCountdown:
             overlayViewModel?.stopTimer()
+            cancelLiveCleanup()
             overlayViewModel?.streamingPartialText = ""
             overlayViewModel?.micDeviceName = nil
             resetStableCleanupState()
@@ -485,6 +495,7 @@ final class DictationFlowCoordinator {
             overlayViewModel?.state = .cancelled(timeRemaining: 5.0)
 
         case .showSuccess:
+            cancelLiveCleanup()
             overlayViewModel?.micDeviceName = nil
             resetStableCleanupState()
             // Replace the streaming bubble with the authoritative final text
@@ -501,21 +512,25 @@ final class DictationFlowCoordinator {
             overlayViewModel?.state = .success
 
         case .showNoSpeech:
+            cancelLiveCleanup()
             overlayViewModel?.streamingPartialText = ""
             overlayViewModel?.micDeviceName = nil
             overlayViewModel?.state = .noSpeech
 
         case .showError(let message):
+            cancelLiveCleanup()
             overlayViewModel?.streamingPartialText = ""
             overlayViewModel?.micDeviceName = nil
             overlayViewModel?.state = .error(message)
 
         case .hideOverlay:
+            cancelLiveCleanup()
             overlayController?.hide()
             overlayController = nil
             overlayViewModel = nil
 
         case .dismissReadyPill:
+            cancelLiveCleanup()
             overlayController?.hide()
             overlayController = nil
             overlayViewModel = nil

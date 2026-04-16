@@ -20,6 +20,7 @@ final class AIAssistantBubbleController {
     private let service: AIAssistantServiceProtocol
     private let configStore: AIAssistantConfigStore
     private let selectionReplacer: SelectionReplacer
+    private let selectionAnchorRect: CGRect?
     /// PID of the app that was frontmost when the user pressed the hotkey
     /// — captured at session start so "Replace selection" can activate the
     /// right window even if the user has since clicked to other apps.
@@ -45,6 +46,7 @@ final class AIAssistantBubbleController {
         service: AIAssistantServiceProtocol,
         configStore: AIAssistantConfigStore,
         selectionReplacer: SelectionReplacer,
+        selectionAnchorRect: CGRect?,
         sourceAppPID: pid_t?,
         onDismissed: @escaping () -> Void
     ) {
@@ -52,6 +54,7 @@ final class AIAssistantBubbleController {
         self.service = service
         self.configStore = configStore
         self.selectionReplacer = selectionReplacer
+        self.selectionAnchorRect = selectionAnchorRect
         self.sourceAppPID = sourceAppPID
         self.onDismissed = onDismissed
         self.state.canReplaceSelection = (sourceAppPID != nil)
@@ -325,11 +328,12 @@ final class AIAssistantBubbleController {
         // display while the user's still holding the hotkey.
         subscribeToStreamingPartials()
 
-        // Deferred smart-positioning pass: runs off the event tap handler
-        // thread so AX latency can't cause the hotkey's keyUp to be dropped.
+        // Deferred smart-positioning pass so the panel exists before we move
+        // it. Position from the source-app anchor captured before the bubble
+        // opened instead of issuing another live AX query after focus shifts.
         DispatchQueue.main.async { [weak self, weak newPanel] in
             guard let self, let newPanel, self.panel === newPanel else { return }
-            self.positionNearSelection(newPanel)
+            self.positionNearSelection(newPanel, anchor: self.selectionAnchorRect)
         }
     }
 
@@ -440,12 +444,12 @@ final class AIAssistantBubbleController {
     /// window as fallbacks). Preference order: above → below → right → left
     /// → center. Always clamped to the active screen's visible frame so the
     /// bubble never renders partly off-screen.
-    private func positionNearSelection(_ panel: NSPanel) {
+    private func positionNearSelection(_ panel: NSPanel, anchor: CGRect?) {
         let panelSize = panel.frame.size
         let screen = NSScreen.main ?? NSScreen.screens.first
         let visible = screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
 
-        guard let anchor = AppContextService.frontmostSelectionScreenRect() else {
+        guard let anchor else {
             // No usable anchor — center on the active screen, no tail.
             let origin = NSPoint(
                 x: visible.midX - panelSize.width / 2,

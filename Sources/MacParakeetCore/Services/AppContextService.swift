@@ -179,9 +179,26 @@ public enum AppContextService {
         timeoutSeconds: Float = 0.15
     ) -> CGRect? {
         #if canImport(AppKit) && canImport(ApplicationServices)
-        guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier else {
-            return nil
-        }
+        guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier else { return nil }
+        return selectionScreenRect(for: pid, timeoutSeconds: timeoutSeconds)
+        #else
+        return nil
+        #endif
+    }
+
+    /// Best-effort screen rect for a specific app's current text selection.
+    /// Used by the AI Assistant bubble to capture an anchor against the source
+    /// app before the bubble takes key-window status.
+    ///
+    /// `includeWindowFallback` is configurable so contextual bubble placement
+    /// can degrade to "no anchor" instead of snapping to the target app's
+    /// outer window frame when AX won't surface a real text rect.
+    public static func selectionScreenRect(
+        for pid: pid_t,
+        timeoutSeconds: Float = 0.15,
+        includeWindowFallback: Bool = true
+    ) -> CGRect? {
+        #if canImport(AppKit) && canImport(ApplicationServices)
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, timeoutSeconds)
 
@@ -196,6 +213,8 @@ public enum AppContextService {
                 return convertAXRectToCocoa(rect)
             }
         }
+
+        guard includeWindowFallback else { return nil }
 
         // Tier 3: frontmost window bounds
         if let window: AXUIElement = copyAXAttribute(app, kAXFocusedWindowAttribute as CFString) {

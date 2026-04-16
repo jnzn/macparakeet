@@ -132,6 +132,13 @@ final class AIAssistantFlowCoordinator {
         // SelectionReplacer can refocus the right window when the user
         // triggers an inline-replace later.
         let sourcePID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let selectionAnchorRect = sourcePID.flatMap {
+            AppContextService.selectionScreenRect(
+                for: $0,
+                timeoutSeconds: 0.10,
+                includeWindowFallback: false
+            )
+        }
 
         logger.info("hotkey_press spawn listening bubble selectionChars=\(selection.count)")
         let bubble = AIAssistantBubbleController(
@@ -139,6 +146,7 @@ final class AIAssistantFlowCoordinator {
             service: service,
             configStore: configStore,
             selectionReplacer: selectionReplacer,
+            selectionAnchorRect: selectionAnchorRect,
             sourceAppPID: sourcePID,
             onDismissed: { [weak self] in
                 self?.activeBubble = nil
@@ -336,6 +344,7 @@ final class AIAssistantFlowCoordinator {
             service: service,
             configStore: configStore,
             selectionReplacer: selectionReplacer,
+            selectionAnchorRect: nil,
             sourceAppPID: nil,
             onDismissed: { [weak self] in
                 self?.activeBubble = nil

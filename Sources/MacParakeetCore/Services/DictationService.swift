@@ -606,22 +606,17 @@ public actor DictationService: DictationServiceProtocol {
         let cleanTranscript = refinement.text
         let expandedSnippetIDs = refinement.expandedSnippetIDs
         let baseText = cleanTranscript ?? result.text
-        // Paste-path LLM polish runs when:
-        //   1. the "Polish final paste" toggle is on (applies to every
-        //      dictation, profile or not), OR
-        //   2. an AppProfile resolved for the frontmost app and carries a
-        //      prompt override — profile activation is itself an opt-in
-        //      signal that the user wants per-app polish on the paste.
-        // No profile + toggle off = pure Parakeet raw (Item 1 default for
-        // unknown apps, keeps paste instant).
+        // Final-paste LLM polish is explicit opt-in via Settings only. Per-app
+        // profiles still shape the live cleanup bubble while recording, but
+        // release should paste immediately unless the user deliberately asked
+        // for another model round-trip at paste time.
         //
-        // `suppressLLMPolish` short-circuits both. AI Assistant dictations
+        // `suppressLLMPolish` short-circuits even the explicit toggle. AI Assistant dictations
         // set it so the raw transcript flows verbatim to Claude/Codex —
         // applying the Terminal profile's transliteration to a spoken
         // question like "see dee slash" would mangle it into "cd /" before
         // it ever reached the model.
-        let shouldPolishPaste = !suppressLLMPolish
-            && (shouldFormatPasteWithAI() || activeProfile?.promptOverride != nil)
+        let shouldPolishPaste = !suppressLLMPolish && shouldFormatPasteWithAI()
         let formattedTranscript = shouldPolishPaste
             ? try await formatTranscriptIfNeeded(baseText)
             : nil
