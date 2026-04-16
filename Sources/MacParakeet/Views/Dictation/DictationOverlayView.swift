@@ -219,6 +219,14 @@ struct DictationOverlayView: View {
     /// to `true` after a short delay so the pill blooms horizontally as the leaf
     /// + "more audio please" label fade in. Reset whenever the pill state changes.
     @State private var noSpeechExpanded: Bool = false
+    @State private var appearProgress: CGFloat = 0
+
+    private static let overlayGlassTint = CodableColor(
+        red: 0.1,
+        green: 0.1,
+        blue: 0.12,
+        opacity: 0.7
+    )
 
     /// Align tooltip above the hovered button: leading for cancel, trailing for stop.
     private var tooltipAlignment: Alignment {
@@ -253,9 +261,76 @@ struct DictationOverlayView: View {
         }
         .padding(.bottom, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .scaleEffect(0.95 + 0.05 * appearProgress, anchor: .bottom)
+        .opacity(Double(appearProgress))
+        .onAppear {
+            appearProgress = 0
+            withAnimation(.easeOut(duration: 0.2)) {
+                appearProgress = 1
+            }
+        }
         .onChange(of: viewModel.pillStateKey) { _, newKey in
             handlePillStateChange(to: newKey)
         }
+    }
+
+    private var overlayGlassTintColor: Color {
+        Self.overlayGlassTint.toSwiftUIColor()
+    }
+
+    private var overlayHighlightGradient: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color.white.opacity(0.15),
+                Color.white.opacity(0.05),
+                Color.clear,
+            ],
+            startPoint: .top,
+            endPoint: .center
+        )
+    }
+
+    private func glassCapsuleBackground(
+        strokeOpacity: Double = 0.12,
+        shadowOpacity: Double = 0.32,
+        shadowRadius: CGFloat = 18,
+        shadowY: CGFloat = 10,
+        includeNoSpeechLightDrift: Bool = false
+    ) -> some View {
+        Capsule()
+            .fill(.ultraThinMaterial)
+            .overlay(Capsule().fill(overlayHighlightGradient))
+            .overlay(Capsule().fill(overlayGlassTintColor))
+            .overlay(NoSpeechLightDrift(active: includeNoSpeechLightDrift))
+            .overlay(
+                Capsule()
+                    .strokeBorder(Color.white.opacity(strokeOpacity), lineWidth: 0.6)
+            )
+            .shadow(color: .black.opacity(shadowOpacity), radius: shadowRadius, y: shadowY)
+    }
+
+    private func glassRoundedRectBackground(
+        cornerRadius: CGFloat,
+        strokeOpacity: Double = 0.12,
+        shadowOpacity: Double = 0.32,
+        shadowRadius: CGFloat = 18,
+        shadowY: CGFloat = 10
+    ) -> some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(.ultraThinMaterial)
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(overlayHighlightGradient)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(overlayGlassTintColor)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(Color.white.opacity(strokeOpacity), lineWidth: 0.6)
+            )
+            .shadow(color: .black.opacity(shadowOpacity), radius: shadowRadius, y: shadowY)
     }
 
     /// Black translucent bubble that appears above the dictation pill during
@@ -277,9 +352,13 @@ struct DictationOverlayView: View {
                 .padding(.vertical, 10)
                 .frame(maxWidth: maxWidth, alignment: .leading)
                 .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color.black.opacity(0.95))
-                        .shadow(color: .black.opacity(0.35), radius: 10, y: 4)
+                    glassRoundedRectBackground(
+                        cornerRadius: 14,
+                        strokeOpacity: 0.1,
+                        shadowOpacity: 0.28,
+                        shadowRadius: 14,
+                        shadowY: 8
+                    )
                 )
                 .transition(.opacity)
         } else {
@@ -311,8 +390,12 @@ struct DictationOverlayView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
             .background(
-                Capsule()
-                    .fill(Color.black.opacity(0.35))
+                glassCapsuleBackground(
+                    strokeOpacity: 0.08,
+                    shadowOpacity: 0.18,
+                    shadowRadius: 10,
+                    shadowY: 6
+                )
             )
             .transition(.opacity)
         } else {
@@ -387,19 +470,7 @@ struct DictationOverlayView: View {
                 .padding(.horizontal, horizontalPadding)
                 .padding(.vertical, verticalPadding)
                 .background(
-                    Capsule()
-                        .fill(DesignSystem.Colors.pillBackground)
-                        .overlay(
-                            Capsule()
-                                .strokeBorder(DesignSystem.Colors.pillBorder, lineWidth: 1)
-                        )
-                        // Slow horizontal light drift that accompanies the
-                        // no-speech pill's farewell — lands exactly at the
-                        // dismiss boundary. No-op for every other state:
-                        // `active` stays false, view sits at opacity 0, and
-                        // onChange never fires.
-                        .overlay(NoSpeechLightDrift(active: isNoSpeechExpanded))
-                        .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+                    glassCapsuleBackground(includeNoSpeechLightDrift: isNoSpeechExpanded)
                 )
                 .animation(.easeInOut(duration: 0.25), value: viewModel.pillStateKey)
                 .animation(.easeOut(duration: 0.45), value: noSpeechExpanded)
@@ -716,13 +787,13 @@ struct DictationOverlayView: View {
         .padding(16)
         .frame(width: 260)
         .background(
-            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
-                .fill(DesignSystem.Colors.pillBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
-                        .strokeBorder(DesignSystem.Colors.pillBorder.opacity(0.5), lineWidth: 0.5)
-                )
-                .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+            glassRoundedRectBackground(
+                cornerRadius: DesignSystem.Layout.cardCornerRadius,
+                strokeOpacity: 0.1,
+                shadowOpacity: 0.3,
+                shadowRadius: 14,
+                shadowY: 8
+            )
         )
     }
 
@@ -795,13 +866,12 @@ struct DictationOverlayView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 10)
             .background(
-                Capsule()
-                    .fill(DesignSystem.Colors.pillBackground)
-                    .overlay(
-                        Capsule()
-                            .strokeBorder(DesignSystem.Colors.pillBorder.opacity(0.67), lineWidth: 0.5)
-                    )
-                    .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+                glassCapsuleBackground(
+                    strokeOpacity: 0.1,
+                    shadowOpacity: 0.24,
+                    shadowRadius: 14,
+                    shadowY: 8
+                )
             )
         }
     }

@@ -67,6 +67,7 @@ final class DictationOverlayController {
         if panel != nil { return }
 
         let view = DictationOverlayView(viewModel: overlayViewModel)
+            .environment(\.colorScheme, .dark)
         let hosting = NSHostingView(rootView: view)
 
         // Sized generously so the streaming bubble can grow upward without
