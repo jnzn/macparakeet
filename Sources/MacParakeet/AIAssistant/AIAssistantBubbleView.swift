@@ -1,5 +1,6 @@
 import SwiftUI
 import MacParakeetCore
+import MarkdownUI
 
 /// Observable state for a single bubble session. Held by the bubble
 /// controller; rebuilt on dismiss so stale turns don't leak across sessions.
@@ -500,16 +501,14 @@ struct AIAssistantBubbleView: View {
                                 // shipping proprietary fonts (Claude's
                                 // Copernicus is not distributable).
                                 //
-                                // Renders inline markdown via AttributedString.
-                                // Covers **bold**, *italic*, `code`, links, and
-                                // ~~strikethrough~~. Headings, lists, block
-                                // code, tables fall back to literal characters —
-                                // upgrade to MarkdownUI package in a later pass
-                                // if richer rendering becomes important.
-                                Text(Self.renderMarkdown(turn.response))
-                                    .font(.system(size: 15, design: .serif))
-                                    .foregroundStyle(foreground)
-                                    .lineSpacing(3)
+                                // Full CommonMark + GFM rendering via MarkdownUI:
+                                // headings, lists, tables, fenced code blocks,
+                                // blockquotes. Theme below preserves the New
+                                // York serif editorial feel for body copy and
+                                // uses monospace for code with a subtle dark
+                                // fill (Claude.ai-style).
+                                Markdown(turn.response)
+                                    .markdownTheme(Self.bubbleMarkdownTheme(foreground: foreground))
                                     .textSelection(.enabled)
 
                                 if state.canReplaceSelection {
@@ -789,18 +788,92 @@ struct AIAssistantBubbleView: View {
         onSubmit(q)
     }
 
-    /// Parse Claude/Codex output as markdown so `**bold**`, `*italic*`,
-    /// `` `code` ``, and links render as formatted text. `.full` interprets
-    /// paragraph breaks and inline elements; `inlineOnlyPreservingWhitespace`
-    /// would strip newlines, which is wrong for multi-paragraph responses.
-    /// Falls back to plain text on parse failure.
-    private static func renderMarkdown(_ raw: String) -> AttributedString {
-        let options = AttributedString.MarkdownParsingOptions(
-            interpretedSyntax: .full
-        )
-        if let parsed = try? AttributedString(markdown: raw, options: options) {
-            return parsed
-        }
-        return AttributedString(raw)
+    /// Bubble's MarkdownUI theme. Body copy uses Apple's New York serif at
+    /// 15pt to match the editorial feel; code uses monospace over a subtle
+    /// dark fill so fenced blocks read like Claude.ai's. Headings step down
+    /// in weight rather than ballooning in size — keeps the bubble from
+    /// looking wiki-ish.
+    private static func bubbleMarkdownTheme(foreground: Color) -> Theme {
+        return Theme()
+            .text {
+                ForegroundColor(foreground)
+                FontFamily(.system(.serif))
+                FontSize(15)
+            }
+            .code {
+                FontFamilyVariant(.monospaced)
+                FontSize(13.5)
+                BackgroundColor(.secondary.opacity(0.18))
+            }
+            .strong { FontWeight(.semibold) }
+            .emphasis { FontStyle(.italic) }
+            .link { ForegroundColor(.accentColor) }
+            .heading1 { config in
+                config.label
+                    .markdownMargin(top: 12, bottom: 6)
+                    .markdownTextStyle {
+                        FontWeight(.bold)
+                        FontSize(20)
+                    }
+            }
+            .heading2 { config in
+                config.label
+                    .markdownMargin(top: 10, bottom: 5)
+                    .markdownTextStyle {
+                        FontWeight(.semibold)
+                        FontSize(17.5)
+                    }
+            }
+            .heading3 { config in
+                config.label
+                    .markdownMargin(top: 8, bottom: 4)
+                    .markdownTextStyle {
+                        FontWeight(.semibold)
+                        FontSize(16)
+                    }
+            }
+            .paragraph { config in
+                config.label
+                    .lineSpacing(3)
+                    .markdownMargin(top: 0, bottom: 8)
+            }
+            .listItem { config in
+                config.label.markdownMargin(top: 2, bottom: 2)
+            }
+            .codeBlock { config in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    config.label
+                        .relativeLineSpacing(.em(0.18))
+                        .markdownTextStyle {
+                            FontFamilyVariant(.monospaced)
+                            FontSize(13)
+                        }
+                        .padding(10)
+                }
+                .background(Color.black.opacity(0.22))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .markdownMargin(top: 6, bottom: 8)
+            }
+            .blockquote { config in
+                config.label
+                    .padding(.leading, 12)
+                    .overlay(alignment: .leading) {
+                        Rectangle()
+                            .fill(.secondary.opacity(0.4))
+                            .frame(width: 2)
+                    }
+                    .markdownTextStyle { FontStyle(.italic) }
+            }
+            .table { config in
+                config.label
+                    .markdownTableBorderStyle(.init(color: .secondary.opacity(0.3)))
+                    .markdownMargin(top: 6, bottom: 8)
+            }
+            .tableCell { config in
+                config.label
+                    .markdownTextStyle { FontSize(14) }
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 8)
+            }
     }
 }

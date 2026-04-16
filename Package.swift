@@ -23,7 +23,11 @@ let package = Package(
         // ArgumentParser for CLI
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0"),
         // Sparkle for auto-updates (non-App Store distribution)
-        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.0")
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.0"),
+        // MarkdownUI for rich CommonMark + GFM rendering in the AI bubble
+        // (headings, lists, tables, fenced code). Replaces the prior
+        // `AttributedString(markdown:)` inline-only path.
+        .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.4.0")
     ],
     targets: [
         // Main GUI app
@@ -32,7 +36,8 @@ let package = Package(
             dependencies: [
                 "MacParakeetCore",
                 "MacParakeetViewModels",
-                .product(name: "Sparkle", package: "Sparkle")
+                .product(name: "Sparkle", package: "Sparkle"),
+                .product(name: "MarkdownUI", package: "swift-markdown-ui")
             ],
             path: "Sources/MacParakeet",
             resources: [.process("Resources")]

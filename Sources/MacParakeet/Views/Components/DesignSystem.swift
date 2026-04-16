@@ -7,48 +7,48 @@ enum DesignSystem {
 
     enum Colors {
         // Accent — warm coral-orange (parakeet plumage)
-        static let accent = Color(light: .init(red: 0.91, green: 0.42, blue: 0.23),
+        static let accent = Color.adaptive(light: .init(red: 0.91, green: 0.42, blue: 0.23),
                                   dark: .init(red: 1.0, green: 0.54, blue: 0.36))
-        static let accentLight = Color(light: .init(red: 1.0, green: 0.94, blue: 0.92),
+        static let accentLight = Color.adaptive(light: .init(red: 1.0, green: 0.94, blue: 0.92),
                                        dark: .init(red: 1.0, green: 0.54, blue: 0.36).opacity(0.12))
-        static let accentDark = Color(light: .init(red: 0.77, green: 0.33, blue: 0.16),
+        static let accentDark = Color.adaptive(light: .init(red: 0.77, green: 0.33, blue: 0.16),
                                       dark: .init(red: 0.91, green: 0.42, blue: 0.23))
 
         // Backgrounds — warm off-whites, not pure white
-        static let background = Color(light: .init(red: 0.98, green: 0.98, blue: 0.97),
+        static let background = Color.adaptive(light: .init(red: 0.98, green: 0.98, blue: 0.97),
                                       dark: .init(red: 0.11, green: 0.11, blue: 0.12))
-        static let surface = Color(light: .white,
+        static let surface = Color.adaptive(light: .white,
                                    dark: .init(red: 0.17, green: 0.17, blue: 0.18))
-        static let surfaceElevated = Color(light: .init(red: 0.96, green: 0.96, blue: 0.94),
+        static let surfaceElevated = Color.adaptive(light: .init(red: 0.96, green: 0.96, blue: 0.94),
                                            dark: .init(red: 0.23, green: 0.23, blue: 0.24))
 
         // Text — high contrast primaries
-        static let textPrimary = Color(light: .init(red: 0.10, green: 0.10, blue: 0.10),
+        static let textPrimary = Color.adaptive(light: .init(red: 0.10, green: 0.10, blue: 0.10),
                                        dark: .white)
-        static let textSecondary = Color(light: .init(red: 0.42, green: 0.42, blue: 0.42),
+        static let textSecondary = Color.adaptive(light: .init(red: 0.42, green: 0.42, blue: 0.42),
                                          dark: .init(red: 0.63, green: 0.63, blue: 0.65))
-        static let textTertiary = Color(light: .init(red: 0.61, green: 0.61, blue: 0.61),
+        static let textTertiary = Color.adaptive(light: .init(red: 0.61, green: 0.61, blue: 0.61),
                                         dark: .init(red: 0.39, green: 0.39, blue: 0.40))
 
         // Semantic
-        static let successGreen = Color(light: .init(red: 0.20, green: 0.66, blue: 0.33),
+        static let successGreen = Color.adaptive(light: .init(red: 0.20, green: 0.66, blue: 0.33),
                                         dark: .init(red: 0.29, green: 0.87, blue: 0.50))
-        static let warningAmber = Color(light: .init(red: 0.96, green: 0.65, blue: 0.14),
+        static let warningAmber = Color.adaptive(light: .init(red: 0.96, green: 0.65, blue: 0.14),
                                         dark: .init(red: 0.98, green: 0.75, blue: 0.14))
-        static let errorRed = Color(light: .init(red: 0.90, green: 0.30, blue: 0.26),
+        static let errorRed = Color.adaptive(light: .init(red: 0.90, green: 0.30, blue: 0.26),
                                     dark: .init(red: 0.97, green: 0.44, blue: 0.44))
         static let onAccent = Color.white
 
         // Borders & dividers
-        static let border = Color(light: .init(red: 0.91, green: 0.91, blue: 0.88),
+        static let border = Color.adaptive(light: .init(red: 0.91, green: 0.91, blue: 0.88),
                                   dark: .init(red: 0.30, green: 0.30, blue: 0.32))
-        static let divider = Color(light: .init(red: 0.94, green: 0.94, blue: 0.91),
+        static let divider = Color.adaptive(light: .init(red: 0.94, green: 0.94, blue: 0.91),
                                    dark: .init(red: 0.25, green: 0.25, blue: 0.27))
 
         // Interactive
-        static let rowHoverBackground = Color(light: .init(red: 0.96, green: 0.96, blue: 0.94),
+        static let rowHoverBackground = Color.adaptive(light: .init(red: 0.96, green: 0.96, blue: 0.94),
                                               dark: .primary.opacity(0.06))
-        static let cardBackground = Color(light: .white,
+        static let cardBackground = Color.adaptive(light: .white,
                                           dark: .init(red: 0.17, green: 0.17, blue: 0.18))
 
         // Playback
@@ -57,17 +57,17 @@ enum DesignSystem {
 
         // Speaker diarization palette — distinct, readable in both light/dark
         static let speakerColors: [Color] = [
-            Color(light: .init(red: 0.20, green: 0.51, blue: 0.84),
+            Color.adaptive(light: .init(red: 0.20, green: 0.51, blue: 0.84),
                   dark: .init(red: 0.42, green: 0.68, blue: 0.96)),   // Blue
-            Color(light: .init(red: 0.72, green: 0.33, blue: 0.64),
+            Color.adaptive(light: .init(red: 0.72, green: 0.33, blue: 0.64),
                   dark: .init(red: 0.85, green: 0.52, blue: 0.78)),   // Purple
-            Color(light: .init(red: 0.16, green: 0.60, blue: 0.46),
+            Color.adaptive(light: .init(red: 0.16, green: 0.60, blue: 0.46),
                   dark: .init(red: 0.30, green: 0.78, blue: 0.62)),   // Teal
-            Color(light: .init(red: 0.82, green: 0.52, blue: 0.14),
+            Color.adaptive(light: .init(red: 0.82, green: 0.52, blue: 0.14),
                   dark: .init(red: 0.95, green: 0.68, blue: 0.30)),   // Amber
-            Color(light: .init(red: 0.80, green: 0.28, blue: 0.28),
+            Color.adaptive(light: .init(red: 0.80, green: 0.28, blue: 0.28),
                   dark: .init(red: 0.95, green: 0.45, blue: 0.45)),   // Red
-            Color(light: .init(red: 0.40, green: 0.56, blue: 0.24),
+            Color.adaptive(light: .init(red: 0.40, green: 0.56, blue: 0.24),
                   dark: .init(red: 0.56, green: 0.76, blue: 0.38)),   // Green
         ]
 
@@ -82,13 +82,13 @@ enum DesignSystem {
         static let pillBackground = Color.black.opacity(0.7)
         static let pillBorder = Color.white.opacity(0.15)
         static let recordingRed = Color.red
-        static let sacredGlow = Color(light: .init(red: 0.40, green: 0.85, blue: 0.40),
+        static let sacredGlow = Color.adaptive(light: .init(red: 0.40, green: 0.85, blue: 0.40),
                                       dark: .init(red: 0.46, green: 0.90, blue: 0.46))
-        static let sacredStem = Color(light: .init(red: 0.35, green: 0.65, blue: 0.35),
+        static let sacredStem = Color.adaptive(light: .init(red: 0.35, green: 0.65, blue: 0.35),
                                       dark: .init(red: 0.43, green: 0.74, blue: 0.43))
-        static let meetingPillBackground = Color(light: .black.opacity(0.88),
+        static let meetingPillBackground = Color.adaptive(light: .black.opacity(0.88),
                                                  dark: .black.opacity(0.90))
-        static let meetingPillBackgroundHover = Color(light: .black.opacity(0.90),
+        static let meetingPillBackgroundHover = Color.adaptive(light: .black.opacity(0.90),
                                                       dark: .init(red: 0.18, green: 0.18, blue: 0.19).opacity(0.95))
         static let meetingPillStroke = Color.white.opacity(0.08)
         static let meetingPillStrokeHover = Color.white.opacity(0.15)
@@ -209,8 +209,11 @@ struct ShadowStyle {
 
 extension Color {
     /// Creates a color that adapts to light/dark mode.
-    init(light: Color, dark: Color) {
-        self.init(nsColor: NSColor(name: nil) { appearance in
+    /// Renamed from `init(light:dark:)` because MarkdownUI exports a same-shape
+    /// initializer that creates an ambiguity at every call site once that
+    /// package is imported into the MacParakeet target.
+    static func adaptive(light: Color, dark: Color) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
             let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             return isDark ? NSColor(dark) : NSColor(light)
         })
