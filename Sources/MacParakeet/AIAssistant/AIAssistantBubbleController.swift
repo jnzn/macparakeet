@@ -16,6 +16,8 @@ private final class AIAssistantBubblePanel: NSPanel {
 /// resign), or explicit `dismiss()` call.
 @MainActor
 final class AIAssistantBubbleController {
+    private static let unfocusedAutoDismissDelay: Duration = .seconds(20)
+
     private let selection: String
     private let service: AIAssistantServiceProtocol
     private let configStore: AIAssistantConfigStore
@@ -33,8 +35,10 @@ final class AIAssistantBubbleController {
     private var panel: AIAssistantBubblePanel?
     private var hostingView: NSHostingView<AIAssistantBubbleView>?
     private var resignObserver: NSObjectProtocol?
+    private var becomeObserver: NSObjectProtocol?
     private var partialObserver: NSObjectProtocol?
     private var activeTask: Task<Void, Never>?
+    private var unfocusedAutoDismissTask: Task<Void, Never>?
     private var isDismissed = false
     /// True after the first auto-replace has fired. Prevents subsequent
     /// responses from auto-replacing — only the initial "Claude, rewrite
@@ -74,6 +78,7 @@ final class AIAssistantBubbleController {
     func showError(_ message: String) {
         state.errorMessage = message
         show()
+        refreshUnfocusedAutoDismissTimer()
     }
 
     /// Open the bubble in "Listening…" state. Called immediately on hotkey
@@ -84,6 +89,7 @@ final class AIAssistantBubbleController {
         state.listeningPartialText = ""
         state.errorMessage = nil
         show()
+        refreshUnfocusedAutoDismissTimer()
     }
 
     /// Called after voice capture completes. Transitions out of the
@@ -96,7 +102,10 @@ final class AIAssistantBubbleController {
         state.isListening = false
         state.listeningPartialText = ""
         let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty else {
+            refreshUnfocusedAutoDismissTimer()
+            return
+        }
         submit(question: trimmed)
     }
 
@@ -108,6 +117,7 @@ final class AIAssistantBubbleController {
     func clearListening() {
         state.isListening = false
         state.listeningPartialText = ""
+        refreshUnfocusedAutoDismissTimer()
     }
 
     /// Subscribe to `.macParakeetStreamingPartial` notifications so the
@@ -154,6 +164,10 @@ final class AIAssistantBubbleController {
     /// field or fall through to the user's previous app.
     var isKey: Bool {
         panel?.isKeyWindow ?? false
+    }
+
+    private var shouldAutoDismissWhenUnfocused: Bool {
+        !state.isListening && !state.isThinking
     }
 
     /// Append a dictated transcript into the bubble's text input. Called by
@@ -308,7 +322,16 @@ final class AIAssistantBubbleController {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.dismiss()
+                self?.refreshUnfocusedAutoDismissTimer()
+            }
+        }
+        becomeObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification,
+            object: newPanel,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.cancelUnfocusedAutoDismissTimer()
             }
         }
 
@@ -352,11 +375,16 @@ final class AIAssistantBubbleController {
         guard !isDismissed else { return }
         isDismissed = true
         AIAssistantPasteInterceptor.shared.unregister(controller: self)
+        cancelUnfocusedAutoDismissTimer()
         activeTask?.cancel()
         activeTask = nil
         if let observer = resignObserver {
             NotificationCenter.default.removeObserver(observer)
             resignObserver = nil
+        }
+        if let observer = becomeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            becomeObserver = nil
         }
         unsubscribeFromStreamingPartials()
         panel?.orderOut(nil)
@@ -396,6 +424,7 @@ final class AIAssistantBubbleController {
                     guard let self else { return }
                     self.state.history.append(AIAssistantTurn(question: trimmed, response: response))
                     self.state.isThinking = false
+                    self.refreshUnfocusedAutoDismissTimer()
                     if shouldAutoReplace {
                         self.hasAutoReplaced = true
                         self.replaceSelection(with: self.state.history.count - 1)
@@ -404,15 +433,47 @@ final class AIAssistantBubbleController {
             } catch is CancellationError {
                 await MainActor.run {
                     self?.state.isThinking = false
+                    self?.refreshUnfocusedAutoDismissTimer()
                 }
             } catch {
                 await MainActor.run {
                     guard let self else { return }
                     self.state.errorMessage = error.localizedDescription
                     self.state.isThinking = false
+                    self.refreshUnfocusedAutoDismissTimer()
                 }
             }
         }
+    }
+
+    private func refreshUnfocusedAutoDismissTimer() {
+        guard let panel else { return }
+        guard !panel.isKeyWindow else {
+            cancelUnfocusedAutoDismissTimer()
+            return
+        }
+        guard shouldAutoDismissWhenUnfocused else {
+            cancelUnfocusedAutoDismissTimer()
+            return
+        }
+        startUnfocusedAutoDismissTimer()
+    }
+
+    private func startUnfocusedAutoDismissTimer() {
+        cancelUnfocusedAutoDismissTimer()
+        unfocusedAutoDismissTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.unfocusedAutoDismissDelay)
+            await MainActor.run {
+                guard let self, let panel = self.panel else { return }
+                guard !panel.isKeyWindow, self.shouldAutoDismissWhenUnfocused else { return }
+                self.dismiss()
+            }
+        }
+    }
+
+    private func cancelUnfocusedAutoDismissTimer() {
+        unfocusedAutoDismissTask?.cancel()
+        unfocusedAutoDismissTask = nil
     }
 
     /// Kick off the paste-to-source-app flow for the turn at `turnIndex`.
