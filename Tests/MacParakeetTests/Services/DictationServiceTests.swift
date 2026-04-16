@@ -147,11 +147,10 @@ final class DictationServiceTests: XCTestCase {
         XCTAssertEqual(mockLLMService.lastFormatterDefaultPromptUsed, false)
     }
 
-    /// When a profile's promptOverride is set, the paste path should run
-    /// through the formatter even when `shouldFormatPasteWithAI` is OFF.
-    /// Profile activation is itself an opt-in signal that the user wants
-    /// per-app polish on the paste. (Item 2 MVP semantic.)
-    func testStopRecordingRunsFormatterForProfileEvenWithPasteToggleOff() async throws {
+    /// Profile-specific prompt overrides still apply to the live cleanup
+    /// bubble, but final paste must stay raw unless the explicit paste-polish
+    /// toggle is on.
+    func testStopRecordingSkipsFormatterForProfileWhenPasteToggleOff() async throws {
         await mockSTT.configure(result: STTResult(text: "hello world"))
         let mockLLMService = MockLLMService()
         mockLLMService.formatTranscriptResult = "Hello, world."
@@ -175,9 +174,39 @@ final class DictationServiceTests: XCTestCase {
         )
 
         try await service.startRecording()
-        _ = try await service.stopRecording()
+        let result = try await service.stopRecording()
 
-        XCTAssertEqual(mockLLMService.formatTranscriptCallCount, 1, "Profile override should trigger paste polish even when toggle is off")
+        XCTAssertEqual(mockLLMService.formatTranscriptCallCount, 0)
+        XCTAssertNil(result.dictation.cleanTranscript)
+    }
+
+    func testCleanupTextLiveUsesProfilePromptOverrideEvenWhenPasteToggleOff() async throws {
+        let mockLLMService = MockLLMService()
+        mockLLMService.formatTranscriptResult = "cd /users"
+
+        let profile = AppProfile(
+            id: "terminal",
+            displayName: "Terminal",
+            bundleIDs: ["com.apple.Terminal"],
+            promptOverride: "terminal-specific prompt {{TRANSCRIPT}}"
+        )
+
+        service = DictationService(
+            audioProcessor: mockAudio,
+            sttTranscriber: mockSTT,
+            dictationRepo: dictationRepo,
+            llmService: mockLLMService,
+            shouldUseAIFormatter: { true },
+            shouldFormatPasteWithAI: { false },
+            aiFormatterPromptTemplate: { AIFormatter.defaultPromptTemplate },
+            resolveActiveProfile: { profile }
+        )
+
+        try await service.startRecording()
+        let cleaned = await service.cleanupTextLive("see dee slash users")
+
+        XCTAssertEqual(cleaned, "cd /users")
+        XCTAssertEqual(mockLLMService.formatTranscriptCallCount, 1)
         XCTAssertEqual(mockLLMService.lastFormatterPromptTemplate, "terminal-specific prompt {{TRANSCRIPT}}")
     }
 
