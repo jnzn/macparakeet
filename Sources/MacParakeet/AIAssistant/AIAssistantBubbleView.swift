@@ -16,6 +16,11 @@ final class AIAssistantBubbleState {
     /// the user has "Live transcript overlay" enabled in Settings.
     var listeningPartialText: String = ""
     var errorMessage: String? = nil
+    /// True when the source app (captured at press time) is still reachable
+    /// via its PID so a "Replace selection" paste is plausible. False when
+    /// the bubble was spawned outside a normal press flow (e.g. error
+    /// bubble) — in which case the replace button is hidden.
+    var canReplaceSelection: Bool = false
     /// Speech-bubble tail direction, decided by the bubble controller based
     /// on where the bubble landed relative to the AX selection rect. `.none`
     /// suppresses the tail — used as a fallback when no usable anchor was
@@ -86,6 +91,10 @@ struct AIAssistantBubbleView: View {
     let backgroundColor: Color
     let onSubmit: (String) -> Void
     let onDismiss: () -> Void
+    /// Fired when the user clicks a turn's "Replace selection" button.
+    /// Passes the turn index so the controller knows which response to
+    /// write into the source app.
+    let onReplaceSelection: (Int) -> Void
 
     /// Tint opacity threshold above which the user's picked color dominates
     /// the visible background enough that we should derive foreground from
@@ -160,6 +169,18 @@ struct AIAssistantBubbleView: View {
                                     .foregroundStyle(foreground)
                                     .lineSpacing(3)
                                     .textSelection(.enabled)
+
+                                if state.canReplaceSelection {
+                                    Button {
+                                        onReplaceSelection(idx)
+                                    } label: {
+                                        Label("Replace selection", systemImage: "arrow.left.and.right.text.vertical")
+                                            .font(.caption)
+                                            .foregroundStyle(foregroundMuted)
+                                    }
+                                    .buttonStyle(.borderless)
+                                    .help("Paste this response over your original selection in the source app.")
+                                }
                             }
                             if idx < state.history.count - 1 {
                                 Divider().padding(.vertical, 4)

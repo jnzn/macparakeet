@@ -225,6 +225,7 @@ final class AppEnvironmentConfigurer {
         let aiAssistantCoordinator = AIAssistantFlowCoordinator(
             service: env.aiAssistantService,
             accessibilityService: env.accessibilityService,
+            clipboardService: env.clipboardService,
             configStore: env.aiAssistantConfigStore,
             dictationService: env.dictationService
         )

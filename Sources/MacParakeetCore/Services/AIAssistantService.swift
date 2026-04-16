@@ -78,6 +78,12 @@ public struct AIAssistantConfig: Codable, Sendable, Equatable {
     /// Optional so older configs without this field decode cleanly after
     /// upgrade.
     public let bubbleBackgroundColor: CodableColor?
+    /// When true, Claude's first response to the initial question auto-
+    /// replaces the original selection in the source app via clipboard
+    /// paste (Cmd+V simulation). Each response still has a manual
+    /// "Replace selection" button regardless of this setting. Default
+    /// false — non-destructive by default.
+    public let autoReplaceSelection: Bool?
 
     public static let minimumTimeout: Double = 5
     public static let defaultTimeout: Double = 120
@@ -106,7 +112,8 @@ public struct AIAssistantConfig: Codable, Sendable, Equatable {
         modelName: String? = nil,
         timeoutSeconds: Double = Self.defaultTimeout,
         hotkeyTrigger: HotkeyTrigger? = nil,
-        bubbleBackgroundColor: CodableColor? = nil
+        bubbleBackgroundColor: CodableColor? = nil,
+        autoReplaceSelection: Bool? = nil
     ) {
         self.provider = provider
         self.commandTemplate = commandTemplate ?? provider.defaultCommandTemplate
@@ -114,6 +121,14 @@ public struct AIAssistantConfig: Codable, Sendable, Equatable {
         self.timeoutSeconds = max(Self.minimumTimeout, timeoutSeconds)
         self.hotkeyTrigger = hotkeyTrigger
         self.bubbleBackgroundColor = bubbleBackgroundColor
+        self.autoReplaceSelection = autoReplaceSelection
+    }
+
+    /// Effective value for `autoReplaceSelection` — false by default so
+    /// existing configs without the field decode cleanly and don't
+    /// suddenly start replacing selections in source apps.
+    public var effectiveAutoReplaceSelection: Bool {
+        autoReplaceSelection ?? false
     }
 
     public static var defaultClaude: AIAssistantConfig {
