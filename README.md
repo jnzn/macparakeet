@@ -21,7 +21,7 @@
 
 ---
 
-## What this is
+## What this is?
 
 PDX Edition is the same MacParakeet engine — local Parakeet TDT speech recognition on the Apple Neural Engine via [FluidAudio](https://github.com/FluidInference/FluidAudio) — packaged for personal use. It does three things equally well:
 
