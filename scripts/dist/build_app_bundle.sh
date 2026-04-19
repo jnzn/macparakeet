@@ -362,6 +362,30 @@ cat >"$INFO_PLIST" <<EOF
   <string>MacParakeet needs microphone access for dictation.</string>
   <key>NSAudioCaptureUsageDescription</key>
   <string>MacParakeet needs system audio recording access for meeting recording.</string>
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <!-- Permit plaintext HTTP to RFC 1918 / Bonjour / link-local hosts.
+         Covers LAN Ollama / LM Studio instances on the local network.
+         Tailscale CGNAT (100.64.0.0/10) traffic is WireGuard-encrypted
+         below the HTTP layer; the .ts.net exception below covers the
+         MagicDNS-named form. -->
+    <key>NSAllowsLocalNetworking</key>
+    <true/>
+    <key>NSExceptionDomains</key>
+    <dict>
+      <!-- Tailscale MagicDNS hosts (*.ts.net). Allows http:// to e.g.
+           http://macstudio.wyrm-toad.ts.net:11434 for private-tailnet
+           Ollama endpoints. Tailscale's WireGuard tunnel encrypts the
+           transport below HTTP. -->
+      <key>ts.net</key>
+      <dict>
+        <key>NSIncludesSubdomains</key>
+        <true/>
+        <key>NSExceptionAllowsInsecureHTTPLoads</key>
+        <true/>
+      </dict>
+    </dict>
+  </dict>
 $(printf "%b" "$LICENSING_PLIST")
 </dict>
 </plist>
