@@ -269,7 +269,7 @@ struct OnboardingFlowView: View {
                 Spacer()
 
                 if viewModel.step == .done {
-                    accentButton("Open MacParakeet", icon: "arrow.right", large: true, disabled: false, isDefault: true) {
+                    accentButton("Open MacParakeet (PDX Edition)", icon: "arrow.right", large: true, disabled: false, isDefault: true) {
                         _ = viewModel.markOnboardingCompleted()
                         onFinish()
                         onOpenMainApp()
@@ -988,11 +988,16 @@ struct OnboardingFlowView: View {
     }
 
     private func engineDetail(_ state: OnboardingViewModel.EngineState) -> String {
+        let cached = viewModel.isSpeechModelAlreadyCached
         switch state {
         case .idle:
-            return "The speech model (~6 GB) will download now. Internet is required this one time only."
+            return cached
+                ? "The speech model is already on disk — preparing it for use."
+                : "The speech model (~6 GB) will download now. Internet is required this one time only."
         case .working(_, _):
-            return "Downloading the speech model (~6 GB). This is a one-time download — dictation and transcription work fully offline after this."
+            return cached
+                ? "Loading the cached speech model into memory. This takes a few seconds and only happens on first launch."
+                : "Downloading the speech model (~6 GB). This is a one-time download — dictation and transcription work fully offline after this."
         case .ready:
             return "Parakeet speech model is ready."
         case .failed:

@@ -790,25 +790,56 @@ public final class LocalCLIExecutor: Sendable {
     private static let pathStartMarker = "__MACPARAKEET_PATH_START__"
     private static let pathEndMarker = "__MACPARAKEET_PATH_END__"
 
+    /// User-home install dirs that common package managers / language
+    /// toolchains drop binaries into. Added to the merged PATH whenever
+    /// they exist so we resolve installs that put bins outside the system
+    /// dirs (npm `--prefix=~/.npm-global`, pipx, cargo, Go, manual
+    /// downloads to `~/.local/bin`, etc.).
+    private static let userBinDirCandidates = [
+        ".local/bin",
+        ".cargo/bin",
+        ".npm-global/bin",
+        ".npm/bin",
+        ".bun/bin",
+        ".deno/bin",
+        ".volta/bin",
+        ".asdf/shims",
+        "go/bin",
+        ".local/share/pnpm",
+    ]
+
+    private static func userBinDirsPATH(fileManager: FileManager = .default) -> String? {
+        let home = NSHomeDirectory()
+        let existing = userBinDirCandidates
+            .map { "\(home)/\($0)" }
+            .filter { fileManager.fileExists(atPath: $0) }
+        return existing.isEmpty ? nil : existing.joined(separator: ":")
+    }
+
     /// Returns the user's full shell PATH. Apps launched from Finder/Dock
-    /// inherit a minimal PATH that lacks Homebrew, nvm, etc.
+    /// inherit a minimal PATH that lacks Homebrew, nvm, user-home bin
+    /// dirs (~/.local/bin etc.).
     private func preferredPATH(fallback: String?) -> String {
         if let cached = cachedPATH.withLock({ $0 }) {
             return cached
         }
 
+        let userBins = Self.userBinDirsPATH()
+
         if let discovered = Self.discoverPATH() {
-            let merged = Self.mergedPATH([discovered, fallback, Self.defaultPATH]) ?? Self.defaultPATH
+            let merged = Self.mergedPATH([discovered, userBins, fallback, Self.defaultPATH]) ?? Self.defaultPATH
             cachedPATH.withLock { $0 = merged }
             return merged
         }
 
-        return Self.mergedPATH([fallback, Self.defaultPATH]) ?? Self.defaultPATH
+        return Self.mergedPATH([userBins, fallback, Self.defaultPATH]) ?? Self.defaultPATH
     }
 
     /// Probes the user's configured shell first, then widely used shells,
-    /// to recover a usable PATH for Finder-launched app processes.
-    static func discoverPATH(timeout: Double = 3) -> String? {
+    /// to recover a usable PATH for Finder-launched app processes. The
+    /// 10-second budget covers slow shell init scripts (NVM lazy-load,
+    /// conda init, asdf, large `~/.zshrc`).
+    static func discoverPATH(timeout: Double = 10) -> String? {
         let deadline = Date().addingTimeInterval(timeout)
         let script = """
         printf '%s\\n' '\(pathStartMarker)'
