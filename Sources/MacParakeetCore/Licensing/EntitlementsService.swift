@@ -31,18 +31,10 @@ public actor EntitlementsService: EntitlementsChecking {
     // MARK: - Bootstrapping
 
     public func bootstrapTrialIfNeeded(now: Date = Date()) {
-        do {
-            if try store.getString(Keys.trialStartISO) == nil {
-                try store.setString(iso(now), forKey: Keys.trialStartISO)
-            }
-            if try store.getString(Keys.installID) == nil {
-                try store.setString(UUID().uuidString, forKey: Keys.installID)
-            }
-        } catch {
-            // Licensing should never prevent core features from running; entitlement checks will fall back to "locked"
-            // only when needed.
-            _ = error
-        }
+        // PDX Edition: app is free / GPL-3.0; the licensing data path is
+        // vestigial. Skipping the keychain bootstrap eliminates one of the
+        // launch-time keychain prompts users see when migrating from a
+        // production install whose ACL doesn't include the PDX bundle.
     }
 
     // MARK: - Public API
@@ -106,41 +98,8 @@ public actor EntitlementsService: EntitlementsChecking {
     }
 
     public func refreshValidationIfNeeded(now: Date = Date()) async {
-        do {
-            guard let licenseKey = try store.getString(Keys.licenseKey),
-                  let instanceID = try store.getString(Keys.licenseInstanceID)
-            else { return }
-
-            let lastValidatedAt = (try store.getString(Keys.lastValidatedISO)).flatMap(parseISO)
-            if let lastValidatedAt, now.timeIntervalSince(lastValidatedAt) < validationMinInterval {
-                return
-            }
-
-            let validation = try await api.validate(licenseKey: licenseKey, instanceID: instanceID)
-
-            if let expected = config.expectedVariantID,
-               let actual = validation.variantID,
-               expected != actual
-            {
-                try? store.delete(Keys.licenseKey)
-                try? store.delete(Keys.licenseInstanceID)
-                try? store.delete(Keys.lastValidatedISO)
-                return
-            }
-
-            if validation.valid {
-                try store.setString(iso(now), forKey: Keys.lastValidatedISO)
-            } else {
-                // License no longer valid. Lock the app (trial may still be active).
-                try? store.delete(Keys.licenseKey)
-                try? store.delete(Keys.licenseInstanceID)
-                try? store.delete(Keys.lastValidatedISO)
-            }
-        } catch {
-            // Network failures shouldn't break an already-unlocked app. One-time purchase = yours
-            // forever, so validated licenses stay unlocked indefinitely.
-            _ = error
-        }
+        // PDX Edition: free / GPL-3.0, licensing not used. No keychain
+        // touches at launch.
     }
 
     // MARK: - Private
