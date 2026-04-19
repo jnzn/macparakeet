@@ -9,9 +9,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DERIVED_DATA_DIR="${MACPARAKEET_DERIVED_DATA_DIR:-${TMPDIR:-/tmp}/macparakeet-xcode-dev}"
 PRODUCT_DIR="$DERIVED_DATA_DIR/Build/Products/Debug"
 APP_BIN="$PRODUCT_DIR/MacParakeet"
-APP_BUNDLE="$PRODUCT_DIR/MacParakeet-Dev.app"
-LOG_FILE="${TMPDIR:-/tmp}/macparakeet-dev.log"
-BUILD_LOG_FILE="${TMPDIR:-/tmp}/macparakeet-dev-build.log"
+APP_BUNDLE="$PRODUCT_DIR/MacParakeet PDX Edition.app"
+LOG_FILE="${TMPDIR:-/tmp}/macparakeet-pdx.log"
+BUILD_LOG_FILE="${TMPDIR:-/tmp}/macparakeet-pdx-build.log"
 APP_MACOS_BIN="$APP_BUNDLE/Contents/MacOS/MacParakeet"
 
 pick_codesign_identity() {
@@ -152,7 +152,7 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
     <key>CFBundleIdentifier</key>
     <string>com.macparakeet.dev</string>
     <key>CFBundleName</key>
-    <string>MacParakeet Dev</string>
+    <string>MacParakeet (PDX Edition)</string>
     <key>CFBundleExecutable</key>
     <string>MacParakeet</string>
     <key>CFBundlePackageType</key>
@@ -204,7 +204,7 @@ codesign --force --sign "$CODESIGN_IDENTITY" --deep "$APP_BUNDLE"
 echo "[3/5] Stopping existing MacParakeet processes…"
 pkill -f "/Applications/MacParakeet.app/Contents/MacOS/MacParakeet" || true
 pkill -f "$ROOT_DIR/dist/MacParakeet.app/Contents/MacOS/MacParakeet" || true
-pkill -f "MacParakeet-Dev.app/Contents/MacOS/MacParakeet" || true
+pkill -f "MacParakeet PDX Edition.app/Contents/MacOS/MacParakeet" || true
 pkill -f "$DERIVED_DATA_DIR/Build/Products/Debug/MacParakeet" || true
 pkill -f "$ROOT_DIR/.build/debug/MacParakeet" || true
 pkill -f "$ROOT_DIR/.build/arm64-apple-macosx/debug/MacParakeet" || true
@@ -223,7 +223,7 @@ nohup open "$APP_BUNDLE" --env MACPARAKEET_GIT_COMMIT="$GIT_COMMIT" \
   --env MACPARAKEET_BUILD_SOURCE="$BUILD_SOURCE" >"$LOG_FILE" 2>&1 &
 
 sleep 2
-PID="$(pgrep -f "MacParakeet-Dev.app/Contents/MacOS/MacParakeet" | head -n 1 || true)"
+PID="$(pgrep -f "MacParakeet PDX Edition.app/Contents/MacOS/MacParakeet" | head -n 1 || true)"
 INSTALLED_PID="$(pgrep -f "/Applications/MacParakeet.app/Contents/MacOS/MacParakeet" | head -n 1 || true)"
 
 echo "[5/5] Running"
