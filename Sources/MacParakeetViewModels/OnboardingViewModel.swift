@@ -280,6 +280,13 @@ public final class OnboardingViewModel {
         permissionPollingTask = nil
     }
 
+    /// Reports whether the speech model is already on disk. Used by the
+    /// onboarding view to swap the "downloading 6 GB" copy for a more
+    /// honest "loading cached model" message when nothing has to download.
+    public var isSpeechModelAlreadyCached: Bool {
+        isSpeechModelCached()
+    }
+
     public func startEngineWarmUp() {
         // If already observing or completed, don't restart
         if case .ready = engineState { return }
