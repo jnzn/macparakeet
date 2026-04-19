@@ -251,6 +251,41 @@ public final class LocalCLIExecutor: Sendable {
         }
     }
 
+    /// Resolves a CLI binary name (e.g. `"claude"`) to its absolute URL by
+    /// walking the user's login-shell PATH. Returns nil if the binary is not
+    /// on any PATH component. PATH is discovered via the same shell-probe
+    /// chain used for command execution, so Finder-launched apps still see
+    /// Homebrew, nvm, volta, asdf, and custom npm prefixes.
+    ///
+    /// - Parameters:
+    ///   - name: Bare binary name (`"claude"`). Inputs containing `/` are
+    ///     rejected — callers pass a name, not a path.
+    ///   - path: PATH string to scan. Defaults to the discovered login-shell
+    ///     PATH. Override for tests.
+    ///   - fileManager: File manager for executable-file checks. Override
+    ///     for tests.
+    /// - Returns: Absolute URL of the first executable match in PATH order,
+    ///   or nil if no match.
+    public func resolve(
+        binary name: String,
+        path: String? = nil,
+        fileManager: FileManager = .default
+    ) -> URL? {
+        guard !name.isEmpty, !name.contains("/") else { return nil }
+        let effectivePath = path ?? preferredPATH(
+            fallback: ProcessInfo.processInfo.environment["PATH"]
+        )
+        for component in effectivePath.split(separator: ":") {
+            let trimmed = String(component).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let candidate = URL(fileURLWithPath: trimmed).appendingPathComponent(name)
+            if fileManager.isExecutableFile(atPath: candidate.path) {
+                return candidate
+            }
+        }
+        return nil
+    }
+
     // MARK: - Prompt Formatting
 
     static func formatFullPrompt(system: String, user: String) -> String {
