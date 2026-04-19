@@ -2,9 +2,10 @@ import SwiftUI
 import MacParakeetCore
 import MacParakeetViewModels
 
-/// Settings UI for the AI Assistant hotkey (Control+Shift+A). Lets the user
-/// pick provider, edit provider-specific execution settings when applicable,
-/// and smoke-test the connection. Persists to `AIAssistantConfigStore` on save.
+/// Settings UI for the AI Assistant hotkey (defaults to the Fn / Globe key).
+/// Lets the user pick provider, edit provider-specific execution settings
+/// when applicable, and smoke-test the connection. Persists to
+/// `AIAssistantConfigStore` on save.
 struct AIAssistantSettingsView: View {
     @Bindable var viewModel: AIAssistantSettingsViewModel
 

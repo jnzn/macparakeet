@@ -153,13 +153,12 @@ public struct AIAssistantConfig: Codable, Sendable, Equatable {
 
     public static let minimumTimeout: Double = 5
     public static let defaultTimeout: Double = 120
-    /// Shipped default trigger: Control+Option+Shift held together, no
-    /// base key. Chosen because it doesn't collide with common app-level
-    /// shortcuts (those almost always include Command) and is easy to
-    /// reach with the left hand while the right hand holds the mouse.
-    public static let defaultHotkeyTrigger: HotkeyTrigger = .modifierCombo(
-        ["control", "option", "shift"]
-    )
+    /// Shipped default trigger: the Fn / Globe key held alone. Dictation
+    /// moved off Fn to right-Option (see `HotkeyTrigger.defaultDictation`),
+    /// freeing Fn for the AI Assistant hold-to-talk gesture. Fn never
+    /// appears in app-level shortcuts, reads naturally on Apple laptop
+    /// keyboards, and costs the user one finger on the bottom-left corner.
+    public static let defaultHotkeyTrigger: HotkeyTrigger = .fn
     /// Shipped default bubble tint — transparent, so the underlying liquid-
     /// glass material does the work (system-appropriate light/dark adapts
     /// automatically). Users pick a tint color via Settings to override;
