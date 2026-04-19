@@ -468,172 +468,171 @@ struct OnboardingFlowView: View {
         }
     }
 
-    @State private var doubleTapPhase = 0
-    @State private var holdPhase: CGFloat = 0
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var rightOptionPressed = false
+    @State private var rightOptionDetected = false
+    @State private var fnPressed = false
+    @State private var fnDetected = false
+    @State private var hotkeyEventMonitor: Any?
+    @State private var hotkeyHintTask: Task<Void, Never>?
+    @State private var showHotkeyAccessibilityHint = false
 
     private var hotkeyStep: some View {
         VStack(alignment: .leading, spacing: 14) {
-            if HotkeyTrigger.current.isDisabled {
-                HStack(spacing: 8) {
-                    Image(systemName: "info.circle.fill")
-                        .foregroundStyle(DesignSystem.Colors.accent)
-                    Text("Your dictation hotkey is currently disabled. The examples below show the default key (\(displayTrigger.shortSymbol)). You can set a hotkey anytime in Settings.")
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(DesignSystem.Spacing.md)
-                .background(
-                    RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
-                        .fill(DesignSystem.Colors.accent.opacity(0.08))
-                )
-            }
+            hotkeyDemoCard(
+                title: "Dictate",
+                keyLabel: "Right Option",
+                keyCap: "R⌥",
+                helper: "Hold to talk, release to paste. Double-tap for persistent mode.",
+                pressed: rightOptionPressed,
+                detected: rightOptionDetected
+            )
 
-            // Persistent Mode card
-            onboardingCard {
-                HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
-                    doubleTapIllustration
-                        .frame(width: 80)
+            hotkeyDemoCard(
+                title: "Ask AI Assistant",
+                keyLabel: "Fn / Globe",
+                keyCap: "fn",
+                helper: "Hold to talk a question about your selection. Release to send.",
+                pressed: fnPressed,
+                detected: fnDetected
+            )
 
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Persistent Mode")
-                            .font(DesignSystem.Typography.micro)
-                            .foregroundStyle(DesignSystem.Colors.accent)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Capsule().fill(DesignSystem.Colors.accent.opacity(0.12)))
-
-                        Text("Double-tap \(displayTrigger.shortSymbol)")
-                            .font(DesignSystem.Typography.sectionTitle)
-
-                        Text("Starts persistent recording.\nTap \(displayTrigger.shortSymbol) again to stop and paste.")
-                            .font(DesignSystem.Typography.bodySmall)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .padding(DesignSystem.Spacing.lg)
-            }
-
-            // Push-to-Talk card
-            onboardingCard {
-                HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
-                    holdIllustration
-                        .frame(width: 80)
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Push-to-Talk")
-                            .font(DesignSystem.Typography.micro)
-                            .foregroundStyle(DesignSystem.Colors.accent)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Capsule().fill(DesignSystem.Colors.accent.opacity(0.12)))
-
-                        Text("Hold \(displayTrigger.shortSymbol)")
-                            .font(DesignSystem.Typography.sectionTitle)
-
-                        Text("Records while you hold the key.\nRelease to stop and paste.")
-                            .font(DesignSystem.Typography.bodySmall)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .padding(DesignSystem.Spacing.lg)
-            }
-
-            // Escape row
             HStack(spacing: 10) {
                 keyCap("Esc")
-                Text("Press Escape to cancel")
+                Text("Press Escape during dictation to cancel.")
                     .font(DesignSystem.Typography.caption)
                     .foregroundStyle(.secondary)
-                Text("·")
+            }
+
+            if showHotkeyAccessibilityHint {
+                Button {
+                    viewModel.jump(to: .accessibility)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(DesignSystem.Colors.warningAmber)
+                        Text("Nothing detected? Check Accessibility permission →")
+                            .font(DesignSystem.Typography.caption)
+                    }
+                }
+                .buttonStyle(.link)
+            }
+        }
+        .onAppear { startHotkeyDetection() }
+        .onDisappear { stopHotkeyDetection() }
+    }
+
+    private func hotkeyDemoCard(
+        title: String,
+        keyLabel: String,
+        keyCap capLabel: String,
+        helper: String,
+        pressed: Bool,
+        detected: Bool
+    ) -> some View {
+        onboardingCard {
+            HStack(alignment: .center, spacing: DesignSystem.Spacing.md) {
+                keyCap(capLabel)
+                    .scaleEffect(pressed ? 0.92 : 1.0)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(pressed ? DesignSystem.Colors.accent.opacity(0.18) : Color.clear)
+                            .padding(-4)
+                    )
+                    .animation(.easeInOut(duration: 0.12), value: pressed)
+                    .frame(width: 56)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(DesignSystem.Typography.sectionTitle)
+                    Text(keyLabel)
+                        .font(DesignSystem.Typography.micro)
+                        .foregroundStyle(DesignSystem.Colors.accent)
+                    Text(helper)
+                        .font(DesignSystem.Typography.bodySmall)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+
+                hotkeyStatusPill(pressed: pressed, detected: detected)
+            }
+            .padding(DesignSystem.Spacing.lg)
+        }
+    }
+
+    private func hotkeyStatusPill(pressed: Bool, detected: Bool) -> some View {
+        HStack(spacing: 6) {
+            if pressed {
+                Image(systemName: "dot.radiowaves.left.and.right")
+                    .foregroundStyle(DesignSystem.Colors.accent)
+                Text("Holding…")
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(DesignSystem.Colors.accent)
+            } else if detected {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(DesignSystem.Colors.successGreen)
+                Text("Detected")
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(DesignSystem.Colors.successGreen)
+            } else {
+                Image(systemName: "circle")
                     .foregroundStyle(.tertiary)
-                Text("5-second undo window")
+                Text("Press to test")
                     .font(DesignSystem.Typography.caption)
                     .foregroundStyle(.tertiary)
             }
-
-            Text("Tip: If your keyboard doesn't send \(displayTrigger.displayName) events, you can still use file transcription from the main app window.")
-                .font(DesignSystem.Typography.caption)
-                .foregroundStyle(.secondary)
         }
-        .onAppear { startAnimations() }
-        .onDisappear { stopAnimations() }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(
+            Capsule().fill(
+                pressed
+                    ? DesignSystem.Colors.accent.opacity(0.12)
+                    : detected
+                        ? DesignSystem.Colors.successGreen.opacity(0.12)
+                        : Color.clear
+            )
+        )
     }
 
-    // MARK: - Hotkey Gesture Illustrations
-
-    @State private var animationTask: Task<Void, Never>?
-
-    private var doubleTapIllustration: some View {
-        HStack(spacing: 4) {
-            keyCap(displayTrigger.shortSymbol)
-                .scaleEffect(doubleTapPhase == 1 ? 0.9 : 1.0)
-                .opacity(reduceMotion || doubleTapPhase == 1 ? 1.0 : 0.5)
-            Text("·")
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(.tertiary)
-            keyCap(displayTrigger.shortSymbol)
-                .scaleEffect(doubleTapPhase == 2 ? 0.9 : 1.0)
-                .opacity(reduceMotion || doubleTapPhase == 2 ? 1.0 : 0.5)
+    private func startHotkeyDetection() {
+        guard hotkeyEventMonitor == nil else { return }
+        hotkeyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged]) { event in
+            handleFlagsChanged(event)
+            return event
         }
-        .animation(.easeInOut(duration: 0.15), value: doubleTapPhase)
-    }
-
-    private var holdIllustration: some View {
-        VStack(spacing: 6) {
-            keyCap(displayTrigger.shortSymbol)
-                .scaleEffect(holdPhase > 0 ? 0.93 : 1.0)
-                .opacity(reduceMotion || holdPhase > 0 ? 1.0 : 0.5)
-                .animation(.easeInOut(duration: 0.15), value: holdPhase > 0)
-
-            // Hold bar that grows
-            GeometryReader { geo in
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(DesignSystem.Colors.accent.opacity(0.5))
-                    .frame(width: geo.size.width * (reduceMotion ? 1.0 : holdPhase))
-                    .animation(.linear(duration: holdPhase > 0 ? 1.0 : 0.15), value: holdPhase)
-            }
-            .frame(height: 4)
-        }
-    }
-
-    private func startAnimations() {
-        guard !reduceMotion else { return }
-        animationTask?.cancel()
-        animationTask = Task { @MainActor in
-            while !Task.isCancelled {
-                // Double-tap: press, pause, press
-                doubleTapPhase = 1
-                try? await Task.sleep(for: .milliseconds(200))
-                guard !Task.isCancelled else { break }
-                doubleTapPhase = 0
-                try? await Task.sleep(for: .milliseconds(150))
-                guard !Task.isCancelled else { break }
-                doubleTapPhase = 2
-                try? await Task.sleep(for: .milliseconds(200))
-                guard !Task.isCancelled else { break }
-                doubleTapPhase = 0
-
-                // Hold: press and grow bar
-                holdPhase = 0.01 // trigger "pressed" state
-                try? await Task.sleep(for: .milliseconds(100))
-                guard !Task.isCancelled else { break }
-                holdPhase = 1.0
-                try? await Task.sleep(for: .seconds(1))
-                guard !Task.isCancelled else { break }
-                holdPhase = 0
-
-                // Pause before repeat
-                try? await Task.sleep(for: .seconds(1.5))
+        hotkeyHintTask?.cancel()
+        hotkeyHintTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(15))
+            guard !Task.isCancelled else { return }
+            if !fnDetected || !rightOptionDetected {
+                showHotkeyAccessibilityHint = true
             }
         }
     }
 
-    private func stopAnimations() {
-        animationTask?.cancel()
-        animationTask = nil
+    private func stopHotkeyDetection() {
+        if let monitor = hotkeyEventMonitor {
+            NSEvent.removeMonitor(monitor)
+            hotkeyEventMonitor = nil
+        }
+        hotkeyHintTask?.cancel()
+        hotkeyHintTask = nil
+    }
+
+    private func handleFlagsChanged(_ event: NSEvent) {
+        // Fn / Globe: tracked via the .function modifier flag.
+        let fnNow = event.modifierFlags.contains(.function)
+        if fnNow != fnPressed { fnPressed = fnNow }
+        if fnNow { fnDetected = true }
+
+        // Right Option: keyCode 61 transitions for the .option flag.
+        if event.keyCode == 61 {
+            let optionNow = event.modifierFlags.contains(.option)
+            if optionNow != rightOptionPressed { rightOptionPressed = optionNow }
+            if optionNow { rightOptionDetected = true }
+        }
     }
 
     // MARK: - AI Assistant Setup
