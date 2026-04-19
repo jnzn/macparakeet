@@ -165,9 +165,10 @@ final class AIAssistantOnboardingViewModelTests: XCTestCase {
         XCTAssertNil(vm.remoteOllama.validationError)
     }
 
-    func testRemoteOllamaProbeRejectsDisallowedURL() async {
+    func testRemoteOllamaProbeRejectsDisallowedHTTPURL() async {
         let vm = makeViewModel(dependencies: StubDependencies())
         vm.setRemoteOllamaEnabled(true)
+        vm.remoteOllama.useHTTPS = false
         vm.remoteOllama.host = "evil.com"
         vm.remoteOllama.port = "80"
 
@@ -175,6 +176,20 @@ final class AIAssistantOnboardingViewModelTests: XCTestCase {
 
         XCTAssertEqual(vm.ollamaProbe, .remoteFailed(.invalidURL))
         XCTAssertNotNil(vm.remoteOllama.validationError)
+    }
+
+    func testRemoteOllamaProbeAcceptsHTTPSToAnyHost() async {
+        let vm = makeViewModel(
+            dependencies: StubDependencies(ollamaResult: .success(["llama3:8b"]))
+        )
+        vm.setRemoteOllamaEnabled(true)
+        vm.remoteOllama.useHTTPS = true
+        vm.remoteOllama.host = "macstudio.wyrm-toad.ts.net"
+        vm.remoteOllama.port = "11434"
+
+        await vm.probeOllamaRemote()
+
+        XCTAssertEqual(vm.ollamaProbe, .foundRemote(models: ["llama3:8b"]))
     }
 
     func testRemoteOllamaProbeSurfacesProbeError() async {
@@ -279,6 +294,7 @@ final class AIAssistantOnboardingViewModelTests: XCTestCase {
         vm.skipCurrentProvider() // gemini
         vm.skipCurrentProvider() // ollama
         vm.setRemoteOllamaEnabled(true)
+        vm.remoteOllama.useHTTPS = false
         vm.remoteOllama.host = "studio.local"
         vm.remoteOllama.port = "11434"
 

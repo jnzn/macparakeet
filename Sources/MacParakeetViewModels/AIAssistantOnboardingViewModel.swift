@@ -102,6 +102,7 @@ public final class AIAssistantOnboardingViewModel {
     /// and port inputs only render once that's true.
     public struct RemoteOllamaDraft: Equatable, Sendable {
         public var enabled: Bool
+        public var useHTTPS: Bool
         public var host: String
         public var port: String
         public var selectedModel: String?
@@ -109,21 +110,26 @@ public final class AIAssistantOnboardingViewModel {
 
         public init(
             enabled: Bool = false,
+            useHTTPS: Bool = true,
             host: String = "",
             port: String = "11434",
             selectedModel: String? = nil,
             validationError: String? = nil
         ) {
             self.enabled = enabled
+            self.useHTTPS = useHTTPS
             self.host = host
             self.port = port
             self.selectedModel = selectedModel
             self.validationError = validationError
         }
 
-        /// Builds an `http://<host>:<port>` URL when host + port are valid
-        /// and the validator accepts it. Sets `validationError` and returns
-        /// nil otherwise so the UI can render the inline message.
+        /// Builds an `http://` or `https://` URL based on `useHTTPS` when
+        /// host + port are valid and the validator accepts it. Sets
+        /// `validationError` and returns nil otherwise so the UI can render
+        /// the inline message. Defaults to HTTPS — Tailscale serves valid
+        /// Let's Encrypt certs on `*.ts.net` via `tailscale serve`, and
+        /// HTTPS sidesteps macOS App Transport Security entirely.
         mutating func resolveURL() -> URL? {
             let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
             let trimmedPort = port.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -135,7 +141,8 @@ public final class AIAssistantOnboardingViewModel {
                 validationError = "Enter a valid port (1-65535)."
                 return nil
             }
-            guard let url = URL(string: "http://\(trimmedHost):\(portValue)") else {
+            let scheme = useHTTPS ? "https" : "http"
+            guard let url = URL(string: "\(scheme)://\(trimmedHost):\(portValue)") else {
                 validationError = "Couldn't build a URL from that host and port."
                 return nil
             }
@@ -531,9 +538,11 @@ public final class AIAssistantOnboardingViewModel {
         let isLocalhost = baseURL.host == "localhost"
             || baseURL.host == "127.0.0.1"
             || baseURL.host == "::1"
+        let isHTTPS = (baseURL.scheme?.lowercased() ?? "https") == "https"
         if isLocalhost {
             remoteOllama = RemoteOllamaDraft(
                 enabled: false,
+                useHTTPS: isHTTPS,
                 host: "",
                 port: baseURL.port.map(String.init) ?? "11434",
                 selectedModel: config.modelName
@@ -542,6 +551,7 @@ public final class AIAssistantOnboardingViewModel {
         }
         remoteOllama = RemoteOllamaDraft(
             enabled: true,
+            useHTTPS: isHTTPS,
             host: baseURL.host ?? "",
             port: baseURL.port.map(String.init) ?? "11434",
             selectedModel: config.modelName

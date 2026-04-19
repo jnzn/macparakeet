@@ -176,6 +176,10 @@ struct AIAssistantOnboardingContainerView: View {
 
         if viewModel.remoteOllama.enabled {
             VStack(alignment: .leading, spacing: 8) {
+                Toggle("Use HTTPS (recommended for Tailscale-served endpoints)", isOn: $viewModel.remoteOllama.useHTTPS)
+                    .toggleStyle(.checkbox)
+                    .font(DesignSystem.Typography.bodySmall)
+
                 HStack(spacing: 8) {
                     TextField("Host (e.g. studio.local or my-tailnet.ts.net)", text: $viewModel.remoteOllama.host)
                         .textFieldStyle(.roundedBorder)
