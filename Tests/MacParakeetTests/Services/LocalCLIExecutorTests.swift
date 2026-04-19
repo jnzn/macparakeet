@@ -439,4 +439,86 @@ final class LocalCLIExecutorTests: XCTestCase {
             "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"
         )
     }
+
+    // MARK: - resolve(binary:)
+
+    /// Creates a temp directory and drops an executable stub inside it.
+    /// Returns (dirURL, binaryURL). Caller is responsible for cleanup.
+    private func makeExecutableStub(named name: String) throws -> (URL, URL) {
+        let tempDir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("cli-resolve-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        let binaryURL = tempDir.appendingPathComponent(name)
+        try "#!/bin/sh\nexit 0\n".write(to: binaryURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755],
+            ofItemAtPath: binaryURL.path
+        )
+        return (tempDir, binaryURL)
+    }
+
+    func testResolveReturnsFirstExecutableMatchOnPATH() throws {
+        let executor = LocalCLIExecutor()
+        let binaryName = "mp-test-binary-\(UUID().uuidString)"
+        let (dir, expected) = try makeExecutableStub(named: binaryName)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let resolved = executor.resolve(
+            binary: binaryName,
+            path: "/nonexistent/first:\(dir.path):/nonexistent/last"
+        )
+
+        XCTAssertEqual(resolved?.path, expected.path)
+    }
+
+    func testResolveHonorsPATHOrderAndReturnsFirstMatch() throws {
+        let executor = LocalCLIExecutor()
+        let binaryName = "mp-test-binary-\(UUID().uuidString)"
+        let (firstDir, firstBinary) = try makeExecutableStub(named: binaryName)
+        let (secondDir, _) = try makeExecutableStub(named: binaryName)
+        defer {
+            try? FileManager.default.removeItem(at: firstDir)
+            try? FileManager.default.removeItem(at: secondDir)
+        }
+
+        let resolved = executor.resolve(
+            binary: binaryName,
+            path: "\(firstDir.path):\(secondDir.path)"
+        )
+
+        XCTAssertEqual(resolved?.path, firstBinary.path)
+    }
+
+    func testResolveReturnsNilWhenBinaryNotOnPATH() {
+        let executor = LocalCLIExecutor()
+
+        XCTAssertNil(
+            executor.resolve(
+                binary: "mp-definitely-not-installed-\(UUID().uuidString)",
+                path: "/nonexistent/a:/nonexistent/b"
+            )
+        )
+    }
+
+    func testResolveRejectsNamesWithSlashes() {
+        let executor = LocalCLIExecutor()
+
+        XCTAssertNil(executor.resolve(binary: "/bin/sh", path: "/bin"))
+        XCTAssertNil(executor.resolve(binary: "sub/path", path: "/bin"))
+        XCTAssertNil(executor.resolve(binary: "", path: "/bin"))
+    }
+
+    func testResolveSkipsEmptyPATHComponents() throws {
+        let executor = LocalCLIExecutor()
+        let binaryName = "mp-test-binary-\(UUID().uuidString)"
+        let (dir, expected) = try makeExecutableStub(named: binaryName)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let resolved = executor.resolve(
+            binary: binaryName,
+            path: "::\(dir.path)::"
+        )
+
+        XCTAssertEqual(resolved?.path, expected.path)
+    }
 }
