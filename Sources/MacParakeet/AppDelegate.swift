@@ -436,6 +436,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if !DEBUG
         guard !hasPresentedHotkeyUnavailableAlert else { return }
         guard settingsViewModel.accessibilityGranted == false else { return }
+        // Suppress while onboarding is on screen — the user hasn't been
+        // asked for Accessibility yet, and the onboarding flow's own
+        // accessibility step is the right place to request it.
+        guard !onboardingWindowController.isVisible else { return }
+        // Suppress on first launch (before onboarding has been completed)
+        // — onboarding will show shortly and run its own accessibility
+        // request, so this redundant alert just lands before any UI is
+        // interactive.
+        let completed = UserDefaults.standard.string(forKey: OnboardingViewModel.onboardingCompletedKey) != nil
+        guard completed else { return }
 
         hasPresentedHotkeyUnavailableAlert = true
         NSApp.activate(ignoringOtherApps: true)
