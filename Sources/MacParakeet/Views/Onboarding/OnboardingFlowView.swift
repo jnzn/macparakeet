@@ -159,6 +159,7 @@ struct OnboardingFlowView: View {
         case .accessibility: return "accessibility"
         case .meetingRecording: return "record.circle"
         case .hotkey: return "keyboard"
+        case .aiAssistant: return "sparkles"
         case .engine: return "cpu"
         case .done: return "checkmark.circle"
         }
@@ -175,6 +176,8 @@ struct OnboardingFlowView: View {
         case .meetingRecording:
             return viewModel.screenRecordingGranted || viewModel.meetingRecordingSkipped
         case .hotkey:
+            return viewModel.step.rawValue > step.rawValue
+        case .aiAssistant:
             return viewModel.step.rawValue > step.rawValue
         case .engine:
             if case .ready = viewModel.engineState { return true }
@@ -331,6 +334,8 @@ struct OnboardingFlowView: View {
             meetingRecordingStep
         case .hotkey:
             hotkeyStep
+        case .aiAssistant:
+            aiAssistantStepPlaceholder
         case .engine:
             engineSetupView
                 .onAppear {
@@ -630,6 +635,22 @@ struct OnboardingFlowView: View {
         animationTask = nil
     }
 
+    // MARK: - AI Assistant Setup (placeholder; container view lands in Step 5)
+
+    private var aiAssistantStepPlaceholder: some View {
+        onboardingCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("AI Assistant onboarding (coming next)")
+                    .font(DesignSystem.Typography.sectionTitle)
+                Text("This step will detect installed CLIs and let you wire them to the Fn / Globe hotkey. Skip is always available.")
+                    .font(DesignSystem.Typography.bodySmall)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(DesignSystem.Spacing.lg)
+        }
+    }
+
     // MARK: - Engine Setup
 
     private var engineSetupView: some View {
@@ -909,7 +930,8 @@ struct OnboardingFlowView: View {
         case .microphone: return "Enable Microphone Access"
         case .accessibility: return "Enable Accessibility"
         case .meetingRecording: return "Meeting Recording (Optional)"
-        case .hotkey: return "Learn the Hotkey"
+        case .hotkey: return "Learn the Hotkeys"
+        case .aiAssistant: return "Ask AI Assistant (Optional)"
         case .engine: return "Prepare Speech Model"
         case .done: return "All Set"
         }
@@ -926,7 +948,9 @@ struct OnboardingFlowView: View {
         case .meetingRecording:
             return "Optional. This is only needed to capture system audio during meeting recording."
         case .hotkey:
-            return "Two ways to dictate — pick whichever feels natural."
+            return "Two hotkeys — dictate with Right Option, ask AI with Fn. Press each to confirm they're wired."
+        case .aiAssistant:
+            return "Optional. Wire any installed AI CLIs (Claude, Codex, Gemini) or an Ollama daemon to the Fn / Globe hotkey."
         case .engine:
             return "The speech model (~6 GB) downloads once. Usually takes 2–5 minutes on broadband, longer on slower connections."
         case .done:
@@ -941,6 +965,7 @@ struct OnboardingFlowView: View {
         case .accessibility: return "Continue"
         case .meetingRecording: return "Continue"
         case .hotkey: return "Continue"
+        case .aiAssistant: return "Continue"
         case .engine: return "Continue"
         case .done: return "Finish"
         }
@@ -1066,7 +1091,7 @@ struct OnboardingFlowView: View {
             return nil
         case .engine:
             return "Downloading — this can take several minutes. Everything works offline after setup."
-        case .welcome, .hotkey, .done:
+        case .welcome, .hotkey, .aiAssistant, .done:
             return nil
         }
     }
