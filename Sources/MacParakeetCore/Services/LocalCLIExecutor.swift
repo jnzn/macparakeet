@@ -213,10 +213,28 @@ public final class LocalCLIExecutor: Sendable {
         }
     }
 
-    private let cachedPATH: OSAllocatedUnfairLock<String?>
+    /// Process-wide cache of the resolved login-shell PATH. Promoted from
+    /// per-instance to class-level so a one-time launch-time pre-warm
+    /// (`preWarmPATHCache()`) populates it once and every later
+    /// `LocalCLIExecutor` instance — onboarding probe, settings test
+    /// connection, AI assistant ask — picks it up synchronously.
+    private static let sharedPATHCache = OSAllocatedUnfairLock<String?>(initialState: nil)
 
-    public init() {
-        self.cachedPATH = OSAllocatedUnfairLock(initialState: nil)
+    public init() {}
+
+    /// Kicks off a background Task that resolves the user's full
+    /// login-shell PATH and stores it in the process-wide cache.
+    /// Idempotent — extra calls are no-ops once the cache is filled.
+    /// Call once early in `applicationDidFinishLaunching` so any later
+    /// `resolve(binary:)` returns instantly instead of blocking up to
+    /// 10 seconds on the shell probe.
+    public static func preWarmPATHCache() {
+        if sharedPATHCache.withLock({ $0 }) != nil { return }
+        Task.detached(priority: .background) {
+            _ = LocalCLIExecutor().preferredPATH(
+                fallback: ProcessInfo.processInfo.environment["PATH"]
+            )
+        }
     }
 
     /// Execute a CLI command with the given prompt components.
@@ -819,8 +837,8 @@ public final class LocalCLIExecutor: Sendable {
     /// Returns the user's full shell PATH. Apps launched from Finder/Dock
     /// inherit a minimal PATH that lacks Homebrew, nvm, user-home bin
     /// dirs (~/.local/bin etc.).
-    private func preferredPATH(fallback: String?) -> String {
-        if let cached = cachedPATH.withLock({ $0 }) {
+    func preferredPATH(fallback: String?) -> String {
+        if let cached = Self.sharedPATHCache.withLock({ $0 }) {
             return cached
         }
 
@@ -828,10 +846,12 @@ public final class LocalCLIExecutor: Sendable {
 
         if let discovered = Self.discoverPATH() {
             let merged = Self.mergedPATH([discovered, userBins, fallback, Self.defaultPATH]) ?? Self.defaultPATH
-            cachedPATH.withLock { $0 = merged }
+            Self.sharedPATHCache.withLock { $0 = merged }
             return merged
         }
 
+        // Probe failed (timeout / no shell). Don't poison the cache —
+        // a later resolve might hit a faster shell.
         return Self.mergedPATH([userBins, fallback, Self.defaultPATH]) ?? Self.defaultPATH
     }
 
