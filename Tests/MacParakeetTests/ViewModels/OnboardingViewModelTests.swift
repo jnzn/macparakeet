@@ -124,8 +124,19 @@ final class OnboardingViewModelTests: XCTestCase {
     func testMeetingRecordingStepOrdering() {
         XCTAssertEqual(
             OnboardingViewModel.Step.allCases,
-            [.welcome, .microphone, .accessibility, .meetingRecording, .hotkey, .engine, .done]
+            [.welcome, .microphone, .accessibility, .meetingRecording, .hotkey, .aiAssistant, .engine, .done]
         )
+    }
+
+    func testAIAssistantStepCanContinueWithoutAnyConfig() {
+        let perms = MockPermissionService()
+        let stt = MockSTTClient()
+        let defaults = UserDefaults(suiteName: "com.macparakeet.tests.\(UUID().uuidString)")!
+
+        let vm = makeViewModel(permissionService: perms, sttClient: stt, defaults: defaults)
+        vm.jump(to: .aiAssistant)
+
+        XCTAssertTrue(vm.canContinueFromCurrentStep())
     }
 
     func testMeetingRecordingStepCanContinueWithoutPermission() {

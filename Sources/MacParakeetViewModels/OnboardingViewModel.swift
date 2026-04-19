@@ -15,6 +15,7 @@ public final class OnboardingViewModel {
         case accessibility
         case meetingRecording
         case hotkey
+        case aiAssistant
         case engine
         case done
 
@@ -26,7 +27,8 @@ public final class OnboardingViewModel {
             case .microphone: return "Microphone"
             case .accessibility: return "Accessibility"
             case .meetingRecording: return "Meeting Recording"
-            case .hotkey: return "Hotkey"
+            case .hotkey: return "Hotkeys"
+            case .aiAssistant: return "Ask AI Assistant"
             case .engine: return "Speech Model"
             case .done: return "Ready"
             }
@@ -192,6 +194,8 @@ public final class OnboardingViewModel {
         case .meetingRecording:
             return true
         case .hotkey:
+            return true
+        case .aiAssistant:
             return true
         case .engine:
             switch engineState {
