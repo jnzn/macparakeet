@@ -74,3 +74,9 @@ tmp/
 
 # Data recovery
 recup_dir*/
+
+# Asset originals (manual backups before re-renders)
+*.orig
+
+# Swift code-coverage scratch files
+*.profraw
