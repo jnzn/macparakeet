@@ -34,8 +34,7 @@ A **fast, private, local-first voice app** for macOS with three co-equal modes: 
 | CLI testing guide | `docs/cli-testing.md` |
 | Brand identity | `docs/brand-identity.md` |
 | UI/UX design overhaul | `docs/design-overhaul.md` |
-| Distribution, signing & auto-updates | `docs/distribution.md` |
-| Telemetry system | `docs/telemetry.md` |
+| Distribution, signing & ad-hoc packaging | `docs/distribution.md` |
 | Commit message format | `docs/commit-guidelines.md` |
 | Implementation plans | `plans/` -> active and completed plans |
 | **PDX Edition fork** (this branch's deltas vs upstream) | `docs/pdx-edition.md` |
@@ -60,7 +59,6 @@ A **fast, private, local-first voice app** for macOS with three co-equal modes: 
 | STT | Parakeet TDT 0.6B-v3 | Via FluidAudio CoreML/ANE (~2.5% WER, 155x realtime, 25 European languages) |
 | Audio | AVAudioEngine + Core Audio + Core Audio Taps | Mic capture for dictation; Core Audio Taps for system audio (meeting recording); FFmpeg (bundled) for video file conversion |
 | YouTube | yt-dlp | Standalone macOS binary, weekly non-blocking auto-update via `--update` |
-| Auto-Update | Sparkle 2 | In-app updates via EdDSA-signed appcast (non-App Store) |
 
 ## Product Context
 
@@ -91,14 +89,13 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 | ADR | Decision | File |
 |-----|----------|------|
 | ADR-001 | Parakeet TDT 0.6B-v3 as primary STT | `spec/adr/001-parakeet-stt.md` |
-| ADR-002 | Local-first processing (amended: opt-in LLM providers, telemetry) | `spec/adr/002-local-only.md` |
+| ADR-002 | Local-first processing (amended: opt-in LLM providers) | `spec/adr/002-local-only.md` |
 | ADR-004 | Deterministic text processing pipeline | `spec/adr/004-deterministic-pipeline.md` |
 | ADR-005 | First-run onboarding flow | `spec/adr/005-onboarding-first-run.md` |
 | ADR-007 | FluidAudio CoreML migration (Python elimination) | `spec/adr/007-fluidaudio-coreml-migration.md` |
 | ADR-009 | Custom hotkey support (any single key + chord combos) | `spec/adr/009-custom-hotkey.md` |
 | ADR-010 | Speaker diarization via FluidAudio offline pipeline | `spec/adr/010-speaker-diarization.md` |
 | ADR-011 | LLM via cloud API keys + optional local providers | `spec/adr/011-llm-cloud-and-local-providers.md` |
-| ADR-012 | Self-hosted telemetry via Cloudflare (Worker + D1) | `spec/adr/012-telemetry-system.md` |
 | ADR-013 | Prompt Library + multi-summary architecture | `spec/adr/013-prompt-library-multi-summary.md` |
 | ADR-014 | Meeting recording via Core Audio Taps | `spec/adr/014-meeting-recording.md` |
 | ADR-015 | Concurrent dictation and meeting recording | `spec/adr/015-concurrent-dictation-meeting.md` |
@@ -203,15 +200,13 @@ Menu Bar Icon (always visible)
     |   +-- Text snippets management (sheet)
     |
     +-- Feedback Panel
-    |   +-- Category selection (bug report, feature request, other)
-    |   +-- Message form with optional email + screenshot
+    |   +-- One-card mailto contact (pdxedition@fastmail.com)
     |
     +-- Settings Window
     |   +-- Hotkey configuration
     |   +-- LLM provider settings
     |   +-- Storage management
     |   +-- Permissions
-    |   +-- Auto-update preferences
     |
     +-- Meetings Panel
     |   +-- Start Meeting Recording button
@@ -237,9 +232,8 @@ View files organized by feature in `Sources/MacParakeet/Views/`:
 - `Transcription/` -- Main window, drop zone, transcript display, export
 - `Dictation/` -- Overlay, waveform, recording state
 - `MeetingRecording/` -- Meeting recording pill, meetings view, dual audio levels
-- `Discover/` -- Discover sidebar, curated content cards
 - `Vocabulary/` -- Processing mode, custom words, text snippets
-- `Feedback/` -- Feedback form, category selection, community link
+- `Feedback/` -- Single mailto contact card
 - `Onboarding/` -- First-run onboarding flow
 - `Settings/` -- Hotkey, LLM providers, storage, permissions
 - `History/` -- Dictation history, search, playback
@@ -261,8 +255,8 @@ macparakeet/
 │   ├── cli-testing.md      # CLI testing guide
 │   ├── commit-guidelines.md # Rich commit message format
 │   ├── design-overhaul.md  # UI/UX redesign spec (warm magical direction)
-│   ├── distribution.md     # Signing, notarization, auto-updates (Sparkle)
-│   ├── telemetry.md        # Telemetry system
+│   ├── distribution.md     # Signing + ad-hoc packaging
+│   ├── pdx-edition.md      # PDX Edition fork delta vs upstream
 │   └── research/           # Deep dives on competitors, user sentiment
 ├── plans/              # Implementation plans (version controlled)
 │   ├── active/         # Currently being implemented
@@ -284,15 +278,11 @@ macparakeet/
 - [macparakeet-community](https://github.com/moona3k/macparakeet-community) -- Archived; all issues now on moona3k/macparakeet
 - [oatmeal](https://github.com/moona3k/oatmeal) -- Sibling product (meeting memory app); some meeting audio capture code was ported and adapted into MacParakeet
 
-### Feedback & Community
+### Feedback
 
-In-app feedback creates GitHub Issues via a Cloudflare Pages Function. User emails are **never** posted in public issues.
-
-**Responding to issues:**
-- Be concise, genuine, no fluff
-- If a feature request is already shipped, say so and close the issue
-- If partially addressed, explain what's done and what's still open
-- Cross-reference related issues
+The in-app Feedback panel is a single mailto card pointing at
+`pdxedition@fastmail.com`. There is no shared issue tracker for
+this fork — bug reports and ideas come in by email.
 
 ## Implementation Guidelines
 
@@ -300,7 +290,7 @@ In-app feedback creates GitHub Issues via a Cloudflare Pages Function. User emai
 2. **ADRs are locked** -- Don't second-guess architectural decisions in `spec/adr/`.
 3. **Never lose user data** -- Graceful degradation for dictation history and transcriptions.
 4. **UI philosophy** -- Minimal during dictation, rich for transcription results.
-5. **Local-first** -- Speech recognition stays on-device by default. Optional network surfaces only run when the user enables or triggers them (for example YouTube downloads, telemetry, licensing, updates, or optional provider flows).
+5. **Local-first** -- Speech recognition stays on-device by default. Optional network surfaces only run when the user enables or triggers them (for example YouTube downloads or optional LLM provider flows).
 6. **Simplicity is the product** -- Resist feature creep. MacParakeet does three things well.
 7. **Fast feedback loops for agents** -- Design everything so the agent can verify its own work: tests for logic, CLI for headless smoke-testing, build errors that surface immediately.
 8. **Bounded agent discretion** -- Agents should choose the simplest process that works, but behavior changes must follow `spec/10-ai-coding-method.md` kernel workflow.
@@ -349,21 +339,57 @@ Plans live in `plans/` and are version-controlled. Create a plan for multi-file 
 4. Run focused tests (should pass), then run `swift test` before merge
 5. Commit with test + fix together
 
-### Release a new build
+### Cut a new release
 
-Full guide: `docs/distribution.md`. Quick steps:
+PDX Edition releases ship as ad-hoc-signed zips attached to a
+GitHub Release tag. There is no auto-update channel — users
+re-download from Releases or rebuild from source.
 
-0. **Pre-flight:** Run `swift test` (all must pass). Check current version: `curl -s "https://macparakeet.com/appcast.xml" | grep sparkle:shortVersionString`. Decide version bump -- patch (0.1.x) for fixes, minor (0.x.0) for features.
-1. **Build:** `VERSION=X.Y.Z scripts/dist/build_app_bundle.sh`
-2. **Sign + notarize:** `scripts/dist/sign_notarize.sh`
-3. **Upload DMG to R2:** `npx wrangler r2 object put macparakeet-downloads/MacParakeet.dmg --file dist/MacParakeet.dmg --content-type "application/x-apple-diskimage" --remote`
-4. **Verify R2 file size matches local:** `curl -sI "https://downloads.macparakeet.com/MacParakeet.dmg?ts=$(date +%s)" | grep content-length` -- must equal `stat -f%z dist/MacParakeet.dmg`
-5. **Sign for Sparkle:** `.build/artifacts/sparkle/Sparkle/bin/sign_update dist/MacParakeet.dmg`
-6. **Update appcast:** Edit `~/code/macparakeet-website/public/appcast.xml` -- **prepend** new `<item>` (keep all previous items). Include build number, version, signature, length, `pubDate` (`date -R`), release notes.
-7. **Deploy website:** `cd ~/code/macparakeet-website && git add public/appcast.xml && git commit && git push && npx astro build && npx wrangler pages deploy dist --project-name macparakeet-website --branch main`
-8. **Verify:** `curl -s "https://macparakeet.com/appcast.xml?ts=$(date +%s)" | grep sparkle:version`
+```bash
+# 1. Pre-flight
+swift test --build-path /tmp/mp-test-build  # all must pass
 
-**Critical:** The DMG uploaded to R2 must be the **exact same file** you ran `sign_update` on. If sizes don't match, Sparkle rejects the update.
+# 2. Build the dist bundle with PDX naming
+rm -rf "dist/MacParakeet (PDX Edition).app" "dist/MacParakeet-PDX-Edition.zip" /tmp/mp-pdx-sign
+APP_NAME="MacParakeet (PDX Edition)" \
+BUNDLE_ID="com.macparakeet.pdx" \
+VERSION="X.Y.Z-pdx" \
+XCODE_DERIVED_DATA="/tmp/mp-pdx-dist" \
+scripts/dist/build_app_bundle.sh
+
+# 3. Ad-hoc sign inside-out (NO --options runtime — that breaks
+#    ad-hoc + library validation)
+SRC="dist/MacParakeet (PDX Edition).app"
+WORK="/tmp/mp-pdx-sign"
+mkdir -p "$WORK" && cp -R "$SRC" "$WORK/"
+APP="$WORK/MacParakeet (PDX Edition).app"
+xattr -cr "$APP"
+find "$APP/Contents/Resources" -maxdepth 1 -type f -perm -111 -print0 \
+  | while IFS= read -r -d '' h; do codesign --force --sign - "$h"; done
+xattr -cr "$APP"
+codesign --force --sign - "$APP"
+codesign --verify --deep --strict --verbose=2 "$APP"
+
+# 4. Smoke test (binary launches and stays alive past dyld)
+"$APP/Contents/MacOS/MacParakeet (PDX Edition)" 2>&1 &
+PID=$!; sleep 4
+if kill -0 "$PID" 2>/dev/null; then echo ALIVE; kill "$PID"; else echo DEAD; fi
+
+# 5. Zip
+ditto -c -k --keepParent --sequesterRsrc "$APP" \
+  ~/Desktop/MacParakeet-PDX-Edition.zip
+
+# 6. Publish to GitHub Releases
+gh release create vX.Y.Z-pdx ~/Desktop/MacParakeet-PDX-Edition.zip \
+  --repo jnzn/macparakeet \
+  --target feature/streaming-overlay \
+  --title "MacParakeet (PDX Edition) vX.Y.Z-pdx" \
+  --notes "Personal-use ad-hoc-signed build. See docs/pdx-edition.md for delta vs upstream."
+```
+
+**Critical:** never use `codesign --options runtime` for the
+ad-hoc path. Hardened runtime + ad-hoc + library validation =
+dyld rejects every bundled framework with "different Team IDs".
 
 ## Testing
 
@@ -440,9 +466,9 @@ open Package.swift  # Select MacParakeet scheme
 | Accessibility | Global hotkey, paste simulation | First dictation use |
 | Screen & System Audio Recording | System audio capture for meeting recording (Core Audio Taps) | First meeting recording use |
 
-1. **Offline-first** -- Dictation and file transcription work fully offline. Network used only for YouTube downloads and anonymous telemetry.
+1. **Offline-first** -- Dictation and file transcription work fully offline. Network used only for YouTube downloads and configured LLM provider calls.
 2. **Temp files deleted** -- Audio removed after transcription (unless user saves)
-3. **Non-identifying telemetry** -- Anonymous, session-scoped, opt-out in Settings. No persistent IDs, no IP storage, no content. See `docs/telemetry.md` and ADR-012.
+3. **No telemetry** -- PDX Edition has telemetry hard-disabled. No analytics, no crash reports.
 4. **No accounts** -- No login, no email, no tracking
 
 ---
