@@ -139,6 +139,42 @@ final class OnboardingViewModelTests: XCTestCase {
         XCTAssertTrue(vm.canContinueFromCurrentStep())
     }
 
+    func testGoNextFromHotkeyLandsOnAIAssistant() {
+        let perms = MockPermissionService()
+        let stt = MockSTTClient()
+        let defaults = UserDefaults(suiteName: "com.macparakeet.tests.\(UUID().uuidString)")!
+
+        let vm = makeViewModel(permissionService: perms, sttClient: stt, defaults: defaults)
+        vm.jump(to: .hotkey)
+        vm.goNext()
+
+        XCTAssertEqual(vm.step, .aiAssistant)
+    }
+
+    func testGoNextFromAIAssistantLandsOnEngine() {
+        let perms = MockPermissionService()
+        let stt = MockSTTClient()
+        let defaults = UserDefaults(suiteName: "com.macparakeet.tests.\(UUID().uuidString)")!
+
+        let vm = makeViewModel(permissionService: perms, sttClient: stt, defaults: defaults)
+        vm.jump(to: .aiAssistant)
+        vm.goNext()
+
+        XCTAssertEqual(vm.step, .engine)
+    }
+
+    func testGoBackFromAIAssistantLandsOnHotkey() {
+        let perms = MockPermissionService()
+        let stt = MockSTTClient()
+        let defaults = UserDefaults(suiteName: "com.macparakeet.tests.\(UUID().uuidString)")!
+
+        let vm = makeViewModel(permissionService: perms, sttClient: stt, defaults: defaults)
+        vm.jump(to: .aiAssistant)
+        vm.goBack()
+
+        XCTAssertEqual(vm.step, .hotkey)
+    }
+
     func testMeetingRecordingStepCanContinueWithoutPermission() {
         let perms = MockPermissionService()
         perms.screenRecordingPermission = false
