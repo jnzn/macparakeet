@@ -830,20 +830,78 @@ final class DictationFlowCoordinator {
 
     private func stopRecordingTask(generation: Int, sessionID: Int) {
         actionTask = Task { @MainActor in
-            do {
-                let serviceState = await self.serviceSession.state
-                self.dictationLog.notice(
-                    "stop_recording_requested gen=\(generation) session=\(sessionID) flowState=\(self.describeState(self.stateMachine.state), privacy: .public) serviceState=\(self.describeServiceState(serviceState), privacy: .public)"
+            let serviceState = await self.serviceSession.state
+            self.dictationLog.notice(
+                "stop_recording_requested gen=\(generation) session=\(sessionID) flowState=\(self.describeState(self.stateMachine.state), privacy: .public) serviceState=\(self.describeServiceState(serviceState), privacy: .public)"
+            )
+
+            // Watchdog: if `serviceSession.stopRecording` doesn't return
+            // within `stopWatchdogMs`, fall back to the latest streaming
+            // partial. The original stop call is allowed to continue —
+            // its result is discarded by the `watchdogFired` guard once
+            // the watchdog has already emitted `transcriptionCompleted`.
+            // Resolves the "loading bubble until I tap to commit" hang
+            // we saw in the streaming-overlay branch when the batch
+            // transcribe never delivers its completion event.
+            let watchdogStartedAt = Date()
+            let watchdogFired = WatchdogFlag()
+            let watchdogTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(Self.stopWatchdogMs))
+                guard !Task.isCancelled, let self else { return }
+                guard let partial = await self.serviceSession.currentStreamingPartial(sessionID: sessionID),
+                      !partial.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    self.dictationLog.warning(
+                        "stop_watchdog_skipped gen=\(generation) session=\(sessionID) reason=no_partial"
+                    )
+                    return
+                }
+                guard !watchdogFired.value else { return }
+                watchdogFired.value = true
+                self.dictationLog.warning(
+                    "stop_watchdog_fired gen=\(generation) session=\(sessionID) chars=\(partial.count) afterMs=\(Int(Date().timeIntervalSince(watchdogStartedAt) * 1000))"
                 )
+                let fallback = Dictation(
+                    durationMs: 0,
+                    rawTranscript: partial,
+                    cleanTranscript: partial,
+                    status: .completed,
+                    wordCount: partial.split(separator: " ").count
+                )
+                self.consumeDictationResult(DictationResult(dictation: fallback, postPasteAction: nil))
+                self.sendEvent(.transcriptionCompleted(generation: generation))
+            }
+
+            do {
                 let result = try await self.serviceSession.stopRecording(sessionID: sessionID)
+                watchdogTask.cancel()
                 guard !Task.isCancelled else { return }
+                if watchdogFired.value {
+                    self.dictationLog.notice(
+                        "stop_recording_late_return gen=\(generation) session=\(sessionID) afterMs=\(Int(Date().timeIntervalSince(watchdogStartedAt) * 1000)) — watchdog already committed"
+                    )
+                    return
+                }
                 self.consumeDictationResult(result)
                 self.sendEvent(.transcriptionCompleted(generation: generation))
             } catch {
+                watchdogTask.cancel()
+                if watchdogFired.value {
+                    self.dictationLog.notice(
+                        "stop_recording_late_error gen=\(generation) session=\(sessionID) error=\(error.localizedDescription, privacy: .public) — watchdog already committed"
+                    )
+                    return
+                }
                 self.handleTranscriptionFailure(error, generation: generation, phase: "stop")
             }
         }
     }
+
+    /// Watchdog timer for `stopRecording`. If the batch transcribe doesn't
+    /// return within this many ms, we commit the latest streaming partial
+    /// instead. 1500ms is well past the 99th percentile of legitimate
+    /// batch-transcribe times for a typical short utterance (50-500ms),
+    /// so this only fires when something actually went sideways.
+    private static let stopWatchdogMs: Int = 1500
 
     private func undoCancelTask(generation: Int) {
         actionTask = Task { @MainActor in
@@ -954,4 +1012,12 @@ final class DictationFlowCoordinator {
         case .error: return "error"
         }
     }
+}
+
+/// Reference-type flag used by the stop watchdog so the watchdog Task and
+/// the `stopRecording` await can both observe / mutate the same boolean
+/// without sharing a value-type capture (which would copy on capture).
+@MainActor
+private final class WatchdogFlag {
+    var value: Bool = false
 }

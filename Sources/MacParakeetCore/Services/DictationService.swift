@@ -84,6 +84,12 @@ public actor DictationService: DictationServiceProtocol {
     private var recordingStartedAt: Date?
     private var activeSessionID: Int = 0
     private var activeStreamingTask: Task<Void, Never>?
+    /// Latest streaming partial text captured by `reportStreamingPartial`,
+    /// keyed by session ID. The watchdog in `DictationFlowCoordinator`
+    /// queries this when the batch transcribe stalls so it can fall back
+    /// to whatever the streaming TDT model produced live, instead of
+    /// leaving the bubble spinning forever.
+    private var lastStreamingPartialBySession: [Int: String] = [:]
     /// Profile resolved at the start of the current dictation, or nil if no
     /// profile matched the frontmost app. Overrides the formatter prompt for
     /// both live-bubble cleanup and paste-path polish. Cleared by the next
@@ -219,6 +225,9 @@ public actor DictationService: DictationServiceProtocol {
 
         let requestedSessionID = sessionID ?? activeSessionID + 1
         activeSessionID = requestedSessionID
+        // Don't carry stale partial text across sessions; the watchdog
+        // would otherwise fire with a previous dictation's transcript.
+        lastStreamingPartialBySession[requestedSessionID] = nil
         _state = .recording
         do {
             try await audioProcessor.startCapture()
@@ -534,7 +543,17 @@ public actor DictationService: DictationServiceProtocol {
     /// callbacks from a replaced session never overwrite the current session's text.
     private func reportStreamingPartial(_ partial: String, sessionID: Int) {
         guard sessionID == activeSessionID else { return }
+        lastStreamingPartialBySession[sessionID] = partial
         streamingPartialHandler?(partial)
+    }
+
+    /// Returns the most recent streaming partial text seen for the given
+    /// session, or nil if none yet (or if the session has been replaced).
+    /// Used by the dictation flow coordinator's watchdog as a fallback when
+    /// the batch transcribe stalls.
+    public func currentStreamingPartial(sessionID: Int) -> String? {
+        guard sessionID == activeSessionID else { return nil }
+        return lastStreamingPartialBySession[sessionID]
     }
 
     private func endStreamingSession() {

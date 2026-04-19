@@ -47,6 +47,14 @@ public final class DictationServiceSession {
         try await service.stopRecording(sessionID: sessionID)
     }
 
+    /// Latest streaming partial seen by the active session, used by the
+    /// flow coordinator's stop watchdog as a fallback when the batch
+    /// transcribe stalls. Returns nil when no partial yet or the session
+    /// has been replaced.
+    public func currentStreamingPartial(sessionID: Int) async -> String? {
+        await service.currentStreamingPartial(sessionID: sessionID)
+    }
+
     public func cancelRecording(
         reason: TelemetryDictationCancelReason?,
         sessionID: Int
