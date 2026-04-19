@@ -207,7 +207,13 @@ final class AIAssistantBubbleController {
         guard provider != state.activeProvider else { return }
         state.activeProvider = provider
 
-        guard let current = configStore.load() else { return }
+        // If the user never explicitly saved an AI Assistant config (skipped
+        // the onboarding step), `load()` returns nil and the service falls
+        // back to `defaultClaude` at runtime. Build the same fallback here
+        // so the provider switch still persists — otherwise the next bubble
+        // open re-reads the empty store, falls back to Claude again, and
+        // every provider switch is forgotten between bubble sessions.
+        let current = configStore.load() ?? AIAssistantConfig.defaultClaude
         guard provider != current.provider else {
             // Switching back to the persisted default — no store rewrite.
             return
