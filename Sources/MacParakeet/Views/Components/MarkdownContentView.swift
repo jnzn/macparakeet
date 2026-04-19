@@ -97,8 +97,8 @@ struct MarkdownContentView: NSViewRepresentable {
         }
         let accentColor = NSColor(name: nil) { appearance in
             let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            return dark ? NSColor(red: 1.0, green: 0.54, blue: 0.36, alpha: 1)
-                        : NSColor(red: 0.91, green: 0.42, blue: 0.23, alpha: 1)
+            return dark ? NSColor(red: 0.32, green: 0.72, blue: 0.46, alpha: 1)
+                        : NSColor(red: 0.16, green: 0.45, blue: 0.27, alpha: 1)
         }
 
         let bodyFont = NSFont.systemFont(ofSize: baseFontSize)
