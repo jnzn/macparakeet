@@ -1,98 +1,122 @@
 <p align="center">
-  <img src="Assets/AppIcon-1024x1024.png" width="128" height="128" alt="MacParakeet app icon">
+  <img src="Assets/AppIcon-1024x1024.png" width="128" height="128" alt="MacParakeet (PDX Edition) app icon">
 </p>
 
-<h1 align="center">MacParakeet</h1>
+<h1 align="center">MacParakeet (PDX Edition)</h1>
 
 <p align="center">
-  Fast voice app for Mac with fully local speech and optional AI. Free and open-source.
-</p>
-
-<p align="center">
-  <em>There are many voice transcription/dictation apps, but this one is mine.</em>
+  Personal fork of <a href="https://github.com/moona3k/macparakeet">moona3k/macparakeet</a> — a fast, fully-local voice app for Mac. This branch is built for personal use: no auto-update phoning home, no telemetry, no shared issue tracker. Same engine, smaller surface area.
 </p>
 
 <p align="center">
-  <a href="https://macparakeet.com">macparakeet.com</a>
-</p>
-
-<p align="center">
-  <a href="https://downloads.macparakeet.com/MacParakeet.dmg"><img src="https://img.shields.io/badge/Download-DMG-E86B3B.svg?style=for-the-badge&logo=apple&logoColor=white" alt="Download DMG"></a>
+  <a href="https://github.com/jnzn/macparakeet/releases/latest"><img src="https://img.shields.io/badge/Download-Latest%20Release-2E7D43.svg?style=for-the-badge&logo=apple&logoColor=white" alt="Download Latest Release"></a>
 </p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="GPL-3.0 License"></a>
   <img src="https://img.shields.io/badge/macOS-14.2%2B-000000.svg" alt="macOS 14.2+">
   <img src="https://img.shields.io/badge/Swift-6.0-F05138.svg" alt="Swift 6">
-  <img src="https://img.shields.io/badge/tests-passing-brightgreen.svg" alt="Tests passing">
   <img src="https://img.shields.io/badge/Apple%20Silicon-only-333333.svg" alt="Apple Silicon only">
-</p>
-
-<p align="center">
-  <img src="Assets/screenshots/transcribe.png?v=3" width="720" alt="MacParakeet — Transcribe view with YouTube and file input">
-</p>
-
-<p align="center">
-  <img src="Assets/screenshots/library.png?v=3" width="720" alt="MacParakeet — Transcription library with thumbnails">
-</p>
-
-<p align="center">
-  <img src="Assets/screenshots/dictations.png?v=3" width="720" alt="MacParakeet — Dictation history and voice stats">
 </p>
 
 ---
 
-MacParakeet runs NVIDIA's Parakeet TDT on Apple's Neural Engine via [FluidAudio](https://github.com/FluidInference/FluidAudio) CoreML. It has three co-equal modes: system-wide dictation, file/URL transcription, and meeting recording. All speech recognition happens on your Mac.
+## What this is
 
-## What it does
+PDX Edition is the same MacParakeet engine — local Parakeet TDT speech recognition on the Apple Neural Engine via [FluidAudio](https://github.com/FluidInference/FluidAudio) — packaged for personal use. It does three things equally well:
 
-**Dictation** — Press a hotkey in any app, speak, text gets pasted. Hold for push-to-talk, double-tap for persistent recording. Works system-wide.
+- **System-wide dictation** — hold a hotkey, talk anywhere on macOS, text gets pasted at your cursor.
+- **File / URL transcription** — drag in audio or video, or paste a YouTube link.
+- **Meeting recording** — captures system audio + microphone together, transcribes locally.
 
-**File transcription** — Drag audio or video files, or paste a YouTube URL. Full transcript with word-level timestamps, speaker labels, and export to 7 formats (TXT, Markdown, SRT, VTT, DOCX, PDF, JSON).
+All speech recognition happens on your machine. Audio never leaves the Mac.
 
-**Meeting recording** — Capture microphone + system audio together, watch a live transcript preview while recording, and save the finished meeting directly into the library with summaries, chat, search, and export support. The meeting pipeline pairs mic/system frames, runs software AEC on the mic path, and applies a conservative system-dominance gate for live mic chunks while preserving both recorded sources in the finalized artifact (headphones still give the cleanest separation).
+## What's different from upstream
 
-**Text cleanup** — Filler word removal, custom word replacements, text snippets with triggers. Deterministic pipeline, no LLM needed.
+This fork strips out everything that makes sense for a public product but doesn't make sense for a personal build:
 
-**AI features** — Optional transcript summaries and chat. Ships with a prompt library, built-in and custom summary prompts, multi-summary tabs, and queued summary generation. Use Claude Code or Codex via Local CLI, or connect OpenAI, Anthropic, Google Gemini, Ollama, LM Studio, or OpenRouter. Entirely opt-in, with a fully local setup available when you stay on local providers/features.
+| Surface | Upstream | PDX Edition |
+|---|---|---|
+| Auto-update | Sparkle 2 with EdDSA-signed appcast at macparakeet.com | **Removed.** Update by re-downloading from Releases. |
+| Telemetry | Opt-out, posts to upstream's Cloudflare endpoint | **Removed.** Hard-off in `AppPreferences`. |
+| Discover sidebar | Curated content card | **Removed.** |
+| Feedback panel | In-app form posting to upstream's GitHub Issues | **Replaced** with a single mailto card. |
+| Trial / licensing keychain bootstrap | Reads 5 keychain items at every launch | **Disabled** (vestigial — app is GPL-3.0 free). |
+| Identity | `MacParakeet`, bundle ID `com.macparakeet.MacParakeet` | `MacParakeet (PDX Edition)`, bundle ID `com.macparakeet.pdx` |
+| Accent color | Coral-orange | Forest green |
 
-### Concurrent by design
+The full delta is documented in [`docs/pdx-edition.md`](docs/pdx-edition.md), including which specific files were touched.
 
-- Dictation and meeting recording can run at the same time.
-- Audio capture stays independent per flow.
-- All STT work routes through one shared runtime owner and explicit scheduler with two default slots: a reserved dictation slot and a shared meeting/batch slot, so file transcription can wait behind interactive work.
+## Notable additions
 
-### Performance
-
-- ~155x realtime — 60 min of audio in ~23 seconds
-- ~2.5% word error rate (Parakeet TDT 0.6B-v3)
-- ~66 MB working memory per active Parakeet inference slot
-- 25 European languages with auto-detection
-
-### Limitations
-
-- Apple Silicon only (M1/M2/M3/M4)
-- Best with English — supports 25 European languages but accuracy varies
-- No CJK language support (Korean, Japanese, Chinese, etc.)
+- **Optional AI Assistant onboarding step** — first-run wizard detects installed Claude Code / Codex / Gemini CLIs on your login-shell PATH, probes any local Ollama daemon over HTTP, and offers a remote-Ollama branch with HTTPS toggle (default-on, since Tailscale serves valid Let's Encrypt certs on `*.ts.net`). All optional; skipping is silent.
+- **Live hotkey-press demo** in the onboarding Hotkeys step — confirms macOS is delivering keyDown/keyUp events to the app for both default hotkeys (right-Option for dictation, Fn / Globe for AI Assistant).
+- **App Transport Security exceptions** for Tailscale `*.ts.net` and RFC 1918 / `.local` LAN addresses, so plain HTTP to Ollama on the tailnet works without TLS termination.
+- **PATH discovery hardening** — process-wide cache pre-warmed at app launch, 10-second probe budget for slow `~/.zshrc`, and a sweep of common user-bin dirs (`~/.local/bin`, `~/.cargo/bin`, `~/.npm-global/bin`, `~/.bun/bin`, `~/.deno/bin`, `~/.volta/bin`, `~/.asdf/shims`, `~/go/bin`, `~/.local/share/pnpm`).
+- **Cache-aware engine setup copy** — when the speech model is already on disk (e.g., migrated from upstream), onboarding says "Loading the cached speech model into memory" instead of misleadingly claiming a 6 GB download.
 
 ## Get it
 
-**Download:** Grab the [notarized DMG](https://downloads.macparakeet.com/MacParakeet.dmg) or visit [macparakeet.com](https://macparakeet.com). Drag to Applications, done.
+### Pre-built binary (recommended for personal use)
 
-First launch downloads the speech model (~6 GB) plus speaker-detection assets (~130 MB) when that default-on feature remains enabled. After that, dictation, meeting recording, and transcription work fully offline.
-
-**Build from source:**
+Grab `MacParakeet-PDX-Edition.zip` from the [Releases page](https://github.com/jnzn/macparakeet/releases/latest), then in Terminal:
 
 ```bash
-git clone https://github.com/moona3k/macparakeet.git
-cd macparakeet
-swift test
-scripts/dev/run_app.sh    # build, sign, launch
+cd ~/Downloads
+unzip MacParakeet-PDX-Edition.zip
+mv "MacParakeet (PDX Edition).app" /Applications/
+xattr -cr "/Applications/MacParakeet (PDX Edition).app"
+open "/Applications/MacParakeet (PDX Edition).app"
 ```
 
-The dev script creates a signed `.app` bundle so macOS grants mic and accessibility permissions. It disables target-level Xcode signing, then signs the finished bundle with the best available local identity. Override with `MACPARAKEET_CODESIGN_IDENTITY="Your Identity"` if needed.
+The `xattr -cr` step is required because the build is **ad-hoc signed** (no Apple Developer Program membership). Without it, macOS Gatekeeper blocks the launch.
 
-**CLI:**
+The parakeet icon appears in the **menu bar (top-right)** — this is a menu-bar app, no Dock icon.
+
+### Build from source
+
+```bash
+git clone --branch feature/streaming-overlay https://github.com/jnzn/macparakeet.git
+cd macparakeet
+swift test --build-path /tmp/mp-test-build
+scripts/dev/run_app.sh
+```
+
+Requires Xcode 15+ on an Apple Silicon Mac. The dev script wraps the binary in `MacParakeet (PDX Edition).app` and signs with the best local identity available (Apple Development cert if installed; ad-hoc otherwise).
+
+### First-run permissions
+
+The app asks for:
+
+- **Microphone** — required for dictation.
+- **Accessibility** — required for the global hotkey + paste automation. After granting in System Settings, **quit and relaunch the app** so the new permission state takes effect (`AXIsProcessTrusted()` is cached per-process by macOS).
+- **Screen & System Audio Recording** — only required for meeting recording. Skippable.
+
+First launch downloads ~6 GB of speech-recognition models (one-time, fully local thereafter). If you're migrating from an existing MacParakeet install, the models live at `~/Library/Application Support/MacParakeet/models/stt/` and are shared between bundles — no re-download.
+
+## Default hotkeys
+
+- **Right Option** held — dictate (release to paste).
+- **Right Option** double-tapped — persistent dictation mode.
+- **Fn / Globe** held — Ask AI Assistant about selected text (only when configured).
+- **Esc** during dictation — cancel.
+
+All rebindable in Settings → Hotkeys.
+
+## Tech stack
+
+| Layer | Choice |
+|-------|--------|
+| STT | Parakeet TDT 0.6B-v3 via [FluidAudio](https://github.com/FluidInference/FluidAudio) CoreML (Neural Engine) |
+| STT orchestration | Shared runtime + scheduler across dictation, meeting recording, and transcription |
+| Language | Swift 6.0 + SwiftUI |
+| Database | SQLite via GRDB |
+| Audio | AVAudioEngine + Core Audio Taps |
+| YouTube | bundled yt-dlp + Node runtime |
+| Media demux | bundled FFmpeg |
+| Platform | macOS 14.2+, Apple Silicon |
+
+## CLI
 
 ```bash
 swift run macparakeet-cli transcribe /path/to/audio.mp3
@@ -100,85 +124,43 @@ swift run macparakeet-cli models status
 swift run macparakeet-cli history
 ```
 
-## Tech stack
+## Performance
 
-| Layer | Choice |
-|-------|--------|
-| STT | Parakeet TDT 0.6B-v3 via [FluidAudio](https://github.com/FluidInference/FluidAudio) CoreML (Neural Engine) |
-| STT orchestration | Shared runtime + explicit scheduler across dictation, meeting recording, and transcription |
-| Language | Swift 6.0 + SwiftUI |
-| Database | SQLite via GRDB |
-| Auto-updates | Sparkle 2 |
-| YouTube | yt-dlp |
-| Platform | macOS 14.2+, Apple Silicon |
-
-## Vocabulary
-
-The Vocabulary panel controls how dictated text is cleaned up before pasting. No AI involved — it's a fast, deterministic pipeline that runs in under 1ms.
-
-You choose between two **processing modes**:
-
-- **Raw** — Paste exactly what the speech engine produces, no changes
-- **Clean** (default) — Run the text through a multi-step pipeline before pasting
-
-**The Clean pipeline** applies these steps in order:
-
-1. **Filler removal** — Strips "um", "uh", and sentence-start fillers like "so", "well", "like"
-2. **Custom words** — Applies your word replacement rules (e.g., "aye pee eye" becomes "API", or "kubernetes" gets capitalized to "Kubernetes"). Case-insensitive, whole-word matching. Words can be toggled on/off without deleting.
-3. **Voice Return** — If you've defined a trigger phrase (e.g., "press return") and speak it at the end of a dictation, it's stripped from the output and a Return keypress is simulated after paste
-4. **Snippet expansion** — Replaces short trigger phrases with longer text (e.g., "my signature" expands to "Best regards, David"). Triggers are natural language phrases because that's what the speech engine outputs. Matched longest-first to prevent collisions.
-5. **Whitespace cleanup** — Collapses spaces, fixes punctuation spacing, capitalizes the first letter
-
-Every dictation stores both the raw and clean transcript so you can always see what changed.
-
-## AI Features
-
-AI features are entirely **opt-in** and separate from speech recognition — transcription is always local. The LLM only sees transcript text, never audio.
-
-**What it does:**
-
-- **Summarize** — After a transcription or meeting recording finishes, click Summarize and pick a prompt ("Meeting Notes", "Action Items", "Key Quotes", etc.) or write your own. The LLM processes the transcript and streams back a summary. You can generate multiple summaries per transcript, each in its own tab. Prompts marked as auto-run generate summaries automatically for new transcriptions.
-- **Chat** — Ask questions about a transcript in a multi-turn chat interface. The LLM answers based on the transcript content.
-
-**Supported providers:**
-
-| Type | Options |
-|------|---------|
-| Cloud | Anthropic (Claude), OpenAI, Google Gemini, OpenRouter |
-| Local | Ollama, LM Studio |
-| CLI | Claude Code, Codex (runs as subprocess) |
-
-**Setup:** In Settings > Intelligence, pick a provider, enter an API key (cloud) or confirm the local server is running, select a model, and hit Test Connection. Cloud providers store keys in the macOS Keychain. Local providers (Ollama, LM Studio, CLI) keep everything on-device.
+- ~155x realtime — 60 min of audio in ~23 seconds
+- ~2.5% word error rate (Parakeet TDT 0.6B-v3)
+- ~66 MB working memory per active inference slot
+- 25 European languages with auto-detection (no CJK)
 
 ## Privacy
 
-All speech recognition runs on the Neural Engine. Your audio never leaves your Mac.
+Same as upstream, with telemetry permanently disabled:
 
-- **No cloud STT.** The model runs on-device. No audio is transmitted.
-- **No accounts.** No login, no email, no registration.
-- **Opt-out telemetry.** Non-identifying usage analytics and crash reporting go to a self-hosted endpoint only when telemetry is enabled. No persistent IDs, no IP storage, and no transcript/audio content is transmitted. [Source code is right here](Sources/MacParakeetCore/Services/TelemetryService.swift) — verify it yourself.
-- **Temp files cleaned up.** Audio deleted after transcription unless you save it.
+- Speech recognition runs on the Neural Engine, fully on-device.
+- No cloud STT, no accounts, no analytics, no crash reports.
+- Audio temp files deleted after transcription unless you save them.
+- AI features (summaries, chat, AI Assistant bubble) connect to whatever LLM provider you configure — Anthropic, OpenAI, Gemini, OpenRouter, Ollama, LM Studio, or local CLI tools (Claude Code, Codex, gemini-cli). All entirely opt-in. Pure local setup is supported.
 
-**What does use the network:** AI summaries and chat connect to configured LLM providers or CLI tools when you choose them. Sparkle checks for app updates. YouTube transcription downloads video via yt-dlp. Telemetry and crash reports go to our self-hosted server unless you opt out. Core dictation and transcription remain fully offline, and the app supports a 100% local setup when you use only local features/providers.
+## Sharing this with someone
 
-**Note:** Builds from source also send telemetry by default. Opt out in Settings or set `MACPARAKEET_TELEMETRY_URL` to override.
+The Releases page is the friendly path. There's a copy-paste install guide friends can follow without touching anything but Terminal — see [the install guide note](https://github.com/jnzn/macparakeet/releases/latest) on the release page.
 
-## Contributing
+## Contact
 
-- **Report bugs** — [Open an issue](https://github.com/moona3k/macparakeet/issues)
-- **Submit a PR** — Fork, make changes, `swift test`, open a PR
-- **Read the specs** — Architecture decisions and feature specs live in `spec/`
+- Bug reports / ideas: **pdxedition@fastmail.com**
+- Source: [github.com/jnzn/macparakeet (feature/streaming-overlay branch)](https://github.com/jnzn/macparakeet/tree/feature/streaming-overlay)
 
-For larger changes, open an issue first.
+There is no shared issue tracker — this is a personal fork, not a public product.
 
-## Support
+## Credits
 
-MacParakeet is free and open source. If it's useful to you, consider [sponsoring](https://github.com/sponsors/moona3k).
+This is a fork of [**MacParakeet** by moona3k](https://github.com/moona3k/macparakeet). All the heavy lifting — the STT pipeline, the meeting-recording architecture, the onboarding flow, the design system — is upstream's work. PDX Edition just adapts the surface for personal-build use.
+
+If MacParakeet is useful to you and you want to support the project, [sponsor moona3k upstream](https://github.com/sponsors/moona3k) — that's where the real maintenance happens.
 
 ## License
 
-GPL-3.0. Free software. [Full license](LICENSE).
+GPL-3.0, same as upstream. [Full license](LICENSE).
 
 ---
 
-*Made for people who think faster than they type.*
+*Made for one person who thinks faster than they type. If you're not that person but it's useful anyway, even better.*
