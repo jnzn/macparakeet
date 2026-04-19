@@ -1,18 +1,18 @@
 import SwiftUI
 
 /// Centralized design tokens for consistent styling across the app.
-/// "Warm Magical" design system — coral-orange accent, generous spacing, rounded headlines.
+/// "Warm Magical" design system — forest-green accent, generous spacing, rounded headlines.
 enum DesignSystem {
     // MARK: - Colors
 
     enum Colors {
-        // Accent — warm coral-orange (parakeet plumage)
-        static let accent = Color.adaptive(light: .init(red: 0.91, green: 0.42, blue: 0.23),
-                                  dark: .init(red: 1.0, green: 0.54, blue: 0.36))
-        static let accentLight = Color.adaptive(light: .init(red: 1.0, green: 0.94, blue: 0.92),
-                                       dark: .init(red: 1.0, green: 0.54, blue: 0.36).opacity(0.12))
-        static let accentDark = Color.adaptive(light: .init(red: 0.77, green: 0.33, blue: 0.16),
-                                      dark: .init(red: 0.91, green: 0.42, blue: 0.23))
+        // Accent — forest green (parakeet plumage, PDX Edition)
+        static let accent = Color.adaptive(light: .init(red: 0.16, green: 0.45, blue: 0.27),
+                                  dark: .init(red: 0.32, green: 0.72, blue: 0.46))
+        static let accentLight = Color.adaptive(light: .init(red: 0.92, green: 0.96, blue: 0.93),
+                                       dark: .init(red: 0.32, green: 0.72, blue: 0.46).opacity(0.12))
+        static let accentDark = Color.adaptive(light: .init(red: 0.10, green: 0.32, blue: 0.18),
+                                      dark: .init(red: 0.16, green: 0.45, blue: 0.27))
 
         // Backgrounds — warm off-whites, not pure white
         static let background = Color.adaptive(light: .init(red: 0.98, green: 0.98, blue: 0.97),
