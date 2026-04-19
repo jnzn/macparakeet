@@ -1,26 +1,9 @@
 import AppKit
-import Sparkle
 import MacParakeetCore
 import MacParakeetViewModels
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    // MARK: - Auto-Update
-
-    #if DEBUG
-    private let updaterController = SPUStandardUpdaterController(
-        startingUpdater: false,
-        updaterDelegate: nil,
-        userDriverDelegate: nil
-    )
-    #else
-    private let updaterController = SPUStandardUpdaterController(
-        startingUpdater: true,
-        updaterDelegate: nil,
-        userDriverDelegate: nil
-    )
-    #endif
-
     // MARK: - Runtime Services
 
     private var appEnvironment: AppEnvironment?
@@ -39,7 +22,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let customWordsViewModel = CustomWordsViewModel()
     private let textSnippetsViewModel = TextSnippetsViewModel()
     private let feedbackViewModel = FeedbackViewModel()
-    private let discoverViewModel = DiscoverViewModel()
     private let libraryViewModel = TranscriptionLibraryViewModel()
     private let meetingsViewModel = TranscriptionLibraryViewModel(scope: .meetings)
     private let llmSettingsViewModel = LLMSettingsViewModel()
@@ -102,10 +84,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         customWordsViewModel: customWordsViewModel,
         textSnippetsViewModel: textSnippetsViewModel,
         feedbackViewModel: feedbackViewModel,
-        discoverViewModel: discoverViewModel,
         libraryViewModel: libraryViewModel,
         meetingsViewModel: meetingsViewModel,
-        updaterController: updaterController,
         onRecordMeeting: { [weak self] in
             self?.toggleMeetingRecording(originatesFromWindow: true)
         },
@@ -118,7 +98,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
 
     private lazy var menuBarCoordinator = MenuBarCoordinator(
-        updaterController: updaterController,
         transcriptionViewModel: transcriptionViewModel,
         youtubeInputController: youtubeInputController,
         environmentProvider: { [weak self] in
@@ -185,7 +164,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuBarCoordinator.setupMenuBar()
         settingsObserverCoordinator.startObserving()
         windowCoordinator.applyActivationPolicyFromSettings()
-        setupDiscoverContent()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -338,16 +316,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = alert.runModal()
 
         NSApp.terminate(nil)
-    }
-
-    private func setupDiscoverContent() {
-        guard let fallbackURL = Bundle.module.url(forResource: "discover-fallback", withExtension: "json"),
-              let data = try? Data(contentsOf: fallbackURL) else { return }
-
-        let service = DiscoverService(fallbackData: data)
-        discoverViewModel.configure(service: service)
-        discoverViewModel.loadCached()
-        discoverViewModel.refreshInBackground()
     }
 
     // MARK: - Disk Image Guard

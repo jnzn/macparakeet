@@ -1,5 +1,4 @@
 import AppKit
-import Sparkle
 import SwiftUI
 import MacParakeetCore
 import MacParakeetViewModels
@@ -18,10 +17,8 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
     private let customWordsViewModel: CustomWordsViewModel
     private let textSnippetsViewModel: TextSnippetsViewModel
     private let feedbackViewModel: FeedbackViewModel
-    private let discoverViewModel: DiscoverViewModel
     private let libraryViewModel: TranscriptionLibraryViewModel
     private let meetingsViewModel: TranscriptionLibraryViewModel
-    private let updaterController: SPUStandardUpdaterController
     private let onRecordMeeting: () -> Void
     private let onQuit: () -> Void
     private let isOnboardingVisible: () -> Bool
@@ -41,10 +38,8 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
         customWordsViewModel: CustomWordsViewModel,
         textSnippetsViewModel: TextSnippetsViewModel,
         feedbackViewModel: FeedbackViewModel,
-        discoverViewModel: DiscoverViewModel,
         libraryViewModel: TranscriptionLibraryViewModel,
         meetingsViewModel: TranscriptionLibraryViewModel,
-        updaterController: SPUStandardUpdaterController,
         onRecordMeeting: @escaping () -> Void,
         onQuit: @escaping () -> Void,
         isOnboardingVisible: @escaping () -> Bool
@@ -61,10 +56,8 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
         self.customWordsViewModel = customWordsViewModel
         self.textSnippetsViewModel = textSnippetsViewModel
         self.feedbackViewModel = feedbackViewModel
-        self.discoverViewModel = discoverViewModel
         self.libraryViewModel = libraryViewModel
         self.meetingsViewModel = meetingsViewModel
-        self.updaterController = updaterController
         self.onRecordMeeting = onRecordMeeting
         self.onQuit = onQuit
         self.isOnboardingVisible = isOnboardingVisible
@@ -114,7 +107,7 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
         let menu = NSMenu()
 
         let openItem = NSMenuItem(
-            title: "Open MacParakeet",
+            title: "Open PDX Edition",
             action: #selector(dockOpenMainWindow),
             keyEquivalent: ""
         )
@@ -132,7 +125,7 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
         menu.addItem(NSMenuItem.separator())
 
         let quitItem = NSMenuItem(
-            title: "Quit MacParakeet",
+            title: "Quit PDX Edition",
             action: #selector(dockQuit),
             keyEquivalent: ""
         )
@@ -168,10 +161,8 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
             customWordsViewModel: customWordsViewModel,
             textSnippetsViewModel: textSnippetsViewModel,
             feedbackViewModel: feedbackViewModel,
-            discoverViewModel: discoverViewModel,
             libraryViewModel: libraryViewModel,
             meetingsViewModel: meetingsViewModel,
-            updater: updaterController.updater,
             onRecordMeeting: onRecordMeeting
         )
 
@@ -186,7 +177,7 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "MacParakeet"
+        window.title = "MacParakeet (PDX Edition)"
         window.center()
         window.setFrameAutosaveName("MainWindow")
         window.minSize = NSSize(

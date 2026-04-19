@@ -1,5 +1,4 @@
 import Foundation
-import Sparkle
 import SwiftUI
 import AppKit
 import MacParakeetCore
@@ -9,10 +8,7 @@ struct SettingsView: View {
     @Bindable var viewModel: SettingsViewModel
     @Bindable var llmSettingsViewModel: LLMSettingsViewModel
     @Bindable var aiAssistantSettingsViewModel: AIAssistantSettingsViewModel
-    let updater: SPUUpdater
 
-    @State private var automaticallyChecksForUpdates: Bool
-    @State private var automaticallyDownloadsUpdates: Bool
     @State private var showClearAllAlert = false
     @State private var showClearYouTubeAudioAlert = false
     @State private var showResetPrivateStatsAlert = false
@@ -21,15 +17,11 @@ struct SettingsView: View {
     init(
         viewModel: SettingsViewModel,
         llmSettingsViewModel: LLMSettingsViewModel,
-        aiAssistantSettingsViewModel: AIAssistantSettingsViewModel,
-        updater: SPUUpdater
+        aiAssistantSettingsViewModel: AIAssistantSettingsViewModel
     ) {
         self.viewModel = viewModel
         self.llmSettingsViewModel = llmSettingsViewModel
         self.aiAssistantSettingsViewModel = aiAssistantSettingsViewModel
-        self.updater = updater
-        self._automaticallyChecksForUpdates = State(initialValue: updater.automaticallyChecksForUpdates)
-        self._automaticallyDownloadsUpdates = State(initialValue: updater.automaticallyDownloadsUpdates)
     }
 
     var body: some View {
@@ -43,9 +35,7 @@ struct SettingsView: View {
                 aiAssistantCard
                 storageCard
                 generalCard
-                updatesCard
                 localModelsCard
-                privacyCard
                 permissionsCard
                 onboardingCard
                 aboutCard
@@ -621,67 +611,6 @@ struct SettingsView: View {
                             .buttonStyle(.bordered)
                         }
                     }
-                }
-            }
-        }
-    }
-
-    // MARK: - Privacy
-
-    private var privacyCard: some View {
-        settingsCard(
-            title: "Privacy",
-            subtitle: "Your audio and transcriptions never leave your device.",
-            icon: "hand.raised"
-        ) {
-            settingsToggleRow(
-                title: "Help improve MacParakeet",
-                detail: "Send non-identifying usage statistics like feature popularity and performance metrics. No personal data is collected.",
-                isOn: $viewModel.telemetryEnabled
-            )
-        }
-    }
-
-    // MARK: - Updates
-
-    private var updatesCard: some View {
-        settingsCard(
-            title: "Updates",
-            subtitle: "Keep MacParakeet up to date.",
-            icon: "arrow.triangle.2.circlepath"
-        ) {
-            VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
-                HStack {
-                    Toggle("Automatically check for updates", isOn: $automaticallyChecksForUpdates)
-                        .onChange(of: automaticallyChecksForUpdates) { _, newValue in
-                            updater.automaticallyChecksForUpdates = newValue
-                        }
-                        .font(DesignSystem.Typography.body)
-                }
-
-                HStack {
-                    Toggle("Automatically download updates", isOn: $automaticallyDownloadsUpdates)
-                        .onChange(of: automaticallyDownloadsUpdates) { _, newValue in
-                            updater.automaticallyDownloadsUpdates = newValue
-                        }
-                        .font(DesignSystem.Typography.body)
-                        .disabled(!automaticallyChecksForUpdates)
-                }
-
-                Divider()
-
-                HStack {
-                    rowText(
-                        title: "Manual check",
-                        detail: "Check for a new version right now."
-                    )
-                    Spacer()
-                    Button("Check for Updates...") {
-                        updater.checkForUpdates()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(DesignSystem.Colors.accent)
-                    .disabled(!updater.canCheckForUpdates)
                 }
             }
         }

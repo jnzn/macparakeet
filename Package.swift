@@ -22,8 +22,6 @@ let package = Package(
         .package(url: "https://github.com/FluidInference/FluidAudio", .upToNextMinor(from: "0.13.6")),
         // ArgumentParser for CLI
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0"),
-        // Sparkle for auto-updates (non-App Store distribution)
-        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.0"),
         // MarkdownUI for rich CommonMark + GFM rendering in the AI bubble
         // (headings, lists, tables, fenced code). Replaces the prior
         // `AttributedString(markdown:)` inline-only path.
@@ -36,7 +34,6 @@ let package = Package(
             dependencies: [
                 "MacParakeetCore",
                 "MacParakeetViewModels",
-                .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "MarkdownUI", package: "swift-markdown-ui")
             ],
             path: "Sources/MacParakeet",

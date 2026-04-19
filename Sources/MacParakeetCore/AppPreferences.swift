@@ -7,7 +7,9 @@ public enum AppPreferences {
         defaults.object(forKey: menuBarOnlyModeKey) as? Bool ?? false
     }
 
+    /// PDX Edition default: telemetry is permanently off — the upstream
+    /// telemetry endpoint isn't ours, and the Settings toggle was removed.
     public static func isTelemetryEnabled(defaults: UserDefaults = .standard) -> Bool {
-        defaults.object(forKey: telemetryEnabledKey) as? Bool ?? true
+        false
     }
 }
