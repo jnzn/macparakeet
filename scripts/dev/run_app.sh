@@ -114,10 +114,17 @@ cp -f "$APP_BIN" "$APP_MACOS_BIN"
 
 # Copy resource bundle (contains discover-fallback.json etc.)
 RESOURCE_BUNDLE="$PRODUCT_DIR/MacParakeet_MacParakeet.bundle"
+RESOURCES_DIR="$APP_BUNDLE/Contents/Resources"
+mkdir -p "$RESOURCES_DIR"
 if [[ -d "$RESOURCE_BUNDLE" ]]; then
-  RESOURCES_DIR="$APP_BUNDLE/Contents/Resources"
-  mkdir -p "$RESOURCES_DIR"
   rsync -a --delete "$RESOURCE_BUNDLE" "$RESOURCES_DIR/"
+fi
+
+# Copy the app icon so the dev bundle doesn't show an empty canvas in the
+# Dock / Finder. Matches the dist bundle's wiring (CFBundleIconFile below).
+ICON_SRC="$ROOT_DIR/Assets/AppIcon.icns"
+if [[ -f "$ICON_SRC" ]]; then
+  cp "$ICON_SRC" "$RESOURCES_DIR/AppIcon.icns"
 fi
 
 # Copy frameworks into the bundle so dyld loads only bundle-local paths.
@@ -150,6 +157,8 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
     <string>MacParakeet</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>CFBundleShortVersionString</key>
