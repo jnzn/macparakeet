@@ -335,7 +335,16 @@ final class AIAssistantBubbleController {
             }
         }
 
+        // Fade in: keep the panel transparent until orderFront, then animate
+        // alphaValue 0 -> 1 so the bubble eases in instead of snapping into
+        // place. ~180ms feels responsive without feeling sluggish.
+        newPanel.alphaValue = 0
         newPanel.makeKeyAndOrderFront(nil)
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.18
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            newPanel.animator().alphaValue = 1
+        }
         self.panel = newPanel
 
         // Register so the primary dictation hotkey routes its transcript
@@ -387,7 +396,21 @@ final class AIAssistantBubbleController {
             becomeObserver = nil
         }
         unsubscribeFromStreamingPartials()
-        panel?.orderOut(nil)
+
+        // Fade out: animate alphaValue 1 -> 0, then orderOut. ~150ms eases
+        // the disappearance without feeling laggy. Keep a strong reference
+        // to the panel inside the completion handler so it survives the
+        // ARC-released `self.panel = nil` below.
+        if let panelRef = panel {
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.15
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+                panelRef.animator().alphaValue = 0
+            }, completionHandler: {
+                panelRef.orderOut(nil)
+                panelRef.alphaValue = 1  // reset for any future show
+            })
+        }
         panel = nil
         hostingView = nil
         onDismissed()
