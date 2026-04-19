@@ -160,7 +160,3 @@ If MacParakeet is useful to you and you want to support the project, [sponsor mo
 ## License
 
 GPL-3.0, same as upstream. [Full license](LICENSE).
-
----
-
-*Made for one person who thinks faster than they type. If you're not that person but it's useful anyway, even better.*
