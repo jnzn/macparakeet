@@ -1,7 +1,7 @@
 # ADR 005: First-Run Onboarding Window
 
 Date: 2026-02-10
-> Note: Qwen LLM warm-up step referenced below was removed 2026-02-23. As of 2026-04-06, onboarding prepares the local speech stack: Parakeet STT plus any required default-on speaker-detection assets. Addendum 2026-04-10: onboarding now includes an optional Screen & System Audio Recording step for meeting capture.
+> Note: Qwen LLM warm-up step referenced below was removed 2026-02-23. As of 2026-04-06, onboarding prepares the local speech stack: Parakeet STT plus any required default-on speaker-detection assets. Addendum 2026-04-10: onboarding now includes an optional Screen & System Audio Recording step for meeting capture. Addendum 2026-04-18: onboarding now includes an optional "Ask AI Assistant" step (after Hotkeys, before Speech Stack) that detects installed Claude Code / Codex / Gemini CLIs via the user's login-shell PATH, probes any local or remote (Tailscale / LAN) Ollama daemon over HTTP, and writes the user's choices to `AIAssistantConfigStore` (and, for Ollama, also `LLMConfigStore`). Each provider card has Enable / Skip; skip-all is valid and writes nothing. The Hotkeys step (formerly singular) was renamed to plural and now demos both default hotkeys (right-Option for dictation, Fn / Globe for AI Assistant) with live press detection.
 
 ## Context
 
@@ -23,9 +23,10 @@ The onboarding flow is linear and step-based:
 2. Microphone permission
 3. Accessibility permission
 4. Meeting recording permission (optional Screen & System Audio Recording)
-5. Hotkey instructions
-6. Speech stack setup (Parakeet + required speaker-detection assets, retry available)
-7. Ready
+5. Hotkeys instructions (live press demo for both default keys: right-Option for dictation, Fn / Globe for AI Assistant)
+6. Ask AI Assistant (optional; detects Claude Code / Codex / Gemini on PATH, probes local + remote Ollama daemons, fans Ollama config out to both `AIAssistantConfigStore` and `LLMConfigStore`; skip-all valid)
+7. Speech stack setup (Parakeet + required speaker-detection assets, retry available)
+8. Ready
 
 The onboarding can also be launched manually from Settings.
 
