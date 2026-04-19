@@ -38,6 +38,17 @@ A **fast, private, local-first voice app** for macOS with three co-equal modes: 
 | Telemetry system | `docs/telemetry.md` |
 | Commit message format | `docs/commit-guidelines.md` |
 | Implementation plans | `plans/` -> active and completed plans |
+| **PDX Edition fork** (this branch's deltas vs upstream) | `docs/pdx-edition.md` |
+
+> **Branch context:** this is the `jnzn/macparakeet` fork on the
+> `feature/streaming-overlay` branch — the "PDX Edition" personal
+> build. Several upstream surfaces (Sparkle auto-update, Discover
+> sidebar, in-app feedback form posting to upstream's Cloudflare
+> worker, telemetry opt-in toggle, dormant licensing keychain
+> bootstrap) have been removed; bundle ID is `com.macparakeet.pdx`
+> for the dist build. See `docs/pdx-edition.md` for the full
+> delta. Upstream merges should expect to handle conflicts in the
+> files listed there.
 
 ## Tech Stack (Locked Decisions)
 
