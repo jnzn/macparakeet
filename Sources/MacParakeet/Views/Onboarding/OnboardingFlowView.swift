@@ -20,6 +20,7 @@ struct OnboardingFlowView: View {
 
     @State private var hoveredStep: OnboardingViewModel.Step?
     @State private var backButtonHovered = false
+    @State private var aiAssistantViewModel = AIAssistantOnboardingViewModel()
 
     private var totalSteps: Int { OnboardingViewModel.Step.allCases.count }
     private var currentStepIndex: Int { viewModel.step.rawValue + 1 }
@@ -335,7 +336,7 @@ struct OnboardingFlowView: View {
         case .hotkey:
             hotkeyStep
         case .aiAssistant:
-            aiAssistantStepPlaceholder
+            aiAssistantStepBody
         case .engine:
             engineSetupView
                 .onAppear {
@@ -635,19 +636,11 @@ struct OnboardingFlowView: View {
         animationTask = nil
     }
 
-    // MARK: - AI Assistant Setup (placeholder; container view lands in Step 5)
+    // MARK: - AI Assistant Setup
 
-    private var aiAssistantStepPlaceholder: some View {
-        onboardingCard {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("AI Assistant onboarding (coming next)")
-                    .font(DesignSystem.Typography.sectionTitle)
-                Text("This step will detect installed CLIs and let you wire them to the Fn / Globe hotkey. Skip is always available.")
-                    .font(DesignSystem.Typography.bodySmall)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(DesignSystem.Spacing.lg)
+    private var aiAssistantStepBody: some View {
+        AIAssistantOnboardingContainerView(viewModel: aiAssistantViewModel) {
+            viewModel.goNext()
         }
     }
 
