@@ -123,7 +123,7 @@ public struct LLMProviderConfig: Codable, Sendable, Equatable {
             baseURL: baseURL,
             apiKey: apiKey,
             modelName: model,
-            isLocal: false
+            isLocal: Self.isLoopbackEndpoint(baseURL)
         )
     }
 
@@ -176,6 +176,11 @@ public struct LLMProviderConfig: Codable, Sendable, Equatable {
             modelName: "cli",
             isLocal: false
         )
+    }
+
+    public static func isLoopbackEndpoint(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        return host == "localhost" || host == "::1" || host.hasPrefix("127.")
     }
 
 }

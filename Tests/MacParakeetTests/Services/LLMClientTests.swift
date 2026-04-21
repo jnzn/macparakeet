@@ -853,6 +853,27 @@ final class LLMClientTests: XCTestCase {
         XCTAssertEqual(capturedRequest?.timeoutInterval, 30)
     }
 
+    func testOpenAICompatibleLoopbackProviderUsesLongerTimeout() async throws {
+        var capturedRequest: URLRequest?
+
+        MockURLProtocol.handler = { request in
+            capturedRequest = request
+            return (self.okResponse(for: request), self.validResponseData())
+        }
+
+        let config = LLMProviderConfig.openaiCompatible(
+            model: "local-model",
+            baseURL: URL(string: "http://127.0.0.1:8000/v1")!
+        )
+        _ = try await llmClient.chatCompletion(
+            messages: [ChatMessage(role: .user, content: "Hi")],
+            config: config,
+            options: .default
+        )
+
+        XCTAssertEqual(capturedRequest?.timeoutInterval, 300)
+    }
+
     // MARK: - Helpers
 
     private func okResponse(for request: URLRequest) -> HTTPURLResponse {

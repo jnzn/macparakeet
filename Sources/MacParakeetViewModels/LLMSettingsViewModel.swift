@@ -135,6 +135,10 @@ public final class LLMSettingsViewModel {
         draft.providerID != nil && draft.isValid
     }
 
+    public var isLocalConfiguration: Bool {
+        draft.isLocalConfiguration
+    }
+
     public var validationMessage: String? {
         draft.validationError?.localizedDescription
     }
