@@ -14,6 +14,12 @@ struct TranscriptionLibraryView: View {
 
     @State private var pendingDelete: Transcription?
 
+    private var visibleLibraryFilters: [LibraryFilter] {
+        LibraryFilter.allCases.filter { filter in
+            AppFeatures.meetingRecordingEnabled || filter != .meeting
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header
@@ -37,7 +43,7 @@ struct TranscriptionLibraryView: View {
             // Filter bar
             if showsFilterBar {
                 HStack(spacing: 0) {
-                    ForEach(LibraryFilter.allCases, id: \.self) { filter in
+                    ForEach(visibleLibraryFilters, id: \.self) { filter in
                         Button {
                             viewModel.filter = filter
                         } label: {

@@ -77,6 +77,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.hotkeyCoordinator?.refreshAllHotkeys()
             self?.menuBarCoordinator.refreshHotkeyTitle()
             self?.menuBarCoordinator.refreshMeetingHotkeyShortcut()
+            self?.menuBarCoordinator.refreshTranscriptionHotkeyShortcuts()
         },
         onOpenMainWindow: { [weak self] in
             self?.windowCoordinator.openMainWindow()
@@ -126,6 +127,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         meetingHotkeyTriggerProvider: { [weak self] in
             self?.settingsViewModel.meetingHotkeyTrigger ?? .defaultMeetingRecording
         },
+        fileTranscriptionHotkeyTriggerProvider: { [weak self] in
+            self?.settingsViewModel.fileTranscriptionHotkeyTrigger ?? .disabled
+        },
+        youtubeTranscriptionHotkeyTriggerProvider: { [weak self] in
+            self?.settingsViewModel.youtubeTranscriptionHotkeyTrigger ?? .disabled
+        },
         meetingRecordingActiveProvider: { [weak self] in
             self?.meetingRecordingFlowCoordinator?.isMeetingRecordingActive == true
         },
@@ -159,6 +166,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         },
         onMeetingHotkeyTriggerChanged: { [weak self] in
             self?.handleMeetingHotkeyTriggerChange()
+        },
+        onFileTranscriptionHotkeyTriggerChanged: { [weak self] in
+            self?.handleFileTranscriptionHotkeyTriggerChange()
+        },
+        onYouTubeTranscriptionHotkeyTriggerChanged: { [weak self] in
+            self?.handleYouTubeTranscriptionHotkeyTriggerChange()
         },
         onMenuBarOnlyModeChanged: { [weak self] in
             self?.windowCoordinator.applyActivationPolicyFromSettings()
@@ -258,6 +271,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 onToggleMeetingRecordingFromHotkey: { [weak self] in
                     self?.toggleMeetingRecording(originatesFromWindow: false)
                 },
+                onTriggerFileTranscriptionFromHotkey: { [weak self] in
+                    self?.triggerFileTranscriptionFromHotkey()
+                },
+                onTriggerYouTubeTranscriptionFromHotkey: { [weak self] in
+                    self?.triggerYouTubeTranscriptionFromHotkey()
+                },
                 onHotkeyBecameAvailable: { [weak self] in
                     self?.hasPresentedHotkeyUnavailableAlert = false
                 },
@@ -273,6 +292,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menuBarCoordinator.refreshHotkeyTitle()
         menuBarCoordinator.refreshMeetingHotkeyShortcut()
+        menuBarCoordinator.refreshTranscriptionHotkeyShortcuts()
         onboardingCoordinator.maybeShow(environment: env)
     }
 
@@ -328,9 +348,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuBarCoordinator.refreshMeetingHotkeyShortcut()
     }
 
+    /// Any auxiliary hotkey change refreshes all three auxiliary hotkeys so a
+    /// newly-claimed trigger can disable a now-colliding peer without waiting
+    /// for the user to visit Settings again.
     private func handleMeetingHotkeyTriggerChange() {
+        refreshAuxiliaryHotkeys()
+    }
+
+    private func handleFileTranscriptionHotkeyTriggerChange() {
+        refreshAuxiliaryHotkeys()
+    }
+
+    private func handleYouTubeTranscriptionHotkeyTriggerChange() {
+        refreshAuxiliaryHotkeys()
+    }
+
+    private func refreshAuxiliaryHotkeys() {
         hotkeyCoordinator?.refreshMeetingHotkey()
+        hotkeyCoordinator?.refreshFileTranscriptionHotkey()
+        hotkeyCoordinator?.refreshYouTubeTranscriptionHotkey()
         menuBarCoordinator.refreshMeetingHotkeyShortcut()
+        menuBarCoordinator.refreshTranscriptionHotkeyShortcuts()
+    }
+
+    private func triggerFileTranscriptionFromHotkey() {
+        guard appEnvironment != nil else { return }
+        menuBarCoordinator.invokeTranscribeFileFlow()
+    }
+
+    private func triggerYouTubeTranscriptionFromHotkey() {
+        guard appEnvironment != nil else { return }
+        menuBarCoordinator.invokeTranscribeYouTubeFlow()
     }
 
     private func handleShowIdlePillChange() {

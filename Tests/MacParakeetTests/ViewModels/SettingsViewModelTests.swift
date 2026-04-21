@@ -219,6 +219,71 @@ final class SettingsViewModelTests: XCTestCase {
         wait(for: [expectation], timeout: 1.0)
     }
 
+    // MARK: - File/YouTube Transcription Hotkeys
+
+    func testTranscriptionHotkeysDefaultToDisabled() {
+        XCTAssertEqual(viewModel.fileTranscriptionHotkeyTrigger, .disabled)
+        XCTAssertEqual(viewModel.youtubeTranscriptionHotkeyTrigger, .disabled)
+    }
+
+    func testFileTranscriptionHotkeyPersistsToDedicatedDefaultsKey() {
+        let trigger = HotkeyTrigger.chord(modifiers: ["control", "shift"], keyCode: 3) // F
+        viewModel.fileTranscriptionHotkeyTrigger = trigger
+
+        XCTAssertEqual(
+            HotkeyTrigger.current(
+                defaults: testDefaults,
+                defaultsKey: HotkeyTrigger.fileTranscriptionDefaultsKey,
+                fallback: .disabled
+            ),
+            trigger
+        )
+    }
+
+    func testYouTubeTranscriptionHotkeyPersistsToDedicatedDefaultsKey() {
+        let trigger = HotkeyTrigger.chord(modifiers: ["control", "shift"], keyCode: 16) // Y
+        viewModel.youtubeTranscriptionHotkeyTrigger = trigger
+
+        XCTAssertEqual(
+            HotkeyTrigger.current(
+                defaults: testDefaults,
+                defaultsKey: HotkeyTrigger.youtubeTranscriptionDefaultsKey,
+                fallback: .disabled
+            ),
+            trigger
+        )
+    }
+
+    func testFileTranscriptionHotkeyPostsNotificationOnChange() {
+        let expectation = expectation(
+            forNotification: Notification.Name("macparakeet.fileTranscriptionHotkeyTriggerDidChange"),
+            object: nil
+        )
+        viewModel.fileTranscriptionHotkeyTrigger = .chord(modifiers: ["control", "shift"], keyCode: 3)
+        wait(for: [expectation], timeout: 1.0)
+    }
+
+    func testYouTubeTranscriptionHotkeyPostsNotificationOnChange() {
+        let expectation = expectation(
+            forNotification: Notification.Name("macparakeet.youtubeTranscriptionHotkeyTriggerDidChange"),
+            object: nil
+        )
+        viewModel.youtubeTranscriptionHotkeyTrigger = .chord(modifiers: ["control", "shift"], keyCode: 16)
+        wait(for: [expectation], timeout: 1.0)
+    }
+
+    func testTranscriptionHotkeysLoadFromUserDefaults() {
+        let fileTrigger = HotkeyTrigger.chord(modifiers: ["control", "shift"], keyCode: 3)
+        let youtubeTrigger = HotkeyTrigger.chord(modifiers: ["control", "shift"], keyCode: 16)
+        fileTrigger.save(to: testDefaults, defaultsKey: HotkeyTrigger.fileTranscriptionDefaultsKey)
+        youtubeTrigger.save(to: testDefaults, defaultsKey: HotkeyTrigger.youtubeTranscriptionDefaultsKey)
+
+        let vm = SettingsViewModel(defaults: testDefaults)
+
+        XCTAssertEqual(vm.fileTranscriptionHotkeyTrigger, fileTrigger)
+        XCTAssertEqual(vm.youtubeTranscriptionHotkeyTrigger, youtubeTrigger)
+    }
+
     func testShowIdlePillDefaultsToTrue() {
         // Fresh defaults with no key set — should default to true (existing users keep pill visible)
         let vm = SettingsViewModel(defaults: testDefaults)

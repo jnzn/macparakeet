@@ -66,6 +66,26 @@ public final class SettingsViewModel {
             Telemetry.send(.settingChanged(setting: .meetingHotkey))
         }
     }
+    public var fileTranscriptionHotkeyTrigger: HotkeyTrigger {
+        didSet {
+            fileTranscriptionHotkeyTrigger.save(to: defaults, defaultsKey: HotkeyTrigger.fileTranscriptionDefaultsKey)
+            NotificationCenter.default.post(
+                name: .macParakeetFileTranscriptionHotkeyTriggerDidChange,
+                object: nil
+            )
+            Telemetry.send(.settingChanged(setting: .fileTranscriptionHotkey))
+        }
+    }
+    public var youtubeTranscriptionHotkeyTrigger: HotkeyTrigger {
+        didSet {
+            youtubeTranscriptionHotkeyTrigger.save(to: defaults, defaultsKey: HotkeyTrigger.youtubeTranscriptionDefaultsKey)
+            NotificationCenter.default.post(
+                name: .macParakeetYouTubeTranscriptionHotkeyTriggerDidChange,
+                object: nil
+            )
+            Telemetry.send(.settingChanged(setting: .youtubeTranscriptionHotkey))
+        }
+    }
     public var silenceAutoStop: Bool {
         didSet {
             defaults.set(silenceAutoStop, forKey: UserDefaultsAppRuntimePreferences.silenceAutoStopKey)
@@ -225,6 +245,14 @@ public final class SettingsViewModel {
         telemetryEnabled = AppPreferences.isTelemetryEnabled(defaults: defaults)
         hotkeyTrigger = HotkeyTrigger.current(defaults: defaults)
         meetingHotkeyTrigger = Self.resolveMeetingHotkeyTrigger(defaults: defaults)
+        fileTranscriptionHotkeyTrigger = Self.resolveTranscriptionHotkeyTrigger(
+            defaults: defaults,
+            defaultsKey: HotkeyTrigger.fileTranscriptionDefaultsKey
+        )
+        youtubeTranscriptionHotkeyTrigger = Self.resolveTranscriptionHotkeyTrigger(
+            defaults: defaults,
+            defaultsKey: HotkeyTrigger.youtubeTranscriptionDefaultsKey
+        )
         silenceAutoStop = defaults.bool(forKey: UserDefaultsAppRuntimePreferences.silenceAutoStopKey)
         let delay = defaults.double(forKey: UserDefaultsAppRuntimePreferences.silenceDelayKey)
         silenceDelay = delay == 0 ? 2.0 : delay
@@ -276,6 +304,18 @@ public final class SettingsViewModel {
             defaults: defaults,
             defaultsKey: HotkeyTrigger.meetingDefaultsKey,
             fallback: .defaultMeetingRecording
+        )
+    }
+
+    /// Transcription hotkeys (file / YouTube) default to `.disabled` — users opt in.
+    private static func resolveTranscriptionHotkeyTrigger(
+        defaults: UserDefaults,
+        defaultsKey: String
+    ) -> HotkeyTrigger {
+        HotkeyTrigger.current(
+            defaults: defaults,
+            defaultsKey: defaultsKey,
+            fallback: .disabled
         )
     }
 

@@ -20,6 +20,8 @@ final class AppEnvironmentConfigurer {
         let onPresentEntitlementsAlert: (Error) -> Void
         let onOpenMainWindow: () -> Void
         let onToggleMeetingRecordingFromHotkey: () -> Void
+        let onTriggerFileTranscriptionFromHotkey: () -> Void
+        let onTriggerYouTubeTranscriptionFromHotkey: () -> Void
         let onHotkeyBecameAvailable: () -> Void
         let onHotkeyUnavailable: () -> Void
     }
@@ -238,6 +240,8 @@ final class AppEnvironmentConfigurer {
                 coordinatorRefs.dictation?.dismissOverlayIfError()
             },
             onToggleMeetingRecording: callbacks.onToggleMeetingRecordingFromHotkey,
+            onTriggerFileTranscription: callbacks.onTriggerFileTranscriptionFromHotkey,
+            onTriggerYouTubeTranscription: callbacks.onTriggerYouTubeTranscriptionFromHotkey,
             onPrimaryHotkeyManagerChanged: { manager in
                 coordinatorRefs.dictation?.hotkeyManager = manager
             },
@@ -247,6 +251,8 @@ final class AppEnvironmentConfigurer {
 
         hotkeyCoordinator.setupPrimaryHotkey()
         hotkeyCoordinator.setupMeetingHotkey()
+        hotkeyCoordinator.setupFileTranscriptionHotkey()
+        hotkeyCoordinator.setupYouTubeTranscriptionHotkey()
         dictationCoordinator.showIdlePill()
 
         return Runtime(

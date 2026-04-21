@@ -154,8 +154,19 @@ public final class OnboardingViewModel {
         }
     }
 
+    /// Steps the user actually sees. Hidden steps (gated by `AppFeatures`) are
+    /// filtered out so next/back/jump all walk the visible list — no flicker or
+    /// silent no-ops when flags are off.
+    public static var visibleSteps: [Step] {
+        Step.allCases.filter { step in
+            AppFeatures.meetingRecordingEnabled || step != .meetingRecording
+        }
+    }
+
     public func goNext() {
-        guard let next = Step(rawValue: step.rawValue + 1) else { return }
+        let visible = Self.visibleSteps
+        let currentRaw = step.rawValue
+        guard let next = visible.first(where: { $0.rawValue > currentRaw }) else { return }
         if step == .meetingRecording {
             clearMeetingRecordingPendingState()
         }
@@ -165,7 +176,9 @@ public final class OnboardingViewModel {
     }
 
     public func goBack() {
-        guard let prev = Step(rawValue: step.rawValue - 1) else { return }
+        let visible = Self.visibleSteps
+        let currentRaw = step.rawValue
+        guard let prev = visible.last(where: { $0.rawValue < currentRaw }) else { return }
         if step == .meetingRecording {
             clearMeetingRecordingPendingState()
         }

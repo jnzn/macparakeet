@@ -135,6 +135,8 @@ public enum TelemetrySettingName: String, Sendable, Equatable {
     case autoSave = "auto_save"
     case meetingAutoSave = "meeting_auto_save"
     case meetingHotkey = "meeting_hotkey"
+    case fileTranscriptionHotkey = "file_transcription_hotkey"
+    case youtubeTranscriptionHotkey = "youtube_transcription_hotkey"
 
     case launchAtLogin = "launch_at_login"
     case silenceAutoStop = "silence_auto_stop"

@@ -29,7 +29,14 @@ enum SidebarItem: String, CaseIterable, Identifiable {
     }
 
     /// Primary features — the core things users do
-    static let primaryItems: [SidebarItem] = [.transcribe, .library, .meetings, .dictations]
+    static var primaryItems: [SidebarItem] {
+        var items: [SidebarItem] = [.transcribe, .library]
+        if AppFeatures.meetingRecordingEnabled {
+            items.append(.meetings)
+        }
+        items.append(.dictations)
+        return items
+    }
 
     /// Configuration and support items
     static let configItems: [SidebarItem] = [.vocabulary, .feedback, .settings]
