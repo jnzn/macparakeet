@@ -133,6 +133,15 @@ public struct LLMSettingsDraft: Equatable, Sendable {
         validationError == nil
     }
 
+    public var isLocalConfiguration: Bool {
+        guard let providerID else { return false }
+        if providerID == .openaiCompatible,
+           let url = URL(string: trimmedBaseURLOverride) {
+            return LLMProviderConfig.isLoopbackEndpoint(url)
+        }
+        return providerID.isLocal
+    }
+
     public func buildConfig(
         defaultBaseURL: String,
         allowMissingModelName: Bool = false
@@ -159,6 +168,14 @@ public struct LLMSettingsDraft: Equatable, Sendable {
             baseURL = defaultURL
         } else {
             throw ValidationError.invalidBaseURL
+        }
+
+        if providerID == .openaiCompatible {
+            return .openaiCompatible(
+                apiKey: trimmedAPIKey.isEmpty ? nil : trimmedAPIKey,
+                model: effectiveModelName,
+                baseURL: baseURL
+            )
         }
 
         return LLMProviderConfig(
@@ -222,7 +239,7 @@ public struct LLMSettingsDraft: Equatable, Sendable {
 
     private static func isAllowedBaseURLOverride(_ url: URL) -> Bool {
         guard let scheme = url.scheme?.lowercased(),
-              let host = url.host?.lowercased() else {
+              url.host != nil else {
             return false
         }
         if scheme == "https" {
@@ -231,6 +248,6 @@ public struct LLMSettingsDraft: Equatable, Sendable {
         guard scheme == "http" else {
             return false
         }
-        return host == "localhost" || host == "127.0.0.1" || host == "::1"
+        return LLMProviderConfig.isLoopbackEndpoint(url)
     }
 }

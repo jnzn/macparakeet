@@ -372,7 +372,7 @@ struct LLMSettingsView: View {
 
     @ViewBuilder
     private var privacyInfo: some View {
-        let isLocal = viewModel.selectedProviderID?.isLocal ?? false
+        let isLocal = viewModel.isLocalConfiguration
         let isCLI = viewModel.selectedProviderID == .localCLI
         HStack(spacing: DesignSystem.Spacing.sm) {
             Image(systemName: isLocal ? "lock.fill" : "arrow.up.right.circle")

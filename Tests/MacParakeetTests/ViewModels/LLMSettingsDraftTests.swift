@@ -70,4 +70,32 @@ final class LLMSettingsDraftTests: XCTestCase {
 
         XCTAssertEqual(draft.validationError, .invalidBaseURL)
     }
+
+    func testOpenAICompatibleLoopbackEndpointBuildsLocalConfig() throws {
+        let draft = LLMSettingsDraft(
+            providerID: .openaiCompatible,
+            useCustomModel: true,
+            customModelName: "third-party-model",
+            baseURLOverride: "http://127.0.0.1:8000/v1"
+        )
+
+        let config = try draft.buildConfig(defaultBaseURL: "")
+
+        XCTAssertEqual(config?.id, .openaiCompatible)
+        XCTAssertEqual(config?.isLocal, true)
+    }
+
+    func testOpenAICompatibleRemoteEndpointBuildsNonLocalConfig() throws {
+        let draft = LLMSettingsDraft(
+            providerID: .openaiCompatible,
+            useCustomModel: true,
+            customModelName: "third-party-model",
+            baseURLOverride: "https://api.example.com/v1"
+        )
+
+        let config = try draft.buildConfig(defaultBaseURL: "")
+
+        XCTAssertEqual(config?.id, .openaiCompatible)
+        XCTAssertEqual(config?.isLocal, false)
+    }
 }

@@ -84,7 +84,7 @@ struct LLMInlineOptions: ParsableArguments {
 
         let client = RoutingLLMClient()
 
-        let providerConfig: LLMProviderConfig
+        var providerConfig: LLMProviderConfig
         var localCLIConfig: LocalCLIConfig?
 
         switch providerID {
@@ -126,6 +126,16 @@ struct LLMInlineOptions: ParsableArguments {
             providerConfig = .localCLI()
             localCLIConfig = LocalCLIConfig(
                 commandTemplate: rawCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+        }
+
+        if local && !providerConfig.isLocal {
+            providerConfig = LLMProviderConfig(
+                id: providerConfig.id,
+                baseURL: providerConfig.baseURL,
+                apiKey: providerConfig.apiKey,
+                modelName: providerConfig.modelName,
+                isLocal: true
             )
         }
 

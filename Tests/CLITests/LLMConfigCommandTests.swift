@@ -71,6 +71,31 @@ final class LLMConfigCommandTests: XCTestCase {
         XCTAssertNil(config.apiKey)
     }
 
+    func testInlineOptionsBuildOpenAICompatibleLocalConfig() throws {
+        let options = try LLMInlineOptions.parse([
+            "--provider", "openai-compatible",
+            "--base-url", "http://localhost:8000/v1",
+            "--model", "local-model"
+        ])
+
+        let config = try options.buildConfig()
+        XCTAssertEqual(config.id, .openaiCompatible)
+        XCTAssertTrue(config.isLocal)
+    }
+
+    func testInlineOptionsLocalFlagMarksRemoteProviderAsLocal() throws {
+        let options = try LLMInlineOptions.parse([
+            "--provider", "openai-compatible",
+            "--base-url", "https://lan-proxy.example/v1",
+            "--model", "self-hosted-model",
+            "--local"
+        ])
+
+        let config = try options.buildConfig()
+        XCTAssertEqual(config.id, .openaiCompatible)
+        XCTAssertTrue(config.isLocal)
+    }
+
     func testLocalCLIExecutionContextRoutesThroughCLIClient() async throws {
         let options = try LLMInlineOptions.parse([
             "--provider", "cli",
