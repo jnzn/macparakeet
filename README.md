@@ -42,25 +42,17 @@
 
 ---
 
-MacParakeet runs NVIDIA's Parakeet TDT on Apple's Neural Engine via [FluidAudio](https://github.com/FluidInference/FluidAudio) CoreML. It has three co-equal modes: system-wide dictation, file/URL transcription, and meeting recording. All speech recognition happens on your Mac.
+MacParakeet runs NVIDIA's Parakeet TDT on Apple's Neural Engine via [FluidAudio](https://github.com/FluidInference/FluidAudio) CoreML. It handles system-wide dictation and file/URL transcription. All speech recognition happens on your Mac.
 
 ## What it does
 
 **Dictation** — Press a hotkey in any app, speak, text gets pasted. Hold for push-to-talk, double-tap for persistent recording. Works system-wide.
 
-**File transcription** — Drag audio or video files, or paste a YouTube URL. Full transcript with word-level timestamps, speaker labels, and export to 7 formats (TXT, Markdown, SRT, VTT, DOCX, PDF, JSON).
-
-**Meeting recording** — Capture microphone + system audio together, watch a live transcript preview while recording, and save the finished meeting directly into the library with summaries, chat, search, and export support. The meeting pipeline pairs mic/system frames, runs software AEC on the mic path, and applies a conservative system-dominance gate for live mic chunks while preserving both recorded sources in the finalized artifact (headphones still give the cleanest separation).
+**File transcription** — Drag audio or video files, or paste a YouTube URL. Full transcript with word-level timestamps, speaker labels, and export to 7 formats (TXT, Markdown, SRT, VTT, DOCX, PDF, JSON). Assign global hotkeys to trigger File or YouTube transcription from anywhere.
 
 **Text cleanup** — Filler word removal, custom word replacements, text snippets with triggers. Deterministic pipeline, no LLM needed.
 
-**AI features** — Optional transcript summaries and chat. Ships with a prompt library, built-in and custom summary prompts, multi-summary tabs, and queued summary generation. Use Claude Code or Codex via Local CLI, or connect OpenAI, Anthropic, Google Gemini, Ollama, LM Studio, or OpenRouter. Entirely opt-in, with a fully local setup available when you stay on local providers/features.
-
-### Concurrent by design
-
-- Dictation and meeting recording can run at the same time.
-- Audio capture stays independent per flow.
-- All STT work routes through one shared runtime owner and explicit scheduler with two default slots: a reserved dictation slot and a shared meeting/batch slot, so file transcription can wait behind interactive work.
+**AI features** — Optional transcript summaries, chat, and an AI formatter that polishes dictation or transcripts through your chosen model. Ships with a prompt library, built-in and custom summary prompts, multi-summary tabs, and queued summary generation. Use Claude Code or Codex via Local CLI, or connect OpenAI, Anthropic, Google Gemini, OpenRouter, Ollama, LM Studio, or any OpenAI-compatible endpoint. Entirely opt-in, with a fully local setup available when you stay on local providers/features.
 
 ### Performance
 
@@ -79,7 +71,7 @@ MacParakeet runs NVIDIA's Parakeet TDT on Apple's Neural Engine via [FluidAudio]
 
 **Download:** Grab the [notarized DMG](https://downloads.macparakeet.com/MacParakeet.dmg) or visit [macparakeet.com](https://macparakeet.com). Drag to Applications, done.
 
-First launch downloads the speech model (~6 GB) plus speaker-detection assets (~130 MB) when that default-on feature remains enabled. After that, dictation, meeting recording, and transcription work fully offline.
+First launch downloads the speech model (~6 GB) plus speaker-detection assets (~130 MB) when that default-on feature remains enabled. After that, dictation and transcription work fully offline.
 
 **Build from source:**
 
@@ -105,7 +97,7 @@ swift run macparakeet-cli history
 | Layer | Choice |
 |-------|--------|
 | STT | Parakeet TDT 0.6B-v3 via [FluidAudio](https://github.com/FluidInference/FluidAudio) CoreML (Neural Engine) |
-| STT orchestration | Shared runtime + explicit scheduler across dictation, meeting recording, and transcription |
+| STT orchestration | Shared runtime + explicit scheduler with a reserved dictation slot and a shared batch slot for transcription |
 | Language | Swift 6.0 + SwiftUI |
 | Database | SQLite via GRDB |
 | Auto-updates | Sparkle 2 |
@@ -137,8 +129,9 @@ AI features are entirely **opt-in** and separate from speech recognition — tra
 
 **What it does:**
 
-- **Summarize** — After a transcription or meeting recording finishes, click Summarize and pick a prompt ("Meeting Notes", "Action Items", "Key Quotes", etc.) or write your own. The LLM processes the transcript and streams back a summary. You can generate multiple summaries per transcript, each in its own tab. Prompts marked as auto-run generate summaries automatically for new transcriptions.
+- **Summarize** — After a transcription finishes, click Summarize and pick a prompt ("Meeting Notes", "Action Items", "Key Quotes", etc.) or write your own. The LLM processes the transcript and streams back a summary. You can generate multiple summaries per transcript, each in its own tab. Prompts marked as auto-run generate summaries automatically for new transcriptions.
 - **Chat** — Ask questions about a transcript in a multi-turn chat interface. The LLM answers based on the transcript content.
+- **AI formatter** — Optionally run your dictation and file transcripts through your AI provider to clean up grammar, punctuation, and paragraphing. Toggle on/off, customize the prompt, or reset to default.
 
 **Supported providers:**
 
@@ -146,9 +139,10 @@ AI features are entirely **opt-in** and separate from speech recognition — tra
 |------|---------|
 | Cloud | Anthropic (Claude), OpenAI, Google Gemini, OpenRouter |
 | Local | Ollama, LM Studio |
+| Custom | OpenAI-Compatible (any API-shaped endpoint — vLLM, LocalAI, LiteLLM, llama.cpp server, third-party hosts) |
 | CLI | Claude Code, Codex (runs as subprocess) |
 
-**Setup:** In Settings > Intelligence, pick a provider, enter an API key (cloud) or confirm the local server is running, select a model, and hit Test Connection. Cloud providers store keys in the macOS Keychain. Local providers (Ollama, LM Studio, CLI) keep everything on-device.
+**Setup:** In Settings → AI Provider, pick a provider, enter an API key (cloud) or confirm the local server is running, select a model, and hit Test Connection. Cloud providers store keys in the macOS Keychain. Local providers (Ollama, LM Studio, CLI) keep everything on-device.
 
 ## Privacy
 
