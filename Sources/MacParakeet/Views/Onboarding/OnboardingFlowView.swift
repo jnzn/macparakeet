@@ -21,8 +21,11 @@ struct OnboardingFlowView: View {
     @State private var hoveredStep: OnboardingViewModel.Step?
     @State private var backButtonHovered = false
 
-    private var totalSteps: Int { OnboardingViewModel.Step.allCases.count }
-    private var currentStepIndex: Int { viewModel.step.rawValue + 1 }
+    private var visibleSteps: [OnboardingViewModel.Step] { OnboardingViewModel.visibleSteps }
+    private var totalSteps: Int { visibleSteps.count }
+    private var currentStepIndex: Int {
+        (visibleSteps.firstIndex(of: viewModel.step) ?? 0) + 1
+    }
     private var onboardingProgress: Double {
         Double(currentStepIndex) / Double(max(totalSteps, 1))
     }
@@ -78,7 +81,7 @@ struct OnboardingFlowView: View {
             .padding(.horizontal, DesignSystem.Spacing.xl)
 
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(OnboardingViewModel.Step.allCases) { step in
+                ForEach(visibleSteps) { step in
                     stepRow(step)
                 }
             }

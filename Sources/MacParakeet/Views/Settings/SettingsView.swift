@@ -30,7 +30,9 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
                 headerCard
                 dictationCard
-                meetingRecordingCard
+                if AppFeatures.meetingRecordingEnabled {
+                    meetingRecordingCard
+                }
                 transcriptionCard
                 aiProviderCard
                 storageCard
@@ -189,11 +191,14 @@ struct SettingsView: View {
                     Spacer(minLength: DesignSystem.Spacing.md)
                     VStack(alignment: .trailing, spacing: 4) {
                         HotkeyRecorderView(trigger: $viewModel.hotkeyTrigger) { candidate in
+                            guard AppFeatures.meetingRecordingEnabled else { return .allowed }
                             guard !candidate.isDisabled, candidate == viewModel.meetingHotkeyTrigger else { return .allowed }
                             return .blocked("Already used by meeting recording.")
                         }
 
-                        if !viewModel.hotkeyTrigger.isDisabled, viewModel.hotkeyTrigger == viewModel.meetingHotkeyTrigger {
+                        if AppFeatures.meetingRecordingEnabled,
+                           !viewModel.hotkeyTrigger.isDisabled,
+                           viewModel.hotkeyTrigger == viewModel.meetingHotkeyTrigger {
                             hotkeyConflictText
                         }
                     }
@@ -300,6 +305,26 @@ struct SettingsView: View {
             icon: "doc.text"
         ) {
             VStack(spacing: DesignSystem.Spacing.md) {
+                transcriptionHotkeyRow(
+                    title: "File transcription hotkey",
+                    detail: "Opens the file picker from anywhere on macOS.",
+                    trigger: $viewModel.fileTranscriptionHotkeyTrigger,
+                    otherTranscriptionTrigger: viewModel.youtubeTranscriptionHotkeyTrigger,
+                    otherTranscriptionName: "YouTube transcription"
+                )
+
+                Divider()
+
+                transcriptionHotkeyRow(
+                    title: "YouTube transcription hotkey",
+                    detail: "Opens the YouTube URL panel from anywhere on macOS.",
+                    trigger: $viewModel.youtubeTranscriptionHotkeyTrigger,
+                    otherTranscriptionTrigger: viewModel.fileTranscriptionHotkeyTrigger,
+                    otherTranscriptionName: "file transcription"
+                )
+
+                Divider()
+
                 settingsToggleRow(
                     title: "Speaker detection",
                     detail: "Identify who said what using Pyannote community-1. Typically ~85% accurate — best with clear audio and distinct voices.",
@@ -319,6 +344,77 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    /// A transcription-hotkey row with a recorder and an inline conflict
+    /// warning when the trigger collides with dictation, meeting, or the
+    /// other transcription hotkey. Default trigger is `.disabled` — users opt
+    /// in by recording a key.
+    private func transcriptionHotkeyRow(
+        title: String,
+        detail: String,
+        trigger: Binding<HotkeyTrigger>,
+        otherTranscriptionTrigger: HotkeyTrigger,
+        otherTranscriptionName: String
+    ) -> some View {
+        HStack(alignment: .center) {
+            rowText(title: title, detail: detail)
+            Spacer(minLength: DesignSystem.Spacing.md)
+            VStack(alignment: .trailing, spacing: 4) {
+                HotkeyRecorderView(
+                    trigger: trigger,
+                    defaultTrigger: .disabled
+                ) { candidate in
+                    guard !candidate.isDisabled else { return .allowed }
+                    if candidate == viewModel.hotkeyTrigger {
+                        return .blocked("Already used by dictation.")
+                    }
+                    if AppFeatures.meetingRecordingEnabled, candidate == viewModel.meetingHotkeyTrigger {
+                        return .blocked("Already used by meeting recording.")
+                    }
+                    if candidate == otherTranscriptionTrigger {
+                        return .blocked("Already used by \(otherTranscriptionName).")
+                    }
+                    return .allowed
+                }
+
+                if let conflict = conflictMessage(
+                    trigger: trigger.wrappedValue,
+                    otherTranscription: otherTranscriptionTrigger,
+                    otherTranscriptionName: otherTranscriptionName
+                ) {
+                    transcriptionHotkeyConflictText(conflict)
+                }
+            }
+        }
+    }
+
+    private func conflictMessage(
+        trigger: HotkeyTrigger,
+        otherTranscription: HotkeyTrigger,
+        otherTranscriptionName: String
+    ) -> String? {
+        guard !trigger.isDisabled else { return nil }
+        if trigger == viewModel.hotkeyTrigger {
+            return "Disabled — conflicts with dictation hotkey."
+        }
+        if AppFeatures.meetingRecordingEnabled, trigger == viewModel.meetingHotkeyTrigger {
+            return "Disabled — conflicts with meeting recording hotkey."
+        }
+        if trigger == otherTranscription {
+            return "Disabled — conflicts with \(otherTranscriptionName) hotkey."
+        }
+        return nil
+    }
+
+    private func transcriptionHotkeyConflictText(_ message: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "xmark.circle.fill")
+                .font(.system(size: 10))
+            Text(message)
+                .font(DesignSystem.Typography.micro)
+        }
+        .foregroundStyle(DesignSystem.Colors.errorRed)
     }
 
     private var hotkeyConflictText: some View {
@@ -520,9 +616,13 @@ struct SettingsView: View {
     }
 
     private var permissionsCard: some View {
-        settingsCard(
+        let permissionsSubtitle = AppFeatures.meetingRecordingEnabled
+            ? "Microphone and Accessibility are required. Screen Recording is optional for meetings."
+            : "Microphone and Accessibility are required."
+
+        return settingsCard(
             title: "Permissions",
-            subtitle: "Microphone and Accessibility are required. Screen Recording is optional for meetings.",
+            subtitle: permissionsSubtitle,
             icon: "lock.shield"
         ) {
             VStack(spacing: DesignSystem.Spacing.md) {
@@ -540,18 +640,21 @@ struct SettingsView: View {
                     permissionPill(granted: viewModel.accessibilityGranted)
                 }
 
-                Divider()
+                if AppFeatures.meetingRecordingEnabled {
+                    Divider()
 
-                HStack {
-                    rowText(
-                        title: "Screen & System Audio Recording",
-                        detail: "Optional. Only used for meeting audio capture. MacParakeet never records your screen."
-                    )
-                    Spacer()
-                    permissionPill(granted: viewModel.screenRecordingGranted)
+                    HStack {
+                        rowText(
+                            title: "Screen & System Audio Recording",
+                            detail: "Optional. Only used for meeting audio capture. MacParakeet never records your screen."
+                        )
+                        Spacer()
+                        permissionPill(granted: viewModel.screenRecordingGranted)
+                    }
                 }
 
-                if !viewModel.accessibilityGranted || !viewModel.screenRecordingGranted {
+                let needsScreenRecordingAction = AppFeatures.meetingRecordingEnabled && !viewModel.screenRecordingGranted
+                if !viewModel.accessibilityGranted || needsScreenRecordingAction {
                     Divider()
                     HStack(spacing: DesignSystem.Spacing.sm) {
                         if !viewModel.accessibilityGranted {
@@ -562,7 +665,7 @@ struct SettingsView: View {
                             .tint(DesignSystem.Colors.accent)
                         }
 
-                        if !viewModel.screenRecordingGranted {
+                        if needsScreenRecordingAction {
                             Button("Enable meeting recording") {
                                 viewModel.requestScreenRecordingAccess()
                             }

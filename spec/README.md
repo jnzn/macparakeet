@@ -57,6 +57,8 @@ All ADRs live in `spec/adr/`. These are locked -- they record decisions already 
 | [ADR-014](adr/014-meeting-recording.md) | Meeting recording via Core Audio Taps |
 | [ADR-015](adr/015-concurrent-dictation-meeting.md) | Concurrent dictation and meeting recording |
 | [ADR-016](adr/016-centralized-stt-runtime-scheduler.md) | Centralized STT runtime and two-slot scheduler |
+| [ADR-017](adr/017-calendar-meeting-auto-start.md) | Calendar-driven meeting auto-start (proposed) |
+| [ADR-018](adr/018-live-meeting-insights-and-ask.md) | Live meeting Insights and Ask tabs (proposed) |
 
 ## Version Roadmap
 
@@ -185,6 +187,12 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 - [x] Hotkey conflict prevention (dictation vs meeting)
 - [x] Concurrent dictation during meeting recording (ADR-015)
 - [x] Centralized STT runtime + two-slot scheduler (ADR-016)
+- [ ] Live panel tabs: Transcript / Insights / Ask (ADR-018)
+- [ ] Live meeting insights service (debounced LLM-generated sections)
+- [ ] Live Ask chat with starter pills + persist-on-finalize handoff
+- [ ] Calendar-driven auto-start (ADR-017): EventKit integration + onboarding + settings
+- [ ] Pre-meeting notifications + 5s countdown toast for auto-start
+- [ ] Auto-stop toast at calendar event end
 
 ## For AI Coding Assistants
 
