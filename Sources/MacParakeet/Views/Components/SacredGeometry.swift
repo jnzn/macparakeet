@@ -296,8 +296,24 @@ struct BreathingRingView: View {
 /// Larger, slower merkaba for empty states and idle backgrounds.
 /// Softer opacity, adapts to light/dark mode via `.primary`.
 ///
-/// Animates by default. Pass `animate: false` for purely static decoration,
-/// or bind to state (e.g. `animate: isDragging`) for interaction-driven animation.
+/// Animates by default (two counter-rotating triangles). Pass `animate: false`
+/// for purely static decoration, or bind to state (e.g. `animate: isDragging`)
+/// for interaction-driven animation.
+///
+/// ## Performance
+/// Only the rotations animate — the center/vertex glow opacities are static.
+/// No `.drawingGroup()` anywhere on the animating path: `.drawingGroup()`
+/// forces offscreen bitmap rasterization, which CA invalidates whenever any
+/// child value changes — incompatible with animated sub-content. Instead,
+/// we rely on CA's native per-layer rendering. Each stroked triangle + vertex
+/// circle becomes its own CALayer, and `.rotationEffect()` animates via a
+/// `CATransform3D` property update on that layer — pure GPU, no CPU work
+/// per frame beyond SwiftUI's lightweight dependency diff.
+///
+/// See PR #107 (idle CPU/GPU fix) for the counter-example: pulsing opacities
+/// + `.drawingGroup()` forced Metal to re-rasterize the flattened bitmap
+/// every frame, burning ~15-18% CPU at idle. Freezing the pulses AND removing
+/// the drawing group drops idle cost to near zero while keeping the spin.
 struct MeditativeMerkabaView: View {
     var size: CGFloat = 64
     var revolutionDuration: Double = 6.0
@@ -308,12 +324,16 @@ struct MeditativeMerkabaView: View {
 
     @State private var rotationCW: Double = 0
     @State private var rotationCCW: Double = 60
-    @State private var centerPulse: Double = 0.15
-    @State private var vertexPulse: Double = 0.3
 
     private var effectiveColor: Color { tintColor ?? .primary }
     private var radius: CGFloat { size * 0.4 }
     private var shouldAnimate: Bool { animate && !reduceMotion }
+
+    // Static glow values — formerly animated as centerPulse/vertexPulse.
+    // Mid-cycle values chosen so the resting merkaba matches the visual
+    // weight of the previous animated peak/trough average.
+    private let centerGlow: Double = 0.32
+    private let vertexGlow: Double = 0.45
 
     var body: some View {
         ZStack {
@@ -322,20 +342,23 @@ struct MeditativeMerkabaView: View {
                 .stroke(effectiveColor.opacity(0.06), lineWidth: 0.5)
                 .frame(width: size, height: size)
 
-            // Triangle 1 — clockwise
-            meditativeTriangle(rotation: rotationCW, strokeOpacity: 0.25, vertexOpacity: vertexPulse)
+            // Triangle 1 — clockwise. `rotationEffect` animates via CA
+            // transform on the triangle's CALayer; body re-evaluations
+            // between animation start and end are rare.
+            meditativeTriangle(strokeOpacity: 0.25, vertexOpacity: vertexGlow)
+                .rotationEffect(.degrees(rotationCW))
 
             // Triangle 2 — counter-clockwise (offset 60° for Star of David)
-            meditativeTriangle(rotation: rotationCCW, strokeOpacity: 0.15, vertexOpacity: vertexPulse * 0.6)
+            meditativeTriangle(strokeOpacity: 0.15, vertexOpacity: vertexGlow * 0.6)
+                .rotationEffect(.degrees(rotationCCW))
 
-            // Center nexus — shadow for glow instead of blur
+            // Center nexus — static glow, shadow for halo
             Circle()
-                .fill(effectiveColor.opacity(centerPulse * 1.5))
+                .fill(effectiveColor.opacity(centerGlow * 1.5))
                 .frame(width: size * 0.06, height: size * 0.06)
-                .shadow(color: effectiveColor.opacity(centerPulse * 0.4), radius: size * 0.12)
+                .shadow(color: effectiveColor.opacity(centerGlow * 0.4), radius: size * 0.12)
         }
         .frame(width: size, height: size)
-        .drawingGroup()
         .onAppear {
             if shouldAnimate {
                 startAnimation()
@@ -357,24 +380,16 @@ struct MeditativeMerkabaView: View {
         withAnimation(.linear(duration: revolutionDuration).repeatForever(autoreverses: false)) {
             rotationCCW = 60 - 360
         }
-        withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
-            centerPulse = 0.5
-        }
-        withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) {
-            vertexPulse = 0.6
-        }
     }
 
     private func stopAnimation() {
         withAnimation(.linear(duration: 0)) {
             rotationCW = 0
             rotationCCW = 60
-            centerPulse = 0.15
-            vertexPulse = 0.3
         }
     }
 
-    private func meditativeTriangle(rotation: Double, strokeOpacity: Double, vertexOpacity: Double) -> some View {
+    private func meditativeTriangle(strokeOpacity: Double, vertexOpacity: Double) -> some View {
         ZStack {
             TriangleShape()
                 .stroke(effectiveColor.opacity(strokeOpacity), lineWidth: size > 80 ? 1.0 : 0.8)
@@ -392,7 +407,6 @@ struct MeditativeMerkabaView: View {
                     .offset(x: x, y: y)
             }
         }
-        .rotationEffect(.degrees(rotation))
     }
 }
 
