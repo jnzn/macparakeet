@@ -1675,8 +1675,7 @@ struct TranscriptResultView: View {
             MeditativeMerkabaView(
                 size: 60,
                 revolutionDuration: 6.0,
-                tintColor: DesignSystem.Colors.accent,
-                animate: false
+                tintColor: DesignSystem.Colors.accent
             )
 
             VStack(spacing: DesignSystem.Spacing.xs) {
