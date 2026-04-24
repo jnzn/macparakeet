@@ -441,6 +441,57 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.dictationCount, 0)
     }
 
+    func testClearAllDictationsAlsoDeletesPrivateRows() {
+        // "Clear All" must wipe both visible and hidden (metric-only) rows.
+        var hidden = Dictation(durationMs: 4000, rawTranscript: "")
+        hidden.hidden = true
+        mockRepo.dictations = [
+            Dictation(durationMs: 1000, rawTranscript: "Visible"),
+            hidden,
+        ]
+
+        viewModel.configure(
+            permissionService: mockPermissions,
+            dictationRepo: mockRepo,
+            entitlementsService: entitlements,
+            checkoutURL: nil
+        )
+
+        viewModel.clearAllDictations()
+
+        XCTAssertTrue(mockRepo.deleteAllCalled, "deleteAll() must run")
+        XCTAssertTrue(mockRepo.deleteHiddenCalled, "deleteHidden() must run too — 'All' means all")
+        XCTAssertTrue(mockRepo.dictations.isEmpty, "no dictation rows survive Clear All")
+    }
+
+    // MARK: - Reset Lifetime Stats (#124)
+
+    func testResetLifetimeStatsCallsRepo() {
+        mockRepo.dictations = [
+            Dictation(durationMs: 1000, rawTranscript: "One"),
+        ]
+
+        viewModel.configure(
+            permissionService: mockPermissions,
+            dictationRepo: mockRepo,
+            entitlementsService: entitlements,
+            checkoutURL: nil
+        )
+
+        var stateChangedFireCount = 0
+        viewModel.onDictationStateChanged = { stateChangedFireCount += 1 }
+
+        viewModel.resetLifetimeStats()
+
+        XCTAssertTrue(mockRepo.resetLifetimeStatsCalled)
+        XCTAssertFalse(mockRepo.deleteAllCalled, "Reset should not delete dictation rows")
+        XCTAssertEqual(viewModel.dictationCount, 1, "Dictation count must survive lifetime reset")
+        XCTAssertEqual(
+            stateChangedFireCount, 1,
+            "onDictationStateChanged must fire once so dependent views (e.g. history) reload derived stats"
+        )
+    }
+
     // MARK: - Unconfigured
 
     func testRefreshStatsBeforeConfigureIsNoOp() {
@@ -451,6 +502,12 @@ final class SettingsViewModelTests: XCTestCase {
     func testClearAllBeforeConfigureIsNoOp() {
         // Should not crash
         viewModel.clearAllDictations()
+        XCTAssertEqual(viewModel.dictationCount, 0)
+    }
+
+    func testResetLifetimeStatsBeforeConfigureIsNoOp() {
+        // Should not crash
+        viewModel.resetLifetimeStats()
         XCTAssertEqual(viewModel.dictationCount, 0)
     }
 

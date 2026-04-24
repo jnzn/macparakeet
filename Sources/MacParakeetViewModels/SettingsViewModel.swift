@@ -559,15 +559,22 @@ public final class SettingsViewModel {
         }
     }
 
-    /// Called after dictations are cleared so other VMs (e.g. history) can reload.
-    public var onDictationsCleared: (() -> Void)?
+    /// Fired after a dictation-state change (rows deleted or lifetime counters reset)
+    /// so other VMs (e.g. the history view) can reload their derived data.
+    public var onDictationStateChanged: (() -> Void)?
 
     public func clearAllDictations() {
         guard let repo = dictationRepo else { return }
+        // `deleteAll()` only removes visible (hidden = 0) rows; `deleteHidden()`
+        // covers the metric-only entries created when "Save dictation history" was
+        // off. Together they truly clear all dictation rows. Each runs in its own
+        // GRDB write transaction; partial failure is logged but never silently
+        // corrupts state because the row counts are independent.
         do {
             try repo.deleteAll()
+            try repo.deleteHidden()
         } catch {
-            logger.error("Failed to delete all dictations error=\(error.localizedDescription, privacy: .public)")
+            logger.error("Failed to clear dictations error=\(error.localizedDescription, privacy: .public)")
         }
         // Also remove any saved audio files (best effort).
         let dir = AppPaths.dictationsDir
@@ -576,18 +583,21 @@ public final class SettingsViewModel {
             try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         }
         refreshStats()
-        onDictationsCleared?()
+        onDictationStateChanged?()
     }
 
-    public func resetPrivateStatistics() {
+    /// Zero the lifetime stats counters. Symmetric to `clearAllDictations()` —
+    /// dictation rows are preserved; only the lifetime totals (total words,
+    /// total time, total count, longest dictation) are reset.
+    public func resetLifetimeStats() {
         guard let repo = dictationRepo else { return }
         do {
-            try repo.deleteHidden()
+            try repo.resetLifetimeStats()
         } catch {
-            logger.error("Failed to delete hidden dictations error=\(error.localizedDescription, privacy: .public)")
+            logger.error("Failed to reset lifetime stats error=\(error.localizedDescription, privacy: .public)")
         }
         refreshStats()
-        onDictationsCleared?()
+        onDictationStateChanged?()
     }
 
     public func clearDownloadedYouTubeAudio() {
