@@ -271,7 +271,16 @@ final class AppEnvironmentConfigurer {
         if AppFeatures.meetingRecordingEnabled {
             let coordinator = MeetingAutoStartCoordinator(
                 calendarService: CalendarService.shared,
-                settingsViewModel: settingsViewModel
+                settingsViewModel: settingsViewModel,
+                isRecordingActive: { [weak meetingCoordinator] in
+                    meetingCoordinator?.isMeetingRecordingActive ?? false
+                },
+                onAutoStartConfirmed: { [weak meetingCoordinator] in
+                    meetingCoordinator?.startFromCalendar()
+                },
+                onAutoStopConfirmed: { [weak meetingCoordinator] in
+                    meetingCoordinator?.toggleRecording()
+                }
             )
             coordinator.start()
             calendarCoordinator = coordinator
