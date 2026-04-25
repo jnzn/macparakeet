@@ -322,20 +322,27 @@ final class MeetingAutoStartCoordinator {
             title: event.title,
             body: body
         ) { [weak self] outcome in
-            guard let self else { return }
-            switch outcome {
-            case .completed, .primedEarly:
-                self.autoStartedEventId = event.id
-                self.onAutoStartConfirmed()
-                self.logger.info("Auto-start confirmed for event id=\(event.id, privacy: .public) outcome=\(String(describing: outcome), privacy: .public)")
-            case .userDismissed:
-                self.dismissedEventIds.insert(event.id)
-                Telemetry.send(.calendarAutoStartCancelled(reason: "user_cancel"))
-                self.logger.info("Auto-start cancelled by user for event id=\(event.id, privacy: .public)")
-            case .programmaticClose:
-                // Another toast preempted us — no telemetry, no recording.
-                return
-            }
+            self?.handleAutoStartOutcome(outcome, for: event)
+        }
+    }
+
+    /// Internal entry point for the auto-start outcome routing. Public to
+    /// the test target so tests can exercise the routing without driving
+    /// real toast UI; production code reaches this only via the toast
+    /// controller's outcome callback.
+    func handleAutoStartOutcome(_ outcome: MeetingCountdownToastOutcome, for event: CalendarEvent) {
+        switch outcome {
+        case .completed, .primedEarly:
+            autoStartedEventId = event.id
+            onAutoStartConfirmed()
+            logger.info("Auto-start confirmed for event id=\(event.id, privacy: .public) outcome=\(String(describing: outcome), privacy: .public)")
+        case .userDismissed:
+            dismissedEventIds.insert(event.id)
+            Telemetry.send(.calendarAutoStartCancelled(reason: "user_cancel"))
+            logger.info("Auto-start cancelled by user for event id=\(event.id, privacy: .public)")
+        case .programmaticClose:
+            // Another toast preempted us — no telemetry, no recording.
+            return
         }
     }
 
@@ -359,29 +366,79 @@ final class MeetingAutoStartCoordinator {
             title: event.title,
             body: "Meeting ending — recording will stop automatically."
         ) { [weak self] outcome in
-            guard let self else { return }
-            switch outcome {
-            case .completed, .primedEarly:
-                self.onAutoStopConfirmed()
-                self.autoStartedEventId = nil
-                self.autoStopCountdownEventId = nil
-                self.logger.info("Auto-stop confirmed for event id=\(event.id, privacy: .public)")
-            case .userDismissed:
-                // User wants to keep recording past the calendar end —
-                // remember that so we don't re-prompt every 5s for the
-                // remainder of the auto-stop window.
-                self.dismissedEventIds.insert(event.id)
-                self.autoStopCountdownEventId = nil
-                Telemetry.send(.calendarAutoStopCancelled)
-                self.logger.info("Auto-stop cancelled by user for event id=\(event.id, privacy: .public)")
-            case .programmaticClose:
-                self.autoStopCountdownEventId = nil
-                return
-            }
+            self?.handleAutoStopOutcome(outcome, for: event)
         }
     }
 
-    private func showReminder(_ event: CalendarEvent, mode: CalendarAutoStartMode) async {
+    /// Internal entry point for the auto-stop outcome routing — symmetric
+    /// to `handleAutoStartOutcome`. Test target uses this directly via
+    /// the testHook extension below.
+    func handleAutoStopOutcome(_ outcome: MeetingCountdownToastOutcome, for event: CalendarEvent) {
+        switch outcome {
+        case .completed, .primedEarly:
+            onAutoStopConfirmed()
+            autoStartedEventId = nil
+            autoStopCountdownEventId = nil
+            logger.info("Auto-stop confirmed for event id=\(event.id, privacy: .public)")
+        case .userDismissed:
+            dismissedEventIds.insert(event.id)
+            autoStopCountdownEventId = nil
+            Telemetry.send(.calendarAutoStopCancelled)
+            logger.info("Auto-stop cancelled by user for event id=\(event.id, privacy: .public)")
+        case .programmaticClose:
+            autoStopCountdownEventId = nil
+            return
+        }
+    }
+}
+
+#if DEBUG
+/// Hooks for unit tests. The `testHook_` prefix marks them as test-only
+/// so they don't pollute autocomplete in production code paths.
+extension MeetingAutoStartCoordinator {
+    var testHook_autoStartedEventId: String? { autoStartedEventId }
+
+    func testHook_simulateAutoStartConfirmed(eventId: String) {
+        let event = CalendarEvent(
+            id: eventId,
+            title: "Test",
+            startTime: Date(),
+            endTime: Date().addingTimeInterval(1800)
+        )
+        handleAutoStartOutcome(.completed, for: event)
+    }
+
+    func testHook_simulateAutoStartCancelled(eventId: String) {
+        let event = CalendarEvent(
+            id: eventId,
+            title: "Test",
+            startTime: Date(),
+            endTime: Date().addingTimeInterval(1800)
+        )
+        handleAutoStartOutcome(.userDismissed, for: event)
+    }
+
+    func testHook_simulateAutoStopFired(eventId: String) {
+        // Mimic the production guard: only proceed if the event matches
+        // the coordinator's auto-started binding.
+        guard autoStartedEventId == eventId else { return }
+        let event = CalendarEvent(
+            id: eventId,
+            title: "Test",
+            startTime: Date().addingTimeInterval(-1800),
+            endTime: Date().addingTimeInterval(20)
+        )
+        handleAutoStopOutcome(.completed, for: event)
+    }
+
+    func testHook_forcePoll() {
+        Task { @MainActor [weak self] in await self?.pollAsync() }
+    }
+}
+#endif
+
+private extension MeetingAutoStartCoordinator {
+    func showReminder(_ event: CalendarEvent, mode: CalendarAutoStartMode) async {
         // Mark before posting so a failed delivery doesn't cause us to
         // re-attempt every poll tick — better to miss one reminder than
         // spam the user.
