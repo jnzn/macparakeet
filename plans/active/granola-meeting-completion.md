@@ -94,9 +94,11 @@ What was deferred:
 - **Dedicated `TranscriptChatViewModelLivePersistenceTests.swift`** — not added; the existing 40-test `TranscriptChatViewModelTests` suite still passes and exercises the shared chat-VM surface. Add focused live-mode tests when we touch this surface again.
 - **Transcription-failure chat recovery** (JSON sidecar) — Future Work in ADR-018 § Future Work.
 
-### Phase D — Calendar auto-start: notify-only (ADR-017 phase 1)
+### Phase D — Calendar auto-start: notify-only (ADR-017 phase 1) ✅ shipped 2026-04-25
 
-Port the three core files from Oatmeal, add settings + onboarding, wire a coordinator that only does `.notify` (no auto-start yet). Safe to ship without Phase E.
+Ported the four core files from Oatmeal (`MeetingMonitor`, `MeetingLinkParser`, `CalendarService`, `CalendarEvent` — GRDB stripped per ADR-017 §6), wired a notify-only `MeetingAutoStartCoordinator` with adaptive 60s/15s/5s polling + `.EKEventStoreChanged` observer + daily stale-id cleanup. Settings card (mode/lead/filter/per-calendar checkboxes/permission CTA) and skippable onboarding step both shipped. CLI surface (`macparakeet-cli calendar upcoming` + `health` extension) shipped alongside for headless verification by AI agents and CI. **Amendment:** the per-calendar include list (originally Phase 3) landed in Phase D — only ~30 lines and made onboarding feel finished.
+
+**Original plan (kept for reference):**
 
 | File | Change |
 |------|--------|
@@ -170,11 +172,11 @@ Low-value-per-unit cleanup that's better done in one pass.
 - Phase A (tab shell) — ✅ shipped 2026-04-24
 - ~~Phase B (Insights)~~ — dropped per ADR-018 amendment
 - Phase C (Live Ask) — ✅ shipped 2026-04-24
-- Phase D (Calendar notify-only) — 2 days remaining
+- Phase D (Calendar notify-only) — ✅ shipped 2026-04-25
 - Phase E (Calendar countdown + auto-stop) — 1 day remaining
 - Phase F (Polish, naming, changelog) — 0.5 day remaining
 
-Total remaining: ~3.5 engineering days for the calendar half.
+Total remaining: ~1.5 engineering days for Phases E + F.
 
 ## Changelog line (when all phases land)
 
