@@ -275,8 +275,8 @@ final class AppEnvironmentConfigurer {
                 isRecordingActive: { [weak meetingCoordinator] in
                     meetingCoordinator?.isMeetingRecordingActive ?? false
                 },
-                onAutoStartConfirmed: { [weak meetingCoordinator] in
-                    meetingCoordinator?.startFromCalendar()
+                onAutoStartConfirmed: { [weak meetingCoordinator] title in
+                    meetingCoordinator?.startFromCalendar(title: title)
                 },
                 onAutoStopConfirmed: { [weak meetingCoordinator] in
                     meetingCoordinator?.toggleRecording()

@@ -35,7 +35,11 @@ final class MeetingAutoStartCoordinator {
     /// on `MeetingRecordingFlowCoordinator` (and so tests can stub them).
     /// All Phase 2 wiring goes through these three callbacks.
     private let isRecordingActive: @MainActor () -> Bool
-    private let onAutoStartConfirmed: @MainActor () -> Void
+    /// Called when the user (or countdown completion) commits to starting
+    /// an auto-start recording. The event title is forwarded so the
+    /// recording flow can pre-name the saved transcription with the
+    /// calendar event name instead of the date-based default.
+    private let onAutoStartConfirmed: @MainActor (_ title: String) -> Void
     private let onAutoStopConfirmed: @MainActor () -> Void
     private let toastController: MeetingCountdownToastController
     private let logger = Logger(subsystem: "com.macparakeet", category: "MeetingAutoStart")
@@ -72,7 +76,7 @@ final class MeetingAutoStartCoordinator {
         calendarService: any CalendarServicing = CalendarService.shared,
         settingsViewModel: SettingsViewModel,
         isRecordingActive: @escaping @MainActor () -> Bool = { false },
-        onAutoStartConfirmed: @escaping @MainActor () -> Void = {},
+        onAutoStartConfirmed: @escaping @MainActor (_ title: String) -> Void = { _ in },
         onAutoStopConfirmed: @escaping @MainActor () -> Void = {},
         toastController: MeetingCountdownToastController? = nil
     ) {
@@ -364,7 +368,7 @@ final class MeetingAutoStartCoordinator {
         switch outcome {
         case .completed, .primedEarly:
             autoStartedEventId = event.id
-            onAutoStartConfirmed()
+            onAutoStartConfirmed(event.title)
             logger.info("Auto-start confirmed for event id=\(event.id, privacy: .public) outcome=\(String(describing: outcome), privacy: .public)")
         case .userDismissed:
             dismissedEventIds.insert(event.id)

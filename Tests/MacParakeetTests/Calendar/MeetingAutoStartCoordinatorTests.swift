@@ -15,6 +15,7 @@ final class MeetingAutoStartCoordinatorTests: XCTestCase {
     /// Tracks calls to the recording-flow callbacks the coordinator makes.
     private var recordingActiveStub = false
     private var autoStartConfirmedCount = 0
+    private var autoStartConfirmedTitles: [String] = []
     private var autoStopConfirmedCount = 0
 
     override func setUp() {
@@ -30,6 +31,7 @@ final class MeetingAutoStartCoordinatorTests: XCTestCase {
         calendarService = MockCalendarService()
         recordingActiveStub = false
         autoStartConfirmedCount = 0
+        autoStartConfirmedTitles = []
         autoStopConfirmedCount = 0
     }
 
@@ -64,7 +66,10 @@ final class MeetingAutoStartCoordinatorTests: XCTestCase {
             calendarService: calendarService,
             settingsViewModel: settingsViewModel,
             isRecordingActive: { [weak self] in self?.recordingActiveStub ?? false },
-            onAutoStartConfirmed: { [weak self] in self?.autoStartConfirmedCount += 1 },
+            onAutoStartConfirmed: { [weak self] title in
+                self?.autoStartConfirmedCount += 1
+                self?.autoStartConfirmedTitles.append(title)
+            },
             onAutoStopConfirmed: { [weak self] in self?.autoStopConfirmedCount += 1 },
             toastController: toastController
         )
@@ -179,6 +184,10 @@ final class MeetingAutoStartCoordinatorTests: XCTestCase {
         coordinator.testHook_simulateAutoStartConfirmed(eventId: "evt-1")
         XCTAssertEqual(autoStartConfirmedCount, 1,
                        "Recording start callback must fire on .completed outcome")
+        // Title forwarding: the calendar event name is what the saved
+        // recording will be titled, not the date-based default.
+        XCTAssertEqual(autoStartConfirmedTitles, ["Test"],
+                       "Auto-start must forward the event title so the saved recording is named after the meeting")
 
         coordinator.stop()
     }
