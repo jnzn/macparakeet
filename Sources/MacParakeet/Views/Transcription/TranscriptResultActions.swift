@@ -4,6 +4,18 @@ import MacParakeetCore
 
 enum TranscriptExportFormat: String {
     case txt, md, srt, vtt, docx, pdf, json
+
+    var displayName: String {
+        switch self {
+        case .txt: "Text"
+        case .md: "Markdown"
+        case .srt: "SRT"
+        case .vtt: "VTT"
+        case .docx: "Word Document"
+        case .pdf: "PDF"
+        case .json: "JSON"
+        }
+    }
 }
 
 @MainActor
