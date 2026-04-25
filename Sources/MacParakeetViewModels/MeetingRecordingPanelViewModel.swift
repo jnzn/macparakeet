@@ -183,4 +183,46 @@ public final class MeetingRecordingPanelViewModel {
     private static func wordCount(for text: String) -> Int {
         text.split(whereSeparator: \.isWhitespace).count
     }
+
+    // MARK: - Tab badges (ADR-020 §1)
+
+    /// Live state hint for the Notes tab. `nil` while the editor is empty so
+    /// the tab reads as plain "Notes" until the user has actually written
+    /// something — avoids "Notes · 0w" noise in the empty state.
+    public var notesBadge: String? {
+        let count = notesViewModel.wordCount
+        guard count > 0 else { return nil }
+        return "\(count)w"
+    }
+
+    /// Live state hint for the Transcript tab. "LIVE" while we're actively
+    /// recording (audio is flowing); `nil` in the transcribing/error/hidden
+    /// states where no new text is arriving.
+    public var transcriptBadge: String? {
+        switch state {
+        case .recording:
+            return "LIVE"
+        case .hidden, .transcribing, .error:
+            return nil
+        }
+    }
+
+    /// Live state hint for the Ask tab. Number of messages in the live
+    /// thread; `nil` when the thread is empty so it doesn't shout for
+    /// attention before the user has actually started a conversation.
+    public var askBadge: String? {
+        let count = chatViewModel.messages.count
+        guard count > 0 else { return nil }
+        return "\(count)"
+    }
+
+    /// Stable badge accessor for any tab — used by the view layer's
+    /// per-tab label rendering.
+    public func badge(for tab: LivePanelTab) -> String? {
+        switch tab {
+        case .notes: return notesBadge
+        case .transcript: return transcriptBadge
+        case .ask: return askBadge
+        }
+    }
 }
