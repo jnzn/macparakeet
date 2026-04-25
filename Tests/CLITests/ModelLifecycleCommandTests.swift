@@ -105,7 +105,7 @@ final class ModelLifecycleCommandTests: XCTestCase {
                 "    3. MacBook Pro Microphone [built-in, built-in fallback]",
                 "  Devices:",
                 "    - Desk USB Mic [usb, selected]",
-                "    - Conference Mic [bluetooth, default]",
+                "    - Conference Mic [bluetooth, system default]",
                 "    - MacBook Pro Microphone [built-in]",
             ]
         )
@@ -155,7 +155,7 @@ final class ModelLifecycleCommandTests: XCTestCase {
                 "  Effective fallback order:",
                 "    1. MacBook Pro Microphone [built-in, system default, built-in fallback]",
                 "  Devices:",
-                "    - MacBook Pro Microphone [built-in, default]",
+                "    - MacBook Pro Microphone [built-in, system default]",
             ]
         )
     }
@@ -188,7 +188,7 @@ final class ModelLifecycleCommandTests: XCTestCase {
                 "    1. Desk USB Mic [usb, selected, system default]",
                 "    2. MacBook Pro Microphone [built-in, built-in fallback]",
                 "  Devices:",
-                "    - Desk USB Mic [usb, default, selected]",
+                "    - Desk USB Mic [usb, system default, selected]",
                 "    - MacBook Pro Microphone [built-in]",
             ]
         )

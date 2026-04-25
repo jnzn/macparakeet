@@ -1,6 +1,12 @@
 import Foundation
 import MacParakeetCore
 
+let macParakeetAppDefaultsSuiteName = "com.macparakeet.MacParakeet"
+
+func macParakeetAppDefaults() -> UserDefaults {
+    UserDefaults(suiteName: macParakeetAppDefaultsSuiteName) ?? .standard
+}
+
 // MARK: - Database Path Resolution
 
 func resolvedDatabasePath(_ database: String?) -> String {
