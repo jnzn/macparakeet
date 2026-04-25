@@ -19,7 +19,7 @@ final class MeetingAudioStorageWriterTests: XCTestCase {
         let writer = try MeetingAudioStorageWriter(folderURL: tempFolder)
         try writeSeconds(5, source: .microphone, writer: writer)
 
-        writer.finalize()
+        await writer.finalize()
 
         let duration = try await audioDuration(writer.microphoneAudioURL)
         XCTAssertEqual(duration, 5.0, accuracy: 0.35)
@@ -30,7 +30,7 @@ final class MeetingAudioStorageWriterTests: XCTestCase {
         try writeSeconds(2, source: .microphone, writer: writer)
         try writeSeconds(2, source: .system, writer: writer)
 
-        writer.finalize()
+        await writer.finalize()
 
         XCTAssertGreaterThan(try fileSize(writer.microphoneAudioURL), 0)
         XCTAssertGreaterThan(try fileSize(writer.systemAudioURL), 0)
@@ -40,11 +40,11 @@ final class MeetingAudioStorageWriterTests: XCTestCase {
         XCTAssertEqual(systemDuration, 2.0, accuracy: 0.35)
     }
 
-    func testFragmentedFileContainsMovieFragments() throws {
+    func testFragmentedFileContainsMovieFragments() async throws {
         let writer = try MeetingAudioStorageWriter(folderURL: tempFolder)
         try writeSeconds(10, source: .microphone, writer: writer)
 
-        writer.finalize()
+        await writer.finalize()
 
         let fragments = try fragmentBoundaryOffsets(in: writer.microphoneAudioURL)
         XCTAssertGreaterThanOrEqual(fragments.count, 1)

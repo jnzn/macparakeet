@@ -34,7 +34,7 @@ final class MeetingRecordingCrashRecoveryTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(duration, 4.0)
     }
 
-    func testCrashHelperWritesMeetingAudioUntilKilled() throws {
+    func testCrashHelperWritesMeetingAudioUntilKilled() async throws {
         guard let folderPath = ProcessInfo.processInfo.environment[Self.helperFolderEnv] else {
             return
         }
@@ -44,9 +44,9 @@ final class MeetingRecordingCrashRecoveryTests: XCTestCase {
         for second in 0..<15 {
             let buffer = try makeSineBuffer(frameCount: 48_000, frequency: 220 + Double(second * 10))
             try writer.write(buffer, source: .microphone)
-            Thread.sleep(forTimeInterval: 1.0)
+            try await Task.sleep(for: .seconds(1))
         }
-        writer.finalize()
+        await writer.finalize()
     }
 
     private func waitForFileToGrow(_ url: URL) async throws {

@@ -108,6 +108,20 @@ final class MeetingRecordingRecoveryServiceTests: XCTestCase {
         XCTAssertNil(metadata.sourceAlignment.system)
     }
 
+    func testRecoverUsesAudioTrackSampleRateInRecoveredMetadata() async throws {
+        let fixture = try makeRecoverableSession(
+            microphoneSampleRate: 44_100,
+            systemAudio: .corrupt
+        )
+
+        _ = try await recoveryService.recover(fixture.lock)
+
+        let metadata = try MeetingRecordingMetadataStore.load(from: fixture.folderURL)
+        let microphone = try XCTUnwrap(metadata.sourceAlignment.microphone)
+        XCTAssertEqual(microphone.sampleRate, 44_100, accuracy: 1)
+        XCTAssertEqual(Double(microphone.writtenFrameCount), 44_100, accuracy: 2_000)
+    }
+
     func testRecoverCleansAwaitingTranscriptionLockWhenTranscriptAlreadyExists() async throws {
         let fixture = try makeRecoverableSession(lockState: .awaitingTranscription)
         let existing = Transcription(
@@ -184,16 +198,24 @@ final class MeetingRecordingRecoveryServiceTests: XCTestCase {
     }
 
     private func makeRecoverableSession(
+        microphoneSampleRate: Double = 48_000,
         systemAudio: SourceFixture = .valid,
+        systemSampleRate: Double = 48_000,
         lockState: MeetingRecordingLockState = .recording
     ) throws -> (folderURL: URL, lock: MeetingRecordingLockFile) {
         let sessionID = UUID()
         let folderURL = tempRoot.appendingPathComponent(sessionID.uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
-        try writeM4A(to: folderURL.appendingPathComponent("microphone.m4a"))
+        try writeM4A(
+            to: folderURL.appendingPathComponent("microphone.m4a"),
+            sampleRate: microphoneSampleRate
+        )
         switch systemAudio {
         case .valid:
-            try writeM4A(to: folderURL.appendingPathComponent("system.m4a"))
+            try writeM4A(
+                to: folderURL.appendingPathComponent("system.m4a"),
+                sampleRate: systemSampleRate
+            )
         case .corrupt:
             try Data("not audio".utf8).write(to: folderURL.appendingPathComponent("system.m4a"))
         }
@@ -210,10 +232,11 @@ final class MeetingRecordingRecoveryServiceTests: XCTestCase {
         return (folderURL, lock)
     }
 
-    private func writeM4A(to url: URL) throws {
+    private func writeM4A(to url: URL, sampleRate: Double = 48_000) throws {
+        let frameCount = Int(sampleRate.rounded())
         let format = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
-            sampleRate: 48_000,
+            sampleRate: sampleRate,
             channels: 1,
             interleaved: false
         )!
@@ -221,17 +244,17 @@ final class MeetingRecordingRecoveryServiceTests: XCTestCase {
             forWriting: url,
             settings: [
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
-                AVSampleRateKey: 48_000,
+                AVSampleRateKey: sampleRate,
                 AVNumberOfChannelsKey: 1,
                 AVEncoderBitRateKey: 64_000,
             ],
             commonFormat: .pcmFormatFloat32,
             interleaved: false
         )
-        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 48_000)!
-        buffer.frameLength = 48_000
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frameCount))!
+        buffer.frameLength = AVAudioFrameCount(frameCount)
         let samples = buffer.floatChannelData![0]
-        for index in 0..<48_000 {
+        for index in 0..<frameCount {
             samples[index] = 0.1
         }
         try file.write(from: buffer)
