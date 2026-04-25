@@ -168,6 +168,180 @@ final class MeetingNotesViewModelTests: XCTestCase {
 
         XCTAssertEqual(viewModel.wordCount, 4)
     }
+
+    // MARK: - Slash menu (ADR-020 §7)
+
+    func testSlashAtStartActivatesMenu() {
+        let viewModel = MeetingNotesViewModel()
+        viewModel.notesBinding.wrappedValue = "/"
+
+        XCTAssertTrue(viewModel.isSlashMenuActive)
+        XCTAssertEqual(viewModel.slashQuery, "")
+        XCTAssertEqual(viewModel.matchingCommands.count, MeetingNotesViewModel.allCommands.count)
+    }
+
+    func testSlashAfterWhitespaceActivatesMenu() {
+        let viewModel = MeetingNotesViewModel()
+        viewModel.notesBinding.wrappedValue = "Some preamble /"
+
+        XCTAssertTrue(viewModel.isSlashMenuActive)
+    }
+
+    func testSlashAfterNewlineActivatesMenu() {
+        let viewModel = MeetingNotesViewModel()
+        viewModel.notesBinding.wrappedValue = "Some heading\n/"
+
+        XCTAssertTrue(viewModel.isSlashMenuActive)
+    }
+
+    func testMidWordSlashDoesNotActivateMenu() {
+        let viewModel = MeetingNotesViewModel()
+        viewModel.notesBinding.wrappedValue = "https:/"
+
+        XCTAssertFalse(viewModel.isSlashMenuActive, "Slash inside a URL/word must not trigger the menu")
+    }
+
+    func testSlashMenuFiltersByQuery() {
+        let viewModel = MeetingNotesViewModel()
+        viewModel.notesBinding.wrappedValue = "/dec"
+
+        XCTAssertTrue(viewModel.isSlashMenuActive)
+        XCTAssertEqual(viewModel.slashQuery, "dec")
+        XCTAssertEqual(viewModel.matchingCommands.map { $0.trigger }, ["/decision"])
+    }
+
+    func testSlashMenuQueryIsCaseInsensitive() {
+        let viewModel = MeetingNotesViewModel()
+        viewModel.notesBinding.wrappedValue = "/AC"
+
+        XCTAssertEqual(viewModel.matchingCommands.map { $0.trigger }, ["/action"])
+    }
+
+    func testSlashMenuDismissesOnNoMatch() {
+        let viewModel = MeetingNotesViewModel()
+        viewModel.notesBinding.wrappedValue = "/zzz"
+
+        XCTAssertFalse(viewModel.isSlashMenuActive, "Typing a query that matches no command dismisses the menu")
+    }
+
+    func testSlashMenuDismissesOnTrailingWhitespace() {
+        let viewModel = MeetingNotesViewModel()
+        viewModel.notesBinding.wrappedValue = "/act"
+        XCTAssertTrue(viewModel.isSlashMenuActive)
+
+        viewModel.notesBinding.wrappedValue = "/act "
+        XCTAssertFalse(viewModel.isSlashMenuActive, "Space after the slash token closes the menu — typed-out commit, not a menu select")
+    }
+
+    func testMoveSelectionClampsToBounds() {
+        let viewModel = MeetingNotesViewModel()
+        viewModel.notesBinding.wrappedValue = "/"
+        XCTAssertEqual(viewModel.slashSelection, 0)
+
+        viewModel.moveSlashSelection(by: -5)
+        XCTAssertEqual(viewModel.slashSelection, 0, "Selection clamps at top boundary")
+
+        viewModel.moveSlashSelection(by: 100)
+        XCTAssertEqual(viewModel.slashSelection, MeetingNotesViewModel.allCommands.count - 1, "Selection clamps at bottom boundary")
+    }
+
+    func testAcceptCommandReplacesTokenWithLiteralInsertion() {
+        let viewModel = MeetingNotesViewModel()
+        viewModel.notesBinding.wrappedValue = "/action"
+        // /action is index 0 (default selection)
+        viewModel.acceptSlashCommand(elapsedSeconds: 0)
+
+        XCTAssertEqual(viewModel.notesText, "**Action:** ")
+        XCTAssertFalse(viewModel.isSlashMenuActive)
+    }
+
+    func testAcceptCommandPreservesPrefix() {
+        let viewModel = MeetingNotesViewModel()
+        viewModel.notesBinding.wrappedValue = "Discussed roadmap.\n/action"
+        viewModel.acceptSlashCommand(elapsedSeconds: 0)
+
+        XCTAssertEqual(viewModel.notesText, "Discussed roadmap.\n**Action:** ")
+    }
+
+    func testAcceptCommandAfterArrowMovesToDecision() {
+        let viewModel = MeetingNotesViewModel()
+        viewModel.notesBinding.wrappedValue = "/"
+        viewModel.moveSlashSelection(by: 1)  // → /decision
+
+        viewModel.acceptSlashCommand(elapsedSeconds: 0)
+
+        XCTAssertEqual(viewModel.notesText, "**Decision:** ")
+    }
+
+    func testAcceptTimestampCommandFormatsElapsedSeconds() {
+        let viewModel = MeetingNotesViewModel()
+        viewModel.notesBinding.wrappedValue = "Topic A\n/now"
+        // /now is index 2
+        viewModel.moveSlashSelection(by: 2)
+
+        viewModel.acceptSlashCommand(elapsedSeconds: 125)
+
+        XCTAssertEqual(viewModel.notesText, "Topic A\n[2:05] ")
+    }
+
+    func testAcceptTimestampCommandHandlesZeroElapsed() {
+        let viewModel = MeetingNotesViewModel()
+        viewModel.notesBinding.wrappedValue = "/now"
+        viewModel.moveSlashSelection(by: 2)
+
+        viewModel.acceptSlashCommand(elapsedSeconds: 0)
+
+        XCTAssertEqual(viewModel.notesText, "[0:00] ")
+    }
+
+    func testAcceptCommandSchedulesPersist() async {
+        let viewModel = MeetingNotesViewModel()
+        let recorder = AsyncRecorder()
+        viewModel.bindPersist { notes in
+            await recorder.record(notes)
+        }
+
+        viewModel.notesBinding.wrappedValue = "/action"
+        viewModel.acceptSlashCommand(elapsedSeconds: 0)
+
+        try? await Task.sleep(for: .milliseconds(800))
+        let snapshots = await recorder.snapshots
+        // The applyEdit fires once on initial set ("/action" → debounced),
+        // then acceptSlashCommand reschedules with the substituted text.
+        // Cancellation collapses the first into the second, so we get one
+        // final persist of the post-substitution text.
+        XCTAssertEqual(snapshots.last, "**Action:** ")
+    }
+
+    func testDismissSlashMenuClearsState() {
+        let viewModel = MeetingNotesViewModel()
+        viewModel.notesBinding.wrappedValue = "/dec"
+        XCTAssertTrue(viewModel.isSlashMenuActive)
+
+        viewModel.dismissSlashMenu()
+
+        XCTAssertFalse(viewModel.isSlashMenuActive)
+        XCTAssertEqual(viewModel.slashQuery, "")
+        XCTAssertEqual(viewModel.slashSelection, 0)
+    }
+
+    func testTrailingSlashTokenHelper() {
+        XCTAssertEqual(MeetingNotesViewModel.trailingSlashToken(in: "/"), "/")
+        XCTAssertEqual(MeetingNotesViewModel.trailingSlashToken(in: "hello /act"), "/act")
+        XCTAssertEqual(MeetingNotesViewModel.trailingSlashToken(in: "hello\n/decision"), "/decision")
+        XCTAssertNil(MeetingNotesViewModel.trailingSlashToken(in: "hello"))
+        XCTAssertNil(MeetingNotesViewModel.trailingSlashToken(in: "/action "), "Trailing space means token is closed")
+        XCTAssertNil(MeetingNotesViewModel.trailingSlashToken(in: ""))
+    }
+
+    func testAcceptCommandIsNoOpWhenMenuInactive() {
+        let viewModel = MeetingNotesViewModel()
+        viewModel.notesBinding.wrappedValue = "Plain text"
+
+        viewModel.acceptSlashCommand(elapsedSeconds: 100)
+
+        XCTAssertEqual(viewModel.notesText, "Plain text", "Accept must no-op when the menu isn't active")
+    }
 }
 
 /// Thread-safe sink for async persist callbacks.

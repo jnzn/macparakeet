@@ -15,6 +15,10 @@ import SwiftUI
 /// of what the user actually cares about.
 struct LiveNotesPaneView: View {
     @Bindable var viewModel: MeetingNotesViewModel
+    /// Elapsed meeting time, supplied by the parent panel. Used by the
+    /// `/now` slash command to format the inserted timestamp. Defaults to
+    /// 0 so previews and unit tests don't need to plumb it.
+    var elapsedSeconds: Int = 0
 
     @FocusState private var editorFocused: Bool
 
@@ -45,12 +49,52 @@ struct LiveNotesPaneView: View {
                 .padding(.vertical, DesignSystem.Spacing.sm)
                 .focused($editorFocused)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Slash-menu key handling — onKeyPress fires before TextEditor
+                // sees the key, which is what lets us hijack ↑/↓/Return/Esc
+                // while the menu is open without owning first responder
+                // (ADR-020 §7 NSPanel pitfalls). Returns `.handled` only when
+                // the menu is open and we acted on the key; otherwise falls
+                // through so normal editing keys still work.
+                .onKeyPress(.upArrow) {
+                    guard viewModel.isSlashMenuActive else { return .ignored }
+                    viewModel.moveSlashSelection(by: -1)
+                    return .handled
+                }
+                .onKeyPress(.downArrow) {
+                    guard viewModel.isSlashMenuActive else { return .ignored }
+                    viewModel.moveSlashSelection(by: 1)
+                    return .handled
+                }
+                .onKeyPress(.return) {
+                    guard viewModel.isSlashMenuActive else { return .ignored }
+                    viewModel.acceptSlashCommand(elapsedSeconds: elapsedSeconds)
+                    return .handled
+                }
+                .onKeyPress(.escape) {
+                    guard viewModel.isSlashMenuActive else { return .ignored }
+                    viewModel.dismissSlashMenu()
+                    return .handled
+                }
 
             if viewModel.notesText.isEmpty {
                 placeholder
                     .padding(.horizontal, DesignSystem.Spacing.md + 5)
                     .padding(.vertical, DesignSystem.Spacing.sm + 8)
                     .allowsHitTesting(false)
+            }
+
+            // In-view ZStack overlay anchored to the editor frame
+            // (ADR-020 §7) — never a SwiftUI .popover, since popovers
+            // hosted inside KeylessPanel can clip, steal first responder,
+            // and route arrow keys unpredictably.
+            if viewModel.isSlashMenuActive {
+                SlashMenuOverlay(viewModel: viewModel, elapsedSeconds: elapsedSeconds)
+                    .padding(.horizontal, DesignSystem.Spacing.md)
+                    .padding(.bottom, DesignSystem.Spacing.sm)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .animation(.easeOut(duration: 0.15), value: viewModel.matchingCommands)
+                    .allowsHitTesting(true)
             }
         }
     }
@@ -64,6 +108,86 @@ struct LiveNotesPaneView: View {
                 .font(DesignSystem.Typography.caption)
                 .foregroundStyle(DesignSystem.Colors.textTertiary.opacity(0.55))
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// Anchored at the bottom of the editor frame, NOT a SwiftUI popover
+    /// (ADR-020 §7 NSPanel pitfalls). Renders the matching commands as
+    /// rows; the highlighted row tracks `viewModel.slashSelection` (driven
+    /// by the editor's `.onKeyPress` handlers above). Click-to-select is
+    /// also wired up so mouse users get the same affordance.
+    private struct SlashMenuOverlay: View {
+        @Bindable var viewModel: MeetingNotesViewModel
+        var elapsedSeconds: Int
+
+        var body: some View {
+            let matches = viewModel.matchingCommands
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(matches.enumerated()), id: \.element.trigger) { index, command in
+                    SlashCommandRow(
+                        command: command,
+                        isHighlighted: index == viewModel.slashSelection,
+                        onTap: {
+                            viewModel.selectSlashCommand(at: index)
+                            viewModel.acceptSlashCommand(elapsedSeconds: elapsedSeconds)
+                        }
+                    )
+                    if index < matches.count - 1 {
+                        Divider().opacity(0.3)
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(DesignSystem.Colors.surfaceElevated)
+                    .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(DesignSystem.Colors.border.opacity(0.4), lineWidth: 0.5)
+            )
+            .frame(maxWidth: 260)
+        }
+    }
+
+    private struct SlashCommandRow: View {
+        let command: SlashCommand
+        let isHighlighted: Bool
+        let onTap: () -> Void
+
+        @State private var isHovered = false
+
+        var body: some View {
+            Button(action: onTap) {
+                HStack(spacing: DesignSystem.Spacing.sm) {
+                    Text(command.trigger)
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundStyle(isHighlighted
+                            ? DesignSystem.Colors.accent
+                            : DesignSystem.Colors.textSecondary)
+                    Text(command.label)
+                        .font(.system(size: 12))
+                        .foregroundStyle(DesignSystem.Colors.textPrimary)
+                    Spacer(minLength: 8)
+                    Text(command.description)
+                        .font(.system(size: 10))
+                        .foregroundStyle(DesignSystem.Colors.textTertiary)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, DesignSystem.Spacing.sm)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(isHighlighted
+                            ? DesignSystem.Colors.accent.opacity(0.12)
+                            : (isHovered ? DesignSystem.Colors.background.opacity(0.5) : .clear))
+                )
+                .padding(.horizontal, 4)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { isHovered = $0 }
         }
     }
 

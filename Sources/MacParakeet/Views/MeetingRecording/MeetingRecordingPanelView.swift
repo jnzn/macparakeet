@@ -32,7 +32,10 @@ struct MeetingRecordingPanelView: View {
     private var paneContent: some View {
         switch viewModel.selectedTab {
         case .notes:
-            LiveNotesPaneView(viewModel: viewModel.notesViewModel)
+            LiveNotesPaneView(
+                viewModel: viewModel.notesViewModel,
+                elapsedSeconds: viewModel.elapsedSeconds
+            )
         case .transcript:
             transcriptContent
         case .ask:
@@ -60,17 +63,14 @@ struct MeetingRecordingPanelView: View {
             case .ask: return "3"
             }
         }()
+        let badge = viewModel.badge(for: tab)
         return Button {
             withAnimation(.easeOut(duration: 0.18)) {
                 viewModel.selectedTab = tab
             }
         } label: {
             VStack(spacing: 5) {
-                Text(tab.title)
-                    .font(.system(size: 12, weight: isActive ? .medium : .regular))
-                    .foregroundStyle(isActive
-                        ? DesignSystem.Colors.textPrimary
-                        : DesignSystem.Colors.textTertiary)
+                tabLabel(title: tab.title, badge: badge, isActive: isActive)
                 Capsule()
                     .fill(isActive ? DesignSystem.Colors.accent : Color.clear)
                     .frame(height: 1)
@@ -82,6 +82,48 @@ struct MeetingRecordingPanelView: View {
         }
         .buttonStyle(.plain)
         .keyboardShortcut(shortcut, modifiers: .command)
+        .help(badge.map { "\(tab.title) · \($0)" } ?? tab.title)
+    }
+
+    /// State-bearing tab label per ADR-020 §1. `ViewThatFits` picks the
+    /// richest variant the cell width allows: rich (noun · badge) at
+    /// default panel widths, plain noun at the 360px floor. Tooltip carries
+    /// the full label so the badge never disappears entirely — see
+    /// `.help(...)` on the parent button.
+    @ViewBuilder
+    private func tabLabel(title: String, badge: String?, isActive: Bool) -> some View {
+        let weight: Font.Weight = isActive ? .medium : .regular
+        let foreground: Color = isActive
+            ? DesignSystem.Colors.textPrimary
+            : DesignSystem.Colors.textTertiary
+
+        if let badge {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 5) {
+                    Text(title)
+                        .font(.system(size: 12, weight: weight))
+                        .foregroundStyle(foreground)
+                    Text("·")
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(DesignSystem.Colors.textTertiary.opacity(0.6))
+                    Text(badge)
+                        .font(.system(size: 11, weight: .regular).monospacedDigit())
+                        .foregroundStyle(isActive
+                            ? DesignSystem.Colors.accent
+                            : DesignSystem.Colors.textTertiary)
+                        .lineLimit(1)
+                }
+                .fixedSize()
+
+                Text(title)
+                    .font(.system(size: 12, weight: weight))
+                    .foregroundStyle(foreground)
+            }
+        } else {
+            Text(title)
+                .font(.system(size: 12, weight: weight))
+                .foregroundStyle(foreground)
+        }
     }
 
     private var header: some View {
