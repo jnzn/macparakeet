@@ -971,7 +971,6 @@ final class TranscriptionViewModelTests: XCTestCase {
         )
         viewModel.currentTranscription = t
 
-        mockRepo.transcriptions[0].summary = "DB summary"
         mockPromptResultRepo.promptResults = [
             PromptResult(
                 transcriptionId: t.id,
@@ -983,7 +982,6 @@ final class TranscriptionViewModelTests: XCTestCase {
 
         viewModel.loadPersistedContent()
 
-        XCTAssertEqual(viewModel.currentTranscription?.summary, "DB summary")
         XCTAssertTrue(viewModel.hasPromptResultTabs)
     }
 

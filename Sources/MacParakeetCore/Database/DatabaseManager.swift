@@ -422,6 +422,16 @@ public final class DatabaseManager: Sendable {
             }
         }
 
+        // v0.7.6 - Drop legacy one-summary column after v0.7 migrates content to summaries.
+        migrator.registerMigration("v0.7.6-drop-legacy-transcription-summary") { db in
+            let columns = try db.columns(in: "transcriptions")
+            if columns.contains(where: { $0.name == "summary" }) {
+                try db.alter(table: "transcriptions") { t in
+                    t.drop(column: "summary")
+                }
+            }
+        }
+
         try migrator.migrate(dbQueue)
         try reconcileBuiltInPrompts()
     }
