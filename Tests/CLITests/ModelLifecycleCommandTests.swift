@@ -1,4 +1,5 @@
 import ArgumentParser
+import CoreAudio
 import XCTest
 @testable import MacParakeetCore
 @testable import CLI
@@ -67,6 +68,111 @@ final class ModelLifecycleCommandTests: XCTestCase {
         )
         XCTAssertEqual(status.summary, "Speech model present, speaker models missing")
     }
+
+    func testAudioInputDiagnosticsShowsSelectedDefaultAndFallbackOrder() {
+        let selected = inputDevice(
+            id: 10,
+            uid: "usb-mic",
+            name: "Desk USB Mic",
+            transport: kAudioDeviceTransportTypeUSB
+        )
+        let defaultDevice = inputDevice(
+            id: 20,
+            uid: "conference-mic",
+            name: "Conference Mic",
+            transport: kAudioDeviceTransportTypeBluetooth
+        )
+        let builtIn = inputDevice(
+            id: 30,
+            uid: "builtin-mic",
+            name: "MacBook Pro Microphone",
+            transport: kAudioDeviceTransportTypeBuiltIn
+        )
+        let diagnostics = AudioInputDiagnostics(
+            devices: [selected, defaultDevice, builtIn],
+            defaultDevice: defaultDevice,
+            storedSelectedUID: "usb-mic"
+        )
+
+        XCTAssertEqual(
+            audioInputDiagnosticsLines(diagnostics),
+            [
+                "  System default: Conference Mic [bluetooth]",
+                "  Stored selection: Desk USB Mic [usb, selected, available]",
+                "  Effective fallback order:",
+                "    1. Desk USB Mic [usb, selected]",
+                "    2. Conference Mic [bluetooth, system default]",
+                "    3. MacBook Pro Microphone [built-in, built-in fallback]",
+                "  Devices:",
+                "    - Desk USB Mic [usb, selected]",
+                "    - Conference Mic [bluetooth, default]",
+                "    - MacBook Pro Microphone [built-in]",
+            ]
+        )
+    }
+
+    func testAudioInputDiagnosticsReportsUnavailableStoredSelectionWithoutUID() {
+        let defaultDevice = inputDevice(
+            id: 20,
+            uid: "builtin-mic",
+            name: "MacBook Pro Microphone",
+            transport: kAudioDeviceTransportTypeBuiltIn
+        )
+        let diagnostics = AudioInputDiagnostics(
+            devices: [defaultDevice],
+            defaultDevice: defaultDevice,
+            storedSelectedUID: "missing-secret-uid"
+        )
+
+        let lines = audioInputDiagnosticsLines(diagnostics)
+
+        XCTAssertTrue(lines.contains("  Stored selection: Unavailable (stored device is not currently connected)"))
+        XCTAssertFalse(lines.joined(separator: "\n").contains("missing-secret-uid"))
+        XCTAssertEqual(
+            lines.filter { $0.trimmingCharacters(in: .whitespaces).hasPrefix("1.") },
+            ["    1. MacBook Pro Microphone [built-in, system default]"]
+        )
+    }
+
+    func testAudioInputDiagnosticsDeduplicatesDefaultBuiltInFallback() {
+        let builtInDefault = inputDevice(
+            id: 30,
+            uid: "builtin-mic",
+            name: "MacBook Pro Microphone",
+            transport: kAudioDeviceTransportTypeBuiltIn
+        )
+        let diagnostics = AudioInputDiagnostics(
+            devices: [builtInDefault],
+            defaultDevice: builtInDefault,
+            storedSelectedUID: nil
+        )
+
+        XCTAssertEqual(
+            audioInputDiagnosticsLines(diagnostics),
+            [
+                "  System default: MacBook Pro Microphone [built-in]",
+                "  Stored selection: System Default",
+                "  Effective fallback order:",
+                "    1. MacBook Pro Microphone [built-in, system default]",
+                "  Devices:",
+                "    - MacBook Pro Microphone [built-in, default]",
+            ]
+        )
+    }
+}
+
+private func inputDevice(
+    id: AudioDeviceID,
+    uid: String,
+    name: String,
+    transport: UInt32
+) -> AudioDeviceManager.InputDevice {
+    AudioDeviceManager.InputDevice(
+        id: id,
+        uid: uid,
+        name: name,
+        transportType: transport
+    )
 }
 
 private actor StubSTTClient: STTClientProtocol {

@@ -68,7 +68,12 @@ struct HealthCommand: AsyncParsableCommand {
         }
         print()
 
-        // 4. Local speech stack
+        // 4. Audio input
+        print("Audio Input:")
+        printAudioInputDiagnostics(loadAudioInputDiagnostics())
+        print()
+
+        // 5. Local speech stack
         print("Local Speech Stack:")
         let sttClient = STTClient()
         let diarizationService = DiarizationService()
@@ -96,7 +101,7 @@ struct HealthCommand: AsyncParsableCommand {
         await sttClient.shutdown()
         print()
 
-        // 5. Bundled FFmpeg
+        // 6. Bundled FFmpeg
         print("FFmpeg:")
         if let ffmpegPath = BinaryBootstrap.resolveRuntimeFFmpegPath() {
             if ffmpegPath == AppPaths.bundledFFmpegPath() {
@@ -109,7 +114,7 @@ struct HealthCommand: AsyncParsableCommand {
         }
         print()
 
-        // 6. yt-dlp managed binary
+        // 7. yt-dlp managed binary
         print("yt-dlp:")
         let bootstrap = BinaryBootstrap()
         do {
@@ -120,7 +125,7 @@ struct HealthCommand: AsyncParsableCommand {
         }
         print()
 
-        // 7. Calendar (EventKit) — agents can't see TCC dialogs from the
+        // 8. Calendar (EventKit) — agents can't see TCC dialogs from the
         // GUI, so the CLI surface lets them check authorization status
         // headlessly during dev iteration.
         print("Calendar (EventKit):")
