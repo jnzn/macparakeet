@@ -10,11 +10,22 @@ import UserNotifications
 public enum CalendarNotificationAuthorization {
     private static let logger = Logger(subsystem: "com.macparakeet", category: "CalendarNotifications")
 
+    /// `UNUserNotificationCenter.current()` requires a host bundle with a
+    /// proper `bundleIdentifier` and crashes inside `xctest` (the test
+    /// helper has no UN-eligible bundle). This guard makes the helper
+    /// safe to call from anywhere — production paths are unaffected
+    /// because the app bundle always has an identifier.
+    private static var isHostBundleEligible: Bool {
+        Bundle.main.bundleIdentifier?.isEmpty == false
+            && Bundle.main.bundleIdentifier?.hasPrefix("com.apple.dt.xctest") == false
+    }
+
     /// Request `.alert` authorization (no `.sound` — calendar reminders are
     /// silent by design so they don't fight the user's Zoom join sound). No-op
     /// when status is already `.authorized` or `.provisional`.
     @discardableResult
     public static func requestIfNeeded() async -> Bool {
+        guard isHostBundleEligible else { return false }
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         switch settings.authorizationStatus {
         case .authorized, .provisional:
@@ -38,6 +49,7 @@ public enum CalendarNotificationAuthorization {
 
     /// Cheap status check the coordinator can call before posting a reminder.
     public static func isAuthorized() async -> Bool {
+        guard isHostBundleEligible else { return false }
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         switch settings.authorizationStatus {
         case .authorized, .provisional: return true
