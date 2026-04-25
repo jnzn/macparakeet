@@ -15,6 +15,7 @@ public final class MicrophoneCapture: @unchecked Sendable {
     private let lifecycleQueue = DispatchQueue(label: "com.macparakeet.microphonecapture")
     private let watchdogQueue = DispatchQueue(label: "com.macparakeet.microphonecapture.watchdog", qos: .utility)
     private let handlerLock = NSLock()
+    private let selectedInputDeviceUIDProvider: @Sendable () -> String?
     private let audioEngine = AVAudioEngine()
     private let bufferSize: AVAudioFrameCount = 4096
     private let watchdogLock = NSLock()
@@ -24,7 +25,11 @@ public final class MicrophoneCapture: @unchecked Sendable {
     private var firstBufferReceived = false
     private var watchdogWorkItem: DispatchWorkItem?
 
-    public init() {}
+    public init(
+        selectedInputDeviceUIDProvider: @escaping @Sendable () -> String? = { nil }
+    ) {
+        self.selectedInputDeviceUIDProvider = selectedInputDeviceUIDProvider
+    }
 
     deinit {
         stop()
@@ -69,6 +74,7 @@ public final class MicrophoneCapture: @unchecked Sendable {
             }
 
             let inputNode = audioEngine.inputNode
+            applySelectedInputDeviceIfAvailable(on: audioEngine)
             state = .starting
             handlerLock.withLock { bufferHandler = handler }
             do {
@@ -236,6 +242,29 @@ public final class MicrophoneCapture: @unchecked Sendable {
         try catchingObjCException {
             try inputNode.setVoiceProcessingEnabled(enabled)
         }
+    }
+
+    private func applySelectedInputDeviceIfAvailable(on engine: AVAudioEngine) {
+        guard let uid = normalizedDeviceUID(selectedInputDeviceUIDProvider()) else { return }
+        guard let deviceID = AudioDeviceManager.inputDeviceID(forUID: uid) else {
+            logger.warning("meeting_selected_input_device_missing uid=\(uid, privacy: .private)")
+            return
+        }
+        guard AudioDeviceManager.setInputDevice(deviceID, on: engine) else {
+            logger.warning(
+                "meeting_selected_input_device_set_failed uid=\(uid, privacy: .private) id=\(deviceID, privacy: .public)"
+            )
+            return
+        }
+        let name = AudioDeviceManager.deviceName(deviceID) ?? "unknown"
+        logger.info(
+            "meeting_selected_input_device_applied uid=\(uid, privacy: .private) id=\(deviceID, privacy: .public) name=\(name, privacy: .public)"
+        )
+    }
+
+    private func normalizedDeviceUID(_ uid: String?) -> String? {
+        let trimmed = uid?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func scheduleSilentBufferWatchdog() {

@@ -16,8 +16,21 @@ public enum AudioDeviceManager {
     /// Describes an available audio input device.
     public struct InputDevice: Sendable, CustomStringConvertible {
         public let id: AudioDeviceID
+        public let uid: String
         public let name: String
         public let transportType: UInt32
+
+        public init(
+            id: AudioDeviceID,
+            uid: String,
+            name: String,
+            transportType: UInt32
+        ) {
+            self.id = id
+            self.uid = uid
+            self.name = name
+            self.transportType = transportType
+        }
 
         public var isBuiltIn: Bool {
             transportType == kAudioDeviceTransportTypeBuiltIn
@@ -33,7 +46,7 @@ public enum AudioDeviceManager {
         }
 
         public var description: String {
-            "\(name) (id=\(id), transport=\(transportLabel))"
+            "\(name) (id=\(id), uid=\(uid), transport=\(transportLabel))"
         }
 
         static func label(for transport: UInt32) -> String {
@@ -76,9 +89,10 @@ public enum AudioDeviceManager {
 
         return deviceIDs.compactMap { id in
             guard hasInputChannels(id) else { return nil }
+            guard let uid = deviceUID(id) else { return nil }
             let name = deviceName(id) ?? "Unknown Device"
             let transport = transportType(id)
-            return InputDevice(id: id, name: name, transportType: transport)
+            return InputDevice(id: id, uid: uid, name: name, transportType: transport)
         }
     }
 
@@ -102,6 +116,20 @@ public enum AudioDeviceManager {
         )
         guard status == noErr, deviceID != kAudioObjectUnknown else { return nil }
         return deviceID
+    }
+
+    /// Returns the current system default input device, if it can be resolved
+    /// to a valid input device descriptor.
+    public static func defaultInputDeviceInfo() -> InputDevice? {
+        guard let id = defaultInputDevice() else { return nil }
+        return deviceInfo(id)
+    }
+
+    /// Resolves a persistent CoreAudio device UID to the current process-local
+    /// `AudioDeviceID`. Device IDs are not stable across boots or hardware
+    /// topology changes, so app preferences should store UIDs and resolve late.
+    public static func inputDeviceID(forUID uid: String) -> AudioDeviceID? {
+        inputDevices().first { $0.uid == uid }?.id
     }
 
     // MARK: - Device Control
@@ -168,6 +196,20 @@ public enum AudioDeviceManager {
         return validName.takeRetainedValue() as String
     }
 
+    /// Returns the persistent CoreAudio UID for a device.
+    public static func deviceUID(_ deviceID: AudioDeviceID) -> String? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceUID,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var uid: Unmanaged<CFString>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        let status = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &uid)
+        guard status == noErr, let validUID = uid else { return nil }
+        return validUID.takeRetainedValue() as String
+    }
+
     /// Returns the transport type of a device (built-in, bluetooth, USB, etc.).
     public static func transportType(_ deviceID: AudioDeviceID) -> UInt32 {
         var address = AudioObjectPropertyAddress(
@@ -185,9 +227,10 @@ public enum AudioDeviceManager {
     /// Returns an InputDevice descriptor for a given device ID, or nil if not a valid input device.
     public static func deviceInfo(_ deviceID: AudioDeviceID) -> InputDevice? {
         guard hasInputChannels(deviceID) else { return nil }
+        guard let uid = deviceUID(deviceID) else { return nil }
         let name = deviceName(deviceID) ?? "Unknown Device"
         let transport = transportType(deviceID)
-        return InputDevice(id: deviceID, name: name, transportType: transport)
+        return InputDevice(id: deviceID, uid: uid, name: name, transportType: transport)
     }
 
     /// For aggregate devices, resolves the transport type of the first active sub-device.
