@@ -14,6 +14,7 @@ public final class OnboardingViewModel {
         case microphone
         case accessibility
         case meetingRecording
+        case calendar
         case hotkey
         case engine
         case done
@@ -26,6 +27,7 @@ public final class OnboardingViewModel {
             case .microphone: return "Microphone"
             case .accessibility: return "Accessibility"
             case .meetingRecording: return "Meeting Recording"
+            case .calendar: return "Calendar"
             case .hotkey: return "Hotkey"
             case .engine: return "Speech Model"
             case .done: return "Ready"
@@ -49,6 +51,8 @@ public final class OnboardingViewModel {
     public private(set) var accessibilityGranted: Bool = false
     public private(set) var screenRecordingGranted: Bool = false
     public private(set) var meetingRecordingSkipped: Bool
+    public private(set) var calendarPermissionGranted: Bool = false
+    public private(set) var calendarSkipped: Bool
     public private(set) var showRelaunchHint: Bool = false
     public private(set) var engineState: EngineState = .idle
 
@@ -79,6 +83,7 @@ public final class OnboardingViewModel {
 
     public static let onboardingCompletedKey = "onboarding.completedAtISO"
     public static let meetingRecordingSkippedKey = "onboarding.meetingRecordingSkipped"
+    public static let calendarSkippedKey = "onboarding.calendarSkipped"
 
     public init(
         permissionService: PermissionServiceProtocol,
@@ -105,6 +110,8 @@ public final class OnboardingViewModel {
         self.permissionPollingInterval = permissionPollingInterval
         self.relaunchHintDelay = relaunchHintDelay
         self.meetingRecordingSkipped = defaults.bool(forKey: Self.meetingRecordingSkippedKey)
+        self.calendarSkipped = defaults.bool(forKey: Self.calendarSkippedKey)
+        self.calendarPermissionGranted = CalendarService().permissionStatus == .granted
     }
 
     public var hasCompletedOnboarding: Bool {
@@ -122,9 +129,11 @@ public final class OnboardingViewModel {
     public func resetOnboarding() {
         defaults.removeObject(forKey: Self.onboardingCompletedKey)
         defaults.removeObject(forKey: Self.meetingRecordingSkippedKey)
+        defaults.removeObject(forKey: Self.calendarSkippedKey)
         step = .welcome
         engineState = .idle
         meetingRecordingSkipped = false
+        calendarSkipped = false
         clearMeetingRecordingPendingState()
     }
 
@@ -159,7 +168,12 @@ public final class OnboardingViewModel {
     /// silent no-ops when flags are off.
     public static var visibleSteps: [Step] {
         Step.allCases.filter { step in
-            AppFeatures.meetingRecordingEnabled || step != .meetingRecording
+            switch step {
+            case .meetingRecording, .calendar:
+                return AppFeatures.meetingRecordingEnabled
+            default:
+                return true
+            }
         }
     }
 
@@ -203,6 +217,8 @@ public final class OnboardingViewModel {
         case .accessibility:
             return accessibilityGranted
         case .meetingRecording:
+            return true
+        case .calendar:
             return true
         case .hotkey:
             return true
@@ -265,6 +281,46 @@ public final class OnboardingViewModel {
         defaults.set(true, forKey: Self.meetingRecordingSkippedKey)
         clearMeetingRecordingPendingState()
         goNext()
+    }
+
+    /// Trigger the EventKit permission prompt. On grant, default the user
+    /// into `.notify` mode so the feature works out of the box. On denial,
+    /// leave the mode as-is (`.off` by default) — the user can opt back in
+    /// from Settings later. We write directly to UserDefaults + post the
+    /// shared notification so a running `MeetingAutoStartCoordinator`
+    /// re-evaluates immediately.
+    public func requestCalendarAccess() {
+        isBusy = true
+        Telemetry.send(.permissionPrompted(permission: .calendar))
+        Task {
+            let service = CalendarService()
+            let granted = await service.requestPermission()
+            await MainActor.run {
+                self.isBusy = false
+                self.calendarPermissionGranted = granted
+                if granted {
+                    Telemetry.send(.permissionGranted(permission: .calendar))
+                    self.applyCalendarMode(.notify)
+                } else {
+                    Telemetry.send(.permissionDenied(permission: .calendar))
+                }
+            }
+        }
+    }
+
+    /// Skip the calendar onboarding step. Persists `.off` mode explicitly so
+    /// the SettingsViewModel default doesn't silently flip back to enabled
+    /// later. Symmetric to `skipMeetingRecordingStep()`.
+    public func skipCalendarStep() {
+        calendarSkipped = true
+        defaults.set(true, forKey: Self.calendarSkippedKey)
+        applyCalendarMode(.off)
+        goNext()
+    }
+
+    private func applyCalendarMode(_ mode: CalendarAutoStartMode) {
+        defaults.set(mode.rawValue, forKey: CalendarAutoStartPreferences.modeKey)
+        NotificationCenter.default.post(name: .macParakeetCalendarSettingsDidChange, object: nil)
     }
 
     public func openScreenRecordingSystemSettings() {
