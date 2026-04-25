@@ -165,6 +165,8 @@ final class STTSchedulerTests: XCTestCase {
         try await waitForStartedPaths(runtime: runtime, count: 1)
 
         let droppedTask = Task { try await scheduler.transcribe(audioPath: "live-1", job: .meetingLiveChunk) }
+        // Let the first live chunk settle into the pending queue before the next chunk evicts it.
+        try await Task.sleep(for: .milliseconds(50))
         let survivingTask = Task { try await scheduler.transcribe(audioPath: "live-2", job: .meetingLiveChunk) }
 
         do {
@@ -192,6 +194,8 @@ final class STTSchedulerTests: XCTestCase {
         try await waitForStartedPaths(runtime: runtime, count: 1)
 
         let droppedTask = Task { try await scheduler.transcribe(audioPath: "live-1", job: .meetingLiveChunk) }
+        // Let the first live chunk settle into the pending queue before the next chunk evicts it.
+        try await Task.sleep(for: .milliseconds(50))
         let survivingTask = Task { try await scheduler.transcribe(audioPath: "live-2", job: .meetingLiveChunk) }
 
         do {
