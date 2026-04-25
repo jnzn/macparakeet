@@ -143,6 +143,33 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(vm.microphoneDeviceOptions.last?.detail, "usb")
     }
 
+    func testRefreshMicrophoneDevicesPreservesUnavailableStoredSelection() {
+        testDefaults.set("missing-usb-mic", forKey: UserDefaultsAppRuntimePreferences.selectedMicrophoneDeviceUIDKey)
+
+        let vm = SettingsViewModel(
+            defaults: testDefaults,
+            inputDevicesProvider: {
+                [
+                    AudioDeviceManager.InputDevice(
+                        id: 10,
+                        uid: "builtin-zed",
+                        name: "Zed Built-In Mic",
+                        transportType: kAudioDeviceTransportTypeBuiltIn
+                    )
+                ]
+            },
+            defaultInputDeviceUIDProvider: { "builtin-zed" }
+        )
+
+        XCTAssertEqual(vm.selectedMicrophoneDeviceUID, "missing-usb-mic")
+        XCTAssertEqual(vm.microphoneDeviceOptions.map(\.uid), ["builtin-zed", "missing-usb-mic"])
+        XCTAssertEqual(vm.microphoneDeviceOptions.last?.displayName, "Selected microphone (unavailable)")
+        XCTAssertEqual(
+            vm.selectedMicrophoneStatusText,
+            "Selected microphone is unavailable. MacParakeet will use System Default until it returns."
+        )
+    }
+
     func testMeetingAutoSaveMigratesLegacyTranscriptionSettings() {
         testDefaults.set(true, forKey: AutoSaveService.enabledKey)
         testDefaults.set(AutoSaveFormat.json.rawValue, forKey: AutoSaveService.formatKey)

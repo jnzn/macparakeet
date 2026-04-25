@@ -145,10 +145,11 @@ struct SettingsView: View {
                             Text("System Default").tag(SettingsViewModel.systemDefaultMicrophoneSelection)
                             ForEach(viewModel.microphoneDeviceOptions) { device in
                                 Text(device.displayName).tag(device.uid)
+                                    .disabled(!device.isAvailable)
                             }
                         }
                         .labelsHidden()
-                        .frame(width: 260)
+                        .frame(minWidth: 220, idealWidth: 260, maxWidth: 320)
 
                         Button {
                             viewModel.refreshMicrophoneDevices()

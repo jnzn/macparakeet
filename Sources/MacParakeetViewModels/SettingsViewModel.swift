@@ -29,13 +29,15 @@ public final class SettingsViewModel {
         public let name: String
         public let transportLabel: String
         public let isDefault: Bool
+        public let isAvailable: Bool
 
         public var displayName: String {
-            isDefault ? "\(name) (System Default)" : name
+            if !isAvailable { return "\(name) (unavailable)" }
+            return isDefault ? "\(name) (System Default)" : name
         }
 
         public var detail: String {
-            transportLabel
+            isAvailable ? transportLabel : "Reconnect this microphone or choose another input."
         }
     }
 
@@ -133,6 +135,8 @@ public final class SettingsViewModel {
             } else {
                 defaults.set(normalized, forKey: UserDefaultsAppRuntimePreferences.selectedMicrophoneDeviceUIDKey)
             }
+            microphoneTestTask?.cancel()
+            microphoneTestTask = nil
             microphoneTestState = .idle
             microphoneTestLevel = 0
             Telemetry.send(.settingChanged(setting: .microphoneSelection))
@@ -149,6 +153,9 @@ public final class SettingsViewModel {
             return "Using macOS System Default."
         }
         guard let selected = microphoneDeviceOptions.first(where: { $0.uid == selectedMicrophoneDeviceUID }) else {
+            return "Selected microphone is unavailable. MacParakeet will use System Default until it returns."
+        }
+        guard selected.isAvailable else {
             return "Selected microphone is unavailable. MacParakeet will use System Default until it returns."
         }
         return "Using \(selected.name) for dictation and meeting microphone capture."
@@ -625,12 +632,26 @@ public final class SettingsViewModel {
                 uid: device.uid,
                 name: device.name,
                 transportLabel: device.transportLabel,
-                isDefault: device.uid == defaultUID
+                isDefault: device.uid == defaultUID,
+                isAvailable: true
             )
         }
         .sorted { lhs, rhs in
             if lhs.isDefault != rhs.isDefault { return lhs.isDefault && !rhs.isDefault }
             return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        }
+        if selectedMicrophoneDeviceUID != Self.systemDefaultMicrophoneSelection,
+           !microphoneDeviceOptions.contains(where: { $0.uid == selectedMicrophoneDeviceUID }) {
+            microphoneDeviceOptions.append(
+                MicrophoneDeviceOption(
+                    id: selectedMicrophoneDeviceUID,
+                    uid: selectedMicrophoneDeviceUID,
+                    name: "Selected microphone",
+                    transportLabel: "unavailable",
+                    isDefault: false,
+                    isAvailable: false
+                )
+            )
         }
     }
 
@@ -653,7 +674,7 @@ public final class SettingsViewModel {
                 }
                 for _ in 0..<40 {
                     try await Task.sleep(for: .milliseconds(50))
-                    microphoneTestLevel = levelBox.maxLevel
+                    microphoneTestLevel = levelBox.latestLevel
                 }
                 capture.stop()
                 guard !Task.isCancelled else { return }
@@ -1041,15 +1062,21 @@ public final class SettingsViewModel {
 
 private final class MicrophoneLevelBox: @unchecked Sendable {
     private let lock = NSLock()
-    private var value: Float = 0
+    private var latestValue: Float = 0
+    private var peakValue: Float = 0
+
+    var latestLevel: Float {
+        lock.withLock { latestValue }
+    }
 
     var maxLevel: Float {
-        lock.withLock { value }
+        lock.withLock { peakValue }
     }
 
     func record(_ level: Float) {
         lock.withLock {
-            value = max(value, level)
+            latestValue = level
+            peakValue = max(peakValue, level)
         }
     }
 }
