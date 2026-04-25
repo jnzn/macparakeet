@@ -648,14 +648,13 @@ public final class SettingsViewModel {
             guard let self else { return }
             let capture = MicrophoneCapture(selectedInputDeviceUIDProvider: { selectedUID })
             do {
-                _ = try capture.start(processingMode: .raw) { [weak self] buffer, _ in
-                    let level = buffer.rmsLevel
-                    levelBox.record(level)
-                    Task { @MainActor [weak self] in
-                        self?.microphoneTestLevel = max(self?.microphoneTestLevel ?? 0, level)
-                    }
+                _ = try capture.start(processingMode: .raw) { buffer, _ in
+                    levelBox.record(buffer.rmsLevel)
                 }
-                try await Task.sleep(for: .seconds(2))
+                for _ in 0..<40 {
+                    try await Task.sleep(for: .milliseconds(50))
+                    microphoneTestLevel = levelBox.maxLevel
+                }
                 capture.stop()
                 guard !Task.isCancelled else { return }
                 microphoneTestState = levelBox.maxLevel > 0.01
