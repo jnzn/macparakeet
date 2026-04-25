@@ -59,7 +59,6 @@ public final class PromptResultsViewModel {
     public var unreadPromptResultIDs: Set<UUID> = []
     public var onModelChanged: (() -> Void)?
     public var onPromptResultsChanged: ((UUID, Bool) -> Void)?
-    public var onLegacySummaryChanged: ((UUID, String?) -> Void)?
     public var onGenerationCompleted: ((UUID, UUID) -> Void)?
     public var onDeletedPromptResult: ((UUID) -> Void)?
     public var shouldMarkPromptResultUnread: ((UUID) -> Bool)?
@@ -67,7 +66,6 @@ public final class PromptResultsViewModel {
     private var llmService: LLMServiceProtocol?
     private var promptRepo: PromptRepositoryProtocol?
     private var promptResultRepo: PromptResultRepositoryProtocol?
-    private var transcriptionRepo: TranscriptionRepositoryProtocol?
     private var configStore: LLMConfigStoreProtocol?
     private var cliConfigStore: LocalCLIConfigStore?
     private var currentTranscriptionID: UUID?
@@ -128,14 +126,12 @@ public final class PromptResultsViewModel {
         llmService: LLMServiceProtocol?,
         promptRepo: PromptRepositoryProtocol?,
         promptResultRepo: PromptResultRepositoryProtocol?,
-        transcriptionRepo: TranscriptionRepositoryProtocol? = nil,
         configStore: LLMConfigStoreProtocol? = nil,
         cliConfigStore: LocalCLIConfigStore = LocalCLIConfigStore()
     ) {
         self.llmService = llmService
         self.promptRepo = promptRepo
         self.promptResultRepo = promptResultRepo
-        self.transcriptionRepo = transcriptionRepo
         self.configStore = configStore
         self.cliConfigStore = cliConfigStore
         loadVisiblePrompts()
@@ -255,11 +251,6 @@ public final class PromptResultsViewModel {
             _ = try promptResultRepo.delete(id: promptResult.id)
             promptResults.removeAll { $0.id == promptResult.id }
             unreadPromptResultIDs.remove(promptResult.id)
-            do {
-                try syncLegacySummary(for: promptResult.transcriptionId)
-            } catch {
-                logger.warning("Legacy summary sync failed after delete: \(error.localizedDescription, privacy: .public)")
-            }
             if let transcriptionID = currentTranscriptionID {
                 onPromptResultsChanged?(transcriptionID, !promptResults.isEmpty)
             }
@@ -433,12 +424,6 @@ public final class PromptResultsViewModel {
         } else {
             try promptResultRepo?.save(promptResult)
         }
-        do {
-            try transcriptionRepo?.updateSummary(id: generation.transcriptionId, summary: promptResult.content)
-            onLegacySummaryChanged?(generation.transcriptionId, promptResult.content)
-        } catch {
-            logger.warning("Legacy summary sync failed, prompt result saved successfully: \(error.localizedDescription, privacy: .public)")
-        }
 
         pendingGenerations.remove(at: index)
         streamingTask = nil
@@ -492,11 +477,5 @@ public final class PromptResultsViewModel {
     private func normalizedExtraInstructions(_ value: String) -> String? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
-    }
-
-    private func syncLegacySummary(for transcriptionId: UUID) throws {
-        let latestPromptResult = try promptResultRepo?.fetchAll(transcriptionId: transcriptionId).first
-        try transcriptionRepo?.updateSummary(id: transcriptionId, summary: latestPromptResult?.content)
-        onLegacySummaryChanged?(transcriptionId, latestPromptResult?.content)
     }
 }

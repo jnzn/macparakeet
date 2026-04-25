@@ -8,14 +8,12 @@ final class PromptResultsViewModelTests: XCTestCase {
     var llm: MockLLMService!
     var promptRepo: MockPromptRepository!
     var promptResultRepo: MockPromptResultRepository!
-    var transcriptionRepo: MockTranscriptionRepository!
 
     override func setUp() {
         viewModel = PromptResultsViewModel()
         llm = MockLLMService()
         promptRepo = MockPromptRepository()
         promptResultRepo = MockPromptResultRepository()
-        transcriptionRepo = MockTranscriptionRepository()
         promptRepo.prompts = Prompt.builtInPrompts()
     }
 
@@ -23,8 +21,7 @@ final class PromptResultsViewModelTests: XCTestCase {
         viewModel.configure(
             llmService: llm,
             promptRepo: promptRepo,
-            promptResultRepo: promptResultRepo,
-            transcriptionRepo: transcriptionRepo
+            promptResultRepo: promptResultRepo
         )
 
         XCTAssertEqual(viewModel.visiblePrompts.count, 6)
@@ -33,9 +30,8 @@ final class PromptResultsViewModelTests: XCTestCase {
         XCTAssertTrue(viewModel.canGenerateManualPromptResult)
     }
 
-    func testGeneratePromptResultPersistsCustomPromptAndLegacySummary() async throws {
+    func testGeneratePromptResultPersistsCustomPromptResult() async throws {
         let transcriptionID = UUID()
-        var mirroredLegacySummary: String?
         let prompt = Prompt(
             name: "Action Items",
             content: "Extract action items only.",
@@ -48,12 +44,8 @@ final class PromptResultsViewModelTests: XCTestCase {
         viewModel.configure(
             llmService: llm,
             promptRepo: promptRepo,
-            promptResultRepo: promptResultRepo,
-            transcriptionRepo: transcriptionRepo
+            promptResultRepo: promptResultRepo
         )
-        viewModel.onLegacySummaryChanged = { _, summary in
-            mirroredLegacySummary = summary
-        }
         viewModel.selectedPrompt = prompt
         viewModel.extraInstructions = "Return terse bullet points."
         llm.streamTokens = ["Task ", "one"]
@@ -70,8 +62,6 @@ final class PromptResultsViewModelTests: XCTestCase {
         XCTAssertEqual(promptResultRepo.saveCalls[0].promptName, "Action Items")
         XCTAssertEqual(promptResultRepo.saveCalls[0].extraInstructions, "Return terse bullet points.")
         XCTAssertEqual(promptResultRepo.saveCalls[0].content, "Task one")
-        XCTAssertEqual(transcriptionRepo.updateSummaryCalls.last?.summary, "Task one")
-        XCTAssertEqual(mirroredLegacySummary, "Task one")
         XCTAssertEqual(
             llm.lastSummarySystemPrompt,
             "Extract action items only.\n\nReturn terse bullet points."
@@ -93,8 +83,7 @@ final class PromptResultsViewModelTests: XCTestCase {
         viewModel.configure(
             llmService: llm,
             promptRepo: promptRepo,
-            promptResultRepo: promptResultRepo,
-            transcriptionRepo: transcriptionRepo
+            promptResultRepo: promptResultRepo
         )
         viewModel.shouldMarkPromptResultUnread = { _ in true }
         llm.streamTokens = ["Done"]
@@ -124,8 +113,7 @@ final class PromptResultsViewModelTests: XCTestCase {
         viewModel.configure(
             llmService: llm,
             promptRepo: promptRepo,
-            promptResultRepo: promptResultRepo,
-            transcriptionRepo: transcriptionRepo
+            promptResultRepo: promptResultRepo
         )
 
         XCTAssertTrue(viewModel.canGeneratePromptResult)
@@ -149,8 +137,7 @@ final class PromptResultsViewModelTests: XCTestCase {
         viewModel.configure(
             llmService: llm,
             promptRepo: promptRepo,
-            promptResultRepo: promptResultRepo,
-            transcriptionRepo: transcriptionRepo
+            promptResultRepo: promptResultRepo
         )
         viewModel.loadPromptResults(transcriptionId: transcriptionID)
         llm.streamTokens = ["New ", "summary"]
@@ -167,7 +154,7 @@ final class PromptResultsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.promptResults.first?.id, generationID)
     }
 
-    func testDeletePromptResultUpdatesLegacySummaryFromLatestRemainingResult() throws {
+    func testDeletePromptResultRemovesResultAndKeepsRemainingPromptResults() throws {
         let transcriptionID = UUID()
         let older = PromptResult(
             transcriptionId: transcriptionID,
@@ -190,8 +177,7 @@ final class PromptResultsViewModelTests: XCTestCase {
         viewModel.configure(
             llmService: llm,
             promptRepo: promptRepo,
-            promptResultRepo: promptResultRepo,
-            transcriptionRepo: transcriptionRepo
+            promptResultRepo: promptResultRepo
         )
         viewModel.loadPromptResults(transcriptionId: transcriptionID)
 
@@ -199,15 +185,13 @@ final class PromptResultsViewModelTests: XCTestCase {
 
         XCTAssertEqual(promptResultRepo.deleteCalls, [newer.id])
         XCTAssertEqual(viewModel.promptResults.map(\.content), ["Older"])
-        XCTAssertEqual(transcriptionRepo.updateSummaryCalls.last?.summary, "Older")
     }
 
     func testAutoGeneratePromptResultsSkipsShortTranscript() {
         viewModel.configure(
             llmService: llm,
             promptRepo: promptRepo,
-            promptResultRepo: promptResultRepo,
-            transcriptionRepo: transcriptionRepo
+            promptResultRepo: promptResultRepo
         )
 
         let queuedIDs = viewModel.autoGeneratePromptResults(
@@ -227,8 +211,7 @@ final class PromptResultsViewModelTests: XCTestCase {
         viewModel.configure(
             llmService: llm,
             promptRepo: promptRepo,
-            promptResultRepo: promptResultRepo,
-            transcriptionRepo: transcriptionRepo
+            promptResultRepo: promptResultRepo
         )
 
         let transcript = String(repeating: "Long transcript ", count: 50)
@@ -254,8 +237,7 @@ final class PromptResultsViewModelTests: XCTestCase {
         viewModel.configure(
             llmService: llm,
             promptRepo: promptRepo,
-            promptResultRepo: promptResultRepo,
-            transcriptionRepo: transcriptionRepo
+            promptResultRepo: promptResultRepo
         )
 
         let queuedIDs = viewModel.autoGeneratePromptResults(
