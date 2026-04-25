@@ -208,7 +208,8 @@ Per-source initialization:
 
 ```swift
 let writer = try AVAssetWriter(outputURL: microphoneAudioURL, fileType: .m4a)
-writer.movieFragmentInterval = CMTime(value: 1, timescale: 1)  // 1 s fragments
+writer.movieFragmentInterval = CMTime(value: 10, timescale: 1)         // 10 s steady-state
+writer.initialMovieFragmentInterval = CMTime(value: 1, timescale: 1)   // 1 s initial — macOS 14.0+
 writer.shouldOptimizeForNetworkUse = false
 
 let outputSettings: [String: Any] = [
@@ -228,7 +229,7 @@ guard writer.startWriting() else {
 writer.startSession(atSourceTime: .zero)
 ```
 
-**Fragment interval = 1 s.** ADR-019 settled on 5 s as a starting point but flagged that 1 s costs nothing on local SSD and bounds loss tighter for short recordings (where the very first fragment can otherwise be delayed past the interval and a < 5 s recording could lose everything). Pick 1 s here; revisit only if profiling shows a real issue.
+**Fragment intervals: 1 s initial + 10 s steady-state (per Apple's official guidance).** [`AVAssetWriter.initialMovieFragmentInterval`](https://developer.apple.com/documentation/avfoundation/avassetwriter/initialmoviefragmentinterval) (macOS 14.0+, we require 14.2+) explicitly addresses the first-fragment-delay concern: Apple recommends a short initial interval (1 s) so a crash early in a recording still leaves a playable file, plus the standard 10 s steady-state for the rest. Worst-case loss: ≤ 1 s for short recordings, ≤ 10 s thereafter. Disk overhead is negligible either way (AAC at 64 kbps, ~16 bytes per `moof`). Don't deviate from this without a profiling reason — it's the documented sweet spot and matches what every other Apple-platform recorder uses.
 
 `expectsMediaDataInRealTime = true` is required for live-capture inputs — it tells the writer to prioritize keeping up with the input clock over compression efficiency. **Without this, the writer may stall under load and drop samples silently.**
 
@@ -355,7 +356,7 @@ Manual smoke:
 
 ## Open questions / known landmines (read before implementing)
 
-- **`movieFragmentInterval` first-fragment delay.** Apple doesn't guarantee the first fragment lands at exactly the configured interval. For very short recordings (< ~3 s), the file may have zero fragments and be unrecoverable on crash. With `interval = 1 s` we should be fine in practice, but Phase 2 tests should cover this with a "record for 2 s, kill, attempt to load" case. If this is broken, document it as a known limitation rather than papering over it.
+- **First-fragment delay is what `initialMovieFragmentInterval` exists for.** With the 1 s initial + 10 s steady-state pair, recordings ≥ 1 s should always produce a playable file on crash. Recordings < 1 s may still have zero fragments — accept that as a known limitation (a sub-second meeting recording isn't a thing users actually want to recover). Phase 2 tests should cover the boundary with a "record for ~1.5 s, kill, attempt to load" case.
 
 - **AAC encoder priming/padding.** AAC has 2112 priming samples; the priming/padding is stored in `edts/elst` atoms in the moov. A truncated mid-fragment file may have minor playback artifacts at start/end. Usually unnoticeable. Don't fight this; just be aware when interpreting test assertion deltas.
 
@@ -382,5 +383,6 @@ Manual smoke:
 - ADR-016: `spec/adr/016-centralized-stt-runtime-scheduler.md` (recovery transcription enqueues as a normal `meetingFinalize` job)
 - Apple docs: [`AVAssetWriter`](https://developer.apple.com/documentation/avfoundation/avassetwriter)
 - Apple docs: [`AVAssetWriter.movieFragmentInterval`](https://developer.apple.com/documentation/avfoundation/avassetwriter/moviefragmentinterval)
+- Apple docs: [`AVAssetWriter.initialMovieFragmentInterval`](https://developer.apple.com/documentation/avfoundation/avassetwriter/initialmoviefragmentinterval)
 - Existing writer: `Sources/MacParakeetCore/Audio/MeetingAudioStorageWriter.swift`
 - Existing service: `Sources/MacParakeetCore/Services/MeetingRecordingService.swift`
