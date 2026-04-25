@@ -54,6 +54,11 @@ public final class ExportService: ExportServiceProtocol, Sendable {
         return text
     }
 
+    private func singleCueSubtitleText(_ text: String) -> String {
+        text.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// Export transcription as plain text file
     public func exportToTxt(transcription: Transcription, url: URL) throws {
         try exportToTxt(transcription: transcription, url: url, options: .default)
@@ -72,7 +77,7 @@ public final class ExportService: ExportServiceProtocol, Sendable {
     public func exportToSRT(transcription: Transcription, url: URL) throws {
         if let text = editedTranscriptText(transcription: transcription) {
             let duration = transcription.durationMs ?? 0
-            let content = "1\n00:00:00,000 --> \(srtTimestamp(ms: duration))\n\(text)\n"
+            let content = "1\n00:00:00,000 --> \(srtTimestamp(ms: duration))\n\(singleCueSubtitleText(text))\n"
             try content.write(to: url, atomically: true, encoding: .utf8)
             return
         }
@@ -81,7 +86,7 @@ public final class ExportService: ExportServiceProtocol, Sendable {
             // Fall back to full transcript as a single cue
             let text = preferredText(transcription: transcription)
             let duration = transcription.durationMs ?? 0
-            let content = "1\n00:00:00,000 --> \(srtTimestamp(ms: duration))\n\(text)\n"
+            let content = "1\n00:00:00,000 --> \(srtTimestamp(ms: duration))\n\(singleCueSubtitleText(text))\n"
             try content.write(to: url, atomically: true, encoding: .utf8)
             return
         }
@@ -93,7 +98,7 @@ public final class ExportService: ExportServiceProtocol, Sendable {
     public func exportToVTT(transcription: Transcription, url: URL) throws {
         if let text = editedTranscriptText(transcription: transcription) {
             let duration = transcription.durationMs ?? 0
-            let content = "WEBVTT\n\n\(vttTimestamp(ms: 0)) --> \(vttTimestamp(ms: duration))\n\(text)\n"
+            let content = "WEBVTT\n\n\(vttTimestamp(ms: 0)) --> \(vttTimestamp(ms: duration))\n\(singleCueSubtitleText(text))\n"
             try content.write(to: url, atomically: true, encoding: .utf8)
             return
         }
@@ -101,7 +106,7 @@ public final class ExportService: ExportServiceProtocol, Sendable {
         guard let words = transcription.wordTimestamps, !words.isEmpty else {
             let text = preferredText(transcription: transcription)
             let duration = transcription.durationMs ?? 0
-            let content = "WEBVTT\n\n\(vttTimestamp(ms: 0)) --> \(vttTimestamp(ms: duration))\n\(text)\n"
+            let content = "WEBVTT\n\n\(vttTimestamp(ms: 0)) --> \(vttTimestamp(ms: duration))\n\(singleCueSubtitleText(text))\n"
             try content.write(to: url, atomically: true, encoding: .utf8)
             return
         }
