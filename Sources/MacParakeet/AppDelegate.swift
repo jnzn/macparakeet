@@ -284,6 +284,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 },
                 onHotkeyUnavailable: { [weak self] in
                     self?.presentHotkeyUnavailableAlertIfNeeded()
+                },
+                onRecoverPendingMeetingRecordings: { [weak self] in
+                    self?.presentPendingMeetingRecoveryDialog()
                 }
             )
         )
@@ -297,6 +300,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuBarCoordinator.refreshMeetingHotkeyShortcut()
         menuBarCoordinator.refreshTranscriptionHotkeyShortcuts()
         onboardingCoordinator.maybeShow(environment: env)
+        scheduleLaunchRecoveryScanIfReady(environment: env)
     }
 
     private func presentEnvironmentSetupError(_ error: Error) {
@@ -448,7 +452,145 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         meetingRecordingFlowCoordinator?.toggleRecording()
     }
 
+    private func scheduleLaunchRecoveryScanIfReady(environment env: AppEnvironment) {
+        let onboardingDone = UserDefaults.standard.string(forKey: OnboardingViewModel.onboardingCompletedKey) != nil
+        guard onboardingDone else { return }
+
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let recoveries = try await env.meetingRecordingRecoveryService.discoverPendingRecoveries()
+                self.settingsViewModel.refreshPendingMeetingRecoveries()
+                guard !recoveries.isEmpty else { return }
+                self.presentMeetingRecoveryDialog(recoveries)
+            } catch {
+                self.presentMeetingRecoveryError(error)
+            }
+        }
+    }
+
+    private func presentPendingMeetingRecoveryDialog() {
+        guard let env = appEnvironment else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let recoveries = try await env.meetingRecordingRecoveryService.discoverPendingRecoveries()
+                self.settingsViewModel.refreshPendingMeetingRecoveries()
+                guard !recoveries.isEmpty else { return }
+                self.presentMeetingRecoveryDialog(recoveries)
+            } catch {
+                self.presentMeetingRecoveryError(error)
+            }
+        }
+    }
+
+    private func presentMeetingRecoveryDialog(_ recoveries: [MeetingRecordingLockFile]) {
+        guard let env = appEnvironment else { return }
+
+        NSApp.activate(ignoringOtherApps: true)
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "We found \(recoveries.count) interrupted recording\(recoveries.count == 1 ? "" : "s")"
+        alert.informativeText = recoveryDialogMessage(for: recoveries)
+        alert.addButton(withTitle: "Recover")
+        alert.addButton(withTitle: "Recover Later")
+        alert.addButton(withTitle: "Discard")
+
+        let response = alert.runModal()
+        switch response {
+        case .alertFirstButtonReturn:
+            Task { [weak self] in
+                guard let self else { return }
+                await self.recoverMeetingRecordings(recoveries, environment: env)
+            }
+        case .alertThirdButtonReturn:
+            Task { [weak self] in
+                guard let self else { return }
+                await self.discardMeetingRecoveries(recoveries, environment: env)
+            }
+        default:
+            settingsViewModel.refreshPendingMeetingRecoveries()
+        }
+    }
+
+    private func recoveryDialogMessage(for recoveries: [MeetingRecordingLockFile]) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+
+        let sessionLines = recoveries.prefix(5).map { recovery in
+            "\(formatter.string(from: recovery.startedAt)) - \(recovery.displayName)"
+        }
+        let extraCount = max(0, recoveries.count - sessionLines.count)
+        let extraLine = extraCount > 0 ? ["and \(extraCount) more"] : []
+        return (sessionLines + extraLine).joined(separator: "\n")
+            + "\n\nRecovery transcribes the saved audio again and marks the result as recovered."
+    }
+
+    private func recoverMeetingRecordings(
+        _ recoveries: [MeetingRecordingLockFile],
+        environment env: AppEnvironment
+    ) async {
+        do {
+            var recovered: [Transcription] = []
+            for recovery in recoveries {
+                recovered.append(try await env.meetingRecordingRecoveryService.recover(recovery))
+            }
+            libraryViewModel.loadTranscriptions()
+            meetingsViewModel.loadTranscriptions()
+            settingsViewModel.refreshPendingMeetingRecoveries()
+            if let first = recovered.first {
+                transcriptionViewModel.presentCompletedTranscription(first, autoSave: true)
+                mainWindowState.navigateToTranscription(from: .meetings)
+                windowCoordinator.openMainWindow()
+            }
+        } catch {
+            settingsViewModel.refreshPendingMeetingRecoveries()
+            presentMeetingRecoveryError(error, recoveries: recoveries, environment: env)
+        }
+    }
+
+    private func discardMeetingRecoveries(
+        _ recoveries: [MeetingRecordingLockFile],
+        environment env: AppEnvironment
+    ) async {
+        do {
+            for recovery in recoveries {
+                try await env.meetingRecordingRecoveryService.discard(recovery)
+            }
+            settingsViewModel.refreshPendingMeetingRecoveries()
+        } catch {
+            settingsViewModel.refreshPendingMeetingRecoveries()
+            presentMeetingRecoveryError(error)
+        }
+    }
+
     // MARK: - Alerts
+
+    private func presentMeetingRecoveryError(
+        _ error: Error,
+        recoveries: [MeetingRecordingLockFile] = [],
+        environment env: AppEnvironment? = nil
+    ) {
+        NSApp.activate(ignoringOtherApps: true)
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Meeting Recovery Failed"
+        alert.informativeText = error.localizedDescription
+        alert.addButton(withTitle: "OK")
+        if !recoveries.isEmpty, env != nil {
+            alert.addButton(withTitle: "Discard Pending")
+        }
+        let response = alert.runModal()
+        guard response == .alertSecondButtonReturn, let env else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            await self.discardMeetingRecoveries(recoveries, environment: env)
+        }
+    }
 
     private func presentEntitlementsAlert(_ error: Error) {
         NSApp.activate(ignoringOtherApps: true)
