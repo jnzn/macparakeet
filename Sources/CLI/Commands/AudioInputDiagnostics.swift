@@ -33,7 +33,7 @@ struct AudioInputDiagnostics {
 }
 
 func loadAudioInputDiagnostics(
-    defaults: UserDefaults = UserDefaults(suiteName: "com.macparakeet.MacParakeet") ?? .standard,
+    defaults: UserDefaults = macParakeetAppDefaults(),
     inputDevices: () -> [AudioDeviceManager.InputDevice] = { AudioDeviceManager.inputDevices() },
     defaultInputDeviceInfo: () -> AudioDeviceManager.InputDevice? = {
         AudioDeviceManager.defaultInputDeviceInfo()
@@ -116,7 +116,7 @@ private func deviceMarkers(
 ) -> [String] {
     var markers = [String]()
     if diagnostics.defaultDevice?.id == device.id {
-        markers.append("default")
+        markers.append("system default")
     }
     if diagnostics.selectedDevice?.id == device.id {
         markers.append("selected")
