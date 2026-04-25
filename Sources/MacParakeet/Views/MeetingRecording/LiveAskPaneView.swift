@@ -411,14 +411,18 @@ private struct MessageBubble: View {
             if message.role != .user && message.content.isEmpty && message.isStreaming {
                 TypingIndicator()
             } else {
-                ChatMarkdownText(raw: message.content)
+                // Reuse the canonical NSTextView-based renderer used by the
+                // post-meeting Chat tab and PromptResults — same code path means
+                // the live thread and its persisted form look identical, and we
+                // get headings, code blocks, blockquotes, ordered lists, and
+                // proper text selection without re-implementing them here.
+                MarkdownContentView(message.content)
                     .padding(.horizontal, DesignSystem.Spacing.md)
                     .padding(.vertical, 10)
                     .background(
                         RoundedRectangle(cornerRadius: 14)
                             .fill(bubbleColor)
                     )
-                    .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -433,167 +437,6 @@ private struct MessageBubble: View {
         case .assistant, .system:
             return DesignSystem.Colors.surfaceElevated.opacity(0.6)
         }
-    }
-}
-
-/// Renders chat content with paragraph spacing, simple bullet lists, and inline
-/// Markdown (bold / italic / `code` / links) via SwiftUI's AttributedString. Not
-/// a full Markdown renderer — covers the shapes LLMs actually produce in chat:
-/// short paragraphs, `*`/`-`/numbered bullets, inline emphasis. Headings and
-/// code blocks render as plain paragraphs.
-struct ChatMarkdownText: View {
-    let raw: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                switch block {
-                case .paragraph(let text):
-                    Text(inlineAttributed(text))
-                        .font(DesignSystem.Typography.body)
-                        .foregroundStyle(DesignSystem.Colors.textPrimary)
-                        .lineSpacing(3)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                case .heading(let level, let text):
-                    Text(inlineAttributed(text))
-                        .font(.system(size: headingSize(level), weight: .semibold))
-                        .foregroundStyle(DesignSystem.Colors.textPrimary)
-                        .padding(.top, 2)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                case .bullet(let indent, let content):
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text("•")
-                            .font(DesignSystem.Typography.body)
-                            .foregroundStyle(DesignSystem.Colors.textSecondary)
-                        Text(inlineAttributed(content))
-                            .font(DesignSystem.Typography.body)
-                            .foregroundStyle(DesignSystem.Colors.textPrimary)
-                            .lineSpacing(3)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(.leading, CGFloat(indent) * 14)
-
-                case .ordered(let indent, let marker, let content):
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(marker)
-                            .font(DesignSystem.Typography.body.monospacedDigit())
-                            .foregroundStyle(DesignSystem.Colors.textSecondary)
-                        Text(inlineAttributed(content))
-                            .font(DesignSystem.Typography.body)
-                            .foregroundStyle(DesignSystem.Colors.textPrimary)
-                            .lineSpacing(3)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(.leading, CGFloat(indent) * 14)
-                }
-            }
-        }
-    }
-
-    // MARK: Block model
-
-    private enum Block {
-        case paragraph(String)
-        case heading(level: Int, text: String)
-        case bullet(indent: Int, content: String)
-        case ordered(indent: Int, marker: String, content: String)
-    }
-
-    private var blocks: [Block] {
-        var out: [Block] = []
-        var paragraphBuffer: [String] = []
-
-        func flushParagraph() {
-            guard !paragraphBuffer.isEmpty else { return }
-            let joined = paragraphBuffer.joined(separator: " ")
-                .trimmingCharacters(in: .whitespaces)
-            if !joined.isEmpty {
-                out.append(.paragraph(joined))
-            }
-            paragraphBuffer.removeAll()
-        }
-
-        for line in raw.components(separatedBy: "\n") {
-            if line.trimmingCharacters(in: .whitespaces).isEmpty {
-                flushParagraph()
-                continue
-            }
-            if let heading = Self.parseHeading(line) {
-                flushParagraph()
-                out.append(heading)
-                continue
-            }
-            if let listItem = Self.parseListItem(line) {
-                flushParagraph()
-                out.append(listItem)
-                continue
-            }
-            paragraphBuffer.append(line.trimmingCharacters(in: .whitespaces))
-        }
-        flushParagraph()
-        return out
-    }
-
-    /// `# Foo`, `## Foo`, etc. up to level 6. Returns the level (count of `#`)
-    /// and the trimmed text after the markers and required space.
-    private static func parseHeading(_ line: String) -> Block? {
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
-        let hashCount = trimmed.prefix(while: { $0 == "#" }).count
-        guard hashCount >= 1, hashCount <= 6 else { return nil }
-        let afterHashes = trimmed.dropFirst(hashCount)
-        guard afterHashes.first == " " else { return nil }
-        let text = afterHashes.drop(while: { $0 == " " })
-        guard !text.isEmpty else { return nil }
-        return .heading(level: hashCount, text: String(text))
-    }
-
-    /// Recognizes `* foo`, `- foo`, and `1. foo` (with optional leading whitespace).
-    /// Indent level = leading spaces / 2 (caps at 4 to avoid runaway nesting).
-    private static func parseListItem(_ line: String) -> Block? {
-        let leadingSpaces = line.prefix(while: { $0 == " " }).count
-        let indent = min(leadingSpaces / 2, 4)
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
-
-        if trimmed.hasPrefix("* ") {
-            return .bullet(indent: indent, content: String(trimmed.dropFirst(2)))
-        }
-        if trimmed.hasPrefix("- ") {
-            return .bullet(indent: indent, content: String(trimmed.dropFirst(2)))
-        }
-        if let match = trimmed.range(of: #"^(\d+\.)\s+"#, options: .regularExpression) {
-            let marker = String(trimmed[trimmed.startIndex..<trimmed.index(before: match.upperBound)])
-                .trimmingCharacters(in: .whitespaces)
-            let content = String(trimmed[match.upperBound...])
-            return .ordered(indent: indent, marker: marker, content: content)
-        }
-        return nil
-    }
-
-    /// Heading point sizes — H1 large, H6 same as body. Tuned for chat density.
-    private func headingSize(_ level: Int) -> CGFloat {
-        switch level {
-        case 1: return 19
-        case 2: return 17
-        case 3: return 15
-        default: return 14
-        }
-    }
-
-    /// Inline-only Markdown so `**bold**`, `*italic*`, `` `code` ``, and `[link](url)`
-    /// render with their attributes. Block-level constructs (headings, lists, fences)
-    /// are intentionally not interpreted — handled by the block model above.
-    private func inlineAttributed(_ s: String) -> AttributedString {
-        if let attr = try? AttributedString(
-            markdown: s,
-            options: AttributedString.MarkdownParsingOptions(
-                interpretedSyntax: .inlineOnlyPreservingWhitespace
-            )
-        ) {
-            return attr
-        }
-        return AttributedString(s)
     }
 }
 
