@@ -154,6 +154,33 @@ final class CaptureOrchestratorTests: XCTestCase {
         }
     }
 
+    /// Defensive case: if neither source ever publishes a valid hostTime
+    /// (both taps stay `isHostTimeValid == false` for the whole recording),
+    /// `sharedOriginMs` is never set and both sources fall back to offset 0.
+    /// Behavior is correct by construction but worth pinning so a future
+    /// refactor that, say, decides to default the origin from the wall clock
+    /// can't silently introduce drift between the two streams.
+    func testBothSourcesNilHostTimeForever_keepsBothAtZeroOffset() async {
+        let orchestrator = CaptureOrchestrator()
+        let conditioner = PassthroughMicConditioner()
+
+        let chunks = await driveCycles(
+            orchestrator: orchestrator,
+            conditioner: conditioner,
+            cycles: cyclesForOneChunk,
+            micHostTimeBaseSeconds: nil,
+            systemHostTimeBaseSeconds: nil
+        )
+
+        guard let micStart = chunks.first(where: { $0.source == .microphone })?.chunk.startMs,
+              let systemStart = chunks.first(where: { $0.source == .system })?.chunk.startMs else {
+            XCTFail("expected one chunk per source even with no hostTimes")
+            return
+        }
+        XCTAssertEqual(micStart, 0, "mic startMs should fall back to 0 when no hostTime ever arrives")
+        XCTAssertEqual(systemStart, 0, "system startMs should fall back to 0 when no hostTime ever arrives")
+    }
+
     /// `reset()` must clear the shared origin so a fresh recording starts at
     /// t=0 instead of latching onto the previous session's uptime baseline.
     func testResetClearsTimelineOriginAcrossRecordings() async {

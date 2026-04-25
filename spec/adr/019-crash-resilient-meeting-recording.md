@@ -67,7 +67,8 @@ early-stage choice when 30-second clips were the model.
 (microphone + system), each configured with:
 
 ```swift
-writer.movieFragmentInterval = CMTime(value: 5, timescale: 1)  // 5 s fragments
+writer.movieFragmentInterval = CMTime(value: 10, timescale: 1)         // 10 s steady-state
+writer.initialMovieFragmentInterval = CMTime(value: 1, timescale: 1)   // 1 s initial — macOS 14.0+
 writer.shouldOptimizeForNetworkUse = false  // not streaming, just resilient
 ```
 
@@ -79,14 +80,41 @@ converted to `CMSampleBuffer` before `appendSampleBuffer(_:)` —
 standard pattern using `CMAudioFormatDescriptionCreate` +
 `CMSampleBufferCreate`.
 
-**Fragment interval rationale.** Apple recommends ≥10 s for
-external storage; we write to local SSD (`~/Library/Application
-Support/MacParakeet/meetings/`), so we have headroom to pick a
-shorter value. **5 s** bounds data loss to 5 seconds (one chunk-
-duration in our existing `AudioChunker`, which is a natural
-alignment), with negligible disk-I/O overhead on modern SSDs (~8 KB
-of AAC per fragment + small `moof` header). 1 s is feasible but
-unnecessarily aggressive given the user-perceived loss tolerance.
+**Fragment interval rationale.** Apple's documentation directly
+addresses the trade-off and recommends a hybrid configuration.
+Quoting
+[`AVAssetWriter.initialMovieFragmentInterval`](https://developer.apple.com/documentation/avfoundation/avassetwriter/initialmoviefragmentinterval)
+(available since macOS 14.0; we require 14.2+):
+
+> When using fragment writing, you can set this property value to
+> indicate the interval at which to write the initial fragment.
+> The default value is invalid, which indicates to use the interval
+> set in the `movieFragmentInterval` property. The
+> `movieFragmentInterval` property is typically set to 10 seconds,
+> so if an error occurs before writing the first fragment, the
+> movie file won't be playable. To avoid this case, your app may
+> want to set a shorter interval, such as 1 second, to write the
+> initial fragment, and then use a 10 second interval for
+> subsequent fragments.
+
+That's exactly our scenario. We adopt Apple's recommended pair:
+**1 s initial** + **10 s steady-state**.
+
+- **Worst-case loss for short recordings:** ≤ 1 s. A recording that
+  crashes 2 s in still produces a playable file with the first
+  ~1 s of audio.
+- **Worst-case loss for long recordings:** ≤ 10 s. After the first
+  fragment lands, subsequent fragments flush every 10 s — Apple's
+  documented sweet spot for storage I/O.
+- **Disk overhead:** negligible. AAC at 64 kbps = 8 KB/s. A 1-hour
+  recording at 10 s intervals = 360 fragments × ~16 bytes of `moof`
+  header = ~6 KB total overhead. The 1 s initial adds one extra
+  fragment header. Both are imperceptible.
+
+The earlier draft of this ADR proposed 5 s for everything; the
+implementation plan briefly proposed 1 s for everything. Both were
+internally consistent but inferior to Apple's officially-recommended
+hybrid, which we discovered after re-reading the docs.
 
 ### 2. Session lock file + recovery scan on launch
 
@@ -151,9 +179,10 @@ recording detected, audio not recoverable" notice with the option
 to delete or keep the folder for later manual recovery.
 
 **Phase 2 (larger, ships second):** Replace `AVAudioFile` with
-`AVAssetWriter` + `movieFragmentInterval`. Phase 1's recovery flow
-becomes lossless (up to the 5 s fragment boundary) without further
-UX changes. The migration is contained to
+`AVAssetWriter` + `movieFragmentInterval` / `initialMovieFragmentInterval`.
+Phase 1's recovery flow becomes lossless (up to the relevant
+fragment boundary — ≤ 1 s for short recordings, ≤ 10 s for long
+ones) without further UX changes. The migration is contained to
 `MeetingAudioStorageWriter` — its public surface (the
 `write(_:source:)` and `finalize()` methods) is preserved so
 callers don't change.
@@ -188,16 +217,18 @@ latency for the encode pass (potentially minutes for a long meeting).
 
 ### Worst-case data loss
 
-5 seconds of audio (one fragment) on hard crash, kernel panic, or
-power loss. Force-quit and clean app crashes preserve everything up
-to the last fragment boundary the OS flushed.
+≤ 1 s for short recordings (before the steady-state interval kicks
+in); ≤ 10 s thereafter. Hard crash, kernel panic, and power loss
+all leave a playable file with everything up to the last fragment
+boundary the OS flushed.
 
 ### Disk overhead
 
 Negligible. AAC at 64 kbps = 8 KB per second. Fragmented MP4 adds
-~16 bytes of `moof` header per fragment. A 1-hour meeting at 5 s
-intervals = 720 fragments × 16 bytes = ~11 KB of overhead per
-source, ~22 KB total. Imperceptible.
+~16 bytes of `moof` header per fragment. A 1-hour meeting at 10 s
+intervals = 360 fragments × ~16 bytes ≈ 6 KB per source, ~12 KB
+total, plus one extra fragment header for the 1 s initial.
+Imperceptible.
 
 ### CPU overhead
 
@@ -245,5 +276,6 @@ the audio they pertain to.
 
 - [AVAssetWriter — Apple Developer Documentation](https://developer.apple.com/documentation/avfoundation/avassetwriter)
 - [AVAssetWriter.movieFragmentInterval — Apple Developer Documentation](https://developer.apple.com/documentation/avfoundation/avassetwriter/moviefragmentinterval)
+- [AVAssetWriter.initialMovieFragmentInterval — Apple Developer Documentation](https://developer.apple.com/documentation/avfoundation/avassetwriter/initialmoviefragmentinterval)
 - ADR-014 (meeting recording via Core Audio Taps) — defines the audio capture stack this ADR extends
 - ADR-016 (centralized STT runtime + scheduler) — recovery transcription enqueues as a normal `meetingFinalize` job
