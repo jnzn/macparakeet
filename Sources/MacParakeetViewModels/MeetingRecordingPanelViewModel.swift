@@ -133,7 +133,7 @@ public final class MeetingRecordingPanelViewModel {
         case .transcribing:
             return "Transcribing"
         case .error:
-            return "Recording Error"
+            return "Meeting interrupted"
         }
     }
 
@@ -147,7 +147,18 @@ public final class MeetingRecordingPanelViewModel {
         case .transcribing:
             return "Meeting audio is being transcribed and saved to your library."
         case .error(let message):
-            return message
+            // ADR-020 §"degradation copy refinement". The state machine fires
+            // `.showError(message)` from both `startFailed` (recording never
+            // started — permissions, audio engine, etc.) and
+            // `transcriptionFailed` (audio captured fine; STT failed). We
+            // can't reliably distinguish those paths from the message
+            // string alone, so the wrapper hedges with "if any audio was
+            // captured" rather than promising the recording is safe.
+            // Action guidance points the user at the Library — that's the
+            // single recoverable surface for either failure mode.
+            let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+            let detail = trimmed.isEmpty ? "An unexpected error occurred." : trimmed
+            return "\(detail)\n\nIf any audio was captured it's in your Library, where you can retry transcription or export the audio."
         }
     }
 
