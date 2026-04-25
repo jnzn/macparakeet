@@ -131,7 +131,7 @@ extension PromptsCommand {
         @Option(name: .long, help: "Prompt body text. Mutually exclusive with --from-file.")
         var content: String?
 
-        @Option(name: .long, help: "Path to a file containing the prompt body. Use /dev/stdin to pipe.")
+        @Option(name: .long, help: "Path to a file containing the prompt body.")
         var fromFile: String?
 
         @Flag(name: .long, help: "Mark as auto-run (implies visible).")
@@ -141,8 +141,8 @@ extension PromptsCommand {
         var database: String?
 
         func validate() throws {
-            if (content == nil) == (fromFile == nil) {
-                throw ValidationError("specify exactly one of --content or --from-file")
+            if content != nil && fromFile != nil {
+                throw ValidationError("--content and --from-file are mutually exclusive")
             }
             if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 throw ValidationError("--name must not be empty")
@@ -154,12 +154,18 @@ extension PromptsCommand {
             let db = try DatabaseManager(path: resolvedDatabasePath(database))
             let repo = PromptRepository(dbQueue: db.dbQueue)
 
-            // validate() guarantees exactly one of content / fromFile is set.
+            // Body precedence: --content > --from-file > stdin (for piped workflows
+            // like `cat prompt.md | macparakeet-cli prompts add --name X`).
             let body: String
             if let content {
                 body = content
+            } else if let fromFile {
+                body = try String(contentsOfFile: fromFile, encoding: .utf8)
             } else {
-                body = try String(contentsOfFile: fromFile!, encoding: .utf8)
+                body = readStdinUTF8()
+            }
+            guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw ValidationError("prompt body is empty (provide --content, --from-file, or pipe via stdin)")
             }
 
             let prompt = Prompt(
@@ -170,6 +176,11 @@ extension PromptsCommand {
             )
             try repo.save(prompt)
             print("Added prompt '\(prompt.name)' (\(prompt.id.uuidString.prefix(8)))")
+        }
+
+        private func readStdinUTF8() -> String {
+            let data = FileHandle.standardInput.readDataToEndOfFile()
+            return String(data: data, encoding: .utf8) ?? ""
         }
     }
 }
@@ -207,6 +218,12 @@ extension PromptsCommand {
             }
             if autoRun && noAutoRun {
                 throw ValidationError("--auto-run and --no-auto-run are mutually exclusive")
+            }
+            // Auto-run requires visible (mirrors PromptRepository.toggleAutoRun).
+            // Reject the contradictory combo explicitly so the user doesn't get a
+            // silent precedence surprise where one flag overrides the other.
+            if hidden && autoRun {
+                throw ValidationError("--hidden and --auto-run cannot be combined (auto-run requires visible)")
             }
             if !(visible || hidden || autoRun || noAutoRun) {
                 throw ValidationError("specify at least one of --visible / --hidden / --auto-run / --no-auto-run")
