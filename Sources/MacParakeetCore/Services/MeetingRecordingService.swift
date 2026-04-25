@@ -20,6 +20,7 @@ public enum CaptureMode: Sendable, Equatable {
 public protocol MeetingRecordingServiceProtocol: Sendable {
     func startRecording() async throws
     func stopRecording() async throws -> MeetingRecordingOutput
+    func completeTranscription(for recording: MeetingRecordingOutput) async
     func cancelRecording() async
     var isRecording: Bool { get async }
     var micLevel: Float { get async }
@@ -53,6 +54,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
     private let fileManager: FileManager
     private let requestedMicProcessingMode: MeetingMicProcessingMode
     private let liveChunkTranscriber: LiveChunkTranscriber
+    private let lockFileStore: MeetingRecordingLockFileStoring
 
     private var currentSession: Session?
     private var writer: MeetingAudioStorageWriter?
@@ -89,6 +91,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         audioCaptureService: (any MeetingAudioCapturing)? = nil,
         audioConverter: any AudioFileConverting = AudioFileConverter(),
         sttTranscriber: STTTranscribing,
+        lockFileStore: MeetingRecordingLockFileStoring = MeetingRecordingLockFileStore(),
         fileManager: FileManager = .default
     ) {
         self.requestedMicProcessingMode = micProcessingMode
@@ -96,6 +99,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             micProcessingMode: micProcessingMode
         )
         self.audioConverter = audioConverter
+        self.lockFileStore = lockFileStore
         self.fileManager = fileManager
         self.liveChunkTranscriber = LiveChunkTranscriber(
             sttTranscriber: sttTranscriber,
@@ -160,6 +164,23 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             mixedAudioURL: writer.mixedAudioURL
         )
 
+        do {
+            try lockFileStore.write(
+                MeetingRecordingLockFile(
+                    sessionId: session.id,
+                    startedAt: session.startedAt,
+                    pid: ProcessInfo.processInfo.processIdentifier,
+                    displayName: session.displayName,
+                    folderURL: session.folderURL
+                ),
+                folderURL: session.folderURL
+            )
+        } catch {
+            writer.finalize()
+            try? fileManager.removeItem(at: folderURL)
+            throw error
+        }
+
         let events = await audioCaptureService.events
         self.latestLevels = MeetingAudioLevels()
         self.writer = writer
@@ -201,6 +222,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             self.writer?.finalize()
             self.writer = nil
             cleanupState()
+            try? lockFileStore.delete(folderURL: folderURL)
             try? fileManager.removeItem(at: folderURL)
             throw error
         }
@@ -252,6 +274,18 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             throw MeetingAudioError.mixFailed(error.localizedDescription)
         }
 
+        try? lockFileStore.write(
+            MeetingRecordingLockFile(
+                sessionId: session.id,
+                startedAt: session.startedAt,
+                pid: ProcessInfo.processInfo.processIdentifier,
+                displayName: session.displayName,
+                state: .awaitingTranscription,
+                folderURL: session.folderURL
+            ),
+            folderURL: session.folderURL
+        )
+
         let durationSeconds = max(0, Date().timeIntervalSince(session.startedAt))
         let output = MeetingRecordingOutput(
             sessionID: session.id,
@@ -270,6 +304,14 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         return output
     }
 
+    public func completeTranscription(for recording: MeetingRecordingOutput) async {
+        do {
+            try lockFileStore.delete(folderURL: recording.folderURL)
+        } catch {
+            logger.error("meeting_recording_lock_cleanup_failed session=\(recording.sessionID.uuidString, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     public func cancelRecording() async {
         guard let session = currentSession else { return }
 
@@ -281,6 +323,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         await liveChunkTranscriber.finishSession()
         writer?.finalize()
         writer = nil
+        try? lockFileStore.delete(folderURL: session.folderURL)
         cleanupState()
         try? fileManager.removeItem(at: session.folderURL)
         logger.info("Meeting recording cancelled: \(session.id.uuidString, privacy: .public)")
@@ -302,7 +345,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
                     )
                 }
             } catch {
-                logger.error("Failed to write microphone audio: \(error.localizedDescription, privacy: .public)")
+                await failCapture(error)
             }
         case .systemBuffer(let buffer, let time):
             guard !captureFailed else { return }
@@ -319,15 +362,19 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
                     )
                 }
             } catch {
-                logger.error("Failed to write system audio: \(error.localizedDescription, privacy: .public)")
+                await failCapture(error)
             }
         case .error(let error):
             guard !captureFailed else { return }
-            captureFailed = true
-            latestLevels = MeetingAudioLevels()
-            logger.error("Meeting capture event error: \(error.localizedDescription, privacy: .public)")
-            await audioCaptureService.stop()
+            await failCapture(error)
         }
+    }
+
+    private func failCapture(_ error: Error) async {
+        captureFailed = true
+        latestLevels = MeetingAudioLevels()
+        logger.error("Meeting capture failed: \(error.localizedDescription, privacy: .public)")
+        await audioCaptureService.stop()
     }
 
     private func ingestResampledSamples(
