@@ -265,7 +265,9 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         let inputURLs = try existingSourceURLs(for: session)
         guard !inputURLs.isEmpty else {
             await liveChunkTranscriber.finishSession()
+            try? lockFileStore.delete(folderURL: session.folderURL)
             cleanupState()
+            try? fileManager.removeItem(at: session.folderURL)
             throw MeetingAudioError.noAudioCaptured
         }
 
