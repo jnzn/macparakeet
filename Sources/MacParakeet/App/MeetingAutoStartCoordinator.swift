@@ -30,6 +30,14 @@ import UserNotifications
 final class MeetingAutoStartCoordinator {
     private let calendarService: any CalendarServicing
     private let settingsViewModel: SettingsViewModel
+    /// Closures to the meeting recording flow — passed in rather than the
+    /// concrete coordinator so this file doesn't gain a reverse dependency
+    /// on `MeetingRecordingFlowCoordinator` (and so tests can stub them).
+    /// All Phase 2 wiring goes through these three callbacks.
+    private let isRecordingActive: @MainActor () -> Bool
+    private let onAutoStartConfirmed: @MainActor () -> Void
+    private let onAutoStopConfirmed: @MainActor () -> Void
+    private let toastController: MeetingCountdownToastController
     private let logger = Logger(subsystem: "com.macparakeet", category: "MeetingAutoStart")
 
     /// Adaptive polling — see ADR-017 §7. We only recreate the `Timer` when
@@ -41,6 +49,17 @@ final class MeetingAutoStartCoordinator {
     private var dismissedEventIds: Set<String> = []
     private var remindedEventIds: Set<String> = []
     private var countdownShownEventIds: Set<String> = []
+    /// `event.id` of the calendar event that triggered the *current*
+    /// recording. Lets `.autoStopDue` only act on auto-started recordings —
+    /// a manually-started recording during a calendar event is not auto-
+    /// stopped (per ADR-017 §10). Cleared when recording ends (detected by
+    /// next poll seeing `isRecordingActive() == false` while we still hold
+    /// an id) or when auto-stop fires.
+    private var autoStartedEventId: String?
+    /// `event.id` of an auto-started recording for which we're currently
+    /// showing the auto-stop countdown. Prevents re-firing the toast on
+    /// every poll tick during the 30s window.
+    private var autoStopCountdownEventId: String?
 
     // `nonisolated(unsafe)` so the nonisolated `deinit` can read these to
     // unregister observers. They're write-only after start() / stop() and
@@ -51,10 +70,22 @@ final class MeetingAutoStartCoordinator {
 
     init(
         calendarService: any CalendarServicing = CalendarService.shared,
-        settingsViewModel: SettingsViewModel
+        settingsViewModel: SettingsViewModel,
+        isRecordingActive: @escaping @MainActor () -> Bool = { false },
+        onAutoStartConfirmed: @escaping @MainActor () -> Void = {},
+        onAutoStopConfirmed: @escaping @MainActor () -> Void = {},
+        toastController: MeetingCountdownToastController? = nil
     ) {
         self.calendarService = calendarService
         self.settingsViewModel = settingsViewModel
+        self.isRecordingActive = isRecordingActive
+        self.onAutoStartConfirmed = onAutoStartConfirmed
+        self.onAutoStopConfirmed = onAutoStopConfirmed
+        // The toast controller is `@MainActor`-isolated, so its default
+        // can't be expressed as a parameter default (initializer evaluation
+        // happens in the caller's actor context). Construct here when the
+        // caller didn't inject one.
+        self.toastController = toastController ?? MeetingCountdownToastController()
     }
 
     deinit {
@@ -91,6 +122,7 @@ final class MeetingAutoStartCoordinator {
         pollingInterval = 0
         cleanupTask?.cancel()
         cleanupTask = nil
+        toastController.close()
         if let observer = settingsObserver {
             NotificationCenter.default.removeObserver(observer)
             settingsObserver = nil
@@ -157,12 +189,22 @@ final class MeetingAutoStartCoordinator {
             return
         }
 
+        let activeRecording = isRecordingActive()
+        // If we held an `autoStartedEventId` and recording is no longer
+        // active, the user manually stopped the auto-started recording.
+        // Clear the binding so we don't fire `.autoStopDue` against a
+        // recording that no longer exists.
+        if !activeRecording, autoStartedEventId != nil {
+            autoStartedEventId = nil
+            autoStopCountdownEventId = nil
+        }
+
         let config = currentConfig(mode: mode)
         let monitorEvents = MeetingMonitor.evaluate(
             events: events,
             now: Date(),
             config: config,
-            activeRecording: false,  // Phase E wires this from the meeting coordinator
+            activeRecording: activeRecording,
             dismissedEventIds: dismissedEventIds,
             remindedEventIds: remindedEventIds,
             countdownShownEventIds: countdownShownEventIds
@@ -243,12 +285,99 @@ final class MeetingAutoStartCoordinator {
         case .reminderDue(let calEvent):
             await showReminder(calEvent, mode: mode)
 
-        case .autoStartDue, .lateJoinAvailable, .autoStopDue:
-            // Phase D scope: notify-only. These are recognized by
-            // `MeetingMonitor` so the enum stays Phase E-ready, but the
-            // coordinator deliberately no-ops until the countdown toast +
-            // recording trigger land.
+        case .autoStartDue(let calEvent):
+            showAutoStartCountdown(calEvent)
+
+        case .autoStopDue(let calEvent):
+            showAutoStopCountdown(calEvent)
+
+        case .lateJoinAvailable:
+            // Phase 3 — UI not built. The enum case stays so Phase 3 wires
+            // the late-join toast without changing `evaluate(...)`.
             return
+        }
+    }
+
+    // MARK: - Auto-start countdown (Phase 2)
+
+    /// Show the 5s pre-meeting countdown. Marks the event as countdown-shown
+    /// regardless of outcome so we don't re-fire on the next poll tick.
+    /// Outcome handling:
+    /// - `.completed` / `.primedEarly` → trigger recording, mark as auto-started
+    /// - `.userDismissed` → add to dismissed set so monitor stops emitting
+    /// - `.programmaticClose` → no-op (another toast preempted us)
+    private func showAutoStartCountdown(_ event: CalendarEvent) {
+        countdownShownEventIds.insert(event.id)
+        let leadSeconds = settingsViewModel.calendarReminderMinutes  // reused for telemetry context
+        let serviceName = event.meetUrl.flatMap(MeetingLinkParser.shared.identifyService)
+        let body = serviceName.map { "Recording will start automatically — joining \($0)?" }
+            ?? "Recording will start automatically."
+
+        Telemetry.send(.calendarAutoStartTriggered(
+            leadSeconds: leadSeconds,
+            hasMeetUrl: event.meetUrl != nil
+        ))
+
+        toastController.showAutoStart(
+            title: event.title,
+            body: body
+        ) { [weak self] outcome in
+            guard let self else { return }
+            switch outcome {
+            case .completed, .primedEarly:
+                self.autoStartedEventId = event.id
+                self.onAutoStartConfirmed()
+                self.logger.info("Auto-start confirmed for event id=\(event.id, privacy: .public) outcome=\(String(describing: outcome), privacy: .public)")
+            case .userDismissed:
+                self.dismissedEventIds.insert(event.id)
+                Telemetry.send(.calendarAutoStartCancelled(reason: "user_cancel"))
+                self.logger.info("Auto-start cancelled by user for event id=\(event.id, privacy: .public)")
+            case .programmaticClose:
+                // Another toast preempted us — no telemetry, no recording.
+                return
+            }
+        }
+    }
+
+    // MARK: - Auto-stop countdown (Phase 2)
+
+    /// Show the 30s end-of-meeting countdown — only for recordings the
+    /// coordinator started itself. Manually-started recordings during a
+    /// calendar event are not auto-stopped (ADR-017 §10).
+    private func showAutoStopCountdown(_ event: CalendarEvent) {
+        // Only act on the binding the coordinator owns. Manual recordings
+        // are sovereign — auto-stop never touches them.
+        guard autoStartedEventId == event.id else { return }
+        // Don't re-stack the toast on every poll while it's already up.
+        guard autoStopCountdownEventId != event.id else { return }
+        autoStopCountdownEventId = event.id
+
+        let durationSeconds = event.endTime.timeIntervalSince(event.startTime)
+        Telemetry.send(.calendarAutoStopShown(eventDurationSeconds: durationSeconds))
+
+        toastController.showAutoStop(
+            title: event.title,
+            body: "Meeting ending — recording will stop automatically."
+        ) { [weak self] outcome in
+            guard let self else { return }
+            switch outcome {
+            case .completed, .primedEarly:
+                self.onAutoStopConfirmed()
+                self.autoStartedEventId = nil
+                self.autoStopCountdownEventId = nil
+                self.logger.info("Auto-stop confirmed for event id=\(event.id, privacy: .public)")
+            case .userDismissed:
+                // User wants to keep recording past the calendar end —
+                // remember that so we don't re-prompt every 5s for the
+                // remainder of the auto-stop window.
+                self.dismissedEventIds.insert(event.id)
+                self.autoStopCountdownEventId = nil
+                Telemetry.send(.calendarAutoStopCancelled)
+                self.logger.info("Auto-stop cancelled by user for event id=\(event.id, privacy: .public)")
+            case .programmaticClose:
+                self.autoStopCountdownEventId = nil
+                return
+            }
         }
     }
 
