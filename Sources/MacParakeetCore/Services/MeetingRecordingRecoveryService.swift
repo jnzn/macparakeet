@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreMedia
 import Foundation
 import OSLog
 
@@ -29,6 +30,13 @@ public protocol MeetingRecordingRecoveryServicing: Sendable {
 }
 
 public final class MeetingRecordingRecoveryService: MeetingRecordingRecoveryServicing, @unchecked Sendable {
+    private struct RecoverableSource {
+        let source: AudioSource
+        let url: URL
+        let duration: TimeInterval
+        let sampleRate: Double
+    }
+
     private let logger = Logger(subsystem: "com.macparakeet.core", category: "MeetingRecordingRecoveryService")
 
     private let meetingsRoot: URL
@@ -76,12 +84,19 @@ public final class MeetingRecordingRecoveryService: MeetingRecordingRecoveryServ
         }
         try deleteIncompleteTranscriptions(for: mixedURL)
 
-        var recoveredSources: [(source: AudioSource, url: URL, duration: TimeInterval)] = []
+        var recoveredSources: [RecoverableSource] = []
         for (source, url) in [(AudioSource.microphone, microphoneURL), (.system, systemURL)] {
             guard fileManager.fileExists(atPath: url.path), fileSize(at: url) > 0 else { continue }
             do {
                 let repaired = try await repairIfNeeded(url)
-                recoveredSources.append((source, repaired.url, repaired.duration))
+                recoveredSources.append(
+                    RecoverableSource(
+                        source: source,
+                        url: repaired.url,
+                        duration: repaired.duration,
+                        sampleRate: repaired.sampleRate
+                    )
+                )
             } catch {
                 logger.error("meeting_recovery_source_skipped session=\(lock.sessionId.uuidString, privacy: .public) source=\(String(describing: source), privacy: .public) error=\(error.localizedDescription, privacy: .public)")
             }
@@ -142,17 +157,16 @@ public final class MeetingRecordingRecoveryService: MeetingRecordingRecoveryServ
     }
 
     private func makeRecoveredAlignment(
-        from sources: [(source: AudioSource, url: URL, duration: TimeInterval)]
+        from sources: [RecoverableSource]
     ) -> MeetingSourceAlignment {
         func track(for source: AudioSource) -> MeetingSourceAlignment.Track? {
             guard let source = sources.first(where: { $0.source == source }) else { return nil }
-            let sampleRate = 48_000.0
             return MeetingSourceAlignment.Track(
                 firstHostTime: nil,
                 lastHostTime: nil,
                 startOffsetMs: 0,
-                writtenFrameCount: Int64((source.duration * sampleRate).rounded()),
-                sampleRate: sampleRate
+                writtenFrameCount: Int64((source.duration * source.sampleRate).rounded()),
+                sampleRate: source.sampleRate
             )
         }
 
@@ -171,10 +185,7 @@ public final class MeetingRecordingRecoveryService: MeetingRecordingRecoveryServ
     }
 
     private func existingTranscriptions(for mixedURL: URL) throws -> [Transcription] {
-        try transcriptionRepo.fetchAll(limit: nil).filter {
-            $0.sourceType == .meeting
-                && $0.filePath == mixedURL.path
-        }
+        try transcriptionRepo.fetchByFilePath(mixedURL.path, sourceType: .meeting)
     }
 
     private func deleteIncompleteTranscriptions(for mixedURL: URL) throws {
@@ -212,9 +223,9 @@ public final class MeetingRecordingRecoveryService: MeetingRecordingRecoveryServ
         return recovered
     }
 
-    private func repairIfNeeded(_ url: URL) async throws -> (url: URL, duration: TimeInterval) {
-        if let duration = try? await loadDuration(url), duration > 0 {
-            return (url, duration)
+    private func repairIfNeeded(_ url: URL) async throws -> (url: URL, duration: TimeInterval, sampleRate: Double) {
+        if let info = try? await loadAudioInfo(url), info.duration > 0 {
+            return (url, info.duration, info.sampleRate)
         }
 
         let repairedURL = url.deletingLastPathComponent()
@@ -235,25 +246,39 @@ public final class MeetingRecordingRecoveryService: MeetingRecordingRecoveryServ
             throw MeetingRecordingRecoveryError.audioRepairFailed(error.localizedDescription)
         }
         guard exportSession.status == .completed,
-              let duration = try? await loadDuration(repairedURL),
-              duration > 0
+              let info = try? await loadAudioInfo(repairedURL),
+              info.duration > 0
         else {
             throw MeetingRecordingRecoveryError.audioRepairFailed("Export did not produce playable audio.")
         }
 
         try? fileManager.removeItem(at: url)
         try fileManager.moveItem(at: repairedURL, to: url)
-        return (url, duration)
+        return (url, info.duration, info.sampleRate)
     }
 
-    private func loadDuration(_ url: URL) async throws -> TimeInterval {
+    private func loadAudioInfo(_ url: URL) async throws -> (duration: TimeInterval, sampleRate: Double) {
         let asset = AVURLAsset(url: url)
         let tracks = try await asset.loadTracks(withMediaType: .audio)
-        guard !tracks.isEmpty else {
+        guard let track = tracks.first else {
             throw MeetingRecordingRecoveryError.noRecoverableAudio
         }
         let duration = try await asset.load(.duration)
-        return duration.seconds.isFinite ? duration.seconds : 0
+        let sampleRate = try await loadSampleRate(from: track) ?? 48_000.0
+        return (duration.seconds.isFinite ? duration.seconds : 0, sampleRate)
+    }
+
+    private func loadSampleRate(from track: AVAssetTrack) async throws -> Double? {
+        let formatDescriptions = try await track.load(.formatDescriptions)
+        for description in formatDescriptions {
+            guard let streamDescription = CMAudioFormatDescriptionGetStreamBasicDescription(description) else {
+                continue
+            }
+            let sampleRate = streamDescription.pointee.mSampleRate
+            guard sampleRate.isFinite, sampleRate > 0 else { continue }
+            return sampleRate
+        }
+        return nil
     }
 
     private func fileSize(at url: URL) -> Int {

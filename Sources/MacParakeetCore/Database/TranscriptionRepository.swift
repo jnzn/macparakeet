@@ -5,6 +5,7 @@ public protocol TranscriptionRepositoryProtocol: Sendable {
     func save(_ transcription: Transcription) throws
     func fetch(id: UUID) throws -> Transcription?
     func fetchAll(limit: Int?) throws -> [Transcription]
+    func fetchByFilePath(_ filePath: String, sourceType: Transcription.SourceType?) throws -> [Transcription]
     func fetchCompletedByVideoID(_ videoID: String) throws -> Transcription?
     func count() throws -> Int
     func search(query: String, limit: Int?) throws -> [Transcription]
@@ -21,6 +22,16 @@ public protocol TranscriptionRepositoryProtocol: Sendable {
 }
 
 extension TranscriptionRepositoryProtocol {
+    public func fetchByFilePath(
+        _ filePath: String,
+        sourceType: Transcription.SourceType? = nil
+    ) throws -> [Transcription] {
+        try fetchAll(limit: nil).filter {
+            $0.filePath == filePath
+                && (sourceType == nil || $0.sourceType == sourceType)
+        }
+    }
+
     public func fetchCompletedByVideoID(_ videoID: String) throws -> Transcription? { nil }
     public func count() throws -> Int { try fetchAll(limit: nil).count }
     public func search(query: String, limit: Int?) throws -> [Transcription] { [] }
@@ -58,6 +69,21 @@ public final class TranscriptionRepository: TranscriptionRepositoryProtocol {
                 .order(Transcription.Columns.createdAt.desc)
             if let limit {
                 request = request.limit(limit)
+            }
+            return try request.fetchAll(db)
+        }
+    }
+
+    public func fetchByFilePath(
+        _ filePath: String,
+        sourceType: Transcription.SourceType? = nil
+    ) throws -> [Transcription] {
+        try dbQueue.read { db in
+            var request = Transcription
+                .filter(Transcription.Columns.filePath == filePath)
+                .order(Transcription.Columns.createdAt.desc)
+            if let sourceType {
+                request = request.filter(Transcription.Columns.sourceType == sourceType.rawValue)
             }
             return try request.fetchAll(db)
         }

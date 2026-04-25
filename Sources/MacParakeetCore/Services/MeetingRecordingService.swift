@@ -192,7 +192,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
                 folderURL: session.folderURL
             )
         } catch {
-            writer.finalize()
+            await writer.finalize()
             try? fileManager.removeItem(at: folderURL)
             throw error
         }
@@ -235,8 +235,9 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             processingTask?.cancel()
             processingTask = nil
             await liveChunkTranscriber.finishSession()
-            self.writer?.finalize()
+            let writer = self.writer
             self.writer = nil
+            await writer?.finalize()
             cleanupState()
             try? lockFileStore.delete(folderURL: folderURL)
             try? fileManager.removeItem(at: folderURL)
@@ -252,12 +253,13 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         await audioCaptureService.stop()
         await processingTask?.value
         processingTask = nil
-        writer?.finalize()
-        let writerMetrics = [
-            AudioSource.microphone: writer?.metrics(for: .microphone),
-            AudioSource.system: writer?.metrics(for: .system),
-        ]
+        let finalizedWriter = writer
         writer = nil
+        await finalizedWriter?.finalize()
+        let writerMetrics = [
+            AudioSource.microphone: finalizedWriter?.metrics(for: .microphone),
+            AudioSource.system: finalizedWriter?.metrics(for: .system),
+        ]
         await liveChunkTranscriber.cancelPendingTasks(waitForCancellation: false)
 
         let inputURLs = try existingSourceURLs(for: session)
@@ -337,8 +339,9 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         processingTask = nil
         await liveChunkTranscriber.cancelPendingTasks(waitForCancellation: true)
         await liveChunkTranscriber.finishSession()
-        writer?.finalize()
+        let finalizedWriter = writer
         writer = nil
+        await finalizedWriter?.finalize()
         try? lockFileStore.delete(folderURL: session.folderURL)
         cleanupState()
         try? fileManager.removeItem(at: session.folderURL)

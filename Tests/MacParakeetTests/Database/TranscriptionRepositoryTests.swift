@@ -66,6 +66,43 @@ final class TranscriptionRepositoryTests: XCTestCase {
         XCTAssertEqual(limited.count, 2)
     }
 
+    func testFetchByFilePathFiltersBySourceTypeAndOrdersNewestFirst() throws {
+        let path = "/tmp/meeting.m4a"
+        let olderMeeting = Transcription(
+            createdAt: Date(timeIntervalSinceNow: -100),
+            fileName: "older meeting",
+            filePath: path,
+            sourceType: .meeting,
+            updatedAt: Date(timeIntervalSinceNow: -100)
+        )
+        let newerMeeting = Transcription(
+            createdAt: Date(timeIntervalSinceNow: -10),
+            fileName: "newer meeting",
+            filePath: path,
+            sourceType: .meeting,
+            updatedAt: Date(timeIntervalSinceNow: -10)
+        )
+        let fileTranscription = Transcription(
+            fileName: "regular file",
+            filePath: path,
+            sourceType: .file
+        )
+        let otherMeeting = Transcription(
+            fileName: "other meeting",
+            filePath: "/tmp/other.m4a",
+            sourceType: .meeting
+        )
+
+        try repo.save(olderMeeting)
+        try repo.save(newerMeeting)
+        try repo.save(fileTranscription)
+        try repo.save(otherMeeting)
+
+        let results = try repo.fetchByFilePath(path, sourceType: .meeting)
+
+        XCTAssertEqual(results.map(\.id), [newerMeeting.id, olderMeeting.id])
+    }
+
     func testDelete() throws {
         let transcription = Transcription(fileName: "delete-me.mp3")
         try repo.save(transcription)

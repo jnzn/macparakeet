@@ -80,9 +80,11 @@ final class MeetingAudioStorageWriter {
         }
     }
 
-    func finalize() {
-        finish(writer: microphoneWriter, input: microphoneInput)
-        finish(writer: systemWriter, input: systemInput)
+    func finalize() async {
+        async let microphoneFinish: Void = finish(writer: microphoneWriter, input: microphoneInput)
+        async let systemFinish: Void = finish(writer: systemWriter, input: systemInput)
+        _ = await (microphoneFinish, systemFinish)
+
         microphoneWriter = nil
         microphoneInput = nil
         systemWriter = nil
@@ -123,7 +125,9 @@ final class MeetingAudioStorageWriter {
 
         let converted = try convertIfNeeded(buffer, converter: &converter)
         guard input.isReadyForMoreMediaData else {
-            throw MeetingAudioError.storageFailed("AVAssetWriter input is not ready for more media data")
+            logger.warning("Meeting audio writer input not ready, dropping buffer (\(converted.frameLength, privacy: .public) frames)")
+            writtenFrames += Int64(converted.frameLength)
+            return
         }
 
         let sampleBuffer = try sampleBufferFactory.makeSampleBuffer(
@@ -218,17 +222,16 @@ final class MeetingAudioStorageWriter {
         return (writer, input)
     }
 
-    private func finish(writer: AVAssetWriter?, input: AVAssetWriterInput?) {
+    private func finish(writer: AVAssetWriter?, input: AVAssetWriterInput?) async {
         guard let writer else { return }
         guard writer.status == .writing else { return }
 
         input?.markAsFinished()
-        let group = DispatchGroup()
-        group.enter()
-        writer.finishWriting {
-            group.leave()
+        await withCheckedContinuation { continuation in
+            writer.finishWriting {
+                continuation.resume()
+            }
         }
-        group.wait()
 
         if let error = writer.error {
             logger.error("meeting_audio_writer_finalize_failed error=\(error.localizedDescription, privacy: .public)")
