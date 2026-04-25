@@ -130,7 +130,7 @@ final class ModelLifecycleCommandTests: XCTestCase {
         XCTAssertFalse(lines.joined(separator: "\n").contains("missing-secret-uid"))
         XCTAssertEqual(
             lines.filter { $0.trimmingCharacters(in: .whitespaces).hasPrefix("1.") },
-            ["    1. MacBook Pro Microphone [built-in, system default]"]
+            ["    1. MacBook Pro Microphone [built-in, system default, built-in fallback]"]
         )
     }
 
@@ -153,11 +153,89 @@ final class ModelLifecycleCommandTests: XCTestCase {
                 "  System default: MacBook Pro Microphone [built-in]",
                 "  Stored selection: System Default",
                 "  Effective fallback order:",
-                "    1. MacBook Pro Microphone [built-in, system default]",
+                "    1. MacBook Pro Microphone [built-in, system default, built-in fallback]",
                 "  Devices:",
                 "    - MacBook Pro Microphone [built-in, default]",
             ]
         )
+    }
+
+    func testAudioInputDiagnosticsMarksSelectedDeviceThatIsAlsoSystemDefault() {
+        let selectedDefault = inputDevice(
+            id: 10,
+            uid: "usb-mic",
+            name: "Desk USB Mic",
+            transport: kAudioDeviceTransportTypeUSB
+        )
+        let builtIn = inputDevice(
+            id: 30,
+            uid: "builtin-mic",
+            name: "MacBook Pro Microphone",
+            transport: kAudioDeviceTransportTypeBuiltIn
+        )
+        let diagnostics = AudioInputDiagnostics(
+            devices: [selectedDefault, builtIn],
+            defaultDevice: selectedDefault,
+            storedSelectedUID: "usb-mic"
+        )
+
+        XCTAssertEqual(
+            audioInputDiagnosticsLines(diagnostics),
+            [
+                "  System default: Desk USB Mic [usb]",
+                "  Stored selection: Desk USB Mic [usb, selected, available]",
+                "  Effective fallback order:",
+                "    1. Desk USB Mic [usb, selected, system default]",
+                "    2. MacBook Pro Microphone [built-in, built-in fallback]",
+                "  Devices:",
+                "    - Desk USB Mic [usb, default, selected]",
+                "    - MacBook Pro Microphone [built-in]",
+            ]
+        )
+    }
+
+    func testLoadAudioInputDiagnosticsUsesInjectedDefaultsAndProviders() {
+        let suiteName = "com.macparakeet.tests.cli.audio.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        defaults.set("usb-mic", forKey: UserDefaultsAppRuntimePreferences.selectedMicrophoneDeviceUIDKey)
+
+        let selected = inputDevice(
+            id: 10,
+            uid: "usb-mic",
+            name: "Desk USB Mic",
+            transport: kAudioDeviceTransportTypeUSB
+        )
+        let defaultDevice = inputDevice(
+            id: 20,
+            uid: "conference-mic",
+            name: "Conference Mic",
+            transport: kAudioDeviceTransportTypeBluetooth
+        )
+        var inputDevicesCalls = 0
+        var defaultInputDeviceInfoCalls = 0
+
+        let diagnostics = loadAudioInputDiagnostics(
+            defaults: defaults,
+            inputDevices: {
+                inputDevicesCalls += 1
+                return [selected, defaultDevice]
+            },
+            defaultInputDeviceInfo: {
+                defaultInputDeviceInfoCalls += 1
+                return defaultDevice
+            }
+        )
+
+        XCTAssertEqual(inputDevicesCalls, 1)
+        XCTAssertEqual(defaultInputDeviceInfoCalls, 1)
+        XCTAssertEqual(diagnostics.devices.map(\.uid), ["usb-mic", "conference-mic"])
+        XCTAssertEqual(diagnostics.defaultDevice?.uid, "conference-mic")
+        XCTAssertEqual(diagnostics.storedSelectedUID, "usb-mic")
+        XCTAssertEqual(diagnostics.selectedDevice?.uid, "usb-mic")
+        XCTAssertEqual(diagnostics.fallbackOrder.map(\.uid), ["usb-mic", "conference-mic"])
     }
 }
 

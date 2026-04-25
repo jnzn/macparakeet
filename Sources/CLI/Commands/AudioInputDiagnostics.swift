@@ -33,7 +33,7 @@ struct AudioInputDiagnostics {
 }
 
 func loadAudioInputDiagnostics(
-    defaults: UserDefaults = UserDefaults(suiteName: "com.macparakeet") ?? .standard,
+    defaults: UserDefaults = UserDefaults(suiteName: "com.macparakeet.MacParakeet") ?? .standard,
     inputDevices: () -> [AudioDeviceManager.InputDevice] = { AudioDeviceManager.inputDevices() },
     defaultInputDeviceInfo: () -> AudioDeviceManager.InputDevice? = {
         AudioDeviceManager.defaultInputDeviceInfo()
@@ -97,16 +97,17 @@ private func fallbackMarkers(
     for device: AudioDeviceManager.InputDevice,
     diagnostics: AudioInputDiagnostics
 ) -> [String] {
+    var markers = [String]()
     if diagnostics.selectedDevice?.id == device.id {
-        return ["selected"]
+        markers.append("selected")
     }
     if diagnostics.defaultDevice?.id == device.id {
-        return ["system default"]
+        markers.append("system default")
     }
     if diagnostics.builtInDevice?.id == device.id {
-        return ["built-in fallback"]
+        markers.append("built-in fallback")
     }
-    return []
+    return markers
 }
 
 private func deviceMarkers(
