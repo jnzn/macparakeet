@@ -10,6 +10,18 @@ public final class MeetingRecordingPanelViewModel {
         case error(String)
     }
 
+    public enum LivePanelTab: String, Equatable, CaseIterable, Sendable {
+        case transcript
+        case ask
+
+        public var title: String {
+            switch self {
+            case .transcript: return "Transcript"
+            case .ask: return "Ask"
+            }
+        }
+    }
+
     public var state: PanelState = .hidden
     public var elapsedSeconds: Int = 0
     public var micLevel: Float = 0
@@ -17,6 +29,8 @@ public final class MeetingRecordingPanelViewModel {
     public var previewLines: [MeetingRecordingPreviewLine] = []
     public var isTranscriptionLagging: Bool = false
     public var showCopiedConfirmation: Bool = false
+    public var selectedTab: LivePanelTab = .transcript
+    public let chatViewModel: TranscriptChatViewModel = TranscriptChatViewModel()
     public var onStop: (() -> Void)?
     public var onClose: (() -> Void)?
 
@@ -54,12 +68,20 @@ public final class MeetingRecordingPanelViewModel {
             wordCount += addedWordCounts.reduce(0, +) - removedWordCount
             previewLineWordCounts = Array(previewLineWordCounts.prefix(firstChangedIndex)) + addedWordCounts
             previewLines = lines
+            // Keep the live Ask tab fed with the latest transcript without disturbing
+            // chat history. Bracketed timestamps stripped — LLMs do better without them.
+            chatViewModel.updateTranscriptText(chatTranscript)
         }
         self.isTranscriptionLagging = isTranscriptionLagging
     }
 
     public var transcriptText: String {
         previewLines.map { "[\($0.timestamp)] \($0.speakerLabel): \($0.text)" }.joined(separator: "\n")
+    }
+
+    /// Cleaner transcript shape for LLM consumption: speaker label + text, no timestamps.
+    public var chatTranscript: String {
+        previewLines.map { "\($0.speakerLabel): \($0.text)" }.joined(separator: "\n")
     }
 
     public var canCopy: Bool {
@@ -79,6 +101,7 @@ public final class MeetingRecordingPanelViewModel {
         isTranscriptionLagging = false
         copiedResetTask?.cancel()
         showCopiedConfirmation = false
+        selectedTab = .transcript
     }
 
     public var formattedElapsed: String {

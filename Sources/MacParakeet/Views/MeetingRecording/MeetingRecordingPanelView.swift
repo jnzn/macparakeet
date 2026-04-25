@@ -11,12 +11,64 @@ struct MeetingRecordingPanelView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            transcriptContent
+            tabBar
             Divider()
-            footer
+            paneContent
+            // Ask owns its own bottom area (composer + follow-up pills). The Stop control
+            // lives on the floating recording pill, so the panel stays focused on chat.
+            if viewModel.selectedTab == .transcript {
+                Divider()
+                footer
+            }
         }
-        .frame(minWidth: 360, idealWidth: 420, minHeight: 320, idealHeight: 460)
+        .frame(minWidth: 360, idealWidth: 420, minHeight: 320, idealHeight: 520)
         .background(DesignSystem.Colors.surface)
+    }
+
+    @ViewBuilder
+    private var paneContent: some View {
+        switch viewModel.selectedTab {
+        case .transcript:
+            transcriptContent
+        case .ask:
+            LiveAskPaneView(viewModel: viewModel.chatViewModel)
+        }
+    }
+
+    private var tabBar: some View {
+        HStack(spacing: 0) {
+            ForEach(MeetingRecordingPanelViewModel.LivePanelTab.allCases, id: \.self) { tab in
+                tabButton(tab)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, DesignSystem.Spacing.sm)
+        .padding(.vertical, 4)
+    }
+
+    private func tabButton(_ tab: MeetingRecordingPanelViewModel.LivePanelTab) -> some View {
+        let isActive = viewModel.selectedTab == tab
+        return Button {
+            withAnimation(.easeOut(duration: 0.18)) {
+                viewModel.selectedTab = tab
+            }
+        } label: {
+            VStack(spacing: 5) {
+                Text(tab.title)
+                    .font(.system(size: 12, weight: isActive ? .medium : .regular))
+                    .foregroundStyle(isActive
+                        ? DesignSystem.Colors.textPrimary
+                        : DesignSystem.Colors.textTertiary)
+                Capsule()
+                    .fill(isActive ? DesignSystem.Colors.accent : Color.clear)
+                    .frame(height: 1)
+                    .frame(maxWidth: .infinity)
+            }
+            .padding(.horizontal, DesignSystem.Spacing.sm)
+            .padding(.top, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var header: some View {
@@ -101,23 +153,25 @@ struct MeetingRecordingPanelView: View {
 
     private var footer: some View {
         HStack(spacing: DesignSystem.Spacing.md) {
-            FooterButton(
-                label: viewModel.showCopiedConfirmation ? "Copied" : "Copy",
-                icon: viewModel.showCopiedConfirmation ? "checkmark" : "doc.on.doc",
-                activeColor: viewModel.showCopiedConfirmation
-                    ? DesignSystem.Colors.successGreen
-                    : nil,
-                disabled: !viewModel.canCopy
-            ) {
-                copyTranscript()
-            }
+            if viewModel.selectedTab == .transcript {
+                FooterButton(
+                    label: viewModel.showCopiedConfirmation ? "Copied" : "Copy",
+                    icon: viewModel.showCopiedConfirmation ? "checkmark" : "doc.on.doc",
+                    activeColor: viewModel.showCopiedConfirmation
+                        ? DesignSystem.Colors.successGreen
+                        : nil,
+                    disabled: !viewModel.canCopy
+                ) {
+                    copyTranscript()
+                }
 
-            FooterIconButton(
-                icon: autoScroll ? "chevron.down.circle.fill" : "chevron.down.circle",
-                activeColor: autoScroll ? DesignSystem.Colors.accent : nil,
-                tooltip: autoScroll ? "Auto-scroll on" : "Auto-scroll paused"
-            ) {
-                autoScroll.toggle()
+                FooterIconButton(
+                    icon: autoScroll ? "chevron.down.circle.fill" : "chevron.down.circle",
+                    activeColor: autoScroll ? DesignSystem.Colors.accent : nil,
+                    tooltip: autoScroll ? "Auto-scroll on" : "Auto-scroll paused"
+                ) {
+                    autoScroll.toggle()
+                }
             }
 
             Spacer()

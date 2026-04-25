@@ -16,6 +16,11 @@ final class MeetingRecordingFlowCoordinator {
     private let meetingRecordingService: MeetingRecordingServiceProtocol
     private let transcriptionService: TranscriptionServiceProtocol
     private let permissionService: PermissionServiceProtocol
+    private let transcriptionRepo: TranscriptionRepositoryProtocol
+    private let conversationRepo: ChatConversationRepositoryProtocol
+    private let configStore: LLMConfigStoreProtocol
+    private let cliConfigStore: LocalCLIConfigStore
+    private var llmService: LLMServiceProtocol?
     private let onMenuBarIconUpdate: (BreathWaveIcon.MenuBarState) -> Void
     private let onTranscriptionReady: (Transcription) -> Void
     private let onRecordingBegan: () -> Void
@@ -36,6 +41,11 @@ final class MeetingRecordingFlowCoordinator {
         meetingRecordingService: MeetingRecordingServiceProtocol,
         transcriptionService: TranscriptionServiceProtocol,
         permissionService: PermissionServiceProtocol,
+        transcriptionRepo: TranscriptionRepositoryProtocol,
+        conversationRepo: ChatConversationRepositoryProtocol,
+        configStore: LLMConfigStoreProtocol,
+        cliConfigStore: LocalCLIConfigStore = LocalCLIConfigStore(),
+        llmService: LLMServiceProtocol?,
         onMenuBarIconUpdate: @escaping (BreathWaveIcon.MenuBarState) -> Void,
         onTranscriptionReady: @escaping (Transcription) -> Void,
         onRecordingBegan: @escaping () -> Void = {},
@@ -44,10 +54,22 @@ final class MeetingRecordingFlowCoordinator {
         self.meetingRecordingService = meetingRecordingService
         self.transcriptionService = transcriptionService
         self.permissionService = permissionService
+        self.transcriptionRepo = transcriptionRepo
+        self.conversationRepo = conversationRepo
+        self.configStore = configStore
+        self.cliConfigStore = cliConfigStore
+        self.llmService = llmService
         self.onMenuBarIconUpdate = onMenuBarIconUpdate
         self.onTranscriptionReady = onTranscriptionReady
         self.onRecordingBegan = onRecordingBegan
         self.onFlowReturnedToIdle = onFlowReturnedToIdle
+    }
+
+    /// Updates the LLM service when the user changes providers. Mirrors what
+    /// AppEnvironmentConfigurer.refreshLLMAvailability does for the singleton chat VM.
+    func updateLLMService(_ service: LLMServiceProtocol?) {
+        self.llmService = service
+        panelViewModel?.chatViewModel.updateLLMService(service)
     }
 
     func toggleRecording() {
@@ -123,6 +145,14 @@ final class MeetingRecordingFlowCoordinator {
             panelVM.updatePreviewLines([], isTranscriptionLagging: false)
             panelVM.onStop = { [weak self] in self?.toggleRecording() }
             panelVM.onClose = { [weak self] in self?.hideMeetingPanel() }
+            // Configure live Ask: in-memory mode (no transcriptionId/conversationRepo).
+            // Promotion to a persisted ChatConversation happens in .navigateToTranscription.
+            panelVM.chatViewModel.configure(
+                llmService: llmService,
+                transcriptText: panelVM.chatTranscript,
+                configStore: configStore,
+                cliConfigStore: cliConfigStore
+            )
             panelViewModel = panelVM
 
             if pillController == nil {
@@ -268,6 +298,14 @@ final class MeetingRecordingFlowCoordinator {
 
         case .navigateToTranscription(let id):
             guard completedTranscription?.id == id, let transcription = completedTranscription else { return }
+            // If the user chatted while recording, promote the in-memory thread to a
+            // real ChatConversation linked to the finalized transcription so the live
+            // conversation appears on TranscriptResultView's Chat tab unbroken.
+            panelViewModel?.chatViewModel.bindPersistedConversation(
+                transcriptionId: transcription.id,
+                transcriptionRepo: transcriptionRepo,
+                conversationRepo: conversationRepo
+            )
             onTranscriptionReady(transcription)
 
         case .presentPermissionAlert(let reason):
