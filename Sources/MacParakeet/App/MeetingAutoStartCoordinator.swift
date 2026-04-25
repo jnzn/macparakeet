@@ -28,7 +28,7 @@ import UserNotifications
 /// ```
 @MainActor
 final class MeetingAutoStartCoordinator {
-    private let calendarService: CalendarService
+    private let calendarService: any CalendarServicing
     private let settingsViewModel: SettingsViewModel
     private let logger = Logger(subsystem: "com.macparakeet", category: "MeetingAutoStart")
 
@@ -49,7 +49,10 @@ final class MeetingAutoStartCoordinator {
     nonisolated(unsafe) private var calendarChangeObserver: NSObjectProtocol?
     private var cleanupTask: Task<Void, Never>?
 
-    init(calendarService: CalendarService = .shared, settingsViewModel: SettingsViewModel) {
+    init(
+        calendarService: any CalendarServicing = CalendarService.shared,
+        settingsViewModel: SettingsViewModel
+    ) {
         self.calendarService = calendarService
         self.settingsViewModel = settingsViewModel
     }
