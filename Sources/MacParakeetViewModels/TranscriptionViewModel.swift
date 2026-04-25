@@ -555,11 +555,6 @@ public final class TranscriptionViewModel {
         self.hasConversations = hasConversations
     }
 
-    public func updateLegacySummary(id: UUID, summary: String?) {
-        guard currentTranscription?.id == id else { return }
-        currentTranscription?.summary = summary
-    }
-
     public func updateLLMAvailability(_ available: Bool, llmService: LLMServiceProtocol? = nil) {
         self.llmAvailable = available
     }

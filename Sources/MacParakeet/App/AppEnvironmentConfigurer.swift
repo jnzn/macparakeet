@@ -134,7 +134,6 @@ final class AppEnvironmentConfigurer {
             llmService: hasLLMConfig ? env.llmService : nil,
             promptRepo: env.promptRepo,
             promptResultRepo: env.promptResultRepo,
-            transcriptionRepo: env.transcriptionRepo,
             configStore: env.llmConfigStore
         )
 
@@ -156,10 +155,6 @@ final class AppEnvironmentConfigurer {
         promptResultsViewModel.onPromptResultsChanged = { [weak self] transcriptionID, hasPromptResults in
             guard self?.transcriptionViewModel.currentTranscription?.id == transcriptionID else { return }
             self?.transcriptionViewModel.hasPromptResultTabs = hasPromptResults
-        }
-
-        promptResultsViewModel.onLegacySummaryChanged = { [weak self] transcriptionID, summary in
-            self?.transcriptionViewModel.updateLegacySummary(id: transcriptionID, summary: summary)
         }
 
         promptResultsViewModel.onGenerationCompleted = { [weak self] generationID, promptResultID in

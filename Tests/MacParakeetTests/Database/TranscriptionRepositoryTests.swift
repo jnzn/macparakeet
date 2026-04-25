@@ -178,26 +178,6 @@ final class TranscriptionRepositoryTests: XCTestCase {
         XCTAssertEqual(try repo.fetch(id: transcription.id)?.status, .cancelled)
     }
 
-    // MARK: - Summary Persistence
-
-    func testUpdateSummary() throws {
-        let transcription = Transcription(fileName: "test.mp3", status: .completed)
-        try repo.save(transcription)
-
-        try repo.updateSummary(id: transcription.id, summary: "This is a summary.")
-        let fetched = try repo.fetch(id: transcription.id)
-        XCTAssertEqual(fetched?.summary, "This is a summary.")
-    }
-
-    func testUpdateSummaryToNil() throws {
-        let transcription = Transcription(fileName: "test.mp3", summary: "Old summary", status: .completed)
-        try repo.save(transcription)
-
-        try repo.updateSummary(id: transcription.id, summary: nil)
-        let fetched = try repo.fetch(id: transcription.id)
-        XCTAssertNil(fetched?.summary)
-    }
-
     func testUpdateFileName() throws {
         let transcription = Transcription(fileName: "Meeting Apr 5", status: .completed)
         try repo.save(transcription)

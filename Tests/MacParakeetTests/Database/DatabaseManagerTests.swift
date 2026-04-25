@@ -176,7 +176,7 @@ final class DatabaseManagerTests: XCTestCase {
         }
     }
 
-    func testPromptSummaryMigrationPreservesLegacySummaryColumn() throws {
+    func testPromptSummaryMigrationMovesLegacySummaryAndDropsColumn() throws {
         let tempDir = FileManager.default.temporaryDirectory
         let dbPath = tempDir.appendingPathComponent("prompt_summary_migration_\(UUID().uuidString).db").path
         let transcriptionID = UUID()
@@ -265,15 +265,11 @@ final class DatabaseManagerTests: XCTestCase {
                 sql: "SELECT content FROM summaries WHERE transcriptionId = ?",
                 arguments: [transcriptionID]
             )
-            let preservedLegacySummary = try String.fetchOne(
-                db,
-                sql: "SELECT summary FROM transcriptions WHERE id = ?",
-                arguments: [transcriptionID]
-            )
+            let transcriptionColumns = try db.columns(in: "transcriptions").map(\.name)
 
             XCTAssertEqual(migratedSummaryCount, 1)
             XCTAssertEqual(migratedSummaryContent, legacySummary)
-            XCTAssertEqual(preservedLegacySummary, legacySummary)
+            XCTAssertFalse(transcriptionColumns.contains("summary"))
         }
 
         try? FileManager.default.removeItem(atPath: dbPath)
