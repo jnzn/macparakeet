@@ -131,8 +131,14 @@ public final class TranscriptChatViewModel {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isStreaming, let llmService else { return }
 
-        // Lazy conversation creation on first message
-        if currentConversation == nil {
+        // Live in-memory mode: no transcriptionId + no conversationRepo means we are
+        // chatting against a not-yet-finalized transcript (e.g. an in-flight meeting).
+        // Skip persistence; promote to a real ChatConversation later via
+        // bindPersistedConversation(transcriptionId:transcriptionRepo:conversationRepo:).
+        let isLiveInMemoryMode = (transcriptionId == nil && conversationRepo == nil)
+
+        // Lazy conversation creation on first message (skipped in live in-memory mode)
+        if currentConversation == nil && !isLiveInMemoryMode {
             guard let transcriptionId else {
                 errorMessage = "Chat is unavailable until a transcript is loaded."
                 return
@@ -257,6 +263,50 @@ public final class TranscriptChatViewModel {
     public func updateTranscript(_ text: String) {
         transcriptText = text
         clearHistory()
+    }
+
+    /// Updates the transcript text without clearing chat history. Use during a live
+    /// recording where the rolling transcript grows across many ticks; each new send
+    /// should run against the latest text without losing prior turns.
+    public func updateTranscriptText(_ text: String) {
+        transcriptText = text
+    }
+
+    /// Promotes an in-memory live chat (no transcriptionId, no conversationRepo)
+    /// into a persisted `ChatConversation` linked to a finalized transcription.
+    /// Call this once after `sendMessage()` was used in live in-memory mode and the
+    /// recording has been transcribed and saved. Existing in-memory `chatHistory` is
+    /// flushed to the new conversation in one repo write.
+    public func bindPersistedConversation(
+        transcriptionId: UUID,
+        transcriptionRepo: TranscriptionRepositoryProtocol,
+        conversationRepo: ChatConversationRepositoryProtocol
+    ) {
+        self.transcriptionId = transcriptionId
+        self.transcriptionRepo = transcriptionRepo
+        self.conversationRepo = conversationRepo
+
+        // Nothing to persist, or already bound to a conversation.
+        guard !chatHistory.isEmpty, currentConversation == nil else {
+            return
+        }
+
+        let firstUser = chatHistory.first(where: { $0.role == .user })?.content ?? "Meeting chat"
+        let title = String(firstUser.prefix(50))
+        let conversation = ChatConversation(transcriptionId: transcriptionId, title: title)
+
+        do {
+            try conversationRepo.save(conversation)
+            try conversationRepo.updateMessages(id: conversation.id, messages: chatHistory)
+            var stored = conversation
+            stored.messages = chatHistory
+            currentConversation = stored
+            conversations.insert(stored, at: 0)
+            notifyConversationsChanged()
+        } catch {
+            logger.error("Failed to promote live chat error=\(error.localizedDescription, privacy: .public)")
+            errorMessage = "Failed to save chat history."
+        }
     }
 
     public func loadTranscript(_ text: String, transcriptionId: UUID?) {

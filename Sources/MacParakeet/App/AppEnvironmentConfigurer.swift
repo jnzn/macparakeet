@@ -38,6 +38,7 @@ final class AppEnvironmentConfigurer {
     private let promptResultsViewModel: PromptResultsViewModel
     private let promptsViewModel: PromptsViewModel
     private let mainWindowState: MainWindowState
+    private weak var liveMeetingCoordinator: MeetingRecordingFlowCoordinator?
 
     init(
         transcriptionViewModel: TranscriptionViewModel,
@@ -199,6 +200,10 @@ final class AppEnvironmentConfigurer {
             meetingRecordingService: env.meetingRecordingService,
             transcriptionService: env.transcriptionService,
             permissionService: env.permissionService,
+            transcriptionRepo: env.transcriptionRepo,
+            conversationRepo: env.chatConversationRepo,
+            configStore: env.llmConfigStore,
+            llmService: hasLLMConfig ? env.llmService : nil,
             onMenuBarIconUpdate: { _ in callbacks.onMenuBarIconUpdate() },
             onTranscriptionReady: { [weak self] transcription in
                 guard let self else { return }
@@ -218,6 +223,7 @@ final class AppEnvironmentConfigurer {
             }
         )
         coordinatorRefs.meeting = meetingCoordinator
+        liveMeetingCoordinator = meetingCoordinator
 
         let hotkeyCoordinator = AppHotkeyCoordinator(
             settingsViewModel: settingsViewModel,
@@ -268,5 +274,6 @@ final class AppEnvironmentConfigurer {
         transcriptionViewModel.updateLLMAvailability(hasConfig, llmService: service)
         chatViewModel.updateLLMService(service)
         promptResultsViewModel.updateLLMService(service)
+        liveMeetingCoordinator?.updateLLMService(service)
     }
 }
