@@ -396,7 +396,8 @@ public final class PromptResultsViewModel {
         let systemPrompt = assembledSystemPrompt(
             promptContent: generation.promptContent,
             extraInstructions: generation.extraInstructions,
-            userNotes: generation.userNotes
+            userNotes: generation.userNotes,
+            transcript: generation.transcript
         )
 
         streamingTask = Task { @MainActor [weak self] in
@@ -498,16 +499,27 @@ public final class PromptResultsViewModel {
     private func assembledSystemPrompt(
         promptContent: String,
         extraInstructions: String?,
-        userNotes: String? = nil
+        userNotes: String? = nil,
+        transcript: String? = nil
     ) -> String {
         // Substitute supported template variables (ADR-020 §4). Single-pass
         // simultaneous; user notes containing literal `{{transcript}}` cannot
         // smuggle further substitutions on a second pass.
+        //
+        // For prompts that include `{{transcript}}` in their template, the
+        // transcript is rendered inline in the system prompt AND still sent
+        // as the user message via `LLMService.generatePromptResultStream`.
+        // The duplication is intentional for v0.6: the LLM provider's own
+        // truncation handles the user-message side, and skipping the
+        // user-message when the template references `{{transcript}}` would
+        // require empty-user-message handling that varies per provider.
+        // Suppression-on-template-use is tracked as Future Work in ADR-020.
         let cappedNotes = userNotes.map { Self.truncateNotesForPrompt($0) }
         let renderedPrompt = PromptTemplateRenderer.render(
             promptContent,
             substitutions: [
                 .userNotes: cappedNotes ?? "",
+                .transcript: transcript ?? "",
             ]
         )
 
@@ -521,11 +533,54 @@ public final class PromptResultsViewModel {
     /// Truncate user notes to the prompt-assembly soft cap (8,000 words).
     /// Persisted notes are never modified — this only protects the LLM
     /// context window at generation time (ADR-020 §3).
+    ///
+    /// Whitespace in the kept portion is preserved as-typed (newlines,
+    /// tabs, indentation, blank lines) so structural cues — bullet lists,
+    /// section headings, slash-command markers — survive truncation.
+    /// A naive `split + join(" ")` would flatten everything to single
+    /// spaces and strip the structure the user typed to *steer* the
+    /// summary in the first place, which defeats the point.
     static func truncateNotesForPrompt(_ notes: String) -> String {
-        let words = notes.split(whereSeparator: \.isWhitespace)
-        guard words.count > userNotesPromptWordCap else { return notes }
-        let kept = words.prefix(userNotesPromptWordCap).joined(separator: " ")
-        return kept + "\n\n[Notes truncated to \(userNotesPromptWordCap) words for summary generation; full notes preserved on the recording.]"
+        let truncationIndex = indexAfterNthWord(in: notes, n: userNotesPromptWordCap)
+        guard let truncationIndex else { return notes }
+        let kept = notes[..<truncationIndex]
+        return String(kept) + "\n\n[Notes truncated to \(userNotesPromptWordCap) words for summary generation; full notes preserved on the recording.]"
+    }
+
+    /// Returns the index in `text` immediately after the `n`-th
+    /// whitespace-delimited word. Returns `nil` if `text` has `n` or
+    /// fewer words (no truncation needed). The boundary lands on a
+    /// non-whitespace character so the kept slice ends with the last
+    /// retained word's final character — trailing whitespace stays
+    /// behind, which keeps the inserted suffix on a clean line break.
+    private static func indexAfterNthWord(in text: String, n: Int) -> String.Index? {
+        guard n > 0 else { return text.startIndex }
+        var wordCount = 0
+        var inWord = false
+        var lastWordEndIndex: String.Index?
+        var index = text.startIndex
+        while index < text.endIndex {
+            let char = text[index]
+            if char.isWhitespace {
+                if inWord {
+                    inWord = false
+                    if wordCount == n {
+                        return lastWordEndIndex
+                    }
+                }
+            } else {
+                if !inWord {
+                    wordCount += 1
+                    inWord = true
+                }
+                lastWordEndIndex = text.index(after: index)
+            }
+            index = text.index(after: index)
+        }
+        // Reached end of text. If we never crossed the cap we don't
+        // need to truncate; if the text ended mid-word at exactly n
+        // words, the suffix would be redundant.
+        return wordCount > n ? lastWordEndIndex : nil
     }
 
     private func fetchUserNotes(for transcriptionId: UUID) -> String? {

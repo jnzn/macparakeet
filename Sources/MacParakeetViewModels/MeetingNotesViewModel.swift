@@ -64,11 +64,14 @@ public final class MeetingNotesViewModel {
         wordCount >= Self.softCapWarningWordCount
     }
 
-    /// Word count derived from `notesText`. Used by the tab-state-bearing
-    /// label in Phase 3 (`Notes · 24w`).
-    public var wordCount: Int {
-        Self.wordCount(for: notesText)
-    }
+    /// Word count derived from `notesText`. Cached as a stored property
+    /// and refreshed whenever `notesText` changes (via `applyEdit`,
+    /// `restore`, `reset`, or slash-command acceptance) — used by the
+    /// tab-state-bearing label (`Notes · 24w`) per panel render and by
+    /// `isApproachingSoftCap` per keystroke. With notes that can grow to
+    /// 8,000+ words and SwiftUI re-rendering on every observable change,
+    /// re-walking the string on every read would be real main-thread cost.
+    public private(set) var wordCount: Int = 0
 
     /// SwiftUI `TextEditor` binds to this. The setter both applies the new
     /// value and queues a debounced persist task.
@@ -99,6 +102,7 @@ public final class MeetingNotesViewModel {
     /// onto the row directly via `Transcription.userNotes`.
     public func restore(_ notes: String?) {
         notesText = notes ?? ""
+        wordCount = Self.wordCount(for: notesText)
     }
 
     /// Cancel any pending debounce and persist whatever was last typed
@@ -116,6 +120,7 @@ public final class MeetingNotesViewModel {
         debounceTask?.cancel()
         debounceTask = nil
         notesText = ""
+        wordCount = 0
         dismissSlashMenu()
     }
 
@@ -167,6 +172,7 @@ public final class MeetingNotesViewModel {
         // view's TextEditor binding observes the final post-substitution
         // text in one tick (no flicker of the typed `/word`).
         notesText = String(prefix) + insertion
+        wordCount = Self.wordCount(for: notesText)
         dismissSlashMenu()
         scheduleDebounce()
     }
@@ -181,6 +187,7 @@ public final class MeetingNotesViewModel {
 
     private func applyEdit(_ newValue: String) {
         notesText = newValue
+        wordCount = Self.wordCount(for: newValue)
         updateSlashMenuState(for: newValue)
         scheduleDebounce()
     }
