@@ -127,13 +127,16 @@ final class MeetingRecordingServiceTests: XCTestCase {
         let captureService = MockMeetingAudioCaptureService()
         let audioConverter = MockMeetingAudioFileConverter()
         let sttClient = CountingMeetingSTTClient()
+        let lockStore = RecordingLockFileStore()
         let service = MeetingRecordingService(
             audioCaptureService: captureService,
             audioConverter: audioConverter,
-            sttTranscriber: sttClient
+            sttTranscriber: sttClient,
+            lockFileStore: lockStore
         )
 
         try await service.startRecording()
+        let folderURL = try XCTUnwrap(lockStore.writes.first?.folderURL)
 
         do {
             _ = try await service.stopRecording()
@@ -144,6 +147,8 @@ final class MeetingRecordingServiceTests: XCTestCase {
                 return
             }
         }
+        XCTAssertEqual(lockStore.deletes, [folderURL])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folderURL.path))
     }
 
     func testRuntimeCaptureErrorTransitionsCaptureModeToStopped() async throws {
