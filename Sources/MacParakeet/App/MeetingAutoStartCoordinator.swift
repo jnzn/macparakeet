@@ -422,9 +422,10 @@ final class MeetingAutoStartCoordinator {
     }
 }
 
-#if DEBUG
 /// Hooks for unit tests. The `testHook_` prefix marks them as test-only
-/// so they don't pollute autocomplete in production code paths.
+/// so they don't pollute autocomplete in production code paths. Not
+/// `#if DEBUG`-gated so `swift test -c release` (CI perf lane) still
+/// links — the methods are `internal` so they don't escape the module.
 extension MeetingAutoStartCoordinator {
     var testHook_autoStartedEventId: String? { autoStartedEventId }
 
@@ -465,7 +466,6 @@ extension MeetingAutoStartCoordinator {
         Task { @MainActor [weak self] in await self?.pollAsync() }
     }
 }
-#endif
 
 private extension MeetingAutoStartCoordinator {
     func showReminder(_ event: CalendarEvent, mode: CalendarAutoStartMode) async {
