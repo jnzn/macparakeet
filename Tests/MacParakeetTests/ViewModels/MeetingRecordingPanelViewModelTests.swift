@@ -89,9 +89,28 @@ final class MeetingRecordingPanelViewModelTests: XCTestCase {
         XCTAssertTrue(viewModel.showsElapsedTime)
 
         viewModel.state = .error("Boom")
-        XCTAssertEqual(viewModel.statusTitle, "Recording Error")
-        XCTAssertEqual(viewModel.statusMessage, "Boom")
+        XCTAssertEqual(viewModel.statusTitle, "Meeting interrupted", "Phase 4 copy refinement: 'Recording Error' → 'Meeting interrupted'")
+        XCTAssertTrue(viewModel.statusMessage.hasPrefix("Boom"), "Detail leads")
+        XCTAssertTrue(viewModel.statusMessage.contains("Library"), "Wrapper points the user at the Library for recovery")
         XCTAssertFalse(viewModel.showsElapsedTime)
+    }
+
+    func testErrorStateWithEmptyMessageHasReadableFallback() {
+        let viewModel = MeetingRecordingPanelViewModel()
+        viewModel.state = .error("")
+
+        XCTAssertTrue(
+            viewModel.statusMessage.hasPrefix("An unexpected error occurred."),
+            "Empty error string falls back to a readable sentence rather than a leading newline"
+        )
+        XCTAssertTrue(viewModel.statusMessage.contains("Library"))
+    }
+
+    func testErrorStateTrimsWhitespaceFromTechnicalDetail() {
+        let viewModel = MeetingRecordingPanelViewModel()
+        viewModel.state = .error("   Network timeout   ")
+
+        XCTAssertTrue(viewModel.statusMessage.hasPrefix("Network timeout"))
     }
 
     func testLaggingRecordingStateUpdatesStatusSurface() {
