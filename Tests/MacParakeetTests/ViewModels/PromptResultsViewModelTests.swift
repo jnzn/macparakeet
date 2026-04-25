@@ -427,4 +427,73 @@ final class PromptResultsViewModelTests: XCTestCase {
             "truncation must include the explanatory suffix"
         )
     }
+
+    /// Regression: Gemini review of PR #143 flagged that `truncateNotesForPrompt`
+    /// used `split + join(" ")`, flattening newlines/tabs/indentation into
+    /// single spaces. That destroys the structural cues (bullet lists, section
+    /// headings, slash-command markers) the user typed *to steer* the summary.
+    func testTruncateNotesForPromptPreservesWhitespaceInKeptPortion() {
+        let cap = PromptResultsViewModel.userNotesPromptWordCap
+        // Build a structured prefix the kept portion must preserve verbatim.
+        let structuredPrefix = "## Roadmap\n\n**Action:** ship infra refactor\n\t- subtask: review staffing plan\n\n[6:02] confirmed"
+        let filler = String(repeating: " filler", count: cap + 50)
+        let input = structuredPrefix + filler
+
+        let truncated = PromptResultsViewModel.truncateNotesForPrompt(input)
+
+        XCTAssertTrue(
+            truncated.contains("## Roadmap\n\n**Action:** ship infra refactor\n\t- subtask: review staffing plan\n\n[6:02] confirmed"),
+            "Original whitespace (newlines, blank lines, tab indentation) must survive in the kept portion"
+        )
+        XCTAssertTrue(
+            truncated.contains("Notes truncated"),
+            "Truncation must still include the explanatory suffix"
+        )
+    }
+
+    /// Regression: Gemini review of PR #143 flagged that `assembledSystemPrompt`
+    /// didn't pass the transcript to `PromptTemplateRenderer`, so prompts
+    /// containing `{{transcript}}` would render with an empty string instead
+    /// of the actual transcript text. ADR-020 §4 lists `{{transcript}}` as a
+    /// supported variable; this test pins the substitution.
+    func testGeneratePromptResultSubstitutesTranscriptIntoSystemPrompt() async throws {
+        let transcriptionID = UUID()
+        try transcriptionRepo.save(
+            Transcription(
+                id: transcriptionID,
+                fileName: "meeting.m4a",
+                sourceType: .meeting
+            )
+        )
+
+        let transcriptInlinePrompt = Prompt(
+            name: "Inline-Transcript",
+            content: "Read this:\nTRANSCRIPT:\n{{transcript}}\n---\nReply.",
+            category: .result,
+            isBuiltIn: false,
+            sortOrder: 0
+        )
+        promptRepo.prompts = [transcriptInlinePrompt]
+
+        viewModel.configure(
+            llmService: llm,
+            promptRepo: promptRepo,
+            promptResultRepo: promptResultRepo,
+            transcriptionRepo: transcriptionRepo
+        )
+        viewModel.selectedPrompt = transcriptInlinePrompt
+        llm.streamTokens = ["done"]
+
+        viewModel.generatePromptResult(
+            transcript: "Sarah pushed back on shipping early.",
+            transcriptionId: transcriptionID
+        )
+        try await Task.sleep(for: .milliseconds(200))
+
+        XCTAssertEqual(
+            llm.lastSummarySystemPrompt,
+            "Read this:\nTRANSCRIPT:\nSarah pushed back on shipping early.\n---\nReply.",
+            "{{transcript}} must be substituted with the transcript text passed to generatePromptResult"
+        )
+    }
 }
