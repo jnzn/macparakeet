@@ -102,6 +102,59 @@ final class PromptsCommandTests: XCTestCase {
 
     // MARK: - cliJSONEncoder smoke
 
+    // MARK: - Set validation
+    // .parse() runs validate() automatically, so a failed parse with our error
+    // text proves validate() rejected it.
+
+    func testSetRejectsContradictoryHiddenAndAutoRun() {
+        XCTAssertThrowsError(
+            try PromptsCommand.SetSubcommand.parse(["anything", "--hidden", "--auto-run"])
+        ) { error in
+            XCTAssertTrue(String(describing: error).contains("auto-run requires visible"),
+                          "Expected message about auto-run requiring visible, got: \(error)")
+        }
+    }
+
+    func testSetRejectsMutuallyExclusiveVisibleHidden() {
+        XCTAssertThrowsError(
+            try PromptsCommand.SetSubcommand.parse(["anything", "--visible", "--hidden"])
+        )
+    }
+
+    func testSetRequiresAtLeastOneFlag() {
+        XCTAssertThrowsError(try PromptsCommand.SetSubcommand.parse(["anything"]))
+    }
+
+    func testSetAcceptsHiddenWithNoAutoRun() {
+        XCTAssertNoThrow(
+            try PromptsCommand.SetSubcommand.parse(["anything", "--hidden", "--no-auto-run"])
+        )
+    }
+
+    // MARK: - Add validation
+
+    func testAddRejectsContentAndFromFileTogether() {
+        XCTAssertThrowsError(
+            try PromptsCommand.AddSubcommand.parse([
+                "--name", "X", "--content", "body", "--from-file", "/tmp/file.txt"
+            ])
+        )
+    }
+
+    func testAddAllowsNeitherSet() {
+        // Neither set means "read body from stdin" — parsing must succeed; the
+        // empty-body guard runs in run(), not validate().
+        XCTAssertNoThrow(try PromptsCommand.AddSubcommand.parse(["--name", "X"]))
+    }
+
+    func testAddRejectsEmptyName() {
+        XCTAssertThrowsError(
+            try PromptsCommand.AddSubcommand.parse(["--name", "   ", "--content", "body"])
+        )
+    }
+
+    // MARK: - JSON encoder
+
     func testCLIJSONEncoderEmitsParseableJSON() throws {
         let db = try DatabaseManager()
         let repo = PromptRepository(dbQueue: db.dbQueue)

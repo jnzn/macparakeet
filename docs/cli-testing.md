@@ -334,11 +334,13 @@ swift run macparakeet-cli prompts list --filter auto-run --json | jq '.[].name'
 swift run macparakeet-cli prompts show "Summary"
 swift run macparakeet-cli prompts show A4882688
 
-# Add a custom prompt. Either --content or --from-file is required.
+# Add a custom prompt. Body precedence: --content > --from-file > stdin.
 swift run macparakeet-cli prompts add --name "Daily Notes" \
   --content "Extract action items grouped by person."
 swift run macparakeet-cli prompts add --name "From File" --from-file ./prompt.md
-echo "Inline body" | swift run macparakeet-cli prompts add --name "Piped" --from-file /dev/stdin
+
+# Pipe via stdin when both --content and --from-file are omitted.
+cat ./prompt.md | swift run macparakeet-cli prompts add --name "Piped"
 ```
 
 ### Visibility / auto-run toggles

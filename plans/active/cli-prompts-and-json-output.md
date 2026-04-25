@@ -31,8 +31,9 @@ parity for parity's sake. Each addition has a concrete dev/CI/agent use case.
 ```
 prompts list [--visible | --auto-run | --all] [--json]
 prompts show <id-or-name> [--json]
-prompts add --name "X" (--content "..." | --from-file path | (stdin if both omitted))
+prompts add --name "X" [--content "..." | --from-file path]
             [--auto-run]
+            (if both --content and --from-file are omitted, body is read from stdin)
 prompts set <id-or-name> [--visible|--hidden] [--auto-run|--no-auto-run]
 prompts delete <id-or-name>
 prompts restore-defaults
