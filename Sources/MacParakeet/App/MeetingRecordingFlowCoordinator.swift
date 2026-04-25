@@ -298,6 +298,13 @@ final class MeetingRecordingFlowCoordinator {
 
         case .navigateToTranscription(let id):
             guard completedTranscription?.id == id, let transcription = completedTranscription else { return }
+            // Cancel any in-flight assistant response BEFORE binding. If the panel
+            // chat VM is destroyed (.hidePill, ~2s after this) while a stream is
+            // still arriving, the streamingTask's [weak self] kills it mid-write
+            // and the response is lost in a non-deterministic spot. Cancelling now
+            // gives a clean state to persist; the user loses an unfinished reply
+            // but the data on disk is consistent.
+            panelViewModel?.chatViewModel.cancelStreaming()
             // If the user chatted while recording, promote the in-memory thread to a
             // real ChatConversation linked to the finalized transcription so the live
             // conversation appears on TranscriptResultView's Chat tab unbroken.
