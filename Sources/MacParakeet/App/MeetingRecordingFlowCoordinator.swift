@@ -78,6 +78,13 @@ final class MeetingRecordingFlowCoordinator {
     /// which sets this and re-enters `toggleRecording`.
     private var pendingTrigger: TelemetryMeetingRecordingTrigger?
 
+    /// Pre-set title for the *next* `.startRecording` effect. Paired with
+    /// `pendingTrigger`: `startFromCalendar(title:)` sets both, the
+    /// `.startRecording` handler snapshots and clears both before the async
+    /// hop. Manual / hotkey starts leave it nil and the service falls back
+    /// to its date-based default.
+    private var pendingTitle: String?
+
     /// Optional callback fired when an auto-start attempt couldn't actually
     /// start a recording — either because the state machine wasn't idle
     /// (back-to-back meeting, previous wrap-up still in progress) or the
@@ -98,16 +105,18 @@ final class MeetingRecordingFlowCoordinator {
     }
 
     /// Calendar-driven entry point. Marks the next start as auto-start so
-    /// telemetry distinguishes it, then enters the normal start flow. No-op
-    /// if a recording is already in progress (manual recording wins by
-    /// arriving first — see ADR-017 §10). When non-idle, fires
-    /// `onAutoStartFailed` so the coordinator can drop its binding.
-    func startFromCalendar() {
+    /// telemetry distinguishes it and pre-names the recording with the
+    /// event title, then enters the normal start flow. No-op if a recording
+    /// is already in progress (manual recording wins by arriving first —
+    /// see ADR-017 §10). When non-idle, fires `onAutoStartFailed` so the
+    /// coordinator can drop its binding.
+    func startFromCalendar(title: String? = nil) {
         guard stateMachine.state == .idle else {
             onAutoStartFailed?()
             return
         }
         pendingTrigger = .calendarAutoStart
+        pendingTitle = title
         sendEvent(.startRequested)
     }
 
@@ -213,12 +222,14 @@ final class MeetingRecordingFlowCoordinator {
         case .startRecording:
             let gen = stateMachine.generation
             // Snapshot + clear before the async hop so a subsequent toggle
-            // can't smuggle a stale trigger into this start's telemetry.
+            // can't smuggle a stale trigger / title into this start.
             let trigger = pendingTrigger
+            let title = pendingTitle
             pendingTrigger = nil
+            pendingTitle = nil
             actionTask = Task { @MainActor in
                 do {
-                    try await meetingRecordingService.startRecording()
+                    try await meetingRecordingService.startRecording(title: title)
                     Telemetry.send(.meetingRecordingStarted(trigger: trigger))
                     self.onRecordingBegan()
                     self.sendEvent(.recordingStarted(generation: gen))
