@@ -107,6 +107,22 @@ macparakeet-cli prompts run "Action items" \
 case-insensitive name. Ambiguous prefixes return a `.ambiguous` error so the
 agent can re-prompt the user.
 
+### Inspect meeting recordings
+
+Meeting commands are deterministic local database operations. They do not
+require an LLM provider.
+
+```bash
+macparakeet-cli meetings list --json
+macparakeet-cli meetings show <id-or-prefix-or-title> --json
+macparakeet-cli meetings transcript <id> --format text
+macparakeet-cli meetings transcript <id> --format json
+macparakeet-cli meetings notes get <id> --json
+macparakeet-cli meetings notes append <id> --text "Decision: ship the parser"
+macparakeet-cli meetings notes clear <id> --json
+macparakeet-cli meetings export <id> --format md --stdout
+```
+
 Prompt and direct LLM JSON responses use an envelope with `output`, `provider`,
 `model`, optional `usage`, optional `stopReason`, and `latencyMs`.
 

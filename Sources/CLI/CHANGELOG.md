@@ -77,6 +77,25 @@ ArgumentParser's plain-text stderr path with exit code `2`. Downstream
 agents that branch on `errorType` should also handle the parse-error case
 by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
 
+## [1.3.0] -- 2026-04-26
+
+### Added
+
+- `meetings` command namespace for deterministic, local meeting objects:
+  `meetings list`, `meetings show`, `meetings transcript`,
+  `meetings notes get|set|append|clear`, and `meetings export`.
+  These commands expose meeting recordings without requiring any LLM provider:
+  metadata, notes, transcript text, timestamp formats, and Markdown/JSON
+  exports are all local database reads/writes.
+
+### Fixed
+
+- `prompts run` now renders `{{userNotes}}` and `{{transcript}}` with the same
+  prompt assembly path used by the GUI, and stores `userNotesSnapshot` on saved
+  prompt results. This restores GUI/CLI parity for notes-steered meeting
+  prompts while keeping LLM invocation explicitly under `prompts`.
+- Meeting retranscription now preserves durable user-authored meeting notes.
+
 ## [1.2.0] -- 2026-04-26
 
 ### Added

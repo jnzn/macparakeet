@@ -26,6 +26,20 @@ final class PromptTemplateRendererTests: XCTestCase {
         XCTAssertEqual(rendered, "T:hello world")
     }
 
+    func testSystemPromptAssemblerRendersNotesTranscriptAndExtraInstructions() {
+        let assembled = PromptSystemPromptAssembler.assemble(
+            promptContent: "Notes:\n{{userNotes}}\nTranscript:\n{{transcript}}",
+            extraInstructions: "Focus on decisions.",
+            userNotes: "Decision: ship",
+            transcript: "We agreed to ship."
+        )
+
+        XCTAssertEqual(
+            assembled,
+            "Notes:\nDecision: ship\nTranscript:\nWe agreed to ship.\n\nFocus on decisions."
+        )
+    }
+
     func testMissingKeyFallsBackToEmptyString() {
         // Template uses both variables; substitutions only supplies one.
         let rendered = PromptTemplateRenderer.render(

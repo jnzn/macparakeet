@@ -360,7 +360,12 @@ extension PromptsCommand {
 
                 let trimmedExtra = extra?.trimmingCharacters(in: .whitespacesAndNewlines)
                 let normalizedExtra = (trimmedExtra?.isEmpty == false) ? trimmedExtra : nil
-                let systemPrompt = assembledSystemPrompt(promptContent: prompt.content, extraInstructions: normalizedExtra)
+                let systemPrompt = PromptSystemPromptAssembler.assemble(
+                    promptContent: prompt.content,
+                    extraInstructions: normalizedExtra,
+                    userNotes: transcript.userNotes,
+                    transcript: transcriptText
+                )
 
                 let execution = try llm.buildExecutionContext()
                 let service = LLMService(
@@ -400,19 +405,14 @@ extension PromptsCommand {
                         promptName: prompt.name,
                         promptContent: prompt.content,
                         extraInstructions: normalizedExtra,
-                        content: output
+                        content: output,
+                        userNotesSnapshot: transcript.userNotes
                     )
                     try resultRepo.save(result)
                     // Status messages on stderr so stdout stays grep-able as the prompt output.
                     FileHandle.standardError.write(Data("\nSaved PromptResult \(result.id.uuidString.prefix(8))\n".utf8))
                 }
             }
-        }
-
-        // Mirrors PromptResultsViewModel.assembledSystemPrompt so CLI runs match GUI behavior.
-        private func assembledSystemPrompt(promptContent: String, extraInstructions: String?) -> String {
-            guard let extraInstructions, !extraInstructions.isEmpty else { return promptContent }
-            return promptContent + "\n\n" + extraInstructions
         }
     }
 }
