@@ -9,9 +9,9 @@
 | | Count |
 |---|---:|
 | Total findings (P0 / P1 / P2) | 70 |
-| FIXED | 27 |
+| FIXED | 28 |
 | REFUTED on verification | 5 |
-| DEFERRED with reason | 38 |
+| DEFERRED with reason | 37 |
 
 ---
 
@@ -62,7 +62,7 @@ Status legend: **FIXED** (commit referenced) · **REFUTED** (with reason) ·
 | ID | Title | Status | Note |
 |---|---|---|---|
 | AUDIT-001 | STTScheduler continuation lifecycle | DEFERRED | Pass 2 narrowed: `STTScheduler` is `actor`; sub-claims (a) and (b) prevented by isolation. Only `cancelAndDrainRunningJobs` race remains, severity P2. Watch production telemetry. |
-| AUDIT-003 | `@unchecked Sendable` on Core Audio paths | DEFERRED | VERIFIED but big sendability refactor of `MeetingAudioStorageWriter` deserves its own PR + risk window. |
+| AUDIT-003 | `@unchecked Sendable` on Core Audio paths | FIXED | Follow-up PR removes the blanket `@unchecked Sendable` from `MeetingAudioStorageWriter`. The writer is non-Sendable and remains serialized by `MeetingRecordingService`; only the AVFoundation finish callback boundary keeps a narrow unchecked wrapper. |
 | AUDIT-005 | FFmpeg conversion + mix temp files leak on timeout / cancel | FIXED | `28ceba2c` (#149). SIGTERM-zombie sub-claim refuted (FFmpeg cleans on SIGTERM); `outputURL` leak on Swift-timeout path was the real concern. |
 | AUDIT-006 | `SystemAudioTap` watchdog only logs on silent buffer timeout | FIXED | `a13717cb` + review polish in `43e97090`. Adds 2s first-buffer budget + 1s repeating heartbeat (5s mid-session stall threshold) wired through the existing `MeetingAudioCaptureEvent.error` channel. |
 | AUDIT-014 | `ObjCExceptionBridge` "wired nowhere" | REFUTED | Pass-1 grep was too narrow. `catchingObjCException` is actually used 11 times across `AudioRecorder.swift` + `MicrophoneCapture.swift`. |
@@ -250,19 +250,17 @@ The deferred items, in priority order:
 1. **Hotkey state-machine fixes** (AUDIT-046 / 047 / 049 / 050). Real bugs;
    the only blocker is regression risk on a delicate area that needs Mac
    runtime verification before/after with the dictation hotkey active.
-2. **`MeetingAudioStorageWriter` actor refactor** (AUDIT-003). Big
-   sendability change; deserves its own PR + risk window.
-3. **Notes durability — scene-phase persistence + lock-file rotation flush**
+2. **Notes durability — scene-phase persistence + lock-file rotation flush**
    (AUDIT-002 follow-up). The narrowed crash-window concern remains.
-4. **Test-quality cleanup** (AUDIT-059 / 060 / 061 / 062 / 063). 92 hardcoded
+3. **Test-quality cleanup** (AUDIT-059 / 060 / 061 / 062 / 063). 92 hardcoded
    sleeps, missing VM tests, hardcoded `/tmp` paths, wall-clock polling.
-5. **Dist-script hardening** (AUDIT-055 / 056 / 058 / 070). Appcast cache-
+4. **Dist-script hardening** (AUDIT-055 / 056 / 058 / 070). Appcast cache-
    bust validation, notarytool SIGBUS retry, SIGN_IDENTITY env-var,
    SHASUMS pinning.
-6. **View / VM decomposition** (AUDIT-016 / 017). `TranscriptResultView`
+5. **View / VM decomposition** (AUDIT-016 / 017). `TranscriptResultView`
    2,475 lines and `SettingsViewModel` 1,108 lines — refactor sprint.
-7. **Accessibility + i18n** (AUDIT-067 / 068). Multi-day work.
-8. **Telemetry bucketing** (AUDIT-022). Reduces fingerprintability on small
+6. **Accessibility + i18n** (AUDIT-067 / 068). Multi-day work.
+7. **Telemetry bucketing** (AUDIT-022). Reduces fingerprintability on small
    cohorts.
 
 ---
@@ -279,3 +277,6 @@ The deferred items, in priority order:
 - **2026-04-26 Sprint 2** — 13 fixes shipped via PR #154.
 - **2026-04-26 AUDIT-069 follow-up** — CI hygiene: SwiftPM cache,
   per-step timeouts, and uploaded CI logs.
+- **2026-04-26 AUDIT-003 follow-up** — `MeetingAudioStorageWriter` no longer
+  declares blanket `@unchecked Sendable`; finalization uses a narrow
+  AVFoundation callback bridge while writer access remains actor-owned.
