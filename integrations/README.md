@@ -149,6 +149,86 @@ mutually-exclusive combos like `--json` with `--stream`) surface through
 ArgumentParser's plain-text stderr path with exit code `2`. Always branch
 on the exit code first.
 
+## Use it as an agent skill
+
+The clean integration shape is a thin skill wrapper around
+`macparakeet-cli`, not a second transcription implementation. The skill's job
+is to teach an agent when to call the CLI, how to parse the JSON envelopes, and
+which operations are deterministic local database reads/writes.
+
+Claude Code-style skills are a good template because they are just a directory
+with a `SKILL.md` file: the frontmatter names when the skill should load, and
+the body gives concise operating instructions. The same pattern ports to Codex,
+OpenClaw, Hermes, or any agent framework that can shell out to local tools.
+
+```text
+macparakeet-stt/
+  SKILL.md
+```
+
+````markdown
+---
+name: macparakeet-stt
+description: Use when the user asks to transcribe audio or video, inspect or manage MacParakeet meeting recordings, search prior dictations/transcripts, or give an AI agent local speech-to-text tools on Apple Silicon.
+---
+
+# MacParakeet STT
+
+Use `macparakeet-cli` for local-first speech-to-text and meeting artifact
+management on macOS Apple Silicon. STT and database access are local. Do not
+send audio or transcripts to an LLM unless the user explicitly asks for an
+LLM-backed prompt/summary and provides or has configured a provider.
+
+## Startup Check
+
+Run this before real work:
+
+```bash
+macparakeet-cli health --json
+```
+
+If it fails, report the `errorType`/message and stop. Do not guess that models,
+FFmpeg, yt-dlp, or the database are ready.
+
+## Core Commands
+
+```bash
+macparakeet-cli transcribe "<path-or-youtube-url>" --format json
+macparakeet-cli history transcriptions --json
+macparakeet-cli history search-transcriptions "<query>" --json
+macparakeet-cli history search "<query>" --json
+macparakeet-cli meetings list --json
+macparakeet-cli meetings show "<id-or-prefix-or-title>" --json
+macparakeet-cli meetings transcript "<id-or-prefix-or-title>" --format json
+macparakeet-cli meetings notes append "<id-or-prefix-or-title>" --text "<note>" --json
+macparakeet-cli meetings export "<id-or-prefix-or-title>" --format md --stdout
+```
+
+Use `meetings` commands for Granola-style deterministic workflows: list
+recordings, read transcripts, update notes, and export artifacts. These do not
+summarize and do not require an LLM provider.
+
+Only use prompt/LLM commands when the user asks for generated output:
+
+```bash
+macparakeet-cli prompts list --json
+macparakeet-cli prompts run "<prompt-name>" \
+  --transcription "<id-or-prefix-or-title>" \
+  --provider "<provider>" --api-key "$PROVIDER_API_KEY" --model "<model>" \
+  --json
+```
+
+## Operating Rules
+
+- Branch on process exit code first.
+- Parse stdout as JSON for `--json` / `--format json` commands.
+- Treat exit code `2` as invocation misuse; fix the command before retrying.
+- Treat lookup ambiguity as normal; ask for or choose a more specific ID.
+- Never delete user database records unless the user explicitly requests it.
+- Prefer meeting ID or UUID prefix over title when mutating notes.
+- Keep API keys in environment variables; do not put literal keys in commands.
+````
+
 ## Conventions
 
 - **Exit codes:** `0` success, `1` runtime failure (work attempted and failed
@@ -184,9 +264,10 @@ on the exit code first.
 
 - **OpenClaw:** [`openclaw/README.md`](./openclaw/README.md)
 - **Hermes Agent:** [`hermes/README.md`](./hermes/README.md)
-- **Codex CLI / Claude Code / generic AGENTS.md consumers:** read
-  [`/AGENTS.md`](../AGENTS.md) at the repo root, plus this file for the CLI
-  vocabulary.
+- **Claude Code / Codex CLI / generic skill consumers:** use the
+  Claude Code-style `SKILL.md` sketch above for external agents that call
+  `macparakeet-cli`. Coding agents working inside this repository should read
+  [`/AGENTS.md`](../AGENTS.md) instead.
 
 ## Reporting issues
 
