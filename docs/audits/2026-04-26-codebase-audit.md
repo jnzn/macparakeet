@@ -9,9 +9,9 @@
 | | Count |
 |---|---:|
 | Total findings (P0 / P1 / P2) | 70 |
-| FIXED | 28 |
+| FIXED | 30 |
 | REFUTED on verification | 5 |
-| DEFERRED with reason | 37 |
+| DEFERRED with reason | 35 |
 
 ---
 
@@ -135,10 +135,10 @@ Status legend: **FIXED** (commit referenced) · **REFUTED** (with reason) ·
 
 | ID | Title | Status | Note |
 |---|---|---|---|
-| AUDIT-046 | Tap re-enable doesn't reset edge flags | DEFERRED | HIGH regression risk — needs Mac runtime verification before/after with active dictation hotkey. |
+| AUDIT-046 | Tap re-enable doesn't reset edge flags | FIXED | Follow-up PR resets stale gesture state after tap re-enable, cancels pending timers, resyncs modifier edges, and preserves physical key-held state so held repeats are not treated as new triggers. |
 | AUDIT-047 | Tap callback races with MainActor closures | DEFERRED | Same regression-risk class. |
 | AUDIT-048 | Mach time conversion assumes 1:1 timebase | DEFERRED | P2; precision-only. |
-| AUDIT-049 | `bareTap` invalidation doesn't cancel debounce timer | DEFERRED | Same regression-risk class as AUDIT-046. |
+| AUDIT-049 | `bareTap` invalidation doesn't cancel debounce timer | FIXED | Regression tests lock that regular-key bare-tap interruption cancels startup/hold windows; tap-disabled recovery also resets the gesture controller so stale timer callbacks cannot start or stop recording. |
 | AUDIT-050 | Paste pipeline doesn't verify frontmost app | DEFERRED | Focus race window 0–15ms; fix needs careful UX consideration. |
 | AUDIT-051 | `start()` doesn't log `AXIsProcessTrusted` on tap failure | FIXED | `2a0e557b` (#154). Observability-only; one-line OSLog warning on the existing failure branch. Distinguishes Accessibility-permission denial from generic system error in log triage. |
 | AUDIT-052 | `GlobalShortcutManager` swallows unrelated shortcuts | DEFERRED | P2. |
@@ -202,8 +202,9 @@ Status legend: **FIXED** (commit referenced) · **REFUTED** (with reason) ·
 5. **Threading-boundary fragility at C-callback / Swift-Concurrency seams** —
    CGEvent tap → MainActor, URLSession callbacks → actor state, Core Audio IO
    block → @unchecked Sendable. Recurring pattern; partial mitigation via
-   AUDIT-006 watchdog and AUDIT-031 pipe-drain ordering. Hotkey-state-machine
-   race fixes (AUDIT-046 / 047 / 049) deferred pending runtime verification.
+   AUDIT-006 watchdog and AUDIT-031 pipe-drain ordering. Hotkey tap recovery
+   now resets edge state and pending timers (AUDIT-046 / 049); the callback
+   actor-boundary concern remains deferred (AUDIT-047).
 
 6. **External fragility with no fallback** — Single-endpoint network
    preflight (AUDIT-066), single LLM provider with tight timeouts and no
@@ -247,9 +248,9 @@ Status legend: **FIXED** (commit referenced) · **REFUTED** (with reason) ·
 
 The deferred items, in priority order:
 
-1. **Hotkey state-machine fixes** (AUDIT-046 / 047 / 049 / 050). Real bugs;
-   the only blocker is regression risk on a delicate area that needs Mac
-   runtime verification before/after with the dictation hotkey active.
+1. **Hotkey/paste follow-ups** (AUDIT-047 / 050; AUDIT-048 / 052 lower-risk
+   P2). Remaining items need careful runtime verification around active
+   dictation and paste targeting.
 2. **Notes durability — scene-phase persistence + lock-file rotation flush**
    (AUDIT-002 follow-up). The narrowed crash-window concern remains.
 3. **Test-quality cleanup** (AUDIT-059 / 060 / 061 / 062 / 063). 92 hardcoded
@@ -280,3 +281,6 @@ The deferred items, in priority order:
 - **2026-04-26 AUDIT-003 follow-up** — `MeetingAudioStorageWriter` no longer
   declares blanket `@unchecked Sendable`; finalization uses a narrow
   AVFoundation callback bridge while writer access remains actor-owned.
+- **2026-04-26 AUDIT-046/AUDIT-049 follow-up** — hotkey tap-disabled recovery
+  now resets stale gesture state, cancels pending startup/hold timers, and
+  resyncs edge detection without changing normal dictation gestures.
