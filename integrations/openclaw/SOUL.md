@@ -42,8 +42,8 @@ symlink path will be deprecated once the tap ships.
 | Transcribe a file | `macparakeet-cli transcribe <path> --format json` |
 | Transcribe a YouTube URL | `macparakeet-cli transcribe <url> --format json` |
 | List recent transcriptions | `macparakeet-cli history transcriptions --json` |
-| Search transcriptions | `macparakeet-cli history search "<query>" --json` |
-| Search dictations | `macparakeet-cli history search-transcriptions "<query>" --json` |
+| Search transcriptions | `macparakeet-cli history search-transcriptions "<query>" --json` |
+| Search dictations | `macparakeet-cli history search "<query>" --json` |
 | Run a prompt on a transcription | `macparakeet-cli prompts run <prompt-name> --transcription <id> --provider <p> --api-key "$KEY" --model <m>` |
 | Health probe (use in skill init) | `macparakeet-cli health --json` |
 

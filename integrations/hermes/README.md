@@ -45,8 +45,8 @@ commands:
   transcribe_file: macparakeet-cli transcribe "{path}" --format json
   transcribe_youtube: macparakeet-cli transcribe "{url}" --format json
   list_transcriptions: macparakeet-cli history transcriptions --json
-  search: macparakeet-cli history search "{query}" --json
-  search_dictations: macparakeet-cli history search-transcriptions "{query}" --json
+  search_transcriptions: macparakeet-cli history search-transcriptions "{query}" --json
+  search_dictations: macparakeet-cli history search "{query}" --json
   run_prompt: |
     macparakeet-cli prompts run "{prompt_id_or_name}" \
       --transcription {transcription_id} \

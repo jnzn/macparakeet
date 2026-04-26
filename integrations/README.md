@@ -82,14 +82,14 @@ macparakeet-cli transcribe "https://www.youtube.com/watch?v=..." --format json
 
 ```bash
 macparakeet-cli history transcriptions --json
-macparakeet-cli history search "design review" --json
+macparakeet-cli history search-transcriptions "design review" --json
 ```
 
 ### Search past dictations
 
 ```bash
 macparakeet-cli history dictations --json
-macparakeet-cli history search-transcriptions "what did I say about" --json
+macparakeet-cli history search "what did I say about" --json
 ```
 
 ### List or run a prompt against a transcription
