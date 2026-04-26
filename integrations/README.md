@@ -99,12 +99,16 @@ macparakeet-cli prompts list --json
 macparakeet-cli prompts run "Action items" \
   --transcription <id-or-prefix> \
   --provider anthropic --api-key "$ANTHROPIC_API_KEY" \
-  --model claude-sonnet-4-6
+  --model claude-sonnet-4-6 \
+  --json
 ```
 
 `<id-or-prefix>` accepts a full UUID, a UUID prefix (>= 4 chars), or the
 case-insensitive name. Ambiguous prefixes return a `.ambiguous` error so the
 agent can re-prompt the user.
+
+Prompt and direct LLM JSON responses use an envelope with `output`, `provider`,
+`model`, optional `usage`, optional `stopReason`, and `latencyMs`.
 
 ## Conventions
 

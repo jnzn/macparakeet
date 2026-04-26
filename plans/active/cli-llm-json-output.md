@@ -1,6 +1,6 @@
 # Plan: `--json` output mode for CLI LLM commands
 
-> Status: **ACTIVE** — pre-implementation, sequenced after PR #148
+> Status: **IMPLEMENTED for non-streaming JSON in PR #149** — NDJSON streaming deferred
 > Author: agent (Claude) + Daniel
 > Date: 2026-04-26
 > Related: PR #138 (CLI prompts + JSON sweep, merged), PR #144 (CLI 1.0 + AGENTS.md, merged), PR #147 (1.0.1 transcribe stderr fix, merged), PR #148 (post-1.0 bug cleanup, in review)
@@ -35,10 +35,10 @@ This is mostly a **MacParakeetCore refactor**: today `LLMService.summarize/chat/
 ```
 
 - **Token names**: OpenAI-compat (`promptTokens`/`completionTokens`/`totalTokens`). Already familiar to agent authors building on top of OpenAI/Anthropic SDKs.
-- **`usage`**: `null` when the provider doesn't surface it (`localCLI`; some `openaiCompatible` servers).
+- **`usage`**: omitted when the provider doesn't surface it (`localCLI`; some `openaiCompatible` servers).
 - **`stopReason`**: pass-through, not normalized. Honest over friendly. Document the per-provider strings agents will actually see.
 
-### Streaming (`--stream --json`) — NDJSON
+### Streaming (`--stream --json`) — deferred NDJSON follow-up
 
 ```
 {"type":"delta","output":"Hello"}
@@ -47,8 +47,9 @@ This is mostly a **MacParakeetCore refactor**: today `LLMService.summarize/chat/
 ```
 
 - One JSON object per line, terminated with `\n`.
-- Always ends with exactly one `final` line, even on usage-less providers (`final` then has `"usage": null`).
+- Always ends with exactly one `final` line. Usage-less providers omit `usage`, matching the one-shot envelope.
 - Lets agents share a parser between streaming and one-shot paths.
+- In PR #149, `--json --stream` is rejected during argument validation with a clear error.
 
 ### `test-connection --json`
 
@@ -72,14 +73,14 @@ Same envelope. `prompts run` is the same operation under the hood; agents will e
 |---|---|---|---|---|---|---|
 | `anthropic` | yes | yes | yes | yes (`input_tokens`/`output_tokens`) | yes (`end_turn`/`max_tokens`/`stop_sequence`/`tool_use`) | yes |
 | `openai` | yes | yes | yes | yes (`prompt_tokens`/`completion_tokens`/`total_tokens`) | yes (`stop`/`length`/`tool_calls`) | yes |
-| `openaiCompatible` | yes | yes | yes | server-dependent — `null` if absent | server-dependent | yes |
+| `openaiCompatible` | yes | yes | yes | server-dependent — omitted if absent | server-dependent | yes |
 | `gemini` | yes | yes | yes | yes (different field names — normalize) | yes (`STOP`/`MAX_TOKENS`/`SAFETY`/`RECITATION`) | yes |
 | `openrouter` | yes | yes | yes | yes (varies by upstream — pass through) | yes (varies) | yes |
 | `ollama` | yes | yes | yes | partial (`prompt_eval_count`/`eval_count`) | yes (`done_reason`) | yes |
 | `lmstudio` | yes | yes | yes | yes (OpenAI-compatible) | yes | yes |
-| `localCLI` | yes | inferred from command template | yes (`cli`) | `null` | `null` | yes |
+| `localCLI` | yes | `cli` | yes (`localCLI`) | omitted | omitted | yes |
 
-Normalization rule: providers map their native usage fields to `promptTokens`/`completionTokens`/`totalTokens`. If the provider only gives partial counts, fill what's available, set the rest to `null`.
+Normalization rule: providers map their native usage fields to `promptTokens`/`completionTokens`/`totalTokens`. PR #149 emits usage only when the provider reports enough data to avoid fabrication; the public schema still allows partial fields if a future provider can honestly report them.
 
 ---
 
@@ -92,7 +93,7 @@ Add a result envelope type:
 ```swift
 public struct LLMResult: Sendable, Codable {
     public let output: String
-    public let provider: LLMProviderID
+    public let provider: String
     public let model: String
     public let usage: LLMUsage?
     public let stopReason: String?
@@ -128,7 +129,7 @@ New stream methods return `AsyncThrowingStream<LLMStreamEvent, Error>`. Existing
 
 ### Phase 2 — Provider plumbing (RoutingLLMClient)
 
-Each `LLMClient` gains an envelope-returning method that captures upstream metadata. Where the underlying SDK already exposes usage (Anthropic, OpenAI, Gemini), this is mechanical. Ollama needs its `done`/`eval_count` fields wired through. `localCLI` returns `usage: null`. `openaiCompatible` honors usage if the server returns it, else `null`.
+Each `LLMClient` gains an envelope-returning method that captures upstream metadata. Where the underlying SDK already exposes usage (Anthropic, OpenAI, Gemini), this is mechanical. Ollama needs its `done`/`eval_count` fields wired through. `localCLI` omits `usage`. `openaiCompatible` honors usage if the server returns it, else omits it.
 
 Latency is measured at the client boundary: `let start = Date(); ... ; latencyMs = Int(Date().timeIntervalSince(start) * 1000)`.
 
@@ -145,7 +146,7 @@ Branching:
 - `!json && !stream` — existing behavior (`print(output)`).
 - `!json && stream` — existing behavior (token stream to stdout).
 - `json && !stream` — call envelope variant, print one JSON object via shared `printJSON` helper.
-- `json && stream` — call stream-event variant, print one NDJSON line per event.
+- `json && stream` — rejected at argument validation in PR #149. NDJSON streaming is a follow-up.
 
 `prompts run` gets the same `--json` flag. The "Saved PromptResult" confirmation continues on stderr.
 
@@ -153,8 +154,8 @@ Branching:
 
 ### Phase 4 — Tests
 
-- Unit: envelope encoding round-trips, NDJSON line shape, `usage: null` shape.
-- Integration: at least one provider path end-to-end (Ollama is the obvious choice — runs locally, no API key, exposes usage). Capture stdout, parse as NDJSON, assert `final` line shape.
+- Unit: envelope encoding round-trips, omitted-optional-field shape, and `--json --stream` validation.
+- Integration: at least one provider path end-to-end (Ollama is the obvious choice — runs locally, no API key, exposes usage). Capture stdout, parse one JSON object, assert envelope shape.
 - Schema golden: a small JSON snapshot per command so future drift surfaces in review.
 
 ---
@@ -179,10 +180,10 @@ Plan doc lands now (cheap, lets reviewers redirect schema decisions before code 
 
 ## Open decisions
 
-None left to resolve before implementation. (Earlier round: token names = OpenAI-compat; `stopReason` = pass-through; streaming = NDJSON with terminating `final`; errors = stderr + non-zero exit, no JSON envelope; `prompts run` included.)
+None left to resolve. (Earlier round: token names = OpenAI-compat; `stopReason` = pass-through; streaming follow-up = NDJSON with terminating `final`; errors = stderr + non-zero exit, no JSON envelope; `prompts run` included.)
 
 ---
 
 ## Success signal
 
-An agent author can pipe `macparakeet-cli llm summarize transcript.txt --provider anthropic --api-key ... --json | jq '.usage.totalTokens'` and get an integer. NDJSON streaming lets `read line; jq -r '.output' <<< "$line"` work in a shell loop. The same envelope shape is observable across all 8 providers (with `usage: null` honestly representing what's unavailable).
+An agent author can pipe `macparakeet-cli llm summarize transcript.txt --provider anthropic --api-key ... --json | jq '.usage.totalTokens'` and get an integer. The same envelope shape is observable across all 8 providers, with the `usage` field honestly absent when unavailable. NDJSON streaming will let `read line; jq -r '.output' <<< "$line"` work in a shell loop in the follow-up.

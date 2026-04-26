@@ -480,6 +480,8 @@ final class TelemetryServiceTests: XCTestCase {
             .llmPromptResultFailed(provider: "openai", errorType: "auth"),
             .llmChatUsed(provider: "openai", messageCount: 3),
             .llmChatFailed(provider: "openai", errorType: "network"),
+            .llmTransformUsed(provider: "openai"),
+            .llmTransformFailed(provider: "openai", errorType: "network"),
             .llmFormatterUsed(
                 provider: "lmstudio",
                 source: .dictation,
