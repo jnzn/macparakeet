@@ -108,8 +108,8 @@ final class LLMClientTests: XCTestCase {
         // Should use x-api-key, NOT Bearer
         XCTAssertEqual(capturedRequest?.value(forHTTPHeaderField: "x-api-key"), "sk-ant-test-key")
         XCTAssertNil(capturedRequest?.value(forHTTPHeaderField: "Authorization"))
-        // Should include anthropic-version
-        XCTAssertEqual(capturedRequest?.value(forHTTPHeaderField: "anthropic-version"), "2023-06-01")
+        // Should include anthropic-version (kept current; bumped from 2023-06-01 in Apr 2026)
+        XCTAssertEqual(capturedRequest?.value(forHTTPHeaderField: "anthropic-version"), "2024-06-01")
     }
 
     func testAnthropicExtractsSystemPrompt() async throws {
@@ -937,6 +937,60 @@ final class LLMClientTests: XCTestCase {
         Data("""
         {"model":"qwen3.5:4b","message":{"role":"assistant","content":"OK"},"done":true,"done_reason":"stop","prompt_eval_count":5,"eval_count":1}
         """.utf8)
+    }
+
+    // MARK: - scrubAPIKeyArtifacts
+
+    func testScrubReplacesOpenAIStyleKeys() {
+        let scrubbed = LLMClient.scrubAPIKeyArtifacts(
+            from: "Authentication failed: token sk-abc123def456ghi789 is invalid"
+        )
+        XCTAssertFalse(scrubbed.contains("sk-abc123def456ghi789"))
+        XCTAssertTrue(scrubbed.contains("<api-key>"))
+    }
+
+    func testScrubReplacesAnthropicStyleKeys() {
+        // sk-ant- prefix is a sub-pattern of the generic sk-... rule.
+        let scrubbed = LLMClient.scrubAPIKeyArtifacts(
+            from: "401 Unauthorized: invalid sk-ant-abcdef0123456789"
+        )
+        XCTAssertFalse(scrubbed.contains("sk-ant-abcdef0123456789"))
+        XCTAssertTrue(scrubbed.contains("<api-key>"))
+    }
+
+    func testScrubReplacesBearerTokens() {
+        let scrubbed = LLMClient.scrubAPIKeyArtifacts(
+            from: "Forwarded request: 'Authorization: Bearer eyJhbGciOiJSUzI1NiIs.example'"
+        )
+        XCTAssertFalse(scrubbed.contains("eyJhbGciOiJSUzI1NiIs.example"))
+        XCTAssertTrue(scrubbed.contains("Bearer <token>"))
+    }
+
+    func testScrubReplacesXApiKeyHeader() {
+        let scrubbed = LLMClient.scrubAPIKeyArtifacts(
+            from: "Headers: x-api-key: sk-secret123456abcdef"
+        )
+        // The Bearer-style header echo and the sk- pattern can both fire,
+        // depending on order. We only assert the secret bytes are gone.
+        XCTAssertFalse(scrubbed.contains("sk-secret123456abcdef"))
+    }
+
+    func testScrubReplacesQueryParamKeys() {
+        let scrubbed = LLMClient.scrubAPIKeyArtifacts(
+            from: "Bad URL: ?api_key=somethinglongenough12345"
+        )
+        XCTAssertFalse(scrubbed.contains("somethinglongenough12345"))
+    }
+
+    func testScrubLeavesPlainErrorAlone() {
+        let original = "Rate limit exceeded. Try again in 30 seconds."
+        XCTAssertEqual(LLMClient.scrubAPIKeyArtifacts(from: original), original)
+    }
+
+    func testScrubIsIdempotent() {
+        let once = LLMClient.scrubAPIKeyArtifacts(from: "key: sk-abcdefghij1234567890")
+        let twice = LLMClient.scrubAPIKeyArtifacts(from: once)
+        XCTAssertEqual(once, twice)
     }
 
     private func extractBody(from request: URLRequest) -> [String: Any]? {
