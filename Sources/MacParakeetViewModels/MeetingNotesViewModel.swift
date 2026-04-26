@@ -250,11 +250,16 @@ public final class MeetingNotesViewModel {
 
     private func scheduleDebounce() {
         debounceTask?.cancel()
-        let snapshot = notesText
         debounceTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: Self.debounceInterval)
+            // Read after the sleep so we always persist the LATEST text,
+            // not a snapshot taken when the debounce was scheduled. Each
+            // keystroke cancels the prior task before scheduling a new one,
+            // so in normal flow snapshot == notesText anyway — but reading
+            // after sleep makes the intent self-evident and immunizes the
+            // contract against a future change to the cancellation path.
             guard !Task.isCancelled, let self else { return }
-            await self.persist?(snapshot)
+            await self.persist?(self.notesText)
         }
     }
 
