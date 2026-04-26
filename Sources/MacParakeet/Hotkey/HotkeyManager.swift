@@ -552,13 +552,6 @@ public final class HotkeyManager {
             guard !triggerPressed else { return [] }
 
             let outputs = gestureController.triggerReleased(timestampMs: timestampMs)
-            if trigger.kind == .chord, triggerKeyPressed {
-                chordModifierReleased = true
-            }
-            if trigger.kind == .modifier {
-                targetModifierGestureIsActive = false
-                bareTap = true
-            }
             handleOutputs(outputs)
             return outputs
 
@@ -570,9 +563,6 @@ public final class HotkeyManager {
                 triggerKeyPressed: triggerKeyPressed,
                 triggerPressed: triggerPressed
             )
-            if trigger.kind == .chord, triggerKeyPressed, !triggerPressed {
-                chordModifierReleased = true
-            }
             return []
 
         case nil:
@@ -639,6 +629,8 @@ public final class HotkeyManager {
         case .chord:
             if triggerPressed {
                 chordModifierReleased = false
+            } else if triggerKeyPressed {
+                chordModifierReleased = true
             }
         default:
             break
