@@ -31,18 +31,55 @@ jobs:
           xcode-version: "16.1"
 
       - name: Toolchain Versions
+        timeout-minutes: 2
         run: |
           xcodebuild -version
           swift --version
 
+      - name: Cache SwiftPM Dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build/checkouts
+            .build/repositories
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-spm-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
       - name: Swift Build (Release)
-        run: swift build -c release
+        timeout-minutes: 15
+        run: |
+          mkdir -p .ci-logs
+          set -o pipefail
+          swift build -c release 2>&1 | tee .ci-logs/swift-build-release.log
 
       - name: Swift Concurrency Safety
-        run: swift build -Xswiftc -warn-concurrency
+        timeout-minutes: 15
+        run: |
+          mkdir -p .ci-logs
+          set -o pipefail
+          swift build -Xswiftc -warn-concurrency 2>&1 | tee .ci-logs/swift-concurrency-safety.log
 
       - name: Swift 6 Language Mode
-        run: swift build -Xswiftc -swift-version -Xswiftc 6
+        timeout-minutes: 15
+        run: |
+          mkdir -p .ci-logs
+          set -o pipefail
+          swift build -Xswiftc -swift-version -Xswiftc 6 2>&1 | tee .ci-logs/swift-6-language-mode.log
 
       - name: Swift Test
-        run: swift test --parallel
+        timeout-minutes: 20
+        run: |
+          mkdir -p .ci-logs
+          set -o pipefail
+          swift test --parallel 2>&1 | tee .ci-logs/swift-test.log
+
+      - name: Upload CI Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-ci-logs
+          path: .ci-logs/
+          if-no-files-found: ignore
+          retention-days: 7
