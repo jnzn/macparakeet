@@ -43,10 +43,15 @@ public struct Prompt: Codable, Identifiable, Sendable {
         self.updatedAt = updatedAt
     }
 
-    // Used for migrations and compatibility paths that need a canonical built-in summary prompt.
-    // This is not a fallback for the explicit "no auto-run prompts enabled" state.
+    // Used for compatibility fallback paths. This is not a fallback for the
+    // explicit "no auto-run prompts enabled" state.
     public static var defaultPrompt: Prompt {
         builtInPrompts().first(where: { $0.isAutoRun }) ?? builtInPrompts()[0]
+    }
+
+    public static func classicSummaryPrompt(now: Date = Date()) -> Prompt {
+        let prompts = builtInPrompts(now: now)
+        return prompts.first(where: { $0.name == "Summary" }) ?? prompts[0]
     }
 
     private static func makeBuiltInPrompt(
