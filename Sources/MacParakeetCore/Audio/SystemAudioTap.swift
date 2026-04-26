@@ -11,7 +11,10 @@ public final class SystemAudioTap: @unchecked Sendable {
 
     /// Budget for the very first buffer to arrive after `start`. If Core Audio
     /// produces nothing in this window, the tap is treated as dead-on-arrival.
-    private static let firstBufferTimeout: DispatchTimeInterval = .seconds(2)
+    /// Kept in sync with `firstBufferTimeoutSeconds` so the user-visible
+    /// stall message reports the actual wait duration.
+    private static let firstBufferTimeoutSeconds = 2
+    private static let firstBufferTimeout: DispatchTimeInterval = .seconds(firstBufferTimeoutSeconds)
     /// How frequently the heartbeat checker runs after first buffer is received.
     private static let heartbeatInterval: DispatchTimeInterval = .seconds(1)
     /// Mid-session silence that should be considered a tap stall (BT disconnect,
@@ -254,7 +257,7 @@ public final class SystemAudioTap: @unchecked Sendable {
         )
         snapshot.observer?(
             .captureRuntimeFailure(
-                "system audio tap delivered no buffers within \(Int(Self.heartbeatStallThreshold))s of start"
+                "system audio tap delivered no buffers within \(Self.firstBufferTimeoutSeconds)s of start"
             )
         )
     }
