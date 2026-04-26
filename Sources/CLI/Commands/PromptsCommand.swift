@@ -327,11 +327,20 @@ extension PromptsCommand {
         @Flag(name: .long, help: "Stream the response token by token.")
         var stream: Bool = false
 
+        @Flag(name: .long, help: "Emit a structured JSON envelope (output, model, usage, latencyMs) instead of plain text.")
+        var json: Bool = false
+
         @Option(name: .long, help: "Extra instructions appended to the prompt for this run.")
         var extra: String?
 
         @Option(help: "Path to SQLite database file (defaults to the app database).")
         var database: String?
+
+        func validate() throws {
+            if json && stream {
+                throw ValidationError("--json with --stream is not yet supported. Run without --stream for the envelope, or omit --json for token streaming.")
+            }
+        }
 
         func run() async throws {
             try AppPaths.ensureDirectories()
@@ -359,7 +368,14 @@ extension PromptsCommand {
             )
 
             var output = ""
-            if stream {
+            if json {
+                let result = try await service.generatePromptResultDetailed(
+                    transcript: transcriptText,
+                    systemPrompt: systemPrompt
+                )
+                output = result.output
+                try printJSON(result)
+            } else if stream {
                 let tokenStream = service.generatePromptResultStream(
                     transcript: transcriptText,
                     systemPrompt: systemPrompt
