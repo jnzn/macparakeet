@@ -93,16 +93,15 @@ func findMeeting(idOrName: String, repo: TranscriptionRepository) throws -> Tran
         return transcription
     }
 
-    let meetings = try repo.fetchBySourceType(.meeting)
     let lowered = trimmed.lowercased()
 
-    let prefixMatches = meetings.filter { $0.id.uuidString.lowercased().hasPrefix(lowered) }
+    let prefixMatches = try repo.fetchBySourceType(.meeting, idPrefix: lowered)
     if prefixMatches.count == 1 { return prefixMatches[0] }
     if prefixMatches.count > 1 {
         throw CLILookupError.ambiguous("Multiple meetings match '\(trimmed)'. Be more specific.")
     }
 
-    let nameMatches = meetings.filter { $0.fileName.lowercased() == lowered }
+    let nameMatches = try repo.fetchBySourceType(.meeting, fileName: trimmed)
     if nameMatches.count == 1 { return nameMatches[0] }
     if nameMatches.count > 1 {
         throw CLILookupError.ambiguous("Multiple meetings named '\(trimmed)'. Use ID instead.")
