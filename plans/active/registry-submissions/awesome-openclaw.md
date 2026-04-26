@@ -1,83 +1,144 @@
 # Submission draft — `vincentkoc/awesome-openclaw`
 
-> **Status:** draft. Do not submit until the brew tap is live and the
-> author confirms.
+> **Status:** issue template responses drafted. **Not yet submitted.**
+> Awaiting explicit user OK.
 
-## Verify before submitting
+## Submission flow (per their CONTRIBUTING.md)
 
-1. Read the current `README.md` at <https://github.com/vincentkoc/awesome-openclaw>
-   to find:
-   - Top-level categories (Voice / Speech / Plugins / Skills / Tools / etc.)
-   - Entry shape conventions
-   - Contribution policy
-2. Note: this list is broader than skills only (covers frameworks,
-   tooling, deployments). Pick the category that fits "an external CLI
-   tool an OpenClaw skill can shell out to."
+> *"Open an issue with the `Add Resource Request` template before
+> opening a PR. Wait for maintainer approval. Unapproved drive-by PRs
+> may be closed."*
 
-## Probable category
+So: **open issue first** via the GitHub Issues UI using the
+[`Add Resource Request`](https://github.com/vincentkoc/awesome-openclaw/issues/new?template=add-resource-request.yml)
+template. PR comes only after maintainer approval and a triage
+discussion.
 
-Best fits: **"Voice & Speech"** / **"Audio"** / **"Tools" / "Integrations"**
-or **"Skills"** if there's a skills subsection. If a Voice category
-doesn't exist, propose adding one with this entry as the first item.
+## Issue template fields (from `.github/ISSUE_TEMPLATE/add-resource-request.yml`)
 
-## Entry to add
+The template enforces the following inputs (all required unless noted):
 
+- **Resource name**
+- **Resource URL**
+- **Suggested section** (dropdown, fixed options)
+- **Why it should be included** (rationale + signal)
+- **Your relationship to this resource** (dropdown, fixed options)
+- **Public signal** (concrete usage / publicity / traction evidence)
+- **Checklist** (4 items, all required)
+
+## Pre-filled responses
+
+### Resource name
+```
+moona3k/macparakeet
+```
+
+### Resource URL
+```
+https://github.com/moona3k/macparakeet
+```
+
+### Suggested section (dropdown)
+**`Plugins and Integrations`** — the section description allows
+community-maintained tools, and our value to OpenClaw is precisely
+as an integration target (an OpenClaw skill shells out to
+`macparakeet-cli` for local Parakeet STT on Apple Silicon).
+
+### Why it should be included (rationale)
 ```markdown
-- [macparakeet-cli](https://github.com/moona3k/macparakeet) — Local Parakeet TDT speech-to-text on the Apple Neural Engine. Swift-native CLI for an OpenClaw skill to shell out to: persistent SQLite memory, prompt library, JSON output. OpenClaw entry point at [`integrations/openclaw/SOUL.md`](https://github.com/moona3k/macparakeet/blob/main/integrations/openclaw/SOUL.md). macOS 14.2+ Apple Silicon, GPL-3.0. `brew install moona3k/tap/macparakeet-cli`.
-```
+Voice / local speech-to-text is currently unrepresented in
+awesome-openclaw, and it's a documented gap in the OpenClaw-on-Mac-mini
+stack: Whisper.cpp doesn't use the Apple Neural Engine; the OpenAI
+Whisper API breaks the local-first posture; `parakeet-mlx` is
+Python-only and has no persistence/prompts.
 
-## PR title
+`macparakeet-cli 1.0.0` is the canonical Swift-native CLI for
+Parakeet TDT on the Apple Neural Engine — ~155x realtime, ~2.5% WER,
+GPL-3.0, semver-stable with a written compatibility policy. For an
+OpenClaw skill author specifically:
 
-```
-Add macparakeet-cli — local Parakeet STT for OpenClaw on Apple Silicon
-```
-
-## PR body
-
-```markdown
-## What
-
-Adds [`macparakeet-cli`](https://github.com/moona3k/macparakeet) to
-awesome-openclaw under **<category>**.
-
-## Why it fits
-
-OpenClaw is increasingly deployed as a daemon on Apple Silicon Mac
-minis. The voice/STT slot in that stack is currently underserved:
-Whisper.cpp doesn't use the Neural Engine; the OpenAI Whisper API
-breaks local-first; `parakeet-mlx` is Python-only and lacks the
-persistence/prompts an OpenClaw skill wants.
-
-`macparakeet-cli` is the canonical Swift-native CLI for Parakeet TDT
-on the Apple Neural Engine — ~155× realtime, ~2.5% WER, ~66 MB memory.
-Free, GPL-3.0, semver-stable (1.0.0+) with a written compatibility
-policy.
-
-For OpenClaw skill authors:
-
-- Stable JSON output (`--json` on every read-only command, ISO-8601
-  datetimes, sorted keys).
-- UUID-or-name lookup with `.notFound`/`.ambiguous` error classes.
+- Stable JSON output (`--json` on every read-only command) with
+  ISO-8601 datetimes and sorted keys.
+- UUID-or-name lookup with `.notFound` / `.ambiguous` error classes.
 - Exit codes: 0 success, non-zero failure, errors to stderr only.
-- Persistent SQLite at `~/Library/Application Support/MacParakeet/macparakeet.db`
-  — lets a skill recall prior dictations/transcriptions across runs.
+- Persistent SQLite memory layer at
+  `~/Library/Application Support/MacParakeet/macparakeet.db` — the
+  skill can recall prior dictations / transcriptions / prompt outputs
+  across sessions without re-transcribing anything.
+- All execution local on the ANE; optional cloud LLM provider only
+  when the agent passes `--provider <cloud>`.
 
-## OpenClaw entry point
+OpenClaw entry point lives at
+[`integrations/openclaw/`](https://github.com/moona3k/macparakeet/tree/main/integrations/openclaw)
+in the macparakeet repo. The full integration vocabulary
+(install, JSON conventions, command list) is at
+[`integrations/README.md`](https://github.com/moona3k/macparakeet/blob/main/integrations/README.md).
+The persona-framed landing page lives at
+<https://macparakeet.com/agents>.
 
-[`integrations/openclaw/SOUL.md`](https://github.com/moona3k/macparakeet/blob/main/integrations/openclaw/SOUL.md)
-— install, capabilities table, conventions. Adapt at clawhub
-registration.
-
-## Author
-
-Daniel Moon (@moona3k), maintainer of MacParakeet.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+Install:
+`brew tap moona3k/tap && brew install macparakeet-cli`
+(macOS 14.2+ Apple Silicon).
 ```
+
+### Your relationship (dropdown)
+**`I am the maintainer, founder, or builder`** — disclosing affiliation
+per CONTRIBUTING quality standards.
+
+### Public signal
+```markdown
+- **Public site + brand**: <https://macparakeet.com> (live, Cloudflare
+  Pages), with a dedicated `/agents` landing page at
+  <https://macparakeet.com/agents> shipped alongside this submission.
+- **Open source for ~1 month**: GPL-3.0 since 2026-03-25
+  ([open-source announcement](https://macparakeet.com/blog/macparakeet-open-source/)).
+- **Daily-driven by maintainer**: feature-complete for dictation,
+  file transcription, and (in v0.6 in progress) meeting recording.
+- **Multiple shipped releases**: Sparkle auto-updates from v0.1
+  through current v0.5.7. Public appcast at
+  <https://macparakeet.com/appcast.xml>.
+- **Comprehensive documentation**: spec kernel in `spec/`, ADRs for
+  locked architectural decisions, AGENTS.md at repo root, a
+  semver-tracked CLI changelog at `Sources/CLI/CHANGELOG.md`.
+- **Today**: cut `macparakeet-cli 1.0.0` (first versioned public
+  surface), shipped a Homebrew tap with both formula and cask, and
+  published [a launch blog post](https://macparakeet.com/blog/macparakeet-cli-1-0/)
+  framing the CLI as the canonical Swift-native Parakeet wrapper for
+  Apple Silicon AI agents.
+
+The OpenClaw integration story (`integrations/openclaw/` scaffold) is
+brand new — shipped in [PR #144](https://github.com/moona3k/macparakeet/pull/144)
+on 2026-04-25 — so OpenClaw-specific outside usage is not yet
+established. The underlying tool (`macparakeet-cli`) and the broader
+project are the established surface this submission is asking you to
+list.
+```
+
+### Checklist
+- [x] I checked that this resource is not already listed.
+- [x] I reviewed CONTRIBUTING.md formatting and A-Z ordering rules.
+- [x] The resource is public and can be evaluated from the provided link.
+- [x] If I am affiliated with the resource, I disclosed that above.
+
+## Proposed entry (for editorial reference, in your format)
+
+```
+- [moona3k/macparakeet](https://github.com/moona3k/macparakeet) - Local Parakeet TDT speech-to-text on the Apple Neural Engine. Swift-native CLI for OpenClaw skills to shell out to: persistent SQLite memory, prompt library, stable JSON output. ~155x realtime, ~2.5% WER, ~66 MB per inference slot. macOS 14.2+ Apple Silicon, GPL-3.0. `brew install moona3k/tap/macparakeet-cli`. OpenClaw scaffold at [integrations/openclaw/](https://github.com/moona3k/macparakeet/tree/main/integrations/openclaw).
+```
+
+A-Z ordering note: in `## Plugins and Integrations`, entries are
+alphabetical by repo path. `moona3k/macparakeet` would slot between
+`m1heng/clawdbot-feishu` and `marshallrichards/ClawPhone`.
 
 ## Submission checklist
 
-- [ ] Brew tap live and `brew install moona3k/tap/macparakeet-cli` verified
-- [ ] Target category in `awesome-openclaw` README confirmed
-- [ ] Entry shape matches existing entries
-- [ ] PR opened against `vincentkoc/awesome-openclaw:main`
+- [x] Brew tap live and `brew install moona3k/tap/macparakeet-cli` verified
+- [x] Target section identified (Plugins and Integrations)
+- [x] Issue template fields pre-filled
+- [x] A-Z ordering location identified
+- [x] Maintainer affiliation disclosure prepared
+- [ ] User has confirmed go-ahead
+- [ ] Issue opened via `Add Resource Request` template
+- [ ] Issue URL captured in this file
+- [ ] (After approval) PR opened with the exact entry text
+- [ ] PR URL captured in this file
