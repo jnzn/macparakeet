@@ -7,16 +7,26 @@ import MacParakeetViewModels
 final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Auto-Update
 
+    /// Sparkle update gating: refuses checks during active meeting recordings
+    /// (so a relaunch can't kill an in-flight recording) and during local
+    /// dev/sentinel builds (so a `0.0.0` / `dev` binary doesn't auto-update
+    /// itself to the shipped release). See `SparkleUpdateGuard`.
+    private lazy var sparkleUpdateGuard: SparkleUpdateGuard = SparkleUpdateGuard(
+        isMeetingRecordingActive: { [weak self] in
+            self?.meetingRecordingFlowCoordinator?.isMeetingRecordingActive == true
+        }
+    )
+
     #if DEBUG
-    private let updaterController = SPUStandardUpdaterController(
+    private lazy var updaterController: SPUStandardUpdaterController = SPUStandardUpdaterController(
         startingUpdater: false,
-        updaterDelegate: nil,
+        updaterDelegate: sparkleUpdateGuard,
         userDriverDelegate: nil
     )
     #else
-    private let updaterController = SPUStandardUpdaterController(
+    private lazy var updaterController: SPUStandardUpdaterController = SPUStandardUpdaterController(
         startingUpdater: true,
-        updaterDelegate: nil,
+        updaterDelegate: sparkleUpdateGuard,
         userDriverDelegate: nil
     )
     #endif

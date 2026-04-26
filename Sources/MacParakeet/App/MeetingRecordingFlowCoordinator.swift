@@ -355,8 +355,15 @@ final class MeetingRecordingFlowCoordinator {
 
         case .cancelRecording:
             let durationSeconds = Double(panelViewModel?.elapsedSeconds ?? 0)
+            let notesVM = panelViewModel?.notesViewModel
             actionTask?.cancel()
             actionTask = Task { @MainActor in
+                // Stop the in-flight debounce so it can't fire against a
+                // session folder that cancelRecording is about to delete.
+                // The notes themselves are intentionally discarded with
+                // the rest of the cancelled recording — symmetric with
+                // .stopRecordingAndTranscribe's commit() call.
+                await notesVM?.commit()
                 await meetingRecordingService.cancelRecording()
                 Telemetry.send(.meetingRecordingCancelled(durationSeconds: durationSeconds))
             }

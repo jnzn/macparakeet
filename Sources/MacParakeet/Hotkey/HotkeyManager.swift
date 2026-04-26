@@ -3,12 +3,15 @@ import CoreGraphics
 import Foundation
 import IOKit.hidsystem
 import MacParakeetCore
+import OSLog
 
 /// Manages system-wide hotkey detection via CGEvent tap.
 /// Supports any single key as trigger: modifier keys (Fn, Control, Option, Shift, Command)
 /// or regular key codes (F13, End, Home, etc.). See ADR-009.
 /// Requires Accessibility permission.
 public final class HotkeyManager {
+    private static let logger = Logger(subsystem: "com.macparakeet.app", category: "HotkeyManager")
+
     public var onStartRecording: ((FnKeyStateMachine.RecordingMode) -> Void)?
     public var onStopRecording: (() -> Void)?
     public var onCancelRecording: (() -> Void)?
@@ -131,6 +134,13 @@ public final class HotkeyManager {
             // Without this, deinit can never fire (the +1 prevents deallocation).
             retainedSelf?.release()
             retainedSelf = nil
+            // Log the trust state so logs distinguish "permission not granted"
+            // from a generic system error. AXIsProcessTrusted is read-only and
+            // doesn't trigger a permission prompt (we pass `nil` options).
+            let isTrusted = AXIsProcessTrusted()
+            Self.logger.error(
+                "hotkey_tap_create_failed accessibility_trusted=\(isTrusted, privacy: .public)"
+            )
             return false
         }
 

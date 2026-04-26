@@ -75,6 +75,14 @@ public final class OnboardingViewModel {
     private var warmUpObserverTask: Task<Void, Never>?
     private var warmUpObserverId: UUID?
     private var warmUpObservationToken: UUID?
+    private var warmUpStallWatchdogTask: Task<Void, Never>?
+
+    /// How long to wait between warm-up progress events before declaring the
+    /// stream stalled. FluidAudio emits progress updates regularly during
+    /// download even when bytes-per-second is low, so silence longer than
+    /// this strongly suggests a stuck connection or a hung dependency.
+    /// Memory: v0.4.22 stranded ~23 users for ~24h with no escape hatch.
+    public static let warmUpStallTimeout: Duration = .seconds(180)
     private var screenRecordingGrantRequestedAt: Date?
     private var hasLoadedInitialScreenRecordingState = false
     private var hasEmittedScreenRecordingGranted = false
@@ -363,6 +371,7 @@ public final class OnboardingViewModel {
         isBusy = true
         engineState = .working(message: "Checking setup requirements...", progress: nil)
         warmUpObservationToken = observationToken
+        resetWarmUpStallWatchdog(generation: generation, observationToken: observationToken)
 
         // Assign the outer Task immediately so re-entrant calls hit the
         // `warmUpObserverTask != nil` guard. Without this, the two `await`
@@ -374,6 +383,8 @@ public final class OnboardingViewModel {
                 self.warmUpObserverTask = nil
                 self.warmUpObserverId = nil
                 self.warmUpObservationToken = nil
+                self.warmUpStallWatchdogTask?.cancel()
+                self.warmUpStallWatchdogTask = nil
                 if let observerId {
                     Task { [sttClient] in await sttClient.removeWarmUpObserver(id: observerId) }
                 }
@@ -407,6 +418,10 @@ public final class OnboardingViewModel {
 
             observationLoop: for await state in stream {
                 guard self.engineGeneration == generation, self.warmUpObservationToken == observationToken else { break }
+                // Each event resets the stall-watchdog clock. If this loop
+                // doesn't iterate again within `warmUpStallTimeout`, the
+                // watchdog transitions to .failed and cancels observation.
+                self.resetWarmUpStallWatchdog(generation: generation, observationToken: observationToken)
                 switch state {
                 case .idle:
                     self.engineState = .working(message: "Preparing...", progress: nil)
@@ -498,12 +513,40 @@ public final class OnboardingViewModel {
 
     private func cancelWarmUpObservation() {
         warmUpObservationToken = nil
+        warmUpStallWatchdogTask?.cancel()
+        warmUpStallWatchdogTask = nil
         warmUpObserverTask?.cancel()
         warmUpObserverTask = nil
         if let id = warmUpObserverId {
             Task { [sttClient] in await sttClient.removeWarmUpObserver(id: id) }
         }
         warmUpObserverId = nil
+    }
+
+    /// Schedule (or reschedule) the warm-up stall watchdog. Cancels any
+    /// previously-running watchdog. If the new timer expires before another
+    /// stream event resets it, transitions `engineState` to `.failed` with a
+    /// retry-able message and cancels the warm-up observation.
+    /// Generation + observationToken guard so a stale watchdog from a previous
+    /// `startEngineWarmUp` call cannot overwrite a newer attempt.
+    private func resetWarmUpStallWatchdog(generation: Int, observationToken: UUID) {
+        warmUpStallWatchdogTask?.cancel()
+        warmUpStallWatchdogTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.warmUpStallTimeout)
+            guard !Task.isCancelled, let self else { return }
+            guard self.engineGeneration == generation,
+                  self.warmUpObservationToken == observationToken else { return }
+            // No progress event for `warmUpStallTimeout`. Declare stuck.
+            let stallSeconds = Int(Self.warmUpStallTimeout.components.seconds)
+            let detail = "no warm-up progress for \(stallSeconds)s"
+            self.logger.error("warm_up_stall_detected detail=\(detail, privacy: .public)")
+            Telemetry.send(.modelDownloadFailed(errorType: "WarmUpStalled", errorDetail: detail))
+            self.engineState = .failed(
+                message: "Setup is taking longer than expected. Check your network connection and tap Retry."
+            )
+            self.isBusy = false
+            self.cancelWarmUpObservation()
+        }
     }
 
     private func runEnginePreflight() async throws {
