@@ -414,6 +414,23 @@ final class ExportServiceTests: XCTestCase {
         try? FileManager.default.removeItem(at: tempURL)
     }
 
+    func testExportToSRTCollapsesEditedTranscriptWhitespaceForSingleCue() throws {
+        let transcription = makeExportOptionsTranscription(
+            cleanTranscript: "Edited first line.\n\nEdited second line.\n  Edited third line.",
+            isTranscriptEdited: true
+        )
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("test_export_\(UUID().uuidString).srt")
+
+        try exportService.exportToSRT(transcription: transcription, url: tempURL)
+
+        let content = try String(contentsOf: tempURL, encoding: .utf8)
+        XCTAssertTrue(content.contains("Edited first line. Edited second line. Edited third line."))
+        XCTAssertFalse(content.contains("Edited first line.\n\nEdited second line."))
+
+        try? FileManager.default.removeItem(at: tempURL)
+    }
+
     func testExportToVTTUsesEditedTranscriptWhenTimestampsExist() throws {
         let transcription = makeExportOptionsTranscription(
             cleanTranscript: "Edited transcript without timing.",
@@ -429,6 +446,23 @@ final class ExportServiceTests: XCTestCase {
         XCTAssertTrue(content.contains("00:00:00.000 --> 00:00:05.000\nEdited transcript without timing."))
         XCTAssertFalse(content.contains("Hello."))
         XCTAssertFalse(content.contains("Goodbye."))
+
+        try? FileManager.default.removeItem(at: tempURL)
+    }
+
+    func testExportToVTTCollapsesEditedTranscriptWhitespaceForSingleCue() throws {
+        let transcription = makeExportOptionsTranscription(
+            cleanTranscript: "Edited first line.\n\nEdited second line.\n  Edited third line.",
+            isTranscriptEdited: true
+        )
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("test_export_\(UUID().uuidString).vtt")
+
+        try exportService.exportToVTT(transcription: transcription, url: tempURL)
+
+        let content = try String(contentsOf: tempURL, encoding: .utf8)
+        XCTAssertTrue(content.contains("Edited first line. Edited second line. Edited third line."))
+        XCTAssertFalse(content.contains("Edited first line.\n\nEdited second line."))
 
         try? FileManager.default.removeItem(at: tempURL)
     }
@@ -697,6 +731,46 @@ final class ExportServiceTests: XCTestCase {
 
         let content = try String(contentsOf: tempURL, encoding: .utf8)
         XCTAssertTrue(content.contains("1\n00:00:00,000 --> 00:00:05,000\nHello world"))
+
+        try? FileManager.default.removeItem(at: tempURL)
+    }
+
+    func testExportToSRTWithoutTimestampsCollapsesWhitespace() throws {
+        let transcription = Transcription(
+            fileName: "audio.mp3",
+            durationMs: 5000,
+            rawTranscript: "Hello world.\n\nSecond paragraph.\n  Third line.",
+            status: .completed
+        )
+
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("test_export_\(UUID().uuidString).srt")
+
+        try exportService.exportToSRT(transcription: transcription, url: tempURL)
+
+        let content = try String(contentsOf: tempURL, encoding: .utf8)
+        XCTAssertTrue(content.contains("Hello world. Second paragraph. Third line."))
+        XCTAssertFalse(content.contains("Hello world.\n\nSecond paragraph."))
+
+        try? FileManager.default.removeItem(at: tempURL)
+    }
+
+    func testExportToVTTWithoutTimestampsCollapsesWhitespace() throws {
+        let transcription = Transcription(
+            fileName: "audio.mp3",
+            durationMs: 5000,
+            rawTranscript: "Hello world.\n\nSecond paragraph.\n  Third line.",
+            status: .completed
+        )
+
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("test_export_\(UUID().uuidString).vtt")
+
+        try exportService.exportToVTT(transcription: transcription, url: tempURL)
+
+        let content = try String(contentsOf: tempURL, encoding: .utf8)
+        XCTAssertTrue(content.contains("Hello world. Second paragraph. Third line."))
+        XCTAssertFalse(content.contains("Hello world.\n\nSecond paragraph."))
 
         try? FileManager.default.removeItem(at: tempURL)
     }

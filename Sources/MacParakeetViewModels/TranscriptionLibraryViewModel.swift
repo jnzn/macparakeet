@@ -42,7 +42,7 @@ public final class TranscriptionLibraryViewModel {
     }
 
     private func recomputeFiltered() {
-        var result = transcriptions.filter(matchesScope)
+        var result = transcriptions.filter { matchesScope($0) }
 
         switch filter {
         case .all: break

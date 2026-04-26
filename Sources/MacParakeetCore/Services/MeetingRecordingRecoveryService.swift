@@ -260,8 +260,10 @@ public final class MeetingRecordingRecoveryService: MeetingRecordingRecoveryServ
             throw MeetingRecordingRecoveryError.audioRepairFailed("Export did not produce playable audio.")
         }
 
-        try? fileManager.removeItem(at: url)
-        try fileManager.moveItem(at: repairedURL, to: url)
+        // Atomic swap: the original is preserved if the OS-level move fails,
+        // so a disk-full / sandbox blip during repair can't strand the user
+        // without either copy of the audio. Same pattern as BinaryBootstrap.
+        _ = try fileManager.replaceItemAt(url, withItemAt: repairedURL)
         return (url, info.duration, info.sampleRate)
     }
 
