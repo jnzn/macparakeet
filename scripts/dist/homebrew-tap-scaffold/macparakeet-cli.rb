@@ -19,7 +19,10 @@ class MacparakeetCli < Formula
   license "GPL-3.0-or-later"
   version "1.0.0"
 
-  # macOS 14.2+ (Sonoma) — required by FluidAudio + Swift 6 runtime
+  # macOS 14.2+ (Sonoma) — required by FluidAudio + Swift 6 runtime.
+  # Homebrew's `depends_on macos:` only accepts major-version symbols, so
+  # `:sonoma` covers 14.0+; the patch-level floor (14.2) is enforced at
+  # install time via the `odie` check below.
   depends_on macos: :sonoma
   # Apple Silicon only — the Neural Engine is the entire performance story
   depends_on arch: :arm64
@@ -30,6 +33,7 @@ class MacparakeetCli < Formula
   depends_on "yt-dlp"
 
   def install
+    odie "macparakeet-cli requires macOS 14.2 or later" if MacOS.version < "14.2"
     bin.install "macparakeet-cli"
   end
 

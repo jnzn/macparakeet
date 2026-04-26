@@ -60,9 +60,16 @@ xcrun notarytool submit dist/macparakeet-cli-1.0.0-darwin-arm64.zip \
 ```
 
 > **Heads up:** `notarytool submit --wait` intermittently SIGBUS-crashes
-> on macOS 15+ even after a successful upload. If that happens, drop
-> `--wait`, then poll with `notarytool history` + `notarytool info`.
-> See `memory/feedback_notarytool_wait_bug.md` for the recipe.
+> (exit 138) on macOS 15+ even after a successful upload. The upload
+> usually succeeds despite the crash. If `--wait` exits non-zero:
+>
+> 1. Run `xcrun notarytool history --keychain-profile <profile>` to find
+>    the most recent submission ID.
+> 2. Poll its status with `xcrun notarytool info <id> --keychain-profile <profile>`
+>    until it reads `Accepted`.
+> 3. If the upload itself failed, resubmit cleanly without `--wait`.
+>
+> Resubmitting after a SIGBUS usually works on the next try.
 
 ### 4. Tar + checksum
 
