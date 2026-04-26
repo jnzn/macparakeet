@@ -383,6 +383,8 @@ public final class OnboardingViewModel {
                 self.warmUpObserverTask = nil
                 self.warmUpObserverId = nil
                 self.warmUpObservationToken = nil
+                self.warmUpStallWatchdogTask?.cancel()
+                self.warmUpStallWatchdogTask = nil
                 if let observerId {
                     Task { [sttClient] in await sttClient.removeWarmUpObserver(id: observerId) }
                 }
