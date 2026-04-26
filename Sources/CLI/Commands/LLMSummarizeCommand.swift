@@ -20,7 +20,7 @@ struct LLMSummarizeCommand: AsyncParsableCommand {
         let text = try readInput(input)
 
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            print("Input is empty.")
+            printErr("Input is empty.")
             throw ExitCode.failure
         }
 
