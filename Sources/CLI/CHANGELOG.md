@@ -30,6 +30,29 @@ JSON output schemas are part of the contract: top-level shape (array vs
 object), field names, and field types are stable within a major version. We
 may add new optional fields in a minor release.
 
+## [1.2.0] -- 2026-04-26
+
+### Added
+
+- `--json` output mode for the LLM commands (`llm summarize`, `llm chat`,
+  `llm transform`, `prompts run`) and `llm test-connection`. Emits a
+  structured envelope so agents can read `{output, provider, model,
+  usage: {promptTokens, completionTokens, totalTokens}, stopReason,
+  latencyMs}` directly rather than regexing prose. Token field names
+  match the OpenAI convention. `usage` is omitted when the provider
+  doesn't surface it (`localCLI`; some `openaiCompatible` servers).
+  `stopReason` is pass-through — provider-native vocabulary
+  (`end_turn`, `length`, `STOP`, `done_reason`, etc.) is surfaced
+  verbatim. `test-connection --json` returns
+  `{ok, provider, model, latencyMs}` on success; on failure: stderr +
+  non-zero exit, no JSON envelope.
+
+### Not yet supported
+
+- `--json` combined with `--stream` is rejected at argument validation
+  with a clear error. NDJSON streaming (`{type: "delta"}` lines
+  followed by a `{type: "final"}` envelope) is a planned follow-up.
+
 ## [1.1.0] -- 2026-04-26
 
 ### Added
