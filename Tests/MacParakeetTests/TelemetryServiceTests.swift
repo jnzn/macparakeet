@@ -269,6 +269,36 @@ final class TelemetryServiceTests: XCTestCase {
         XCTAssertTrue(json["props"] is NSNull || json["props"] == nil)
     }
 
+    func testErrorOccurredDescriptionIsSanitizedAndTruncated() throws {
+        let event = TelemetryEvent(
+            spec: .errorOccurred(
+                domain: "Test",
+                code: "42",
+                description: "Failed /Users/alice/secret.wav via https://example.com/token?\(String(repeating: "x", count: 600))"
+            ),
+            appVer: "0.4.2",
+            osVer: "15.3",
+            locale: "en-US",
+            chip: "Apple M1",
+            session: "test-session"
+        )
+
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let data = try encoder.encode(event)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let props = try XCTUnwrap(json["props"] as? [String: String])
+        let description = try XCTUnwrap(props["description"])
+
+        XCTAssertEqual(props["domain"], "Test")
+        XCTAssertEqual(props["code"], "42")
+        XCTAssertFalse(description.contains("/Users/alice"))
+        XCTAssertFalse(description.contains("example.com"))
+        XCTAssertTrue(description.contains("<path>"))
+        XCTAssertTrue(description.contains("<url>"))
+        XCTAssertLessThanOrEqual(description.count, 512)
+    }
+
     func testTranscriptionCompletedSerializesDiarizationContext() throws {
         let event = TelemetryEvent(
             spec: .transcriptionCompleted(
