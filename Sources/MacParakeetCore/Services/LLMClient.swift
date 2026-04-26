@@ -481,7 +481,10 @@ public final class LLMClient: LLMClientProtocol, Sendable {
         var request = URLRequest(url: url, timeoutInterval: stream ? 120 : 30)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        // Anthropic versions are pinned date strings. We track a single
+// constant so chat + listModels stay in sync and the bump is one
+// place. 2023-06-01 (the previous pin) was 2+ years stale.
+request.setValue(LLMClient.anthropicAPIVersion, forHTTPHeaderField: "anthropic-version")
 
         if let apiKey = config.apiKey {
             request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
@@ -531,7 +534,10 @@ public final class LLMClient: LLMClientProtocol, Sendable {
             // Anthropic uses x-api-key header and anthropic-version
             if let key = config.apiKey {
                 request.setValue(key, forHTTPHeaderField: "x-api-key")
-                request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+                // Anthropic versions are pinned date strings. We track a single
+// constant so chat + listModels stay in sync and the bump is one
+// place. 2023-06-01 (the previous pin) was 2+ years stale.
+request.setValue(LLMClient.anthropicAPIVersion, forHTTPHeaderField: "anthropic-version")
             }
         case .gemini:
             // Gemini uses ?key= query parameter on their native endpoint
@@ -746,15 +752,23 @@ public final class LLMClient: LLMClientProtocol, Sendable {
         // Providers use different formats:
         //   OpenAI/Anthropic: {"error": {"message": "..."}}
         //   Gemini:           [{"error": {"code": 404, "message": "...", "status": "NOT_FOUND"}}]
-        let message: String
+        let rawMessage: String
         if let errorBody = try? JSONDecoder().decode(OpenAIErrorResponse.self, from: data) {
-            message = errorBody.error.message
+            rawMessage = errorBody.error.message
         } else if let geminiArray = try? JSONDecoder().decode([GeminiErrorWrapper].self, from: data),
                   let first = geminiArray.first {
-            message = first.error.message
+            rawMessage = first.error.message
         } else {
-            message = String(data: data, encoding: .utf8) ?? "Unknown error"
+            rawMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
         }
+
+        // Sanitize the message before propagating. Some providers echo the
+        // request shape (or fragments of it) in their error responses; if a
+        // misconfigured request leaked an Authorization header, sk-... key,
+        // or `api-key=...` query param, the message would otherwise carry
+        // those tokens into Swift error chains, telemetry, logs, and the
+        // user-visible UI.
+        let message = LLMClient.scrubAPIKeyArtifacts(from: rawMessage)
 
         switch statusCode {
         case 401:
@@ -774,6 +788,47 @@ public final class LLMClient: LLMClientProtocol, Sendable {
         default:
             return .providerError(message)
         }
+    }
+
+    /// Anthropic Messages API version pin. Anthropic dates each API version;
+    /// they keep old pins working for a long time, but using a 2-year-old pin
+    /// risks subtle compat issues with newer model behavior (tool-use,
+    /// content-block shapes). One constant so chat-stream and listModels
+    /// stay in lockstep.
+    static let anthropicAPIVersion = "2024-06-01"
+
+    /// Strips obvious API-key artifacts from a provider error message before
+    /// it propagates into Swift errors / telemetry / logs / UI. Intended to
+    /// be idempotent and conservative -- false negatives are acceptable;
+    /// false positives that mask the actual error message are not. Patterns:
+    /// - `sk-...` and `sk-proj-...` style OpenAI / Anthropic keys
+    /// - `Bearer <token>`
+    /// - `x-api-key: <token>` and similar header echoes
+    /// - `key=<token>` and `api[_-]?key=<token>` query-param echoes
+    static func scrubAPIKeyArtifacts(from message: String) -> String {
+        let patterns: [(String, String)] = [
+            // OpenAI / Anthropic / OpenRouter style keys with `sk-` or `sk-proj-` prefix.
+            (#"\bsk-[A-Za-z0-9_\-]{8,}"#, "<api-key>"),
+            // Bearer tokens (Authorization header echoes).
+            (#"\bBearer\s+[A-Za-z0-9._\-]{8,}"#, "Bearer <token>"),
+            // x-api-key header echoes (case-insensitive).
+            (#"(?i)\bx-api-key:\s*[A-Za-z0-9._\-]{8,}"#, "x-api-key: <token>"),
+            // Generic api-key / api_key / apikey query params (case-insensitive).
+            (#"(?i)\bapi[_-]?key=[A-Za-z0-9._\-]{8,}"#, "api-key=<token>"),
+            // Generic key= query param (must come last so the more specific
+            // api-key= rule wins).
+            (#"(?i)\bkey=[A-Za-z0-9._\-]{20,}"#, "key=<token>"),
+        ]
+
+        var out = message
+        for (pattern, replacement) in patterns {
+            out = out.replacingOccurrences(
+                of: pattern,
+                with: replacement,
+                options: .regularExpression
+            )
+        }
+        return out
     }
 }
 
