@@ -190,7 +190,8 @@ extension Transcription: FetchableRecord, PersistableRecord {
             }
         } else {
             speakers = nil
-            if container.contains(.speakers) {
+            let speakersIsExplicitNull = (try? container.decodeNil(forKey: .speakers)) == true
+            if container.contains(.speakers), !speakersIsExplicitNull {
                 let recordIDString = id.uuidString
                 transcriptionDecodeLogger.warning(
                     "transcription_speakers_decode_failed id=\(recordIDString, privacy: .public)"

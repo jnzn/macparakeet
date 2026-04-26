@@ -159,10 +159,11 @@ func printErr(_ s: String) {
 
 /// Public failure envelope emitted to stdout when a `--json` command fails.
 /// Pairs with the success envelopes (`LLMResult`, `LLMTestConnectionResult`,
-/// etc.) so downstream agents parsing `--json` only ever see one of two
-/// JSON shapes: an `ok: true` success object or this `ok: false` failure
-/// object. Either way, the exit code is the source of truth for branching;
-/// the envelope is the source of truth for *why* it failed.
+/// etc.) after argument parsing succeeds. Downstream agents parsing executed
+/// `--json` commands see one of two JSON shapes: an `ok: true` success object
+/// or this `ok: false` failure object. Either way, the exit code is the
+/// source of truth for branching; the envelope is the source of truth for
+/// *why* it failed.
 public struct CLIErrorEnvelope: Encodable {
     public let ok: Bool   // always false
     public let error: String
