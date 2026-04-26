@@ -173,6 +173,30 @@ final class HotkeyManagerTests: XCTestCase {
         )
     }
 
+    func testTapRecoveryDuringActiveChordHoldStopsAndSuppressesLaterKeyUp() {
+        let trigger = HotkeyTrigger.chord(modifiers: ["command"], keyCode: 49)
+        let manager = HotkeyManager(trigger: trigger)
+
+        manager.resumeRecording(mode: .holdToTalk)
+
+        XCTAssertEqual(
+            manager.recoverFromDisabledTapForTesting(
+                flags: [],
+                triggerKeyPressed: true,
+                timestampMs: 1_500
+            ),
+            [
+                .cancelStartupDebounce,
+                .cancelHoldWindow,
+                .stopRecording,
+            ]
+        )
+        XCTAssertEqual(
+            manager.chordTriggerKeyUpOutputsForTesting(timestampMs: 1_550),
+            []
+        )
+    }
+
     func testAdditionalModifierInterruptsBareFnBeforeStartup() {
         let manager = HotkeyManager(trigger: .fn)
 

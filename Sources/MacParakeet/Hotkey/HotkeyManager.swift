@@ -189,7 +189,7 @@ public final class HotkeyManager {
         // Re-enable it to prevent the hotkey from silently dying.
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let tap = eventTap { CGEvent.tapEnable(tap: tap, enable: true) }
-            recoverFromDisabledTap(timestampMs: UInt64(event.timestamp / 1_000_000))
+            recoverFromDisabledTap()
             return Unmanaged.passUnretained(event)
         }
 
@@ -394,6 +394,14 @@ public final class HotkeyManager {
         )
     }
 
+    func chordTriggerKeyUpOutputsForTesting(
+        timestampMs: UInt64
+    ) -> [HotkeyGestureController.Output] {
+        let outputs = chordTriggerKeyUpOutputs(timestampMs: timestampMs)
+        rememberRecordingState(for: outputs)
+        return outputs
+    }
+
     // MARK: - KeyCode Trigger Path
 
     private func handleKeyCodeEvent(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
@@ -474,14 +482,7 @@ public final class HotkeyManager {
             }
         } else if type == .keyUp {
             if keyCode == triggerCode {
-                if triggerKeyIsPressed {
-                    triggerKeyIsPressed = false
-                    if !chordModifierReleased {
-                        // Normal key release — end dictation
-                        handleOutputs(gestureController.triggerReleased(timestampMs: timestampMs))
-                    }
-                    chordModifierReleased = false
-                }
+                handleOutputs(chordTriggerKeyUpOutputs(timestampMs: timestampMs))
                 // Always swallow the trigger key's keyUp
                 return nil
             }
@@ -544,6 +545,7 @@ public final class HotkeyManager {
         switch activeRecordingMode {
         case .holdToTalk:
             cancelStartupTimer()
+            cancelHoldTimer()
             syncRecoveredTriggerState(
                 flags: flags,
                 triggerKeyPressed: triggerKeyPressed,
@@ -635,6 +637,17 @@ public final class HotkeyManager {
         default:
             break
         }
+    }
+
+    private func chordTriggerKeyUpOutputs(
+        timestampMs: UInt64
+    ) -> [HotkeyGestureController.Output] {
+        guard triggerKeyIsPressed else { return [] }
+
+        triggerKeyIsPressed = false
+        let outputs = chordModifierReleased ? [] : gestureController.triggerReleased(timestampMs: timestampMs)
+        chordModifierReleased = false
+        return outputs
     }
 
     private func currentPhysicalTriggerKeyIsPressed() -> Bool {
