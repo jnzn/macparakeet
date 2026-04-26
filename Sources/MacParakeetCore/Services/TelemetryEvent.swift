@@ -670,7 +670,16 @@ extension TelemetryEventSpec {
         case .calendarAutoStopCancelled:
             return nil
         case .errorOccurred(let domain, let code, let description):
-            return ["domain": domain, "code": code, "description": String(description.prefix(512))]
+            // Defense in depth: sanitize() at the boundary so any caller route
+            // (including future call sites that forget to run
+            // `TelemetryErrorClassifier.errorDetail` first) cannot leak file
+            // paths or URLs into telemetry. `sanitize` is idempotent, so
+            // double-sanitizing existing well-behaved callers costs nothing.
+            return [
+                "domain": domain,
+                "code": code,
+                "description": String(TelemetryErrorClassifier.sanitize(description).prefix(512)),
+            ]
         case .crashOccurred(let crashType, let signal, let name, let crashTimestamp,
                             let crashAppVer, let crashOsVer, let uuid, let slide,
                             let reason, let stackTrace):
