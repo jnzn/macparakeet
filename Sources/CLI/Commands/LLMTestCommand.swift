@@ -42,7 +42,7 @@ struct LLMTestCommand: AsyncParsableCommand {
     }
 }
 
-private struct LLMTestConnectionResult: Encodable {
+struct LLMTestConnectionResult: Encodable {
     let ok: Bool
     let provider: String
     let model: String
