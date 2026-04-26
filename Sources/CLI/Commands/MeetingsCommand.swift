@@ -117,17 +117,9 @@ struct MeetingsCommand: AsyncParsableCommand {
                 case .json:
                     try printJSON(MeetingTranscriptRecord(transcription))
                 case .srt:
-                    if let words = transcription.wordTimestamps, !words.isEmpty {
-                        print(await exportService.formatSRT(words: words, speakers: transcription.speakers))
-                    } else {
-                        print(preferredTranscriptText(transcription))
-                    }
+                    print(await exportService.formatSRT(transcription: transcription))
                 case .vtt:
-                    if let words = transcription.wordTimestamps, !words.isEmpty {
-                        print(await exportService.formatVTT(words: words, speakers: transcription.speakers))
-                    } else {
-                        print(preferredTranscriptText(transcription))
-                    }
+                    print(await exportService.formatVTT(transcription: transcription))
                 }
             }
         }
