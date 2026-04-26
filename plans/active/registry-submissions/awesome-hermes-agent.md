@@ -1,7 +1,6 @@
 # Submission draft — `0xNyk/awesome-hermes-agent`
 
-> **Status:** issue body drafted. **Not yet submitted.** Awaiting
-> explicit user OK.
+> **Status:** ✅ submitted as issue [#49](https://github.com/0xNyk/awesome-hermes-agent/issues/49) on 2026-04-25. Awaiting maintainer review.
 
 ## Submission flow (per their CONTRIBUTING.md)
 
