@@ -20,7 +20,7 @@ struct LLMTestCommand: AsyncParsableCommand {
             try await execution.client.testConnection(context: execution.context)
             print("Connection successful.")
         } catch let error as LLMError {
-            print("Connection failed: \(error.errorDescription ?? String(describing: error))")
+            printErr("Connection failed: \(error.errorDescription ?? String(describing: error))")
             throw ExitCode.failure
         }
     }
