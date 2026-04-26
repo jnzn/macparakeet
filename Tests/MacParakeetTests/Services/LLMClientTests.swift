@@ -284,6 +284,31 @@ final class LLMClientTests: XCTestCase {
         XCTAssertEqual(response.usage?.completionTokens, 5)
     }
 
+    func testOllamaResponseWithoutUsageFieldsEmitsNilUsage() async throws {
+        // Locks the fix for the partial-usage fabrication bug: when Ollama
+        // returns a response without `prompt_eval_count` / `eval_count`, the
+        // client must emit `usage: nil` rather than synthesizing
+        // `TokenUsage(0, 0)` — otherwise the public `--json` envelope would
+        // surface a fabricated `totalTokens: 0` indistinguishable from a
+        // real zero-token response.
+        MockURLProtocol.handler = { request in
+            let json = """
+            {"model":"qwen3.5:4b","message":{"role":"assistant","content":"OK"},"done":true}
+            """
+            return (self.okResponse(for: request), Data(json.utf8))
+        }
+
+        let config = LLMProviderConfig.ollama(model: "qwen3.5:4b")
+        let response = try await llmClient.chatCompletion(
+            messages: [ChatMessage(role: .user, content: "Hi")],
+            config: config,
+            options: .default
+        )
+
+        XCTAssertEqual(response.content, "OK")
+        XCTAssertNil(response.usage)
+    }
+
     func testInvalidResponseThrowsInvalidResponse() async {
         MockURLProtocol.handler = { request in
             return (self.okResponse(for: request), Data("not json".utf8))

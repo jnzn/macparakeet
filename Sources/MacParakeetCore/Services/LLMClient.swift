@@ -226,10 +226,19 @@ public final class LLMClient: LLMClientProtocol, Sendable {
             throw LLMError.invalidResponse
         }
 
-        let usage = TokenUsage(
-            promptTokens: ollamaResponse.prompt_eval_count ?? 0,
-            completionTokens: ollamaResponse.eval_count ?? 0
-        )
+        // Emit usage only when both halves are present. Defaulting missing
+        // counts to 0 (the previous `?? 0` behavior) is misleading for any
+        // downstream consumer that has to distinguish "really 0 tokens"
+        // from "Ollama didn't report it" — most acutely the public
+        // `--json` envelope shape, which would otherwise show a
+        // fabricated `totalTokens` for partial reports.
+        let usage: TokenUsage?
+        if let prompt = ollamaResponse.prompt_eval_count,
+           let completion = ollamaResponse.eval_count {
+            usage = TokenUsage(promptTokens: prompt, completionTokens: completion)
+        } else {
+            usage = nil
+        }
 
         return ChatCompletionResponse(
             content: ollamaResponse.message.content,
