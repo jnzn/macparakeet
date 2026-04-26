@@ -432,6 +432,10 @@ final class TranscriptionServiceTests: XCTestCase {
         XCTAssertEqual(convertURLs, [microphoneURL, systemURL])
 
         let events = telemetry.snapshot()
+        let completedEvent = events.reversed().first {
+            if case .transcriptionCompleted = $0 { return true }
+            return false
+        }
         guard case .transcriptionCompleted(
             let source,
             _,
@@ -440,7 +444,7 @@ final class TranscriptionServiceTests: XCTestCase {
             let speakerCount,
             let diarizationRequested,
             let diarizationApplied
-        ) = try XCTUnwrap(events.last) else {
+        ) = try XCTUnwrap(completedEvent) else {
             return XCTFail("Expected transcription_completed telemetry")
         }
         XCTAssertEqual(source, .meeting)
@@ -877,7 +881,11 @@ final class TranscriptionServiceTests: XCTestCase {
         }
 
         let events = telemetry.snapshot()
-        guard case .transcriptionFailed(let source, let stage, let errorType, _) = try XCTUnwrap(events.last) else {
+        let failedEvent = events.reversed().first {
+            if case .transcriptionFailed = $0 { return true }
+            return false
+        }
+        guard case .transcriptionFailed(let source, let stage, let errorType, _) = try XCTUnwrap(failedEvent) else {
             return XCTFail("Expected transcription_failed telemetry")
         }
         XCTAssertEqual(source, .meeting)
@@ -1014,7 +1022,11 @@ final class TranscriptionServiceTests: XCTestCase {
         }
 
         let events = telemetry.snapshot()
-        guard case .transcriptionFailed(let source, let stage, let errorType, _) = try XCTUnwrap(events.last) else {
+        let failedEvent = events.reversed().first {
+            if case .transcriptionFailed = $0 { return true }
+            return false
+        }
+        guard case .transcriptionFailed(let source, let stage, let errorType, _) = try XCTUnwrap(failedEvent) else {
             return XCTFail("Expected transcription_failed telemetry")
         }
         XCTAssertEqual(source, .youtube)

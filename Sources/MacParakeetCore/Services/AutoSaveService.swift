@@ -83,6 +83,8 @@ public final class AutoSaveService {
 
         let format = AutoSaveFormat(rawValue: defaults.string(forKey: scope.formatKey) ?? "md") ?? .md
         let fileURL = buildFileURL(for: transcription, format: format, in: folderURL)
+        let operationID = Observability.operationID()
+        let startedAt = Date()
 
         do {
             // Ensure the folder still exists
@@ -97,8 +99,24 @@ public final class AutoSaveService {
             }
 
             logger.info("Auto-saved \(scope.rawValue) transcript to \(fileURL.lastPathComponent)")
+            Telemetry.send(.autoSaveOperation(
+                operationID: operationID,
+                scope: scope,
+                format: format,
+                outcome: .success,
+                durationSeconds: Observability.durationSeconds(since: startedAt),
+                errorType: nil
+            ))
         } catch {
             logger.error("Auto-save failed for \(scope.rawValue): \(error.localizedDescription)")
+            Telemetry.send(.autoSaveOperation(
+                operationID: operationID,
+                scope: scope,
+                format: format,
+                outcome: .failure,
+                durationSeconds: Observability.durationSeconds(since: startedAt),
+                errorType: Observability.errorType(for: error)
+            ))
         }
     }
 
