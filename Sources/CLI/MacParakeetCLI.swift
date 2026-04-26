@@ -4,8 +4,8 @@ import ArgumentParser
 struct CLI: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "macparakeet-cli",
-        abstract: "MacParakeet developer CLI (internal; used for AI-assisted development and testing).",
-        version: "0.1.0",
+        abstract: "Local STT, transcription, and prompt automation for Apple Silicon. Powered by Parakeet TDT on the Neural Engine.",
+        version: "1.0.0",
         subcommands: [
             TranscribeCommand.self,
             HistoryCommand.self,
