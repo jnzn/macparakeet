@@ -1,10 +1,22 @@
 import AVFoundation
 import Foundation
+import os
 import OSLog
 
-/// Owned and serialized by MeetingRecordingService. The AVFoundation writer
-/// objects it wraps are reference types that are not annotated Sendable.
-final class MeetingAudioStorageWriter: @unchecked Sendable {
+/// AVAssetWriter's finish callback is @Sendable, but the object itself is
+/// non-Sendable. This wrapper is limited to reading the writer's final error
+/// from AVFoundation's own completion callback after writes have stopped.
+private final class FinalizedAVAssetWriter: @unchecked Sendable {
+    let writer: AVAssetWriter
+
+    init(_ writer: AVAssetWriter) {
+        self.writer = writer
+    }
+}
+
+/// Non-Sendable audio sink owned and serialized by MeetingRecordingService.
+/// Its AVFoundation writer/converter objects are mutable reference types.
+final class MeetingAudioStorageWriter {
     struct SourceWriteMetrics: Sendable, Equatable {
         let writtenFrameCount: Int64
         let sampleRate: Double
@@ -82,16 +94,32 @@ final class MeetingAudioStorageWriter: @unchecked Sendable {
         }
     }
 
-    func finalize() async {
-        await finish(writer: microphoneWriter, input: microphoneInput)
-        await finish(writer: systemWriter, input: systemInput)
+    func finalize(completion: @escaping @Sendable () -> Void) {
+        let microphoneWriter = self.microphoneWriter
+        let microphoneInput = self.microphoneInput
+        let systemWriter = self.systemWriter
+        let systemInput = self.systemInput
+        let logger = self.logger
 
-        microphoneWriter = nil
-        microphoneInput = nil
-        systemWriter = nil
-        systemInput = nil
-        microphoneConverter = nil
-        systemConverter = nil
+        self.microphoneWriter = nil
+        self.microphoneInput = nil
+        self.systemWriter = nil
+        self.systemInput = nil
+        self.microphoneConverter = nil
+        self.systemConverter = nil
+
+        let remainingFinishes = OSAllocatedUnfairLock(initialState: 2)
+        let completeOne: @Sendable () -> Void = {
+            let shouldComplete = remainingFinishes.withLock { remaining in
+                remaining -= 1
+                return remaining == 0
+            }
+            if shouldComplete {
+                completion()
+            }
+        }
+        Self.finish(writer: microphoneWriter, input: microphoneInput, logger: logger, completion: completeOne)
+        Self.finish(writer: systemWriter, input: systemInput, logger: logger, completion: completeOne)
     }
 
     func metrics(for source: AudioSource) -> SourceWriteMetrics {
@@ -228,19 +256,28 @@ final class MeetingAudioStorageWriter: @unchecked Sendable {
         return (writer, input)
     }
 
-    private func finish(writer: AVAssetWriter?, input: AVAssetWriterInput?) async {
-        guard let writer else { return }
-        guard writer.status == .writing else { return }
-
-        input?.markAsFinished()
-        await withCheckedContinuation { continuation in
-            writer.finishWriting {
-                continuation.resume()
-            }
+    private static func finish(
+        writer: AVAssetWriter?,
+        input: AVAssetWriterInput?,
+        logger: Logger,
+        completion: @escaping @Sendable () -> Void
+    ) {
+        guard let writer else {
+            completion()
+            return
+        }
+        guard writer.status == .writing else {
+            completion()
+            return
         }
 
-        if let error = writer.error {
-            logger.error("meeting_audio_writer_finalize_failed error=\(error.localizedDescription, privacy: .public)")
+        input?.markAsFinished()
+        let finalizedWriter = FinalizedAVAssetWriter(writer)
+        finalizedWriter.writer.finishWriting {
+            if let error = finalizedWriter.writer.error {
+                logger.error("meeting_audio_writer_finalize_failed error=\(error.localizedDescription, privacy: .public)")
+            }
+            completion()
         }
     }
 }
