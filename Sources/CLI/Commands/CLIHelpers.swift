@@ -207,6 +207,11 @@ enum CLIErrorType {
         }
         if error is CLILookupError { return lookup }
         if error is CLIInputError { return inputEmpty }
+        // ArgumentParser surfaces `validate()` failures as `ValidationError`.
+        // The taxonomy has carried the `validation` value since 1.2.0; map
+        // ValidationError to it so downstream agents can branch on user
+        // misuse without regexing the human-readable description.
+        if error is ValidationError { return validation }
         return runtime
     }
 }
@@ -227,11 +232,21 @@ extension CLIErrorEnvelope {
 /// `CLIErrorEnvelope` on stdout and exit non-zero; otherwise re-throw so
 /// the existing plain-text path (printErr / ArgumentParser) handles it.
 ///
-/// `ExitCode.success` and `CleanExit` are graceful exit signals (e.g.
-/// `--help`) and pass through unchanged. `ExitCode.failure` thrown from
-/// the body means the inner code already handled its own user-visible
-/// stderr and is signalling exit-1 to ArgumentParser; pass it through so
-/// we don't double-print the same failure on the JSON channel.
+/// Exit code follows the public CLI contract documented in
+/// `Sources/CLI/CHANGELOG.md`:
+///
+/// - `ExitCode.success` and `CleanExit` (e.g. `--help`) pass through.
+/// - `ExitCode.*` thrown from the body means the inner code already handled
+///   its own user-visible output; pass through unchanged so we don't
+///   double-print on the JSON channel.
+/// - User-misuse errors (`ValidationError`, `CLIInputError`) exit `2`.
+/// - Everything else exits `1` (runtime failure).
+///
+/// Note: errors thrown during ArgumentParser's parse + `validate()` phase
+/// occur *before* `run()` and therefore cannot reach this wrapper. Those
+/// surface through ArgumentParser's plain-text stderr path; the JSON
+/// envelope contract applies only to errors emitted after argument parsing
+/// succeeds.
 func emitJSONOrRethrow(json: Bool, _ body: () async throws -> Void) async throws {
     do {
         try await body()
@@ -243,6 +258,9 @@ func emitJSONOrRethrow(json: Bool, _ body: () async throws -> Void) async throws
         guard json else { throw error }
         let envelope = CLIErrorEnvelope(error: error)
         try? printJSON(envelope)
+        if error is ValidationError || error is CLIInputError {
+            throw ExitCode.validationFailure
+        }
         throw ExitCode.failure
     }
 }
