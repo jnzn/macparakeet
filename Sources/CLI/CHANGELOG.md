@@ -30,6 +30,32 @@ JSON output schemas are part of the contract: top-level shape (array vs
 object), field names, and field types are stable within a major version. We
 may add new optional fields in a minor release.
 
+## [1.0.1] -- 2026-04-26
+
+End-to-end validation of the brew-installed 1.0.0 binary surfaced a
+single stdout-pollution bug in `transcribe`. Fixed below; no other
+behavior change.
+
+### Fixed
+
+- `transcribe --format json` emitted a `Transcribing <file>...` (or
+  `Converting`/`Downloading`/`Identifying speakers`/`Finalizing` for
+  YouTube URLs) progress line on **stdout** before the JSON payload,
+  which broke `transcribe ... --format json | jq .` for any scripted
+  caller. Progress messages now go to stderr (matching the existing
+  pattern in `prompts run` and the documented "JSON only to stdout"
+  contract from `integrations/README.md`). New `printErr(_:)` helper
+  in `CLIHelpers.swift` codifies the channel.
+
+### Compatibility notes
+
+- The progress messages are still emitted; they just go to stderr now.
+  Human callers using the human-readable `--format txt` (default) are
+  unaffected — stderr still surfaces in the terminal.
+- Scripted callers that were relying on the progress message appearing
+  on stdout (unlikely; it was a polling-style "..." line) need to read
+  stderr instead.
+
 ## [1.0.0] -- 2026-04-25
 
 First release of the CLI as a versioned public surface. The CLI has existed
