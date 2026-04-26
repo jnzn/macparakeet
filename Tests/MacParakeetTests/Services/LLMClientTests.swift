@@ -662,13 +662,92 @@ final class LLMClientTests: XCTestCase {
         }
     }
 
-    func testValidateStreamCompletionAcceptsMissingDoneMarker() {
-        // Many providers (Gemini, Ollama) don't send [DONE] — this should not throw
-        XCTAssertNoThrow(try llmClient.validateStreamCompletion(sawDone: false))
+    func testValidateStreamCompletionAcceptsMissingSentinelForLenientProvider() {
+        // Lenient providers (Gemini, OpenAI-Compatible aggregators, LM Studio,
+        // Ollama, localCLI) don't always send a sentinel. Accept clean EOF.
+        for provider in [LLMProviderID.gemini, .openaiCompatible, .lmstudio, .ollama, .localCLI] {
+            XCTAssertNoThrow(
+                try llmClient.validateStreamCompletion(
+                    providerID: provider,
+                    sawSentinel: false,
+                    yieldedAnyContent: true
+                ),
+                "Lenient provider \(provider) should not throw on missing sentinel"
+            )
+        }
     }
 
-    func testValidateStreamCompletionAcceptsDoneMarker() throws {
-        XCTAssertNoThrow(try llmClient.validateStreamCompletion(sawDone: true))
+    func testValidateStreamCompletionAcceptsSentinelForStrictProvider() throws {
+        for provider in [LLMProviderID.openai, .openrouter, .anthropic] {
+            XCTAssertNoThrow(
+                try llmClient.validateStreamCompletion(
+                    providerID: provider,
+                    sawSentinel: true,
+                    yieldedAnyContent: true
+                ),
+                "Strict provider \(provider) should accept proper sentinel"
+            )
+        }
+    }
+
+    func testValidateStreamCompletionThrowsOnMissingSentinelForStrictProvider() {
+        // OpenAI / OpenRouter / Anthropic contractually emit a stream terminator.
+        // EOF without it means the connection dropped mid-response; treat as
+        // truncated rather than silently look successful (AUDIT-036 P0).
+        for provider in [LLMProviderID.openai, .openrouter, .anthropic] {
+            XCTAssertThrowsError(
+                try llmClient.validateStreamCompletion(
+                    providerID: provider,
+                    sawSentinel: false,
+                    yieldedAnyContent: true
+                ),
+                "Strict provider \(provider) must throw on missing sentinel"
+            ) { error in
+                guard let llmError = error as? LLMError, case .streamingError = llmError else {
+                    XCTFail("Expected LLMError.streamingError for \(provider), got \(error)")
+                    return
+                }
+            }
+        }
+    }
+
+    func testValidateStreamCompletionDistinguishesNoContentFromTruncation() {
+        // The error detail differentiates "no content delivered" (likely
+        // backend issue) from "some content then EOF" (truncation) so
+        // downstream telemetry / logs can split the two failure modes.
+        do {
+            try llmClient.validateStreamCompletion(
+                providerID: .openai,
+                sawSentinel: false,
+                yieldedAnyContent: false
+            )
+            XCTFail("Expected throw")
+        } catch let error as LLMError {
+            guard case .streamingError(let detail) = error else {
+                XCTFail("Expected streamingError, got \(error)")
+                return
+            }
+            XCTAssertTrue(detail.contains("no content"), "Detail should mention no content; got: \(detail)")
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
+
+        do {
+            try llmClient.validateStreamCompletion(
+                providerID: .openai,
+                sawSentinel: false,
+                yieldedAnyContent: true
+            )
+            XCTFail("Expected throw")
+        } catch let error as LLMError {
+            guard case .streamingError(let detail) = error else {
+                XCTFail("Expected streamingError, got \(error)")
+                return
+            }
+            XCTAssertTrue(detail.contains("truncated"), "Detail should mention truncation; got: \(detail)")
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
     }
 
     // MARK: - OpenAI Reasoning Model Handling
