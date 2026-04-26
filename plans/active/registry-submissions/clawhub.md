@@ -27,10 +27,10 @@ ClawHub README confirms:
 - **ClawHub uses `SKILL.md`** (with frontmatter metadata)
 - **`SOUL.md` belongs to a different agent registry** (onlycrabs.ai)
 
-The `integrations/openclaw/SOUL.md` file in the macparakeet repo is
-therefore misnamed. A follow-up to PR #144 should either rename it to
-`integrations/openclaw/SKILL.md` (or to `integrations/openclaw/README.md`
-for consistency with the Hermes-flavored entry point) and update the
+The `integrations/openclaw/SOUL.md` file in the macparakeet repo was
+therefore misnamed. **Resolved** in [PR #146](https://github.com/moona3k/macparakeet/pull/146)
+(merged 2026-04-25): renamed to `integrations/openclaw/README.md`
+for consistency with the Hermes-flavored entry point, and updated the
 content to reference the SKILL.md format.
 
 ## What's needed to actually submit

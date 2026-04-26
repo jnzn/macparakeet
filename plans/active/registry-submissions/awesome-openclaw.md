@@ -1,7 +1,6 @@
 # Submission draft — `vincentkoc/awesome-openclaw`
 
-> **Status:** issue template responses drafted. **Not yet submitted.**
-> Awaiting explicit user OK.
+> **Status:** ✅ submitted as issue [#71](https://github.com/vincentkoc/awesome-openclaw/issues/71) on 2026-04-25. Awaiting maintainer triage.
 
 ## Submission flow (per their CONTRIBUTING.md)
 

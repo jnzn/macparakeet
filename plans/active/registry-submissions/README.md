@@ -13,12 +13,12 @@ The brew tap is live as of 2026-04-25, so install instructions
 submission. Reconnaissance against each target's `CONTRIBUTING.md`
 sharpened the picture significantly — see per-target notes below.
 
-| # | Registry | Repo | Submission flow | Recommended action |
+| # | Registry | Repo | Submission flow | Status (2026-04-25) |
 |---|---|---|---|---|
-| 1 | Awesome Hermes Agent | [`0xNyk/awesome-hermes-agent`](https://github.com/0xNyk/awesome-hermes-agent) | **Issue first** — direct PRs explicitly forbidden by CONTRIBUTING.md | Open issue with required fields |
-| 2 | Awesome OpenClaw | [`vincentkoc/awesome-openclaw`](https://github.com/vincentkoc/awesome-openclaw) | **Issue first** via `Add Resource Request` template, PR after maintainer approval | Open issue via template |
-| 3 | OpenClaw skill registry | [`openclaw/clawhub`](https://github.com/openclaw/clawhub) | **CLI-based** (`clawhub skill publish <path>`); uses `SKILL.md` (NOT `SOUL.md`) | **Defer** — needs OpenClaw CLI installed locally + SKILL.md schema verification |
-| 4 | Awesome OpenClaw Skills | [`VoltAgent/awesome-openclaw-skills`](https://github.com/VoltAgent/awesome-openclaw-skills) | Manual PR — but **only accepts skills already published in `github.com/openclaw/skills`** | **Defer** — depends on (3) succeeding first |
+| 1 | Awesome Hermes Agent | [`0xNyk/awesome-hermes-agent`](https://github.com/0xNyk/awesome-hermes-agent) | **Issue first** — direct PRs explicitly forbidden by CONTRIBUTING.md | ✅ **Submitted:** [issue #49](https://github.com/0xNyk/awesome-hermes-agent/issues/49) |
+| 2 | Awesome OpenClaw | [`vincentkoc/awesome-openclaw`](https://github.com/vincentkoc/awesome-openclaw) | **Issue first** via `Add Resource Request` template, PR after maintainer approval | ✅ **Submitted:** [issue #71](https://github.com/vincentkoc/awesome-openclaw/issues/71) |
+| 3 | OpenClaw skill registry | [`openclaw/clawhub`](https://github.com/openclaw/clawhub) | **CLI-based** (`openclaw clawhub skill publish <path>`); uses `SKILL.md` (NOT `SOUL.md`) | **Deferred** — npm `openclaw@2026.4.24` is the full OpenClaw runtime (36 deps); installing globally to publish a single skill is overkill. Defer until either an isolated install path is set up OR there's a lighter-weight publish flow. |
+| 4 | Awesome OpenClaw Skills | [`VoltAgent/awesome-openclaw-skills`](https://github.com/VoltAgent/awesome-openclaw-skills) | Manual PR — but **only accepts skills already published in `github.com/openclaw/skills`** | **Deferred** — depends on (3) succeeding first |
 
 ## Critical schema correction
 
