@@ -159,6 +159,18 @@ public final class AudioFileConverter: AudioFileConverting, Sendable {
     ) async throws -> URL {
         let outputURL = tempDir.appendingPathComponent("\(UUID().uuidString).wav")
 
+        // The output WAV is owned by the caller on success (returned URL). On
+        // any failure path -- non-zero exit, timeout, cancellation, thrown
+        // pre-condition -- the partially-written file is ours to clean up so
+        // it doesn't accumulate in $TMPDIR/macparakeet/. Track success
+        // explicitly; the defer fires for every non-success exit.
+        var succeeded = false
+        defer {
+            if !succeeded {
+                try? FileManager.default.removeItem(at: outputURL)
+            }
+        }
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: ffmpegPath)
         process.arguments = [
@@ -189,10 +201,10 @@ public final class AudioFileConverter: AudioFileConverting, Sendable {
         if process.terminationStatus != 0 {
             stderrHandle.synchronizeFile()
             let stderrStr = (try? String(contentsOf: stderrURL, encoding: .utf8)) ?? "Unknown error"
-            try? FileManager.default.removeItem(at: outputURL)
             throw AudioProcessorError.conversionFailed(stderrStr)
         }
 
+        succeeded = true
         return outputURL
     }
 
@@ -201,6 +213,18 @@ public final class AudioFileConverter: AudioFileConverting, Sendable {
         inputURLs: [URL],
         outputURL: URL
     ) async throws {
+        // The mix output URL is supplied by the caller, but the contract on
+        // failure is "no partial output left behind" -- callers can re-run
+        // without first deleting a half-written file. The non-zero-exit path
+        // already cleaned up; this defer extends that contract to the timeout
+        // and cancellation paths so they behave the same way.
+        var succeeded = false
+        defer {
+            if !succeeded {
+                try? FileManager.default.removeItem(at: outputURL)
+            }
+        }
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: ffmpegPath)
         process.arguments = ffmpegMixArguments(
@@ -223,9 +247,10 @@ public final class AudioFileConverter: AudioFileConverting, Sendable {
         if process.terminationStatus != 0 {
             stderrHandle.synchronizeFile()
             let stderrStr = (try? String(contentsOf: stderrURL, encoding: .utf8)) ?? "Unknown error"
-            try? FileManager.default.removeItem(at: outputURL)
             throw AudioProcessorError.conversionFailed(stderrStr)
         }
+
+        succeeded = true
     }
 
     private func ensureTempDir() throws -> URL {
