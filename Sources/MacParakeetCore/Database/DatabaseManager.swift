@@ -188,11 +188,19 @@ public final class DatabaseManager: Sendable {
             }
         }
 
-        // v0.5 — Private dictation mode: hidden flag + wordCount column
+        // v0.5 — Private dictation mode: hidden flag + wordCount column.
+        // Pre-check column existence so a hand-restored DB (or one whose
+        // grdb_migrations row was lost) doesn't fail with `duplicate column`
+        // on re-run. Mirrors the v0.7.1-prompt-default pattern below.
         migrator.registerMigration("v0.5-private-dictation") { db in
+            let existingColumns = try db.columns(in: "dictations").map(\.name)
             try db.alter(table: "dictations") { t in
-                t.add(column: "hidden", .boolean).notNull().defaults(to: false)
-                t.add(column: "wordCount", .integer).notNull().defaults(to: 0)
+                if !existingColumns.contains("hidden") {
+                    t.add(column: "hidden", .boolean).notNull().defaults(to: false)
+                }
+                if !existingColumns.contains("wordCount") {
+                    t.add(column: "wordCount", .integer).notNull().defaults(to: 0)
+                }
             }
             // Backfill wordCount for existing completed rows.
             // Use DatabaseValue to safely skip rows with corrupt/non-UUID ids.
