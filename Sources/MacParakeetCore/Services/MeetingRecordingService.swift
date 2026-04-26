@@ -213,7 +213,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             )
         } catch {
             self.writer = nil
-            await writer.finalize()
+            await finalizeWriter(writer)
             cleanupState()
             try? fileManager.removeItem(at: folderURL)
             throw error
@@ -261,7 +261,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             await liveChunkTranscriber.finishSession()
             let writer = self.writer
             self.writer = nil
-            await writer?.finalize()
+            await finalizeWriter(writer)
             cleanupState()
             try? lockFileStore.delete(folderURL: folderURL)
             try? fileManager.removeItem(at: folderURL)
@@ -293,7 +293,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         processingTask = nil
         let finalizedWriter = writer
         writer = nil
-        await finalizedWriter?.finalize()
+        await finalizeWriter(finalizedWriter)
         let writerMetrics = [
             AudioSource.microphone: finalizedWriter?.metrics(for: .microphone),
             AudioSource.system: finalizedWriter?.metrics(for: .system),
@@ -423,11 +423,20 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         await liveChunkTranscriber.finishSession()
         let finalizedWriter = writer
         writer = nil
-        await finalizedWriter?.finalize()
+        await finalizeWriter(finalizedWriter)
         try? lockFileStore.delete(folderURL: session.folderURL)
         cleanupState()
         try? fileManager.removeItem(at: session.folderURL)
         logger.info("Meeting recording cancelled: \(session.id.uuidString, privacy: .public)")
+    }
+
+    private func finalizeWriter(_ writer: MeetingAudioStorageWriter?) async {
+        guard let writer else { return }
+        await withCheckedContinuation { continuation in
+            writer.finalize {
+                continuation.resume()
+            }
+        }
     }
 
     private func handleCaptureEvent(_ event: MeetingAudioCaptureEvent) async {

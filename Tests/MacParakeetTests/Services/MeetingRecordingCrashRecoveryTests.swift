@@ -46,7 +46,15 @@ final class MeetingRecordingCrashRecoveryTests: XCTestCase {
             try writer.write(buffer, source: .microphone)
             try await Task.sleep(for: .seconds(1))
         }
-        await writer.finalize()
+        await finalize(writer)
+    }
+
+    private func finalize(_ writer: MeetingAudioStorageWriter) async {
+        await withCheckedContinuation { continuation in
+            writer.finalize {
+                continuation.resume()
+            }
+        }
     }
 
     private func waitForFileToGrow(_ url: URL) async throws {
