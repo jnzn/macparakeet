@@ -28,7 +28,7 @@ All execution is local on the Apple Neural Engine. No cloud STT.
 ln -s /Applications/MacParakeet.app/Contents/MacOS/macparakeet-cli \
       /usr/local/bin/macparakeet-cli
 # 3. Verify
-macparakeet-cli --version   # 1.0.0+
+macparakeet-cli --version   # 1.0.0
 macparakeet-cli health --json
 ```
 

@@ -110,6 +110,11 @@ agent can re-prompt the user.
 
 - **Exit codes:** `0` on success; non-zero on failure with a one-line stderr
   message. JSON output never goes to stderr.
+- **JSON flag shape:** read-only query commands take `--json` (a binary flag);
+  `transcribe` and `export` take `--format json` because they emit one of
+  several formats (txt / srt / vtt / json / docx / pdf). Both produce stable
+  JSON schemas. The split is deliberate -- see
+  `Sources/CLI/CHANGELOG.md` for the compatibility note.
 - **Lookups:** records that take an `<id-or-name>` argument accept full UUID,
   UUID prefix (>= 4 chars), or case-insensitive name. Ambiguous prefixes
   produce a `.ambiguous` error; missing records produce `.notFound`.

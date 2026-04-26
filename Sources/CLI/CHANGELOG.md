@@ -74,3 +74,10 @@ complete enough to commit to. This release marks that commitment.
   (`MacParakeet.app/Contents/MacOS/macparakeet-cli`). Standalone install via
   Homebrew tap is on the roadmap (see plan above) and will not change command
   semantics.
+- **`--format json` (transcribe, export) vs `--json` (read-only queries)**
+  is deliberate, not a bug. `transcribe` and `export` carry a `--format`
+  selector because they emit one of several formats (txt / srt / vtt / json /
+  docx / pdf); `--json` on read-only query commands is a binary flag because
+  their output shape is conceptually fixed -- it's either JSON or human.
+  Unifying this would be a major-version breaking change; we are not doing
+  that in 1.0.
