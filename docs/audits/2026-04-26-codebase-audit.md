@@ -2,16 +2,16 @@
 
 > **Status:** IMPLEMENTED. Two-pass independent audit of the `macparakeet`
 > codebase at the time of branch `feat/cli-llm-json-output` (HEAD `702ce37e`).
-> 70 findings catalogued. Fixes landed across two PRs (#149, #154). Refuted
-> findings retained with rationale. Deferred items list explicit reasons and
-> revisit triggers.
+> 70 findings catalogued. Fixes landed across #149, #154, and follow-up
+> hygiene PRs. Refuted findings retained with rationale. Deferred items list
+> explicit reasons and revisit triggers.
 
 | | Count |
 |---|---:|
 | Total findings (P0 / P1 / P2) | 70 |
-| FIXED in #149 + #154 | 26 |
+| FIXED | 27 |
 | REFUTED on verification | 5 |
-| DEFERRED with reason | 39 |
+| DEFERRED with reason | 38 |
 
 ---
 
@@ -47,6 +47,8 @@ Two sprints landed in two PRs. PR #149 (Sprint 1) shipped 13 fixes alongside
 the CLI `--json` envelope. PR #154 (Sprint 2 + carryovers) shipped the
 remaining 13 commits. Each commit references the AUDIT-NNN finding it
 addresses; commit messages document the fix and any review-pass refinement.
+Follow-up hygiene PRs can move deferred P2 items to fixed without changing the
+original two-pass audit scope.
 
 ---
 
@@ -155,7 +157,7 @@ Status legend: **FIXED** (commit referenced) · **REFUTED** (with reason) ·
 | AUDIT-066 | Single-endpoint preflight (HF only) | DEFERRED | Pragmatic fix needs UI message changes too. |
 | AUDIT-067 | Accessibility (Dynamic Type, VoiceOver) | DEFERRED | Multi-day separate sprint. |
 | AUDIT-068 | i18n unstarted | DEFERRED | Multi-day separate sprint. |
-| AUDIT-069 | CI: no SPM cache, no per-step timeouts | DEFERRED | P2. |
+| AUDIT-069 | CI: no SPM cache, no per-step timeouts | FIXED | Follow-up CI hygiene PR adds SwiftPM dependency cache, per-step `timeout-minutes`, and uploaded build/test logs. |
 | AUDIT-070 | Node SHASUMS file not pinned | DEFERRED | P2. |
 
 ### Test quality
@@ -254,15 +256,13 @@ The deferred items, in priority order:
    (AUDIT-002 follow-up). The narrowed crash-window concern remains.
 4. **Test-quality cleanup** (AUDIT-059 / 060 / 061 / 062 / 063). 92 hardcoded
    sleeps, missing VM tests, hardcoded `/tmp` paths, wall-clock polling.
-5. **CI hygiene** (AUDIT-069). SPM cache, per-step `timeout-minutes`,
-   artifact upload.
-6. **Dist-script hardening** (AUDIT-055 / 056 / 058 / 070). Appcast cache-
+5. **Dist-script hardening** (AUDIT-055 / 056 / 058 / 070). Appcast cache-
    bust validation, notarytool SIGBUS retry, SIGN_IDENTITY env-var,
    SHASUMS pinning.
-7. **View / VM decomposition** (AUDIT-016 / 017). `TranscriptResultView`
+6. **View / VM decomposition** (AUDIT-016 / 017). `TranscriptResultView`
    2,475 lines and `SettingsViewModel` 1,108 lines — refactor sprint.
-8. **Accessibility + i18n** (AUDIT-067 / 068). Multi-day work.
-9. **Telemetry bucketing** (AUDIT-022). Reduces fingerprintability on small
+7. **Accessibility + i18n** (AUDIT-067 / 068). Multi-day work.
+8. **Telemetry bucketing** (AUDIT-022). Reduces fingerprintability on small
    cohorts.
 
 ---
@@ -277,3 +277,5 @@ The deferred items, in priority order:
   re-grep).
 - **2026-04-26 Sprint 1** — 13 fixes shipped via PR #149.
 - **2026-04-26 Sprint 2** — 13 fixes shipped via PR #154.
+- **2026-04-26 AUDIT-069 follow-up** — CI hygiene: SwiftPM cache,
+  per-step timeouts, and uploaded CI logs.
