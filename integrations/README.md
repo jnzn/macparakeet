@@ -99,17 +99,29 @@ macparakeet-cli prompts list --json
 macparakeet-cli prompts run "Action items" \
   --transcription <id-or-prefix> \
   --provider anthropic --api-key "$ANTHROPIC_API_KEY" \
-  --model claude-sonnet-4-6
+  --model claude-sonnet-4-6 \
+  --json
 ```
 
 `<id-or-prefix>` accepts a full UUID, a UUID prefix (>= 4 chars), or the
 case-insensitive name. Ambiguous prefixes return a `.ambiguous` error so the
 agent can re-prompt the user.
 
+Prompt and direct LLM JSON responses use an envelope with `output`, `provider`,
+`model`, optional `usage`, optional `stopReason`, and `latencyMs`.
+
 ## Conventions
 
-- **Exit codes:** `0` on success; non-zero on failure with a one-line stderr
-  message. JSON output never goes to stderr.
+- **Exit codes:** `0` success, `1` runtime failure (work attempted and failed
+  -- LLM error, DB error, transcription failure), `2` validation/misuse
+  (malformed invocation -- unknown flag, missing required arg, unsupported
+  `--format`), `130` SIGINT. JSON output never goes to stderr regardless of
+  code. Full table in `Sources/CLI/CHANGELOG.md` "Exit codes" section.
+- **API keys:** pass via `"$VAR"` shell expansion (e.g.
+  `--api-key "$ANTHROPIC_API_KEY"`), not literally. CLI does not read
+  `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` directly -- but a literal
+  `--api-key sk-...` lands in shell history and `ps`. Env-var expansion
+  avoids both.
 - **JSON flag shape:** read-only query commands take `--json` (a binary flag);
   `transcribe` and `export` take `--format json` because they emit one of
   several formats (txt / srt / vtt / json / docx / pdf). Both produce stable

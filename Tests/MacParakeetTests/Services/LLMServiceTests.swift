@@ -11,6 +11,7 @@ final class MockLLMClient: LLMClientProtocol, @unchecked Sendable {
     var responseReasoningContent: String?
     var responseFinishReason: String?
     var responseModel = "mock-model"
+    var responseUsage: TokenUsage?
     var streamTokens: [String]?
     var testConnectionError: Error?
     var testConnectionDelayNs: UInt64 = 0
@@ -27,7 +28,8 @@ final class MockLLMClient: LLMClientProtocol, @unchecked Sendable {
             content: responseContent,
             reasoningContent: responseReasoningContent,
             finishReason: responseFinishReason,
-            model: responseModel
+            model: responseModel,
+            usage: responseUsage
         )
     }
 
@@ -266,6 +268,67 @@ final class LLMServiceTests: XCTestCase {
         XCTAssertEqual(mockClient.capturedMessages[2].role, .assistant)
         XCTAssertEqual(mockClient.capturedMessages[3].role, .user)
         XCTAssertEqual(mockClient.capturedMessages[3].content, "What did Alice say?")
+    }
+
+    // MARK: - Detailed (Envelope) Variants
+
+    func testSummarizeDetailedReturnsEnvelopeWithUsageAndModel() async throws {
+        mockClient.responseContent = "summary"
+        mockClient.responseModel = "gpt-4.1"
+        mockClient.responseFinishReason = "stop"
+        mockClient.responseUsage = TokenUsage(promptTokens: 50, completionTokens: 75)
+
+        let result = try await service.summarizeDetailed(transcript: "hello world")
+
+        XCTAssertEqual(result.output, "summary")
+        XCTAssertEqual(result.model, "gpt-4.1")
+        XCTAssertEqual(result.provider, "openai")
+        XCTAssertEqual(result.usage?.promptTokens, 50)
+        XCTAssertEqual(result.usage?.completionTokens, 75)
+        XCTAssertEqual(result.usage?.totalTokens, 125)
+        XCTAssertEqual(result.stopReason, "stop")
+        XCTAssertGreaterThanOrEqual(result.latencyMs, 0)
+    }
+
+    func testSummarizeStringDelegatesToDetailed() async throws {
+        // The string variant must end up in the same network call site as
+        // detailed — proven by the call only landing once on the mock and
+        // the captured user message matching what summarize() would assemble.
+        mockClient.responseContent = "delegated"
+
+        let output = try await service.summarize(transcript: "input text")
+
+        XCTAssertEqual(output, "delegated")
+        XCTAssertEqual(mockClient.capturedMessages.count, 2)
+        XCTAssertEqual(mockClient.capturedMessages[1].content, "input text")
+    }
+
+    func testChatDetailedReturnsEnvelope() async throws {
+        mockClient.responseContent = "answer"
+        mockClient.responseModel = "claude-sonnet-4-6"
+        mockClient.responseUsage = TokenUsage(promptTokens: 200, completionTokens: 30)
+
+        let result = try await service.chatDetailed(
+            question: "Who?",
+            transcript: "Alice and Bob spoke.",
+            history: []
+        )
+
+        XCTAssertEqual(result.output, "answer")
+        XCTAssertEqual(result.model, "claude-sonnet-4-6")
+        XCTAssertEqual(result.usage?.totalTokens, 230)
+    }
+
+    func testTransformDetailedReturnsEnvelopeWithoutUsageWhenAbsent() async throws {
+        mockClient.responseContent = "TRANSFORMED"
+        mockClient.responseModel = "qwen-4b"
+        mockClient.responseUsage = nil
+
+        let result = try await service.transformDetailed(text: "hello", prompt: "uppercase")
+
+        XCTAssertEqual(result.output, "TRANSFORMED")
+        XCTAssertEqual(result.model, "qwen-4b")
+        XCTAssertNil(result.usage)
     }
 
     // MARK: - Transform
