@@ -896,6 +896,100 @@ final class TranscriptionServiceTests: XCTestCase {
         XCTAssertEqual(lastJob, .fileTranscription)
     }
 
+    func testRetranscribeExistingFileUpdatesOriginalRowWithoutDuplicate() async throws {
+        let original = Transcription(
+            id: UUID(),
+            createdAt: Date(timeIntervalSince1970: 123),
+            fileName: "lecture.mp3",
+            filePath: "/tmp/lecture.mp3",
+            rawTranscript: "Old transcript",
+            cleanTranscript: "Edited old transcript",
+            wordTimestamps: [
+                WordTimestamp(word: "Old", startMs: 0, endMs: 100, confidence: 0.9, speakerId: "S1")
+            ],
+            speakerCount: 1,
+            speakers: [SpeakerInfo(id: "S1", label: "Speaker 1")],
+            diarizationSegments: [DiarizationSegmentRecord(speakerId: "S1", startMs: 0, endMs: 100)],
+            status: .completed,
+            sourceURL: "https://youtube.com/watch?v=abc123",
+            thumbnailURL: "https://img.youtube.com/vi/abc123/default.jpg",
+            channelName: "Channel",
+            videoDescription: "Description",
+            isFavorite: true,
+            sourceType: .youtube
+        )
+        try transcriptionRepo.save(original)
+        await mockSTT.configure(result: STTResult(
+            text: "New transcript",
+            words: [
+                TimestampedWord(word: "New", startMs: 0, endMs: 120, confidence: 0.98),
+                TimestampedWord(word: "transcript", startMs: 150, endMs: 420, confidence: 0.97),
+            ]
+        ))
+
+        let result = try await service.retranscribe(
+            existing: original,
+            fileURL: URL(fileURLWithPath: "/tmp/lecture.mp3"),
+            source: .youtube,
+            onProgress: nil
+        )
+
+        let all = try transcriptionRepo.fetchAll(limit: nil)
+        XCTAssertEqual(all.count, 1)
+        XCTAssertEqual(result.id, original.id)
+        XCTAssertEqual(all[0].id, original.id)
+        XCTAssertEqual(all[0].rawTranscript, "New transcript")
+        XCTAssertNil(all[0].cleanTranscript)
+        XCTAssertEqual(all[0].wordTimestamps?.map(\.word), ["New", "transcript"])
+        XCTAssertNil(all[0].speakerCount)
+        XCTAssertNil(all[0].speakers)
+        XCTAssertNil(all[0].diarizationSegments)
+        XCTAssertEqual(all[0].createdAt, original.createdAt)
+        XCTAssertEqual(all[0].fileName, original.fileName)
+        XCTAssertEqual(all[0].filePath, original.filePath)
+        XCTAssertEqual(all[0].sourceURL, original.sourceURL)
+        XCTAssertEqual(all[0].thumbnailURL, original.thumbnailURL)
+        XCTAssertEqual(all[0].channelName, original.channelName)
+        XCTAssertEqual(all[0].videoDescription, original.videoDescription)
+        XCTAssertEqual(all[0].isFavorite, true)
+        XCTAssertEqual(all[0].sourceType, .youtube)
+        XCTAssertEqual(all[0].status, .completed)
+    }
+
+    func testRetranscribeExistingFileFailureLeavesOriginalRowIntact() async throws {
+        let original = Transcription(
+            id: UUID(),
+            fileName: "lecture.mp3",
+            filePath: "/tmp/lecture.mp3",
+            rawTranscript: "Old transcript",
+            status: .completed,
+            sourceType: .file
+        )
+        try transcriptionRepo.save(original)
+        await mockSTT.configure(error: STTError.transcriptionFailed("Model error"))
+
+        do {
+            _ = try await service.retranscribe(
+                existing: original,
+                fileURL: URL(fileURLWithPath: "/tmp/lecture.mp3"),
+                source: .file,
+                onProgress: nil
+            )
+            XCTFail("Should have thrown")
+        } catch let error as STTError {
+            guard case .transcriptionFailed = error else {
+                return XCTFail("Unexpected STT error: \(error)")
+            }
+        }
+
+        let all = try transcriptionRepo.fetchAll(limit: nil)
+        XCTAssertEqual(all.count, 1)
+        XCTAssertEqual(all[0].id, original.id)
+        XCTAssertEqual(all[0].rawTranscript, "Old transcript")
+        XCTAssertEqual(all[0].status, .completed)
+        XCTAssertNil(all[0].errorMessage)
+    }
+
     func testTranscribeURLDownloadFailureEmitsDownloadStageTelemetry() async throws {
         let telemetry = TelemetrySpy()
         Telemetry.configure(telemetry)

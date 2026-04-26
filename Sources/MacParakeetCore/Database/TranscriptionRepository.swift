@@ -72,6 +72,51 @@ public final class TranscriptionRepository: TranscriptionRepositoryProtocol {
         }
     }
 
+    public func fetchBySourceType(_ sourceType: Transcription.SourceType, limit: Int? = nil) throws -> [Transcription] {
+        try dbQueue.read { db in
+            var request = Transcription
+                .filter(Transcription.Columns.sourceType == sourceType.rawValue)
+                .order(Transcription.Columns.createdAt.desc)
+            if let limit {
+                request = request.limit(limit)
+            }
+            return try request.fetchAll(db)
+        }
+    }
+
+    public func fetchBySourceType(
+        _ sourceType: Transcription.SourceType,
+        idPrefix: String
+    ) throws -> [Transcription] {
+        let trimmed = idPrefix.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        let textPattern = escapedLikePattern(trimmed.lowercased()) + "%"
+        let compactPattern = escapedLikePattern(trimmed.lowercased().replacingOccurrences(of: "-", with: "")) + "%"
+        return try dbQueue.read { db in
+            try Transcription
+                .filter(
+                    sql: "sourceType = ? AND (lower(id) LIKE ? ESCAPE '\\' OR lower(hex(id)) LIKE ? ESCAPE '\\')",
+                    arguments: [sourceType.rawValue, textPattern, compactPattern]
+                )
+                .order(Transcription.Columns.createdAt.desc)
+                .fetchAll(db)
+        }
+    }
+
+    public func fetchBySourceType(
+        _ sourceType: Transcription.SourceType,
+        fileName: String
+    ) throws -> [Transcription] {
+        let trimmed = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        return try dbQueue.read { db in
+            try Transcription
+                .filter(sql: "sourceType = ? AND lower(fileName) = lower(?)", arguments: [sourceType.rawValue, trimmed])
+                .order(Transcription.Columns.createdAt.desc)
+                .fetchAll(db)
+        }
+    }
+
     public func fetchByFilePath(
         _ filePath: String,
         sourceType: Transcription.SourceType? = nil
@@ -191,6 +236,15 @@ public final class TranscriptionRepository: TranscriptionRepositoryProtocol {
         }
     }
 
+    public func updateUserNotes(id: UUID, userNotes: String?) throws {
+        try dbQueue.write { db in
+            guard var transcription = try Transcription.fetchOne(db, key: id) else { return }
+            transcription.userNotes = userNotes
+            transcription.updatedAt = Date()
+            try transcription.update(db)
+        }
+    }
+
     public func clearStoredAudioPathsForURLTranscriptions() throws {
         try dbQueue.write { db in
             try db.execute(
@@ -216,4 +270,11 @@ public final class TranscriptionRepository: TranscriptionRepositoryProtocol {
                 .fetchAll(db)
         }
     }
+}
+
+private func escapedLikePattern(_ value: String) -> String {
+    value
+        .replacingOccurrences(of: "\\", with: "\\\\")
+        .replacingOccurrences(of: "%", with: "\\%")
+        .replacingOccurrences(of: "_", with: "\\_")
 }

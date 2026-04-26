@@ -351,6 +351,34 @@ final class ExportServiceTests: XCTestCase {
         XCTAssertTrue(vtt.contains("00:00:02.000 --> 00:00:03.000\nGoodbye world."))
     }
 
+    func testFormatSRTTranscriptionWithoutTimestampsUsesSingleCue() {
+        let transcription = Transcription(
+            fileName: "meeting.m4a",
+            durationMs: 2500,
+            rawTranscript: " Hello\n\nworld. ",
+            status: .completed,
+            sourceType: .meeting
+        )
+
+        let srt = exportService.formatSRT(transcription: transcription)
+
+        XCTAssertEqual(srt, "1\n00:00:00,000 --> 00:00:02,500\nHello world.\n")
+    }
+
+    func testFormatVTTTranscriptionWithoutTimestampsUsesSingleCue() {
+        let transcription = Transcription(
+            fileName: "meeting.m4a",
+            durationMs: 2500,
+            rawTranscript: " Hello\n\nworld. ",
+            status: .completed,
+            sourceType: .meeting
+        )
+
+        let vtt = exportService.formatVTT(transcription: transcription)
+
+        XCTAssertEqual(vtt, "WEBVTT\n\n00:00:00.000 --> 00:00:02.500\nHello world.\n")
+    }
+
     // MARK: - File Export
 
     func testExportToSRT() throws {
