@@ -167,13 +167,17 @@ public final class LLMClient: LLMClientProtocol, Sendable {
                     // Process each line individually. Some providers (Gemini)
                     // don't send blank line separators between SSE events,
                     // so we parse each `data:` line as it arrives.
+                    var sawDone = false
+                    var yieldedAnyContent = false
                     for try await line in bytes.lines {
                         try Task.checkCancellation()
 
                         switch parseSSELine(line) {
                         case .content(let text):
+                            yieldedAnyContent = true
                             continuation.yield(text)
                         case .done:
+                            sawDone = true
                             continuation.finish()
                             return
                         case .error(let message):
@@ -183,6 +187,18 @@ public final class LLMClient: LLMClientProtocol, Sendable {
                         }
                     }
 
+                    // Stream ended without `[DONE]`. For strict providers
+                    // (OpenAI, OpenRouter — both contractually emit `[DONE]`),
+                    // a missing sentinel means the connection dropped mid-
+                    // response and the user is looking at truncated output.
+                    // Lenient providers (Gemini, OpenAI-Compatible aggregators
+                    // like Together/Fireworks, LM Studio) frequently omit it,
+                    // so we accept a clean end-of-stream there.
+                    try validateStreamCompletion(
+                        providerID: config.id,
+                        sawSentinel: sawDone,
+                        yieldedAnyContent: yieldedAnyContent
+                    )
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -427,6 +443,8 @@ public final class LLMClient: LLMClientProtocol, Sendable {
                         throw mapError(statusCode: http.statusCode, data: errorData)
                     }
 
+                    var sawMessageStop = false
+                    var yieldedAnyContent = false
                     for try await line in bytes.lines {
                         try Task.checkCancellation()
 
@@ -447,8 +465,10 @@ public final class LLMClient: LLMClientProtocol, Sendable {
                         if eventType == "content_block_delta",
                            let delta = json["delta"] as? [String: Any],
                            let text = delta["text"] as? String {
+                            yieldedAnyContent = true
                             continuation.yield(text)
                         } else if eventType == "message_stop" {
+                            sawMessageStop = true
                             continuation.finish()
                             return
                         } else if eventType == "error",
@@ -458,6 +478,14 @@ public final class LLMClient: LLMClientProtocol, Sendable {
                         }
                     }
 
+                    // Anthropic always emits `message_stop` to terminate a
+                    // successful stream. Reaching EOF without it means the
+                    // HTTP connection dropped mid-response — treat as truncated.
+                    try validateStreamCompletion(
+                        providerID: config.id,
+                        sawSentinel: sawMessageStop,
+                        yieldedAnyContent: yieldedAnyContent
+                    )
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -742,9 +770,42 @@ request.setValue(LLMClient.anthropicAPIVersion, forHTTPHeaderField: "anthropic-v
         return parseSSELine("data: \(payload)")
     }
 
-    internal func validateStreamCompletion(sawDone: Bool) throws {
-        // Many OpenAI-compatible providers (Gemini, Ollama) don't send [DONE].
-        // A clean stream end without [DONE] is acceptable.
+    /// Whether the provider contractually emits a stream terminator. Strict
+    /// providers throw `streamingError` on EOF without the sentinel because
+    /// the user is otherwise looking at silently truncated output. Lenient
+    /// providers omit the sentinel commonly enough that enforcing it would
+    /// produce false positives:
+    ///
+    /// - **Strict**: OpenAI (`[DONE]`), OpenRouter (`[DONE]`, OpenAI-compat
+    ///   aggregator), Anthropic (`message_stop` event).
+    /// - **Lenient**: Gemini (no `[DONE]` per spec), OpenAI-Compatible
+    ///   (Together/Fireworks/Groq vary), LM Studio (varies), Ollama (uses
+    ///   `done:true` field detected separately, not the SSE `[DONE]` line),
+    ///   localCLI (subprocess output, not HTTP SSE).
+    internal static func providerEnforcesStreamSentinel(_ id: LLMProviderID) -> Bool {
+        switch id {
+        case .openai, .openrouter, .anthropic:
+            return true
+        case .openaiCompatible, .gemini, .ollama, .lmstudio, .localCLI:
+            return false
+        }
+    }
+
+    internal func validateStreamCompletion(
+        providerID: LLMProviderID,
+        sawSentinel: Bool,
+        yieldedAnyContent: Bool
+    ) throws {
+        guard Self.providerEnforcesStreamSentinel(providerID), !sawSentinel else { return }
+
+        // EOF before the sentinel from a provider that contractually emits one.
+        // Distinguish "no content at all" (likely auth/connection drop after
+        // headers — usually a backend issue) from "some content delivered"
+        // (mid-response truncation — the user-visible failure mode).
+        let detail = yieldedAnyContent
+            ? "stream ended before completion sentinel — response is truncated"
+            : "stream produced no content before EOF"
+        throw LLMError.streamingError(detail)
     }
 
     private func mapError(statusCode: Int, data: Data) -> LLMError {
