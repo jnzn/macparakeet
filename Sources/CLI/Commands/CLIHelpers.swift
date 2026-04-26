@@ -227,12 +227,15 @@ extension CLIErrorEnvelope {
 /// `CLIErrorEnvelope` on stdout and exit non-zero; otherwise re-throw so
 /// the existing plain-text path (printErr / ArgumentParser) handles it.
 ///
-/// Catches `CleanExit` and `ExitCode.success` unmodified — those are not
-/// failures, they signal a graceful early exit (e.g., `--help`, dry runs).
+/// `ExitCode.success` and `CleanExit` are graceful exit signals (e.g.
+/// `--help`) and pass through unchanged. `ExitCode.failure` thrown from
+/// the body means the inner code already handled its own user-visible
+/// stderr and is signalling exit-1 to ArgumentParser; pass it through so
+/// we don't double-print the same failure on the JSON channel.
 func emitJSONOrRethrow(json: Bool, _ body: () async throws -> Void) async throws {
     do {
         try await body()
-    } catch let exit as ExitCode where exit == .success {
+    } catch let exit as ExitCode {
         throw exit
     } catch let cleanExit as CleanExit {
         throw cleanExit
