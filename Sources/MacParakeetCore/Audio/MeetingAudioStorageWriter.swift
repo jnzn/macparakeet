@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import os
 import OSLog
 
 /// AVAssetWriter's finish callback is @Sendable, but the object itself is
@@ -272,7 +273,7 @@ final class MeetingAudioStorageWriter {
 
         input?.markAsFinished()
         let finalizedWriter = FinalizedAVAssetWriter(writer)
-        writer.finishWriting {
+        finalizedWriter.writer.finishWriting {
             if let error = finalizedWriter.writer.error {
                 logger.error("meeting_audio_writer_finalize_failed error=\(error.localizedDescription, privacy: .public)")
             }
