@@ -20,10 +20,17 @@ import Sparkle
 ///
 /// Implemented by throwing from `updater(_:mayPerform:)` so both auto-checks
 /// (background timer) and user-initiated checks (the menu item) are blocked
-/// uniformly. Sparkle surfaces the localized description in its UI for
-/// user-initiated checks; auto-checks just no-op.
+/// uniformly, and by returning `false` from `updaterShouldRelaunchApplication`
+/// so an already-downloaded update cannot relaunch the app mid-recording.
+/// Sparkle surfaces the localized description in its UI for user-initiated
+/// checks; auto-checks just no-op.
 @MainActor
 final class SparkleUpdateGuard: NSObject {
+    enum BlockReason: Equatable {
+        case devBuild(version: String?)
+        case meetingRecordingActive
+    }
+
     private let isMeetingRecordingActive: () -> Bool
 
     init(isMeetingRecordingActive: @escaping () -> Bool) {
@@ -43,6 +50,41 @@ final class SparkleUpdateGuard: NSObject {
         if normalized.contains("pdx") { return true }
         return false
     }
+
+    static func blockReason(appVersion: String?, isMeetingRecordingActive: Bool) -> BlockReason? {
+        if isDevBuildVersion(appVersion) {
+            return .devBuild(version: appVersion)
+        }
+        if isMeetingRecordingActive {
+            return .meetingRecordingActive
+        }
+        return nil
+    }
+
+    private func currentBlockReason() -> BlockReason? {
+        let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        if Self.isDevBuildVersion(appVersion) {
+            return .devBuild(version: appVersion)
+        }
+        if isMeetingRecordingActive() {
+            return .meetingRecordingActive
+        }
+        return nil
+    }
+
+    private static func error(for reason: BlockReason) -> NSError {
+        let message: String = switch reason {
+        case .devBuild(let version):
+            "Dev builds skip update checks (version: \(version ?? "<missing>"))."
+        case .meetingRecordingActive:
+            "Update checks are paused while a meeting recording is active. Stop the recording and try again."
+        }
+        return NSError(
+            domain: "com.macparakeet.update-guard",
+            code: reason.errorCode,
+            userInfo: [NSLocalizedDescriptionKey: message]
+        )
+    }
 }
 
 extension SparkleUpdateGuard: SPUUpdaterDelegate {
@@ -50,24 +92,24 @@ extension SparkleUpdateGuard: SPUUpdaterDelegate {
     /// to refuse the check; the thrown NSError's `localizedDescription` is
     /// shown in Sparkle's user-initiated check UI.
     func updater(_ updater: SPUUpdater, mayPerform updateCheck: SPUUpdateCheck) throws {
-        let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
-        if Self.isDevBuildVersion(appVersion) {
-            throw NSError(
-                domain: "com.macparakeet.update-guard",
-                code: 1,
-                userInfo: [
-                    NSLocalizedDescriptionKey: "Dev builds skip update checks (version: \(appVersion ?? "<missing>"))."
-                ]
-            )
+        if let reason = currentBlockReason() {
+            throw Self.error(for: reason)
         }
-        if isMeetingRecordingActive() {
-            throw NSError(
-                domain: "com.macparakeet.update-guard",
-                code: 2,
-                userInfo: [
-                    NSLocalizedDescriptionKey: "Update checks are paused while a meeting recording is active. Stop the recording and try again."
-                ]
-            )
+    }
+
+    /// Sparkle calls this when installing an already-downloaded update. This is
+    /// the data-loss gate for the case where the check/download happened before
+    /// a meeting started but the relaunch prompt fires during the recording.
+    func updaterShouldRelaunchApplication(_ updater: SPUUpdater) -> Bool {
+        currentBlockReason() == nil
+    }
+}
+
+private extension SparkleUpdateGuard.BlockReason {
+    var errorCode: Int {
+        switch self {
+        case .devBuild: return 1
+        case .meetingRecordingActive: return 2
         }
     }
 }

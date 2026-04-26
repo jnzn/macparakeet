@@ -33,7 +33,6 @@ struct LLMChatCommand: AsyncParsableCommand {
             let text = try readInput(input)
 
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                if !json { printErr("Input is empty.") }
                 throw CLIInputError.empty
             }
 
