@@ -327,7 +327,7 @@ extension PromptsCommand {
         @Flag(name: .long, help: "Stream the response token by token.")
         var stream: Bool = false
 
-        @Flag(name: .long, help: "Emit a structured JSON envelope (output, model, usage, latencyMs) instead of plain text.")
+        @Flag(name: .long, help: "Emit a structured JSON envelope (output, provider, model, usage, stopReason, latencyMs) instead of plain text.")
         var json: Bool = false
 
         @Option(name: .long, help: "Extra instructions appended to the prompt for this run.")

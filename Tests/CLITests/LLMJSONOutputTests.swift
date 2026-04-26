@@ -1,0 +1,125 @@
+import ArgumentParser
+import XCTest
+@testable import CLI
+@testable import MacParakeetCore
+
+/// Schema and validation tests for the CLI's `--json` output mode.
+/// `LLMResultTests` covers the `MacParakeetCore` envelope; this file
+/// covers CLI-only concerns: the test-connection success shape and the
+/// `--json` × `--stream` rejection contract.
+final class LLMJSONOutputTests: XCTestCase {
+
+    // MARK: - LLMTestConnectionResult schema lock
+
+    func testLLMTestConnectionResultEncodesExpectedShape() throws {
+        let result = LLMTestConnectionResult(
+            ok: true,
+            provider: "anthropic",
+            model: "claude-sonnet-4-6",
+            latencyMs: 234
+        )
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let data = try encoder.encode(result)
+        let json = try XCTUnwrap(String(data: data, encoding: .utf8))
+
+        XCTAssertEqual(
+            json,
+            #"{"latencyMs":234,"model":"claude-sonnet-4-6","ok":true,"provider":"anthropic"}"#
+        )
+    }
+
+    // MARK: - --json × --stream rejection
+    //
+    // ArgumentParser's `parse(_:)` runs `validate()` as part of parsing,
+    // so a validation error surfaces during `parse` rather than as a
+    // separate step. Each rejection test asserts that `parse` throws
+    // and that the human-readable text mentions both flag names so a
+    // future refactor can't accidentally drop the actionable hint.
+
+    func testSummarizeRejectsJSONWithStream() {
+        assertParseRejects(
+            command: LLMSummarizeCommand.self,
+            args: [
+                "--provider", "ollama",
+                "--model", "qwen3.5:4b",
+                "--json",
+                "--stream",
+                "-",
+            ]
+        )
+    }
+
+    func testChatRejectsJSONWithStream() {
+        assertParseRejects(
+            command: LLMChatCommand.self,
+            args: [
+                "--provider", "ollama",
+                "--model", "qwen3.5:4b",
+                "--question", "Why?",
+                "--json",
+                "--stream",
+                "-",
+            ]
+        )
+    }
+
+    func testTransformRejectsJSONWithStream() {
+        assertParseRejects(
+            command: LLMTransformCommand.self,
+            args: [
+                "--provider", "ollama",
+                "--model", "qwen3.5:4b",
+                "--prompt", "Make it formal",
+                "--json",
+                "--stream",
+                "-",
+            ]
+        )
+    }
+
+    func testSummarizeAcceptsJSONWithoutStream() throws {
+        // The complement: --json on its own must parse cleanly.
+        XCTAssertNoThrow(try LLMSummarizeCommand.parse([
+            "--provider", "ollama",
+            "--model", "qwen3.5:4b",
+            "--json",
+            "-",
+        ]))
+    }
+
+    func testSummarizeAcceptsStreamWithoutJSON() throws {
+        XCTAssertNoThrow(try LLMSummarizeCommand.parse([
+            "--provider", "ollama",
+            "--model", "qwen3.5:4b",
+            "--stream",
+            "-",
+        ]))
+    }
+
+    // MARK: - Helpers
+
+    private func assertParseRejects<C: ParsableCommand>(
+        command: C.Type,
+        args: [String],
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        do {
+            _ = try C.parse(args)
+            XCTFail("Expected --json with --stream to be rejected at parse time.", file: file, line: line)
+        } catch {
+            // The exit message contains the validation text — assert the
+            // hint mentions both flags so the actionable message can't
+            // silently degrade to a generic ArgumentParser error.
+            let message = C.message(for: error)
+            XCTAssertTrue(
+                message.contains("--json") && message.contains("--stream"),
+                "Expected message to mention both --json and --stream, got: \(message)",
+                file: file,
+                line: line
+            )
+        }
+    }
+}

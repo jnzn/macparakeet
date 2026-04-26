@@ -19,7 +19,7 @@ struct LLMTransformCommand: AsyncParsableCommand {
     @Flag(name: .long, help: "Stream the response token by token.")
     var stream: Bool = false
 
-    @Flag(name: .long, help: "Emit a structured JSON envelope (output, model, usage, latencyMs) instead of plain text.")
+    @Flag(name: .long, help: "Emit a structured JSON envelope (output, provider, model, usage, stopReason, latencyMs) instead of plain text.")
     var json: Bool = false
 
     func validate() throws {
