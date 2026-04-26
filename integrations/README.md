@@ -129,7 +129,7 @@ agent can re-prompt the user.
 
 ## Per-ecosystem entry points
 
-- **OpenClaw:** [`openclaw/SOUL.md`](./openclaw/SOUL.md)
+- **OpenClaw:** [`openclaw/README.md`](./openclaw/README.md)
 - **Hermes Agent:** [`hermes/README.md`](./hermes/README.md)
 - **Codex CLI / Claude Code / generic AGENTS.md consumers:** read
   [`/AGENTS.md`](../AGENTS.md) at the repo root, plus this file for the CLI
