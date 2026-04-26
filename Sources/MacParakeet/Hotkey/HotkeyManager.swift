@@ -150,7 +150,7 @@ public final class HotkeyManager {
         installedRunLoop = runLoop
         CFRunLoopAddSource(runLoop, runLoopSource, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
-        syncModifierPressedState()
+        recoverFromDisabledTap()
 
         return true
     }
