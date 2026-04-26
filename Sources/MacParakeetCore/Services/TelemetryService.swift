@@ -57,10 +57,12 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
     private let locale: String?
     private let chip: String
     private let isEnabled: () -> Bool
+    private let requestTimeoutInterval: TimeInterval
 
     static let maxQueueSize = 200
     static let flushThreshold = 50
     static let flushInterval: TimeInterval = 60
+    static let requestTimeout: TimeInterval = 10
     static let maxBatchSize = 100
     static let terminationFlushMaxWait: TimeInterval = 0.4
     static let terminationRequestTimeout: TimeInterval = 0.3
@@ -92,6 +94,7 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
     public init(
         baseURL: URL? = nil,
         session: URLSession = .shared,
+        requestTimeoutInterval: TimeInterval = 10,
         isEnabled: @escaping () -> Bool = {
             UserDefaults.standard.object(forKey: "telemetryEnabled") as? Bool ?? true
         }
@@ -106,6 +109,7 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
         }
         self.session = session
         self.isEnabled = isEnabled
+        self.requestTimeoutInterval = requestTimeoutInterval
         self.sessionId = UUID().uuidString
         self.sessionStartedAt = Date()
 
@@ -169,7 +173,7 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
     private func flushQueuedEvents() async -> Set<String> {
         let events = takeQueuedEvents()
         guard !events.isEmpty else { return [] }
-        let failedEvents = await sendBatches(events, using: session, timeoutInterval: 10)
+        let failedEvents = await sendBatches(events, using: session, timeoutInterval: requestTimeoutInterval)
         requeueFailedEvents(failedEvents)
         return Set(failedEvents.map(\.eventId))
     }

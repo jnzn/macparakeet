@@ -70,6 +70,12 @@ macparakeet-cli
 > `jq` or any JSON tool. Side-effect commands (delete, favorite, etc.) print one
 > confirmation line and don't accept `--json`.
 
+> **Telemetry convention**: CLI telemetry uses the same opt-out preference as
+> the GUI and does not change stdout/stderr contracts. `transcribe` emits a
+> privacy-safe `cli_operation` event with command, outcome, duration, output
+> format, and coarse input kind. Set `MACPARAKEET_TELEMETRY=0` to disable CLI
+> telemetry for a process.
+
 ## Core Modes
 
 ### 1) GUI-Parity Mode (recommended for behavior checks)

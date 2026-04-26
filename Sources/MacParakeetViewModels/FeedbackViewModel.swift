@@ -115,6 +115,8 @@ public final class FeedbackViewModel {
         submissionState = .submitting
         let trimmedMessage = message.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        let operationID = Observability.operationID()
+        let startedAt = Date()
 
         let payload = FeedbackPayload(
             category: category,
@@ -134,6 +136,15 @@ public final class FeedbackViewModel {
                 guard !Task.isCancelled else { return }
 
                 Telemetry.send(.feedbackSubmitted(category: payload.category.rawValue))
+                Telemetry.send(.feedbackOperation(
+                    operationID: operationID,
+                    category: payload.category.rawValue,
+                    outcome: .success,
+                    durationSeconds: Observability.durationSeconds(since: startedAt),
+                    screenshotAttached: payload.screenshotBase64 != nil,
+                    systemInfoIncluded: true,
+                    errorType: nil
+                ))
                 submissionState = .success
                 // Auto-reset after 3 seconds
                 try await Task.sleep(for: .seconds(3))
@@ -146,6 +157,15 @@ public final class FeedbackViewModel {
                 return
             } catch {
                 guard !Task.isCancelled else { return }
+                Telemetry.send(.feedbackOperation(
+                    operationID: operationID,
+                    category: payload.category.rawValue,
+                    outcome: .failure,
+                    durationSeconds: Observability.durationSeconds(since: startedAt),
+                    screenshotAttached: payload.screenshotBase64 != nil,
+                    systemInfoIncluded: true,
+                    errorType: Observability.errorType(for: error)
+                ))
                 submissionState = .error(error.localizedDescription)
             }
         }
