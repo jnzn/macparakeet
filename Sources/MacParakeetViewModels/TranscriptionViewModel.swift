@@ -301,6 +301,8 @@ public final class TranscriptionViewModel {
                 updatedResult.channelName = original.channelName
                 updatedResult.videoDescription = original.videoDescription
                 updatedResult.sourceType = original.sourceType
+                updatedResult.recoveredFromCrash = original.recoveredFromCrash
+                updatedResult.userNotes = original.userNotes
                 updatedResult.updatedAt = Date()
                 do {
                     try transcriptionRepo?.save(updatedResult)

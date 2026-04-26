@@ -103,6 +103,47 @@ final class TranscriptionRepositoryTests: XCTestCase {
         XCTAssertEqual(results.map(\.id), [newerMeeting.id, olderMeeting.id])
     }
 
+    func testFetchBySourceTypeFiltersAndOrdersNewestFirst() throws {
+        let olderMeeting = Transcription(
+            createdAt: Date(timeIntervalSinceNow: -100),
+            fileName: "older meeting",
+            sourceType: .meeting,
+            updatedAt: Date(timeIntervalSinceNow: -100)
+        )
+        let newerMeeting = Transcription(
+            createdAt: Date(timeIntervalSinceNow: -10),
+            fileName: "newer meeting",
+            sourceType: .meeting,
+            updatedAt: Date(timeIntervalSinceNow: -10)
+        )
+        let fileTranscription = Transcription(fileName: "regular file", sourceType: .file)
+
+        try repo.save(olderMeeting)
+        try repo.save(newerMeeting)
+        try repo.save(fileTranscription)
+
+        let results = try repo.fetchBySourceType(.meeting)
+
+        XCTAssertEqual(results.map(\.id), [newerMeeting.id, olderMeeting.id])
+    }
+
+    func testUpdateUserNotesPreservesOtherFields() throws {
+        let transcription = Transcription(
+            fileName: "Meeting Apr 5",
+            rawTranscript: "Transcript",
+            status: .completed,
+            sourceType: .meeting
+        )
+        try repo.save(transcription)
+
+        try repo.updateUserNotes(id: transcription.id, userNotes: "Decision: ship it")
+
+        let fetched = try XCTUnwrap(repo.fetch(id: transcription.id))
+        XCTAssertEqual(fetched.userNotes, "Decision: ship it")
+        XCTAssertEqual(fetched.rawTranscript, "Transcript")
+        XCTAssertEqual(fetched.sourceType, .meeting)
+    }
+
     func testDelete() throws {
         let transcription = Transcription(fileName: "delete-me.mp3")
         try repo.save(transcription)

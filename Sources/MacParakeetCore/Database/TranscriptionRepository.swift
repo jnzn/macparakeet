@@ -72,6 +72,18 @@ public final class TranscriptionRepository: TranscriptionRepositoryProtocol {
         }
     }
 
+    public func fetchBySourceType(_ sourceType: Transcription.SourceType, limit: Int? = nil) throws -> [Transcription] {
+        try dbQueue.read { db in
+            var request = Transcription
+                .filter(Transcription.Columns.sourceType == sourceType.rawValue)
+                .order(Transcription.Columns.createdAt.desc)
+            if let limit {
+                request = request.limit(limit)
+            }
+            return try request.fetchAll(db)
+        }
+    }
+
     public func fetchByFilePath(
         _ filePath: String,
         sourceType: Transcription.SourceType? = nil
@@ -186,6 +198,15 @@ public final class TranscriptionRepository: TranscriptionRepositoryProtocol {
         try dbQueue.write { db in
             guard var transcription = try Transcription.fetchOne(db, key: id) else { return }
             transcription.speakers = speakers
+            transcription.updatedAt = Date()
+            try transcription.update(db)
+        }
+    }
+
+    public func updateUserNotes(id: UUID, userNotes: String?) throws {
+        try dbQueue.write { db in
+            guard var transcription = try Transcription.fetchOne(db, key: id) else { return }
+            transcription.userNotes = userNotes
             transcription.updatedAt = Date()
             try transcription.update(db)
         }

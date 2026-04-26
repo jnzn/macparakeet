@@ -27,6 +27,16 @@ final class CLIHelpersTests: XCTestCase {
         XCTAssertEqual(found.id, t.id)
     }
 
+    func testFindTranscriptionByExactName() throws {
+        let db = try DatabaseManager()
+        let repo = TranscriptionRepository(dbQueue: db.dbQueue)
+        let t = Transcription(fileName: "Design Review", rawTranscript: "Hello", status: .completed)
+        try repo.save(t)
+
+        let found = try findTranscription(id: "design review", repo: repo)
+        XCTAssertEqual(found.id, t.id)
+    }
+
     func testFindTranscriptionThrowsNotFoundForBogusID() throws {
         let db = try DatabaseManager()
         let repo = TranscriptionRepository(dbQueue: db.dbQueue)
@@ -155,6 +165,38 @@ final class CLIHelpersTests: XCTestCase {
             }
             if case .ambiguous = lookupError {} else {
                 XCTFail("Expected .ambiguous, got \(lookupError)")
+            }
+        }
+    }
+
+    // MARK: - findMeeting
+
+    func testFindMeetingFiltersToMeetingSourceType() throws {
+        let db = try DatabaseManager()
+        let repo = TranscriptionRepository(dbQueue: db.dbQueue)
+
+        let meeting = Transcription(fileName: "Planning", status: .completed, sourceType: .meeting)
+        let file = Transcription(fileName: "Planning", status: .completed, sourceType: .file)
+        try repo.save(file)
+        try repo.save(meeting)
+
+        let found = try findMeeting(idOrName: "planning", repo: repo)
+        XCTAssertEqual(found.id, meeting.id)
+    }
+
+    func testFindMeetingRejectsNonMeetingExactUUID() throws {
+        let db = try DatabaseManager()
+        let repo = TranscriptionRepository(dbQueue: db.dbQueue)
+
+        let file = Transcription(fileName: "clip.mp3", status: .completed, sourceType: .file)
+        try repo.save(file)
+
+        XCTAssertThrowsError(try findMeeting(idOrName: file.id.uuidString, repo: repo)) { error in
+            guard let lookupError = error as? CLILookupError else {
+                return XCTFail("Expected CLILookupError")
+            }
+            if case .notFound = lookupError {} else {
+                XCTFail("Expected .notFound, got \(lookupError)")
             }
         }
     }
