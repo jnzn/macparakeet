@@ -30,6 +30,23 @@ JSON output schemas are part of the contract: top-level shape (array vs
 object), field names, and field types are stable within a major version. We
 may add new optional fields in a minor release.
 
+### Exit codes
+
+The CLI uses a small set of exit codes. They are part of the public contract;
+new error classes get new minor-version codes, never silent reuse.
+
+| Code | Meaning |
+|------|---------|
+| `0`  | Success. |
+| `1`  | Runtime failure -- the command attempted its work and the work failed. Examples: LLM provider call returned an error, transcription failed, database read/write error, network unreachable. The command writes a one-line stderr message describing the failure. |
+| `2`  | Validation/misuse -- the invocation itself was malformed before the command did any real work. Examples: unknown provider, missing required flag, malformed input file, unsupported `--format` value. ArgumentParser produces this for unknown flags as well. |
+| `130` | Interrupted by `SIGINT` (Ctrl-C). Inherits Unix convention; downstream agents should treat this as cancellation, not failure. |
+
+`--json` output never goes to stderr regardless of exit code. On failure the
+JSON envelope shape varies by command -- see each command's section below for
+the exact shape (or a note about plain-text-on-stderr fallback for that
+command).
+
 ## [1.2.0] -- 2026-04-26
 
 ### Added
