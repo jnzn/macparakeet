@@ -27,8 +27,15 @@ extension MicrophoneCapture: MeetingMicrophoneCapturing {}
 
 protocol MeetingSystemAudioTapping: Sendable {
     typealias AudioBufferHandler = @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void
-    func start(handler: @escaping AudioBufferHandler) throws
+    typealias StallObserver = @Sendable (MeetingAudioError) -> Void
+    func start(handler: @escaping AudioBufferHandler, onStall: StallObserver?) throws
     func stop()
+}
+
+extension MeetingSystemAudioTapping {
+    func start(handler: @escaping AudioBufferHandler) throws {
+        try start(handler: handler, onStall: nil)
+    }
 }
 
 @available(macOS 14.2, *)
@@ -142,21 +149,26 @@ public actor MeetingAudioCaptureService {
                 self?.eventSink.emit(.microphoneBuffer(copy, time))
             }
 
-            try tap.start { [weak self] buffer, time in
-                guard let copy = Self.deepCopyBuffer(buffer) else {
-                    Logger(subsystem: "com.macparakeet.core", category: "MeetingAudioCaptureService")
-                        .warning("deepCopyBuffer nil for system tap: format=\(buffer.format.commonFormat.rawValue) rate=\(buffer.format.sampleRate) ch=\(buffer.format.channelCount) interleaved=\(buffer.format.isInterleaved) frames=\(buffer.frameLength)")
-                    self?.eventSink.emit(
-                        .error(
-                            .captureRuntimeFailure(
-                                "system buffer copy failed (format=\(buffer.format.commonFormat.rawValue) rate=\(buffer.format.sampleRate) channels=\(buffer.format.channelCount))"
+            try tap.start(
+                handler: { [weak self] buffer, time in
+                    guard let copy = Self.deepCopyBuffer(buffer) else {
+                        Logger(subsystem: "com.macparakeet.core", category: "MeetingAudioCaptureService")
+                            .warning("deepCopyBuffer nil for system tap: format=\(buffer.format.commonFormat.rawValue) rate=\(buffer.format.sampleRate) ch=\(buffer.format.channelCount) interleaved=\(buffer.format.isInterleaved) frames=\(buffer.frameLength)")
+                        self?.eventSink.emit(
+                            .error(
+                                .captureRuntimeFailure(
+                                    "system buffer copy failed (format=\(buffer.format.commonFormat.rawValue) rate=\(buffer.format.sampleRate) channels=\(buffer.format.channelCount))"
+                                )
                             )
                         )
-                    )
-                    return
+                        return
+                    }
+                    self?.eventSink.emit(.systemBuffer(copy, time))
+                },
+                onStall: { [weak self] error in
+                    self?.eventSink.emit(.error(error))
                 }
-                self?.eventSink.emit(.systemBuffer(copy, time))
-            }
+            )
         } catch {
             microphoneCapture.stop()
             tap.stop()

@@ -220,6 +220,33 @@ final class MeetingAudioCaptureServiceTests: XCTestCase {
         }
     }
 
+    func testEmitsRuntimeErrorEventWhenSystemTapStallsMidSession() async throws {
+        let microphone = MockMeetingMicrophoneCapture()
+        let systemTap = MockMeetingSystemAudioTap()
+        let service = MeetingAudioCaptureService(
+            microphoneCapture: microphone,
+            systemAudioTapFactory: { systemTap }
+        )
+
+        let events = await service.events
+        _ = try await service.start()
+        defer { Task { await service.stop() } }
+
+        systemTap.emitStall(.captureRuntimeFailure("system audio tap stopped delivering buffers (gap 6.0s)"))
+
+        var iterator = events.makeAsyncIterator()
+        let emitted = await iterator.next()
+        guard case let .error(error)? = emitted else {
+            XCTFail("Expected .error event, got \(String(describing: emitted))")
+            return
+        }
+        guard case .captureRuntimeFailure(let message) = error else {
+            XCTFail("Expected captureRuntimeFailure, got \(error)")
+            return
+        }
+        XCTAssertTrue(message.contains("stopped delivering buffers"))
+    }
+
     private func makeInterleavedFloatStereoBuffer(
         sampleRate: Double = 16_000,
         samples: [Float]
@@ -308,17 +335,24 @@ private final class MockMeetingMicrophoneCapture: MeetingMicrophoneCapturing, @u
 
 private final class MockMeetingSystemAudioTap: MeetingSystemAudioTapping, @unchecked Sendable {
     private var handler: AudioBufferHandler?
+    private var stallObserver: StallObserver?
 
-    func start(handler: @escaping AudioBufferHandler) throws {
+    func start(handler: @escaping AudioBufferHandler, onStall: StallObserver?) throws {
         self.handler = handler
+        self.stallObserver = onStall
     }
 
     func stop() {
         handler = nil
+        stallObserver = nil
     }
 
     func emit(buffer: AVAudioPCMBuffer, time: AVAudioTime) {
         handler?(buffer, time)
+    }
+
+    func emitStall(_ error: MeetingAudioError) {
+        stallObserver?(error)
     }
 }
 
