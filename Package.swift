@@ -37,14 +37,17 @@ let package = Package(
             path: "Sources/MacParakeet",
             resources: [.process("Resources")]
         ),
-        // CLI tool for headless testing and scripting
+        // macparakeet-cli — versioned public surface (semver, Sources/CLI/CHANGELOG.md).
+        // Consumed by the macOS app, scripted callers, and downstream agent skills
+        // (see /AGENTS.md and integrations/README.md).
         .executableTarget(
             name: "CLI",
             dependencies: [
                 "MacParakeetCore",
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
             ],
-            path: "Sources/CLI"
+            path: "Sources/CLI",
+            exclude: ["CHANGELOG.md"]
         ),
         // Objective-C shim target for catching NSException in Swift.
         // Swift's `do/try/catch` cannot catch Objective-C exceptions raised by
