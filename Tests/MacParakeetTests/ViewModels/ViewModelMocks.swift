@@ -482,6 +482,21 @@ final class MockLLMService: LLMServiceProtocol, @unchecked Sendable {
         return "Mock transform"
     }
 
+    func generatePromptResultDetailed(transcript: String, systemPrompt: String?) async throws -> LLMResult {
+        let output = try await generatePromptResult(transcript: transcript, systemPrompt: systemPrompt)
+        return LLMResult(output: output, provider: "mock", model: "mock-model", latencyMs: 0)
+    }
+
+    func chatDetailed(question: String, transcript: String, history: [ChatMessage]) async throws -> LLMResult {
+        let output = try await chat(question: question, transcript: transcript, history: history)
+        return LLMResult(output: output, provider: "mock", model: "mock-model", latencyMs: 0)
+    }
+
+    func transformDetailed(text: String, prompt: String) async throws -> LLMResult {
+        let output = try await transform(text: text, prompt: prompt)
+        return LLMResult(output: output, provider: "mock", model: "mock-model", latencyMs: 0)
+    }
+
     func formatTranscript(
         transcript: String,
         promptTemplate: String,
