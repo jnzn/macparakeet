@@ -38,6 +38,9 @@ A **fast, private, local-first voice app** for macOS with three co-equal modes: 
 | Telemetry system | `docs/telemetry.md` |
 | Commit message format | `docs/commit-guidelines.md` |
 | Implementation plans | `plans/` -> active and completed plans |
+| Cross-agent coding-agent guide | `AGENTS.md` -> slim, convention-following |
+| Downstream agent integration (calling the CLI) | `integrations/README.md` |
+| CLI semver + compatibility policy | `Sources/CLI/CHANGELOG.md` |
 
 ## Tech Stack (Locked Decisions)
 
@@ -243,6 +246,7 @@ View files organized by feature in `Sources/MacParakeet/Views/`:
 ```
 macparakeet/
 ├── CLAUDE.md           # This file (AI assistant context)
+├── AGENTS.md           # Cross-agent guide for coding agents working in this repo
 ├── README.md           # Public-facing readme
 ├── Package.swift       # Swift package manifest
 ├── spec/               # THE SPEC (authoritative, prescriptive)
@@ -260,9 +264,14 @@ macparakeet/
 ├── plans/              # Implementation plans (version controlled)
 │   ├── active/         # Currently being implemented
 │   └── completed/      # Done plans (archived, not deleted)
+├── integrations/       # Downstream agent integration docs (OpenClaw, Hermes, ...)
+│   ├── README.md       # Canonical CLI vocabulary + install for agents calling the CLI
+│   ├── openclaw/SOUL.md
+│   └── hermes/README.md
 ├── Sources/
 │   ├── MacParakeet/            # GUI app (SwiftUI, imports MacParakeetCore + ViewModels)
-│   ├── CLI/                    # CLI tool (ArgumentParser, imports MacParakeetCore)
+│   ├── CLI/                    # macparakeet-cli (ArgumentParser, imports MacParakeetCore)
+│   │   └── CHANGELOG.md        # CLI semver + compatibility policy (public contract)
 │   ├── MacParakeetCore/        # Shared library (no UI deps)
 │   └── MacParakeetViewModels/  # ViewModels (testable, depends on Core)
 ├── Tests/
@@ -399,9 +408,11 @@ scripts/dev/run_app.sh
 # Optional: force a specific signing identity for the dev .app bundle
 MACPARAKEET_CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" scripts/dev/run_app.sh
 
-# Build and run CLI
+# Build and run CLI -- public surface, semver tracked in Sources/CLI/CHANGELOG.md.
+# See AGENTS.md (this repo) and integrations/README.md (downstream agents) for context.
 swift build --target CLI
 swift run macparakeet-cli --help
+swift run macparakeet-cli --version    # 1.0.0+
 swift run macparakeet-cli transcribe /path/to/audio.mp3
 swift run macparakeet-cli health
 

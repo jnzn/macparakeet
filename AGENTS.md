@@ -1,0 +1,107 @@
+# AGENTS.md -- MacParakeet
+
+> Read by coding agents (Claude Code, Codex CLI, Hermes, OpenClaw, etc.) working
+> *in this repo*. Deeper project context lives in [`CLAUDE.md`](./CLAUDE.md).
+> If your agent runs *outside* this repo and wants to *call* `macparakeet-cli`,
+> see [`integrations/README.md`](./integrations/README.md) instead.
+
+## What this project is
+
+MacParakeet is a fast, private, local-first voice app for macOS with three
+co-equal modes: system-wide dictation, file transcription, and meeting
+recording. Powered by NVIDIA Parakeet TDT 0.6B v3 via FluidAudio CoreML on
+the Apple Neural Engine.
+
+Free and open-source (GPL-3.0). Apple Silicon only. Requires macOS 14.2+.
+
+The repo ships two products:
+
+- **`macparakeet-cli`** -- versioned public surface
+  ([`Sources/CLI/`](./Sources/CLI/), semver tracked in
+  [`Sources/CLI/CHANGELOG.md`](./Sources/CLI/CHANGELOG.md)).
+- **`MacParakeet.app`** -- SwiftUI macOS app, one consumer of the CLI's
+  underlying core library.
+
+## Build & Test
+
+```bash
+# Build everything (app + CLI + core + viewmodels + tests)
+swift build
+
+# Run the test suite (Swift 6 language mode)
+swift test
+
+# Build, codesign, and launch the dev app
+scripts/dev/run_app.sh
+
+# Run the CLI against your local DB
+swift run macparakeet-cli --help
+swift run macparakeet-cli health
+```
+
+The full test suite runs in well under a minute. Run `swift test` before
+declaring code-change work complete; failures are deterministic.
+
+## Code Style
+
+- Swift 6.0 with SwiftUI for UI and GRDB for SQLite.
+- One repository per database table (see
+  [`Sources/MacParakeetCore/Database/`](./Sources/MacParakeetCore/Database/)).
+- Comments explain *why*, not *what* -- well-named identifiers carry the what.
+  Default to writing none.
+- `MacParakeetCore` has no UI dependencies (Foundation + GRDB + FluidAudio
+  only). One exception: `ExportService` imports AppKit for PDF/DOCX. No new
+  AppKit imports in Core.
+- ViewModels live in their own SPM target (`Sources/MacParakeetViewModels/`)
+  so they can be tested without the GUI.
+- Async/await for all I/O. No completion handlers, no Combine in new code.
+
+## Architecture Orientation
+
+```
+Sources/
+  MacParakeetCore/        -- Pure Swift library: STT, DB, prompts, LLM, audio
+  MacParakeetViewModels/  -- @Observable view models, no UI
+  MacParakeet/            -- SwiftUI app target
+  CLI/                    -- macparakeet-cli; ArgumentParser commands
+Tests/
+  MacParakeetTests/       -- Unit, database, integration tests
+  CLITests/               -- CLI argument-parsing + helper tests
+```
+
+Full spec is in [`spec/`](./spec/). Architectural decisions (locked) are in
+[`spec/adr/`](./spec/adr/). Don't second-guess ADRs.
+
+## Security & Privacy
+
+- **Local-first by default.** STT runs on the Apple Neural Engine. No audio
+  ever leaves the device unless the user explicitly enables a cloud LLM
+  provider, telemetry, or YouTube downloads.
+- **No accounts, no logins.** No identifying data is sent anywhere.
+- **The user database lives at**
+  `~/Library/Application Support/MacParakeet/macparakeet.db`. Treat it as user
+  data: never delete without explicit user confirmation; write migrations
+  rather than dropping tables.
+
+## Important Runtime Locations
+
+| Item | Path |
+|------|------|
+| App bundle | `/Applications/MacParakeet.app` |
+| Database | `~/Library/Application Support/MacParakeet/macparakeet.db` |
+| CoreML STT models (~6 GB) | `~/Library/Application Support/MacParakeet/models/stt/` |
+| Settings | `~/Library/Preferences/com.macparakeet.plist` |
+| Logs | `~/Library/Logs/MacParakeet/` |
+
+## Where to Look Next
+
+- **Coding-agent context for this repo:** [`CLAUDE.md`](./CLAUDE.md) for deep
+  project context; [`spec/10-ai-coding-method.md`](./spec/10-ai-coding-method.md)
+  for the kernel workflow; ADRs in [`spec/adr/`](./spec/adr/) for locked
+  decisions.
+- **Calling macparakeet-cli from another agent (OpenClaw / Hermes / etc.):**
+  [`integrations/README.md`](./integrations/README.md) and the CLI changelog
+  at [`Sources/CLI/CHANGELOG.md`](./Sources/CLI/CHANGELOG.md).
+- **Commit format:** rich-format messages per
+  [`docs/commit-guidelines.md`](./docs/commit-guidelines.md) for significant
+  changes.
