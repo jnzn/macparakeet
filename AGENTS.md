@@ -22,7 +22,7 @@ The repo ships two products:
 - **`MacParakeet.app`** -- SwiftUI macOS app, one consumer of the CLI's
   underlying core library.
 
-## Build & test
+## Build & Test
 
 ```bash
 # Build everything (app + CLI + core + viewmodels + tests)
@@ -42,7 +42,7 @@ swift run macparakeet-cli health
 The full test suite runs in well under a minute. Run `swift test` before
 declaring code-change work complete; failures are deterministic.
 
-## Code style
+## Code Style
 
 - Swift 6.0 with SwiftUI for UI and GRDB for SQLite.
 - One repository per database table (see
@@ -56,7 +56,7 @@ declaring code-change work complete; failures are deterministic.
   so they can be tested without the GUI.
 - Async/await for all I/O. No completion handlers, no Combine in new code.
 
-## Architecture orientation
+## Architecture Orientation
 
 ```
 Sources/
@@ -72,7 +72,7 @@ Tests/
 Full spec is in [`spec/`](./spec/). Architectural decisions (locked) are in
 [`spec/adr/`](./spec/adr/). Don't second-guess ADRs.
 
-## Security & privacy
+## Security & Privacy
 
 - **Local-first by default.** STT runs on the Apple Neural Engine. No audio
   ever leaves the device unless the user explicitly enables a cloud LLM
@@ -83,7 +83,7 @@ Full spec is in [`spec/`](./spec/). Architectural decisions (locked) are in
   data: never delete without explicit user confirmation; write migrations
   rather than dropping tables.
 
-## Important runtime locations
+## Important Runtime Locations
 
 | Item | Path |
 |------|------|
@@ -93,7 +93,7 @@ Full spec is in [`spec/`](./spec/). Architectural decisions (locked) are in
 | Settings | `~/Library/Preferences/com.macparakeet.plist` |
 | Logs | `~/Library/Logs/MacParakeet/` |
 
-## Where to look next
+## Where to Look Next
 
 - **Coding-agent context for this repo:** [`CLAUDE.md`](./CLAUDE.md) for deep
   project context; [`spec/10-ai-coding-method.md`](./spec/10-ai-coding-method.md)

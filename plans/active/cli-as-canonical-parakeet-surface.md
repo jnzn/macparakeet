@@ -3,7 +3,7 @@
 > Status: **ACTIVE** — strategic plan, post-PR-#138, pre-v0.6.0
 > Author: agent (Claude) + Daniel
 > Date: 2026-04-25
-> Related: PR #138 (CLI prompts + JSON sweep, merged), PR #141 (gitignore journal/, merged), `MEMORY.md`
+> Related: PR #138 (CLI prompts + JSON sweep, merged), PR #141 (gitignore journal/, merged)
 
 ---
 
@@ -94,13 +94,12 @@ The CLI is the load-bearing surface. The GUI is one well-crafted client of it. A
 
 ### 1. Promote `macparakeet-cli` to a versioned public surface
 
-**Why:** The CLI was framed as "internal dev tool" in `MEMORY.md`. Once OpenClaw/Hermes users build skills against `macparakeet-cli flow words add`, that's a public contract. Breaking changes need migration paths.
+**Why:** The CLI was previously framed as `"MacParakeet developer CLI (internal; used for AI-assisted development and testing)"` in its own `--help` abstract. Once OpenClaw/Hermes users build skills against `macparakeet-cli flow words add`, that's a public contract. Breaking changes need migration paths.
 
 **What:**
 - Adopt **semver** for the CLI surface. Stamp `1.0.0` on it (it's mature enough — the PR #138 work landed CRUD, JSON, validation, tests).
 - Create `CHANGELOG.md` scoped to CLI changes. Existing app changelog is for the app; the CLI deserves its own.
 - Add a **deprecation policy** doc: "CLI surface is semver. Breaking changes require N versions of `--legacy-X` shim and a release-note callout."
-- Update `MEMORY.md` to flip the "internal dev tool only" line — the CLI is now a public surface.
 - Bump `macparakeet-cli --version` from `0.1.0` to `1.0.0` in `Sources/CLI/MacParakeetCLI.swift`.
 
 **Effort:** 0.5 day.
@@ -272,5 +271,4 @@ If all stay flat → the thesis didn't validate; cost was small (3-4 days), no r
 - PR #140: Retire legacy `Transcription.summary` mirror (merged 2026-04-25)
 - PR #141: Gitignore `journal/` directory (merged 2026-04-25)
 - `plans/active/cli-prompts-and-json-output.md` — the immediate predecessor plan
-- `MEMORY.md` — agent context, market positioning notes
 - ADR-013: Prompt Library + Multi-Summary Architecture
