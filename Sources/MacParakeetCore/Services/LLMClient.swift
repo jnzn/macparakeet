@@ -510,9 +510,9 @@ public final class LLMClient: LLMClientProtocol, Sendable {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         // Anthropic versions are pinned date strings. We track a single
-// constant so chat + listModels stay in sync and the bump is one
-// place. 2023-06-01 (the previous pin) was 2+ years stale.
-request.setValue(LLMClient.anthropicAPIVersion, forHTTPHeaderField: "anthropic-version")
+        // constant so chat + listModels stay in sync. Anthropic's public
+        // version history still lists 2023-06-01 as the current latest pin.
+        request.setValue(LLMClient.anthropicAPIVersion, forHTTPHeaderField: "anthropic-version")
 
         if let apiKey = config.apiKey {
             request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
@@ -563,9 +563,8 @@ request.setValue(LLMClient.anthropicAPIVersion, forHTTPHeaderField: "anthropic-v
             if let key = config.apiKey {
                 request.setValue(key, forHTTPHeaderField: "x-api-key")
                 // Anthropic versions are pinned date strings. We track a single
-// constant so chat + listModels stay in sync and the bump is one
-// place. 2023-06-01 (the previous pin) was 2+ years stale.
-request.setValue(LLMClient.anthropicAPIVersion, forHTTPHeaderField: "anthropic-version")
+                // constant so chat + listModels stay in sync.
+                request.setValue(LLMClient.anthropicAPIVersion, forHTTPHeaderField: "anthropic-version")
             }
         case .gemini:
             // Gemini uses ?key= query parameter on their native endpoint
@@ -852,11 +851,9 @@ request.setValue(LLMClient.anthropicAPIVersion, forHTTPHeaderField: "anthropic-v
     }
 
     /// Anthropic Messages API version pin. Anthropic dates each API version;
-    /// they keep old pins working for a long time, but using a 2-year-old pin
-    /// risks subtle compat issues with newer model behavior (tool-use,
-    /// content-block shapes). One constant so chat-stream and listModels
-    /// stay in lockstep.
-    static let anthropicAPIVersion = "2024-06-01"
+    /// use the latest date listed in the public version history so chat-stream
+    /// and listModels stay in lockstep.
+    static let anthropicAPIVersion = "2023-06-01"
 
     /// Strips obvious API-key artifacts from a provider error message before
     /// it propagates into Swift errors / telemetry / logs / UI. Intended to

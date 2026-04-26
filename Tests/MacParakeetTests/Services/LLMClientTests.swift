@@ -108,8 +108,8 @@ final class LLMClientTests: XCTestCase {
         // Should use x-api-key, NOT Bearer
         XCTAssertEqual(capturedRequest?.value(forHTTPHeaderField: "x-api-key"), "sk-ant-test-key")
         XCTAssertNil(capturedRequest?.value(forHTTPHeaderField: "Authorization"))
-        // Should include anthropic-version (kept current; bumped from 2023-06-01 in Apr 2026)
-        XCTAssertEqual(capturedRequest?.value(forHTTPHeaderField: "anthropic-version"), "2024-06-01")
+        // Should include the current Anthropic API version pin.
+        XCTAssertEqual(capturedRequest?.value(forHTTPHeaderField: "anthropic-version"), "2023-06-01")
     }
 
     func testAnthropicExtractsSystemPrompt() async throws {

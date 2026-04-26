@@ -270,7 +270,7 @@ public final class SystemAudioTap: @unchecked Sendable {
         enum Action { case none, firstBuffer }
         let action = watchdogLock.withLock { () -> Action in
             self.lastBufferAtNanos = nowNanos
-            guard !self.firstBufferReceived else { return .none }
+            guard !self.firstBufferReceived, !self.hasReportedStall else { return .none }
             self.firstBufferReceived = true
             self.watchdogWorkItem?.cancel()
             self.watchdogWorkItem = nil

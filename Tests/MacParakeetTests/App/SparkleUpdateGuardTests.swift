@@ -36,4 +36,26 @@ final class SparkleUpdateGuardTests: XCTestCase {
         XCTAssertFalse(SparkleUpdateGuard.isDevBuildVersion("0.6.0"))
         XCTAssertFalse(SparkleUpdateGuard.isDevBuildVersion("10.20.30"))
     }
+
+    // MARK: - blockReason
+
+    func testBlockReasonBlocksDevBuildBeforeMeetingState() {
+        XCTAssertEqual(
+            SparkleUpdateGuard.blockReason(appVersion: "0.0.0", isMeetingRecordingActive: true),
+            .devBuild(version: "0.0.0")
+        )
+    }
+
+    func testBlockReasonBlocksReleaseBuildDuringMeeting() {
+        XCTAssertEqual(
+            SparkleUpdateGuard.blockReason(appVersion: "0.6.0", isMeetingRecordingActive: true),
+            .meetingRecordingActive
+        )
+    }
+
+    func testBlockReasonAllowsReleaseBuildWhenIdle() {
+        XCTAssertNil(
+            SparkleUpdateGuard.blockReason(appVersion: "0.6.0", isMeetingRecordingActive: false)
+        )
+    }
 }
