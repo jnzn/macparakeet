@@ -42,15 +42,16 @@ new error classes get new minor-version codes, never silent reuse.
 | `2`  | Validation/misuse -- the invocation itself was malformed before the command did any real work. Examples: unknown provider, missing required flag, malformed input file, unsupported `--format` value. ArgumentParser produces this for unknown flags as well. |
 | `130` | Interrupted by `SIGINT` (Ctrl-C). Inherits Unix convention; downstream agents should treat this as cancellation, not failure. |
 
-`--json` output never goes to stderr regardless of exit code. When `--json` is
-passed, both success and failure print a JSON object to stdout; the exit code
-remains the source of truth for branching.
+After argument parsing succeeds, `--json` output never goes to stderr
+regardless of exit code. When `--json` is passed, both success and post-parse
+failure print a JSON object to stdout; the exit code remains the source of
+truth for branching.
 
 ### `--json` failure envelope
 
 Any command that accepts `--json` emits this envelope on stdout when the
-command fails (regardless of where in the pipeline the failure occurred —
-provider error, missing input, lookup miss, etc.):
+command fails *after argument parsing succeeds* — provider error, missing
+input, lookup miss, runtime exception, etc.:
 
 ```json
 {
@@ -68,6 +69,13 @@ minor releases; existing values are stable within a major.
 
 Stderr stays plain text for human-only progress / status (e.g. "Saved
 PromptResult abc12345"), so piping `--json` stdout through `jq` is safe.
+
+**Parse-time / `validate()` failures** (unknown flags, missing required
+flags, mutually-exclusive flag combinations like `--json` with `--stream`)
+happen before the command starts running and surface through
+ArgumentParser's plain-text stderr path with exit code `2`. Downstream
+agents that branch on `errorType` should also handle the parse-error case
+by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
 
 ## [1.2.0] -- 2026-04-26
 
