@@ -150,7 +150,7 @@ public final class HotkeyManager {
         installedRunLoop = runLoop
         CFRunLoopAddSource(runLoop, runLoopSource, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
-        syncModifierPressedState()
+        recoverFromDisabledTap()
 
         return true
     }
@@ -187,7 +187,7 @@ public final class HotkeyManager {
         // Re-enable it to prevent the hotkey from silently dying.
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let tap = eventTap { CGEvent.tapEnable(tap: tap, enable: true) }
-            syncModifierPressedState()
+            recoverFromDisabledTap()
             return Unmanaged.passUnretained(event)
         }
 
@@ -296,6 +296,7 @@ public final class HotkeyManager {
                 return gestureController.triggerPressed(timestampMs: timestampMs)
             }
 
+            guard targetModifierGestureIsActive else { return [] }
             targetModifierGestureIsActive = false
             let outputs: [HotkeyGestureController.Output]
             if bareTap {
@@ -369,6 +370,13 @@ public final class HotkeyManager {
 
     func syncModifierPressedStateForTesting(flags: CGEventFlags) {
         syncModifierPressedState(flags: flags)
+    }
+
+    func recoverFromDisabledTapForTesting(
+        flags: CGEventFlags? = nil,
+        triggerKeyPressed: Bool = false
+    ) {
+        resetGestureState(flags: flags, triggerKeyPressed: triggerKeyPressed)
     }
 
     // MARK: - KeyCode Trigger Path
@@ -490,14 +498,30 @@ public final class HotkeyManager {
 
     /// Reset state machine to idle (e.g., after cancel countdown expires).
     public func resetToIdle(flags: CGEventFlags? = nil) {
+        resetGestureState(flags: flags, triggerKeyPressed: false)
+    }
+
+    private func recoverFromDisabledTap(flags: CGEventFlags? = nil) {
+        resetGestureState(flags: flags, triggerKeyPressed: currentPhysicalTriggerKeyIsPressed())
+    }
+
+    private func resetGestureState(flags: CGEventFlags? = nil, triggerKeyPressed: Bool) {
         cancelStartupTimer()
         cancelHoldTimer()
-        triggerKeyIsPressed = false
+        triggerKeyIsPressed = triggerKeyPressed
         chordModifierReleased = false
         targetModifierGestureIsActive = false
         bareTap = true
         gestureController.reset()
         syncModifierPressedState(flags: flags)
+    }
+
+    private func currentPhysicalTriggerKeyIsPressed() -> Bool {
+        guard trigger.kind == .keyCode || trigger.kind == .chord,
+              let keyCode = trigger.keyCode else {
+            return false
+        }
+        return CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(keyCode))
     }
 
     private func syncModifierPressedState(flags: CGEventFlags? = nil) {
