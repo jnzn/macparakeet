@@ -29,30 +29,32 @@ struct LLMTransformCommand: AsyncParsableCommand {
     }
 
     func run() async throws {
-        let text = try readInput(input)
+        try await emitJSONOrRethrow(json: json) {
+            let text = try readInput(input)
 
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            printErr("Input is empty.")
-            throw ExitCode.failure
-        }
-
-        let execution = try llm.buildExecutionContext()
-        let service = LLMService(
-            client: execution.client,
-            contextResolver: StaticLLMExecutionContextResolver(context: execution.context)
-        )
-
-        if json {
-            let result = try await service.transformDetailed(text: text, prompt: prompt)
-            try printJSON(result)
-        } else if stream {
-            let tokenStream = service.transformStream(text: text, prompt: prompt)
-            for try await token in tokenStream {
-                print(token, terminator: "")
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                if !json { printErr("Input is empty.") }
+                throw CLIInputError.empty
             }
-            print()
-        } else {
-            print(try await service.transform(text: text, prompt: prompt))
+
+            let execution = try llm.buildExecutionContext()
+            let service = LLMService(
+                client: execution.client,
+                contextResolver: StaticLLMExecutionContextResolver(context: execution.context)
+            )
+
+            if json {
+                let result = try await service.transformDetailed(text: text, prompt: prompt)
+                try printJSON(result)
+            } else if stream {
+                let tokenStream = service.transformStream(text: text, prompt: prompt)
+                for try await token in tokenStream {
+                    print(token, terminator: "")
+                }
+                print()
+            } else {
+                print(try await service.transform(text: text, prompt: prompt))
+            }
         }
     }
 }
