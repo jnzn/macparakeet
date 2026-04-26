@@ -88,8 +88,8 @@ Status legend: **FIXED** (commit referenced) · **REFUTED** (with reason) ·
 
 | ID | Title | Status | Note |
 |---|---|---|---|
-| AUDIT-007 | `--json` failure-envelope contract asymmetry | FIXED | `30a6f0a7` (#154). Locked: when `--json` is passed, both success and failure emit JSON to stdout. New `CLIErrorEnvelope { ok, error, errorType }` with stable `errorType` taxonomy. Documented in `Sources/CLI/CHANGELOG.md` + `integrations/README.md`. |
-| AUDIT-008 | Zero `--json` error-path tests | FIXED | `30a6f0a7` (#154). 4 new tests cover envelope shape, taxonomy mapping for every `LLMError` case, and CLI-error mapping. |
+| AUDIT-007 | `--json` failure-envelope contract asymmetry | FIXED | `30a6f0a7` (#154). Locked: after argument parsing succeeds, `--json` success and failure emit JSON to stdout. New `CLIErrorEnvelope { ok, error, errorType }` with stable `errorType` taxonomy. Parse-time ArgumentParser failures remain plain stderr with exit code 2. Documented in `Sources/CLI/CHANGELOG.md` + `integrations/README.md`. |
+| AUDIT-008 | Zero `--json` error-path tests | FIXED | `30a6f0a7` (#154). Tests cover envelope shape, taxonomy mapping for every `LLMError` case, and CLI-error mapping. |
 | AUDIT-009 | Exit codes under-specified | FIXED | `359df673` (#149). Enumerated table in `Sources/CLI/CHANGELOG.md` and `integrations/README.md`. |
 | AUDIT-020 | `--api-key` shell-history exposure | FIXED | `359df673` (#149). Help text now recommends `"$VAR"` shell expansion. |
 | AUDIT-023 | yt-dlp leading-dash URL injection | REFUTED | Args at `YouTubeDownloader.swift:198–206` already include POSIX `--` separator before url. |
