@@ -316,6 +316,7 @@ public final class DatabaseManager: Sendable {
             """)
 
             let now = Date()
+            let legacySummaryPrompt = Prompt.classicSummaryPrompt(now: now)
             for prompt in Prompt.builtInPrompts(now: now) {
                 try prompt.insert(db)
             }
@@ -368,8 +369,8 @@ public final class DatabaseManager: Sendable {
                     arguments: [
                         UUID(),
                         transcriptionId,
-                        Prompt.defaultPrompt.name,
-                        Prompt.defaultPrompt.content,
+                        legacySummaryPrompt.name,
+                        legacySummaryPrompt.content,
                         nil as String?,
                         summaryText,
                         createdAt,

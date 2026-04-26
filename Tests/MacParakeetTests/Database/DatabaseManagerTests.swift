@@ -605,10 +605,22 @@ final class DatabaseManagerTests: XCTestCase {
                 sql: "SELECT content FROM summaries WHERE transcriptionId = ?",
                 arguments: [transcriptionID]
             )
+            let migratedPromptName = try String.fetchOne(
+                db,
+                sql: "SELECT promptName FROM summaries WHERE transcriptionId = ?",
+                arguments: [transcriptionID]
+            )
+            let migratedPromptContent = try String.fetchOne(
+                db,
+                sql: "SELECT promptContent FROM summaries WHERE transcriptionId = ?",
+                arguments: [transcriptionID]
+            )
             let transcriptionColumns = try db.columns(in: "transcriptions").map(\.name)
 
             XCTAssertEqual(migratedSummaryCount, 1)
             XCTAssertEqual(migratedSummaryContent, legacySummary)
+            XCTAssertEqual(migratedPromptName, "Summary")
+            XCTAssertEqual(migratedPromptContent, Prompt.classicSummaryPrompt().content)
             XCTAssertFalse(transcriptionColumns.contains("summary"))
         }
 

@@ -1208,6 +1208,10 @@ struct TranscriptResultView: View {
                         .controlSize(.small)
                     }
 
+                    if let notesUsed = promptResult.displayableUserNotesSnapshot {
+                        notesUsedSection(notesUsed)
+                    }
+
                     MarkdownContentView(promptResult.content, font: DesignSystem.Typography.bodyLarge)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -1223,6 +1227,23 @@ struct TranscriptResultView: View {
             RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
                 .strokeBorder(DesignSystem.Colors.border.opacity(0.75), lineWidth: 0.5)
         )
+    }
+
+    private func notesUsedSection(_ notes: String) -> some View {
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
+            Label("Notes used", systemImage: "note.text")
+                .font(DesignSystem.Typography.caption.weight(.semibold))
+                .foregroundStyle(DesignSystem.Colors.textSecondary)
+
+            Text(notes)
+                .font(DesignSystem.Typography.caption)
+                .foregroundStyle(DesignSystem.Colors.textSecondary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.bottom, DesignSystem.Spacing.sm)
+        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder
