@@ -41,6 +41,7 @@ This matrix traces each requirement ID from `requirements.yaml` to its implement
 | REQ-DIAR-001 | `MacParakeetCore/Services/DiarizationService.swift` | `DiarizationServiceTests.swift` |
 | REQ-DICT-004 | `MacParakeetCore/Services/HotkeyService.swift` | `HotkeyServiceTests.swift` |
 | REQ-LLM-001 | `MacParakeetCore/Services/LLMProviderService.swift` | `LLMProviderServiceTests.swift` |
+| REQ-LLM-002 | `CLI/Commands/LLMChatCommand.swift`, `CLI/Commands/LLMSummarizeCommand.swift`, `CLI/Commands/LLMTestCommand.swift`, `CLI/Commands/LLMTransformCommand.swift`, `CLI/Commands/PromptsCommand.swift`, `MacParakeetCore/Models/LLMResult.swift`, `MacParakeetCore/Services/LLMClient.swift`, `MacParakeetCore/Services/LLMService.swift` | `LLMJSONOutputTests.swift`, `LLMResultTests.swift`, `LLMClientTests.swift`, `LLMServiceTests.swift` |
 
 ## v0.5 Data & Reliability
 

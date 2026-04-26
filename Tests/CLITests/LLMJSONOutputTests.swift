@@ -79,6 +79,20 @@ final class LLMJSONOutputTests: XCTestCase {
         )
     }
 
+    func testPromptsRunRejectsJSONWithStream() {
+        assertParseRejects(
+            command: PromptsCommand.RunSubcommand.self,
+            args: [
+                "--provider", "ollama",
+                "--model", "qwen3.5:4b",
+                "--transcription", "abcd",
+                "--json",
+                "--stream",
+                "Action items",
+            ]
+        )
+    }
+
     func testSummarizeAcceptsJSONWithoutStream() throws {
         // The complement: --json on its own must parse cleanly.
         XCTAssertNoThrow(try LLMSummarizeCommand.parse([

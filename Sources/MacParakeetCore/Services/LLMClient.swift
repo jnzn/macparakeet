@@ -242,6 +242,7 @@ public final class LLMClient: LLMClientProtocol, Sendable {
 
         return ChatCompletionResponse(
             content: ollamaResponse.message.content,
+            finishReason: ollamaResponse.done_reason,
             model: ollamaResponse.model,
             usage: usage
         )
@@ -389,7 +390,12 @@ public final class LLMClient: LLMClientProtocol, Sendable {
             completionTokens: anthropicResponse.usage.output_tokens
         )
 
-        return ChatCompletionResponse(content: content, model: anthropicResponse.model, usage: usage)
+        return ChatCompletionResponse(
+            content: content,
+            finishReason: anthropicResponse.stop_reason,
+            model: anthropicResponse.model,
+            usage: usage
+        )
     }
 
     private func anthropicChatCompletionStream(
@@ -875,6 +881,7 @@ struct AnthropicResponse: Decodable {
     let model: String
     let content: [ContentBlock]
     let usage: AnthropicUsage
+    let stop_reason: String?
 
     enum ContentBlock: Decodable {
         case text(String)
@@ -920,6 +927,7 @@ struct OllamaChatResponse: Decodable {
     let model: String
     let message: OllamaResponseMessage
     let done: Bool?
+    let done_reason: String?
     let error: String?
     let prompt_eval_count: Int?
     let eval_count: Int?

@@ -179,9 +179,18 @@ public final class LLMService: LLMServiceProtocol, Sendable {
             ChatMessage(role: .user, content: "Transform the following text according to this instruction: \(prompt)\n\n---\n\n\(truncated)"),
         ]
         let startedAt = Date()
-        let response = try await client.chatCompletion(messages: messages, context: context, options: .default)
-        let latencyMs = Self.latencyMs(since: startedAt)
-        return LLMResult(response: response, provider: config.id, latencyMs: latencyMs)
+        do {
+            let response = try await client.chatCompletion(messages: messages, context: context, options: .default)
+            let latencyMs = Self.latencyMs(since: startedAt)
+            Telemetry.send(.llmTransformUsed(provider: config.id.rawValue))
+            return LLMResult(response: response, provider: config.id, latencyMs: latencyMs)
+        } catch {
+            if !(error is CancellationError) {
+                // No errorDetail for LLM errors — API responses may echo user transcript/prompt content
+                Telemetry.send(.llmTransformFailed(provider: config.id.rawValue, errorType: Self.errorType(for: error)))
+            }
+            throw error
+        }
     }
 
     private static func latencyMs(since start: Date) -> Int {

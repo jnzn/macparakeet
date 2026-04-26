@@ -155,6 +155,7 @@ final class LLMClientTests: XCTestCase {
         XCTAssertEqual(response.model, "claude-sonnet-4-6")
         XCTAssertEqual(response.usage?.promptTokens, 10)
         XCTAssertEqual(response.usage?.completionTokens, 5)
+        XCTAssertEqual(response.finishReason, "end_turn")
     }
 
     func testAnthropicIncludesMaxTokens() async throws {
@@ -282,6 +283,21 @@ final class LLMClientTests: XCTestCase {
         XCTAssertEqual(response.model, "gpt-4o")
         XCTAssertEqual(response.usage?.promptTokens, 10)
         XCTAssertEqual(response.usage?.completionTokens, 5)
+    }
+
+    func testOllamaResponsePassesThroughDoneReason() async throws {
+        MockURLProtocol.handler = { request in
+            return (self.okResponse(for: request), self.validOllamaResponseData())
+        }
+
+        let config = LLMProviderConfig.ollama(model: "qwen3.5:4b")
+        let response = try await llmClient.chatCompletion(
+            messages: [ChatMessage(role: .user, content: "Hi")],
+            config: config,
+            options: .default
+        )
+
+        XCTAssertEqual(response.finishReason, "stop")
     }
 
     func testOllamaResponseWithoutUsageFieldsEmitsNilUsage() async throws {
@@ -919,7 +935,7 @@ final class LLMClientTests: XCTestCase {
 
     private func validOllamaResponseData() -> Data {
         Data("""
-        {"model":"qwen3.5:4b","message":{"role":"assistant","content":"OK"},"done":true,"prompt_eval_count":5,"eval_count":1}
+        {"model":"qwen3.5:4b","message":{"role":"assistant","content":"OK"},"done":true,"done_reason":"stop","prompt_eval_count":5,"eval_count":1}
         """.utf8)
     }
 
