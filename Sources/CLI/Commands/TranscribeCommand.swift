@@ -14,6 +14,11 @@ enum DownloadedAudioPolicy: String, ExpressibleByArgument {
     case delete
 }
 
+enum TranscribeOutputFormat: String, ExpressibleByArgument, CaseIterable, Sendable {
+    case text
+    case json
+}
+
 struct TranscribeCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "transcribe",
@@ -24,7 +29,7 @@ struct TranscribeCommand: AsyncParsableCommand {
     var input: String
 
     @Option(name: .shortAndLong, help: "Output format: text, json.")
-    var format: String = "text"
+    var format: TranscribeOutputFormat = .text
 
     @Option(help: "Processing mode: raw, clean, app-default.")
     var mode: TranscribeMode = .appDefault
@@ -62,78 +67,85 @@ struct TranscribeCommand: AsyncParsableCommand {
         let customWordRepo = CustomWordRepository(dbQueue: dbManager.dbQueue)
         let snippetRepo = TextSnippetRepository(dbQueue: dbManager.dbQueue)
         let sttClient = STTClient()
-        let audioProcessor = AudioProcessor()
-        let youtubeDownloader = YouTubeDownloader()
-        let entitlementsService = enforceEntitlements ? makeEntitlementsService() : nil
+        let runResult: Result<Void, Error>
+        do {
+            let audioProcessor = AudioProcessor()
+            let youtubeDownloader = YouTubeDownloader()
+            let entitlementsService = enforceEntitlements ? makeEntitlementsService() : nil
 
-        if let entitlementsService {
-            await entitlementsService.bootstrapTrialIfNeeded()
-            await entitlementsService.refreshValidationIfNeeded()
-        }
+            if let entitlementsService {
+                await entitlementsService.bootstrapTrialIfNeeded()
+                await entitlementsService.refreshValidationIfNeeded()
+            }
 
-        let diarizationService: DiarizationService? = noDiarize ? nil : DiarizationService()
-        let service = TranscriptionService(
-            audioProcessor: audioProcessor,
-            sttTranscriber: sttClient,
-            transcriptionRepo: transcriptionRepo,
-            entitlements: entitlementsService,
-            customWordRepo: customWordRepo,
-            snippetRepo: snippetRepo,
-            processingMode: {
-                let defaults = macParakeetAppDefaults()
-                return Self.resolveProcessingMode(self.mode, storedMode: defaults.string(forKey: "processingMode"))
-            },
-            shouldKeepDownloadedAudio: {
-                switch self.downloadedAudio {
-                case .keep:
-                    return true
-                case .delete:
-                    return false
-                case .appDefault:
+            let diarizationService: DiarizationService? = noDiarize ? nil : DiarizationService()
+            let service = TranscriptionService(
+                audioProcessor: audioProcessor,
+                sttTranscriber: sttClient,
+                transcriptionRepo: transcriptionRepo,
+                entitlements: entitlementsService,
+                customWordRepo: customWordRepo,
+                snippetRepo: snippetRepo,
+                processingMode: {
                     let defaults = macParakeetAppDefaults()
-                    return defaults.object(forKey: "saveTranscriptionAudio") as? Bool ?? true
+                    return Self.resolveProcessingMode(self.mode, storedMode: defaults.string(forKey: "processingMode"))
+                },
+                shouldKeepDownloadedAudio: {
+                    switch self.downloadedAudio {
+                    case .keep:
+                        return true
+                    case .delete:
+                        return false
+                    case .appDefault:
+                        let defaults = macParakeetAppDefaults()
+                        return defaults.object(forKey: "saveTranscriptionAudio") as? Bool ?? true
+                    }
+                },
+                youtubeDownloader: youtubeDownloader,
+                diarizationService: diarizationService
+            )
+
+            let result: Transcription
+
+            if YouTubeURLValidator.isYouTubeURL(trimmedInput) {
+                result = try await service.transcribeURL(urlString: trimmedInput) { progress in
+                    switch progress {
+                    case .converting: printErr("Converting audio...")
+                    case .downloading(let pct): printErr("Downloading audio... \(pct)%")
+                    case .transcribing(let pct): printErr("Transcribing... \(pct)%")
+                    case .identifyingSpeakers: printErr("Identifying speakers...")
+                    case .finalizing: printErr("Finalizing...")
+                    }
                 }
-            },
-            youtubeDownloader: youtubeDownloader,
-            diarizationService: diarizationService
-        )
+            } else {
+                let url = URL(fileURLWithPath: trimmedInput)
 
-        let result: Transcription
-
-        if YouTubeURLValidator.isYouTubeURL(trimmedInput) {
-            result = try await service.transcribeURL(urlString: trimmedInput) { progress in
-                switch progress {
-                case .converting: printErr("Converting audio...")
-                case .downloading(let pct): printErr("Downloading audio... \(pct)%")
-                case .transcribing(let pct): printErr("Transcribing... \(pct)%")
-                case .identifyingSpeakers: printErr("Identifying speakers...")
-                case .finalizing: printErr("Finalizing...")
+                guard FileManager.default.fileExists(atPath: trimmedInput) else {
+                    throw CLIError.fileNotFound(trimmedInput)
                 }
-            }
-        } else {
-            let url = URL(fileURLWithPath: input)
 
-            guard FileManager.default.fileExists(atPath: input) else {
-                throw CLIError.fileNotFound(input)
-            }
+                let ext = url.pathExtension.lowercased()
+                guard AudioFileConverter.supportedExtensions.contains(ext) else {
+                    throw CLIError.unsupportedFormat(ext)
+                }
 
-            let ext = url.pathExtension.lowercased()
-            guard AudioFileConverter.supportedExtensions.contains(ext) else {
-                throw CLIError.unsupportedFormat(ext)
+                printErr("Transcribing \(url.lastPathComponent)...")
+                result = try await service.transcribe(fileURL: url)
             }
 
-            printErr("Transcribing \(url.lastPathComponent)...")
-            result = try await service.transcribe(fileURL: url)
-        }
-
-        switch format {
-        case "json":
-            printJSON(result)
-        default:
-            printText(result)
+            switch format {
+            case .json:
+                try printJSON(result)
+            case .text:
+                printText(result)
+            }
+            runResult = .success(())
+        } catch {
+            runResult = .failure(error)
         }
 
         await sttClient.shutdown()
+        try runResult.get()
     }
 
     private func makeEntitlementsService() -> EntitlementsService {
@@ -206,18 +218,6 @@ struct TranscribeCommand: AsyncParsableCommand {
                 let speaker = w.speakerId.map { " [\($0)]" } ?? ""
                 print("[\(start)-\(end)] \(w.word) (\(String(format: "%.0f", w.confidence * 100))%)\(speaker)")
             }
-        }
-    }
-
-    private func printJSON(_ t: Transcription) {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
-        
-        if let data = try? encoder.encode(t),
-           let str = String(data: data, encoding: .utf8)
-        {
-            print(str)
         }
     }
 }
