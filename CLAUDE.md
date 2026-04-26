@@ -266,7 +266,7 @@ macparakeet/
 │   └── completed/      # Done plans (archived, not deleted)
 ├── integrations/       # Downstream agent integration docs (OpenClaw, Hermes, ...)
 │   ├── README.md       # Canonical CLI vocabulary + install for agents calling the CLI
-│   ├── openclaw/SOUL.md
+│   ├── openclaw/README.md
 │   └── hermes/README.md
 ├── Sources/
 │   ├── MacParakeet/            # GUI app (SwiftUI, imports MacParakeetCore + ViewModels)
