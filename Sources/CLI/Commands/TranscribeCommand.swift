@@ -14,6 +14,11 @@ enum DownloadedAudioPolicy: String, ExpressibleByArgument {
     case delete
 }
 
+enum TranscribeOutputFormat: String, ExpressibleByArgument, CaseIterable, Sendable {
+    case text
+    case json
+}
+
 struct TranscribeCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "transcribe",
@@ -24,7 +29,7 @@ struct TranscribeCommand: AsyncParsableCommand {
     var input: String
 
     @Option(name: .shortAndLong, help: "Output format: text, json.")
-    var format: String = "text"
+    var format: TranscribeOutputFormat = .text
 
     @Option(help: "Processing mode: raw, clean, app-default.")
     var mode: TranscribeMode = .appDefault
@@ -62,6 +67,8 @@ struct TranscribeCommand: AsyncParsableCommand {
         let customWordRepo = CustomWordRepository(dbQueue: dbManager.dbQueue)
         let snippetRepo = TextSnippetRepository(dbQueue: dbManager.dbQueue)
         let sttClient = STTClient()
+        // Backstop so the runtime tears down on early throws too.
+        defer { Task { await sttClient.shutdown() } }
         let audioProcessor = AudioProcessor()
         let youtubeDownloader = YouTubeDownloader()
         let entitlementsService = enforceEntitlements ? makeEntitlementsService() : nil
@@ -111,10 +118,10 @@ struct TranscribeCommand: AsyncParsableCommand {
                 }
             }
         } else {
-            let url = URL(fileURLWithPath: input)
+            let url = URL(fileURLWithPath: trimmedInput)
 
-            guard FileManager.default.fileExists(atPath: input) else {
-                throw CLIError.fileNotFound(input)
+            guard FileManager.default.fileExists(atPath: trimmedInput) else {
+                throw CLIError.fileNotFound(trimmedInput)
             }
 
             let ext = url.pathExtension.lowercased()
@@ -127,13 +134,11 @@ struct TranscribeCommand: AsyncParsableCommand {
         }
 
         switch format {
-        case "json":
-            printJSON(result)
-        default:
+        case .json:
+            try printJSON(result)
+        case .text:
             printText(result)
         }
-
-        await sttClient.shutdown()
     }
 
     private func makeEntitlementsService() -> EntitlementsService {
@@ -206,18 +211,6 @@ struct TranscribeCommand: AsyncParsableCommand {
                 let speaker = w.speakerId.map { " [\($0)]" } ?? ""
                 print("[\(start)-\(end)] \(w.word) (\(String(format: "%.0f", w.confidence * 100))%)\(speaker)")
             }
-        }
-    }
-
-    private func printJSON(_ t: Transcription) {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
-        
-        if let data = try? encoder.encode(t),
-           let str = String(data: data, encoding: .utf8)
-        {
-            print(str)
         }
     }
 }
