@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import OSLog
 
 public final class DatabaseManager: Sendable {
     public let dbQueue: DatabaseQueue
@@ -225,22 +226,52 @@ public final class DatabaseManager: Sendable {
                 columns: ["transcriptionId"]
             )
 
-            // Migrate existing chatMessages from transcriptions into chat_conversations
+            // Migrate existing chatMessages from transcriptions into chat_conversations.
+            //
+            // We track exactly which rows successfully migrated so the
+            // chatMessages-nullification at the end only touches rows whose
+            // content has actually been preserved in chat_conversations.
+            // Earlier versions of this migration ran a blanket
+            // `UPDATE ... SET chatMessages = NULL WHERE chatMessages IS NOT NULL`
+            // after the loop, which silently nulled rows whose primary key
+            // couldn't be parsed as a UUID -- their content was dropped with
+            // no audit trail. Now: skipped rows are logged via OSLog and
+            // their chatMessages column is left intact for forensic recovery.
+            let logger = Logger(subsystem: "com.macparakeet.core", category: "DatabaseMigration")
             let rows = try Row.fetchAll(db, sql: """
                 SELECT id, chatMessages FROM transcriptions WHERE chatMessages IS NOT NULL
             """)
             let now = Date()
+            var migratedRawIDs: [String] = []
+            var skippedCount = 0
             for row in rows {
+                let rawIDString: String? = row["id"]
                 guard let transcriptionId = UUID.fromDatabaseValue(row["id"] as DatabaseValue),
-                      let chatMessagesJSON = String.fromDatabaseValue(row["chatMessages"] as DatabaseValue) else { continue }
+                      let chatMessagesJSON = String.fromDatabaseValue(row["chatMessages"] as DatabaseValue) else {
+                    skippedCount += 1
+                    if let rawIDString {
+                        logger.warning(
+                            "v0.5-chat-conversations migration skipped row with unparseable id rawID=\(rawIDString, privacy: .private(mask: .hash))"
+                        )
+                    } else {
+                        logger.warning("v0.5-chat-conversations migration skipped row with missing id")
+                    }
+                    continue
+                }
 
-                // Derive title from first user message
+                // Derive title from first user message. Decode failure here
+                // only loses the derived title -- the raw JSON is still
+                // preserved in chat_conversations.messages.
                 var title = "Chat"
                 if let data = chatMessagesJSON.data(using: .utf8),
                    let messages = try? JSONDecoder().decode([ChatMessage].self, from: data) {
                     if let firstUser = messages.first(where: { $0.role == .user }) {
                         title = String(firstUser.content.prefix(50))
                     }
+                } else {
+                    logger.notice(
+                        "v0.5-chat-conversations migration could not decode messages for title derivation transcriptionId=\(transcriptionId.uuidString, privacy: .public)"
+                    )
                 }
 
                 let conversationId = UUID()
@@ -248,10 +279,21 @@ public final class DatabaseManager: Sendable {
                     INSERT INTO chat_conversations (id, transcriptionId, title, messages, createdAt, updatedAt)
                     VALUES (?, ?, ?, ?, ?, ?)
                 """, arguments: [conversationId, transcriptionId, title, chatMessagesJSON, now, now])
+                migratedRawIDs.append(rawIDString ?? transcriptionId.uuidString)
             }
 
-            // Null out migrated chatMessages (keep column for backward compat)
-            try db.execute(sql: "UPDATE transcriptions SET chatMessages = NULL WHERE chatMessages IS NOT NULL")
+            if skippedCount > 0 {
+                logger.warning(
+                    "v0.5-chat-conversations migration finished with skipped=\(skippedCount, privacy: .public) migrated=\(migratedRawIDs.count, privacy: .public). Skipped rows retain their chatMessages column for recovery."
+                )
+            }
+
+            // Null out migrated chatMessages only -- skipped rows keep their
+            // column intact. SQLite has no efficient `id IN (large list)`
+            // when the list grows; null per-id which preserves the contract.
+            for rawID in migratedRawIDs {
+                try db.execute(sql: "UPDATE transcriptions SET chatMessages = NULL WHERE id = ?", arguments: [rawID])
+            }
         }
 
         // v0.5 — Remove unused FTS5 infrastructure

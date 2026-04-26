@@ -39,7 +39,7 @@ struct LLMInlineOptions: ParsableArguments {
     @Option(name: .long, help: "Provider: anthropic, openai, openaiCompatible, gemini, openrouter, ollama, lmstudio, cli.")
     var provider: String
 
-    @Option(name: .long, help: "API key.")
+    @Option(name: .long, help: "API key. Pass via shell expansion (e.g. --api-key \"$ANTHROPIC_API_KEY\") so the literal key doesn't land in shell history or ps output.")
     var apiKey: String?
 
     @Option(name: .long, help: "Model name (e.g. gpt-4o, claude-sonnet-4-20250514, gemini-2.0-flash).")

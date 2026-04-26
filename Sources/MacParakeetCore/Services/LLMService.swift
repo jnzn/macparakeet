@@ -16,6 +16,17 @@ public protocol LLMServiceProtocol: Sendable {
     func generatePromptResultStream(transcript: String, systemPrompt: String?) -> AsyncThrowingStream<String, Error>
     func chatStream(question: String, transcript: String, history: [ChatMessage]) -> AsyncThrowingStream<String, Error>
     func transformStream(text: String, prompt: String) -> AsyncThrowingStream<String, Error>
+
+    // MARK: Envelope variants
+    //
+    // The `*Detailed` calls return the same operation result wrapped in
+    // an `LLMResult` envelope (provider, model, usage, stopReason,
+    // latencyMs). The CLI uses these for `--json` output; existing
+    // `String`-returning callers (the GUI) are unaffected.
+
+    func generatePromptResultDetailed(transcript: String, systemPrompt: String?) async throws -> LLMResult
+    func chatDetailed(question: String, transcript: String, history: [ChatMessage]) async throws -> LLMResult
+    func transformDetailed(text: String, prompt: String) async throws -> LLMResult
 }
 
 public extension LLMServiceProtocol {
@@ -41,6 +52,18 @@ public extension LLMServiceProtocol {
 
     func summarizeStream(transcript: String, systemPrompt: String?) -> AsyncThrowingStream<String, Error> {
         generatePromptResultStream(transcript: transcript, systemPrompt: systemPrompt)
+    }
+
+    func generatePromptResultDetailed(transcript: String) async throws -> LLMResult {
+        try await generatePromptResultDetailed(transcript: transcript, systemPrompt: nil)
+    }
+
+    func summarizeDetailed(transcript: String) async throws -> LLMResult {
+        try await generatePromptResultDetailed(transcript: transcript, systemPrompt: nil)
+    }
+
+    func summarizeDetailed(transcript: String, systemPrompt: String?) async throws -> LLMResult {
+        try await generatePromptResultDetailed(transcript: transcript, systemPrompt: systemPrompt)
     }
 }
 
@@ -85,8 +108,27 @@ public final class LLMService: LLMServiceProtocol, Sendable {
     }
 
     // MARK: - Sync Variants
+    //
+    // The `String`-returning entry points delegate to their `*Detailed`
+    // counterparts and project the `output` field. There's exactly one
+    // network-call site per operation; metadata (model, usage, latency)
+    // is captured uniformly even for callers that ultimately discard it.
 
     public func generatePromptResult(transcript: String, systemPrompt: String?) async throws -> String {
+        try await generatePromptResultDetailed(transcript: transcript, systemPrompt: systemPrompt).output
+    }
+
+    public func chat(question: String, transcript: String, history: [ChatMessage]) async throws -> String {
+        try await chatDetailed(question: question, transcript: transcript, history: history).output
+    }
+
+    public func transform(text: String, prompt: String) async throws -> String {
+        try await transformDetailed(text: text, prompt: prompt).output
+    }
+
+    // MARK: - Envelope (Detailed) Variants
+
+    public func generatePromptResultDetailed(transcript: String, systemPrompt: String?) async throws -> LLMResult {
         let context = try loadContext()
         let config = context.providerConfig
         let truncated = Self.truncateMiddle(transcript, limit: contextBudget(for: config))
@@ -94,10 +136,12 @@ public final class LLMService: LLMServiceProtocol, Sendable {
             ChatMessage(role: .system, content: resolveSummaryPrompt(systemPrompt)),
             ChatMessage(role: .user, content: truncated),
         ]
+        let startedAt = Date()
         do {
             let response = try await client.chatCompletion(messages: messages, context: context, options: .default)
+            let latencyMs = Self.latencyMs(since: startedAt)
             Telemetry.send(.llmPromptResultUsed(provider: config.id.rawValue))
-            return response.content
+            return LLMResult(response: response, provider: config.id, latencyMs: latencyMs)
         } catch {
             if !(error is CancellationError) {
                 // No errorDetail for LLM errors — API responses may echo user transcript/prompt content
@@ -107,14 +151,16 @@ public final class LLMService: LLMServiceProtocol, Sendable {
         }
     }
 
-    public func chat(question: String, transcript: String, history: [ChatMessage]) async throws -> String {
+    public func chatDetailed(question: String, transcript: String, history: [ChatMessage]) async throws -> LLMResult {
         let context = try loadContext()
         let config = context.providerConfig
         let messages = buildChatMessages(question: question, transcript: transcript, history: history, config: config)
+        let startedAt = Date()
         do {
             let response = try await client.chatCompletion(messages: messages, context: context, options: .default)
+            let latencyMs = Self.latencyMs(since: startedAt)
             Telemetry.send(.llmChatUsed(provider: config.id.rawValue, messageCount: history.count + 1))
-            return response.content
+            return LLMResult(response: response, provider: config.id, latencyMs: latencyMs)
         } catch {
             if !(error is CancellationError) {
                 // No errorDetail for LLM errors — API responses may echo user transcript/prompt content
@@ -124,7 +170,7 @@ public final class LLMService: LLMServiceProtocol, Sendable {
         }
     }
 
-    public func transform(text: String, prompt: String) async throws -> String {
+    public func transformDetailed(text: String, prompt: String) async throws -> LLMResult {
         let context = try loadContext()
         let config = context.providerConfig
         let truncated = Self.truncateMiddle(text, limit: contextBudget(for: config))
@@ -132,8 +178,23 @@ public final class LLMService: LLMServiceProtocol, Sendable {
             ChatMessage(role: .system, content: Prompts.transform),
             ChatMessage(role: .user, content: "Transform the following text according to this instruction: \(prompt)\n\n---\n\n\(truncated)"),
         ]
-        let response = try await client.chatCompletion(messages: messages, context: context, options: .default)
-        return response.content
+        let startedAt = Date()
+        do {
+            let response = try await client.chatCompletion(messages: messages, context: context, options: .default)
+            let latencyMs = Self.latencyMs(since: startedAt)
+            Telemetry.send(.llmTransformUsed(provider: config.id.rawValue))
+            return LLMResult(response: response, provider: config.id, latencyMs: latencyMs)
+        } catch {
+            if !(error is CancellationError) {
+                // No errorDetail for LLM errors — API responses may echo user transcript/prompt content
+                Telemetry.send(.llmTransformFailed(provider: config.id.rawValue, errorType: Self.errorType(for: error)))
+            }
+            throw error
+        }
+    }
+
+    private static func latencyMs(since start: Date) -> Int {
+        Int((Date().timeIntervalSince(start) * 1000).rounded())
     }
 
     public func formatTranscript(

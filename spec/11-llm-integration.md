@@ -1,6 +1,6 @@
 # 11 - LLM Integration
 
-> Status: **IMPLEMENTED** - Done, still accurate (CLI command signatures updated 2026-04-02)
+> Status: **IMPLEMENTED** - Done, still accurate (CLI command signatures updated 2026-04-26)
 > Supersedes: Previous HISTORICAL version (local Qwen3-8B via mlx-swift-lm, removed 2026-02-23)
 > ADR: ADR-011 (Cloud API keys + optional local providers)
 > Note: §1 (Transcript Summary) and §3 (Custom Transforms) are superseded by [spec/12-processing-layer.md](12-processing-layer.md) — Prompt Library + multi-summary architecture. Provider protocol, chat, and CLI sections remain current.
@@ -140,6 +140,8 @@ public struct ChatCompletionOptions: Sendable {
 
 public struct ChatCompletionResponse: Sendable {
     public let content: String
+    public let reasoningContent: String?
+    public let finishReason: String?
     public let model: String
     public let usage: TokenUsage?
 }
@@ -147,6 +149,21 @@ public struct ChatCompletionResponse: Sendable {
 public struct TokenUsage: Sendable {
     public let promptTokens: Int
     public let completionTokens: Int
+}
+
+public struct LLMResult: Sendable, Codable {
+    public let output: String
+    public let provider: String
+    public let model: String
+    public let usage: LLMUsage?
+    public let stopReason: String?
+    public let latencyMs: Int
+}
+
+public struct LLMUsage: Sendable, Codable {
+    public let promptTokens: Int?
+    public let completionTokens: Int?
+    public let totalTokens: Int?
 }
 ```
 
@@ -166,6 +183,11 @@ public protocol LLMServiceProtocol: Sendable {
 
     /// Apply a custom transform to text
     func transform(text: String, prompt: String) async throws -> String
+
+    /// Envelope variants used by CLI JSON output
+    func generatePromptResultDetailed(transcript: String, systemPrompt: String?) async throws -> LLMResult
+    func chatDetailed(question: String, transcript: String, history: [ChatMessage]) async throws -> LLMResult
+    func transformDetailed(text: String, prompt: String) async throws -> LLMResult
 
     /// Streaming variants
     func summarizeStream(transcript: String, systemPrompt: String?) -> AsyncThrowingStream<String, Error>
@@ -399,7 +421,7 @@ macparakeet-cli llm test-connection --provider cli --command "claude -p --model 
 macparakeet-cli llm summarize transcript.txt --provider cli --command "claude -p --model haiku"
 ```
 
-Additional options: `--model`, `--base-url`, `--stream`, `--command` (Local CLI only). Use `-` as input to read from stdin.
+Additional options: `--model`, `--base-url`, `--stream`, `--json`, `--command` (Local CLI only). Use `-` as input to read from stdin. `--json` emits a structured envelope with `output`, `provider`, `model`, optional `usage`, optional `stopReason`, and `latencyMs`. `llm test-connection --json` emits `{ok, provider, model, latencyMs}` on success. `--json --stream` is rejected until NDJSON streaming lands.
 
 CLI LLM commands use ephemeral inline config (not shared with GUI UserDefaults/Keychain).
 

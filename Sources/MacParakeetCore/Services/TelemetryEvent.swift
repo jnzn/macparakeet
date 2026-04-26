@@ -20,6 +20,8 @@ public enum TelemetryEventName: String, Sendable, CaseIterable {
     case llmPromptResultFailed = "llm_prompt_result_failed"
     case llmChatUsed = "llm_chat_used"
     case llmChatFailed = "llm_chat_failed"
+    case llmTransformUsed = "llm_transform_used"
+    case llmTransformFailed = "llm_transform_failed"
     case llmFormatterUsed = "llm_formatter_used"
     case llmFormatterFailed = "llm_formatter_failed"
     case historySearched = "history_searched"
@@ -214,6 +216,8 @@ public enum TelemetryEventSpec: Sendable {
     case llmPromptResultFailed(provider: String, errorType: String, errorDetail: String? = nil)
     case llmChatUsed(provider: String, messageCount: Int)
     case llmChatFailed(provider: String, errorType: String, errorDetail: String? = nil)
+    case llmTransformUsed(provider: String)
+    case llmTransformFailed(provider: String, errorType: String, errorDetail: String? = nil)
     case llmFormatterUsed(
         provider: String,
         source: TelemetryFormatterSource,
@@ -347,6 +351,8 @@ extension TelemetryEventSpec {
         case .llmPromptResultFailed: return .llmPromptResultFailed
         case .llmChatUsed: return .llmChatUsed
         case .llmChatFailed: return .llmChatFailed
+        case .llmTransformUsed: return .llmTransformUsed
+        case .llmTransformFailed: return .llmTransformFailed
         case .llmFormatterUsed: return .llmFormatterUsed
         case .llmFormatterFailed: return .llmFormatterFailed
         case .historySearched: return .historySearched
@@ -521,6 +527,12 @@ extension TelemetryEventSpec {
             var props = ["provider": provider, "error_type": errorType]
             if let errorDetail { props["error_detail"] = errorDetail }
             return props
+        case .llmTransformUsed(let provider):
+            return ["provider": provider]
+        case .llmTransformFailed(let provider, let errorType, let errorDetail):
+            var props = ["provider": provider, "error_type": errorType]
+            if let errorDetail { props["error_detail"] = errorDetail }
+            return props
         case .llmFormatterUsed(
             let provider,
             let source,
@@ -658,7 +670,16 @@ extension TelemetryEventSpec {
         case .calendarAutoStopCancelled:
             return nil
         case .errorOccurred(let domain, let code, let description):
-            return ["domain": domain, "code": code, "description": String(description.prefix(512))]
+            // Defense in depth: sanitize() at the boundary so any caller route
+            // (including future call sites that forget to run
+            // `TelemetryErrorClassifier.errorDetail` first) cannot leak file
+            // paths or URLs into telemetry. `sanitize` is idempotent, so
+            // double-sanitizing existing well-behaved callers costs nothing.
+            return [
+                "domain": domain,
+                "code": code,
+                "description": String(TelemetryErrorClassifier.sanitize(description).prefix(512)),
+            ]
         case .crashOccurred(let crashType, let signal, let name, let crashTimestamp,
                             let crashAppVer, let crashOsVer, let uuid, let slide,
                             let reason, let stackTrace):
@@ -728,6 +749,8 @@ public enum TelemetryImplementedContract {
         .llmPromptResultFailed: ["provider", "error_type"],
         .llmChatUsed: ["provider", "message_count"],
         .llmChatFailed: ["provider", "error_type"],
+        .llmTransformUsed: ["provider"],
+        .llmTransformFailed: ["provider", "error_type"],
         .llmFormatterUsed: ["provider", "source", "duration_seconds", "input_chars", "output_chars", "default_prompt_used", "input_truncated"],
         .llmFormatterFailed: ["provider", "source", "duration_seconds", "error_type", "default_prompt_used", "input_truncated"],
         .historySearched: [],
