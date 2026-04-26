@@ -54,26 +54,60 @@ enum CLIInputError: Error, LocalizedError {
 // MARK: - Transcription Lookup (shared by export, delete, favorite, unfavorite)
 
 func findTranscription(id: String, repo: TranscriptionRepository) throws -> Transcription {
-    guard !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+    let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else {
         throw CLILookupError.emptyID
     }
 
     // Try exact UUID first
-    if let uuid = UUID(uuidString: id), let t = try repo.fetch(id: uuid) {
+    if let uuid = UUID(uuidString: trimmed), let t = try repo.fetch(id: uuid) {
         return t
     }
 
     // Prefix match
     let all = try repo.fetchAll()
-    let matches = all.filter { $0.id.uuidString.lowercased().hasPrefix(id.lowercased()) }
+    let lowered = trimmed.lowercased()
+    let matches = all.filter { $0.id.uuidString.lowercased().hasPrefix(lowered) }
 
-    guard let match = matches.first else {
-        throw CLILookupError.notFound("No transcription matching '\(id)'")
+    if matches.count == 1 { return matches[0] }
+    if matches.count > 1 {
+        throw CLILookupError.ambiguous("Multiple transcriptions match '\(trimmed)'. Be more specific.")
     }
-    guard matches.count == 1 else {
-        throw CLILookupError.ambiguous("Multiple transcriptions match '\(id)'. Be more specific.")
+
+    let nameMatches = all.filter { $0.fileName.lowercased() == lowered }
+    if nameMatches.count == 1 { return nameMatches[0] }
+    if nameMatches.count > 1 {
+        throw CLILookupError.ambiguous("Multiple transcriptions named '\(trimmed)'. Use ID instead.")
     }
-    return match
+
+    throw CLILookupError.notFound("No transcription matching '\(trimmed)'")
+}
+
+func findMeeting(idOrName: String, repo: TranscriptionRepository) throws -> Transcription {
+    let trimmed = idOrName.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { throw CLILookupError.emptyID }
+
+    if let uuid = UUID(uuidString: trimmed),
+       let transcription = try repo.fetch(id: uuid),
+       transcription.sourceType == .meeting {
+        return transcription
+    }
+
+    let lowered = trimmed.lowercased()
+
+    let prefixMatches = try repo.fetchBySourceType(.meeting, idPrefix: lowered)
+    if prefixMatches.count == 1 { return prefixMatches[0] }
+    if prefixMatches.count > 1 {
+        throw CLILookupError.ambiguous("Multiple meetings match '\(trimmed)'. Be more specific.")
+    }
+
+    let nameMatches = try repo.fetchBySourceType(.meeting, fileName: trimmed)
+    if nameMatches.count == 1 { return nameMatches[0] }
+    if nameMatches.count > 1 {
+        throw CLILookupError.ambiguous("Multiple meetings named '\(trimmed)'. Use ID instead.")
+    }
+
+    throw CLILookupError.notFound("No meeting matching '\(trimmed)'")
 }
 
 // MARK: - Dictation Lookup

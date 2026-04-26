@@ -76,15 +76,9 @@ struct ExportCommand: AsyncParsableCommand {
         case .markdown:
             return await exportService.formatMarkdown(transcription: transcription)
         case .srt:
-            if let words = transcription.wordTimestamps, !words.isEmpty {
-                return await exportService.formatSRT(words: words, speakers: transcription.speakers)
-            }
-            return transcription.cleanTranscript ?? transcription.rawTranscript ?? ""
+            return await exportService.formatSRT(transcription: transcription)
         case .vtt:
-            if let words = transcription.wordTimestamps, !words.isEmpty {
-                return await exportService.formatVTT(words: words, speakers: transcription.speakers)
-            }
-            return transcription.cleanTranscript ?? transcription.rawTranscript ?? ""
+            return await exportService.formatVTT(transcription: transcription)
         case .json:
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

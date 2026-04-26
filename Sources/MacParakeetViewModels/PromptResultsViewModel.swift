@@ -54,7 +54,7 @@ public final class PromptResultsViewModel {
     /// Soft cap on user notes for prompt-assembly only — full notes remain on
     /// the Transcription row. ~11k tokens at typical English word→token ratio,
     /// leaving headroom for transcript + system prompt + response (ADR-020 §3).
-    static let userNotesPromptWordCap = 8_000
+    static let userNotesPromptWordCap = PromptSystemPromptAssembler.userNotesPromptWordCap
 
     public var promptResults: [PromptResult] = []
     public var pendingGenerations: [PendingGeneration] = []
@@ -502,40 +502,12 @@ public final class PromptResultsViewModel {
         userNotes: String? = nil,
         transcript: String? = nil
     ) -> String {
-        // Substitute supported template variables (ADR-020 §4).
-        //
-        // Single-pass matters here specifically: `cappedNotes` is user-typed
-        // text that may contain literal `{{transcript}}` (pasted code, a
-        // quoted prompt, etc.) and the renderer walks the original template
-        // string only — substituted values are appended to a fresh buffer
-        // and never re-scanned. A naïve sequential `replacingOccurrences`
-        // implementation would re-interpret notes-injected `{{...}}` tokens
-        // on the second pass, leaking transcript content into the rendered
-        // prompt anywhere a user's note happens to look like a template
-        // variable. Do not "simplify" this back to sequential substitution.
-        //
-        // For prompts that include `{{transcript}}` in their template, the
-        // transcript is rendered inline in the system prompt AND still sent
-        // as the user message via `LLMService.generatePromptResultStream`.
-        // The duplication is intentional for v0.6: the LLM provider's own
-        // truncation handles the user-message side, and skipping the
-        // user-message when the template references `{{transcript}}` would
-        // require empty-user-message handling that varies per provider.
-        // Suppression-on-template-use is tracked as Future Work in ADR-020.
-        let cappedNotes = userNotes.map { Self.truncateNotesForPrompt($0) }
-        let renderedPrompt = PromptTemplateRenderer.render(
-            promptContent,
-            substitutions: [
-                .userNotes: cappedNotes ?? "",
-                .transcript: transcript ?? "",
-            ]
+        PromptSystemPromptAssembler.assemble(
+            promptContent: promptContent,
+            extraInstructions: extraInstructions,
+            userNotes: userNotes,
+            transcript: transcript
         )
-
-        let trimmedInstructions = extraInstructions?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let trimmedInstructions, !trimmedInstructions.isEmpty else {
-            return renderedPrompt
-        }
-        return renderedPrompt + "\n\n" + trimmedInstructions
     }
 
     /// Truncate user notes to the prompt-assembly soft cap (8,000 words).
@@ -549,51 +521,7 @@ public final class PromptResultsViewModel {
     /// spaces and strip the structure the user typed to *steer* the
     /// summary in the first place, which defeats the point.
     static func truncateNotesForPrompt(_ notes: String) -> String {
-        let truncationIndex = indexAfterNthWord(in: notes, n: userNotesPromptWordCap)
-        guard let truncationIndex else { return notes }
-        let kept = notes[..<truncationIndex]
-        return String(kept) + "\n\n[Notes truncated to \(userNotesPromptWordCap) words for summary generation; full notes preserved on the recording.]"
-    }
-
-    /// Returns the index in `text` immediately after the `n`-th
-    /// whitespace-delimited word, or `nil` if `text` has `n` or fewer
-    /// words (no truncation needed). The boundary lands on a non-
-    /// whitespace character so the kept slice ends with the last
-    /// retained word's final character — trailing whitespace stays
-    /// behind, which keeps the inserted suffix on a clean line break.
-    ///
-    /// Truncation is only signaled when we observe a transition INTO an
-    /// (n+1)-th word. Earlier versions returned a non-nil index when the
-    /// n-th word was followed by trailing whitespace (e.g. the user typed
-    /// exactly 8,000 words and a final newline), which produced a false
-    /// "[Notes truncated...]" banner even though the entire input was kept.
-    private static func indexAfterNthWord(in text: String, n: Int) -> String.Index? {
-        guard n > 0 else { return text.startIndex }
-        var wordCount = 0
-        var inWord = false
-        var nthWordEndIndex: String.Index?
-        var index = text.startIndex
-        while index < text.endIndex {
-            let char = text[index]
-            if char.isWhitespace {
-                inWord = false
-            } else {
-                if !inWord {
-                    wordCount += 1
-                    inWord = true
-                    if wordCount == n + 1 {
-                        return nthWordEndIndex
-                    }
-                }
-                if wordCount == n {
-                    nthWordEndIndex = text.index(after: index)
-                }
-            }
-            index = text.index(after: index)
-        }
-        // Reached end of text without ever entering an (n+1)-th word —
-        // text contains at most `n` words and needs no truncation.
-        return nil
+        PromptSystemPromptAssembler.truncateNotesForPrompt(notes)
     }
 
     private func fetchUserNotes(for transcriptionId: UUID) -> String? {

@@ -11,6 +11,17 @@ public protocol TranscriptionServiceProtocol: Sendable {
         recording: MeetingRecordingOutput,
         onProgress: (@Sendable (TranscriptionProgress) -> Void)?
     ) async throws -> Transcription
+    func retranscribe(
+        existing transcription: Transcription,
+        fileURL: URL,
+        source: TelemetryTranscriptionSource,
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)?
+    ) async throws -> Transcription
+    func retranscribeMeeting(
+        existing transcription: Transcription,
+        recording: MeetingRecordingOutput,
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)?
+    ) async throws -> Transcription
     func transcribeURL(urlString: String, onProgress: (@Sendable (TranscriptionProgress) -> Void)?) async throws -> Transcription
 }
 
@@ -32,6 +43,23 @@ extension TranscriptionServiceProtocol {
 
     public func transcribeMeeting(recording: MeetingRecordingOutput) async throws -> Transcription {
         try await transcribeMeeting(recording: recording, onProgress: nil)
+    }
+
+    public func retranscribe(
+        existing transcription: Transcription,
+        fileURL: URL,
+        source: TelemetryTranscriptionSource,
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
+    ) async throws -> Transcription {
+        try await transcribe(fileURL: fileURL, source: source, onProgress: onProgress)
+    }
+
+    public func retranscribeMeeting(
+        existing transcription: Transcription,
+        recording: MeetingRecordingOutput,
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
+    ) async throws -> Transcription {
+        try await transcribeMeeting(recording: recording, onProgress: onProgress)
     }
 }
 
@@ -138,6 +166,60 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         return try await transcribeMeetingAudio(
             recording: recording,
             transcription: &transcription,
+            onProgress: onProgress
+        )
+    }
+
+    public func retranscribe(
+        existing original: Transcription,
+        fileURL: URL,
+        source: TelemetryTranscriptionSource,
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
+    ) async throws -> Transcription {
+        if let entitlements {
+            try await entitlements.assertCanTranscribe(now: Date())
+        }
+
+        var transcription = makeRetranscriptionRecord(from: original)
+        transcription.fileSizeBytes = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? Int)
+            .flatMap { $0 } ?? original.fileSizeBytes
+
+        Telemetry.send(.transcriptionStarted(source: source, audioDurationSeconds: nil))
+
+        return try await transcribeAudio(
+            fileURL: fileURL,
+            source: source,
+            sttJob: .fileTranscription,
+            transcription: &transcription,
+            tempFiles: [],
+            persistFailureStatus: false,
+            onProgress: onProgress
+        )
+    }
+
+    public func retranscribeMeeting(
+        existing original: Transcription,
+        recording: MeetingRecordingOutput,
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
+    ) async throws -> Transcription {
+        if let entitlements {
+            try await entitlements.assertCanTranscribe(now: Date())
+        }
+
+        var transcription = makeRetranscriptionRecord(from: original)
+        transcription.fileSizeBytes = (try? FileManager.default.attributesOfItem(atPath: recording.mixedAudioURL.path)[.size] as? Int)
+            .flatMap { $0 } ?? original.fileSizeBytes
+        transcription.userNotes = original.userNotes ?? recording.userNotes
+
+        Telemetry.send(.transcriptionStarted(
+            source: .meeting,
+            audioDurationSeconds: recording.durationSeconds
+        ))
+
+        return try await transcribeMeetingAudio(
+            recording: recording,
+            transcription: &transcription,
+            persistFailureStatus: false,
             onProgress: onProgress
         )
     }
@@ -285,6 +367,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
     private func transcribeMeetingAudio(
         recording: MeetingRecordingOutput,
         transcription: inout Transcription,
+        persistFailureStatus: Bool = true,
         onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
     ) async throws -> Transcription {
         let processingStartedAt = Date()
@@ -358,26 +441,28 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                 ))
             }
 
-            let txID = transcription.id
-            if error is CancellationError {
-                do {
-                    try transcriptionRepo.updateStatus(
-                        id: txID,
-                        status: .cancelled,
-                        errorMessage: nil
-                    )
-                } catch let dbError {
-                    logger.error("failed_to_update_cancelled_status id=\(txID) dbError=\(dbError.localizedDescription, privacy: .public)")
-                }
-            } else {
-                do {
-                    try transcriptionRepo.updateStatus(
-                        id: txID,
-                        status: .error,
-                        errorMessage: error.localizedDescription
-                    )
-                } catch let dbError {
-                    logger.error("failed_to_update_error_status id=\(txID) dbError=\(dbError.localizedDescription, privacy: .public)")
+            if persistFailureStatus {
+                let txID = transcription.id
+                if error is CancellationError {
+                    do {
+                        try transcriptionRepo.updateStatus(
+                            id: txID,
+                            status: .cancelled,
+                            errorMessage: nil
+                        )
+                    } catch let dbError {
+                        logger.error("failed_to_update_cancelled_status id=\(txID) dbError=\(dbError.localizedDescription, privacy: .public)")
+                    }
+                } else {
+                    do {
+                        try transcriptionRepo.updateStatus(
+                            id: txID,
+                            status: .error,
+                            errorMessage: error.localizedDescription
+                        )
+                    } catch let dbError {
+                        logger.error("failed_to_update_error_status id=\(txID) dbError=\(dbError.localizedDescription, privacy: .public)")
+                    }
                 }
             }
             throw error
@@ -518,6 +603,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         transcription: inout Transcription,
         tempFiles: [URL],
         cleanUpDownloadedFiles: Bool = true,
+        persistFailureStatus: Bool = true,
         onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
     ) async throws -> Transcription {
         var wavURL: URL?
@@ -643,30 +729,49 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                 ))
             }
 
-            let txID = transcription.id
-            if error is CancellationError {
-                do {
-                    try transcriptionRepo.updateStatus(
-                        id: txID,
-                        status: .cancelled,
-                        errorMessage: nil
-                    )
-                } catch let dbError {
-                    logger.error("failed_to_update_cancelled_status id=\(txID) dbError=\(dbError.localizedDescription, privacy: .public)")
-                }
-            } else {
-                do {
-                    try transcriptionRepo.updateStatus(
-                        id: txID,
-                        status: .error,
-                        errorMessage: error.localizedDescription
-                    )
-                } catch let dbError {
-                    logger.error("failed_to_update_error_status id=\(txID) dbError=\(dbError.localizedDescription, privacy: .public)")
+            if persistFailureStatus {
+                let txID = transcription.id
+                if error is CancellationError {
+                    do {
+                        try transcriptionRepo.updateStatus(
+                            id: txID,
+                            status: .cancelled,
+                            errorMessage: nil
+                        )
+                    } catch let dbError {
+                        logger.error("failed_to_update_cancelled_status id=\(txID) dbError=\(dbError.localizedDescription, privacy: .public)")
+                    }
+                } else {
+                    do {
+                        try transcriptionRepo.updateStatus(
+                            id: txID,
+                            status: .error,
+                            errorMessage: error.localizedDescription
+                        )
+                    } catch let dbError {
+                        logger.error("failed_to_update_error_status id=\(txID) dbError=\(dbError.localizedDescription, privacy: .public)")
+                    }
                 }
             }
             throw error
         }
+    }
+
+    private func makeRetranscriptionRecord(from original: Transcription) -> Transcription {
+        var transcription = original
+        transcription.durationMs = nil
+        transcription.rawTranscript = nil
+        transcription.cleanTranscript = nil
+        transcription.wordTimestamps = nil
+        transcription.speakerCount = nil
+        transcription.speakers = nil
+        transcription.diarizationSegments = nil
+        transcription.status = .processing
+        transcription.errorMessage = nil
+        transcription.exportPath = nil
+        transcription.isTranscriptEdited = false
+        transcription.updatedAt = Date()
+        return transcription
     }
 
     private func completeTranscription(

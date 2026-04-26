@@ -277,12 +277,14 @@ public final class TranscriptionViewModel {
                 let result: Transcription
                 if original.sourceType == .meeting,
                    let meetingRecording = archivedMeetingRecording(for: original, mixedAudioURL: url) {
-                    result = try await service.transcribeMeeting(
+                    result = try await service.retranscribeMeeting(
+                        existing: original,
                         recording: meetingRecording,
                         onProgress: progressHandler
                     )
                 } else {
-                    result = try await service.transcribe(
+                    result = try await service.retranscribe(
+                        existing: original,
                         fileURL: url,
                         source: retranscriptionSource,
                         onProgress: progressHandler
@@ -301,6 +303,8 @@ public final class TranscriptionViewModel {
                 updatedResult.channelName = original.channelName
                 updatedResult.videoDescription = original.videoDescription
                 updatedResult.sourceType = original.sourceType
+                updatedResult.recoveredFromCrash = original.recoveredFromCrash
+                updatedResult.userNotes = original.userNotes
                 updatedResult.updatedAt = Date()
                 do {
                     try transcriptionRepo?.save(updatedResult)

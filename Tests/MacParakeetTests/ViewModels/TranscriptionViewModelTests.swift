@@ -1064,7 +1064,9 @@ final class TranscriptionViewModelTests: XCTestCase {
             durationMs: 2_000,
             rawTranscript: "Old meeting transcript",
             status: .completed,
-            sourceType: .meeting
+            sourceType: .meeting,
+            recoveredFromCrash: true,
+            userNotes: "Original decision notes"
         )
         mockRepo.transcriptions = [original]
 
@@ -1083,6 +1085,8 @@ final class TranscriptionViewModelTests: XCTestCase {
 
         XCTAssertEqual(mockRepo.transcriptions.count, 1)
         XCTAssertEqual(mockRepo.transcriptions.first?.sourceType, .meeting)
+        XCTAssertEqual(mockRepo.transcriptions.first?.userNotes, "Original decision notes")
+        XCTAssertEqual(mockRepo.transcriptions.first?.recoveredFromCrash, true)
 
         let lastSource = await mockService.lastSource
         XCTAssertEqual(lastSource, .meeting)

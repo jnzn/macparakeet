@@ -10,6 +10,8 @@ public protocol ExportServiceProtocol: Sendable {
     func exportToJSON(transcription: Transcription, url: URL) throws
     @MainActor func exportToPDF(transcription: Transcription, url: URL) throws
     @MainActor func exportToDocx(transcription: Transcription, url: URL) throws
+    func formatSRT(transcription: Transcription) -> String
+    func formatVTT(transcription: Transcription) -> String
     func formatSRT(words: [WordTimestamp], speakers: [SpeakerInfo]?) -> String
     func formatVTT(words: [WordTimestamp], speakers: [SpeakerInfo]?) -> String
     func formatMarkdown(transcription: Transcription) -> String
@@ -75,43 +77,42 @@ public final class ExportService: ExportServiceProtocol, Sendable {
 
     /// Export transcription as SRT subtitle file
     public func exportToSRT(transcription: Transcription, url: URL) throws {
-        if let text = editedTranscriptText(transcription: transcription) {
-            let duration = transcription.durationMs ?? 0
-            let content = "1\n00:00:00,000 --> \(srtTimestamp(ms: duration))\n\(singleCueSubtitleText(text))\n"
-            try content.write(to: url, atomically: true, encoding: .utf8)
-            return
-        }
-
-        guard let words = transcription.wordTimestamps, !words.isEmpty else {
-            // Fall back to full transcript as a single cue
-            let text = preferredText(transcription: transcription)
-            let duration = transcription.durationMs ?? 0
-            let content = "1\n00:00:00,000 --> \(srtTimestamp(ms: duration))\n\(singleCueSubtitleText(text))\n"
-            try content.write(to: url, atomically: true, encoding: .utf8)
-            return
-        }
-        let content = formatSRT(words: words, speakers: transcription.speakers)
-        try content.write(to: url, atomically: true, encoding: .utf8)
+        try formatSRT(transcription: transcription).write(to: url, atomically: true, encoding: .utf8)
     }
 
     /// Export transcription as WebVTT subtitle file
     public func exportToVTT(transcription: Transcription, url: URL) throws {
+        try formatVTT(transcription: transcription).write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    /// Format a transcription as SRT, falling back to one full-transcript cue.
+    public func formatSRT(transcription: Transcription) -> String {
         if let text = editedTranscriptText(transcription: transcription) {
             let duration = transcription.durationMs ?? 0
-            let content = "WEBVTT\n\n\(vttTimestamp(ms: 0)) --> \(vttTimestamp(ms: duration))\n\(singleCueSubtitleText(text))\n"
-            try content.write(to: url, atomically: true, encoding: .utf8)
-            return
+            return "1\n00:00:00,000 --> \(srtTimestamp(ms: duration))\n\(singleCueSubtitleText(text))\n"
         }
 
         guard let words = transcription.wordTimestamps, !words.isEmpty else {
             let text = preferredText(transcription: transcription)
             let duration = transcription.durationMs ?? 0
-            let content = "WEBVTT\n\n\(vttTimestamp(ms: 0)) --> \(vttTimestamp(ms: duration))\n\(singleCueSubtitleText(text))\n"
-            try content.write(to: url, atomically: true, encoding: .utf8)
-            return
+            return "1\n00:00:00,000 --> \(srtTimestamp(ms: duration))\n\(singleCueSubtitleText(text))\n"
         }
-        let content = formatVTT(words: words, speakers: transcription.speakers)
-        try content.write(to: url, atomically: true, encoding: .utf8)
+        return formatSRT(words: words, speakers: transcription.speakers)
+    }
+
+    /// Format a transcription as WebVTT, falling back to one full-transcript cue.
+    public func formatVTT(transcription: Transcription) -> String {
+        if let text = editedTranscriptText(transcription: transcription) {
+            let duration = transcription.durationMs ?? 0
+            return "WEBVTT\n\n\(vttTimestamp(ms: 0)) --> \(vttTimestamp(ms: duration))\n\(singleCueSubtitleText(text))\n"
+        }
+
+        guard let words = transcription.wordTimestamps, !words.isEmpty else {
+            let text = preferredText(transcription: transcription)
+            let duration = transcription.durationMs ?? 0
+            return "WEBVTT\n\n\(vttTimestamp(ms: 0)) --> \(vttTimestamp(ms: duration))\n\(singleCueSubtitleText(text))\n"
+        }
+        return formatVTT(words: words, speakers: transcription.speakers)
     }
 
     /// Export transcription as JSON file
