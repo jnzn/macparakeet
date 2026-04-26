@@ -1,50 +1,65 @@
 # Registry submission drafts
 
-Drafts of the content + PR bodies for submitting `macparakeet-cli` to
-the relevant agent skill registries. **None of these have been
-submitted.** Each requires user confirmation before opening an external
-PR (per the standing "ask before visible-to-others actions" rule).
+Drafts of the content + submission bodies for placing `macparakeet-cli`
+in the relevant agent skill registries. **None of these have been
+submitted.** Each requires explicit user confirmation before opening
+an external action (per the standing "ask before visible-to-others
+actions" rule).
 
-## Targets
+## Status snapshot (post-2026-04-25 reconnaissance)
 
-| Registry | Repo | Type | Status |
-|---|---|---|---|
-| OpenClaw skill registry | [`openclaw/clawhub`](https://github.com/openclaw/clawhub) | Official skill registry (SOUL.md / package upload) | **Draft only** — verify exact submission schema before PR |
-| Awesome OpenClaw | [`vincentkoc/awesome-openclaw`](https://github.com/vincentkoc/awesome-openclaw) | Curated awesome list (Markdown PR) | **Draft only** — verify category structure |
-| Awesome OpenClaw Skills | [`VoltAgent/awesome-openclaw-skills`](https://github.com/VoltAgent/awesome-openclaw-skills) | Curated skill index (large, automated) | **Draft only** — likely auto-pulls from clawhub |
-| Awesome Hermes Agent | [`0xNyk/awesome-hermes-agent`](https://github.com/0xNyk/awesome-hermes-agent) | Curated awesome list (Markdown PR) | **Draft only** — verify category structure |
+The brew tap is live as of 2026-04-25, so install instructions
+(`brew install moona3k/tap/macparakeet-cli`) are now valid in any
+submission. Reconnaissance against each target's `CONTRIBUTING.md`
+sharpened the picture significantly — see per-target notes below.
 
-## Submission order
+| # | Registry | Repo | Submission flow | Recommended action |
+|---|---|---|---|---|
+| 1 | Awesome Hermes Agent | [`0xNyk/awesome-hermes-agent`](https://github.com/0xNyk/awesome-hermes-agent) | **Issue first** — direct PRs explicitly forbidden by CONTRIBUTING.md | Open issue with required fields |
+| 2 | Awesome OpenClaw | [`vincentkoc/awesome-openclaw`](https://github.com/vincentkoc/awesome-openclaw) | **Issue first** via `Add Resource Request` template, PR after maintainer approval | Open issue via template |
+| 3 | OpenClaw skill registry | [`openclaw/clawhub`](https://github.com/openclaw/clawhub) | **CLI-based** (`clawhub skill publish <path>`); uses `SKILL.md` (NOT `SOUL.md`) | **Defer** — needs OpenClaw CLI installed locally + SKILL.md schema verification |
+| 4 | Awesome OpenClaw Skills | [`VoltAgent/awesome-openclaw-skills`](https://github.com/VoltAgent/awesome-openclaw-skills) | Manual PR — but **only accepts skills already published in `github.com/openclaw/skills`** | **Defer** — depends on (3) succeeding first |
 
-Do NOT submit any of these before the brew tap is live, because each
-submission's install path will read `brew install moona3k/tap/macparakeet-cli`.
-Submitting earlier means people land on broken instructions.
+## Critical schema correction
 
-Recommended sequence:
+The `SOUL.md` filename in `integrations/openclaw/` was based on a
+mistaken belief that ClawHub uses SOUL.md. **It does not.** ClawHub
+uses `SKILL.md` with frontmatter metadata. `SOUL.md` is the format
+used by a different agent registry (onlycrabs.ai). See `clawhub.md`
+for details. A follow-up PR to `macparakeet` should rename or
+reframe `integrations/openclaw/SOUL.md` so it accurately reflects
+the SKILL.md target.
 
-1. Cut the brew tap (see `scripts/dist/homebrew-tap-scaffold/HOWTO.md`).
-2. Verify `brew install moona3k/tap/macparakeet-cli` works end-to-end.
-3. Submit `awesome-hermes-agent` PR (lowest-friction, awesome-style).
-4. Submit `awesome-openclaw` PR (same shape).
-5. Submit to `openclaw/clawhub` (official registry — needs schema verification).
-6. `VoltAgent/awesome-openclaw-skills` likely auto-syncs from clawhub —
-   probably no separate submission needed; verify after step 5.
+## Submission order (revised)
+
+The previous "submit all four" plan was incorrect. Updated:
+
+1. **Now** (with explicit user OK): Open issues on `awesome-hermes-agent`
+   and `awesome-openclaw`. Both maintainers vet additions; issues are
+   the prescribed entry point.
+2. **Later** (separate, more involved): If pursuing ClawHub publication,
+   install the OpenClaw CLI, verify SKILL.md frontmatter spec via
+   `docs.openclaw.ai/tools/clawhub`, prepare a real SKILL.md package,
+   and run `clawhub skill publish`.
+3. **Even later**: After (2) succeeds, the `VoltAgent/awesome-openclaw-skills`
+   list may auto-sync, or may accept a manual PR linking to the
+   newly-published clawhub entry.
 
 ## Per-target drafts
 
-- [`awesome-hermes-agent.md`](./awesome-hermes-agent.md)
-- [`awesome-openclaw.md`](./awesome-openclaw.md)
-- [`clawhub.md`](./clawhub.md)
+- [`awesome-hermes-agent.md`](./awesome-hermes-agent.md) — issue body draft
+- [`awesome-openclaw.md`](./awesome-openclaw.md) — issue template responses
+- [`clawhub.md`](./clawhub.md) — deferred submission notes + schema findings
 
-## Cross-posting (after registry submissions)
+## Cross-posting (after registry placements take)
 
-Once the registry PRs are in flight, cross-post to:
+Once the registry placements have landed, cross-post to:
 
-- **r/LocalLLaMA** — title: *"Local Whisper alternative for Mac mini AI agents (Parakeet on the Neural Engine)"*
-- **Hacker News** — title: *"Show HN: macparakeet-cli — canonical Parakeet CLI for Apple Silicon agents"*
+- **r/LocalLLaMA** — *"Local Whisper alternative for Mac mini AI agents (Parakeet on the Neural Engine)"*
+- **Hacker News** — *"Show HN: macparakeet-cli — canonical Parakeet CLI for Apple Silicon agents"*
 - **OpenClaw Discord** — `#showcase` or equivalent
 - **Nous Research Discord** — `#hermes-agent` or equivalent
 
 Time these to land alongside v0.6.0 release for compounding momentum
-(item #6 of the canonical plan). Don't fire community posts before the
-brew tap is live.
+(item #6 of the canonical plan). Don't fire community posts before
+the brew tap is live AND the registry placements have been accepted.

@@ -1,99 +1,141 @@
-# Submission draft — `openclaw/clawhub` (the official OpenClaw skill registry)
+# Submission notes — `openclaw/clawhub` (deferred)
 
-> **Status:** draft, schema-uncertain. Do not submit until the brew tap
-> is live AND the actual ClawHub skill manifest schema is verified.
+> **Status:** **deferred.** ClawHub submission requires the OpenClaw
+> CLI installed locally and a SKILL.md package; the submission flow
+> is non-trivial and needs verification of the current SKILL.md
+> frontmatter schema before attempting.
 
-## What's uncertain
+## What ClawHub actually is (corrected)
 
-ClawHub appears to be the **official skill registry** for OpenClaw —
-not just a curated awesome list. Skills there are typically packaged as
-SOUL.md plus supporting files, with a documented submission flow
-(possibly via the OpenClaw CLI: `openclaw skill publish` or similar) or
-via PR to `openclaw/clawhub`.
+ClawHub is the **official skill registry for OpenClaw** at
+<https://clawhub.ai>. Skills are submitted via the OpenClaw CLI:
 
-Before submitting, verify:
-
-1. Read <https://docs.openclaw.ai/tools/clawhub> for the canonical
-   submission flow.
-2. Inspect <https://github.com/openclaw/clawhub> for repo structure.
-   Are skills bundled per-directory? Is there a manifest schema?
-3. Check whether submission is via CLI tooling, PR, or web upload at
-   <https://clawhub.ai>.
-4. Check whether submission requires native installation of the
-   OpenClaw CLI to package + sign the skill.
-
-The thin scaffold at [`integrations/openclaw/SOUL.md`](https://github.com/moona3k/macparakeet/blob/main/integrations/openclaw/SOUL.md)
-self-marks as "illustrative — adapt at registration time" precisely
-because the schema may have evolved post-OpenAI acquisition.
-
-## Likely submission shape
-
-If ClawHub follows the typical skill-manifest pattern, the skill would be:
-
-```
-macparakeet-stt/
-├── SOUL.md                # Skill manifest (description, capabilities, usage)
-├── install.sh             # Installs the macparakeet-cli host binary
-├── README.md              # Human-facing intro
-└── examples/              # Example invocations
-    ├── transcribe.md
-    ├── search-history.md
-    └── run-prompt.md
+```bash
+clawhub skill publish <path-to-skill-dir>
 ```
 
-`SOUL.md` content would mirror our `integrations/openclaw/SOUL.md`
-but adapted to whatever frontmatter fields ClawHub requires
-(e.g., `name:`, `version:`, `author:`, `tags:`, `requires:`).
+Skills are packaged as a directory containing a `SKILL.md` file with
+frontmatter metadata, plus supporting files. ClawHub renders the
+SKILL.md content and indexes it for search.
 
-## Probable PR title (if PR-based submission)
+## Critical correction: SKILL.md, not SOUL.md
 
-```
-Add macparakeet-stt — local Parakeet STT skill (Apple Silicon)
-```
+When this work began, the handoff document conflated `SOUL.md` with
+the OpenClaw skill format. **It is not.** Reconnaissance against the
+ClawHub README confirms:
 
-## Probable PR body skeleton
+- **ClawHub uses `SKILL.md`** (with frontmatter metadata)
+- **`SOUL.md` belongs to a different agent registry** (onlycrabs.ai)
+
+The `integrations/openclaw/SOUL.md` file in the macparakeet repo is
+therefore misnamed. A follow-up to PR #144 should either rename it to
+`integrations/openclaw/SKILL.md` (or to `integrations/openclaw/README.md`
+for consistency with the Hermes-flavored entry point) and update the
+content to reference the SKILL.md format.
+
+## What's needed to actually submit
+
+1. **Install OpenClaw CLI** locally (`npm install -g openclaw` or per
+   their canonical install path).
+2. **Verify SKILL.md frontmatter spec** at <https://docs.openclaw.ai/tools/clawhub>
+   — what fields are required (`name`, `version`, `author`, `tags`,
+   `requires`, etc.) and what they validate against.
+3. **Create a properly-formed skill package** — directory with
+   `SKILL.md` (frontmatter + body), `install.sh` (installs the
+   `macparakeet-cli` host binary), and possibly `examples/` with
+   illustrative invocations.
+4. **Run `clawhub skill publish <path>`** and capture the resulting
+   ClawHub URL.
+
+## Likely SKILL.md skeleton
 
 ```markdown
-## Skill: macparakeet-stt
+---
+name: macparakeet-stt
+version: 1.0.0
+author: moona3k
+description: Local Parakeet TDT speech-to-text for Apple Silicon. Wraps macparakeet-cli (GPL-3.0).
+tags: [stt, transcription, voice, apple-silicon, local, parakeet]
+requires:
+  - platform: darwin
+  - arch: arm64
+  - macos: ">=14.2"
+license: GPL-3.0-or-later
+---
 
-Local Parakeet TDT speech-to-text for OpenClaw on Apple Silicon.
-Wraps [macparakeet-cli](https://github.com/moona3k/macparakeet)
-(GPL-3.0, semver 1.0+).
+# macparakeet-stt
+
+Local speech-to-text and transcription for an OpenClaw agent running
+on Apple Silicon. Wraps `macparakeet-cli` so an OpenClaw skill can
+transcribe local audio/video files, transcribe YouTube URLs, search
+the user's prior dictation/transcription history, and run a prompt
+against a transcription. All execution is local on the Apple Neural
+Engine; no cloud STT.
+
+## Install
+
+```bash
+brew install moona3k/tap/macparakeet-cli
+```
 
 ## Capabilities
 
-- Transcribe local audio/video files (MP3 / WAV / MP4 / MOV / WebM / ...)
-- Transcribe YouTube URLs
-- Search the user's prior dictation/transcription history
-- Run a prompt against a transcription (action items, summaries, ...)
-
-## Requires
-
-- macOS 14.2+ on Apple Silicon (M1, M2, M3, M4)
-- `brew install moona3k/tap/macparakeet-cli` (the host binary)
+(table of capabilities → CLI invocations — see
+`integrations/openclaw/` in the macparakeet repo for the canonical
+list)
 
 ## Privacy
 
-All execution local. STT runs on the Apple Neural Engine. No audio
-or transcript content is sent over the network unless the user
-explicitly invokes the prompt-runner with a cloud LLM provider.
-
-## Source
-
-- Skill scaffold: <https://github.com/moona3k/macparakeet/blob/main/integrations/openclaw/SOUL.md>
-- Host binary: <https://github.com/moona3k/macparakeet>
-- Compatibility policy: <https://github.com/moona3k/macparakeet/blob/main/Sources/CLI/CHANGELOG.md>
-- Author: @moona3k
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+All STT runs on the ANE. No audio leaves the device. Optional cloud
+LLM provider only when the user explicitly passes `--provider <cloud>`.
 ```
 
-## Submission checklist
+**This skeleton is illustrative.** The actual SKILL.md frontmatter
+fields must be verified against the current OpenClaw documentation
+before publishing.
 
-- [ ] Brew tap live and `brew install moona3k/tap/macparakeet-cli` verified
-- [ ] ClawHub submission flow confirmed (CLI / PR / web)
-- [ ] SOUL.md schema fields confirmed against current spec
-- [ ] If CLI-based: OpenClaw CLI installed locally and skill packaged
-- [ ] PR / submission opened
-- [ ] `VoltAgent/awesome-openclaw-skills` checked — likely auto-syncs
-      from clawhub; only submit there if it doesn't
+## Why we're deferring
+
+- **Untrusted schema**: SKILL.md frontmatter validation rules aren't
+  fully documented here. Submitting an invalid manifest could be
+  rejected — or worse, accepted in a degraded form that misrepresents
+  the skill.
+- **Untested install path**: The skill's `install.sh` wrapper around
+  `brew install moona3k/tap/macparakeet-cli` needs to be tested in
+  ClawHub's runtime environment.
+- **Post-acquisition uncertainty**: OpenClaw was acquired by OpenAI
+  in February 2026; the registry tooling and submission flow may
+  evolve. Better to consult current docs immediately before
+  publishing rather than relying on possibly-stale information.
+
+## Recommended next action
+
+When ready to pursue:
+
+1. Read <https://docs.openclaw.ai/tools/clawhub> end-to-end.
+2. Read `openclaw/clawhub`'s CONTRIBUTING.md.
+3. Read `docs/quickstart.md` and `docs/cli.md` referenced in the
+   ClawHub README.
+4. Pick or build a sandbox environment to test `clawhub skill publish`
+   before publishing to the live registry.
+5. (Optional) Rename `integrations/openclaw/SOUL.md` →
+   `integrations/openclaw/SKILL.md` (or `README.md`) in a small
+   macparakeet PR to reflect the corrected understanding.
+
+## Downstream dependency
+
+`VoltAgent/awesome-openclaw-skills` only accepts entries for skills
+already published in `github.com/openclaw/skills` (the ClawHub mirror
+repo). So any submission to `awesome-openclaw-skills` depends on
+this ClawHub publication succeeding first.
+
+## Submission checklist (for the future)
+
+- [x] Brew tap live and `brew install moona3k/tap/macparakeet-cli` verified
+- [ ] OpenClaw CLI installed locally
+- [ ] SKILL.md frontmatter schema verified against current docs
+- [ ] Sandbox test of `clawhub skill publish` succeeded
+- [ ] `integrations/openclaw/SOUL.md` renamed to SKILL.md (or otherwise corrected)
+- [ ] User has confirmed go-ahead
+- [ ] `clawhub skill publish` run for live registry
+- [ ] ClawHub URL captured in this file
