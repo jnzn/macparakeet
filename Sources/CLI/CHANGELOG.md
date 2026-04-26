@@ -30,6 +30,22 @@ JSON output schemas are part of the contract: top-level shape (array vs
 object), field names, and field types are stable within a major version. We
 may add new optional fields in a minor release.
 
+## [1.1.0] -- 2026-04-26
+
+### Added
+
+- `flow process --database <path>` can now run the clean text-processing
+  pipeline against an explicit SQLite database, matching the testability and
+  agent-workflow override already used by other `flow` commands.
+
+### Fixed
+
+- `feedback` and direct `llm` commands now write validation and provider
+  errors to stderr instead of stdout.
+- `transcribe --format` now rejects unsupported values during argument parsing
+  instead of silently falling back to text output.
+- `transcribe` now awaits STT runtime shutdown on both success and error paths.
+
 ## [1.0.1] -- 2026-04-26
 
 End-to-end validation of the brew-installed 1.0.0 binary surfaced a

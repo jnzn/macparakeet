@@ -67,6 +67,7 @@ struct TranscribeCommand: AsyncParsableCommand {
         let customWordRepo = CustomWordRepository(dbQueue: dbManager.dbQueue)
         let snippetRepo = TextSnippetRepository(dbQueue: dbManager.dbQueue)
         let sttClient = STTClient()
+        let runResult: Result<Void, Error>
         do {
             let audioProcessor = AudioProcessor()
             let youtubeDownloader = YouTubeDownloader()
@@ -138,12 +139,13 @@ struct TranscribeCommand: AsyncParsableCommand {
             case .text:
                 printText(result)
             }
+            runResult = .success(())
         } catch {
-            await sttClient.shutdown()
-            throw error
+            runResult = .failure(error)
         }
 
         await sttClient.shutdown()
+        try runResult.get()
     }
 
     private func makeEntitlementsService() -> EntitlementsService {
