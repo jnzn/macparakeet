@@ -112,6 +112,58 @@ final class LLMJSONOutputTests: XCTestCase {
         ]))
     }
 
+    // MARK: - --json failure envelope (AUDIT-007)
+
+    func testCLIErrorEnvelopeEncodesShape() throws {
+        let envelope = CLIErrorEnvelope(
+            ok: false,
+            error: "Authentication failed: invalid API key.",
+            errorType: "auth"
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let data = try encoder.encode(envelope)
+        let json = try XCTUnwrap(String(data: data, encoding: .utf8))
+        XCTAssertEqual(
+            json,
+            #"{"error":"Authentication failed: invalid API key.","errorType":"auth","ok":false}"#
+        )
+    }
+
+    func testCLIErrorEnvelopeUsesLocalizedDescriptionFromLLMError() {
+        let envelope = CLIErrorEnvelope(error: LLMError.rateLimited)
+        XCTAssertFalse(envelope.ok)
+        XCTAssertEqual(envelope.errorType, "rate_limit")
+        XCTAssertTrue(envelope.error.lowercased().contains("rate"))
+    }
+
+    func testCLIErrorTypeMapsLLMErrorCases() {
+        // Pin the public `errorType` taxonomy so renames in LLMError can't
+        // silently break downstream agents that branch on these strings.
+        XCTAssertEqual(CLIErrorType.key(for: LLMError.notConfigured), "config")
+        XCTAssertEqual(CLIErrorType.key(for: LLMError.connectionFailed("nope")), "connection")
+        XCTAssertEqual(CLIErrorType.key(for: LLMError.authenticationFailed(nil)), "auth")
+        XCTAssertEqual(CLIErrorType.key(for: LLMError.rateLimited), "rate_limit")
+        XCTAssertEqual(CLIErrorType.key(for: LLMError.modelNotFound("gpt-9")), "model")
+        XCTAssertEqual(CLIErrorType.key(for: LLMError.contextTooLong), "context")
+        XCTAssertEqual(CLIErrorType.key(for: LLMError.formatterTruncated), "truncated")
+        XCTAssertEqual(CLIErrorType.key(for: LLMError.formatterEmptyResponse), "truncated")
+        XCTAssertEqual(CLIErrorType.key(for: LLMError.providerError("oops")), "provider")
+        XCTAssertEqual(CLIErrorType.key(for: LLMError.streamingError("eof")), "streaming")
+        XCTAssertEqual(CLIErrorType.key(for: LLMError.invalidResponse), "invalid_response")
+        XCTAssertEqual(CLIErrorType.key(for: LLMError.cliError("boom")), "runtime")
+    }
+
+    func testCLIErrorTypeMapsCLIErrors() {
+        XCTAssertEqual(CLIErrorType.key(for: CLILookupError.emptyID), "lookup")
+        XCTAssertEqual(CLIErrorType.key(for: CLILookupError.notFound("nope")), "lookup")
+        XCTAssertEqual(CLIErrorType.key(for: CLIInputError.empty), "input_empty")
+        XCTAssertEqual(CLIErrorType.key(for: ValidationError("bad combo")), "validation")
+
+        struct UnknownError: Error {}
+        XCTAssertEqual(CLIErrorType.key(for: UnknownError()), "runtime")
+    }
+
     // MARK: - Helpers
 
     private func assertParseRejects<C: ParsableCommand>(

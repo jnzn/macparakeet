@@ -1,3 +1,4 @@
+import ArgumentParser
 import Foundation
 import MacParakeetCore
 
@@ -36,6 +37,16 @@ enum CLILookupError: Error, LocalizedError {
         case .notFound(let msg): return msg
         case .ambiguous(let msg): return msg
         case .emptyID: return "ID must not be empty."
+        }
+    }
+}
+
+enum CLIInputError: Error, LocalizedError {
+    case empty
+
+    var errorDescription: String? {
+        switch self {
+        case .empty: return "Input is empty."
         }
     }
 }
@@ -142,4 +153,115 @@ func printJSON<T: Encodable>(_ value: T) throws {
 /// Append a trailing newline.
 func printErr(_ s: String) {
     try? FileHandle.standardError.write(contentsOf: Data((s + "\n").utf8))
+}
+
+// MARK: - Failure envelope (--json contract)
+
+/// Public failure envelope emitted to stdout when a `--json` command fails.
+/// Pairs with the success envelopes (`LLMResult`, `LLMTestConnectionResult`,
+/// etc.) after argument parsing succeeds. Downstream agents parsing executed
+/// `--json` commands see one of two JSON shapes: an `ok: true` success object
+/// or this `ok: false` failure object. Either way, the exit code is the
+/// source of truth for branching; the envelope is the source of truth for
+/// *why* it failed.
+public struct CLIErrorEnvelope: Encodable {
+    public let ok: Bool   // always false
+    public let error: String
+    public let errorType: String
+}
+
+/// Stable, low-cardinality string keys for the `errorType` field. Picking
+/// readable strings (over an enum surfaced as int) so the contract stays
+/// usable from `jq`, shell scripts, and skill manifests.
+enum CLIErrorType {
+    static let auth = "auth"
+    static let config = "config"
+    static let connection = "connection"
+    static let context = "context"
+    static let inputEmpty = "input_empty"
+    static let inputMissing = "input_missing"
+    static let invalidResponse = "invalid_response"
+    static let lookup = "lookup"
+    static let model = "model"
+    static let provider = "provider"
+    static let rateLimit = "rate_limit"
+    static let runtime = "runtime"
+    static let streaming = "streaming"
+    static let truncated = "truncated"
+    static let validation = "validation"
+
+    static func key(for error: Error) -> String {
+        if let llm = error as? LLMError {
+            switch llm {
+            case .notConfigured: return config
+            case .connectionFailed: return connection
+            case .authenticationFailed: return auth
+            case .rateLimited: return rateLimit
+            case .modelNotFound: return model
+            case .contextTooLong: return context
+            case .formatterTruncated, .formatterEmptyResponse: return truncated
+            case .providerError: return provider
+            case .streamingError: return streaming
+            case .invalidResponse: return invalidResponse
+            case .cliError: return runtime
+            }
+        }
+        if error is CLILookupError { return lookup }
+        if error is CLIInputError { return inputEmpty }
+        // ArgumentParser surfaces `validate()` failures as `ValidationError`.
+        // The taxonomy has carried the `validation` value since 1.2.0; map
+        // ValidationError to it so downstream agents can branch on user
+        // misuse without regexing the human-readable description.
+        if error is ValidationError { return validation }
+        return runtime
+    }
+}
+
+extension CLIErrorEnvelope {
+    init(error: Error) {
+        let message: String
+        if let localized = error as? LocalizedError, let description = localized.errorDescription {
+            message = description
+        } else {
+            message = String(describing: error)
+        }
+        self.init(ok: false, error: message, errorType: CLIErrorType.key(for: error))
+    }
+}
+
+/// Wrap a `--json`-aware CLI body. On error: when `json` is true, emit a
+/// `CLIErrorEnvelope` on stdout and exit non-zero; otherwise re-throw so
+/// the existing plain-text path (printErr / ArgumentParser) handles it.
+///
+/// Exit code follows the public CLI contract documented in
+/// `Sources/CLI/CHANGELOG.md`:
+///
+/// - `ExitCode.success` and `CleanExit` (e.g. `--help`) pass through.
+/// - `ExitCode.*` thrown from the body means the inner code already handled
+///   its own user-visible output; pass through unchanged so we don't
+///   double-print on the JSON channel.
+/// - User-misuse errors (`ValidationError`, `CLIInputError`) exit `2`.
+/// - Everything else exits `1` (runtime failure).
+///
+/// Note: errors thrown during ArgumentParser's parse + `validate()` phase
+/// occur *before* `run()` and therefore cannot reach this wrapper. Those
+/// surface through ArgumentParser's plain-text stderr path; the JSON
+/// envelope contract applies only to errors emitted after argument parsing
+/// succeeds.
+func emitJSONOrRethrow(json: Bool, _ body: () async throws -> Void) async throws {
+    do {
+        try await body()
+    } catch let exit as ExitCode {
+        throw exit
+    } catch let cleanExit as CleanExit {
+        throw cleanExit
+    } catch {
+        guard json else { throw error }
+        let envelope = CLIErrorEnvelope(error: error)
+        try? printJSON(envelope)
+        if error is ValidationError || error is CLIInputError {
+            throw ExitCode.validationFailure
+        }
+        throw ExitCode.failure
+    }
 }

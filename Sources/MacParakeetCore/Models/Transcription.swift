@@ -1,5 +1,11 @@
 import Foundation
 import GRDB
+import OSLog
+
+private let transcriptionDecodeLogger = Logger(
+    subsystem: "com.macparakeet.core",
+    category: "Transcription.decode"
+)
 
 public struct Transcription: Codable, Identifiable, Sendable {
     public enum SourceType: String, Codable, Sendable {
@@ -171,7 +177,11 @@ extension Transcription: FetchableRecord, PersistableRecord {
         language = try container.decodeIfPresent(String.self, forKey: .language)
         speakerCount = try container.decodeIfPresent(Int.self, forKey: .speakerCount)
 
-        // Try new [SpeakerInfo] format first, fall back to old [String] format
+        // Try new [SpeakerInfo] format first, fall back to old [String] format.
+        // If both shapes fail to decode but the key is present, the data is
+        // genuinely malformed (a string array would round-trip via the
+        // fallback). Log so the corruption is observable in Console.app
+        // rather than silently dropping speaker info on read.
         if let speakerInfos = try? container.decodeIfPresent([SpeakerInfo].self, forKey: .speakers) {
             speakers = speakerInfos
         } else if let oldStrings = try? container.decodeIfPresent([String].self, forKey: .speakers) {
@@ -180,6 +190,13 @@ extension Transcription: FetchableRecord, PersistableRecord {
             }
         } else {
             speakers = nil
+            let speakersIsExplicitNull = (try? container.decodeNil(forKey: .speakers)) == true
+            if container.contains(.speakers), !speakersIsExplicitNull {
+                let recordIDString = id.uuidString
+                transcriptionDecodeLogger.warning(
+                    "transcription_speakers_decode_failed id=\(recordIDString, privacy: .public)"
+                )
+            }
         }
 
         diarizationSegments = try container.decodeIfPresent([DiarizationSegmentRecord].self, forKey: .diarizationSegments)

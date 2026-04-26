@@ -26,30 +26,31 @@ struct LLMSummarizeCommand: AsyncParsableCommand {
     }
 
     func run() async throws {
-        let text = try readInput(input)
+        try await emitJSONOrRethrow(json: json) {
+            let text = try readInput(input)
 
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            printErr("Input is empty.")
-            throw ExitCode.failure
-        }
-
-        let execution = try llm.buildExecutionContext()
-        let service = LLMService(
-            client: execution.client,
-            contextResolver: StaticLLMExecutionContextResolver(context: execution.context)
-        )
-
-        if json {
-            let result = try await service.summarizeDetailed(transcript: text)
-            try printJSON(result)
-        } else if stream {
-            let tokenStream = service.summarizeStream(transcript: text)
-            for try await token in tokenStream {
-                print(token, terminator: "")
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw CLIInputError.empty
             }
-            print()
-        } else {
-            print(try await service.summarize(transcript: text))
+
+            let execution = try llm.buildExecutionContext()
+            let service = LLMService(
+                client: execution.client,
+                contextResolver: StaticLLMExecutionContextResolver(context: execution.context)
+            )
+
+            if json {
+                let result = try await service.summarizeDetailed(transcript: text)
+                try printJSON(result)
+            } else if stream {
+                let tokenStream = service.summarizeStream(transcript: text)
+                for try await token in tokenStream {
+                    print(token, terminator: "")
+                }
+                print()
+            } else {
+                print(try await service.summarize(transcript: text))
+            }
         }
     }
 }

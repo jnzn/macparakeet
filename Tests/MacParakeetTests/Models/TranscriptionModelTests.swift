@@ -156,6 +156,7 @@ final class TranscriptionModelTests: XCTestCase {
             "createdAt": "2026-03-01T00:00:00Z",
             "fileName": "test.mp3",
             "status": "completed",
+            "speakers": null,
             "updatedAt": "2026-03-01T00:00:00Z"
         }
         """

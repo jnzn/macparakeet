@@ -122,7 +122,14 @@ public final class MeetingRecordingRecoveryService: MeetingRecordingRecoveryServ
             throw MeetingRecordingRecoveryError.mixFailed(error.localizedDescription)
         }
 
-        let duration = recoveredSources.map(\.duration).max() ?? Date().timeIntervalSince(lock.startedAt)
+        // Clamp the wall-clock fallback to non-negative. If the user's clock
+        // skewed (NTP correction backwards, manual time change) between when
+        // the lock file was written and when recovery runs, `startedAt` can
+        // be in the future and `timeIntervalSince` returns a negative number —
+        // a malformed duration that would corrupt the recovered output.
+        let durationFromSources = recoveredSources.map(\.duration).max()
+        let durationFallback = max(0, Date().timeIntervalSince(lock.startedAt))
+        let duration = durationFromSources ?? durationFallback
         let recording = MeetingRecordingOutput(
             sessionID: lock.sessionId,
             displayName: lock.displayName,

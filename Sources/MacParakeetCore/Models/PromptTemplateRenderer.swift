@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 /// Single-pass simultaneous template substitution for prompt content.
 ///
@@ -15,12 +16,17 @@ import Foundation
 /// empty-string substitution rather than leaving the literal `{{...}}` token
 /// in the rendered output.
 ///
-/// See ADR-020 §4.
+/// Malformed templates (unterminated `{{`, unknown variable keys) emit
+/// `os_log` warnings via the `com.macparakeet.core/PromptTemplate` category
+/// so prompt-authoring bugs are observable in Console.app rather than just
+/// "the prompt didn't include what I expected." See ADR-020 §4.
 public enum PromptTemplateRenderer {
     public enum Variable: String, CaseIterable, Sendable {
         case userNotes
         case transcript
     }
+
+    private static let logger = Logger(subsystem: "com.macparakeet.core", category: "PromptTemplate")
 
     /// Render `template`, replacing every recognized `{{key}}` token with the
     /// value supplied for that key. Tokens whose key is not present in
@@ -50,7 +56,13 @@ public enum PromptTemplateRenderer {
 
             let afterOpen = openRange.upperBound
             guard let closeRange = template.range(of: closeMarker, range: afterOpen..<end) else {
-                // Unterminated `{{` — emit the marker literally and keep scanning past it.
+                // Unterminated `{{` — preserve the existing behavior of
+                // emitting the marker literally so a template that
+                // intentionally contained `{{` (e.g. as Mustache-like
+                // documentation) renders as written, but log a warning so
+                // a typo'd prompt surfaces in Console.app rather than
+                // silently leaking template syntax to the LLM.
+                logger.warning("Prompt template has an unterminated `{{` marker; emitting literally and continuing.")
                 output.append(contentsOf: template[openRange])
                 index = openRange.upperBound
                 continue
@@ -62,6 +74,8 @@ public enum PromptTemplateRenderer {
             } else {
                 // Unknown variable → empty-string fallback (per ADR §4).
                 // Typos like `{{Usernotes}}` produce empty rather than the literal token.
+                // Log so prompt authors can spot the typo in Console.app.
+                logger.notice("Prompt template references unknown variable `\(key, privacy: .public)`; substituting empty string.")
             }
 
             index = closeRange.upperBound

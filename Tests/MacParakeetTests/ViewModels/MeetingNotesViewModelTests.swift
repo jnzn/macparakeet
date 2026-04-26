@@ -59,6 +59,30 @@ final class MeetingNotesViewModelTests: XCTestCase {
         XCTAssertEqual(snapshots.first, "abcde")
     }
 
+    func testDebouncePersistsLatestTextNotSnapshotAtScheduleTime() async {
+        // Regression test for AUDIT-002 (narrowed): the debounced persist
+        // should always deliver the LATEST `notesText`, never a snapshot
+        // captured when the timer was scheduled. Each applyEdit cancels the
+        // prior task before scheduling a new one, so this asserts the
+        // intent rather than guarding a known live race — but it pins the
+        // contract so any future change to the cancellation path can't
+        // silently start delivering stale text.
+        let viewModel = MeetingNotesViewModel()
+        let recorder = AsyncRecorder()
+        viewModel.bindPersist { notes in
+            await recorder.record(notes)
+        }
+
+        viewModel.notesBinding.wrappedValue = "first"
+        // Mutate again before the debounce window elapses.
+        try? await Task.sleep(for: .milliseconds(50))
+        viewModel.notesBinding.wrappedValue = "first second"
+        try? await Task.sleep(for: .milliseconds(800))
+
+        let snapshots = await recorder.snapshots
+        XCTAssertEqual(snapshots, ["first second"], "Debounce must deliver the latest text, not a stale snapshot")
+    }
+
     func testCommitFlushesPendingDebounceImmediately() async {
         let viewModel = MeetingNotesViewModel()
         let recorder = AsyncRecorder()

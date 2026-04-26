@@ -110,13 +110,38 @@ agent can re-prompt the user.
 Prompt and direct LLM JSON responses use an envelope with `output`, `provider`,
 `model`, optional `usage`, optional `stopReason`, and `latencyMs`.
 
+When a `--json` command fails *after argument parsing succeeds* (provider
+error, missing input, lookup miss, runtime exception, etc.), stdout is a
+structured failure envelope instead of the success shape:
+
+```json
+{
+  "ok": false,
+  "error": "Provider error: No models loaded.",
+  "errorType": "provider"
+}
+```
+
+`errorType` is a stable low-cardinality string. Branch on the exit code, then
+use `errorType` to differentiate retryable failures (`rate_limit`,
+`connection`, `streaming`) from permanent ones (`auth`, `model`,
+`input_empty`, `lookup`, `validation`). Full taxonomy in
+`Sources/CLI/CHANGELOG.md`.
+
+Parse-time failures (unknown flags, missing required flags,
+mutually-exclusive combos like `--json` with `--stream`) surface through
+ArgumentParser's plain-text stderr path with exit code `2`. Always branch
+on the exit code first.
+
 ## Conventions
 
 - **Exit codes:** `0` success, `1` runtime failure (work attempted and failed
   -- LLM error, DB error, transcription failure), `2` validation/misuse
   (malformed invocation -- unknown flag, missing required arg, unsupported
-  `--format`), `130` SIGINT. JSON output never goes to stderr regardless of
-  code. Full table in `Sources/CLI/CHANGELOG.md` "Exit codes" section.
+  `--format`), `130` SIGINT. After argument parsing succeeds, JSON output
+  never goes to stderr regardless of code; parse-time failures still use
+  ArgumentParser's plain-text stderr path. Full table in
+  `Sources/CLI/CHANGELOG.md` "Exit codes" section.
 - **API keys:** pass via `"$VAR"` shell expansion (e.g.
   `--api-key "$ANTHROPIC_API_KEY"`), not literally. CLI does not read
   `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` directly -- but a literal
