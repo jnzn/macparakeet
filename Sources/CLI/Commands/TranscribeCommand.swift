@@ -103,11 +103,11 @@ struct TranscribeCommand: AsyncParsableCommand {
         if YouTubeURLValidator.isYouTubeURL(trimmedInput) {
             result = try await service.transcribeURL(urlString: trimmedInput) { progress in
                 switch progress {
-                case .converting: print("Converting audio...")
-                case .downloading(let pct): print("Downloading audio... \(pct)%")
-                case .transcribing(let pct): print("Transcribing... \(pct)%")
-                case .identifyingSpeakers: print("Identifying speakers...")
-                case .finalizing: print("Finalizing...")
+                case .converting: printErr("Converting audio...")
+                case .downloading(let pct): printErr("Downloading audio... \(pct)%")
+                case .transcribing(let pct): printErr("Transcribing... \(pct)%")
+                case .identifyingSpeakers: printErr("Identifying speakers...")
+                case .finalizing: printErr("Finalizing...")
                 }
             }
         } else {
@@ -122,7 +122,7 @@ struct TranscribeCommand: AsyncParsableCommand {
                 throw CLIError.unsupportedFormat(ext)
             }
 
-            print("Transcribing \(url.lastPathComponent)...")
+            printErr("Transcribing \(url.lastPathComponent)...")
             result = try await service.transcribe(fileURL: url)
         }
 

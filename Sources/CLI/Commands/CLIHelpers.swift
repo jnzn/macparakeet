@@ -131,3 +131,10 @@ func printJSON<T: Encodable>(_ value: T) throws {
         print(s)
     }
 }
+
+/// Write a status / progress message to stderr so it doesn't pollute stdout
+/// for callers piping `--json` output to `jq`, scripts, or skill manifests.
+/// Append a trailing newline.
+func printErr(_ s: String) {
+    FileHandle.standardError.write(Data((s + "\n").utf8))
+}
