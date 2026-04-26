@@ -343,67 +343,69 @@ extension PromptsCommand {
         }
 
         func run() async throws {
-            try AppPaths.ensureDirectories()
-            let db = try DatabaseManager(path: resolvedDatabasePath(database))
-            let promptRepo = PromptRepository(dbQueue: db.dbQueue)
-            let transcriptionRepo = TranscriptionRepository(dbQueue: db.dbQueue)
-            let resultRepo = PromptResultRepository(dbQueue: db.dbQueue)
+            try await emitJSONOrRethrow(json: json) {
+                try AppPaths.ensureDirectories()
+                let db = try DatabaseManager(path: resolvedDatabasePath(database))
+                let promptRepo = PromptRepository(dbQueue: db.dbQueue)
+                let transcriptionRepo = TranscriptionRepository(dbQueue: db.dbQueue)
+                let resultRepo = PromptResultRepository(dbQueue: db.dbQueue)
 
-            let prompt = try findPrompt(idOrName: promptIdOrName, repo: promptRepo)
-            let transcript = try findTranscription(id: transcription, repo: transcriptionRepo)
+                let prompt = try findPrompt(idOrName: promptIdOrName, repo: promptRepo)
+                let transcript = try findTranscription(id: transcription, repo: transcriptionRepo)
 
-            let transcriptText = transcript.cleanTranscript ?? transcript.rawTranscript ?? ""
-            guard !transcriptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                throw PromptCLIError.emptyTranscript(transcript.fileName)
-            }
-
-            let trimmedExtra = extra?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let normalizedExtra = (trimmedExtra?.isEmpty == false) ? trimmedExtra : nil
-            let systemPrompt = assembledSystemPrompt(promptContent: prompt.content, extraInstructions: normalizedExtra)
-
-            let execution = try llm.buildExecutionContext()
-            let service = LLMService(
-                client: execution.client,
-                contextResolver: StaticLLMExecutionContextResolver(context: execution.context)
-            )
-
-            var output = ""
-            if json {
-                let result = try await service.generatePromptResultDetailed(
-                    transcript: transcriptText,
-                    systemPrompt: systemPrompt
-                )
-                output = result.output
-                try printJSON(result)
-            } else if stream {
-                let tokenStream = service.generatePromptResultStream(
-                    transcript: transcriptText,
-                    systemPrompt: systemPrompt
-                )
-                for try await token in tokenStream {
-                    print(token, terminator: "")
-                    output += token
+                let transcriptText = transcript.cleanTranscript ?? transcript.rawTranscript ?? ""
+                guard !transcriptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    throw PromptCLIError.emptyTranscript(transcript.fileName)
                 }
-                print()
-            } else {
-                output = try await service.generatePromptResult(
-                    transcript: transcriptText,
-                    systemPrompt: systemPrompt
-                )
-                print(output)
-            }
 
-            if !noStore {
-                let result = PromptResult(
-                    transcriptionId: transcript.id,
-                    promptName: prompt.name,
-                    promptContent: prompt.content,
-                    extraInstructions: normalizedExtra,
-                    content: output
+                let trimmedExtra = extra?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let normalizedExtra = (trimmedExtra?.isEmpty == false) ? trimmedExtra : nil
+                let systemPrompt = assembledSystemPrompt(promptContent: prompt.content, extraInstructions: normalizedExtra)
+
+                let execution = try llm.buildExecutionContext()
+                let service = LLMService(
+                    client: execution.client,
+                    contextResolver: StaticLLMExecutionContextResolver(context: execution.context)
                 )
-                try resultRepo.save(result)
-                // Status messages on stderr so stdout stays grep-able as the prompt output.
-                FileHandle.standardError.write(Data("\nSaved PromptResult \(result.id.uuidString.prefix(8))\n".utf8))
+
+                var output = ""
+                if json {
+                    let result = try await service.generatePromptResultDetailed(
+                        transcript: transcriptText,
+                        systemPrompt: systemPrompt
+                    )
+                    output = result.output
+                    try printJSON(result)
+                } else if stream {
+                    let tokenStream = service.generatePromptResultStream(
+                        transcript: transcriptText,
+                        systemPrompt: systemPrompt
+                    )
+                    for try await token in tokenStream {
+                        print(token, terminator: "")
+                        output += token
+                    }
+                    print()
+                } else {
+                    output = try await service.generatePromptResult(
+                        transcript: transcriptText,
+                        systemPrompt: systemPrompt
+                    )
+                    print(output)
+                }
+
+                if !noStore {
+                    let result = PromptResult(
+                        transcriptionId: transcript.id,
+                        promptName: prompt.name,
+                        promptContent: prompt.content,
+                        extraInstructions: normalizedExtra,
+                        content: output
+                    )
+                    try resultRepo.save(result)
+                    // Status messages on stderr so stdout stays grep-able as the prompt output.
+                    FileHandle.standardError.write(Data("\nSaved PromptResult \(result.id.uuidString.prefix(8))\n".utf8))
+                }
             }
         }
 

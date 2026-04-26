@@ -110,6 +110,22 @@ agent can re-prompt the user.
 Prompt and direct LLM JSON responses use an envelope with `output`, `provider`,
 `model`, optional `usage`, optional `stopReason`, and `latencyMs`.
 
+When a `--json` command fails (provider error, missing input, lookup miss,
+etc.), stdout is a structured failure envelope instead of the success shape:
+
+```json
+{
+  "ok": false,
+  "error": "Provider error: No models loaded.",
+  "errorType": "provider"
+}
+```
+
+`errorType` is a stable low-cardinality string. Branch on the exit code, then
+use `errorType` to differentiate retryable failures (`rate_limit`,
+`connection`, `streaming`) from permanent ones (`auth`, `model`,
+`input_empty`, `lookup`). Full taxonomy in `Sources/CLI/CHANGELOG.md`.
+
 ## Conventions
 
 - **Exit codes:** `0` success, `1` runtime failure (work attempted and failed

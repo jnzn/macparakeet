@@ -42,10 +42,32 @@ new error classes get new minor-version codes, never silent reuse.
 | `2`  | Validation/misuse -- the invocation itself was malformed before the command did any real work. Examples: unknown provider, missing required flag, malformed input file, unsupported `--format` value. ArgumentParser produces this for unknown flags as well. |
 | `130` | Interrupted by `SIGINT` (Ctrl-C). Inherits Unix convention; downstream agents should treat this as cancellation, not failure. |
 
-`--json` output never goes to stderr regardless of exit code. On failure the
-JSON envelope shape varies by command -- see each command's section below for
-the exact shape (or a note about plain-text-on-stderr fallback for that
-command).
+`--json` output never goes to stderr regardless of exit code. When `--json` is
+passed, both success and failure print a JSON object to stdout; the exit code
+remains the source of truth for branching.
+
+### `--json` failure envelope
+
+Any command that accepts `--json` emits this envelope on stdout when the
+command fails (regardless of where in the pipeline the failure occurred —
+provider error, missing input, lookup miss, etc.):
+
+```json
+{
+  "ok": false,
+  "error": "human-readable message",
+  "errorType": "auth"
+}
+```
+
+`errorType` is a low-cardinality stable string. Current values: `auth`,
+`config`, `connection`, `context`, `input_empty`, `input_missing`,
+`invalid_response`, `lookup`, `model`, `provider`, `rate_limit`, `runtime`,
+`streaming`, `truncated`, `validation`. New error classes get new values in
+minor releases; existing values are stable within a major.
+
+Stderr stays plain text for human-only progress / status (e.g. "Saved
+PromptResult abc12345"), so piping `--json` stdout through `jq` is safe.
 
 ## [1.2.0] -- 2026-04-26
 
@@ -61,8 +83,10 @@ command).
   `stopReason` is pass-through — provider-native vocabulary
   (`end_turn`, `length`, `STOP`, `done_reason`, etc.) is surfaced
   verbatim. `test-connection --json` returns
-  `{ok, provider, model, latencyMs}` on success; on failure: stderr +
-  non-zero exit, no JSON envelope.
+  `{ok: true, provider, model, latencyMs}` on success and the standard
+  `--json` failure envelope (see top of file) on failure. All `--json`
+  commands now share that failure envelope so downstream agents see one
+  of two shapes — never a mix of JSON success and plain-text failure.
 
 ### Not yet supported
 
