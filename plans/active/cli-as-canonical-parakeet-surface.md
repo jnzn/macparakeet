@@ -3,7 +3,19 @@
 > Status: **ACTIVE** — strategic plan, post-PR-#138, pre-v0.6.0
 > Author: agent (Claude) + Daniel
 > Date: 2026-04-25
-> Related: PR #138 (CLI prompts + JSON sweep, merged), PR #141 (gitignore journal/, merged)
+> Related: PR #138 (CLI prompts + JSON sweep, merged), PR #141 (gitignore journal/, merged), PR #144 (CLI 1.0 + AGENTS.md + integrations/, merged), PR #145 (rollout artifacts + registry drafts)
+>
+> **Post-launch correction (2026-04-25):** This plan repeatedly refers
+> to OpenClaw skills as `SOUL.md` files. That was wrong. ClawHub
+> (the OpenClaw skill registry) publishes skills as **`SKILL.md`** with
+> frontmatter; `SOUL.md` is the format used by a different agent
+> registry, onlycrabs.ai. The integrations/ directory has been
+> corrected (`integrations/openclaw/SOUL.md` was renamed to
+> `integrations/openclaw/README.md`). Inline `SOUL.md` references in
+> the body below are preserved as the original strategic snapshot but
+> should be read as `SKILL.md` for any OpenClaw/ClawHub action. See
+> PR #145's `plans/active/registry-submissions/clawhub.md` for the
+> verified submission flow.
 
 ---
 
