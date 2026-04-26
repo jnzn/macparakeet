@@ -38,6 +38,7 @@ A **fast, private, local-first voice app** for macOS with three co-equal modes: 
 | Telemetry system | `docs/telemetry.md` |
 | Commit message format | `docs/commit-guidelines.md` |
 | Implementation plans | `plans/` -> active and completed plans |
+| Codebase audits | `docs/audits/` -> two-pass independent audits with status, refutations, deferred items |
 | Cross-agent coding-agent guide | `AGENTS.md` -> slim, convention-following |
 | Downstream agent integration (calling the CLI) | `integrations/README.md` |
 | CLI semver + compatibility policy | `Sources/CLI/CHANGELOG.md` |
