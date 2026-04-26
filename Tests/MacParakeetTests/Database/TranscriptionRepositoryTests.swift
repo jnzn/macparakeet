@@ -127,6 +127,37 @@ final class TranscriptionRepositoryTests: XCTestCase {
         XCTAssertEqual(results.map(\.id), [newerMeeting.id, olderMeeting.id])
     }
 
+    func testFetchBySourceTypeAndIDPrefixFiltersInDatabase() throws {
+        let meetingID = UUID(uuidString: "AABBCCDD-1111-1111-1111-111111111111")!
+        let otherMeetingID = UUID(uuidString: "CCDDEEFF-1111-1111-1111-111111111111")!
+        let meeting = Transcription(id: meetingID, fileName: "Planning", sourceType: .meeting)
+        let otherMeeting = Transcription(id: otherMeetingID, fileName: "Other", sourceType: .meeting)
+        let file = Transcription(
+            id: UUID(uuidString: "AABBCCDD-2222-2222-2222-222222222222")!,
+            fileName: "File",
+            sourceType: .file
+        )
+        try repo.save(meeting)
+        try repo.save(otherMeeting)
+        try repo.save(file)
+
+        let results = try repo.fetchBySourceType(.meeting, idPrefix: "aabbccdd")
+
+        XCTAssertEqual(results.map(\.id), [meetingID])
+        XCTAssertEqual(try repo.fetchBySourceType(.meeting, idPrefix: "AABBCCDD-1111").map(\.id), [meetingID])
+    }
+
+    func testFetchBySourceTypeAndFileNameIsCaseInsensitive() throws {
+        let meeting = Transcription(fileName: "Design Review", sourceType: .meeting)
+        let file = Transcription(fileName: "Design Review", sourceType: .file)
+        try repo.save(meeting)
+        try repo.save(file)
+
+        let results = try repo.fetchBySourceType(.meeting, fileName: "design review")
+
+        XCTAssertEqual(results.map(\.id), [meeting.id])
+    }
+
     func testUpdateUserNotesPreservesOtherFields() throws {
         let transcription = Transcription(
             fileName: "Meeting Apr 5",

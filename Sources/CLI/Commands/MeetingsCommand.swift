@@ -572,10 +572,7 @@ private func sanitizedFileName(_ value: String) -> String {
 }
 
 private func formatDate(_ date: Date) -> String {
-    let formatter = DateFormatter()
-    formatter.dateStyle = .short
-    formatter.timeStyle = .short
-    return formatter.string(from: date)
+    date.formatted(date: .numeric, time: .shortened)
 }
 
 private func formatDuration(_ durationMs: Int) -> String {
