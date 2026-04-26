@@ -70,7 +70,7 @@ public final class GlobalShortcutManager {
         installedRunLoop = runLoop
         CFRunLoopAddSource(runLoop, runLoopSource, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
-        syncModifierPressedState()
+        recoverFromDisabledTap()
         return true
     }
 
