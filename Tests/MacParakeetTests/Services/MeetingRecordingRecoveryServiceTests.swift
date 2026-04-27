@@ -216,6 +216,155 @@ final class MeetingRecordingRecoveryServiceTests: XCTestCase {
         XCTAssertNil(transcription.userNotes, "lock with no notes leaves userNotes nil")
     }
 
+    // MARK: - discoverPendingRecoveries - empty-session filter
+
+    func testDiscoverFiltersStubSessionAndPurgesFolder() async throws {
+        let stub = try makeEmptyStubSession()
+
+        let pending = try await recoveryService.discoverPendingRecoveries()
+
+        XCTAssertTrue(pending.isEmpty, "stub session with init-only audio should be filtered")
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: stub.folderURL.path),
+            "stub session folder should be auto-purged so it doesn't accumulate"
+        )
+    }
+
+    func testDiscoverFiltersSessionWithNoAudioFiles() async throws {
+        let folderURL = tempRoot.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        let lock = MeetingRecordingLockFile(
+            sessionId: UUID(),
+            startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            pid: 42,
+            displayName: "Empty Session",
+            folderURL: folderURL
+        )
+        try lockStore.write(lock, folderURL: folderURL)
+
+        let pending = try await recoveryService.discoverPendingRecoveries()
+
+        XCTAssertTrue(pending.isEmpty, "session with no audio files should be filtered")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folderURL.path))
+    }
+
+    func testDiscoverKeepsSessionWithViableAudio() async throws {
+        let viable = try makeRecoverableSession()
+
+        let pending = try await recoveryService.discoverPendingRecoveries()
+
+        XCTAssertEqual(pending.count, 1)
+        XCTAssertEqual(pending.first?.sessionId, viable.lock.sessionId)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: viable.folderURL.path))
+    }
+
+    func testDiscoverFiltersOnlyEmptySessionsInMixedBatch() async throws {
+        let viable = try makeRecoverableSession()
+        let stub = try makeEmptyStubSession()
+
+        let pending = try await recoveryService.discoverPendingRecoveries()
+
+        XCTAssertEqual(pending.map(\.sessionId), [viable.lock.sessionId])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: viable.folderURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stub.folderURL.path))
+    }
+
+    func testDiscoverKeepsSessionWhenOnlyOneChannelHasViableAudio() async throws {
+        // Recovery already supports single-channel sessions (mic only / system
+        // only), so discovery shouldn't filter them either. Build a mic-only
+        // session: real audio on the mic, init-stub system file.
+        let folderURL = tempRoot.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        try writeM4A(to: folderURL.appendingPathComponent("microphone.m4a"))
+        try writeStubAudio(to: folderURL.appendingPathComponent("system.m4a"))
+        let lock = MeetingRecordingLockFile(
+            sessionId: UUID(),
+            startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            pid: 42,
+            displayName: "Mic-only session",
+            folderURL: folderURL
+        )
+        try lockStore.write(lock, folderURL: folderURL)
+
+        let pending = try await recoveryService.discoverPendingRecoveries()
+
+        XCTAssertEqual(pending.map(\.sessionId), [lock.sessionId])
+    }
+
+    func testDiscoverKeepsCompletedMeetingWhenSourceAudioIsMissing() async throws {
+        let folderURL = tempRoot.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        let mixedURL = folderURL.appendingPathComponent("meeting.m4a")
+        FileManager.default.createFile(atPath: mixedURL.path, contents: Data("mixed".utf8))
+        let existing = Transcription(
+            fileName: "Recovered Team Sync",
+            filePath: mixedURL.path,
+            status: .completed,
+            sourceType: .meeting
+        )
+        try transcriptionRepo.save(existing)
+        let lock = MeetingRecordingLockFile(
+            sessionId: UUID(),
+            startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            pid: 42,
+            displayName: "Recovered Team Sync",
+            state: .awaitingTranscription,
+            folderURL: folderURL
+        )
+        try lockStore.write(lock, folderURL: folderURL)
+
+        let pending = try await recoveryService.discoverPendingRecoveries()
+
+        XCTAssertEqual(pending.map(\.sessionId), [lock.sessionId])
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: folderURL.path),
+            "completed meeting audio must not be purged by the empty-session filter"
+        )
+    }
+
+    func testDiscoverKeepsCandidateWhenViabilityCheckFails() async throws {
+        let stub = try makeEmptyStubSession()
+        transcriptionRepo.fetchAllError = RecoveryTestError.transcriptionFailed
+
+        let pending = try await recoveryService.discoverPendingRecoveries()
+
+        XCTAssertEqual(pending.map(\.sessionId), [stub.lock.sessionId])
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: stub.folderURL.path),
+            "a viability-check failure should not purge user data"
+        )
+    }
+
+    /// Writes a session folder containing only init-header-sized audio
+    /// stubs - the exact pattern produced by a recording that was killed
+    /// before any audio frames were captured. Real-world stub size is
+    /// ~557 bytes; we go with a known-small fixed payload so the test is
+    /// deterministic and obviously below `minViableAudioBytes`.
+    private func makeEmptyStubSession() throws -> (folderURL: URL, lock: MeetingRecordingLockFile) {
+        let sessionID = UUID()
+        let folderURL = tempRoot.appendingPathComponent(sessionID.uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        try writeStubAudio(to: folderURL.appendingPathComponent("microphone.m4a"))
+        try writeStubAudio(to: folderURL.appendingPathComponent("system.m4a"))
+
+        let lock = MeetingRecordingLockFile(
+            sessionId: sessionID,
+            startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            pid: 42,
+            displayName: "Stub session",
+            folderURL: folderURL
+        )
+        try lockStore.write(lock, folderURL: folderURL)
+        return (folderURL, lock)
+    }
+
+    private func writeStubAudio(to url: URL) throws {
+        // 600 bytes - comfortably above an empty file but well under
+        // `minViableAudioBytes`. The exact byte content is irrelevant; we
+        // only care that the file size is below the recovery threshold.
+        try Data(count: 600).write(to: url)
+    }
+
     private func makeRecoverableSession(
         microphoneSampleRate: Double = 48_000,
         systemAudio: SourceFixture = .valid,
@@ -384,6 +533,7 @@ private final class RecoveryMockTranscriptionService: TranscriptionServiceProtoc
 private final class RecordingTranscriptionRepository: TranscriptionRepositoryProtocol, @unchecked Sendable {
     private let lock = NSLock()
     private(set) var saved: [Transcription] = []
+    var fetchAllError: Error?
 
     func save(_ transcription: Transcription) throws {
         lock.withLock {
@@ -397,7 +547,8 @@ private final class RecordingTranscriptionRepository: TranscriptionRepositoryPro
     }
 
     func fetchAll(limit: Int?) throws -> [Transcription] {
-        lock.withLock { saved }
+        if let fetchAllError { throw fetchAllError }
+        return lock.withLock { saved }
     }
 
     func fetchCompletedByVideoID(_ videoID: String) throws -> Transcription? { nil }

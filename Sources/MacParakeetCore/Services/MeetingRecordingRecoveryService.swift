@@ -62,11 +62,81 @@ public final class MeetingRecordingRecoveryService: MeetingRecordingRecoveryServ
         self.fileManager = fileManager
     }
 
+    /// Minimum size (bytes) for either `microphone.m4a` or `system.m4a` to
+    /// be considered worth offering recovery on. AAC fragmented-MP4 init
+    /// headers (no audio frames) are ~557 bytes; even a fraction of a second
+    /// of compressed audio is several KB. The threshold is comfortably above
+    /// the empty-header floor and well below any meaningful recording.
+    ///
+    /// Sessions whose audio is at or below this floor were almost always
+    /// killed within a second of `MeetingRecordingService.startRecording`
+    /// writing the lock file but before any real audio frames were captured -
+    /// e.g., a force-quit, hard crash, or rapid dev-cycle restart. Surfacing
+    /// these as "interrupted recordings" alarms the user over data that
+    /// never existed and where `recover()` would error with
+    /// `noRecoverableAudio` regardless. Filtering at discovery is cheaper
+    /// (size stat, no AVFoundation load) and preserves the existing public
+    /// contract: every entry returned here is something `recover()` has a
+    /// chance of producing a transcription from.
+    public static let minViableAudioBytes: Int = 4 * 1024
+
     public func discoverPendingRecoveries() async throws -> [MeetingRecordingLockFile] {
         // `discoverOrphans` already sorts by `startedAt` with a folder-path
         // tiebreaker for ties — re-sorting here would just drop the
         // tiebreaker without adding any ordering guarantee.
-        try lockFileStore.discoverOrphans(meetingsRoot: meetingsRoot)
+        let candidates = try lockFileStore.discoverOrphans(meetingsRoot: meetingsRoot)
+        var viable: [MeetingRecordingLockFile] = []
+        viable.reserveCapacity(candidates.count)
+        for lock in candidates {
+            do {
+                if try canOfferRecovery(for: lock) {
+                    viable.append(lock)
+                } else {
+                    // Auto-clean instead of skipping silently: the folder + lock
+                    // are otherwise immortal, accumulating across every crash
+                    // until the user manually deletes them. Logged for forensic
+                    // reference if a user reports missing recordings.
+                    purgeEmptySession(lock)
+                }
+            } catch {
+                logger.error(
+                    "meeting_recovery_viability_check_failed session=\(lock.sessionId.uuidString, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+                )
+                viable.append(lock)
+            }
+        }
+        return viable
+    }
+
+    private func canOfferRecovery(for lock: MeetingRecordingLockFile) throws -> Bool {
+        guard let folderURL = lock.folderURL else { return false }
+        let mixedURL = folderURL.appendingPathComponent("meeting.m4a")
+        if try existingCompletedTranscription(for: mixedURL) != nil {
+            return true
+        }
+        return hasViableAudio(in: lock)
+    }
+
+    private func hasViableAudio(in lock: MeetingRecordingLockFile) -> Bool {
+        guard let folderURL = lock.folderURL else { return false }
+        let micSize = fileSize(at: folderURL.appendingPathComponent("microphone.m4a"))
+        let sysSize = fileSize(at: folderURL.appendingPathComponent("system.m4a"))
+        return max(micSize, sysSize) >= Self.minViableAudioBytes
+    }
+
+    private func purgeEmptySession(_ lock: MeetingRecordingLockFile) {
+        guard let folderURL = lock.folderURL else { return }
+        guard fileManager.fileExists(atPath: folderURL.path) else { return }
+        do {
+            try fileManager.removeItem(at: folderURL)
+            logger.info(
+                "meeting_recovery_purged_empty_session session=\(lock.sessionId.uuidString, privacy: .public)"
+            )
+        } catch {
+            logger.error(
+                "meeting_recovery_purge_failed session=\(lock.sessionId.uuidString, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+            )
+        }
     }
 
     public func recover(_ lock: MeetingRecordingLockFile) async throws -> Transcription {
@@ -194,7 +264,31 @@ public final class MeetingRecordingRecoveryService: MeetingRecordingRecoveryServ
     }
 
     private func existingTranscriptions(for mixedURL: URL) throws -> [Transcription] {
-        try transcriptionRepo.fetchByFilePath(mixedURL.path, sourceType: .meeting)
+        var seenIDs = Set<UUID>()
+        var transcriptions: [Transcription] = []
+        for path in filePathAliases(for: mixedURL) {
+            for transcription in try transcriptionRepo.fetchByFilePath(path, sourceType: .meeting) {
+                guard seenIDs.insert(transcription.id).inserted else { continue }
+                transcriptions.append(transcription)
+            }
+        }
+        return transcriptions
+    }
+
+    private func filePathAliases(for url: URL) -> Set<String> {
+        var paths = Set([
+            url.path,
+            url.standardizedFileURL.path,
+            url.resolvingSymlinksInPath().path,
+        ])
+        for path in Array(paths) {
+            if path.hasPrefix("/private/var/") {
+                paths.insert(String(path.dropFirst("/private".count)))
+            } else if path.hasPrefix("/var/") {
+                paths.insert("/private" + path)
+            }
+        }
+        return paths
     }
 
     private func deleteIncompleteTranscriptions(for mixedURL: URL) throws {
