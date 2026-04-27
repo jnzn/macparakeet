@@ -457,7 +457,7 @@ Ship-quality polish. Direct distribution via notarized DMG.
 | **YouTube downloads** | Standalone yt-dlp | macOS binary, auto-updates via `--update`. No Python needed. |
 | **UI framework** | SwiftUI | Native Mac experience. Menu bar + window. |
 | **Database** | SQLite (GRDB) | Single file. No server. Dictation history, custom words, settings. |
-| **Cloud option** | No cloud STT; optional LLM providers | Core speech stays local. Network use is explicit and opt-in for AI, updates, telemetry, and media download. |
+| **Cloud option** | No cloud STT; optional LLM providers | Core speech stays local. AI and media downloads are user-triggered; updates, licensing, and opt-out telemetry/crash reporting are product-managed network surfaces. |
 | **Pricing** | Free (GPL-3.0) | Zero friction. Maximum adoption. Community-driven development. |
 
 ---
