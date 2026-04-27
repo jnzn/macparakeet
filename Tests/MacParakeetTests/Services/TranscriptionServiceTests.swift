@@ -61,6 +61,18 @@ private actor FailingYouTubeDownloader: YouTubeDownloading {
     }
 }
 
+private struct FailingEntitlements: EntitlementsChecking {
+    let error: Error
+
+    func assertCanTranscribe(now: Date) async throws {
+        throw error
+    }
+
+    func currentState(now: Date) async -> EntitlementsState {
+        EntitlementsState(access: .trialExpired(endedAt: now), licenseKeyMasked: nil, lastValidatedAt: nil)
+    }
+}
+
 final class TranscriptionServiceTests: XCTestCase {
     var service: TranscriptionService!
     var mockAudio: MockAudioProcessor!
@@ -130,6 +142,55 @@ final class TranscriptionServiceTests: XCTestCase {
         let all = try transcriptionRepo.fetchAll(limit: nil)
         XCTAssertEqual(all.count, 1)
         XCTAssertEqual(all[0].status, .error)
+    }
+
+    func testTranscribeFileEntitlementFailureEmitsPreflightOperation() async throws {
+        let telemetry = TelemetrySpy()
+        Telemetry.configure(telemetry)
+        let service = TranscriptionService(
+            audioProcessor: mockAudio,
+            sttTranscriber: mockSTT,
+            transcriptionRepo: transcriptionRepo,
+            entitlements: FailingEntitlements(error: EntitlementsError.trialExpired)
+        )
+
+        do {
+            _ = try await service.transcribe(fileURL: URL(fileURLWithPath: "/tmp/test.mp3"))
+            XCTFail("Should have thrown")
+        } catch EntitlementsError.trialExpired {
+            // Expected
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
+
+        let operation = telemetry.snapshot().reversed().first {
+            if case .transcriptionOperation = $0 { return true }
+            return false
+        }
+        guard case .transcriptionOperation(
+            _,
+            _,
+            let outcome,
+            let source,
+            let stage,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            let errorType
+        ) = try XCTUnwrap(operation) else {
+            return XCTFail("Expected transcription_operation telemetry")
+        }
+        XCTAssertEqual(outcome, .unavailable)
+        XCTAssertEqual(source, .file)
+        XCTAssertEqual(stage, .preflight)
+        XCTAssertEqual(errorType, "EntitlementsError.trialExpired")
     }
 
     func testTranscribeFileCancellationMarksRecordCancelled() async throws {

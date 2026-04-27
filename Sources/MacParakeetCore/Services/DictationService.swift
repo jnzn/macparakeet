@@ -67,7 +67,8 @@ public actor DictationService: DictationServiceProtocol {
     private var currentTelemetryContext = DictationTelemetryContext()
     private var recordingStartedAt: Date?
     private var currentOperationID: String?
-    private var currentOperationContext = DictationTelemetryContext()
+    private var currentOperationTelemetryContext = DictationTelemetryContext()
+    private var currentObservabilityOperationContext: ObservabilityOperationContext?
     private var activeSessionID: Int = 0
 
     public var state: DictationState {
@@ -120,8 +121,22 @@ public actor DictationService: DictationServiceProtocol {
         sessionID: Int?
     ) async throws {
         logger.debug("startRecording requested state=\(self.debugStateLabel(self._state), privacy: .public)")
+        let operationContext = ObservabilityOperationContext()
         if let entitlements {
-            try await entitlements.assertCanTranscribe(now: Date())
+            do {
+                try await entitlements.assertCanTranscribe(now: Date())
+            } catch {
+                let device = await audioProcessor.recordingDeviceInfo
+                sendDictationOperation(
+                    operationID: operationContext.operationID,
+                    operationContext: operationContext,
+                    telemetryContext: context,
+                    outcome: .unavailable,
+                    errorType: Self.errorType(for: error),
+                    device: device
+                )
+                throw error
+            }
         }
 
         switch _state {
@@ -155,8 +170,9 @@ public actor DictationService: DictationServiceProtocol {
 
         let requestedSessionID = sessionID ?? activeSessionID + 1
         activeSessionID = requestedSessionID
-        currentOperationID = Observability.operationID()
-        currentOperationContext = context
+        currentOperationID = operationContext.operationID
+        currentOperationTelemetryContext = context
+        currentObservabilityOperationContext = operationContext
         _state = .recording
         do {
             try await audioProcessor.startCapture()
@@ -178,13 +194,15 @@ public actor DictationService: DictationServiceProtocol {
             logger.debug("startRecording capture started session=\(requestedSessionID)")
         } catch {
             let operationID = currentOperationID
-            let operationContext = currentOperationContext
+            let telemetryContext = currentOperationTelemetryContext
+            let observabilityOperationContext = currentObservabilityOperationContext
             let device = await audioProcessor.recordingDeviceInfo
             _state = .idle
             recordingStartedAt = nil
             sendDictationOperation(
                 operationID: operationID,
-                telemetryContext: operationContext,
+                operationContext: observabilityOperationContext,
+                telemetryContext: telemetryContext,
                 outcome: .failure,
                 errorType: Self.errorType(for: error),
                 device: device
@@ -226,7 +244,14 @@ public actor DictationService: DictationServiceProtocol {
             logger.debug(
                 "stopRecording capture stopped session=\(currentSession) url=\(audioURL.path, privacy: .public)"
             )
-            let result = try await processCapturedAudio(audioURL: audioURL)
+            let result: DictationResult
+            if let operationContext = currentObservabilityOperationContext {
+                result = try await Observability.withOperationContext(operationContext) {
+                    try await processCapturedAudio(audioURL: audioURL)
+                }
+            } else {
+                result = try await processCapturedAudio(audioURL: audioURL)
+            }
             // Guard against reentrancy: a new session may have started during
             // transcription, replacing this session. Don't overwrite its state.
             guard activeSessionID == currentSession else {
@@ -379,7 +404,14 @@ public actor DictationService: DictationServiceProtocol {
 
         _state = .processing
         do {
-            let result = try await processCapturedAudio(audioURL: audioURL)
+            let result: DictationResult
+            if let operationContext = currentObservabilityOperationContext {
+                result = try await Observability.withOperationContext(operationContext) {
+                    try await processCapturedAudio(audioURL: audioURL)
+                }
+            } else {
+                result = try await processCapturedAudio(audioURL: audioURL)
+            }
             let device = await audioProcessor.recordingDeviceInfo
             _state = .success(result.dictation)
             sendDictationOperation(
@@ -642,11 +674,13 @@ public actor DictationService: DictationServiceProtocol {
 
     private func clearCurrentOperation() {
         currentOperationID = nil
-        currentOperationContext = DictationTelemetryContext()
+        currentOperationTelemetryContext = DictationTelemetryContext()
+        currentObservabilityOperationContext = nil
     }
 
     private func sendDictationOperation(
         operationID: String? = nil,
+        operationContext: ObservabilityOperationContext? = nil,
         telemetryContext: DictationTelemetryContext? = nil,
         outcome: ObservabilityOutcome,
         durationSeconds: Double? = nil,
@@ -655,9 +689,11 @@ public actor DictationService: DictationServiceProtocol {
         device: RecordingDeviceInfo? = nil
     ) {
         guard let id = operationID ?? currentOperationID else { return }
-        let context = telemetryContext ?? currentOperationContext
+        let context = telemetryContext ?? currentOperationTelemetryContext
+        let observabilityContext = operationContext ?? currentObservabilityOperationContext
         Telemetry.send(.dictationOperation(
             operationID: id,
+            operationContext: observabilityContext,
             outcome: outcome,
             trigger: context.trigger,
             mode: context.mode,
