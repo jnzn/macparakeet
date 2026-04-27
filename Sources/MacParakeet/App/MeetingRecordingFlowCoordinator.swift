@@ -494,11 +494,24 @@ final class MeetingRecordingFlowCoordinator {
                 panelViewModel?.elapsedSeconds = elapsedSeconds
                 panelViewModel?.micLevel = micLevel
                 panelViewModel?.systemLevel = systemLevel
-                if captureMode == .stopped, pillViewModel?.state == .recording {
+                if captureMode == .stopped,
+                   stateMachine.state == .recording,
+                   pillViewModel?.state == .recording {
+                    // Audio capture stopped while the state machine still
+                    // expects a live recording — typically because
+                    // `MeetingRecordingService.failCapture` ran (mic unplug,
+                    // writer error, OS audio routing change). Without this
+                    // signal the pill keeps animating "recording" with a
+                    // ticking timer while no audio is actually being
+                    // captured. Surface it through the state machine so the
+                    // existing stop+transcribe path saves whatever made it
+                    // to disk.
                     pillViewModel?.micLevel = 0
                     pillViewModel?.systemLevel = 0
                     panelViewModel?.micLevel = 0
                     panelViewModel?.systemLevel = 0
+                    sendEvent(.captureFailed(generation: stateMachine.generation))
+                    break
                 }
 
                 try? await Task.sleep(for: .milliseconds(150))
