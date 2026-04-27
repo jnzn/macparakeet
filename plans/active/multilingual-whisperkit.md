@@ -1,25 +1,30 @@
-# Plan: macparakeet-cli multilingual STT via WhisperKit
+# Plan: MacParakeet multilingual support via WhisperKit
 
 > Status: **ACTIVE**
 > Author: Daniel + agent (Claude)
-> Date: 2026-04-27 (cut to actually-simple after self-correction on cross-process ANE extrapolation)
-> Targets: CLI 1.3.0, MacParakeet v0.7.x
+> Date: 2026-04-27 (expanded from CLI-only to full multilingual: CLI + dictation + meeting recording, single PR)
+> Targets: CLI 1.3.0, MacParakeet v0.7.0
 
 ---
 
 ## TL;DR
 
-Add WhisperKit as a second STT engine in `macparakeet-cli`. Parakeet stays the default. User opts in to WhisperKit when they have languages outside Parakeet's coverage.
+Add WhisperKit as a second STT engine across **all three MacParakeet surfaces**: CLI file transcription, GUI dictation, GUI meeting recording. Parakeet stays the default everywhere. One Settings toggle flips the GUI between engines; CLI takes a `--engine` flag per invocation.
 
+**CLI usage:**
 ```
 macparakeet-cli transcribe file.wav                                  # → Parakeet (default, fast)
 macparakeet-cli transcribe file.wav --engine whisper                 # → WhisperKit (slower, 99 languages)
 macparakeet-cli transcribe file.wav --engine whisper --language ko   # → WhisperKit forced to Korean
 ```
 
-**No auto-routing, no cross-process coordination, no abstraction layers.** User passes a flag, CLI dispatches, done.
+**GUI:** Settings → Speech Recognition → toggle Parakeet ↔ Whisper. Affects dictation hotkey + meeting recording transcription.
 
-**Primary user:** Daniel consumes Korean content (YouTube, podcasts) and wants `macparakeet-cli` to handle Korean transcription end-to-end. WhisperKit's broader multilingual coverage (Vietnamese, Thai, Hindi, Arabic, 95+ others) is a free side-benefit — same code path, no extra cost. Agent operator demand is bonus, not blocker.
+**Single PR.** Integration cost is small once `WhisperEngine` exists — same engine wrapper used by all three surfaces. Doing it all together delivers "MacParakeet supports Korean" as one coherent ship moment, instead of a half-shipped state where CLI works but GUI doesn't.
+
+**Primary user:** Daniel consumes Korean content (YouTube videos, podcasts, meetings). Wants every MacParakeet surface to handle Korean — transcribe Korean videos via CLI, dictate Korean via hotkey, record Korean meetings. WhisperKit's broader multilingual coverage (Vietnamese, Thai, Hindi, Arabic, 95+ others) is a free side-benefit of the same code paths.
+
+**No auto-routing, no abstraction layers, no protocol/registry.** Two engines, switch-statement dispatch.
 
 ---
 
@@ -27,13 +32,13 @@ macparakeet-cli transcribe file.wav --engine whisper --language ko   # → Whisp
 
 Parakeet TDT v3 is the high-quality default for languages it supports. Whisper is the escape hatch for everything else.
 
-**Important runtime nuance (verified against FluidAudio 0.14.1 source):** `TokenLanguageFilter`'s `Language` enum has no CJK entries — only Latin/Cyrillic, 21 cases. The `tdtJa` decode path bypasses token language filtering entirely. So `--language` is effectively a no-op for any non-Latin/Cyrillic target with `--engine parakeet`. We silently don't pass the hint to Parakeet in those cases (no error, no warning).
+**Important runtime nuance (verified against FluidAudio 0.14.1 source):** `TokenLanguageFilter`'s `Language` enum has no CJK entries — only Latin/Cyrillic, 21 cases. So `--language` is a no-op for any non-Latin/Cyrillic target with `--engine parakeet`. We silently don't pass the hint to Parakeet in those cases (no error, no warning).
 
 | If your audio is… | Use | Notes |
 |---|---|---|
-| English or one of the 25 European languages Parakeet supports | **Parakeet (default)** | Fastest, highest quality on Apple Silicon. Just `transcribe file.wav`. |
-| Japanese or Mandarin | **Parakeet** first; switch to Whisper if quality isn't adequate | Parakeet's `tdtJa`/`tdtZh` decode paths handle these. `--language` is ignored by Parakeet (auto-detect). |
-| Korean, or any other language | **Whisper** | Pass `--engine whisper` (and optionally `--language <bcp47>`). |
+| English or one of the 25 European languages Parakeet supports | **Parakeet (default)** | Fastest, highest quality on Apple Silicon. |
+| Japanese or Mandarin | **Parakeet** first; switch to Whisper if quality isn't adequate | Parakeet's `tdtJa`/`tdtZh` decode paths handle these. `--language` is ignored (auto-detect). |
+| Korean, or any other language | **Whisper** | Whisper supports 99 languages. |
 
 No quantitative WER claims. User picks.
 
@@ -41,62 +46,78 @@ No quantitative WER claims. User picks.
 
 ## What we're building
 
+### Shared core (used by all three surfaces)
+
+- **`Sources/MacParakeetCore/STT/WhisperEngine.swift`** — actor wrapping `WhisperKit`. One static factory `WhisperEngine.make(model:)`, one method `transcribe(audioURL:language:onProgress:) -> STTResult`. Conditionally compiled `#if canImport(WhisperKit)`.
+- **`Sources/MacParakeetCore/Settings/SpeechEnginePreference.swift`** — small enum `{ parakeet, whisper }` + UserDefaults persistence + default-language pref.
+- **`Package.swift`** — add `argmaxinc/argmax-oss-swift` dep. **Important:** explicit product reference `.product(name: "WhisperKit", package: "argmax-oss-swift")` — meta-package would otherwise pull in SpeakerKit + TTSKit.
+
+### CLI (file transcription)
+
+- **Modify `Sources/CLI/Commands/TranscribeCommand.swift`:** add `--engine [parakeet|whisper]` flag (default parakeet) + `--language <bcp47>`. Switch on engine: parakeet → existing `STTClient` path; whisper → `WhisperEngine`.
+- **Modify `Sources/CLI/Commands/ModelsCommand.swift`:** extend `models download <variant>` to recognize `whisper-*` identifiers. For whisper-*, call `WhisperKit.download(variant:progressCallback:)`. Storage at `~/Library/Application Support/MacParakeet/models/stt/whisper/<variant>/`.
+- **Help text + CHANGELOG entry.**
+
+### GUI dictation
+
+- **Modify `Sources/MacParakeetCore/STT/STTRuntime.swift`:** read `SpeechEnginePreference` at the entry point of dictation transcription. If `parakeet` (default) → existing path unchanged. If `whisper` → route to `WhisperEngine`. Lazy-load Whisper on first use after toggle; unload Parakeet from ANE when Whisper is active to free working memory (and vice-versa).
+- **Dictation overlay (`Sources/MacParakeet/Views/Dictation/...`):** when engine is Whisper, show a "Transcribing…" state on the overlay between hotkey release and text paste (Whisper takes ~2-5 seconds for a 5-second clip). Existing overlay's recording state stays the same; only the post-release period gets the new state.
+- **Settings UI (below):** the toggle gates this entire path.
+
+### GUI meeting recording
+
+- **Modify `Sources/MacParakeetCore/STT/...`** (wherever meeting transcription dispatches): read `SpeechEnginePreference` at meeting transcription time (post-recording). Audio capture is engine-agnostic — the change only affects transcription dispatch.
+- **No UI change to the recording flow itself.** Recording captures audio same way; transcription engine is the only thing that changes.
+- Meeting transcription is async/batch — Whisper's latency doesn't matter here.
+
+### Settings UI
+
+New section in `Sources/MacParakeet/Views/Settings/...`:
+
 ```
-1. Add `argmaxinc/argmax-oss-swift` dep to Package.swift
-   - Pin to a specific tag
-   - Reference only the WhisperKit product: .product(name: "WhisperKit", package: "argmax-oss-swift")
-   - This is a meta-package; without explicit product naming, SpeakerKit + TTSKit get dragged in
+Speech Recognition
+──────────────────
+●  Parakeet (default)   Fast. English + 25 European languages + Japanese + Mandarin.
+○  Whisper              Slower. 99 languages including Korean.
 
-2. New: Sources/CLI/Engines/WhisperEngine.swift
-   - Actor wrapping WhisperKit
-   - One static factory: `WhisperEngine.make(model:) async throws -> WhisperEngine`
-   - One method: `transcribe(audioURL:language:onProgress:) async throws -> STTResult`
-   - Maps WhisperKit's TranscriptionResult to existing STTResult (text + words)
-   - Conditionally compiled: #if canImport(WhisperKit)
+  When using Whisper:
+  • Dictation has a 2-5 second delay (vs Parakeet's near-instant response)
+  • First use after switching loads the model (~5-15 seconds)
+  • Meeting transcription quality benefits from picking the right language below
 
-3. Modify: Sources/CLI/Commands/TranscribeCommand.swift
-   - Add `--engine [parakeet|whisper]` flag (default: parakeet)
-   - Add `--language <bcp47>` flag
-   - Switch on engine: parakeet → existing STTClient path; whisper → WhisperEngine
-   - Pass --language to WhisperKit always; pass to Parakeet only if FluidAudio Language enum has it (silently drop otherwise)
-
-4. Modify: Sources/CLI/Commands/ModelsCommand.swift
-   - Extend `models download <variant>` to recognize whisper-* identifiers
-   - For whisper-*, call WhisperKit.download(variant:progressCallback:) — Argmax handles the actual download
-   - Storage: ~/Library/Application Support/MacParakeet/models/stt/whisper/<variant>/
-   - Override WhisperKit's HF cache default so deleting MacParakeet wipes everything
-
-5. Help text + CHANGELOG + brief integrations/README.md note about engine selection
+Default language for Whisper:  [ Auto-detect ▼ ]   (only used with Whisper)
 ```
 
-That's the whole feature. Maybe 300-400 lines of code. A few days for a senior engineer.
+~50 lines of SwiftUI. Pref persists via UserDefaults.
 
 ---
 
-## What we're NOT doing in v1 (and why)
+## What we're NOT doing
 
-- **Cross-process ANE lock.** Theoretical risk, no observed instances on macOS. macOS has `anecompilerservice` daemon for exactly this mediation; many CoreML apps (Photos, Mail, MacWhisper, VoiceInk, Hex) coexist in production without cross-process locks. If we see a real crash post-ship, we add ~50 lines of `flock` then.
-- **`STTProvider` protocol + `STTRuntime` refactor.** Only justified by the lock above. No lock → no refactor → GUI hot path stays out of the diff.
-- **`STTTranscription` wrapper / `--include-metadata` flag.** Defer. JSON envelope stays byte-identical to v1.2.
-- **`models verify --sha256`.** WhisperKit handles its own download integrity. Defer until users ask.
-- **Disk preflight, retry/backoff with jitter, per-variant locks, stale-file reapers.** Defensive engineering for risks that may not be real. OS errors are reasonable user feedback. Add when we see actual operational pain.
-- **New telemetry events / `cliWarmupStarted` bracketing.** Existing `cliOperation` event is sufficient for v1. Adding new events triggers the two-repo allowlist coordination — defer until we have something to instrument.
-- **Auto-routing / `--engine auto`.** Speculative product complexity. Defer to v0.8+ if there's demand.
-- **Streaming, translation mode, multiple languages, GUI multilingual UX.** All v0.8+ or later.
-
-The discipline here: ship the feature; defer defensive work until evidence shows it's needed.
+- **Per-surface toggles** (separate Whisper-for-dictation vs Whisper-for-meeting). One toggle covers GUI surfaces. If users ask for split control later, add it.
+- **Auto-detection / `--engine auto`.** Speculative product complexity. v0.8+ if demand surfaces.
+- **Streaming WhisperKit (`--stream`).** v0.8+
+- **WhisperKit translation mode (`--task translate`).** Defer.
+- **Mid-session engine switching.** Toggle is a Settings change between sessions; not changeable mid-recording or mid-dictation.
+- **Cross-process ANE coordination.** macOS daemon mediates; many CoreML apps coexist in production without locks. Add ~50 lines of `flock` only if real crashes appear post-ship.
+- **`STTProvider` protocol + registry.** Two engines, switch-statement dispatch. Add abstraction when a third engine arrives.
+- **`models verify --sha256`.** WhisperKit handles its own integrity. Defer.
+- **Disk preflight, retry/backoff, per-variant locks.** Defensive engineering for unobserved risks. Add if we see operational pain.
+- **`STTTranscription` wrapper / `--include-metadata` flag.** v0.7 ships byte-identical v1.2 JSON envelope.
+- **Telemetry allowlist coordination.** Existing `cliOperation` event is sufficient. Add new events only when we have specific reason.
 
 ---
 
 ## Implementation notes (things to know during coding, not as gating spikes)
 
-- **WhisperKit Sendable / @MainActor.** WhisperKit 1.x has had `@MainActor`-bound progress callbacks. CLI runs without an `NSApplication` run loop, so `@MainActor` hops can deadlock. If you hit this during implementation: wrap `WhisperKit` calls in `Task { @MainActor in ... }` blocks, or use `dispatchMain()`. Verify on the version we pin; if it's been fixed in current `argmax-oss-swift`, no work needed.
-- **Audio normalization is already done.** `Sources/CLI/AudioFileConverter.swift` produces 16 kHz mono Float32 WAV (`-ar 16000 -ac 1 -acodec pcm_f32le`). `WhisperEngine.transcribe()` receives the converted file URL — FFmpeg runs once.
-- **Watchdog cold-start gotcha.** If the CLI gains a no-progress watchdog later (not in v1), it must only start ticking *after* the first progress event from the engine. WhisperKit prewarm can take >60s on M1/M2; a watchdog that ticks during specialization would kill first-runs.
-- **WhisperKit issue #300:** `loadModels()` duplicates `.bundle` files in memory each call. Reuse the `WhisperKit` instance within a CLI invocation; never re-init.
-- **JSON envelope contract:** existing v1.2 is flat `{ ok, error, errorType }` (in `Sources/CLI/CHANGELOG.md`). Don't break it. v1.3.0 adds engine support without changing this shape.
-- **In-process double-load:** the CLI is one-engine-per-process by construction. We don't need an in-process semaphore in v1. If we ever load both engines in one process (e.g., a future server mode), revisit.
-- **`models download parakeet`** — currently the GUI's onboarding handles this. Headless CLI users may need an explicit command in a follow-up. Out of scope for v1 (Parakeet onboarding still required).
+- **WhisperKit Sendable / @MainActor.** WhisperKit 1.x has had `@MainActor`-bound progress callbacks. Verify on the version we pin; if hops to MainActor deadlock the CLI (no `NSApplication` run loop), wrap calls in `Task { @MainActor in ... }`. The GUI doesn't have this concern.
+- **Audio normalization is already done.** `Sources/CLI/AudioFileConverter.swift` produces 16 kHz mono Float32 WAV. Both engines receive the converted file URL. FFmpeg runs once.
+- **Engine switching evicts ANE.** When the user toggles in Settings, the previously-active engine should `unload()` so the new one can specialize without ANE memory pressure. Toggle only happens between sessions — not in the middle of a dictation.
+- **First-use after toggle pays specialization cost.** Communicate this in Settings copy. Lazy-load on first dictation/meeting transcription rather than at app launch.
+- **WhisperKit issue #300:** `loadModels()` duplicates `.bundle` files in memory each call. Reuse the WhisperKit instance within a session.
+- **JSON envelope contract:** existing v1.2 in `Sources/CLI/CHANGELOG.md` is flat `{ ok, error, errorType }`. v1.3.0 adds `--engine` support without changing this shape.
+- **In-process double-load:** the GUI loads only one engine at a time (toggle determines which). The CLI loads only one per invocation. Never both simultaneously. So we don't need an in-process semaphore.
+- **Cross-process (GUI + CLI both running):** macOS daemon mediates ANE access. Memory is fine — Parakeet ~66 MB ANE working set + WhisperKit large-v3-turbo ~600 MB working set, in separate process address spaces.
 
 ---
 
@@ -104,11 +125,12 @@ The discipline here: ship the feature; defer defensive work until evidence shows
 
 | Risk | Probability | Impact | Mitigation |
 |---|---|---|---|
-| WhisperKit `@MainActor` deadlock in headless CLI | Possible (version-dependent) | High (CLI hangs) | Verify during implementation; `Task { @MainActor in ... }` wrapper if needed |
-| `argmax-oss-swift` meta-package drags in SpeakerKit/TTSKit | Real | Low (binary bloat) | Explicit `.product(name: "WhisperKit", package: "argmax-oss-swift")` |
-| WhisperKit Korean output is unusable in practice | Low | High | Reversal trigger #3 below; integrate Qwen3-ASR or other |
-| Korean transcription quality (the load-bearing use case) is unusable | Low (Whisper is well-validated on Korean) | High | Reversal trigger #3 below; Daniel sniff-tests pre-ship |
-| Watchdog kills legitimate long transcribes | N/A (no watchdog in v1) | — | Defer until needed |
+| WhisperKit `@MainActor` deadlock in headless CLI | Possible (version-dependent) | High (CLI hangs) | Verify during impl; `Task { @MainActor in ... }` wrapper if needed |
+| `argmax-oss-swift` meta-package drags in SpeakerKit/TTSKit | Real | Low (binary bloat) | Explicit `.product(name: "WhisperKit", ...)` |
+| Korean transcription quality unusable in practice | Low (Whisper is well-validated on Korean) | High (kills the load-bearing use case) | Daniel sniff-tests on real Korean content during dev; reversal triggers below |
+| Dictation latency on Whisper is unacceptable | Real (2-5 sec is slow) | Low (users self-select via toggle, copy sets expectation) | Settings copy clearly states the trade-off |
+| Engine toggle leaks ANE memory across switches | Possible | Medium | `unload()` previous engine when toggle fires |
+| CLI invocation while GUI is active triggers ANE collision | Theoretical, no observed instances on macOS | High if real | Ship without lock; `flock` fast-follow if telemetry shows crashes |
 
 ---
 
@@ -118,7 +140,7 @@ Revisit WhisperKit if:
 
 1. **Argmax ships Qwen3-ASR (or equivalent)** in WhisperKit. Verifiable from their releases.
 2. **`mlx-qwen3-asr` reaches agent-grade quality** — tagged release, green CI on macOS 14+, zero open P0 for ≥30 days, ≥50 external transcribe operations without crash, mature Swift wrapper.
-3. **Field signal:** ≥3 distinct agent operators report "WhisperKit Chinese (or other CJK) output is unusable for my use case."
+3. **Field signal:** ≥3 distinct users report "WhisperKit Chinese (or other CJK) output is unusable for my use case."
 4. **Quality benchmark:** Qwen3-ASR achieves ≥10% relative CER improvement on our own Mandarin/Japanese/Korean corpus.
 5. **Apple ships native multilingual ASR** with WER ≤10% relative penalty vs Whisper-large-v3 on FLEURS-30.
 
@@ -139,16 +161,39 @@ When any trigger fires, integrate as a third engine — don't replace WhisperKit
 
 ---
 
+## Implementation order (within the single PR)
+
+Not phases-with-gates — just a suggested order for the implementing engineer:
+
+1. **Add WhisperKit dep** to `Package.swift` with explicit product reference.
+2. **Implement `WhisperEngine.swift`** in `MacParakeetCore`. Basic actor + transcribe method + STTResult mapping. Verify it works in isolation via a unit test or scratch script.
+3. **Add CLI surface** — `--engine` flag, `--language` flag, `models download whisper-*`. CLI is the easiest validation surface.
+4. **Daniel sniff-tests Korean content via CLI.** Run `macparakeet-cli transcribe <korean.mp3> --engine whisper --language ko`. Verify quality is adequate. **This is the load-bearing decision point** — if Korean output is unusable, the rest of the PR is wasted; reversal triggers fire.
+5. **Add `SpeechEnginePreference` + UserDefaults plumbing.**
+6. **Wire `STTRuntime` to read pref and dispatch.**
+7. **Settings UI** with toggle + language picker + latency copy.
+8. **Dictation overlay "Transcribing…" state.**
+9. **Meeting recording dispatch.**
+10. **CHANGELOG, integrations docs, THIRD_PARTY_LICENSES.**
+11. **Tests** — engine routing, toggle persistence, lazy-load + unload lifecycle, Korean sniff test on a known-good fixture.
+
+Total estimate: ~5-7 days of focused work for a senior engineer.
+
+---
+
 ## Success signals
 
-The honest validation is: **Daniel transcribes Korean YouTube content with `macparakeet-cli transcribe <url> --engine whisper --language ko` and the output is good enough to read.** That's the load-bearing test.
+The honest validation:
+1. **Daniel transcribes Korean YouTube content via CLI** — output is good enough to read.
+2. **Daniel dictates Korean text** via the GUI hotkey — text appears, accepts the latency.
+3. **Daniel records a Korean meeting** and the post-recording transcription is usable.
 
-Secondary signals (4–8 weeks post-ship, nice-to-have):
+If all three work for Daniel on real Korean content, the feature ships and is a success regardless of broader uptake.
 
-- WhisperKit `--engine whisper` invocation rate non-zero in opt-in telemetry — proves the option is reachable for users beyond Daniel
+Secondary signals (4–8 weeks post-ship, gravy):
+- Non-zero opt-in usage of Whisper toggle / CLI flag — proves the option is reachable for users beyond Daniel
 - ≤1 P0 issue on the Whisper path in first month
-- Argmax issue tracker: zero new MacParakeet-specific bug reports
-- Anyone else publishing a "macparakeet-cli for non-English transcription" writeup is gravy
+- Anyone publishing a "MacParakeet for Korean (or other) transcription" writeup
 
 Bad ship: Korean output is unusable in practice → reversal triggers fire toward Qwen3-ASR.
 
@@ -159,17 +204,19 @@ Bad ship: Korean output is unusable in practice → reversal triggers fire towar
 ### Internal
 - `Sources/CLI/CHANGELOG.md` — v1.2 envelope contract (do not break)
 - `plans/active/cli-as-canonical-parakeet-surface.md` — broader CLI positioning
-- `Sources/CLI/AudioFileConverter.swift` — produces 16 kHz mono Float32 WAV
+- `Sources/CLI/AudioFileConverter.swift` — produces 16 kHz mono Float32 WAV (used by both engines)
+- `Sources/MacParakeetCore/STT/STTRuntime.swift` — current Parakeet-only dispatch; gets a toggle-based switch in this PR
 
 ### External
 - `argmaxinc/argmax-oss-swift` — WhisperKit, pinned product at meta-package level
 - FluidAudio 0.14.1 — `TokenLanguageFilter.swift` `Language` enum (Latin/Cyrillic only); `AsrManager.swift` `tdtJa`/`tdtZh` paths
+- VoiceInk, Hex, Dictus — shipping examples of dual Parakeet + WhisperKit (single-process GUI architectures; informed our switch-statement-not-protocol decision)
 
-### Multi-LLM review (2026-04-27)
-3 Gemini + 3 Codex reviewers ran against the prior 774-line draft. Their HIGH/CRITICAL findings:
-- **FluidAudio CJK enum gap** (Codex 3) → reflected in language coverage table above
+### Multi-LLM review (2026-04-27, initial CLI-only scope)
+3 Gemini + 3 Codex reviewers ran against an earlier 774-line draft. Their HIGH/CRITICAL findings:
+- **FluidAudio CJK enum gap** (Codex 3) → reflected in language coverage table
 - **JSON envelope contract preservation** (Gemini 3) → no envelope changes in v1
-- **Cross-process ANE collision** (Gemini 1+2) → **rejected after self-audit:** the failure mode was extrapolated from iOS in-process behavior to a hypothetical macOS cross-process scenario. macOS has daemon mediation; no observed instances. Dropping the lock + the `STTRuntime` refactor + the `STTProvider` protocol that the lock necessitated.
-- **Operational discipline (retries, preflight, locks, telemetry coordination)** (Codex 1+2) → **deferred** as defensive engineering for unobserved risks; add when evidence shows need.
+- **Cross-process ANE collision** (Gemini 1+2) → rejected after self-audit; was extrapolation from iOS to macOS without observed evidence
+- **Operational discipline (retries, preflight, locks, telemetry coordination)** (Codex 1+2) → deferred as defensive engineering for unobserved risks
 
-The reviews surfaced real things the prior plan got wrong (FluidAudio enum, JSON envelope) and correctly identified theoretical risks. Folding every theoretical risk in turned a 4-day feature into a 4-week project. Ship the feature; iterate from telemetry.
+Strategy unchallenged: zero reviewers questioned Parakeet-default + Whisper-opt-in or WhisperKit-over-Qwen3.
