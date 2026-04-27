@@ -79,7 +79,9 @@ public actor STTRuntime: STTRuntimeProtocol {
 
         do {
             try Task.checkCancellation()
-            let result = try await manager.transcribe(audioURL)
+            let decoderLayers = await manager.decoderLayerCount
+            var decoderState = TdtDecoderState.make(decoderLayers: decoderLayers)
+            let result = try await manager.transcribe(audioURL, decoderState: &decoderState)
             let words = Self.mergeTokenTimingsIntoWords(result.tokenTimings)
             onProgress?(100, 100)
             return STTResult(text: result.text, words: words)
