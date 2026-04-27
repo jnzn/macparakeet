@@ -7,7 +7,7 @@ public enum MeetingRecordingLockState: String, Codable, Sendable, Equatable {
 }
 
 public struct MeetingRecordingLockFile: Codable, Sendable, Equatable {
-    /// Schema version is intentionally left at 1 in v0.8 because the `notes`
+    /// Schema version is intentionally left at 1 in v0.6 because the `notes`
     /// field is a backward-compatible additive change (`decodeIfPresent`).
     /// See ADR-020 §9. The version guard in `MeetingRecordingLockFileStore.read()`
     /// uses `<=` so a lock file written by an OLDER app version is still
