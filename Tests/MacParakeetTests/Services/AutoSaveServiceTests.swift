@@ -1,6 +1,31 @@
 import XCTest
 @testable import MacParakeetCore
 
+private final class AutoSaveTelemetrySpy: TelemetryServiceProtocol, @unchecked Sendable {
+    private let lock = NSLock()
+    private var events: [TelemetryEventSpec] = []
+
+    func send(_ event: TelemetryEventSpec) {
+        lock.lock()
+        events.append(event)
+        lock.unlock()
+    }
+
+    func sendAndFlush(_ event: TelemetryEventSpec) async -> Bool {
+        send(event)
+        return true
+    }
+
+    func flush() async {}
+    func flushForTermination() {}
+
+    func snapshot() -> [TelemetryEventSpec] {
+        lock.lock()
+        defer { lock.unlock() }
+        return events
+    }
+}
+
 @MainActor
 final class AutoSaveServiceTests: XCTestCase {
 
@@ -17,6 +42,7 @@ final class AutoSaveServiceTests: XCTestCase {
     }
 
     override func tearDown() {
+        Telemetry.configure(NoOpTelemetryService())
         try? FileManager.default.removeItem(at: tempDir)
         if let name = defaults.volatileDomainNames.first {
             defaults.removeVolatileDomain(forName: name)
@@ -250,6 +276,29 @@ final class AutoSaveServiceTests: XCTestCase {
         let service = makeService()
         // Should not crash; auto-save silently skips when folder is gone
         service.saveIfEnabled(makeTranscription())
+    }
+
+    func testDeletedFolderEmitsUnavailableOperation() {
+        let telemetry = AutoSaveTelemetrySpy()
+        Telemetry.configure(telemetry)
+        configureAutoSave(enabled: true, format: .txt)
+        try! FileManager.default.removeItem(at: tempDir)
+
+        let service = makeService()
+        service.saveIfEnabled(makeTranscription())
+
+        let operation = telemetry.snapshot().reversed().first {
+            if case .autoSaveOperation = $0 { return true }
+            return false
+        }
+        guard let operation,
+              case .autoSaveOperation(_, _, let scope, let format, let outcome, _, let errorType) = operation else {
+            return XCTFail("Expected auto_save_operation telemetry")
+        }
+        XCTAssertEqual(scope, .transcription)
+        XCTAssertEqual(format, .txt)
+        XCTAssertEqual(outcome, .unavailable)
+        XCTAssertEqual(errorType, "folder_unavailable")
     }
 
     func testFallsBackToMarkdownForInvalidStoredFormat() {

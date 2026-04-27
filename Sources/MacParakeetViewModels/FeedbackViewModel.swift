@@ -115,8 +115,7 @@ public final class FeedbackViewModel {
         submissionState = .submitting
         let trimmedMessage = message.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
-        let operationID = Observability.operationID()
-        let startedAt = Date()
+        let operationContext = Observability.childOperationContext()
 
         let payload = FeedbackPayload(
             category: category,
@@ -137,10 +136,11 @@ public final class FeedbackViewModel {
 
                 Telemetry.send(.feedbackSubmitted(category: payload.category.rawValue))
                 Telemetry.send(.feedbackOperation(
-                    operationID: operationID,
+                    operationID: operationContext.operationID,
+                    operationContext: operationContext,
                     category: payload.category.rawValue,
                     outcome: .success,
-                    durationSeconds: Observability.durationSeconds(since: startedAt),
+                    durationSeconds: Observability.durationSeconds(since: operationContext.startedAt),
                     screenshotAttached: payload.screenshotBase64 != nil,
                     systemInfoIncluded: true,
                     errorType: nil
@@ -158,10 +158,11 @@ public final class FeedbackViewModel {
             } catch {
                 guard !Task.isCancelled else { return }
                 Telemetry.send(.feedbackOperation(
-                    operationID: operationID,
+                    operationID: operationContext.operationID,
+                    operationContext: operationContext,
                     category: payload.category.rawValue,
                     outcome: .failure,
-                    durationSeconds: Observability.durationSeconds(since: startedAt),
+                    durationSeconds: Observability.durationSeconds(since: operationContext.startedAt),
                     screenshotAttached: payload.screenshotBase64 != nil,
                     systemInfoIncluded: true,
                     errorType: Observability.errorType(for: error)

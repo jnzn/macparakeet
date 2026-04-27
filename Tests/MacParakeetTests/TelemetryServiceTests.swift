@@ -445,6 +445,50 @@ final class TelemetryServiceTests: XCTestCase {
         XCTAssertNil(props["source_url"])
     }
 
+    func testOperationContextSerializesWorkflowParentAndStage() throws {
+        let context = ObservabilityOperationContext(
+            operationID: "op-meeting",
+            workflowID: "workflow-123",
+            parentOperationID: "op-cli",
+            startedAt: Date(timeIntervalSince1970: 0)
+        )
+        let event = TelemetryEvent(
+            spec: .meetingOperation(
+                operationID: context.operationID,
+                operationContext: context,
+                outcome: .failure,
+                trigger: .calendarAutoStart,
+                stage: .permissions,
+                durationSeconds: nil,
+                liveWordCount: nil,
+                liveTranscriptLagged: nil,
+                microphoneTrackPresent: nil,
+                systemTrackPresent: nil,
+                notesUsed: nil,
+                notesLengthBucket: nil,
+                errorType: "permission_denied"
+            ),
+            appVer: "0.4.2",
+            osVer: "15.3",
+            locale: "en-US",
+            chip: "Apple M1",
+            session: "test-session"
+        )
+
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let data = try encoder.encode(event)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let props = try XCTUnwrap(json["props"] as? [String: String])
+
+        XCTAssertEqual(json["event"] as? String, "meeting_operation")
+        XCTAssertEqual(props["operation_id"], "op-meeting")
+        XCTAssertEqual(props["workflow_id"], "workflow-123")
+        XCTAssertEqual(props["parent_operation_id"], "op-cli")
+        XCTAssertEqual(props["stage"], "permissions")
+        XCTAssertEqual(props["error_type"], "permission_denied")
+    }
+
     func testDictationOperationDoesNotSerializeDeviceNameOrUID() throws {
         let device = RecordingDeviceInfo(
             deviceName: "Alice's Custom Microphone",

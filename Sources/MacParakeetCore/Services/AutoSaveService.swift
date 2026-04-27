@@ -76,15 +76,23 @@ public final class AutoSaveService {
     /// Failures are logged but never surfaced to the user.
     public func saveIfEnabled(_ transcription: Transcription, scope: AutoSaveScope = .transcription) {
         guard defaults.bool(forKey: scope.enabledKey) else { return }
+        let format = AutoSaveFormat(rawValue: defaults.string(forKey: scope.formatKey) ?? "md") ?? .md
+        let operationContext = Observability.childOperationContext()
         guard let folderURL = resolveFolder(scope: scope) else {
             logger.warning("Auto-save enabled but no valid folder configured for \(scope.rawValue).")
+            Telemetry.send(.autoSaveOperation(
+                operationID: operationContext.operationID,
+                operationContext: operationContext,
+                scope: scope,
+                format: format,
+                outcome: .unavailable,
+                durationSeconds: Observability.durationSeconds(since: operationContext.startedAt),
+                errorType: "folder_unavailable"
+            ))
             return
         }
 
-        let format = AutoSaveFormat(rawValue: defaults.string(forKey: scope.formatKey) ?? "md") ?? .md
         let fileURL = buildFileURL(for: transcription, format: format, in: folderURL)
-        let operationID = Observability.operationID()
-        let startedAt = Date()
 
         do {
             // Ensure the folder still exists
@@ -100,21 +108,23 @@ public final class AutoSaveService {
 
             logger.info("Auto-saved \(scope.rawValue) transcript to \(fileURL.lastPathComponent)")
             Telemetry.send(.autoSaveOperation(
-                operationID: operationID,
+                operationID: operationContext.operationID,
+                operationContext: operationContext,
                 scope: scope,
                 format: format,
                 outcome: .success,
-                durationSeconds: Observability.durationSeconds(since: startedAt),
+                durationSeconds: Observability.durationSeconds(since: operationContext.startedAt),
                 errorType: nil
             ))
         } catch {
             logger.error("Auto-save failed for \(scope.rawValue): \(error.localizedDescription)")
             Telemetry.send(.autoSaveOperation(
-                operationID: operationID,
+                operationID: operationContext.operationID,
+                operationContext: operationContext,
                 scope: scope,
                 format: format,
                 outcome: .failure,
-                durationSeconds: Observability.durationSeconds(since: startedAt),
+                durationSeconds: Observability.durationSeconds(since: operationContext.startedAt),
                 errorType: Observability.errorType(for: error)
             ))
         }
