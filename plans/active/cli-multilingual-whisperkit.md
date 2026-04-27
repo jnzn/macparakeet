@@ -38,7 +38,7 @@ Without auto-routing, the architecture doesn't depend on this claim. But we stil
 
 ### Test protocol
 
-Multi-condition corpus per language (Japanese, Mandarin, Korean):
+Multi-condition corpus per language (Japanese, Mandarin only — Korean is not in Parakeet's supported set per FluidAudio README; testing it would burn hours for a row that's already locked to "use whisper"):
 
 1. Clean broadcast — news clip — 2 min
 2. Conversational — podcast/interview — 2 min
@@ -199,7 +199,7 @@ User chooses; CLI obeys.
 | Default (English / European audio) | `transcribe file.wav` | Parakeet, fast |
 | Non-European audio | `transcribe file.wav --engine whisper` | WhisperKit, slower, 99 languages |
 | Force language to Whisper | `transcribe file.wav --engine whisper --language ko` | WhisperKit forced to Korean |
-| Force language to Parakeet | `transcribe file.wav --engine parakeet --language ja` | **REJECTED — exit code 7.** Parakeet is auto-only (per Hex's settings UI). `--language` is only valid with `--engine whisper`. Error message tells user how to fix. |
+| Force language to Parakeet | `transcribe file.wav --engine parakeet --language ja` | **Soft-accept.** If FluidAudio 0.14.1's `AsrManager.transcribe()` accepts a language hint, pass it through. If it does not, the flag is silently ignored (Parakeet is auto-only); when `--include-metadata` is set, surface `"language_hint_ignored": true` in the metadata wrapper so callers can audit. **Never exit non-zero on this combination** — agents that pass `--language` uniformly across engines must keep working. |
 
 **Why no auto-routing:** detecting language at runtime is real product complexity (multi-point sampling vs first-30s, VAD-aware vs fixed offsets, confidence weighting, drift handling). All of it is speculative without agent-operator demand signal. Defer to v0.8+ when there's actual evidence users want auto-detection.
 
@@ -215,8 +215,8 @@ WhisperKit issues #352, #410, #198 are real production hang reports. Agents that
 
 **Implementation:**
 
-- `--timeout <seconds>` flag (default 600 = 10 min). Hard SIGTERM at expiry; exit code 6.
-- Internal progress watchdog: if no progress event from the engine for N seconds (default N=60), emit structured timeout error and exit. Exit code 6.
+- `--timeout <seconds>` flag. **Default: 0 (disabled, opt-in only.)** Hard SIGTERM at expiry; exit code 6. The hard timeout is opt-in because legitimate transcribes can run for hours (multi-hour batch jobs, unattended overnight runs); defaulting to a hard ceiling silently kills real work.
+- Internal progress watchdog: if no progress event from the engine for N seconds (default N=60), emit structured timeout error and exit. Exit code 6. **This is the always-on safety net** — it catches genuine engine hangs without killing long-but-progressing transcribes.
 - All temp files cleaned up on signal-driven exit (RAII pattern from Handy).
 - JSON envelope on hang exit:
   ```json
@@ -235,7 +235,7 @@ WhisperKit issues #352, #410, #198 are real production hang reports. Agents that
 | 4 | Cancelled (SIGINT/SIGTERM from caller) |
 | 5 | Model verification failed (SHA256 mismatch) |
 | 6 | Engine hang / timeout |
-| 7 | Invalid argument combination (e.g., `--language` with `--engine parakeet`) |
+| 7 | Invalid argument combination (genuinely malformed input — e.g., unknown engine name. **Not** used for `--language` with `--engine parakeet`, which is soft-accepted.) |
 
 ### JSON envelope additions (gated behind `--include-metadata`)
 
@@ -272,9 +272,9 @@ macparakeet-cli transcribe <input> [options]
 
   --engine [parakeet|whisper]     Default: parakeet
   --model <variant>                Override default model for chosen engine
-  --language <bcp47>               (Whisper only) force decode language. Rejected with --engine parakeet.
+  --language <bcp47>               Force decode language. Honored by Whisper; soft-accepted (or ignored) by Parakeet — never errors.
   --word-timestamps                Word-level timing in output
-  --timeout <seconds>              Watchdog (default: 600)
+  --timeout <seconds>              Hard timeout, default 0 (disabled). Internal no-progress watchdog (60s) is always on.
   --include-metadata               Add metadata wrapper to --json output
   --json                           Machine-readable output (required for agents)
 
@@ -432,16 +432,22 @@ Phase 1 file plan (suggested layout; coding agent can adjust):
 - New: `Sources/MacParakeetCore/STT/ParakeetProvider.swift` — wraps existing `AsrManager` plumbing; conforms to `STTProvider`
 - Refactor: `Sources/MacParakeetCore/STT/STTRuntime.swift` — becomes a thin consumer of `ParakeetProvider`, OR `STTRuntime` itself conforms to `STTProvider` directly. Either is fine; pick whichever requires fewer call-site changes elsewhere in the codebase.
 
-### "Parakeet TDT v3 is auto-only" — verify before Phase 1
+### "Parakeet TDT v3 + `--language`" — settle once FluidAudio 0.14.1 lands
 
-The plan's `--engine parakeet --language ja` → exit 7 rule is based on third-party signal (Hex's settings UI). Verify against actual FluidAudio 0.14.1 API before locking it in:
+The behavior is now soft-accept regardless (the exit-7 rule was retired). The remaining question is whether the language hint is **passed through** or **silently ignored** when `--engine parakeet --language X` is used. Once FluidAudio 0.14.1 is on `main` (PR pending):
 
-1. Open `AsrManager.swift` in the resolved FluidAudio package after `swift package resolve` — typically at `.build/checkouts/FluidAudio/Sources/FluidAudio/Asr/AsrManager.swift` or similar.
+1. Open `AsrManager.swift` in the resolved FluidAudio package — typically at `.build/checkouts/FluidAudio/Sources/FluidAudio/Asr/AsrManager.swift`.
 2. Check `transcribe()` signature: does it accept a `language:` parameter or `decodingOptions` containing one?
-3. **If yes:** delete the `--language with --engine parakeet → exit 7` rule. Pass the hint through to FluidAudio.
-4. **If no:** rule stands as written.
+3. **If yes:** plumb the hint through to FluidAudio.
+4. **If no:** ignore the hint silently. When `--include-metadata` is set, surface `"language_hint_ignored": true` so callers can audit.
 
-Either outcome is acceptable; the goal is to not enforce a fictional restriction.
+In neither case does the CLI exit non-zero on this combination.
+
+### CLI bypasses `STTScheduler` (ADR-016)
+
+ADR-016's `STTScheduler` is process-internal: reserved dictation slot + shared meeting/batch slot, both inside the GUI's `STTRuntime`. The CLI is a **separate process** invoked per transcribe call — it does not (and cannot) compose with the GUI's scheduler. Each CLI invocation owns one provider for the lifetime of that process; on exit, ANE state is evicted by the OS.
+
+A coding agent should **not** wire `WhisperKitProvider` through `STTScheduler` — that abstraction is for in-process slot arbitration that doesn't apply here.
 
 ### WhisperKit valid model identifiers
 
@@ -482,7 +488,7 @@ Per-code `details` payloads:
 | `cancelled` | 4 | `{ "signal": "SIGINT" \| "SIGTERM" }` |
 | `verification_failed` | 5 | `{ "model": "<variant>", "expected_sha256": "...", "actual_sha256": "..." }` |
 | `engine_hang` | 6 | `{ "engine": "...", "stalled_for_seconds": 60, "last_progress_pct": 0.42 }` |
-| `argument_invalid` | 7 | `{ "argument": "<flag-name>", "value": "<value>", "reason": "..." }` |
+| `argument_invalid` | 7 | `{ "argument": "<flag-name>", "value": "<value>", "reason": "..." }` — for genuinely malformed input (unknown engine name, non-numeric `--timeout`, etc). **Not** raised for `--language` + `--engine parakeet`, which is soft-accepted. |
 
 The shape is a **public contract** under semver — never remove or rename fields; only add. Schema-lock test in Phase 3 covers this.
 
@@ -518,13 +524,19 @@ The shape is a **public contract** under semver — never remove or rename field
 
 - [ ] CLI flags per § "CLI flag set"
 - [ ] `--engine` parsing + dispatch to registry
-- [ ] `--language` validation: reject with exit code 7 when paired with `--engine parakeet`
+- [ ] `--language` soft-accept: pass through to Whisper; pass through (or silently ignore + flag in metadata) for Parakeet per Pre-Phase-1 verification. Never exit non-zero on `--language` + `--engine parakeet`.
 - [ ] `--include-metadata` opt-in for JSON metadata wrapper
-- [ ] `--timeout` watchdog with hang detection (exit code 6)
+- [ ] `--timeout` hard-timeout flag (default 0, disabled); always-on no-progress watchdog (60s default) emits exit code 6
 - [ ] `engines list` subcommand
 - [ ] JSON envelope: byte-identical v1.2 by default; metadata wrapper only with `--include-metadata`
-- [ ] Schema-lock tests: golden-file test that `--json` (no flag) output is byte-identical to v1.2 across every documented scenario
-- [ ] Exit codes 0/2/3/4/5/6/7 fully wired with structured error envelopes
+- [ ] Schema-lock tests — six golden files, one per scenario:
+  - clean WAV success (exit 0)
+  - missing model (exit 2, `model_missing`)
+  - corrupt audio (exit 3, `audio_invalid`)
+  - SIGINT mid-transcribe (exit 4, `cancelled`)
+  - watchdog stall (exit 6, `engine_hang`)
+  - genuinely invalid argument, e.g. unknown engine name (exit 7, `argument_invalid`)
+- [ ] Exit codes 0/2/3/4/6/7 fully wired with structured error envelopes (5 wired only when SHA256 verify subcommand actually runs)
 
 ### Phase 4 — Documentation + integration (~2 days)
 
@@ -616,7 +628,7 @@ When any trigger fires, integrate as a **third** engine (don't replace WhisperKi
 | WhisperKit thread-safety bugs in production | Low (mature codebase but tracked) | Medium | Actor pattern around progress, instance reuse, periodic reset |
 | WhisperKit becomes deprecated / acquired-and-killed | Very low | High | Provider abstraction makes swap cheap; mlx-qwen3-asr is fallback |
 | Adding a second engine bloats CLI binary | Low | Medium | Measure pre/post; if bad, gate WhisperKit at a separate brew formula |
-| Watchdog kills legitimate long transcriptions | Low | Low | `--timeout` opt-in extension; default 10 min covers most cases |
+| Watchdog kills legitimate long transcriptions | Low | Medium | Hard `--timeout` defaults to 0 (disabled); always-on no-progress watchdog (60s) catches hangs without ceiling-killing valid long jobs |
 
 ---
 
