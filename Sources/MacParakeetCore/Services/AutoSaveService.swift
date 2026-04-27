@@ -80,15 +80,13 @@ public final class AutoSaveService {
         let operationContext = Observability.childOperationContext()
         guard let folderURL = resolveFolder(scope: scope) else {
             logger.warning("Auto-save enabled but no valid folder configured for \(scope.rawValue).")
-            Telemetry.send(.autoSaveOperation(
-                operationID: operationContext.operationID,
+            sendAutoSaveOperation(
                 operationContext: operationContext,
                 scope: scope,
                 format: format,
                 outcome: .unavailable,
-                durationSeconds: Observability.durationSeconds(since: operationContext.startedAt),
                 errorType: "folder_unavailable"
-            ))
+            )
             return
         }
 
@@ -107,26 +105,21 @@ public final class AutoSaveService {
             }
 
             logger.info("Auto-saved \(scope.rawValue) transcript to \(fileURL.lastPathComponent)")
-            Telemetry.send(.autoSaveOperation(
-                operationID: operationContext.operationID,
+            sendAutoSaveOperation(
                 operationContext: operationContext,
                 scope: scope,
                 format: format,
-                outcome: .success,
-                durationSeconds: Observability.durationSeconds(since: operationContext.startedAt),
-                errorType: nil
-            ))
+                outcome: .success
+            )
         } catch {
             logger.error("Auto-save failed for \(scope.rawValue): \(error.localizedDescription)")
-            Telemetry.send(.autoSaveOperation(
-                operationID: operationContext.operationID,
+            sendAutoSaveOperation(
                 operationContext: operationContext,
                 scope: scope,
                 format: format,
                 outcome: .failure,
-                durationSeconds: Observability.durationSeconds(since: operationContext.startedAt),
                 errorType: Observability.errorType(for: error)
-            ))
+            )
         }
     }
 
@@ -164,6 +157,24 @@ public final class AutoSaveService {
               let value = defaults.object(forKey: sourceKey)
         else { return }
         defaults.set(value, forKey: destinationKey)
+    }
+
+    private func sendAutoSaveOperation(
+        operationContext: ObservabilityOperationContext,
+        scope: AutoSaveScope,
+        format: AutoSaveFormat,
+        outcome: ObservabilityOutcome,
+        errorType: String? = nil
+    ) {
+        Telemetry.send(.autoSaveOperation(
+            operationID: operationContext.operationID,
+            operationContext: operationContext,
+            scope: scope,
+            format: format,
+            outcome: outcome,
+            durationSeconds: Observability.durationSeconds(since: operationContext.startedAt),
+            errorType: errorType
+        ))
     }
 
     /// Store a folder URL as bookmark data. Returns the display path on success.

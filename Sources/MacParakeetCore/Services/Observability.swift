@@ -63,13 +63,12 @@ public enum Observability {
 
     public static func operationContext(operationID: String, startedAt: Date) -> ObservabilityOperationContext {
         if let currentOperationContext {
-            if currentOperationContext.operationID == operationID {
-                return currentOperationContext
-            }
             return ObservabilityOperationContext(
                 operationID: operationID,
                 workflowID: currentOperationContext.workflowID,
-                parentOperationID: currentOperationContext.operationID,
+                parentOperationID: currentOperationContext.operationID == operationID
+                    ? currentOperationContext.parentOperationID
+                    : currentOperationContext.operationID,
                 startedAt: startedAt
             )
         }
