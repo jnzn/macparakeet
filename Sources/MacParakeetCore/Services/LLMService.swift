@@ -497,7 +497,7 @@ public final class LLMService: LLMServiceProtocol, Sendable {
                             inputChars: transcript.count,
                             promptDefaultUsed: promptDefaultUsed,
                             messageCount: 2,
-                            errorType: Self.errorType(for: error)
+                            errorType: Self.operationErrorType(for: error)
                         )
                         throw error
                     }
@@ -538,7 +538,7 @@ public final class LLMService: LLMServiceProtocol, Sendable {
                             errorType: Self.errorType(for: error)
                         ))
                     }
-                    if provider != "unknown" || error is CancellationError {
+                    if provider != "unknown" {
                         self.sendLLMOperation(
                             operationID: operationID,
                             feature: "prompt_result",
@@ -584,7 +584,7 @@ public final class LLMService: LLMServiceProtocol, Sendable {
                             startedAt: startedAt,
                             inputChars: question.count + transcript.count,
                             messageCount: messageCount,
-                            errorType: Self.errorType(for: error)
+                            errorType: Self.operationErrorType(for: error)
                         )
                         throw error
                     }
@@ -619,7 +619,7 @@ public final class LLMService: LLMServiceProtocol, Sendable {
                             errorType: Self.errorType(for: error)
                         ))
                     }
-                    if provider != "unknown" || error is CancellationError {
+                    if provider != "unknown" {
                         self.sendLLMOperation(
                             operationID: operationID,
                             feature: "chat",
@@ -663,7 +663,7 @@ public final class LLMService: LLMServiceProtocol, Sendable {
                             startedAt: startedAt,
                             inputChars: text.count + prompt.count,
                             messageCount: 2,
-                            errorType: Self.errorType(for: error)
+                            errorType: Self.operationErrorType(for: error)
                         )
                         throw error
                     }
@@ -703,7 +703,7 @@ public final class LLMService: LLMServiceProtocol, Sendable {
                             errorType: Self.errorType(for: error)
                         ))
                     }
-                    if provider != "unknown" || error is CancellationError {
+                    if provider != "unknown" {
                         self.sendLLMOperation(
                             operationID: operationID,
                             feature: "transform",
@@ -756,7 +756,7 @@ public final class LLMService: LLMServiceProtocol, Sendable {
                 inputChars: inputChars,
                 promptDefaultUsed: promptDefaultUsed,
                 messageCount: messageCount,
-                errorType: Self.errorType(for: error)
+                errorType: Self.operationErrorType(for: error)
             )
             throw error
         }
@@ -799,7 +799,14 @@ public final class LLMService: LLMServiceProtocol, Sendable {
         TelemetryErrorClassifier.classify(error)
     }
 
+    private static func operationErrorType(for error: Error) -> String? {
+        error is CancellationError ? nil : errorType(for: error)
+    }
+
     private static func outcomeForLLMSetupError(_ error: Error) -> ObservabilityOutcome {
+        if error is CancellationError {
+            return .cancelled
+        }
         if let llmError = error as? LLMError, case .notConfigured = llmError {
             return .unavailable
         }
