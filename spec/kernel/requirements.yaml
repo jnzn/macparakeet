@@ -205,3 +205,25 @@ REQ-MEET-006:
   description: Meeting source audio is written as fragmented MP4 so crash-interrupted recordings remain playable up to the last fragment
   version: v0.6
   status: implemented
+
+# --- v0.7 Multilingual Speech Recognition ---
+
+REQ-STT-002:
+  description: WhisperKit is available as a second speech recognition engine while Parakeet remains the default
+  version: v0.7
+  status: implemented
+
+REQ-STT-003:
+  description: GUI speech recognition settings persist the selected engine and Whisper default language, and refuse unsafe switches while speech work or a meeting session is active
+  version: v0.7
+  status: implemented
+
+REQ-TRANS-002:
+  description: CLI file and URL transcription support per-invocation Parakeet or Whisper engine selection, optional Whisper language hints, and additive detected-language output
+  version: cli-1.3.0
+  status: implemented
+
+REQ-MEET-007:
+  description: Meeting recordings capture the active speech engine and Whisper language at recording start for live preview, metadata, crash recovery, and final transcription
+  version: v0.7
+  status: implemented

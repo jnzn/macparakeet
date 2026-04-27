@@ -72,6 +72,13 @@ yt-dlp). Use this before issuing real work.
 macparakeet-cli transcribe /path/to/audio.mp3 --format json
 ```
 
+Parakeet is the default engine. Use Whisper per invocation for Korean or other
+non-Parakeet languages:
+
+```bash
+macparakeet-cli transcribe /path/to/korean.mp3 --engine whisper --language ko --format json
+```
+
 ### Transcribe a YouTube video
 
 ```bash
@@ -194,6 +201,7 @@ FFmpeg, yt-dlp, or the database are ready.
 
 ```bash
 macparakeet-cli transcribe "<path-or-youtube-url>" --format json
+macparakeet-cli transcribe "<path-or-youtube-url>" --engine whisper --language ko --format json
 macparakeet-cli history transcriptions --json
 macparakeet-cli history search-transcriptions "<query>" --json
 macparakeet-cli history search "<query>" --json

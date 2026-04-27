@@ -62,6 +62,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         let microphoneAudioURL: URL
         let systemAudioURL: URL
         let mixedAudioURL: URL
+        let speechEngine: SpeechEngineSelection
     }
 
     private let logger = Logger(subsystem: "com.macparakeet.core", category: "MeetingRecordingService")
@@ -72,6 +73,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
     private let requestedMicProcessingMode: MeetingMicProcessingMode
     private let liveChunkTranscriber: LiveChunkTranscriber
     private let lockFileStore: MeetingRecordingLockFileStoring
+    private let speechEngineSessionManager: (any SpeechEngineSessionManaging)?
 
     private var currentSession: Session?
     /// In-flight notes text for the current session. Mutated by `updateNotes`
@@ -88,6 +90,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
     /// `startRecording`, mutated by state transitions, cleared in
     /// `cleanupState` / `cancelRecording`.
     private var currentLockFile: MeetingRecordingLockFile?
+    private var currentSpeechEngineLease: SpeechEngineLease?
     /// Keeps replacement starts out while `audioCaptureService.start()` is still
     /// unwinding after cancellation. `currentSession` may already be nil then.
     private var startingSessionID: UUID?
@@ -136,6 +139,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         self.lockFileStore = lockFileStore
         self.fileManager = fileManager
         self.liveChunkTranscriber = LiveChunkTranscriber(sttTranscriber: sttTranscriber)
+        self.speechEngineSessionManager = sttTranscriber as? any SpeechEngineSessionManaging
     }
 
     public var isRecording: Bool {
@@ -189,6 +193,9 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         // the clock ticked over a minute boundary between them, which is
         // vanishingly rare but trivially avoidable.
         let now = Date()
+        let speechEngineLease = await speechEngineSessionManager?.beginSpeechEngineSession()
+        currentSpeechEngineLease = speechEngineLease
+        let speechEngine = speechEngineLease?.selection ?? SpeechEngineSelection.current()
         let session = Session(
             id: sessionID,
             displayName: Self.resolveDisplayName(title: title, fallbackDate: now),
@@ -197,7 +204,8 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             chunkFolderURL: chunkFolderURL,
             microphoneAudioURL: writer.microphoneAudioURL,
             systemAudioURL: writer.systemAudioURL,
-            mixedAudioURL: writer.mixedAudioURL
+            mixedAudioURL: writer.mixedAudioURL,
+            speechEngine: speechEngine
         )
         startingSessionID = session.id
         defer {
@@ -214,6 +222,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
                 startedAt: session.startedAt,
                 pid: ProcessInfo.processInfo.processIdentifier,
                 displayName: session.displayName,
+                speechEngine: session.speechEngine,
                 folderURL: session.folderURL
             )
             try lockFileStore.write(initialLock, folderURL: session.folderURL)
@@ -221,6 +230,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         } catch {
             self.writer = nil
             await finalizeWriter(writer)
+            await releaseSpeechEngineLease()
             cleanupState()
             try? fileManager.removeItem(at: folderURL)
             throw error
@@ -269,6 +279,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             let writer = self.writer
             self.writer = nil
             await finalizeWriter(writer)
+            await releaseSpeechEngineLease()
             cleanupState()
             try? lockFileStore.delete(folderURL: folderURL)
             try? fileManager.removeItem(at: folderURL)
@@ -317,6 +328,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         guard !inputURLs.isEmpty else {
             await liveChunkTranscriber.finishSession()
             try? lockFileStore.delete(folderURL: session.folderURL)
+            await releaseSpeechEngineLease()
             cleanupState()
             try? fileManager.removeItem(at: session.folderURL)
             throw MeetingAudioError.noAudioCaptured
@@ -328,11 +340,15 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         )
         do {
             try MeetingRecordingMetadataStore.save(
-                MeetingRecordingMetadata(sourceAlignment: sourceAlignment),
+                MeetingRecordingMetadata(
+                    sourceAlignment: sourceAlignment,
+                    speechEngine: session.speechEngine
+                ),
                 folderURL: session.folderURL
             )
         } catch {
             await liveChunkTranscriber.finishSession()
+            await releaseSpeechEngineLease()
             cleanupState()
             throw MeetingAudioError.storageFailed(error.localizedDescription)
         }
@@ -341,6 +357,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             try await audioConverter.mixToM4A(inputURLs: inputURLs, outputURL: session.mixedAudioURL)
         } catch {
             await liveChunkTranscriber.finishSession()
+            await releaseSpeechEngineLease()
             cleanupState()
             throw MeetingAudioError.mixFailed(error.localizedDescription)
         }
@@ -351,6 +368,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             startedAt: session.startedAt,
             pid: ProcessInfo.processInfo.processIdentifier,
             displayName: session.displayName,
+            speechEngine: session.speechEngine,
             folderURL: session.folderURL
         ))
             .withNotes(finalNotes)
@@ -368,10 +386,12 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             systemAudioURL: session.systemAudioURL,
             durationSeconds: durationSeconds,
             sourceAlignment: sourceAlignment,
+            speechEngine: session.speechEngine,
             userNotes: finalNotes
         )
 
         await liveChunkTranscriber.finishSession()
+        await releaseSpeechEngineLease()
         cleanupState()
         logger.info("Meeting recording finalized: \(session.id.uuidString, privacy: .public)")
         return output
@@ -408,6 +428,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             startedAt: session.startedAt,
             pid: ProcessInfo.processInfo.processIdentifier,
             displayName: session.displayName,
+            speechEngine: session.speechEngine,
             folderURL: session.folderURL
         )
         let updated = base.withNotes(normalized)
@@ -434,9 +455,16 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         writer = nil
         await finalizeWriter(finalizedWriter)
         try? lockFileStore.delete(folderURL: session.folderURL)
+        await releaseSpeechEngineLease()
         cleanupState()
         try? fileManager.removeItem(at: session.folderURL)
         logger.info("Meeting recording cancelled: \(session.id.uuidString, privacy: .public)")
+    }
+
+    private func releaseSpeechEngineLease() async {
+        guard let lease = currentSpeechEngineLease else { return }
+        currentSpeechEngineLease = nil
+        await speechEngineSessionManager?.endSpeechEngineSession(lease)
     }
 
     private func finalizeWriter(_ writer: MeetingAudioStorageWriter?) async {

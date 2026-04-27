@@ -766,17 +766,75 @@ struct SettingsView: View {
 
     private var localModelsCard: some View {
         settingsCard(
-            title: "Speech Model",
-            subtitle: "Parakeet powers all speech recognition on your Mac.",
+            title: "Speech Recognition",
+            subtitle: "Parakeet is fastest. Whisper adds Korean and broader multilingual coverage.",
             icon: "cpu"
         ) {
-            modelStatusRow(
-                title: "Parakeet (Speech)",
-                detail: viewModel.parakeetStatusDetail,
-                status: viewModel.parakeetStatus,
-                isRepairing: viewModel.parakeetRepairing
-            ) {
-                viewModel.repairParakeetModel()
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+                HStack(alignment: .center) {
+                    rowText(
+                        title: "Engine",
+                        detail: viewModel.speechEngineSwitching
+                            ? "Switching speech engine..."
+                            : "Used by dictation, file transcription, and meetings."
+                    )
+                    Spacer(minLength: DesignSystem.Spacing.md)
+                    Picker("Speech Engine", selection: $viewModel.speechEnginePreference) {
+                        Text("Parakeet").tag(SpeechEnginePreference.parakeet)
+                        Text("Whisper").tag(SpeechEnginePreference.whisper)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 220)
+                    .disabled(viewModel.speechEngineSwitching)
+                }
+
+                if let error = viewModel.speechEngineError {
+                    Text(error)
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(DesignSystem.Colors.errorRed)
+                }
+
+                HStack(alignment: .center) {
+                    rowText(
+                        title: "Whisper language",
+                        detail: "Only used when Whisper is active. Auto-detect works for most files."
+                    )
+                    Spacer(minLength: DesignSystem.Spacing.md)
+                    Picker("Whisper language", selection: $viewModel.whisperDefaultLanguage) {
+                        Text("Auto").tag("auto")
+                        Text("English").tag("en")
+                        Text("Korean").tag("ko")
+                        Text("Japanese").tag("ja")
+                        Text("Mandarin").tag("zh")
+                    }
+                    .labelsHidden()
+                    .frame(width: 160)
+                    .disabled(viewModel.speechEnginePreference != .whisper)
+                }
+
+                Divider()
+
+                modelStatusRow(
+                    title: "Parakeet",
+                    detail: viewModel.parakeetStatusDetail,
+                    status: viewModel.parakeetStatus,
+                    isRepairing: viewModel.parakeetRepairing,
+                    actionLabel: "Repair"
+                ) {
+                    viewModel.repairParakeetModel()
+                }
+
+                Divider()
+
+                modelStatusRow(
+                    title: "Whisper",
+                    detail: viewModel.whisperModelStatusDetail,
+                    status: viewModel.whisperModelStatus,
+                    isRepairing: viewModel.whisperDownloading,
+                    actionLabel: viewModel.isWhisperModelDownloaded ? "Downloaded" : "Download"
+                ) {
+                    viewModel.downloadWhisperModel()
+                }
             }
         }
     }
@@ -1079,6 +1137,7 @@ struct SettingsView: View {
         detail: String,
         status: SettingsViewModel.LocalModelStatus,
         isRepairing: Bool,
+        actionLabel: String = "Repair",
         onRepair: @escaping () -> Void
     ) -> some View {
         HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
@@ -1094,11 +1153,11 @@ struct SettingsView: View {
 
             modelStatusPill(status)
 
-            Button(isRepairing ? "Repairing..." : "Repair") {
+            Button(isRepairing ? "Working..." : actionLabel) {
                 onRepair()
             }
             .buttonStyle(.bordered)
-            .disabled(isRepairing)
+            .disabled(isRepairing || actionLabel == "Downloaded")
         }
     }
 

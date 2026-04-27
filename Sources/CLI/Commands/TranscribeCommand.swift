@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import MacParakeetCore
+import os
 
 enum TranscribeMode: String, ExpressibleByArgument {
     case raw
@@ -19,6 +20,11 @@ enum TranscribeOutputFormat: String, ExpressibleByArgument, CaseIterable, Sendab
     case json
 }
 
+enum TranscribeSpeechEngine: String, ExpressibleByArgument, CaseIterable, Sendable {
+    case parakeet
+    case whisper
+}
+
 struct TranscribeCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "transcribe",
@@ -33,6 +39,12 @@ struct TranscribeCommand: AsyncParsableCommand {
 
     @Option(help: "Processing mode: raw, clean, app-default.")
     var mode: TranscribeMode = .appDefault
+
+    @Option(help: "Speech engine: parakeet, whisper.")
+    var engine: TranscribeSpeechEngine = .parakeet
+
+    @Option(help: "Language hint for Whisper, as a BCP-47/language code such as ko or en. Parakeet ignores this flag.")
+    var language: String?
 
     @Option(help: "Downloaded YouTube audio retention: app-default, keep, delete.")
     var downloadedAudio: DownloadedAudioPolicy = .appDefault
@@ -68,6 +80,7 @@ struct TranscribeCommand: AsyncParsableCommand {
             : (Observability.inputKind(for: URL(fileURLWithPath: trimmedInput)) ?? .unknown)
 
         var sttClient: STTClient?
+        var whisperEngine: WhisperEngine?
         let runResult: Result<Void, Error>
         do {
             try await Observability.withOperationContext(cliOperationContext) {
@@ -76,8 +89,17 @@ struct TranscribeCommand: AsyncParsableCommand {
                 let transcriptionRepo = TranscriptionRepository(dbQueue: dbManager.dbQueue)
                 let customWordRepo = CustomWordRepository(dbQueue: dbManager.dbQueue)
                 let snippetRepo = TextSnippetRepository(dbQueue: dbManager.dbQueue)
-                let createdSTTClient = STTClient()
-                sttClient = createdSTTClient
+                let sttTranscriber: STTTranscribing
+                switch engine {
+                case .parakeet:
+                    let createdSTTClient = STTClient()
+                    sttClient = createdSTTClient
+                    sttTranscriber = createdSTTClient
+                case .whisper:
+                    let createdWhisperEngine = WhisperEngine(language: language)
+                    whisperEngine = createdWhisperEngine
+                    sttTranscriber = createdWhisperEngine
+                }
                 let audioProcessor = AudioProcessor()
                 let youtubeDownloader = YouTubeDownloader()
                 let entitlementsService = enforceEntitlements ? makeEntitlementsService() : nil
@@ -90,7 +112,7 @@ struct TranscribeCommand: AsyncParsableCommand {
                 let diarizationService: DiarizationService? = noDiarize ? nil : DiarizationService()
                 let service = TranscriptionService(
                     audioProcessor: audioProcessor,
-                    sttTranscriber: createdSTTClient,
+                    sttTranscriber: sttTranscriber,
                     transcriptionRepo: transcriptionRepo,
                     entitlements: entitlementsService,
                     customWordRepo: customWordRepo,
@@ -117,13 +139,25 @@ struct TranscribeCommand: AsyncParsableCommand {
                 let result: Transcription
 
                 if YouTubeURLValidator.isYouTubeURL(trimmedInput) {
+                    let lastProgressLine = OSAllocatedUnfairLock(initialState: "")
+                    @Sendable func printProgressLine(_ line: String) {
+                        let shouldPrint = lastProgressLine.withLock { lastLine in
+                            guard lastLine != line else { return false }
+                            lastLine = line
+                            return true
+                        }
+                        if shouldPrint {
+                            printErr(line)
+                        }
+                    }
+
                     result = try await service.transcribeURL(urlString: trimmedInput) { progress in
                         switch progress {
-                        case .converting: printErr("Converting audio...")
-                        case .downloading(let pct): printErr("Downloading audio... \(pct)%")
-                        case .transcribing(let pct): printErr("Transcribing... \(pct)%")
-                        case .identifyingSpeakers: printErr("Identifying speakers...")
-                        case .finalizing: printErr("Finalizing...")
+                        case .converting: printProgressLine("Converting audio...")
+                        case .downloading(let pct): printProgressLine("Downloading audio... \(pct)%")
+                        case .transcribing(let pct): printProgressLine("Transcribing... \(pct)%")
+                        case .identifyingSpeakers: printProgressLine("Identifying speakers...")
+                        case .finalizing: printProgressLine("Finalizing...")
                         }
                     }
                 } else {
@@ -138,7 +172,7 @@ struct TranscribeCommand: AsyncParsableCommand {
                         throw CLIError.unsupportedFormat(ext)
                     }
 
-                    printErr("Transcribing \(url.lastPathComponent)...")
+                    printErr("Transcribing \(url.lastPathComponent) with \(engine.rawValue)...")
                     result = try await service.transcribe(fileURL: url)
                 }
 
@@ -155,6 +189,7 @@ struct TranscribeCommand: AsyncParsableCommand {
         }
 
         await sttClient?.shutdown()
+        await whisperEngine?.unload()
         let cliOutcome: ObservabilityOutcome
         let exitCode: Int
         let errorType: String?

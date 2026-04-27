@@ -22,6 +22,17 @@ final class ModelLifecycleCommandTests: XCTestCase {
         XCTAssertEqual(command.repairAttempts, 6)
     }
 
+    func testResolveWhisperDownloadModelRequiresWhisperPrefix() throws {
+        XCTAssertEqual(
+            try resolveWhisperDownloadModel("whisper-large-v3-v20240930-turbo-632MB"),
+            "large-v3-v20240930_turbo_632MB"
+        )
+
+        XCTAssertThrowsError(try resolveWhisperDownloadModel("parakeet-v3")) { error in
+            XCTAssertTrue(error is ValidationError)
+        }
+    }
+
     func testWarmUpRetriesConfiguredAttempts() async {
         let stt = StubSTTClient()
         let diarization = StubDiarizationService()

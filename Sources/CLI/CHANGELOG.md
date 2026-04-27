@@ -81,6 +81,15 @@ by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
 
 ### Added
 
+- `transcribe` accepts `--engine parakeet|whisper` (default `parakeet`) and
+  `--language <code>` for Whisper language hints. The `--engine` flag is
+  per-invocation and does not mutate the GUI's Speech Recognition setting.
+- `transcribe --format json` may include an optional top-level `language`
+  field on successful output when the active engine detects or confirms a
+  language. This is additive; existing fields and defaults are unchanged.
+- `models download <variant>` recognizes Whisper model identifiers such as
+  `whisper-large-v3-v20240930-turbo-632MB` and stores them under MacParakeet's
+  Whisper model cache.
 - `meetings` command namespace for deterministic, local meeting objects:
   `meetings list`, `meetings show`, `meetings transcript`,
   `meetings notes get|set|append|clear`, and `meetings export`.

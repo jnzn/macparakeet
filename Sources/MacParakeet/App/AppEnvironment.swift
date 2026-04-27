@@ -53,7 +53,10 @@ final class AppEnvironment {
             runtimePreferences.selectedMicrophoneDeviceUID
         }
 
-        sttRuntime = STTRuntime()
+        sttRuntime = STTRuntime(
+            speechEngine: SpeechEnginePreference.current(),
+            whisperModelVariant: SpeechEnginePreference.whisperModelVariant()
+        )
         sttScheduler = STTScheduler(runtime: sttRuntime)
         audioProcessor = AudioProcessor(
             selectedInputDeviceUIDProvider: selectedInputDeviceUIDProvider

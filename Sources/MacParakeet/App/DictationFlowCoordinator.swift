@@ -314,12 +314,21 @@ final class DictationFlowCoordinator {
                 overlayController = controller
             }
             vm.recordingMode = mode
+            vm.processingMessage = nil
+            vm.busyProcessingMessage = nil
             vm.state = .recording
             vm.startTimer()
 
         case .showProcessingState:
             overlayViewModel?.stopTimer()
+            overlayViewModel?.processingMessage = settingsViewModel.speechEnginePreference == .whisper
+                ? "Transcribing..."
+                : nil
+            overlayViewModel?.busyProcessingMessage = nil
             overlayViewModel?.state = .processing
+
+        case .showBusyProcessingHint:
+            overlayViewModel?.showBusyProcessingHint()
 
         case .showCancelCountdown:
             overlayViewModel?.stopTimer()

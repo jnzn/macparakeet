@@ -525,6 +525,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
 
             transcription.rawTranscript = finalized.rawTranscript
             transcription.wordTimestamps = finalized.words
+            transcription.language = Self.commonDetectedLanguage(from: sourceResults) ?? transcription.language
             transcription.durationMs = max(
                 Int((recording.durationSeconds * 1000).rounded()),
                 finalized.durationMs ?? 0
@@ -625,9 +626,10 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
 
             lifecycleStage = .stt
             onProgress?(.transcribing(percent: Int((Double(index) / Double(max(activeSources.count, 1))) * 100)))
-            let result = try await sttTranscriber.transcribe(
+            let result = try await transcribeSpeech(
                 audioPath: wavURL.path,
                 job: .meetingFinalize,
+                speechEngine: recording.speechEngine,
                 onProgress: meetingSourceProgressMapper(
                     sourceIndex: index,
                     sourceCount: activeSources.count,
@@ -732,6 +734,29 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         }
     }
 
+    private func transcribeSpeech(
+        audioPath: String,
+        job: STTJobKind,
+        speechEngine: SpeechEngineSelection?,
+        onProgress: (@Sendable (Int, Int) -> Void)?
+    ) async throws -> STTResult {
+        if let speechEngine,
+           let routed = sttTranscriber as? any SpeechEngineRoutedTranscribing {
+            return try await routed.transcribe(
+                audioPath: audioPath,
+                job: job,
+                speechEngine: speechEngine,
+                onProgress: onProgress
+            )
+        }
+
+        return try await sttTranscriber.transcribe(
+            audioPath: audioPath,
+            job: job,
+            onProgress: onProgress
+        )
+    }
+
     private func transcribeAudio(
         fileURL: URL,
         source: TelemetryTranscriptionSource,
@@ -763,9 +788,10 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                     callback(.transcribing(percent: min(pct, 99)))
                 }
             }
-            let result = try await sttTranscriber.transcribe(
+            let result = try await transcribeSpeech(
                 audioPath: wavURL.path,
                 job: sttJob,
+                speechEngine: nil,
                 onProgress: sttProgress
             )
 
@@ -780,7 +806,8 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
 
             transcription.rawTranscript = result.text
             transcription.wordTimestamps = words
-            transcription.durationMs = result.words.last?.endMs
+            transcription.language = result.language ?? transcription.language
+            transcription.durationMs = words.map(\.endMs).max()
 
             let diarizationApplied: Bool
             if let diarizationService, shouldDiarize() {
@@ -916,6 +943,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         transcription.rawTranscript = nil
         transcription.cleanTranscript = nil
         transcription.wordTimestamps = nil
+        transcription.language = nil
         transcription.speakerCount = nil
         transcription.speakers = nil
         transcription.diarizationSegments = nil
@@ -925,6 +953,15 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         transcription.isTranscriptEdited = false
         transcription.updatedAt = Date()
         return transcription
+    }
+
+    private static func commonDetectedLanguage(
+        from sourceResults: [MeetingTranscriptFinalizer.SourceTranscript]
+    ) -> String? {
+        let languages = Set(sourceResults.compactMap { source in
+            source.result.language?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        }.filter { !$0.isEmpty })
+        return languages.count == 1 ? languages.first : nil
     }
 
     private func completeTranscription(

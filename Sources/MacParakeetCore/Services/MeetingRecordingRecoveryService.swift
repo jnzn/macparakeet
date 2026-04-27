@@ -180,7 +180,10 @@ public final class MeetingRecordingRecoveryService: MeetingRecordingRecoveryServ
 
         let sourceAlignment = makeRecoveredAlignment(from: recoveredSources)
         try MeetingRecordingMetadataStore.save(
-            MeetingRecordingMetadata(sourceAlignment: sourceAlignment),
+            MeetingRecordingMetadata(
+                sourceAlignment: sourceAlignment,
+                speechEngine: lock.speechEngine
+            ),
             folderURL: folderURL
         )
 
@@ -210,7 +213,9 @@ public final class MeetingRecordingRecoveryService: MeetingRecordingRecoveryServ
             microphoneAudioURL: microphoneURL,
             systemAudioURL: systemURL,
             durationSeconds: duration,
-            sourceAlignment: sourceAlignment
+            sourceAlignment: sourceAlignment,
+            speechEngine: lock.speechEngine,
+            userNotes: lock.notes
         )
 
         do {
