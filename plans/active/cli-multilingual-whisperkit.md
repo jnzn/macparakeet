@@ -40,39 +40,19 @@ The CLI and GUI today already use parallel STT wrappers around `AsrManager` (`ST
 
 ---
 
-## Pre-work — Parakeet CJK quality test (informational, not blocking)
+## Language coverage (user-facing doc copy)
 
-The FluidAudio 0.12.4 README states:
+Parakeet TDT v3 is the high-quality default for languages it supports. Whisper is the escape hatch for everything else. **We are not benchmarking Parakeet's CJK quality before ship** — users decide whether Parakeet's output is adequate for their audio, and switch to Whisper if not. User owns the call.
 
-> "Parakeet TDT v3 (0.6b) and other TDT/CTC models for batch transcription supporting 25 European languages, Japanese, and Chinese"
+The CLI help text and `integrations/README.md` carry this table verbatim:
 
-Without auto-routing, the architecture doesn't depend on this claim. But we still need to know **what to tell users in the docs.** If Parakeet handles Japanese well, "use the default for Japanese audio" is reasonable advice. If it doesn't, docs say "Japanese requires `--engine whisper`."
+| If your audio is… | Use | Notes |
+|---|---|---|
+| English or one of the 25 European languages Parakeet supports | **Parakeet (default)** | Fastest, highest quality on Apple Silicon. Just `transcribe file.wav`. |
+| Japanese or Mandarin | **Parakeet** first; switch to Whisper if quality isn't adequate | Parakeet officially supports both per FluidAudio README; we have no opinion on quality vs Whisper. |
+| Korean, or any other language | **Whisper** | Pass `--engine whisper`. Whisper supports 99 languages. |
 
-### Test protocol
-
-Multi-condition corpus per language (Japanese, Mandarin only — Korean is not in Parakeet's supported set per FluidAudio README; testing it would burn hours for a row that's already locked to "use whisper"):
-
-1. Clean broadcast — news clip — 2 min
-2. Conversational — podcast/interview — 2 min
-3. Meeting-quality — Zoom recording (low bitrate AAC) — 2 min
-4. Noisy — overlay 10 dB SNR background noise — 2 min
-5. Code-switching — English preamble + content — 2 min
-
-Use **Common Voice** (Mozilla, CC-0) and **FLEURS** (Google, CC-BY-4.0) — freely redistributable, unlike NHK/CCTV broadcast clips.
-
-Compute WER against published reference transcripts.
-
-### Output
-
-A documentation table — not a routing decision matrix:
-
-| Language | Parakeet WER (clean) | Parakeet WER (noisy) | Recommendation in user docs |
-|---|---|---|---|
-| ja | TBD | TBD | TBD after test |
-| zh | TBD | TBD | TBD after test |
-| ko | n/a | n/a | Always use `--engine whisper` |
-
-This goes in `integrations/README.md` and the `/agents` page on macparakeet.com.
+No quantitative WER claims. No "auto-routing" — the user picks.
 
 ---
 
@@ -486,12 +466,6 @@ The shape is a **public contract** under semver — never remove or rename field
 
 ## PR 1 implementation phases (v0.7)
 
-### Phase 0 — Pre-work (informational)
-
-- [ ] Run Parakeet CJK quality test (§ "Pre-work" above) — Japanese + Mandarin only
-- [ ] Capture results in `docs/audits/parakeet-cjk-coverage-2026-XX.md`
-- [ ] Use results to write the language coverage table in user docs
-
 ### Phase 1 — WhisperKit wrapper
 
 - [ ] **Spike** — half-day audit of `argmaxinc/argmax-oss-swift` for Swift 6 `Sendable` gaps (§ Pre-Phase-1)
@@ -526,7 +500,7 @@ The shape is a **public contract** under semver — never remove or rename field
 
 ### Phase 3 — Documentation + integration
 
-- [ ] Update `integrations/README.md` with engine-selection section + language coverage table from Phase 0
+- [ ] Update `integrations/README.md` with engine-selection section + the "Language coverage" table verbatim from this plan
 - [ ] **New section in `integrations/README.md`:** "Running CLI alongside the desktop app" — document the cross-process ANE risk; what to do if `cli_warmup_failed` events appear in telemetry
 - [ ] Update `Sources/CLI/CHANGELOG.md` for 1.3.0
 - [ ] Update `AGENTS.md` if needed
@@ -575,7 +549,7 @@ Triggered if telemetry or P0 reports show ANE specialization crashes when CLI ru
 - **Multilingual via mlx-qwen3-asr** — see reversal triggers; v0.8+.
 - **Cloud STT providers** — Deepgram, AssemblyAI, OpenAI Whisper API. ADR-002 says no. Maybe v1.0 if signal.
 - **Diarization for WhisperKit** — Argmax has SpeakerKit; we have FluidAudio diarization on Parakeet. Don't unify yet.
-- **GUI multilingual UX** — even after PR 2 makes the GUI multi-engine-capable, the surfacing of language choice in the GUI (engine picker, language picker, etc.) is a separate plan/PR. v0.8+.
+- **GUI multilingual UX** — even after PR 2 makes the GUI multi-engine-capable, surfacing engine choice in the GUI is a separate plan/PR. Expected shape: a "Use Whisper for languages outside Parakeet's range" toggle in Settings (defaulted off; user-driven, not auto). Would let GUI file transcription handle Korean YouTube downloads, Korean uploaded audio, etc. v0.8+.
 - **Model auto-update** — no Sparkle-equivalent for STT models. User pulls explicitly.
 - **`--language ja,ko,en` (multiple)** — anarlog pattern. Defer until single-language is solid.
 
@@ -622,7 +596,7 @@ When any trigger fires, integrate as a **third** engine (don't replace WhisperKi
 
 ## Open decisions
 
-- [ ] **Default Whisper variant** — `large-v3-v20240930_626MB` (accuracy) or `large-v3-v20240930_turbo_632MB` (speed). Lean turbo. Revisit after Phase 0 results.
+- [ ] **Default Whisper variant** — `large-v3-v20240930_626MB` (accuracy) or `large-v3-v20240930_turbo_632MB` (speed). Lean turbo — agent operators care more about throughput than the marginal accuracy gain at this model size.
 - [ ] **Agent operator beta** — ship to a small group before ClawHub/awesome-hermes-agent registry promotion? Recommend yes; need to pick the group.
 - [ ] **Model bundle path** — `models/whisper/` or `models/stt/whisper/`? Current Parakeet at `models/stt/`. Lean toward `models/stt/whisper/` for symmetry.
 - [ ] **Cross-process ANE lock policy** — ship PR 1 without it (current plan) or include it day-one as one-sided CLI `flock`? Current call: ship without; instrument; fast-follow if needed. Reverse if pre-ship testing shows reliable repro of E5 crash with GUI active.
@@ -646,7 +620,6 @@ When any trigger fires, integrate as a **third** engine (don't replace WhisperKi
 ## Sequencing relative to other work
 
 - **v0.6.0** ships first (meeting recording stable). No multilingual work touches v0.6.
-- **v0.6.x soak time** — run Parakeet CJK quality test; capture results for docs.
 - **v0.7** — **PR 1 only** (CLI multilingual via new CLI-local `WhisperEngine`). GUI's `STTRuntime` untouched. CLI 1.3.0.
 - **v0.7.x** — PR 1.5 if cross-process ANE crashes appear. Idle-unload watcher.
 - **v0.7.x or v0.8** — **PR 2** (STT abstraction unification). Separate plan, no user-visible behavior change. GUI becomes multi-engine-capable as a side effect, but no GUI multilingual UX in this PR.
