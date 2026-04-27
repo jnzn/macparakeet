@@ -244,13 +244,8 @@ public actor DictationService: DictationServiceProtocol {
             logger.debug(
                 "stopRecording capture stopped session=\(currentSession) url=\(audioURL.path, privacy: .public)"
             )
-            let result: DictationResult
-            if let operationContext = currentObservabilityOperationContext {
-                result = try await Observability.withOperationContext(operationContext) {
-                    try await processCapturedAudio(audioURL: audioURL)
-                }
-            } else {
-                result = try await processCapturedAudio(audioURL: audioURL)
+            let result = try await withCurrentObservabilityContextIfAny {
+                try await processCapturedAudio(audioURL: audioURL)
             }
             // Guard against reentrancy: a new session may have started during
             // transcription, replacing this session. Don't overwrite its state.
@@ -404,13 +399,8 @@ public actor DictationService: DictationServiceProtocol {
 
         _state = .processing
         do {
-            let result: DictationResult
-            if let operationContext = currentObservabilityOperationContext {
-                result = try await Observability.withOperationContext(operationContext) {
-                    try await processCapturedAudio(audioURL: audioURL)
-                }
-            } else {
-                result = try await processCapturedAudio(audioURL: audioURL)
+            let result = try await withCurrentObservabilityContextIfAny {
+                try await processCapturedAudio(audioURL: audioURL)
             }
             let device = await audioProcessor.recordingDeviceInfo
             _state = .success(result.dictation)
@@ -471,6 +461,17 @@ public actor DictationService: DictationServiceProtocol {
             try? FileManager.default.removeItem(at: url)
         }
         pendingCancelledAudioURL = nil
+    }
+
+    private func withCurrentObservabilityContextIfAny<T>(
+        _ operation: () async throws -> T
+    ) async rethrows -> T {
+        guard let operationContext = currentObservabilityOperationContext else {
+            return try await operation()
+        }
+        return try await Observability.withOperationContext(operationContext) {
+            try await operation()
+        }
     }
 
     private func processCapturedAudio(audioURL: URL) async throws -> DictationResult {

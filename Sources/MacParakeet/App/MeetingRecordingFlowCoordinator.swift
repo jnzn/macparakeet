@@ -99,7 +99,7 @@ final class MeetingRecordingFlowCoordinator {
         switch stateMachine.state {
         case .idle:
             pendingTrigger = pendingTrigger ?? trigger
-            currentMeetingOperationContext = currentMeetingOperationContext ?? ObservabilityOperationContext()
+            currentMeetingOperationContext = ObservabilityOperationContext()
             sendEvent(.startRequested)
         case .recording, .starting, .stopping:
             sendEvent(.stopRequested)
@@ -342,31 +342,16 @@ final class MeetingRecordingFlowCoordinator {
             let liveWordCount = panelViewModel?.wordCount ?? 0
             let liveTranscriptLagged = panelViewModel?.isTranscriptionLagging ?? false
             let notesVM = panelViewModel?.notesViewModel
-            let operationContext = currentMeetingOperationContext
+            let operationContext = currentMeetingOperationContext ?? ObservabilityOperationContext()
+            currentMeetingOperationContext = operationContext
             actionTask = Task { @MainActor in
                 var stoppedOutput: MeetingRecordingOutput?
                 var transcriptionFinished = false
                 do {
-                    let transcription: Transcription
-                    if let operationContext {
-                        transcription = try await Observability.withOperationContext(operationContext) {
-                            // Flush any keystrokes typed in the last < 250 ms so
-                            // they make it onto the lock file and into the saved
-                            // Transcription.userNotes (ADR-020 §8).
-                            await notesVM?.commit()
-                            let output = try await meetingRecordingService.stopRecording()
-                            stoppedOutput = output
-                            Telemetry.send(.meetingRecordingCompleted(
-                                durationSeconds: output.durationSeconds,
-                                liveWordCount: liveWordCount,
-                                liveTranscriptLagged: liveTranscriptLagged
-                            ))
-                            let transcription = try await transcriptionService.transcribeMeeting(recording: output, onProgress: nil)
-                            transcriptionFinished = true
-                            await meetingRecordingService.completeTranscription(for: output)
-                            return transcription
-                        }
-                    } else {
+                    let transcription = try await Observability.withOperationContext(operationContext) {
+                        // Flush any keystrokes typed in the last < 250 ms so
+                        // they make it onto the lock file and into the saved
+                        // Transcription.userNotes (ADR-020 §8).
                         await notesVM?.commit()
                         let output = try await meetingRecordingService.stopRecording()
                         stoppedOutput = output
@@ -375,9 +360,10 @@ final class MeetingRecordingFlowCoordinator {
                             liveWordCount: liveWordCount,
                             liveTranscriptLagged: liveTranscriptLagged
                         ))
-                        transcription = try await transcriptionService.transcribeMeeting(recording: output, onProgress: nil)
+                        let transcription = try await transcriptionService.transcribeMeeting(recording: output, onProgress: nil)
                         transcriptionFinished = true
                         await meetingRecordingService.completeTranscription(for: output)
+                        return transcription
                     }
                     self.sendMeetingOperation(
                         outcome: .success,

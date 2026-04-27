@@ -174,20 +174,10 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         )
 
         return try await Observability.withOperationContext(operation.operationContext) {
-            do {
-                if let entitlements {
-                    try await entitlements.assertCanTranscribe(now: Date())
-                }
-            } catch {
-                sendTranscriptionOperation(
-                    operation,
-                    outcome: .unavailable,
-                    stage: .preflight,
-                    audioDurationSeconds: recording.durationSeconds,
-                    errorType: Self.errorType(for: error)
-                )
-                throw error
-            }
+            try await assertCanTranscribeOrEmitPreflight(
+                operation,
+                audioDurationSeconds: recording.durationSeconds
+            )
 
             var transcription = Transcription(
                 fileName: recording.displayName,
@@ -240,19 +230,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         )
 
         return try await Observability.withOperationContext(operation.operationContext) {
-            do {
-                if let entitlements {
-                    try await entitlements.assertCanTranscribe(now: Date())
-                }
-            } catch {
-                sendTranscriptionOperation(
-                    operation,
-                    outcome: .unavailable,
-                    stage: .preflight,
-                    errorType: Self.errorType(for: error)
-                )
-                throw error
-            }
+            try await assertCanTranscribeOrEmitPreflight(operation)
 
             Telemetry.send(.transcriptionStarted(source: source, audioDurationSeconds: nil))
 
@@ -286,20 +264,10 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         )
 
         return try await Observability.withOperationContext(operation.operationContext) {
-            do {
-                if let entitlements {
-                    try await entitlements.assertCanTranscribe(now: Date())
-                }
-            } catch {
-                sendTranscriptionOperation(
-                    operation,
-                    outcome: .unavailable,
-                    stage: .preflight,
-                    audioDurationSeconds: recording.durationSeconds,
-                    errorType: Self.errorType(for: error)
-                )
-                throw error
-            }
+            try await assertCanTranscribeOrEmitPreflight(
+                operation,
+                audioDurationSeconds: recording.durationSeconds
+            )
 
             Telemetry.send(.transcriptionStarted(
                 source: .meeting,
@@ -337,19 +305,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         )
 
         return try await Observability.withOperationContext(operation.operationContext) {
-            do {
-                if let entitlements {
-                    try await entitlements.assertCanTranscribe(now: Date())
-                }
-            } catch {
-                sendTranscriptionOperation(
-                    operation,
-                    outcome: .unavailable,
-                    stage: .preflight,
-                    errorType: Self.errorType(for: error)
-                )
-                throw error
-            }
+            try await assertCanTranscribeOrEmitPreflight(operation)
 
             var transcription = Transcription(
                 fileName: fileName,
@@ -416,19 +372,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                 throw YouTubeDownloadError.ytDlpNotFound
             }
 
-            do {
-                if let entitlements {
-                    try await entitlements.assertCanTranscribe(now: Date())
-                }
-            } catch {
-                sendTranscriptionOperation(
-                    operation,
-                    outcome: .unavailable,
-                    stage: .preflight,
-                    errorType: Self.errorType(for: error)
-                )
-                throw error
-            }
+            try await assertCanTranscribeOrEmitPreflight(operation)
 
             let downloadResult: YouTubeDownloader.DownloadResult
             do {
@@ -1092,6 +1036,26 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         TelemetryErrorClassifier.classify(error)
     }
 
+    private func assertCanTranscribeOrEmitPreflight(
+        _ operation: TranscriptionOperationContext,
+        audioDurationSeconds: Double? = nil
+    ) async throws {
+        do {
+            if let entitlements {
+                try await entitlements.assertCanTranscribe(now: Date())
+            }
+        } catch {
+            sendTranscriptionOperation(
+                operation,
+                outcome: .unavailable,
+                stage: .preflight,
+                audioDurationSeconds: audioDurationSeconds,
+                errorType: Self.errorType(for: error)
+            )
+            throw error
+        }
+    }
+
     private func sendTranscriptionOperation(
         _ operation: TranscriptionOperationContext,
         outcome: ObservabilityOutcome,
@@ -1112,7 +1076,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             stage: stage,
             durationSeconds: Observability.durationSeconds(since: operation.operationContext.startedAt),
             audioDurationSeconds: audioDurationSeconds,
-            processingSeconds: processingSeconds ?? Observability.durationSeconds(since: operation.operationContext.startedAt),
+            processingSeconds: processingSeconds,
             wordCount: wordCount,
             speakerCount: speakerCount,
             diarizationRequested: diarizationRequested,
