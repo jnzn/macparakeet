@@ -63,6 +63,30 @@ extension TranscriptionServiceProtocol {
     }
 }
 
+private struct TranscriptionOperationContext: Sendable {
+    let operationID: String
+    let source: TelemetryTranscriptionSource
+    let inputKind: ObservabilityInputKind?
+    let mediaExtension: String?
+    let fileSizeBucket: String?
+    let startedAt: Date
+
+    init(
+        source: TelemetryTranscriptionSource,
+        inputKind: ObservabilityInputKind?,
+        mediaExtension: String?,
+        fileSizeBucket: String?,
+        startedAt: Date = Date()
+    ) {
+        self.operationID = Observability.operationID()
+        self.source = source
+        self.inputKind = inputKind
+        self.mediaExtension = mediaExtension
+        self.fileSizeBucket = fileSizeBucket
+        self.startedAt = startedAt
+    }
+}
+
 public actor TranscriptionService: TranscriptionServiceProtocol {
     private let logger = Logger(subsystem: "com.macparakeet.core", category: "TranscriptionService")
     private let audioProcessor: AudioProcessorProtocol
@@ -148,6 +172,12 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
 
         let fileSize = (try? FileManager.default.attributesOfItem(atPath: recording.mixedAudioURL.path)[.size] as? Int)
             .flatMap { $0 }
+        let operation = TranscriptionOperationContext(
+            source: .meeting,
+            inputKind: .meeting,
+            mediaExtension: Observability.mediaExtension(for: recording.mixedAudioURL),
+            fileSizeBucket: Observability.fileSizeBucket(bytes: fileSize)
+        )
 
         var transcription = Transcription(
             fileName: recording.displayName,
@@ -166,6 +196,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         return try await transcribeMeetingAudio(
             recording: recording,
             transcription: &transcription,
+            operation: operation,
             onProgress: onProgress
         )
     }
@@ -183,6 +214,12 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         var transcription = makeRetranscriptionRecord(from: original)
         transcription.fileSizeBytes = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? Int)
             .flatMap { $0 } ?? original.fileSizeBytes
+        let operation = TranscriptionOperationContext(
+            source: source,
+            inputKind: Observability.inputKind(for: fileURL),
+            mediaExtension: Observability.mediaExtension(for: fileURL),
+            fileSizeBucket: Observability.fileSizeBucket(bytes: transcription.fileSizeBytes)
+        )
 
         Telemetry.send(.transcriptionStarted(source: source, audioDurationSeconds: nil))
 
@@ -191,6 +228,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             source: source,
             sttJob: .fileTranscription,
             transcription: &transcription,
+            operation: operation,
             tempFiles: [],
             persistFailureStatus: false,
             onProgress: onProgress
@@ -210,6 +248,12 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         transcription.fileSizeBytes = (try? FileManager.default.attributesOfItem(atPath: recording.mixedAudioURL.path)[.size] as? Int)
             .flatMap { $0 } ?? original.fileSizeBytes
         transcription.userNotes = original.userNotes ?? recording.userNotes
+        let operation = TranscriptionOperationContext(
+            source: .meeting,
+            inputKind: .meeting,
+            mediaExtension: Observability.mediaExtension(for: recording.mixedAudioURL),
+            fileSizeBucket: Observability.fileSizeBucket(bytes: transcription.fileSizeBytes)
+        )
 
         Telemetry.send(.transcriptionStarted(
             source: .meeting,
@@ -219,6 +263,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         return try await transcribeMeetingAudio(
             recording: recording,
             transcription: &transcription,
+            operation: operation,
             persistFailureStatus: false,
             onProgress: onProgress
         )
@@ -241,6 +286,12 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         let fileSize = storedFileURL.flatMap {
             (try? FileManager.default.attributesOfItem(atPath: $0.path)[.size] as? Int).flatMap { $0 }
         }
+        let operation = TranscriptionOperationContext(
+            source: source,
+            inputKind: source == .youtube ? .youtube : Observability.inputKind(for: fileURL),
+            mediaExtension: Observability.mediaExtension(for: fileURL),
+            fileSizeBucket: Observability.fileSizeBucket(bytes: fileSize)
+        )
 
         var transcription = Transcription(
             fileName: fileName,
@@ -271,13 +322,27 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             source: source,
             sttJob: sttJob,
             transcription: &transcription,
+            operation: operation,
             tempFiles: [],
             onProgress: onProgress
         )
     }
 
     public func transcribeURL(urlString: String, onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil) async throws -> Transcription {
+        let operation = TranscriptionOperationContext(
+            source: .youtube,
+            inputKind: .youtube,
+            mediaExtension: nil,
+            fileSizeBucket: nil
+        )
+
         guard let downloader = youtubeDownloader else {
+            sendTranscriptionOperation(
+                operation,
+                outcome: .unavailable,
+                stage: .download,
+                errorType: Self.errorType(for: YouTubeDownloadError.ytDlpNotFound)
+            )
             throw YouTubeDownloadError.ytDlpNotFound
         }
 
@@ -298,6 +363,11 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                     audioDurationSeconds: nil,
                     stage: .download
                 ))
+                sendTranscriptionOperation(
+                    operation,
+                    outcome: .cancelled,
+                    stage: .download
+                )
             } else {
                 Telemetry.send(.transcriptionFailed(
                     source: .youtube,
@@ -305,6 +375,12 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                     errorType: Self.errorType(for: error),
                     errorDetail: TelemetryErrorClassifier.errorDetail(error)
                 ))
+                sendTranscriptionOperation(
+                    operation,
+                    outcome: .failure,
+                    stage: .download,
+                    errorType: Self.errorType(for: error)
+                )
             }
             throw error
         }
@@ -317,6 +393,12 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                 audioDurationSeconds: downloadResult.durationSeconds.map(Double.init),
                 stage: .download
             ))
+            sendTranscriptionOperation(
+                operation,
+                outcome: .cancelled,
+                stage: .download,
+                audioDurationSeconds: downloadResult.durationSeconds.map(Double.init)
+            )
             throw error
         }
         let keepDownloadedAudio = shouldKeepDownloadedAudio()
@@ -356,6 +438,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             source: .youtube,
             sttJob: .fileTranscription,
             transcription: &transcription,
+            operation: operation,
             tempFiles: [downloadResult.audioFileURL],
             cleanUpDownloadedFiles: !keepDownloadedAudio,
             onProgress: onProgress
@@ -367,6 +450,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
     private func transcribeMeetingAudio(
         recording: MeetingRecordingOutput,
         transcription: inout Transcription,
+        operation: TranscriptionOperationContext,
         persistFailureStatus: Bool = true,
         onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
     ) async throws -> Transcription {
@@ -417,6 +501,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             let completed = try await completeTranscription(
                 source: .meeting,
                 transcription: &transcription,
+                operation: operation,
                 rawText: finalized.rawTranscript,
                 processingStartedAt: processingStartedAt,
                 diarizationRequested: diarizationRequested,
@@ -432,6 +517,13 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                     audioDurationSeconds: audioDurationSeconds,
                     stage: lifecycleStage
                 ))
+                sendTranscriptionOperation(
+                    operation,
+                    outcome: .cancelled,
+                    stage: lifecycleStage,
+                    audioDurationSeconds: audioDurationSeconds,
+                    diarizationRequested: diarizationRequested
+                )
             } else {
                 Telemetry.send(.transcriptionFailed(
                     source: .meeting,
@@ -439,6 +531,14 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                     errorType: Self.errorType(for: error),
                     errorDetail: TelemetryErrorClassifier.errorDetail(error)
                 ))
+                sendTranscriptionOperation(
+                    operation,
+                    outcome: .failure,
+                    stage: lifecycleStage,
+                    audioDurationSeconds: audioDurationSeconds,
+                    diarizationRequested: diarizationRequested,
+                    errorType: Self.errorType(for: error)
+                )
             }
 
             if persistFailureStatus {
@@ -601,6 +701,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         source: TelemetryTranscriptionSource,
         sttJob: STTJobKind,
         transcription: inout Transcription,
+        operation: TranscriptionOperationContext,
         tempFiles: [URL],
         cleanUpDownloadedFiles: Bool = true,
         persistFailureStatus: Bool = true,
@@ -691,6 +792,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             let completed = try await completeTranscription(
                 source: source,
                 transcription: &transcription,
+                operation: operation,
                 rawText: result.text,
                 processingStartedAt: processingStartedAt,
                 diarizationRequested: diarizationRequested,
@@ -720,6 +822,13 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                     audioDurationSeconds: audioDurationSeconds,
                     stage: lifecycleStage
                 ))
+                sendTranscriptionOperation(
+                    operation,
+                    outcome: .cancelled,
+                    stage: lifecycleStage,
+                    audioDurationSeconds: audioDurationSeconds,
+                    diarizationRequested: diarizationRequested
+                )
             } else {
                 Telemetry.send(.transcriptionFailed(
                     source: source,
@@ -727,6 +836,14 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                     errorType: Self.errorType(for: error),
                     errorDetail: TelemetryErrorClassifier.errorDetail(error)
                 ))
+                sendTranscriptionOperation(
+                    operation,
+                    outcome: .failure,
+                    stage: lifecycleStage,
+                    audioDurationSeconds: audioDurationSeconds,
+                    diarizationRequested: diarizationRequested,
+                    errorType: Self.errorType(for: error)
+                )
             }
 
             if persistFailureStatus {
@@ -777,6 +894,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
     private func completeTranscription(
         source: TelemetryTranscriptionSource,
         transcription: inout Transcription,
+        operation: TranscriptionOperationContext,
         rawText: String,
         processingStartedAt: Date,
         diarizationRequested: Bool,
@@ -823,6 +941,17 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             diarizationRequested: diarizationRequested,
             diarizationApplied: diarizationApplied
         ))
+        sendTranscriptionOperation(
+            operation,
+            outcome: .success,
+            stage: .postProcessing,
+            audioDurationSeconds: audioDurationSeconds,
+            processingSeconds: processingSeconds,
+            wordCount: wordCount,
+            speakerCount: transcription.speakerCount,
+            diarizationRequested: diarizationRequested,
+            diarizationApplied: diarizationApplied
+        )
 
         return transcription
     }
@@ -869,6 +998,37 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
 
     private static func errorType(for error: Error) -> String {
         TelemetryErrorClassifier.classify(error)
+    }
+
+    private func sendTranscriptionOperation(
+        _ operation: TranscriptionOperationContext,
+        outcome: ObservabilityOutcome,
+        stage: TelemetryTranscriptionStage?,
+        audioDurationSeconds: Double? = nil,
+        processingSeconds: Double? = nil,
+        wordCount: Int? = nil,
+        speakerCount: Int? = nil,
+        diarizationRequested: Bool = false,
+        diarizationApplied: Bool = false,
+        errorType: String? = nil
+    ) {
+        Telemetry.send(.transcriptionOperation(
+            operationID: operation.operationID,
+            outcome: outcome,
+            source: operation.source,
+            stage: stage,
+            durationSeconds: Observability.durationSeconds(since: operation.startedAt),
+            audioDurationSeconds: audioDurationSeconds,
+            processingSeconds: processingSeconds ?? Observability.durationSeconds(since: operation.startedAt),
+            wordCount: wordCount,
+            speakerCount: speakerCount,
+            diarizationRequested: diarizationRequested,
+            diarizationApplied: diarizationApplied,
+            inputKind: operation.inputKind,
+            mediaExtension: operation.mediaExtension,
+            fileSizeBucket: operation.fileSizeBucket,
+            errorType: errorType
+        ))
     }
 
     private static let videoExtensions: Set<String> = ["mp4", "mov", "mkv", "avi", "webm", "m4v", "flv", "wmv"]

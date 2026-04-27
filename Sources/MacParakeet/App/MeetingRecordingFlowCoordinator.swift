@@ -36,6 +36,8 @@ final class MeetingRecordingFlowCoordinator {
     private var pillPollingTask: Task<Void, Never>?
     private var transcriptObservationTask: Task<Void, Never>?
     private var completedTranscription: Transcription?
+    private var currentMeetingOperationID: String?
+    private var currentMeetingTrigger: TelemetryMeetingRecordingTrigger?
 
     init(
         meetingRecordingService: MeetingRecordingServiceProtocol,
@@ -81,8 +83,8 @@ final class MeetingRecordingFlowCoordinator {
     /// Pre-set title for the *next* `.startRecording` effect. Paired with
     /// `pendingTrigger`: `startFromCalendar(title:)` sets both, the
     /// `.startRecording` handler snapshots and clears both before the async
-    /// hop. Manual / hotkey starts leave it nil and the service falls back
-    /// to its date-based default.
+    /// hop. Manual / hotkey starts set only the trigger, so the service falls
+    /// back to its date-based default title.
     private var pendingTitle: String?
 
     /// Optional callback fired when an auto-start attempt couldn't actually
@@ -93,9 +95,10 @@ final class MeetingRecordingFlowCoordinator {
     /// doesn't suppress the *next* meeting's auto-stop.
     var onAutoStartFailed: (() -> Void)?
 
-    func toggleRecording() {
+    func toggleRecording(trigger: TelemetryMeetingRecordingTrigger = .manual) {
         switch stateMachine.state {
         case .idle:
+            pendingTrigger = pendingTrigger ?? trigger
             sendEvent(.startRequested)
         case .recording, .starting, .stopping:
             sendEvent(.stopRequested)
@@ -260,6 +263,9 @@ final class MeetingRecordingFlowCoordinator {
             let title = pendingTitle
             pendingTrigger = nil
             pendingTitle = nil
+            let operationID = Observability.operationID()
+            currentMeetingOperationID = operationID
+            currentMeetingTrigger = trigger
             actionTask = Task { @MainActor in
                 do {
                     try await meetingRecordingService.startRecording(title: title)
@@ -281,6 +287,13 @@ final class MeetingRecordingFlowCoordinator {
                         Telemetry.send(.calendarAutoStartFailed(reason: "service_threw"))
                         self.onAutoStartFailed?()
                     }
+                    self.sendMeetingOperation(
+                        outcome: .failure,
+                        trigger: trigger,
+                        errorType: TelemetryErrorClassifier.classify(error)
+                    )
+                    self.currentMeetingOperationID = nil
+                    self.currentMeetingTrigger = nil
                     self.sendEvent(.startFailed(generation: gen, message: error.localizedDescription))
                 }
             }
@@ -319,12 +332,14 @@ final class MeetingRecordingFlowCoordinator {
             let liveTranscriptLagged = panelViewModel?.isTranscriptionLagging ?? false
             let notesVM = panelViewModel?.notesViewModel
             actionTask = Task { @MainActor in
+                var stoppedOutput: MeetingRecordingOutput?
                 do {
                     // Flush any keystrokes typed in the last < 250 ms so
                     // they make it onto the lock file and into the saved
                     // Transcription.userNotes (ADR-020 §8).
                     await notesVM?.commit()
                     let output = try await meetingRecordingService.stopRecording()
+                    stoppedOutput = output
                     Telemetry.send(.meetingRecordingCompleted(
                         durationSeconds: output.durationSeconds,
                         liveWordCount: liveWordCount,
@@ -332,6 +347,14 @@ final class MeetingRecordingFlowCoordinator {
                     ))
                     let transcription = try await transcriptionService.transcribeMeeting(recording: output, onProgress: nil)
                     await meetingRecordingService.completeTranscription(for: output)
+                    self.sendMeetingOperation(
+                        outcome: .success,
+                        output: output,
+                        liveWordCount: liveWordCount,
+                        liveTranscriptLagged: liveTranscriptLagged
+                    )
+                    self.currentMeetingOperationID = nil
+                    self.currentMeetingTrigger = nil
                     self.completedTranscription = transcription
                     self.sendEvent(.transcriptionCompleted(generation: gen, transcriptionID: transcription.id))
                 } catch {
@@ -339,6 +362,15 @@ final class MeetingRecordingFlowCoordinator {
                         errorType: TelemetryErrorClassifier.classify(error),
                         errorDetail: TelemetryErrorClassifier.errorDetail(error)
                     ))
+                    self.sendMeetingOperation(
+                        outcome: .failure,
+                        output: stoppedOutput,
+                        liveWordCount: liveWordCount,
+                        liveTranscriptLagged: liveTranscriptLagged,
+                        errorType: TelemetryErrorClassifier.classify(error)
+                    )
+                    self.currentMeetingOperationID = nil
+                    self.currentMeetingTrigger = nil
                     self.sendEvent(.transcriptionFailed(generation: gen, message: error.localizedDescription))
                 }
             }
@@ -366,6 +398,12 @@ final class MeetingRecordingFlowCoordinator {
                 await notesVM?.commit()
                 await meetingRecordingService.cancelRecording()
                 Telemetry.send(.meetingRecordingCancelled(durationSeconds: durationSeconds))
+                self.sendMeetingOperation(
+                    outcome: .cancelled,
+                    durationSeconds: durationSeconds
+                )
+                self.currentMeetingOperationID = nil
+                self.currentMeetingTrigger = nil
             }
 
         case .showError(let message):
@@ -591,5 +629,31 @@ final class MeetingRecordingFlowCoordinator {
 
     private func hideMeetingPanel() {
         panelController?.hide()
+    }
+
+    private func sendMeetingOperation(
+        outcome: ObservabilityOutcome,
+        trigger: TelemetryMeetingRecordingTrigger? = nil,
+        output: MeetingRecordingOutput? = nil,
+        durationSeconds: Double? = nil,
+        liveWordCount: Int? = nil,
+        liveTranscriptLagged: Bool? = nil,
+        errorType: String? = nil
+    ) {
+        guard let operationID = currentMeetingOperationID else { return }
+        let notes = output?.userNotes?.trimmingCharacters(in: .whitespacesAndNewlines)
+        Telemetry.send(.meetingOperation(
+            operationID: operationID,
+            outcome: outcome,
+            trigger: trigger ?? currentMeetingTrigger,
+            durationSeconds: output?.durationSeconds ?? durationSeconds,
+            liveWordCount: liveWordCount,
+            liveTranscriptLagged: liveTranscriptLagged,
+            microphoneTrackPresent: output.map { $0.sourceAlignment.microphone != nil },
+            systemTrackPresent: output.map { $0.sourceAlignment.system != nil },
+            notesUsed: notes.map { !$0.isEmpty },
+            notesLengthBucket: output.map { Observability.textLengthBucket($0.userNotes) },
+            errorType: errorType
+        ))
     }
 }
