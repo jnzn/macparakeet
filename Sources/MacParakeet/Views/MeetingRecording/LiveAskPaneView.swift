@@ -10,6 +10,7 @@ struct LiveAskPaneView: View {
     @Bindable var viewModel: TranscriptChatViewModel
 
     @FocusState private var inputFocused: Bool
+    @State private var showingPromptMenu = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -17,6 +18,13 @@ struct LiveAskPaneView: View {
             composerArea
         }
         .background(DesignSystem.Colors.background)
+        .overlay(alignment: .bottomLeading) {
+            if showingPromptMenu {
+                promptMenuOverlay
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+        }
+        .animation(.easeOut(duration: 0.16), value: showingPromptMenu)
         .task {
             // Cursor lands in the input the moment you switch to Ask. Tiny await
             // so the focus state binding is wired before we set it (SwiftUI quirk).
@@ -24,12 +32,47 @@ struct LiveAskPaneView: View {
             inputFocused = true
         }
         .onKeyPress(.escape) {
-            // Universal cancel for an in-flight assistant response.
+            // ESC priority: dismiss menu, then cancel streaming.
+            if showingPromptMenu {
+                showingPromptMenu = false
+                return .handled
+            }
             if viewModel.isStreaming {
                 viewModel.cancelStreaming()
                 return .handled
             }
             return .ignored
+        }
+    }
+
+    /// In-view popover for mid-conversation prompt browsing. Anchored above the
+    /// menu button on the input bar. NOT a SwiftUI `.popover` — those are broken
+    /// inside KeylessPanel (clip, focus theft, key misrouting). ZStack + transparent
+    /// tap-catcher gives us outside-tap dismissal without crossing NSPanel boundaries.
+    private var promptMenuOverlay: some View {
+        ZStack(alignment: .bottomLeading) {
+            Color.black.opacity(0.0001)
+                .contentShape(Rectangle())
+                .onTapGesture { showingPromptMenu = false }
+
+            StarterPromptList(groups: LiveAskStarterPrompts.groups) { entry in
+                showingPromptMenu = false
+                fire(entry)
+            }
+            .padding(DesignSystem.Spacing.md)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(DesignSystem.Colors.cardBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .strokeBorder(DesignSystem.Colors.border.opacity(0.45), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.32), radius: 14, y: 4)
+            .padding(.leading, DesignSystem.Spacing.md)
+            .padding(.trailing, DesignSystem.Spacing.md)
+            // Sit above the input bar (≈48pt) with breathing room.
+            .padding(.bottom, 56)
         }
     }
 
@@ -116,19 +159,8 @@ struct LiveAskPaneView: View {
     // MARK: - Empty State
 
     private var emptyStateWithPills: some View {
-        VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
-            Text("Quick prompts")
-                .font(DesignSystem.Typography.caption)
-                .foregroundStyle(DesignSystem.Colors.textTertiary)
-                .padding(.leading, 4)
-
-            VStack(spacing: 5) {
-                ForEach(LiveAskStarterPrompts.all, id: \.self) { entry in
-                    StarterPromptPill(label: entry.label) {
-                        fire(entry)
-                    }
-                }
-            }
+        StarterPromptList(groups: LiveAskStarterPrompts.groups) { entry in
+            fire(entry)
         }
     }
 
@@ -171,6 +203,12 @@ struct LiveAskPaneView: View {
 
     private var inputBar: some View {
         HStack(spacing: DesignSystem.Spacing.sm) {
+            // Menu button only mid-conversation — empty state already shows the
+            // full prompt grid in the pane, so the button would be redundant.
+            if !viewModel.messages.isEmpty && viewModel.canSendMessage {
+                PromptMenuButton(isOpen: $showingPromptMenu)
+            }
+
             TextField("Ask about the meeting…", text: $viewModel.inputText, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1...4)
@@ -251,64 +289,141 @@ struct LiveAskPrompt: Hashable {
 }
 
 /// Empty-state "thinking-partner" prompts — meant to start a thread and make the
-/// user sharper in the meeting, not just summarize. English-first; localization deferred.
+/// user sharper in the meeting, not just summarize. Grouped by intent so the empty
+/// state orients the user before they read any individual label. English-first;
+/// localization deferred.
 enum LiveAskStarterPrompts {
-    static let all: [LiveAskPrompt] = [
-        LiveAskPrompt(
-            label: "Summarize so far",
-            prompt: "Give a concise summary of the meeting so far. Focus on the main topics, decisions made, and any clear conclusions. Skip verbal filler."
-        ),
-        LiveAskPrompt(
-            label: "What did I miss?",
-            prompt: "Catch me up on what I missed in the last few minutes — the most important points or shifts. Be terse, signal-rich."
-        ),
-        LiveAskPrompt(
-            label: "Decisions made",
-            prompt: "List the decisions reached in the meeting so far. For each, note what was decided and the brief context that explains why. Skip topics that were only discussed without a decision."
-        ),
-        LiveAskPrompt(
-            label: "Action items",
-            prompt: "List concrete action items from the meeting so far — what needs to happen next, by whom, and by when if mentioned. Be specific. Skip vague intentions."
-        ),
-        LiveAskPrompt(
-            label: "Who owns what?",
-            prompt: "Map who owns what from the meeting so far — assignments, commitments, areas of responsibility. If ownership for an item is unclear or unstated, flag that explicitly."
-        ),
-        LiveAskPrompt(
-            label: "What's unresolved?",
-            prompt: "List the open questions, unmade decisions, or topics still hanging from the meeting so far. Be specific."
-        ),
-        LiveAskPrompt(
-            label: "What question is worth asking?",
-            prompt: "Based on the meeting so far, suggest one sharp, useful question I could ask next that would advance the discussion or surface something important that hasn't been addressed."
-        ),
-        LiveAskPrompt(
-            label: "What's worth pushing back on?",
-            prompt: "Identify any claims, assumptions, or decisions in the meeting so far that deserve scrutiny. What might be wrong, weak, or worth challenging?"
-        ),
-        LiveAskPrompt(
-            label: "Where are we going in circles?",
-            prompt: "Have we revisited the same topic or argument without making progress? If so, point out where we're looping and what would actually move things forward."
-        ),
+    struct Group: Hashable {
+        let label: String
+        let prompts: [LiveAskPrompt]
+    }
+
+    static let groups: [Group] = [
+        Group(label: "CATCH UP", prompts: [
+            LiveAskPrompt(
+                label: "Summarize so far",
+                prompt: "Give a concise summary of the meeting so far. Focus on the main topics, decisions made, and any clear conclusions. Skip verbal filler."
+            ),
+            LiveAskPrompt(
+                label: "What did I miss?",
+                prompt: "Catch me up on what I missed in the last few minutes — the most important points or shifts. Be terse, signal-rich."
+            ),
+        ]),
+        Group(label: "CAPTURE", prompts: [
+            LiveAskPrompt(
+                label: "Decisions made",
+                prompt: "List the decisions reached in the meeting so far. For each, note what was decided and the brief context that explains why. Skip topics that were only discussed without a decision."
+            ),
+            LiveAskPrompt(
+                label: "Action items",
+                prompt: "List concrete action items from the meeting so far — what needs to happen next, by whom, and by when if mentioned. Be specific. Skip vague intentions."
+            ),
+            LiveAskPrompt(
+                label: "Who owns what?",
+                prompt: "Map who owns what from the meeting so far — assignments, commitments, areas of responsibility. If ownership for an item is unclear or unstated, flag that explicitly."
+            ),
+        ]),
+        Group(label: "CHALLENGE", prompts: [
+            LiveAskPrompt(
+                label: "What's unresolved?",
+                prompt: "List the open questions, unmade decisions, or topics still hanging from the meeting so far. Be specific."
+            ),
+            LiveAskPrompt(
+                label: "What question is worth asking?",
+                prompt: "Based on the meeting so far, suggest one sharp, useful question I could ask next that would advance the discussion or surface something important that hasn't been addressed."
+            ),
+            LiveAskPrompt(
+                label: "What's worth pushing back on?",
+                prompt: "Identify any claims, assumptions, or decisions in the meeting so far that deserve scrutiny. What might be wrong, weak, or worth challenging?"
+            ),
+            LiveAskPrompt(
+                label: "Where are we going in circles?",
+                prompt: "Have we revisited the same topic or argument without making progress? If so, point out where we're looping and what would actually move things forward."
+            ),
+        ]),
     ]
 }
 
+/// Renders the 3-group starter prompt list. Single source of truth for both the
+/// empty-state pane and the mid-conversation popover so the two surfaces stay
+/// visually identical and behavior never drifts.
+private struct StarterPromptList: View {
+    let groups: [LiveAskStarterPrompts.Group]
+    let onSelect: (LiveAskPrompt) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(groups, id: \.self) { group in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(group.label)
+                        .font(.system(size: 10, weight: .semibold))
+                        .tracking(0.8)
+                        .foregroundStyle(DesignSystem.Colors.textTertiary)
+                        .padding(.leading, 4)
+
+                    VStack(spacing: 5) {
+                        ForEach(group.prompts, id: \.self) { entry in
+                            StarterPromptPill(entry: entry) {
+                                onSelect(entry)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Sparkle button at the leading edge of the input bar. Toggles the prompt
+/// menu popover. Visually tracks open/closed state so the user always knows
+/// what the menu is doing.
+private struct PromptMenuButton: View {
+    @Binding var isOpen: Bool
+    @State private var isHovered = false
+
+    var body: some View {
+        Button {
+            isOpen.toggle()
+        } label: {
+            Image(systemName: "sparkles")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(isOpen
+                    ? DesignSystem.Colors.accent
+                    : DesignSystem.Colors.accent.opacity(isHovered ? 0.85 : 0.7))
+                .frame(width: 28, height: 28)
+                .background(
+                    Circle()
+                        .fill(isOpen
+                            ? DesignSystem.Colors.surfaceElevated
+                            : DesignSystem.Colors.surfaceElevated.opacity(isHovered ? 0.55 : 0.32))
+                )
+                .overlay(
+                    Circle()
+                        .strokeBorder(isOpen
+                            ? DesignSystem.Colors.accent.opacity(0.4)
+                            : DesignSystem.Colors.border.opacity(0.35),
+                            lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .animation(.easeOut(duration: 0.14), value: isHovered)
+        .animation(.easeOut(duration: 0.14), value: isOpen)
+        .onHover { isHovered = $0 }
+        .help("Quick prompts")
+        .accessibilityLabel(isOpen ? "Close quick prompts" : "Open quick prompts")
+    }
+}
+
 /// Always-visible follow-up prompts above the input once a conversation exists.
-/// "Summarize so far" and "What did I miss?" earn a slot here too — both stay
-/// useful mid-conversation since the underlying transcript keeps growing.
+/// Strictly universal "next-moves on the last assistant message" — keep, expand,
+/// probe, push back, compress. Global meeting prompts (Summarize / What did I
+/// miss? / Action items) live in the empty-state starters so this row stays
+/// honest about its single job: continue the thread.
 enum LiveAskFollowUpPrompts {
     static let all: [LiveAskPrompt] = [
         LiveAskPrompt(
             label: "Tell me more",
             prompt: "Expand on your previous response. Go deeper with concrete details and any nuances worth knowing."
-        ),
-        LiveAskPrompt(
-            label: "Summarize so far",
-            prompt: "Give a concise summary of the meeting so far. Focus on the main topics, decisions made, and any clear conclusions. Skip verbal filler."
-        ),
-        LiveAskPrompt(
-            label: "What did I miss?",
-            prompt: "Catch me up on what I missed in the last few minutes — the most important points or shifts. Be terse, signal-rich."
         ),
         LiveAskPrompt(
             label: "Why?",
@@ -323,10 +438,6 @@ enum LiveAskFollowUpPrompts {
             prompt: "What's the strongest counter-argument to your previous response? Steelman the opposing view."
         ),
         LiveAskPrompt(
-            label: "Action items?",
-            prompt: "Pull out any action items, decisions, or commitments from the meeting so far. List them clearly, with owners if mentioned."
-        ),
-        LiveAskPrompt(
             label: "TL;DR",
             prompt: "Compress your previous response into one or two short, punchy sentences."
         ),
@@ -334,21 +445,34 @@ enum LiveAskFollowUpPrompts {
 }
 
 private struct StarterPromptPill: View {
-    let label: String
+    let entry: LiveAskPrompt
     let action: () -> Void
 
     @State private var isHovered = false
+    @State private var isRevealed = false
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: DesignSystem.Spacing.sm) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 11))
-                    .foregroundStyle(DesignSystem.Colors.accent.opacity(0.75))
-                Text(label)
-                    .font(DesignSystem.Typography.bodySmall)
-                    .foregroundStyle(DesignSystem.Colors.textPrimary)
-                Spacer(minLength: 0)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: DesignSystem.Spacing.sm) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 11))
+                        .foregroundStyle(DesignSystem.Colors.accent.opacity(0.75))
+                    Text(entry.label)
+                        .font(DesignSystem.Typography.bodySmall)
+                        .foregroundStyle(DesignSystem.Colors.textPrimary)
+                    Spacer(minLength: 0)
+                }
+
+                if isRevealed {
+                    Text(entry.prompt)
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(DesignSystem.Colors.textSecondary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.leading, 19)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
             }
             .padding(.horizontal, DesignSystem.Spacing.md)
             .padding(.vertical, 7)
@@ -356,20 +480,34 @@ private struct StarterPromptPill: View {
                 RoundedRectangle(cornerRadius: 10)
                     .fill(isHovered
                         ? DesignSystem.Colors.surfaceElevated
-                        : DesignSystem.Colors.surfaceElevated.opacity(0.55))
+                        : DesignSystem.Colors.surfaceElevated.opacity(0.32))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10)
                     .strokeBorder(
                         isHovered
                             ? DesignSystem.Colors.accent.opacity(0.4)
-                            : DesignSystem.Colors.border.opacity(0.5),
+                            : DesignSystem.Colors.border.opacity(0.35),
                         lineWidth: 1
                     )
             )
         }
         .buttonStyle(.plain)
+        .animation(.easeOut(duration: 0.18), value: isRevealed)
+        .animation(.easeOut(duration: 0.14), value: isHovered)
         .onHover { isHovered = $0 }
+        // Delay the reveal slightly so sweeping the mouse across rows doesn't
+        // flicker. Background/border still react instantly via isHovered.
+        .task(id: isHovered) {
+            if isHovered {
+                try? await Task.sleep(for: .milliseconds(250))
+                guard !Task.isCancelled else { return }
+                isRevealed = true
+            } else {
+                isRevealed = false
+            }
+        }
+        .accessibilityHint(entry.prompt)
     }
 }
 
@@ -394,19 +532,20 @@ private struct FollowUpPill: View {
                     Capsule()
                         .fill(isHovered
                             ? DesignSystem.Colors.surfaceElevated
-                            : DesignSystem.Colors.surfaceElevated.opacity(0.55))
+                            : DesignSystem.Colors.surfaceElevated.opacity(0.32))
                 )
                 .overlay(
                     Capsule()
                         .strokeBorder(
                             isHovered
-                                ? DesignSystem.Colors.accent.opacity(0.35)
-                                : DesignSystem.Colors.border.opacity(0.4),
+                                ? DesignSystem.Colors.accent.opacity(0.4)
+                                : DesignSystem.Colors.border.opacity(0.35),
                             lineWidth: 0.75
                         )
                 )
         }
         .buttonStyle(.plain)
+        .animation(.easeOut(duration: 0.14), value: isHovered)
         .onHover { isHovered = $0 }
     }
 }
