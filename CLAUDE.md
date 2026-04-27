@@ -84,7 +84,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 | ADR | Decision | File |
 |-----|----------|------|
 | ADR-001 | Parakeet TDT 0.6B-v3 as primary STT | `spec/adr/001-parakeet-stt.md` |
-| ADR-002 | Local-first processing (amended: opt-in LLM providers, telemetry) | `spec/adr/002-local-only.md` |
+| ADR-002 | Local-first processing (amended: opt-in LLM providers, opt-out telemetry) | `spec/adr/002-local-only.md` |
 | ADR-004 | Deterministic text processing pipeline | `spec/adr/004-deterministic-pipeline.md` |
 | ADR-005 | First-run onboarding flow | `spec/adr/005-onboarding-first-run.md` |
 | ADR-007 | FluidAudio CoreML migration (Python elimination) | `spec/adr/007-fluidaudio-coreml-migration.md` |
@@ -304,7 +304,7 @@ In-app feedback creates GitHub Issues via a Cloudflare Pages Function. User emai
 2. **ADRs are locked** -- Don't second-guess architectural decisions in `spec/adr/`.
 3. **Never lose user data** -- Graceful degradation for dictation history and transcriptions.
 4. **UI philosophy** -- Minimal during dictation, rich for transcription results.
-5. **Local-first** -- Speech recognition stays on-device by default. Optional network surfaces only run when the user enables or triggers them (for example YouTube downloads, telemetry, licensing, updates, or optional provider flows).
+5. **Local-first** -- Speech recognition stays on-device by default. Optional provider and media-download flows are user-triggered; model/update/licensing flows and self-hosted telemetry/crash reporting are product-managed surfaces. Telemetry is opt-out in Settings and never includes audio or transcript content.
 6. **Simplicity is the product** -- Resist feature creep. MacParakeet does three things well.
 7. **Fast feedback loops for agents** -- Design everything so the agent can verify its own work: tests for logic, CLI for headless smoke-testing, build errors that surface immediately.
 8. **Bounded agent discretion** -- Agents should choose the simplest process that works, but behavior changes must follow `spec/10-ai-coding-method.md` kernel workflow.
@@ -446,7 +446,7 @@ open Package.swift  # Select MacParakeet scheme
 | Accessibility | Global hotkey, paste simulation | First dictation use |
 | Screen & System Audio Recording | System audio capture for meeting recording (Core Audio Taps) | First meeting recording use |
 
-1. **Offline-first** -- Dictation and file transcription work fully offline. Network used only for YouTube downloads and anonymous telemetry.
+1. **Offline-first** -- Dictation and file transcription work fully offline. Network is limited to user-triggered downloads/providers, update/licensing flows, and opt-out anonymous telemetry.
 2. **Temp files deleted** -- Audio removed after transcription (unless user saves)
 3. **Non-identifying telemetry** -- Anonymous, session-scoped, opt-out in Settings. No persistent IDs, no IP storage, no content. See `docs/telemetry.md` and ADR-012.
 4. **No accounts** -- No login, no email, no tracking

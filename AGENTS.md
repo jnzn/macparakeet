@@ -74,9 +74,12 @@ Full spec is in [`spec/`](./spec/). Architectural decisions (locked) are in
 
 ## Security & Privacy
 
-- **Local-first by default.** STT runs on the Apple Neural Engine. No audio
-  ever leaves the device unless the user explicitly enables a cloud LLM
-  provider, telemetry, or YouTube downloads.
+- **Local-first speech.** STT runs on the Apple Neural Engine. Audio and
+  transcripts stay on-device for core dictation, transcription, and meeting
+  recording. Network surfaces are limited to user-triggered LLM providers,
+  media downloads, model/update/licensing flows, and opt-out self-hosted
+  telemetry/crash reporting. Telemetry never includes audio or transcript
+  content.
 - **No accounts, no logins.** No identifying data is sent anywhere.
 - **The user database lives at**
   `~/Library/Application Support/MacParakeet/macparakeet.db`. Treat it as user
