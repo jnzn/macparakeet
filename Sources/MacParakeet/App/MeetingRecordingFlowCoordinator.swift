@@ -83,8 +83,8 @@ final class MeetingRecordingFlowCoordinator {
     /// Pre-set title for the *next* `.startRecording` effect. Paired with
     /// `pendingTrigger`: `startFromCalendar(title:)` sets both, the
     /// `.startRecording` handler snapshots and clears both before the async
-    /// hop. Manual / hotkey starts leave it nil and the service falls back
-    /// to its date-based default.
+    /// hop. Manual / hotkey starts set only the trigger, so the service falls
+    /// back to its date-based default title.
     private var pendingTitle: String?
 
     /// Optional callback fired when an auto-start attempt couldn't actually
@@ -95,9 +95,10 @@ final class MeetingRecordingFlowCoordinator {
     /// doesn't suppress the *next* meeting's auto-stop.
     var onAutoStartFailed: (() -> Void)?
 
-    func toggleRecording() {
+    func toggleRecording(trigger: TelemetryMeetingRecordingTrigger = .manual) {
         switch stateMachine.state {
         case .idle:
+            pendingTrigger = pendingTrigger ?? trigger
             sendEvent(.startRequested)
         case .recording, .starting, .stopping:
             sendEvent(.stopRequested)

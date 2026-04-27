@@ -62,7 +62,6 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
     static let maxQueueSize = 200
     static let flushThreshold = 50
     static let flushInterval: TimeInterval = 60
-    static let requestTimeout: TimeInterval = 10
     static let maxBatchSize = 100
     static let terminationFlushMaxWait: TimeInterval = 0.4
     static let terminationRequestTimeout: TimeInterval = 0.3

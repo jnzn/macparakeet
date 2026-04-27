@@ -296,7 +296,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self?.windowCoordinator.openMainWindow()
                 },
                 onToggleMeetingRecordingFromHotkey: { [weak self] in
-                    self?.toggleMeetingRecording(originatesFromWindow: false)
+                    self?.toggleMeetingRecording(originatesFromWindow: false, trigger: .hotkey)
                 },
                 onTriggerFileTranscriptionFromHotkey: { [weak self] in
                     self?.triggerFileTranscriptionFromHotkey()
@@ -461,7 +461,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Meeting Recording
 
-    private func toggleMeetingRecording(originatesFromWindow: Bool) {
+    private func toggleMeetingRecording(
+        originatesFromWindow: Bool,
+        trigger: TelemetryMeetingRecordingTrigger = .manual
+    ) {
         guard appEnvironment != nil else { return }
 
         if meetingRecordingFlowCoordinator?.isMeetingRecordingActive == true {
@@ -474,7 +477,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             windowCoordinator.openMainWindow()
         }
 
-        meetingRecordingFlowCoordinator?.toggleRecording()
+        meetingRecordingFlowCoordinator?.toggleRecording(trigger: trigger)
     }
 
     // MARK: - Alerts
