@@ -48,9 +48,10 @@ public enum Observability {
 
     public static func withOperationContext<T>(
         _ context: ObservabilityOperationContext,
+        isolation: isolated (any Actor)? = #isolation,
         operation: () async throws -> T
     ) async rethrows -> T {
-        try await $currentOperationContext.withValue(context, operation: operation)
+        try await $currentOperationContext.withValue(context, operation: operation, isolation: isolation)
     }
 
     public static func childOperationContext(startedAt: Date = Date()) -> ObservabilityOperationContext {
