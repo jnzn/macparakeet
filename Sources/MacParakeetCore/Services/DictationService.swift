@@ -463,7 +463,7 @@ public actor DictationService: DictationServiceProtocol {
         pendingCancelledAudioURL = nil
     }
 
-    private func withCurrentObservabilityContextIfAny<T>(
+    private func withCurrentObservabilityContextIfAny<T: Sendable>(
         _ operation: () async throws -> T
     ) async rethrows -> T {
         guard let operationContext = currentObservabilityOperationContext else {
