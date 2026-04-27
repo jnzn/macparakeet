@@ -48,8 +48,9 @@ No quantitative WER claims. User picks.
 
 ### Shared core (used by all three surfaces)
 
-- **`Sources/MacParakeetCore/STT/WhisperEngine.swift`** — actor wrapping `WhisperKit`. One static factory `WhisperEngine.make(model:)`, one method `transcribe(audioURL:language:onProgress:) -> STTResult`. Conditionally compiled `#if canImport(WhisperKit)`.
-- **`Sources/MacParakeetCore/Settings/SpeechEnginePreference.swift`** — small enum `{ parakeet, whisper }` + UserDefaults persistence + default-language pref.
+- **`Sources/MacParakeetCore/STT/WhisperEngine.swift`** — actor wrapping `WhisperKit`. **Owns its own load lifecycle** — stored `WhisperKit?` property + `var isLoaded: Bool` guard inside the actor. One static factory `WhisperEngine.make(model:)`, one method `transcribe(audioURL:language:onProgress:) -> STTResult`. Conditionally compiled `#if canImport(WhisperKit)`. `STTRuntime` calls `whisperEngine.transcribe(...)` and the engine self-manages — no lifecycle state in `STTRuntime`.
+- **`Sources/MacParakeetCore/SpeechEnginePreference.swift`** — small enum `{ parakeet, whisper }` + UserDefaults persistence + default-language pref. **Place at `MacParakeetCore` root** alongside existing `AppPreferences`, `AppRuntimePreferences`, `CalendarAutoStartPreferences` — don't create a `Settings/` subdirectory for one enum.
+- **`Sources/MacParakeetCore/STT/STTResult.swift`** — **add `language: String?` field** (additive, optional). `WhisperEngine` populates with detected language; `ParakeetProvider`-equivalent path leaves it nil. Surfaces in CLI's `--json` output as a top-level optional field. Avoids a v0.8 breaking schema change to expose Whisper's language detection later.
 - **`Package.swift`** — add `argmaxinc/argmax-oss-swift` dep. **Important:** explicit product reference `.product(name: "WhisperKit", package: "argmax-oss-swift")` — meta-package would otherwise pull in SpeakerKit + TTSKit.
 
 ### CLI (file transcription)
@@ -60,15 +61,40 @@ No quantitative WER claims. User picks.
 
 ### GUI dictation
 
-- **Modify `Sources/MacParakeetCore/STT/STTRuntime.swift`:** read `SpeechEnginePreference` at the entry point of dictation transcription. If `parakeet` (default) → existing path unchanged. If `whisper` → route to `WhisperEngine`. Lazy-load Whisper on first use after toggle; unload Parakeet from ANE when Whisper is active to free working memory (and vice-versa).
-- **Dictation overlay (`Sources/MacParakeet/Views/Dictation/...`):** when engine is Whisper, show a "Transcribing…" state on the overlay between hotkey release and text paste (Whisper takes ~2-5 seconds for a 5-second clip). Existing overlay's recording state stays the same; only the post-release period gets the new state.
+- **Modify `Sources/MacParakeetCore/STT/STTRuntime.swift`:** `STTRuntime.transcribe()` is the single entry point for *all* job kinds (dictation + meeting + file). The engine switch must happen **inside `transcribe()`**, before `ensureInitialized()` (which today is hard-coded to allocate Parakeet's ANE slot). Read `SpeechEnginePreference` first, branch dispatch: parakeet → existing path; whisper → `WhisperEngine`. **Patching only upstream call sites would silently leave meeting recording on Parakeet.**
+- **Dictation overlay** (`DictationOverlayView` + `DictationOverlayViewModel`): **reuse the existing `.processing` overlay state** — don't add a new `.transcribing` enum case (would touch state machine + computed properties + exhaustive switches for marginal benefit). Add a Whisper-aware label ("Transcribing…" or similar) that reads from the active engine — visible during `.processing` only when engine is Whisper, so users see distinct affordance during the 2-5s wait. Add a separate **`.loadingModel` overlay state** for the cold-start prewarm path ("Loading Whisper model…") so the 5-15s first-use latency doesn't look like a hung app.
 - **Settings UI (below):** the toggle gates this entire path.
 
 ### GUI meeting recording
 
-- **Modify `Sources/MacParakeetCore/STT/...`** (wherever meeting transcription dispatches): read `SpeechEnginePreference` at meeting transcription time (post-recording). Audio capture is engine-agnostic — the change only affects transcription dispatch.
-- **No UI change to the recording flow itself.** Recording captures audio same way; transcription engine is the only thing that changes.
+- **Capture engine preference at recording START, not at transcription time.** Store the engine ID (and chosen language, see below) in meeting metadata when the recording begins. Post-recording transcription dispatches to the engine that was active when the user started — not the engine they may have toggled to in the meantime. (Reviewer caught this as action-at-a-distance: user toggles to Whisper for a quick dictation mid-meeting, the entire meeting batch then unexpectedly runs through Whisper.)
+- **Per-meeting language override** (small UI affordance in the meeting recording panel): optional language picker at recording start, defaults to global Whisper default-language pref, overridable per session **without mutating the global setting**. Korean meeting today doesn't force user to flip global setting and remember to revert.
+- Audio capture is engine-agnostic — the engine choice only affects post-recording transcription dispatch.
 - Meeting transcription is async/batch — Whisper's latency doesn't matter here.
+
+### Engine switch lifecycle (load-bearing — multi-reviewer convergent finding)
+
+The plan's earlier "toggle in Settings, lazy-load on first use" framing handwaved over four implementation gaps that all four reviewers surfaced from different angles. Locking in the actual switch contract:
+
+**Settings toggle invokes a new method on `STTClientProtocol` / `STTRuntime`:**
+
+```swift
+func setSpeechEngine(_ preference: SpeechEnginePreference) async throws
+```
+
+The implementation:
+
+1. **Refuse to switch if a transcription is in flight** (returns `STTError.engineBusy`). The Settings UI surfaces this — disables the toggle while in-flight, or queues the switch to apply after current job completes. **Toggle is a "between-sessions" change**; the runtime enforces it, not just docs.
+
+2. **Cancel `backgroundWarmUpTask`** if pending; explicitly reset state via `setBackgroundWarmUpState(.idle)`. Without this, `backgroundWarmUp()`'s early-return-on-`.ready` guard leaves the new engine permanently unable to warm up.
+
+3. **Attempt the new engine's `prepare()` BEFORE unloading the previous engine.** If Whisper specialization fails (ANE busy, CoreML compile error, disk full), Parakeet stays loaded, the toggle reverts to `.parakeet`, and the UI surfaces a clear error. The plan's earlier "unload Parakeet, then load Whisper" sequence had a failure mode where both engines end up uninitialized — user presses hotkey, gets `modelNotLoaded`. This sequence prevents that.
+
+4. **After successful new-engine prepare, unload the previous engine** (via existing `AsrManager.shutdown()` for Parakeet, or `WhisperEngine.unload()` for Whisper). Persist the new pref to UserDefaults.
+
+**Hotkey re-entry during Whisper transcribe:** Whisper's 4-8s post-stop window is much longer than Parakeet's sub-second. The existing `DictationService` re-entry guard silently drops a second hotkey press during `.processing`. Either (a) surface a "busy, try again" affordance via brief overlay flash, or (b) queue the second press to start after current transcription completes. Pick (a) for v1 — simpler, matches existing dictation semantics.
+
+**First-toggle download path:** If the user toggles to Whisper without the model downloaded, **the toggle must surface this state immediately** — don't lazy-trigger a 632 MB download on first hotkey press (would block dictation indefinitely with no progress UI). Settings shows "Whisper model: Not downloaded [Download (632 MB)]" inline. Toggle activation is gated on download completion (or user explicitly defers). Force-quit during download → next launch detects partial state via `.partial` suffix and resumes or cleans up.
 
 ### Settings UI
 
@@ -79,16 +105,25 @@ Speech Recognition
 ──────────────────
 ●  Parakeet (default)   Fast. English + 25 European languages + Japanese + Mandarin.
 ○  Whisper              Slower. 99 languages including Korean.
+                        Model: Not downloaded  [Download (632 MB)]
+                                — or after install —
+                        Model: Ready
 
   When using Whisper:
   • Dictation has a 2-5 second delay (vs Parakeet's near-instant response)
-  • First use after switching loads the model (~5-15 seconds)
-  • Meeting transcription quality benefits from picking the right language below
+  • First use after switching takes ~5-15s while the model specializes for ANE
+  • Meeting recording asks per-meeting language; overrides this default
 
 Default language for Whisper:  [ Auto-detect ▼ ]   (only used with Whisper)
 ```
 
-~50 lines of SwiftUI. Pref persists via UserDefaults.
+Behavior:
+- Whisper radio is **disabled** until the model is downloaded (or user clicks Download). Otherwise users could toggle to a non-functional engine and dictate into the void.
+- Download surfaces a progress bar inline; cancel reverts state.
+- **`In-flight transcription disables the toggle`** — UI reflects the runtime's `engineBusy` semantics. Tooltip: "Finishing current dictation/meeting transcription before switching."
+- Meeting recording panel surfaces a per-session language picker (not in Settings; in the meeting start UI). Defaults to this `Default language` pref but doesn't mutate global state when overridden.
+
+~80 lines of SwiftUI total (Settings + meeting recording panel addition).
 
 ---
 
@@ -111,12 +146,13 @@ Default language for Whisper:  [ Auto-detect ▼ ]   (only used with Whisper)
 ## Implementation notes (things to know during coding, not as gating spikes)
 
 - **WhisperKit Sendable / @MainActor.** WhisperKit 1.x has had `@MainActor`-bound progress callbacks. Verify on the version we pin; if hops to MainActor deadlock the CLI (no `NSApplication` run loop), wrap calls in `Task { @MainActor in ... }`. The GUI doesn't have this concern.
+- **WhisperKit word-timing schema mismatch (Codex op finding).** `WhisperKit.WordTiming` has `start`/`end` in **seconds (Float)** + `logprob` (negative float). MacParakeet's `STTResult.words` is `startMs`/`endMs` (Int milliseconds) + `confidence` 0-1. The `WhisperEngine` mapping must explicitly convert seconds → ms (×1000) and transform logprob to a 0-1 confidence proxy (e.g., `exp(logprob)` clamped). Without conversion, `MeetingTranscriptFinalizer.shiftedWords()` produces garbage segment boundaries — a 5-second dictation reports as 5ms. **Add a unit test asserting the schema against a known fixture before wiring meeting transcription.**
 - **Audio normalization is already done.** `Sources/CLI/AudioFileConverter.swift` produces 16 kHz mono Float32 WAV. Both engines receive the converted file URL. FFmpeg runs once.
-- **Engine switching evicts ANE.** When the user toggles in Settings, the previously-active engine should `unload()` so the new one can specialize without ANE memory pressure. Toggle only happens between sessions — not in the middle of a dictation.
-- **First-use after toggle pays specialization cost.** Communicate this in Settings copy. Lazy-load on first dictation/meeting transcription rather than at app launch.
-- **WhisperKit issue #300:** `loadModels()` duplicates `.bundle` files in memory each call. Reuse the WhisperKit instance within a session.
-- **JSON envelope contract:** existing v1.2 in `Sources/CLI/CHANGELOG.md` is flat `{ ok, error, errorType }`. v1.3.0 adds `--engine` support without changing this shape.
+- **Whisper load failure must not strand the user.** Order of operations on engine switch: `prepare(.whisper)` → on success, unload Parakeet → persist pref. If Whisper prepare fails, **revert the toggle to `.parakeet`**, leave Parakeet loaded, surface a clear error to the user. Never end up in a both-uninitialized state.
+- **WhisperKit issue #300:** `loadModels()` duplicates `.bundle` files in memory each call. Reuse the `WhisperKit` instance within a `WhisperEngine` actor — don't re-init across multiple dictation calls.
+- **JSON envelope contract:** existing v1.2 in `Sources/CLI/CHANGELOG.md` is flat `{ ok, error, errorType }`. v1.3.0 adds the optional top-level `language` field on success responses (additive), driven by `STTResult.language`. `--engine` support adds no envelope shape change.
 - **In-process double-load:** the GUI loads only one engine at a time (toggle determines which). The CLI loads only one per invocation. Never both simultaneously. So we don't need an in-process semaphore.
+- **WhisperKit SPM placement.** Putting `WhisperEngine` in `MacParakeetCore` makes WhisperKit a transitive dep of CLI + GUI + Tests. Even with `#if canImport`, SPM resolve fetches the package. If clean-build / CI time becomes annoying, isolate `WhisperEngine` in a thin `MacParakeetWhisper` target that only the GUI app and CLI link directly. **Default: keep in `MacParakeetCore` for simplicity; revisit if build time hurts.**
 - **Cross-process (GUI + CLI both running):** macOS daemon mediates ANE access. Memory is fine — Parakeet ~66 MB ANE working set + WhisperKit large-v3-turbo ~600 MB working set, in separate process address spaces.
 
 ---
@@ -129,7 +165,14 @@ Default language for Whisper:  [ Auto-detect ▼ ]   (only used with Whisper)
 | `argmax-oss-swift` meta-package drags in SpeakerKit/TTSKit | Real | Low (binary bloat) | Explicit `.product(name: "WhisperKit", ...)` |
 | Korean transcription quality unusable in practice | Low (Whisper is well-validated on Korean) | High (kills the load-bearing use case) | Daniel sniff-tests on real Korean content during dev; reversal triggers below |
 | Dictation latency on Whisper is unacceptable | Real (2-5 sec is slow) | Low (users self-select via toggle, copy sets expectation) | Settings copy clearly states the trade-off |
-| Engine toggle leaks ANE memory across switches | Possible | Medium | `unload()` previous engine when toggle fires |
+| Engine swap fails partway → user stranded with no engine | Possible (Whisper prepare fails for unrelated reasons) | High | Prepare new engine BEFORE unloading previous; revert pref on failure |
+| Hotkey re-entry during Whisper transcribe silently dropped (Codex op) | Real (Whisper 4-8s window vs Parakeet sub-second) | Medium | Surface "busy, try again" affordance via overlay flash; existing re-entry guard not sufficient |
+| WhisperKit word timing in seconds vs `STTResult.words` in milliseconds | Real | High (meeting diarization produces garbage if not converted) | Explicit unit conversion in `WhisperEngine` mapping; fixture-driven unit test |
+| `STTRuntime.ensureInitialized()` hard-coded to Parakeet pre-allocation | Real | High (toggle to Whisper still loads Parakeet on ANE first) | Read pref above `ensureInitialized()`; branch dispatch before |
+| First-toggle without download blocks dictation indefinitely | Real | Medium | Settings shows download status inline; toggle disabled until model present |
+| Toggle during in-flight transcription corrupts state | Possible | Medium | `setSpeechEngine` returns `engineBusy` if job in flight; UI disables toggle accordingly |
+| Meeting engine captured at wrong time (transcription vs recording) | Real | Medium (action-at-a-distance) | Capture engine + language pref at recording **start**, store in meeting metadata |
+| `backgroundWarmUpState` stuck at `.ready` after switch | Real (early-return guard) | Medium (new engine fails to warm) | Engine switch path explicitly resets to `.idle` |
 | CLI invocation while GUI is active triggers ANE collision | Theoretical, no observed instances on macOS | High if real | Ship without lock; `flock` fast-follow if telemetry shows crashes |
 
 ---
@@ -165,19 +208,21 @@ When any trigger fires, integrate as a third engine — don't replace WhisperKit
 
 Not phases-with-gates — just a suggested order for the implementing engineer:
 
-1. **Add WhisperKit dep** to `Package.swift` with explicit product reference.
-2. **Implement `WhisperEngine.swift`** in `MacParakeetCore`. Basic actor + transcribe method + STTResult mapping. Verify it works in isolation via a unit test or scratch script.
-3. **Add CLI surface** — `--engine` flag, `--language` flag, `models download whisper-*`. CLI is the easiest validation surface.
-4. **Daniel sniff-tests Korean content via CLI.** Run `macparakeet-cli transcribe <korean.mp3> --engine whisper --language ko`. Verify quality is adequate. **This is the load-bearing decision point** — if Korean output is unusable, the rest of the PR is wasted; reversal triggers fire.
-5. **Add `SpeechEnginePreference` + UserDefaults plumbing.**
-6. **Wire `STTRuntime` to read pref and dispatch.**
-7. **Settings UI** with toggle + language picker + latency copy.
-8. **Dictation overlay "Transcribing…" state.**
-9. **Meeting recording dispatch.**
-10. **CHANGELOG, integrations docs, THIRD_PARTY_LICENSES.**
-11. **Tests** — engine routing, toggle persistence, lazy-load + unload lifecycle, Korean sniff test on a known-good fixture.
+1. **Add WhisperKit dep** to `Package.swift` with explicit product reference (`.product(name: "WhisperKit", package: "argmax-oss-swift")`).
+2. **Add `STTResult.language: String?`** field. Additive, optional, populated only by Whisper path.
+3. **Implement `WhisperEngine.swift`** in `MacParakeetCore`. Actor owns its own `WhisperKit?` + `isLoaded` guard. Static `make(model:)` factory. `transcribe(audioURL:language:onProgress:) -> STTResult`. **Word-timing schema conversion: seconds × 1000 → ms; `exp(logprob)` clamped → confidence.** Add a fixture-driven unit test asserting the schema before wiring to anything else.
+4. **Add CLI surface** — `--engine` flag, `--language` flag, `models download whisper-*`. CLI is the easiest validation surface.
+5. **Daniel sniff-tests Korean content via CLI.** Run `macparakeet-cli transcribe <korean.mp3> --engine whisper --language ko`. **Load-bearing decision point** — if Korean output is unusable, the rest of the PR is wasted; reversal triggers fire.
+6. **Add `SpeechEnginePreference`** at `MacParakeetCore` root (alongside `AppPreferences`). UserDefaults persistence.
+7. **Add `setSpeechEngine(_:) async throws` to `STTClientProtocol` / `STTRuntime`.** Implementation: refuse if in-flight; cancel `backgroundWarmUpTask`; reset `backgroundWarmUpState` to `.idle`; **`prepare(new)` BEFORE `shutdown(old)`**; revert pref on prepare failure. This is the load-bearing lifecycle work — multi-reviewer convergent finding.
+8. **Wire `STTRuntime.transcribe()` to read pref before `ensureInitialized()`** and branch dispatch by engine for **all `STTJobKind`s** (dictation + meeting + file). Single entry point — patching only upstream call sites would silently leave meeting recording on Parakeet.
+9. **Settings UI** — toggle + Whisper download status inline + language picker + latency copy. Toggle disabled until model present and during in-flight jobs.
+10. **Dictation overlay** — reuse `.processing` state with Whisper-aware label ("Transcribing…"); add `.loadingModel` substate for cold-start prewarm ("Loading Whisper model…"). Hotkey re-entry during Whisper window: brief "busy" overlay flash.
+11. **Meeting recording** — capture engine ID + language at recording start, store in meeting metadata; transcription dispatches from metadata. Per-session language picker on the recording panel (defaults to global, overridable without mutating global).
+12. **CHANGELOG, integrations docs, THIRD_PARTY_LICENSES.** Note new top-level `language` field in JSON envelope.
+13. **Tests** — engine routing, toggle persistence, lifecycle (refuse on in-flight, prepare-before-unload, fallback on Whisper fail, state reset), word-timing schema fixture, Korean sniff test on a known-good fixture, meeting metadata captures engine at start.
 
-Total estimate: ~5-7 days of focused work for a senior engineer.
+Total estimate: ~7-10 days of focused work for a senior engineer (revised up from ~5-7 after reviewer findings folded in — the engine-switch lifecycle is real work).
 
 ---
 
@@ -212,11 +257,18 @@ Bad ship: Korean output is unusable in practice → reversal triggers fire towar
 - FluidAudio 0.14.1 — `TokenLanguageFilter.swift` `Language` enum (Latin/Cyrillic only); `AsrManager.swift` `tdtJa`/`tdtZh` paths
 - VoiceInk, Hex, Dictus — shipping examples of dual Parakeet + WhisperKit (single-process GUI architectures; informed our switch-statement-not-protocol decision)
 
-### Multi-LLM review (2026-04-27, initial CLI-only scope)
-3 Gemini + 3 Codex reviewers ran against an earlier 774-line draft. Their HIGH/CRITICAL findings:
-- **FluidAudio CJK enum gap** (Codex 3) → reflected in language coverage table
-- **JSON envelope contract preservation** (Gemini 3) → no envelope changes in v1
+### Multi-LLM review pass 1 (2026-04-27, initial CLI-only scope, 774-line draft)
+3 Gemini + 3 Codex. Findings folded in:
+- **FluidAudio CJK enum gap** (Codex 3) → language coverage table
+- **JSON envelope contract preservation** (Gemini 3) → no breaking shape change
 - **Cross-process ANE collision** (Gemini 1+2) → rejected after self-audit; was extrapolation from iOS to macOS without observed evidence
 - **Operational discipline (retries, preflight, locks, telemetry coordination)** (Codex 1+2) → deferred as defensive engineering for unobserved risks
 
-Strategy unchallenged: zero reviewers questioned Parakeet-default + Whisper-opt-in or WhisperKit-over-Qwen3.
+### Multi-LLM review pass 2 (2026-04-27, single-PR all-surfaces scope, 222-line draft)
+2 Gemini + 2 Codex. All HIGH/MEDIUM findings folded in via the `Engine switch lifecycle` section, `STTResult.language` field addition, dictation overlay `.processing` reuse with Whisper-aware label, `.loadingModel` substate, meeting engine pinned at recording start, per-session language override, Settings download status indicator. Specific source-grounded catches:
+- **Codex Swift:** `STTRuntime.transcribe()` is a single entry point — switch happens there, not at upstream call sites; `SettingsViewModel` needs a new `setSpeechEngine` API surface; `backgroundWarmUpState` `.ready` early-return needs reset on switch; reuse `.processing` overlay state, don't add `.transcribing`
+- **Codex operational:** WhisperKit `WordTiming` is in seconds + logprob, not ms + confidence — explicit conversion required; engine-swap failure must not strand user; first-toggle 632 MB download must surface in Settings, not block dictation; hotkey re-entry during 4-8s Whisper window needs visual affordance
+- **Gemini architecture:** `ensureInitialized()` is hard-coded to Parakeet — pref read must happen above it; `STTResult.language` field is a cheap additive change avoiding v0.8 breaking schema; `WhisperEngine` actor owns its own load lifecycle; `SpeechEnginePreference` lives at `MacParakeetCore` root, not in a `Settings/` subdirectory
+- **Gemini UX:** spinner without label looks like crash → reuse `.processing` but add Whisper-aware copy; no `.loadingModel` state for prewarm → add one; meeting engine captured at transcription time is action-at-a-distance → capture at recording start; per-meeting language override missing; download state must surface at toggle point
+
+Strategy unchallenged in either pass: zero reviewers questioned Parakeet-default + Whisper-opt-in, WhisperKit-over-Qwen3, or single-PR scope.
