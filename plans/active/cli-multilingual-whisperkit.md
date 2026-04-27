@@ -19,6 +19,8 @@ macparakeet-cli transcribe file.wav --engine whisper --language ko   # → Whisp
 
 **No auto-routing, no cross-process coordination, no abstraction layers.** User passes a flag, CLI dispatches, done.
 
+**Primary user:** Daniel consumes Korean content (YouTube, podcasts) and wants `macparakeet-cli` to handle Korean transcription end-to-end. WhisperKit's broader multilingual coverage (Vietnamese, Thai, Hindi, Arabic, 95+ others) is a free side-benefit — same code path, no extra cost. Agent operator demand is bonus, not blocker.
+
 ---
 
 ## Language coverage (user-facing doc copy)
@@ -105,7 +107,7 @@ The discipline here: ship the feature; defer defensive work until evidence shows
 | WhisperKit `@MainActor` deadlock in headless CLI | Possible (version-dependent) | High (CLI hangs) | Verify during implementation; `Task { @MainActor in ... }` wrapper if needed |
 | `argmax-oss-swift` meta-package drags in SpeakerKit/TTSKit | Real | Low (binary bloat) | Explicit `.product(name: "WhisperKit", package: "argmax-oss-swift")` |
 | WhisperKit Korean output is unusable in practice | Low | High | Reversal trigger #3 below; integrate Qwen3-ASR or other |
-| Demand for multilingual is thin | Real (unverified) | Medium | Ship cheaply; success metrics are targets, not baselines |
+| Korean transcription quality (the load-bearing use case) is unusable | Low (Whisper is well-validated on Korean) | High | Reversal trigger #3 below; Daniel sniff-tests pre-ship |
 | Watchdog kills legitimate long transcribes | N/A (no watchdog in v1) | — | Defer until needed |
 
 ---
@@ -137,16 +139,18 @@ When any trigger fires, integrate as a third engine — don't replace WhisperKit
 
 ---
 
-## Success signals (4–8 weeks post-ship)
+## Success signals
 
-Demand evidence is thin. OpenClaw/Hermes integration docs are boilerplate. Metrics below are targets with no baseline.
+The honest validation is: **Daniel transcribes Korean YouTube content with `macparakeet-cli transcribe <url> --engine whisper --language ko` and the output is good enough to read.** That's the load-bearing test.
 
-- WhisperKit `--engine whisper` invocation rate ≥5% of CLI transcribes (telemetry, opt-in)
-- ≤1 P0 issue from agent operators on the Whisper path in first month
-- ≥1 external "macparakeet-cli for non-English transcription" guide published
+Secondary signals (4–8 weeks post-ship, nice-to-have):
+
+- WhisperKit `--engine whisper` invocation rate non-zero in opt-in telemetry — proves the option is reachable for users beyond Daniel
+- ≤1 P0 issue on the Whisper path in first month
 - Argmax issue tracker: zero new MacParakeet-specific bug reports
+- Anyone else publishing a "macparakeet-cli for non-English transcription" writeup is gravy
 
-Bad ship: Whisper usage <1%; or P0 reports of unusable Korean → reversal triggers fire.
+Bad ship: Korean output is unusable in practice → reversal triggers fire toward Qwen3-ASR.
 
 ---
 
