@@ -400,6 +400,93 @@ final class TelemetryServiceTests: XCTestCase {
         XCTAssertNil(props["file_path"])
     }
 
+    func testCanonicalOperationSerializesSafeDimensionsOnly() throws {
+        let event = TelemetryEvent(
+            spec: .transcriptionOperation(
+                operationID: "op-123",
+                outcome: .success,
+                source: .file,
+                stage: .postProcessing,
+                durationSeconds: 15.8,
+                audioDurationSeconds: 90,
+                processingSeconds: 12.4,
+                wordCount: 240,
+                speakerCount: 2,
+                diarizationRequested: true,
+                diarizationApplied: true,
+                inputKind: .audio,
+                mediaExtension: "m4a",
+                fileSizeBucket: "10_100mb",
+                errorType: nil
+            ),
+            appVer: "0.4.2",
+            osVer: "15.3",
+            locale: "en-US",
+            chip: "Apple M1",
+            session: "test-session"
+        )
+
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let data = try encoder.encode(event)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let props = try XCTUnwrap(json["props"] as? [String: String])
+
+        XCTAssertEqual(json["event"] as? String, "transcription_operation")
+        XCTAssertEqual(props["operation_id"], "op-123")
+        XCTAssertEqual(props["outcome"], "success")
+        XCTAssertEqual(props["source"], "file")
+        XCTAssertEqual(props["duration_seconds"], "15.8")
+        XCTAssertEqual(props["input_kind"], "audio")
+        XCTAssertEqual(props["media_extension"], "m4a")
+        XCTAssertEqual(props["file_size_bucket"], "10_100mb")
+        XCTAssertNil(props["file_path"])
+        XCTAssertNil(props["file_name"])
+        XCTAssertNil(props["source_url"])
+    }
+
+    func testDictationOperationDoesNotSerializeDeviceNameOrUID() throws {
+        let device = RecordingDeviceInfo(
+            deviceName: "Alice's Custom Microphone",
+            transport: "bluetooth",
+            subTransport: nil,
+            sampleRate: 48_000,
+            channels: 1,
+            fallbackUsed: false,
+            deviceUID: "secret-device-uid",
+            requestedDeviceUID: "secret-requested-uid"
+        )
+        let event = TelemetryEvent(
+            spec: .dictationOperation(
+                operationID: "op-dict",
+                outcome: .success,
+                trigger: .hotkey,
+                mode: .persistent,
+                durationSeconds: 2.4,
+                wordCount: 10,
+                errorType: nil,
+                device: device
+            ),
+            appVer: "0.4.2",
+            osVer: "15.3",
+            locale: "en-US",
+            chip: "Apple M1",
+            session: "test-session"
+        )
+
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let data = try encoder.encode(event)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let props = try XCTUnwrap(json["props"] as? [String: String])
+
+        XCTAssertEqual(props["device_transport"], "bluetooth")
+        XCTAssertEqual(props["device_selected"], "true")
+        XCTAssertNil(props["device_name"])
+        XCTAssertNil(props["device_uid"])
+        XCTAssertNil(props["requested_device_uid"])
+    }
+
     func testImplementedContractCoversEveryTypedEventName() {
         XCTAssertEqual(
             Set(TelemetryEventName.allCases),
@@ -514,6 +601,15 @@ final class TelemetryServiceTests: XCTestCase {
             .dictationCancelled(durationSeconds: 1.5, reason: .escape),
             .dictationEmpty(durationSeconds: 1.5),
             .dictationFailed(errorType: "network"),
+            .dictationOperation(
+                operationID: "op-dict",
+                outcome: .success,
+                trigger: .hotkey,
+                mode: .persistent,
+                durationSeconds: 12.5,
+                wordCount: 84,
+                errorType: nil
+            ),
             .transcriptionStarted(source: .file, audioDurationSeconds: 30.0),
             .transcriptionCompleted(
                 source: .dragDrop,
@@ -526,6 +622,23 @@ final class TelemetryServiceTests: XCTestCase {
             ),
             .transcriptionCancelled(source: .youtube, audioDurationSeconds: 45.0, stage: .stt),
             .transcriptionFailed(source: .file, stage: .audioConversion, errorType: "transcribe"),
+            .transcriptionOperation(
+                operationID: "op-transcription",
+                outcome: .success,
+                source: .dragDrop,
+                stage: .postProcessing,
+                durationSeconds: 2.9,
+                audioDurationSeconds: 30.0,
+                processingSeconds: 2.4,
+                wordCount: 120,
+                speakerCount: 2,
+                diarizationRequested: true,
+                diarizationApplied: true,
+                inputKind: .audio,
+                mediaExtension: "mp3",
+                fileSizeBucket: "1_10mb",
+                errorType: nil
+            ),
             .exportUsed(format: "txt"),
             .llmPromptResultUsed(provider: "openai"),
             .llmPromptResultFailed(provider: "openai", errorType: "auth"),
@@ -549,6 +662,20 @@ final class TelemetryServiceTests: XCTestCase {
                 errorType: "network",
                 defaultPromptUsed: false,
                 inputTruncated: true
+            ),
+            .llmOperation(
+                operationID: "op-llm",
+                feature: "chat",
+                provider: "openai",
+                streaming: false,
+                outcome: .success,
+                durationSeconds: 1.2,
+                inputChars: 480,
+                outputChars: 512,
+                inputTruncated: false,
+                promptDefaultUsed: nil,
+                messageCount: 3,
+                errorType: nil
             ),
             .historySearched,
             .historyReplayed,
@@ -579,6 +706,15 @@ final class TelemetryServiceTests: XCTestCase {
             .modelDownloadStarted,
             .modelDownloadCompleted(durationSeconds: 30.0),
             .modelDownloadFailed(errorType: "network"),
+            .feedbackOperation(
+                operationID: "op-feedback",
+                category: "bug",
+                outcome: .success,
+                durationSeconds: 0.6,
+                screenshotAttached: false,
+                systemInfoIncluded: true,
+                errorType: nil
+            ),
             .onboardingStep(step: "microphone"),
             .licenseActivationFailed(errorType: "invalid_key"),
             .keystrokeSnippetFired(action: "return"),
@@ -586,6 +722,19 @@ final class TelemetryServiceTests: XCTestCase {
             .meetingRecordingCompleted(durationSeconds: 1800.0, liveWordCount: 4200, liveTranscriptLagged: false),
             .meetingRecordingCancelled(durationSeconds: 30.0),
             .meetingRecordingFailed(errorType: "tap_creation_failed"),
+            .meetingOperation(
+                operationID: "op-meeting",
+                outcome: .success,
+                trigger: .manual,
+                durationSeconds: 1800.0,
+                liveWordCount: 4200,
+                liveTranscriptLagged: false,
+                microphoneTrackPresent: true,
+                systemTrackPresent: true,
+                notesUsed: true,
+                notesLengthBucket: "1_200",
+                errorType: nil
+            ),
             .meetingRecoveryDiscovered(count: 1, source: .launch),
             .meetingRecoveryStarted(count: 1, source: .launch),
             .meetingRecoveryCompleted(count: 1, durationSeconds: 4.2, source: .launch),
@@ -597,6 +746,26 @@ final class TelemetryServiceTests: XCTestCase {
                 crashTimestamp: "1711900000", crashAppVer: "0.5.1",
                 crashOsVer: "15.3.1", uuid: "A1B2C3D4", slide: "0x100000",
                 reason: nil, stackTrace: "0x1234\n0x5678"
+            ),
+            .cliOperation(
+                operationID: "op-cli",
+                command: "transcribe",
+                subcommand: nil,
+                outcome: .success,
+                durationSeconds: 4.2,
+                inputKind: .audio,
+                outputFormat: "json",
+                json: true,
+                exitCode: 0,
+                errorType: nil
+            ),
+            .autoSaveOperation(
+                operationID: "op-auto-save",
+                scope: .transcription,
+                format: .md,
+                outcome: .success,
+                durationSeconds: 0.2,
+                errorType: nil
             ),
         ]
     }

@@ -58,17 +58,24 @@ struct TranscribeCommand: AsyncParsableCommand {
     }
 
     func run() async throws {
+        CLITelemetry.configureIfNeeded()
+        let cliOperationID = Observability.operationID()
+        let cliStartedAt = Date()
         let trimmedInput = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        let inputKind: ObservabilityInputKind = YouTubeURLValidator.isYouTubeURL(trimmedInput)
+            ? .youtube
+            : (Observability.inputKind(for: URL(fileURLWithPath: trimmedInput)) ?? .unknown)
 
-        // Set up services
-        try AppPaths.ensureDirectories()
-        let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
-        let transcriptionRepo = TranscriptionRepository(dbQueue: dbManager.dbQueue)
-        let customWordRepo = CustomWordRepository(dbQueue: dbManager.dbQueue)
-        let snippetRepo = TextSnippetRepository(dbQueue: dbManager.dbQueue)
-        let sttClient = STTClient()
+        var sttClient: STTClient?
         let runResult: Result<Void, Error>
         do {
+            try AppPaths.ensureDirectories()
+            let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
+            let transcriptionRepo = TranscriptionRepository(dbQueue: dbManager.dbQueue)
+            let customWordRepo = CustomWordRepository(dbQueue: dbManager.dbQueue)
+            let snippetRepo = TextSnippetRepository(dbQueue: dbManager.dbQueue)
+            let createdSTTClient = STTClient()
+            sttClient = createdSTTClient
             let audioProcessor = AudioProcessor()
             let youtubeDownloader = YouTubeDownloader()
             let entitlementsService = enforceEntitlements ? makeEntitlementsService() : nil
@@ -81,7 +88,7 @@ struct TranscribeCommand: AsyncParsableCommand {
             let diarizationService: DiarizationService? = noDiarize ? nil : DiarizationService()
             let service = TranscriptionService(
                 audioProcessor: audioProcessor,
-                sttTranscriber: sttClient,
+                sttTranscriber: createdSTTClient,
                 transcriptionRepo: transcriptionRepo,
                 entitlements: entitlementsService,
                 customWordRepo: customWordRepo,
@@ -144,7 +151,31 @@ struct TranscribeCommand: AsyncParsableCommand {
             runResult = .failure(error)
         }
 
-        await sttClient.shutdown()
+        await sttClient?.shutdown()
+        let cliOutcome: ObservabilityOutcome
+        let exitCode: Int
+        let errorType: String?
+        switch runResult {
+        case .success:
+            cliOutcome = .success
+            exitCode = 0
+            errorType = nil
+        case .failure(let error):
+            cliOutcome = .failure
+            exitCode = 1
+            errorType = Observability.errorType(for: error)
+        }
+        await CLITelemetry.sendOperationAndFlush(
+            operationID: cliOperationID,
+            command: "transcribe",
+            outcome: cliOutcome,
+            startedAt: cliStartedAt,
+            inputKind: inputKind,
+            outputFormat: format.rawValue,
+            json: format == .json,
+            exitCode: exitCode,
+            errorType: errorType
+        )
         try runResult.get()
     }
 

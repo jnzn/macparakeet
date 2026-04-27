@@ -71,6 +71,7 @@ final class MockLLMClient: LLMClientProtocol, @unchecked Sendable {
 final class MockLLMExecutionContextResolver: LLMExecutionContextResolving, @unchecked Sendable {
     let configStore: MockLLMConfigStore
     var localCLIConfig: LocalCLIConfig?
+    var resolveError: Error?
 
     init(configStore: MockLLMConfigStore, localCLIConfig: LocalCLIConfig? = nil) {
         self.configStore = configStore
@@ -78,6 +79,9 @@ final class MockLLMExecutionContextResolver: LLMExecutionContextResolving, @unch
     }
 
     func resolveContext() throws -> LLMExecutionContext? {
+        if let resolveError {
+            throw resolveError
+        }
         guard let config = try configStore.loadConfig() else { return nil }
         let resolvedLocalCLIConfig = config.id == .localCLI ? localCLIConfig : nil
         return LLMExecutionContext(
@@ -140,6 +144,31 @@ final class MockLLMConfigStore: LLMConfigStoreProtocol, @unchecked Sendable {
     }
 }
 
+private final class LLMTelemetrySpy: TelemetryServiceProtocol, @unchecked Sendable {
+    private let lock = NSLock()
+    private var events: [TelemetryEventSpec] = []
+
+    func send(_ event: TelemetryEventSpec) {
+        lock.lock()
+        events.append(event)
+        lock.unlock()
+    }
+
+    func sendAndFlush(_ event: TelemetryEventSpec) async -> Bool {
+        send(event)
+        return true
+    }
+
+    func flush() async {}
+    func flushForTermination() {}
+
+    func snapshot() -> [TelemetryEventSpec] {
+        lock.lock()
+        defer { lock.unlock() }
+        return events
+    }
+}
+
 final class LLMServiceTests: XCTestCase {
     var mockClient: MockLLMClient!
     var mockConfigStore: MockLLMConfigStore!
@@ -152,6 +181,15 @@ final class LLMServiceTests: XCTestCase {
         mockConfigStore.config = .openai(apiKey: "sk-test")
         mockContextResolver = MockLLMExecutionContextResolver(configStore: mockConfigStore)
         service = LLMService(client: mockClient, contextResolver: mockContextResolver)
+    }
+
+    override func tearDown() {
+        Telemetry.configure(NoOpTelemetryService())
+        service = nil
+        mockContextResolver = nil
+        mockConfigStore = nil
+        mockClient = nil
+        super.tearDown()
     }
 
     // MARK: - Not Configured
@@ -219,6 +257,28 @@ final class LLMServiceTests: XCTestCase {
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
+    }
+
+    func testSetupCancellationEmitsCancelledLLMOperationWithoutErrorType() async {
+        let telemetry = LLMTelemetrySpy()
+        Telemetry.configure(telemetry)
+        mockContextResolver.resolveError = CancellationError()
+
+        do {
+            _ = try await service.summarize(transcript: "Test")
+            XCTFail("Expected CancellationError")
+        } catch is CancellationError {
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        let operations = llmOperationProps(in: telemetry.snapshot())
+        XCTAssertEqual(operations.count, 1)
+        XCTAssertEqual(operations.first?["feature"], "prompt_result")
+        XCTAssertEqual(operations.first?["provider"], "unknown")
+        XCTAssertEqual(operations.first?["streaming"], "false")
+        XCTAssertEqual(operations.first?["outcome"], "cancelled")
+        XCTAssertNil(operations.first?["error_type"])
     }
 
     // MARK: - Summarize
@@ -693,6 +753,36 @@ final class LLMServiceTests: XCTestCase {
         }
     }
 
+    func testSummarizeStreamSetupCancellationEmitsOneCancelledLLMOperationWithoutErrorType() async {
+        let telemetry = LLMTelemetrySpy()
+        Telemetry.configure(telemetry)
+        mockContextResolver.resolveError = CancellationError()
+        let stream = service.summarizeStream(transcript: "Test")
+
+        do {
+            for try await _ in stream {
+                XCTFail("Expected stream to throw")
+            }
+            XCTFail("Expected CancellationError")
+        } catch is CancellationError {
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        let events = telemetry.snapshot()
+        let operations = llmOperationProps(in: events)
+        XCTAssertEqual(operations.count, 1)
+        XCTAssertEqual(operations.first?["feature"], "prompt_result")
+        XCTAssertEqual(operations.first?["provider"], "unknown")
+        XCTAssertEqual(operations.first?["streaming"], "true")
+        XCTAssertEqual(operations.first?["outcome"], "cancelled")
+        XCTAssertNil(operations.first?["error_type"])
+        XCTAssertFalse(events.contains { event in
+            if case .llmPromptResultFailed = event { return true }
+            return false
+        })
+    }
+
     func testChatStreamThrowsWhenNotConfigured() async {
         mockConfigStore.config = nil
         let stream = service.chatStream(question: "Q", transcript: "T", history: [])
@@ -747,5 +837,12 @@ final class LLMServiceTests: XCTestCase {
         mockConfigStore.config = nil
         try mockConfigStore.updateModelName("gpt-5-mini")
         XCTAssertNil(try mockConfigStore.loadConfig())
+    }
+
+    private func llmOperationProps(in events: [TelemetryEventSpec]) -> [[String: String]] {
+        events.compactMap { event in
+            guard case .llmOperation = event else { return nil }
+            return event.props ?? [:]
+        }
     }
 }
