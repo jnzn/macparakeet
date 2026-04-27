@@ -63,8 +63,10 @@ public final class MeetingRecordingRecoveryService: MeetingRecordingRecoveryServ
     }
 
     public func discoverPendingRecoveries() async throws -> [MeetingRecordingLockFile] {
+        // `discoverOrphans` already sorts by `startedAt` with a folder-path
+        // tiebreaker for ties — re-sorting here would just drop the
+        // tiebreaker without adding any ordering guarantee.
         try lockFileStore.discoverOrphans(meetingsRoot: meetingsRoot)
-            .sorted { $0.startedAt < $1.startedAt }
     }
 
     public func recover(_ lock: MeetingRecordingLockFile) async throws -> Transcription {

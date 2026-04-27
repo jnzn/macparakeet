@@ -75,6 +75,12 @@ final class MeetingRecoveryCoordinator {
         alert.addButton(withTitle: "Recover")
         alert.addButton(withTitle: "Recover Later")
         alert.addButton(withTitle: "Discard")
+        // Match `confirmAndCancelRecording` — the Discard path deletes the
+        // session folder (`MeetingRecordingRecoveryService.discard`), so
+        // surface that as destructive in the alert chrome.
+        if alert.buttons.indices.contains(2) {
+            alert.buttons[2].hasDestructiveAction = true
+        }
 
         let response = await presentAlert(alert)
         switch response {
