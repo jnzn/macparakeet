@@ -67,6 +67,7 @@ public actor DictationService: DictationServiceProtocol {
     private var currentTelemetryContext = DictationTelemetryContext()
     private var recordingStartedAt: Date?
     private var currentOperationID: String?
+    private var currentOperationContext = DictationTelemetryContext()
     private var activeSessionID: Int = 0
 
     public var state: DictationState {
@@ -155,6 +156,7 @@ public actor DictationService: DictationServiceProtocol {
         let requestedSessionID = sessionID ?? activeSessionID + 1
         activeSessionID = requestedSessionID
         currentOperationID = Observability.operationID()
+        currentOperationContext = context
         _state = .recording
         do {
             try await audioProcessor.startCapture()
@@ -165,7 +167,6 @@ public actor DictationService: DictationServiceProtocol {
                     try? FileManager.default.removeItem(at: audioURL)
                 }
                 recordingStartedAt = nil
-                currentOperationID = nil
                 logger.notice(
                     "startRecording aborted session=\(requestedSessionID) state=\(self.debugStateLabel(self._state), privacy: .public)"
                 )
@@ -176,17 +177,19 @@ public actor DictationService: DictationServiceProtocol {
             Telemetry.send(.dictationStarted(trigger: context.trigger, mode: context.mode))
             logger.debug("startRecording capture started session=\(requestedSessionID)")
         } catch {
+            let operationID = currentOperationID
+            let operationContext = currentOperationContext
             let device = await audioProcessor.recordingDeviceInfo
             _state = .idle
-            let operationID = currentOperationID
             recordingStartedAt = nil
             sendDictationOperation(
                 operationID: operationID,
+                telemetryContext: operationContext,
                 outcome: .failure,
                 errorType: Self.errorType(for: error),
                 device: device
             )
-            currentOperationID = nil
+            clearCurrentOperation()
             Telemetry.send(.dictationFailed(errorType: Self.errorType(for: error), errorDetail: TelemetryErrorClassifier.errorDetail(error), device: device))
             logger.error(
                 "startRecording failed session=\(requestedSessionID) error=\(error.localizedDescription, privacy: .public)"
@@ -252,7 +255,7 @@ public actor DictationService: DictationServiceProtocol {
             guard activeSessionID == currentSession else { return result }
             _state = .idle
             recordingStartedAt = nil
-            currentOperationID = nil
+            clearCurrentOperation()
             return result
         } catch {
             // Snapshot device before setting state to .idle — prevents reentrancy
@@ -283,7 +286,7 @@ public actor DictationService: DictationServiceProtocol {
                 Telemetry.send(.dictationFailed(errorType: Self.errorType(for: error), errorDetail: TelemetryErrorClassifier.errorDetail(error), device: device))
             }
             recordingStartedAt = nil
-            currentOperationID = nil
+            clearCurrentOperation()
             logger.error(
                 "stopRecording failed session=\(currentSession) error=\(error.localizedDescription, privacy: .public)"
             )
@@ -356,7 +359,7 @@ public actor DictationService: DictationServiceProtocol {
             device: device
         )
         recordingStartedAt = nil
-        currentOperationID = nil
+        clearCurrentOperation()
         _state = .idle
     }
 
@@ -394,7 +397,7 @@ public actor DictationService: DictationServiceProtocol {
             try? await Task.sleep(for: .milliseconds(500))
             _state = .idle
             recordingStartedAt = nil
-            currentOperationID = nil
+            clearCurrentOperation()
             return result
         } catch {
             let device = await audioProcessor.recordingDeviceInfo
@@ -417,7 +420,7 @@ public actor DictationService: DictationServiceProtocol {
                 Telemetry.send(.dictationFailed(errorType: Self.errorType(for: error), errorDetail: TelemetryErrorClassifier.errorDetail(error), device: device))
             }
             recordingStartedAt = nil
-            currentOperationID = nil
+            clearCurrentOperation()
             throw error
         }
     }
@@ -605,7 +608,7 @@ public actor DictationService: DictationServiceProtocol {
             )
             discardPendingCancelledAudio()
             recordingStartedAt = nil
-            currentOperationID = nil
+            clearCurrentOperation()
             _state = .idle
         }
         cancelResetTask = nil
@@ -637,8 +640,14 @@ public actor DictationService: DictationServiceProtocol {
         TelemetryErrorClassifier.classify(error)
     }
 
+    private func clearCurrentOperation() {
+        currentOperationID = nil
+        currentOperationContext = DictationTelemetryContext()
+    }
+
     private func sendDictationOperation(
         operationID: String? = nil,
+        telemetryContext: DictationTelemetryContext? = nil,
         outcome: ObservabilityOutcome,
         durationSeconds: Double? = nil,
         wordCount: Int? = nil,
@@ -646,11 +655,12 @@ public actor DictationService: DictationServiceProtocol {
         device: RecordingDeviceInfo? = nil
     ) {
         guard let id = operationID ?? currentOperationID else { return }
+        let context = telemetryContext ?? currentOperationContext
         Telemetry.send(.dictationOperation(
             operationID: id,
             outcome: outcome,
-            trigger: currentTelemetryContext.trigger,
-            mode: currentTelemetryContext.mode,
+            trigger: context.trigger,
+            mode: context.mode,
             durationSeconds: durationSeconds,
             wordCount: wordCount,
             errorType: errorType,
