@@ -494,7 +494,9 @@ final class MeetingRecordingFlowCoordinator {
                 panelViewModel?.elapsedSeconds = elapsedSeconds
                 panelViewModel?.micLevel = micLevel
                 panelViewModel?.systemLevel = systemLevel
-                if captureMode == .stopped, pillViewModel?.state == .recording {
+                if captureMode == .stopped,
+                   stateMachine.state == .recording,
+                   pillViewModel?.state == .recording {
                     // Audio capture stopped while the state machine still
                     // expects a live recording — typically because
                     // `MeetingRecordingService.failCapture` ran (mic unplug,

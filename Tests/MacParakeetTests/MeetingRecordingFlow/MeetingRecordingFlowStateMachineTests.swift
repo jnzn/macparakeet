@@ -76,6 +76,44 @@ final class MeetingRecordingFlowStateMachineTests: XCTestCase {
         )
     }
 
+    func testCaptureFailureWhileRecordingBeginsTranscription() {
+        var machine = MeetingRecordingFlowStateMachine()
+        _ = machine.handle(.startRequested)
+        _ = machine.handle(.permissionsGranted(generation: 1))
+        _ = machine.handle(.recordingStarted(generation: 1))
+
+        let effects = machine.handle(.captureFailed(generation: 1))
+
+        XCTAssertEqual(machine.state, .transcribing)
+        XCTAssertEqual(
+            effects,
+            [.showTranscribingState, .updateMenuBar(.processing), .stopRecordingAndTranscribe]
+        )
+    }
+
+    func testCaptureFailureWhileStartingIsIgnored() {
+        var machine = MeetingRecordingFlowStateMachine()
+        _ = machine.handle(.startRequested)
+        _ = machine.handle(.permissionsGranted(generation: 1))
+
+        let effects = machine.handle(.captureFailed(generation: 1))
+
+        XCTAssertEqual(machine.state, .starting)
+        XCTAssertTrue(effects.isEmpty)
+    }
+
+    func testStaleCaptureFailureIsIgnored() {
+        var machine = MeetingRecordingFlowStateMachine()
+        _ = machine.handle(.startRequested)
+        _ = machine.handle(.permissionsGranted(generation: 1))
+        _ = machine.handle(.recordingStarted(generation: 1))
+
+        let effects = machine.handle(.captureFailed(generation: 0))
+
+        XCTAssertEqual(machine.state, .recording)
+        XCTAssertTrue(effects.isEmpty)
+    }
+
     func testCompletedTranscriptionNavigatesAndSchedulesDismiss() {
         var machine = MeetingRecordingFlowStateMachine()
         let transcriptionID = UUID()

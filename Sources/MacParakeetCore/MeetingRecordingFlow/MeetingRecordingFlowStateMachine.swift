@@ -122,12 +122,6 @@ public struct MeetingRecordingFlowStateMachine: Equatable, Sendable {
             state = .transcribing
             return [.showTranscribingState, .updateMenuBar(.processing), .stopRecordingAndTranscribe]
 
-        case (.starting, .captureFailed(let gen)):
-            guard gen == generation else { return [] }
-            let message = "Audio capture stopped before the recording could start."
-            state = .finishing(outcome: .error(message))
-            return [.showError(message), .updateMenuBar(.idle), .startAutoDismissTimer(seconds: 5)]
-
         case (.transcribing, .transcriptionCompleted(let gen, let transcriptionID)):
             guard gen == generation else { return [] }
             state = .finishing(outcome: .completed(transcriptionID))
