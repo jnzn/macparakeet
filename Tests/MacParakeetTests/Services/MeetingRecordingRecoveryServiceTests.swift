@@ -216,7 +216,7 @@ final class MeetingRecordingRecoveryServiceTests: XCTestCase {
         XCTAssertNil(transcription.userNotes, "lock with no notes leaves userNotes nil")
     }
 
-    // MARK: - discoverPendingRecoveries — empty-session filter
+    // MARK: - discoverPendingRecoveries - empty-session filter
 
     func testDiscoverFiltersStubSessionAndPurgesFolder() async throws {
         let stub = try makeEmptyStubSession()
@@ -322,8 +322,21 @@ final class MeetingRecordingRecoveryServiceTests: XCTestCase {
         )
     }
 
+    func testDiscoverKeepsCandidateWhenViabilityCheckFails() async throws {
+        let stub = try makeEmptyStubSession()
+        transcriptionRepo.fetchAllError = RecoveryTestError.transcriptionFailed
+
+        let pending = try await recoveryService.discoverPendingRecoveries()
+
+        XCTAssertEqual(pending.map(\.sessionId), [stub.lock.sessionId])
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: stub.folderURL.path),
+            "a viability-check failure should not purge user data"
+        )
+    }
+
     /// Writes a session folder containing only init-header-sized audio
-    /// stubs — the exact pattern produced by a recording that was killed
+    /// stubs - the exact pattern produced by a recording that was killed
     /// before any audio frames were captured. Real-world stub size is
     /// ~557 bytes; we go with a known-small fixed payload so the test is
     /// deterministic and obviously below `minViableAudioBytes`.
@@ -346,7 +359,7 @@ final class MeetingRecordingRecoveryServiceTests: XCTestCase {
     }
 
     private func writeStubAudio(to url: URL) throws {
-        // 600 bytes — comfortably above an empty file but well under
+        // 600 bytes - comfortably above an empty file but well under
         // `minViableAudioBytes`. The exact byte content is irrelevant; we
         // only care that the file size is below the recovery threshold.
         try Data(count: 600).write(to: url)
@@ -520,6 +533,7 @@ private final class RecoveryMockTranscriptionService: TranscriptionServiceProtoc
 private final class RecordingTranscriptionRepository: TranscriptionRepositoryProtocol, @unchecked Sendable {
     private let lock = NSLock()
     private(set) var saved: [Transcription] = []
+    var fetchAllError: Error?
 
     func save(_ transcription: Transcription) throws {
         lock.withLock {
@@ -533,7 +547,8 @@ private final class RecordingTranscriptionRepository: TranscriptionRepositoryPro
     }
 
     func fetchAll(limit: Int?) throws -> [Transcription] {
-        lock.withLock { saved }
+        if let fetchAllError { throw fetchAllError }
+        return lock.withLock { saved }
     }
 
     func fetchCompletedByVideoID(_ videoID: String) throws -> Transcription? { nil }
