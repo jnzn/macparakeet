@@ -80,6 +80,14 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
     /// typed (which we preserve as `nil` rather than empty so downstream
     /// `Transcription.userNotes` is `nil` for non-notepad recordings).
     private var currentNotes: String?
+    /// In-memory mirror of the session's `recording.lock` content. Held so
+    /// `updateNotes` can persist notes by mutating + atomic-writing in one
+    /// step instead of read-modify-write on every keystroke debounce. The
+    /// actor isolation already serializes lock-file writes with state
+    /// transitions; the disk read was redundant. Initialized in
+    /// `startRecording`, mutated by state transitions, cleared in
+    /// `cleanupState` / `cancelRecording`.
+    private var currentLockFile: MeetingRecordingLockFile?
     /// Keeps replacement starts out while `audioCaptureService.start()` is still
     /// unwinding after cancellation. `currentSession` may already be nil then.
     private var startingSessionID: UUID?
@@ -201,16 +209,15 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         self.currentSession = session
 
         do {
-            try lockFileStore.write(
-                MeetingRecordingLockFile(
-                    sessionId: session.id,
-                    startedAt: session.startedAt,
-                    pid: ProcessInfo.processInfo.processIdentifier,
-                    displayName: session.displayName,
-                    folderURL: session.folderURL
-                ),
+            let initialLock = MeetingRecordingLockFile(
+                sessionId: session.id,
+                startedAt: session.startedAt,
+                pid: ProcessInfo.processInfo.processIdentifier,
+                displayName: session.displayName,
                 folderURL: session.folderURL
             )
+            try lockFileStore.write(initialLock, folderURL: session.folderURL)
+            currentLockFile = initialLock
         } catch {
             self.writer = nil
             await finalizeWriter(writer)
@@ -289,6 +296,12 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         }
 
         await audioCaptureService.stop()
+        // Defensive: `audioCaptureService.stop()` is supposed to finish the
+        // events stream so the `for await` in `processingTask` exits, but if
+        // the capture service had a bug that left the continuation open we
+        // would hang here forever. Cancelling the task lets the for-await
+        // exit even in that pathological case.
+        processingTask?.cancel()
         await processingTask?.value
         processingTask = nil
         let finalizedWriter = writer
@@ -333,18 +346,17 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         }
 
         let finalNotes = currentNotes
-        try? lockFileStore.write(
-            MeetingRecordingLockFile(
-                sessionId: session.id,
-                startedAt: session.startedAt,
-                pid: ProcessInfo.processInfo.processIdentifier,
-                displayName: session.displayName,
-                state: .awaitingTranscription,
-                notes: finalNotes,
-                folderURL: session.folderURL
-            ),
+        let awaitingLock = (currentLockFile ?? MeetingRecordingLockFile(
+            sessionId: session.id,
+            startedAt: session.startedAt,
+            pid: ProcessInfo.processInfo.processIdentifier,
+            displayName: session.displayName,
             folderURL: session.folderURL
-        )
+        ))
+            .withNotes(finalNotes)
+            .withState(.awaitingTranscription)
+        try? lockFileStore.write(awaitingLock, folderURL: session.folderURL)
+        currentLockFile = awaitingLock
 
         let durationSeconds = max(0, Date().timeIntervalSince(session.startedAt))
         let output = MeetingRecordingOutput(
@@ -384,27 +396,24 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         let normalized: String? = trimmed.isEmpty ? nil : notes
         currentNotes = normalized
 
+        // Mutate the in-memory mirror and atomically rewrite. Actor
+        // isolation already serializes us with state-transition writes
+        // (`stopRecording` / `cancelRecording` / `startRecording`), so
+        // reading the file back from disk on every keystroke debounce
+        // would just be redundant I/O. `currentLockFile` is normally set
+        // by `startRecording`; the fallback handles the vanishingly rare
+        // case where a debounce somehow fires before initialization.
+        let base = currentLockFile ?? MeetingRecordingLockFile(
+            sessionId: session.id,
+            startedAt: session.startedAt,
+            pid: ProcessInfo.processInfo.processIdentifier,
+            displayName: session.displayName,
+            folderURL: session.folderURL
+        )
+        let updated = base.withNotes(normalized)
         do {
-            // Read-modify-write to preserve any state already on disk
-            // (most importantly: the recording state field). If the file
-            // doesn't exist yet (extremely unlikely between startRecording
-            // succeeding and the first debounce), write a fresh recording-
-            // state record carrying the notes.
-            let existing = try lockFileStore.read(folderURL: session.folderURL)
-            let updated: MeetingRecordingLockFile
-            if let existing {
-                updated = existing.withNotes(normalized)
-            } else {
-                updated = MeetingRecordingLockFile(
-                    sessionId: session.id,
-                    startedAt: session.startedAt,
-                    pid: ProcessInfo.processInfo.processIdentifier,
-                    displayName: session.displayName,
-                    notes: normalized,
-                    folderURL: session.folderURL
-                )
-            }
             try lockFileStore.write(updated, folderURL: session.folderURL)
+            currentLockFile = updated
         } catch {
             // Notes persistence is best-effort — losing one debounce write to
             // an I/O error is preferable to surfacing a UI error mid-meeting.
@@ -779,6 +788,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
     private func cleanupState() {
         currentSession = nil
         currentNotes = nil
+        currentLockFile = nil
         micConditioner = SoftwareAECConditioner()
         latestLevels = MeetingAudioLevels()
         sourceCaptureMetrics = [:]
