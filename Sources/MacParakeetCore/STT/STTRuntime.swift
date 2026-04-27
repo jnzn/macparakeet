@@ -26,6 +26,7 @@ public actor STTRuntime: STTRuntimeProtocol {
     private var interactiveManager: AsrManager?
     private var backgroundManager: AsrManager?
     private var models: AsrModels?
+    private var decoderLayerCount: Int?
     private var initializationTask: Task<Void, Error>?
     private var initializationGeneration: UInt64 = 0
     private var warmUpProgressHandler: (@Sendable (String) -> Void)?
@@ -49,6 +50,9 @@ public actor STTRuntime: STTRuntimeProtocol {
 
         let slot = route(for: job)
         guard let manager = manager(for: slot) else {
+            throw STTError.modelNotLoaded
+        }
+        guard let decoderLayers = decoderLayerCount else {
             throw STTError.modelNotLoaded
         }
 
@@ -79,7 +83,9 @@ public actor STTRuntime: STTRuntimeProtocol {
 
         do {
             try Task.checkCancellation()
-            let result = try await manager.transcribe(audioURL)
+            var decoderState = TdtDecoderState.make(decoderLayers: decoderLayers)
+            try Task.checkCancellation()
+            let result = try await manager.transcribe(audioURL, decoderState: &decoderState)
             let words = Self.mergeTokenTimingsIntoWords(result.tokenTimings)
             onProgress?(100, 100)
             return STTResult(text: result.text, words: words)
@@ -192,6 +198,7 @@ public actor STTRuntime: STTRuntimeProtocol {
         self.interactiveManager = nil
         self.backgroundManager = nil
         self.models = nil
+        self.decoderLayerCount = nil
         await Self.cleanupManagers(
             interactiveManager: interactiveManager,
             backgroundManager: backgroundManager
@@ -311,10 +318,12 @@ public actor STTRuntime: STTRuntimeProtocol {
                 backgroundManager = loadedBackgroundManager
                 try await loadedInteractiveManager.loadModels(downloadedModels)
                 try await loadedBackgroundManager.loadModels(downloadedModels)
+                let loadedDecoderLayerCount = await loadedInteractiveManager.decoderLayerCount
                 try Task.checkCancellation()
                 try await self.completeInitialization(
                     generation: generation,
                     models: downloadedModels,
+                    decoderLayerCount: loadedDecoderLayerCount,
                     interactiveManager: loadedInteractiveManager,
                     backgroundManager: loadedBackgroundManager
                 )
@@ -347,6 +356,7 @@ public actor STTRuntime: STTRuntimeProtocol {
     private func completeInitialization(
         generation: UInt64,
         models: AsrModels,
+        decoderLayerCount: Int,
         interactiveManager: AsrManager,
         backgroundManager: AsrManager
     ) async throws {
@@ -355,6 +365,7 @@ public actor STTRuntime: STTRuntimeProtocol {
         }
         try Task.checkCancellation()
         self.models = models
+        self.decoderLayerCount = decoderLayerCount
         self.interactiveManager = interactiveManager
         self.backgroundManager = backgroundManager
     }
