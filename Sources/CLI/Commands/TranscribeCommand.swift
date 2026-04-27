@@ -59,8 +59,9 @@ struct TranscribeCommand: AsyncParsableCommand {
 
     func run() async throws {
         CLITelemetry.configureIfNeeded()
-        let cliOperationID = Observability.operationID()
-        let cliStartedAt = Date()
+        let cliOperationContext = ObservabilityOperationContext()
+        let cliOperationID = cliOperationContext.operationID
+        let cliStartedAt = cliOperationContext.startedAt
         let trimmedInput = input.trimmingCharacters(in: .whitespacesAndNewlines)
         let inputKind: ObservabilityInputKind = YouTubeURLValidator.isYouTubeURL(trimmedInput)
             ? .youtube
@@ -69,82 +70,84 @@ struct TranscribeCommand: AsyncParsableCommand {
         var sttClient: STTClient?
         let runResult: Result<Void, Error>
         do {
-            try AppPaths.ensureDirectories()
-            let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
-            let transcriptionRepo = TranscriptionRepository(dbQueue: dbManager.dbQueue)
-            let customWordRepo = CustomWordRepository(dbQueue: dbManager.dbQueue)
-            let snippetRepo = TextSnippetRepository(dbQueue: dbManager.dbQueue)
-            let createdSTTClient = STTClient()
-            sttClient = createdSTTClient
-            let audioProcessor = AudioProcessor()
-            let youtubeDownloader = YouTubeDownloader()
-            let entitlementsService = enforceEntitlements ? makeEntitlementsService() : nil
+            try await Observability.withOperationContext(cliOperationContext) {
+                try AppPaths.ensureDirectories()
+                let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
+                let transcriptionRepo = TranscriptionRepository(dbQueue: dbManager.dbQueue)
+                let customWordRepo = CustomWordRepository(dbQueue: dbManager.dbQueue)
+                let snippetRepo = TextSnippetRepository(dbQueue: dbManager.dbQueue)
+                let createdSTTClient = STTClient()
+                sttClient = createdSTTClient
+                let audioProcessor = AudioProcessor()
+                let youtubeDownloader = YouTubeDownloader()
+                let entitlementsService = enforceEntitlements ? makeEntitlementsService() : nil
 
-            if let entitlementsService {
-                await entitlementsService.bootstrapTrialIfNeeded()
-                await entitlementsService.refreshValidationIfNeeded()
-            }
+                if let entitlementsService {
+                    await entitlementsService.bootstrapTrialIfNeeded()
+                    await entitlementsService.refreshValidationIfNeeded()
+                }
 
-            let diarizationService: DiarizationService? = noDiarize ? nil : DiarizationService()
-            let service = TranscriptionService(
-                audioProcessor: audioProcessor,
-                sttTranscriber: createdSTTClient,
-                transcriptionRepo: transcriptionRepo,
-                entitlements: entitlementsService,
-                customWordRepo: customWordRepo,
-                snippetRepo: snippetRepo,
-                processingMode: {
-                    let defaults = macParakeetAppDefaults()
-                    return Self.resolveProcessingMode(self.mode, storedMode: defaults.string(forKey: "processingMode"))
-                },
-                shouldKeepDownloadedAudio: {
-                    switch self.downloadedAudio {
-                    case .keep:
-                        return true
-                    case .delete:
-                        return false
-                    case .appDefault:
+                let diarizationService: DiarizationService? = noDiarize ? nil : DiarizationService()
+                let service = TranscriptionService(
+                    audioProcessor: audioProcessor,
+                    sttTranscriber: createdSTTClient,
+                    transcriptionRepo: transcriptionRepo,
+                    entitlements: entitlementsService,
+                    customWordRepo: customWordRepo,
+                    snippetRepo: snippetRepo,
+                    processingMode: {
                         let defaults = macParakeetAppDefaults()
-                        return defaults.object(forKey: "saveTranscriptionAudio") as? Bool ?? true
+                        return Self.resolveProcessingMode(self.mode, storedMode: defaults.string(forKey: "processingMode"))
+                    },
+                    shouldKeepDownloadedAudio: {
+                        switch self.downloadedAudio {
+                        case .keep:
+                            return true
+                        case .delete:
+                            return false
+                        case .appDefault:
+                            let defaults = macParakeetAppDefaults()
+                            return defaults.object(forKey: "saveTranscriptionAudio") as? Bool ?? true
+                        }
+                    },
+                    youtubeDownloader: youtubeDownloader,
+                    diarizationService: diarizationService
+                )
+
+                let result: Transcription
+
+                if YouTubeURLValidator.isYouTubeURL(trimmedInput) {
+                    result = try await service.transcribeURL(urlString: trimmedInput) { progress in
+                        switch progress {
+                        case .converting: printErr("Converting audio...")
+                        case .downloading(let pct): printErr("Downloading audio... \(pct)%")
+                        case .transcribing(let pct): printErr("Transcribing... \(pct)%")
+                        case .identifyingSpeakers: printErr("Identifying speakers...")
+                        case .finalizing: printErr("Finalizing...")
+                        }
                     }
-                },
-                youtubeDownloader: youtubeDownloader,
-                diarizationService: diarizationService
-            )
+                } else {
+                    let url = URL(fileURLWithPath: trimmedInput)
 
-            let result: Transcription
-
-            if YouTubeURLValidator.isYouTubeURL(trimmedInput) {
-                result = try await service.transcribeURL(urlString: trimmedInput) { progress in
-                    switch progress {
-                    case .converting: printErr("Converting audio...")
-                    case .downloading(let pct): printErr("Downloading audio... \(pct)%")
-                    case .transcribing(let pct): printErr("Transcribing... \(pct)%")
-                    case .identifyingSpeakers: printErr("Identifying speakers...")
-                    case .finalizing: printErr("Finalizing...")
+                    guard FileManager.default.fileExists(atPath: trimmedInput) else {
+                        throw CLIError.fileNotFound(trimmedInput)
                     }
-                }
-            } else {
-                let url = URL(fileURLWithPath: trimmedInput)
 
-                guard FileManager.default.fileExists(atPath: trimmedInput) else {
-                    throw CLIError.fileNotFound(trimmedInput)
-                }
+                    let ext = url.pathExtension.lowercased()
+                    guard AudioFileConverter.supportedExtensions.contains(ext) else {
+                        throw CLIError.unsupportedFormat(ext)
+                    }
 
-                let ext = url.pathExtension.lowercased()
-                guard AudioFileConverter.supportedExtensions.contains(ext) else {
-                    throw CLIError.unsupportedFormat(ext)
+                    printErr("Transcribing \(url.lastPathComponent)...")
+                    result = try await service.transcribe(fileURL: url)
                 }
 
-                printErr("Transcribing \(url.lastPathComponent)...")
-                result = try await service.transcribe(fileURL: url)
-            }
-
-            switch format {
-            case .json:
-                try printJSON(result)
-            case .text:
-                printText(result)
+                switch format {
+                case .json:
+                    try printJSON(result)
+                case .text:
+                    printText(result)
+                }
             }
             runResult = .success(())
         } catch {
@@ -167,6 +170,7 @@ struct TranscribeCommand: AsyncParsableCommand {
         }
         await CLITelemetry.sendOperationAndFlush(
             operationID: cliOperationID,
+            operationContext: cliOperationContext,
             command: "transcribe",
             outcome: cliOutcome,
             startedAt: cliStartedAt,

@@ -20,6 +20,7 @@ enum CLITelemetry {
 
     static func sendOperationAndFlush(
         operationID: String,
+        operationContext: ObservabilityOperationContext? = nil,
         command: String,
         subcommand: String? = nil,
         outcome: ObservabilityOutcome,
@@ -32,6 +33,7 @@ enum CLITelemetry {
     ) async {
         Telemetry.send(.cliOperation(
             operationID: operationID,
+            operationContext: operationContext,
             command: command,
             subcommand: subcommand,
             outcome: outcome,

@@ -827,8 +827,10 @@ public final class LLMService: LLMServiceProtocol, Sendable {
         messageCount: Int? = nil,
         errorType: String? = nil
     ) {
+        let operationContext = Observability.operationContext(operationID: operationID, startedAt: startedAt)
         Telemetry.send(.llmOperation(
             operationID: operationID,
+            operationContext: operationContext,
             feature: feature,
             provider: provider,
             streaming: streaming,
