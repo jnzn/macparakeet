@@ -111,12 +111,15 @@ MacParakeet uses two event shapes together:
   `transcription_operation`, `meeting_operation`, `llm_operation`,
   `feedback_operation`, `auto_save_operation`, and `cli_operation` are wide,
   outcome-focused events emitted once per operation completion. They carry a
-  short-lived `operation_id`, `outcome`, duration, safe dimensions, and
-  `error_type` when relevant.
+  short-lived `operation_id`, `workflow_id`, optional `parent_operation_id`,
+  `outcome`, duration, safe dimensions, and `error_type` when relevant.
 
-Operation IDs are random UUIDs and are not persisted across app launches. They
-exist to correlate the start/end/failure breadcrumbs for one local operation
-inside one telemetry session, not to identify a user.
+Operation IDs and workflow IDs are random UUIDs and are not persisted across app
+launches. `workflow_id` lets child work, such as a transcription or LLM call,
+join back to its root operation without string matching. `parent_operation_id`
+links one child operation to the operation that started it. These IDs exist to
+correlate local operation breadcrumbs inside one telemetry session, not to
+identify a user.
 
 ### 1. App Lifecycle — "Who's using this?"
 
@@ -136,7 +139,7 @@ inside one telemetry session, not to identify a user.
 | `dictation_cancelled` | `duration_seconds`, `reason` (escape, hotkey, silence), `device_*` | Are people cancelling often? Why? |
 | `dictation_empty` | `duration_seconds`, `device_*` | Are people getting empty results? (quality signal) |
 | `dictation_failed` | `error_type`, `device_*` | Core feature failures — blind spot without this |
-| `dictation_operation` | `operation_id`, `outcome`, `trigger`, `mode`, `duration_seconds`, `word_count`, `error_type`, `device_*` | One wide outcome event per dictation attempt |
+| `dictation_operation` | `operation_id`, `workflow_id`, `parent_operation_id`, `outcome`, `trigger`, `mode`, `duration_seconds`, `word_count`, `error_type`, `device_*` | One wide outcome event per dictation attempt |
 
 > **Device props** (optional, included when available): `device_transport`, `device_sub_transport`, `device_sample_rate`, `device_channels`, `device_fallback`, `device_selected`. Raw device names and UIDs are intentionally not serialized.
 
@@ -148,9 +151,15 @@ inside one telemetry session, not to identify a user.
 | `transcription_completed` | `source`, `audio_duration_seconds`, `processing_seconds`, `word_count`, `speaker_count`, `diarization_requested`, `diarization_applied` | Real-world performance and speaker-label coverage across file, YouTube, and meeting pipelines |
 | `transcription_cancelled` | `source`, `audio_duration_seconds`, `stage` (download, audio_conversion, stt, diarization, post_processing) | Where do users abandon jobs? |
 | `transcription_failed` | `source`, `stage`, `error_type` | What's breaking, and in which pipeline stage? |
-| `transcription_operation` | `operation_id`, `outcome`, `source`, `stage`, `duration_seconds`, `audio_duration_seconds`, `processing_seconds`, `word_count`, `speaker_count`, `diarization_requested`, `diarization_applied`, `input_kind`, `media_extension`, `file_size_bucket`, `error_type` | One wide outcome event per file, YouTube, or meeting transcription |
+| `transcription_operation` | `operation_id`, `workflow_id`, `parent_operation_id`, `outcome`, `source`, `stage`, `duration_seconds`, `audio_duration_seconds`, `processing_seconds`, `word_count`, `speaker_count`, `diarization_requested`, `diarization_applied`, `input_kind`, `media_extension`, `file_size_bucket`, `error_type` | One wide outcome event per file, YouTube, or meeting transcription |
 
-`transcription_operation` is the broad product-health outcome event. `transcription_completed` remains the stable success breadcrumb/performance event. For meetings, the app always treats the final transcript as fresh batch STT over the recorded source artifacts, not reused live-preview metadata. The separate `diarization_*` events remain useful for diarization-specific timing and failure analysis.
+`transcription_operation` is the broad product-health outcome event. Its
+`stage` values are `preflight`, `download`, `audio_conversion`, `stt`,
+`diarization`, `post_processing`, and `persistence`. `transcription_completed`
+remains the stable success breadcrumb/performance event. For meetings, the app
+always treats the final transcript as fresh batch STT over the recorded source
+artifacts, not reused live-preview metadata. The separate `diarization_*`
+events remain useful for diarization-specific timing and failure analysis.
 
 ### 3b. Speaker Diarization — "Is speaker detection working?"
 
@@ -171,14 +180,14 @@ inside one telemetry session, not to identify a user.
 | `llm_chat_failed` | `provider`, `error_type` | Chat failure rates per provider |
 | `llm_formatter_used` | `provider`, `source`, `duration_seconds`, `input_chars`, `output_chars`, `default_prompt_used`, `input_truncated` | Is transcript/dictation formatting useful, and how expensive is it? |
 | `llm_formatter_failed` | `provider`, `source`, `duration_seconds`, `error_type`, `default_prompt_used`, `input_truncated` | Formatter failure rates and prompt-shape correlations |
-| `llm_operation` | `operation_id`, `feature`, `provider`, `streaming`, `outcome`, `duration_seconds`, `input_chars`, `output_chars`, `input_truncated`, `prompt_default_used`, `message_count`, `error_type` | One safe outcome event per LLM call, without prompts, responses, or provider error bodies |
+| `llm_operation` | `operation_id`, `workflow_id`, `parent_operation_id`, `feature`, `provider`, `streaming`, `outcome`, `duration_seconds`, `input_chars`, `output_chars`, `input_truncated`, `prompt_default_used`, `message_count`, `error_type` | One safe outcome event per LLM call, without prompts, responses, or provider error bodies |
 | `history_searched` | — | Is search useful? |
 | `history_replayed` | — | Do people re-listen to audio? |
 | `copy_to_clipboard` | `source` (dictation, transcription, history, meeting, discover) | How do people get text out? |
 | `keystroke_snippet_fired` | — | Are keystroke action snippets being used? |
 | `feedback_submitted` | `category` (bug, featureRequest, other) | Feedback volume and sentiment split |
-| `feedback_operation` | `operation_id`, `category`, `outcome`, `duration_seconds`, `screenshot_attached`, `system_info_included`, `error_type` | Feedback delivery health without storing message text or email |
-| `auto_save_operation` | `operation_id`, `scope`, `format`, `outcome`, `duration_seconds`, `error_type` | Whether transcript/meeting auto-save succeeds for configured users |
+| `feedback_operation` | `operation_id`, `workflow_id`, `parent_operation_id`, `category`, `outcome`, `duration_seconds`, `screenshot_attached`, `system_info_included`, `error_type` | Feedback delivery health without storing message text or email |
+| `auto_save_operation` | `operation_id`, `workflow_id`, `parent_operation_id`, `scope`, `format`, `outcome`, `duration_seconds`, `error_type` | Whether transcript/meeting auto-save succeeds for configured users |
 | `transcription_deleted` | — | Are users cleaning up transcriptions? |
 | `dictation_deleted` | — | History hygiene patterns |
 | `transcription_favorited` | `is_favorite` (true/false) | Which content types get saved? |
@@ -203,7 +212,10 @@ inside one telemetry session, not to identify a user.
 | `meeting_recording_completed` | `duration_seconds`, `live_word_count`, `live_transcript_lagged` | Recording duration and live-preview quality |
 | `meeting_recording_cancelled` | `duration_seconds` | How often recordings are intentionally discarded |
 | `meeting_recording_failed` | `error_type` | What blocks recording/finalization |
-| `meeting_operation` | `operation_id`, `outcome`, `trigger`, `duration_seconds`, `live_word_count`, `live_transcript_lagged`, `microphone_track_present`, `system_track_present`, `notes_used`, `notes_length_bucket`, `error_type` | One wide outcome event for the full meeting capture + transcription flow |
+| `meeting_operation` | `operation_id`, `workflow_id`, `parent_operation_id`, `outcome`, `trigger`, `stage`, `duration_seconds`, `live_word_count`, `live_transcript_lagged`, `microphone_track_present`, `system_track_present`, `notes_used`, `notes_length_bucket`, `error_type` | One wide outcome event for the full meeting capture + transcription flow |
+
+`meeting_operation.stage` values are `permissions`, `start_recording`,
+`stop_recording`, `transcription`, `complete_transcription`, and `cancel`.
 
 ### 5. Settings & Customization — "How do people configure the app?"
 
@@ -259,7 +271,7 @@ inside one telemetry session, not to identify a user.
 
 | Event | Props | Question It Answers |
 |---|---|---|
-| `cli_operation` | `operation_id`, `command`, `subcommand`, `outcome`, `duration_seconds`, `input_kind`, `output_format`, `json`, `exit_code`, `error_type` | Which CLI workflows are used by scripts/agents, and where they fail |
+| `cli_operation` | `operation_id`, `workflow_id`, `parent_operation_id`, `command`, `subcommand`, `outcome`, `duration_seconds`, `input_kind`, `output_format`, `json`, `exit_code`, `error_type` | Which CLI workflows are used by scripts/agents, and where they fail |
 
 CLI telemetry is initialized by `macparakeet-cli transcribe` and uses the same
 app preference as the GUI. Users and automation can also set
@@ -289,8 +301,10 @@ Telemetry.send(.dictationCompleted(
     mode: .hold
 ))
 
+let operationContext = Observability.childOperationContext()
 Telemetry.send(.transcriptionOperation(
-    operationID: Observability.operationID(),
+    operationID: operationContext.operationID,
+    operationContext: operationContext,
     outcome: .success,
     source: .file,
     stage: .postProcessing,

@@ -36,7 +36,7 @@ final class MeetingRecordingFlowCoordinator {
     private var pillPollingTask: Task<Void, Never>?
     private var transcriptObservationTask: Task<Void, Never>?
     private var completedTranscription: Transcription?
-    private var currentMeetingOperationID: String?
+    private var currentMeetingOperationContext: ObservabilityOperationContext?
     private var currentMeetingTrigger: TelemetryMeetingRecordingTrigger?
 
     init(
@@ -99,6 +99,7 @@ final class MeetingRecordingFlowCoordinator {
         switch stateMachine.state {
         case .idle:
             pendingTrigger = pendingTrigger ?? trigger
+            currentMeetingOperationContext = ObservabilityOperationContext()
             sendEvent(.startRequested)
         case .recording, .starting, .stopping:
             sendEvent(.stopRequested)
@@ -123,6 +124,7 @@ final class MeetingRecordingFlowCoordinator {
         }
         pendingTrigger = .calendarAutoStart
         pendingTitle = title
+        currentMeetingOperationContext = ObservabilityOperationContext()
         sendEvent(.startRequested)
     }
 
@@ -138,8 +140,16 @@ final class MeetingRecordingFlowCoordinator {
     /// keeps the two coordinators in lockstep).
     private func clearPendingStartContext(failureReason: String) {
         let wasCalendarTriggered = pendingTrigger == .calendarAutoStart
+        sendMeetingOperation(
+            outcome: .unavailable,
+            trigger: pendingTrigger,
+            stage: .permissions,
+            errorType: failureReason
+        )
         pendingTrigger = nil
         pendingTitle = nil
+        currentMeetingOperationContext = nil
+        currentMeetingTrigger = nil
         if wasCalendarTriggered {
             Telemetry.send(.calendarAutoStartFailed(reason: failureReason))
             onAutoStartFailed?()
@@ -263,8 +273,8 @@ final class MeetingRecordingFlowCoordinator {
             let title = pendingTitle
             pendingTrigger = nil
             pendingTitle = nil
-            let operationID = Observability.operationID()
-            currentMeetingOperationID = operationID
+            let operationContext = currentMeetingOperationContext ?? ObservabilityOperationContext()
+            currentMeetingOperationContext = operationContext
             currentMeetingTrigger = trigger
             actionTask = Task { @MainActor in
                 do {
@@ -290,9 +300,10 @@ final class MeetingRecordingFlowCoordinator {
                     self.sendMeetingOperation(
                         outcome: .failure,
                         trigger: trigger,
+                        stage: .startRecording,
                         errorType: TelemetryErrorClassifier.classify(error)
                     )
-                    self.currentMeetingOperationID = nil
+                    self.currentMeetingOperationContext = nil
                     self.currentMeetingTrigger = nil
                     self.sendEvent(.startFailed(generation: gen, message: error.localizedDescription))
                 }
@@ -331,29 +342,37 @@ final class MeetingRecordingFlowCoordinator {
             let liveWordCount = panelViewModel?.wordCount ?? 0
             let liveTranscriptLagged = panelViewModel?.isTranscriptionLagging ?? false
             let notesVM = panelViewModel?.notesViewModel
+            let operationContext = currentMeetingOperationContext ?? ObservabilityOperationContext()
+            currentMeetingOperationContext = operationContext
             actionTask = Task { @MainActor in
                 var stoppedOutput: MeetingRecordingOutput?
+                var transcriptionFinished = false
                 do {
-                    // Flush any keystrokes typed in the last < 250 ms so
-                    // they make it onto the lock file and into the saved
-                    // Transcription.userNotes (ADR-020 §8).
-                    await notesVM?.commit()
-                    let output = try await meetingRecordingService.stopRecording()
-                    stoppedOutput = output
-                    Telemetry.send(.meetingRecordingCompleted(
-                        durationSeconds: output.durationSeconds,
-                        liveWordCount: liveWordCount,
-                        liveTranscriptLagged: liveTranscriptLagged
-                    ))
-                    let transcription = try await transcriptionService.transcribeMeeting(recording: output, onProgress: nil)
-                    await meetingRecordingService.completeTranscription(for: output)
+                    let transcription = try await Observability.withOperationContext(operationContext) {
+                        // Flush any keystrokes typed in the last < 250 ms so
+                        // they make it onto the lock file and into the saved
+                        // Transcription.userNotes (ADR-020 §8).
+                        await notesVM?.commit()
+                        let output = try await meetingRecordingService.stopRecording()
+                        stoppedOutput = output
+                        Telemetry.send(.meetingRecordingCompleted(
+                            durationSeconds: output.durationSeconds,
+                            liveWordCount: liveWordCount,
+                            liveTranscriptLagged: liveTranscriptLagged
+                        ))
+                        let transcription = try await transcriptionService.transcribeMeeting(recording: output, onProgress: nil)
+                        transcriptionFinished = true
+                        await meetingRecordingService.completeTranscription(for: output)
+                        return transcription
+                    }
                     self.sendMeetingOperation(
                         outcome: .success,
-                        output: output,
+                        output: stoppedOutput,
+                        stage: .completeTranscription,
                         liveWordCount: liveWordCount,
                         liveTranscriptLagged: liveTranscriptLagged
                     )
-                    self.currentMeetingOperationID = nil
+                    self.currentMeetingOperationContext = nil
                     self.currentMeetingTrigger = nil
                     self.completedTranscription = transcription
                     self.sendEvent(.transcriptionCompleted(generation: gen, transcriptionID: transcription.id))
@@ -365,11 +384,12 @@ final class MeetingRecordingFlowCoordinator {
                     self.sendMeetingOperation(
                         outcome: .failure,
                         output: stoppedOutput,
+                        stage: stoppedOutput == nil ? .stopRecording : (transcriptionFinished ? .completeTranscription : .transcription),
                         liveWordCount: liveWordCount,
                         liveTranscriptLagged: liveTranscriptLagged,
                         errorType: TelemetryErrorClassifier.classify(error)
                     )
-                    self.currentMeetingOperationID = nil
+                    self.currentMeetingOperationContext = nil
                     self.currentMeetingTrigger = nil
                     self.sendEvent(.transcriptionFailed(generation: gen, message: error.localizedDescription))
                 }
@@ -400,9 +420,10 @@ final class MeetingRecordingFlowCoordinator {
                 Telemetry.send(.meetingRecordingCancelled(durationSeconds: durationSeconds))
                 self.sendMeetingOperation(
                     outcome: .cancelled,
+                    stage: .cancel,
                     durationSeconds: durationSeconds
                 )
-                self.currentMeetingOperationID = nil
+                self.currentMeetingOperationContext = nil
                 self.currentMeetingTrigger = nil
             }
 
@@ -635,17 +656,20 @@ final class MeetingRecordingFlowCoordinator {
         outcome: ObservabilityOutcome,
         trigger: TelemetryMeetingRecordingTrigger? = nil,
         output: MeetingRecordingOutput? = nil,
+        stage: TelemetryMeetingOperationStage? = nil,
         durationSeconds: Double? = nil,
         liveWordCount: Int? = nil,
         liveTranscriptLagged: Bool? = nil,
         errorType: String? = nil
     ) {
-        guard let operationID = currentMeetingOperationID else { return }
+        guard let operationContext = currentMeetingOperationContext else { return }
         let notes = output?.userNotes?.trimmingCharacters(in: .whitespacesAndNewlines)
         Telemetry.send(.meetingOperation(
-            operationID: operationID,
+            operationID: operationContext.operationID,
+            operationContext: operationContext,
             outcome: outcome,
             trigger: trigger ?? currentMeetingTrigger,
+            stage: stage,
             durationSeconds: output?.durationSeconds ?? durationSeconds,
             liveWordCount: liveWordCount,
             liveTranscriptLagged: liveTranscriptLagged,

@@ -61,6 +61,33 @@ private actor FailingYouTubeDownloader: YouTubeDownloading {
     }
 }
 
+private struct FailingEntitlements: EntitlementsChecking {
+    let error: Error
+    let state: EntitlementsState?
+
+    init(error: Error, state: EntitlementsState? = nil) {
+        self.error = error
+        self.state = state
+    }
+
+    func assertCanTranscribe(now: Date) async throws {
+        throw error
+    }
+
+    func currentState(now: Date) async -> EntitlementsState {
+        state ?? Self.state(for: error, now: now)
+    }
+
+    private static func state(for error: Error, now: Date) -> EntitlementsState {
+        switch error {
+        case EntitlementsError.trialExpired:
+            return EntitlementsState(access: .trialExpired(endedAt: now), licenseKeyMasked: nil, lastValidatedAt: nil)
+        default:
+            return EntitlementsState(access: .trialExpired(endedAt: now), licenseKeyMasked: nil, lastValidatedAt: nil)
+        }
+    }
+}
+
 final class TranscriptionServiceTests: XCTestCase {
     var service: TranscriptionService!
     var mockAudio: MockAudioProcessor!
@@ -130,6 +157,52 @@ final class TranscriptionServiceTests: XCTestCase {
         let all = try transcriptionRepo.fetchAll(limit: nil)
         XCTAssertEqual(all.count, 1)
         XCTAssertEqual(all[0].status, .error)
+    }
+
+    func testTranscribeFileEntitlementFailureEmitsPreflightOperation() async throws {
+        let telemetry = TelemetrySpy()
+        Telemetry.configure(telemetry)
+        defer { Telemetry.configure(NoOpTelemetryService()) }
+        let service = TranscriptionService(
+            audioProcessor: mockAudio,
+            sttTranscriber: mockSTT,
+            transcriptionRepo: transcriptionRepo,
+            entitlements: FailingEntitlements(error: EntitlementsError.trialExpired)
+        )
+
+        do {
+            _ = try await service.transcribe(fileURL: URL(fileURLWithPath: "/tmp/test.mp3"))
+            XCTFail("Should have thrown")
+        } catch EntitlementsError.trialExpired {
+            // Expected
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
+
+        let operation = telemetry.snapshot().reversed().first {
+            if case .transcriptionOperation = $0 { return true }
+            return false
+        }
+        let event = TelemetryEvent(
+            spec: try XCTUnwrap(operation),
+            appVer: "test",
+            osVer: "test",
+            locale: "en-US",
+            chip: "test",
+            session: "test"
+        )
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let data = try encoder.encode(event)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let props = try XCTUnwrap(json["props"] as? [String: String])
+
+        XCTAssertEqual(json["event"] as? String, "transcription_operation")
+        XCTAssertEqual(props["outcome"], "unavailable")
+        XCTAssertEqual(props["source"], "file")
+        XCTAssertEqual(props["stage"], "preflight")
+        XCTAssertEqual(props["error_type"], "EntitlementsError.trialExpired")
+        XCTAssertNil(props["processing_seconds"])
     }
 
     func testTranscribeFileCancellationMarksRecordCancelled() async throws {
@@ -362,6 +435,7 @@ final class TranscriptionServiceTests: XCTestCase {
     func testTranscribeMeetingUsesFinalizeLaneAndMergesFreshSourceTranscriptsByAlignment() async throws {
         let telemetry = TelemetrySpy()
         Telemetry.configure(telemetry)
+        defer { Telemetry.configure(NoOpTelemetryService()) }
         let recordingFolder = URL(fileURLWithPath: AppPaths.tempDir)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: recordingFolder, withIntermediateDirectories: true)
@@ -843,6 +917,7 @@ final class TranscriptionServiceTests: XCTestCase {
     func testTranscribeMeetingSttFailureEmitsSttStageTelemetry() async throws {
         let telemetry = TelemetrySpy()
         Telemetry.configure(telemetry)
+        defer { Telemetry.configure(NoOpTelemetryService()) }
 
         let recordingFolder = URL(fileURLWithPath: AppPaths.tempDir)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -1001,6 +1076,7 @@ final class TranscriptionServiceTests: XCTestCase {
     func testTranscribeURLDownloadFailureEmitsDownloadStageTelemetry() async throws {
         let telemetry = TelemetrySpy()
         Telemetry.configure(telemetry)
+        defer { Telemetry.configure(NoOpTelemetryService()) }
         let downloader = FailingYouTubeDownloader(
             error: YouTubeDownloadError.downloadFailed("yt-dlp failed")
         )

@@ -16,7 +16,65 @@ public enum ObservabilityInputKind: String, Sendable {
     case unknown
 }
 
+public struct ObservabilityOperationContext: Sendable, Equatable {
+    public let operationID: String
+    public let workflowID: String
+    public let parentOperationID: String?
+    public let startedAt: Date
+
+    public init(
+        operationID: String = Observability.operationID(),
+        workflowID: String? = nil,
+        parentOperationID: String? = nil,
+        startedAt: Date = Date()
+    ) {
+        self.operationID = operationID
+        self.workflowID = workflowID ?? operationID
+        self.parentOperationID = parentOperationID
+        self.startedAt = startedAt
+    }
+
+    public func child(startedAt: Date = Date()) -> ObservabilityOperationContext {
+        ObservabilityOperationContext(
+            workflowID: workflowID,
+            parentOperationID: operationID,
+            startedAt: startedAt
+        )
+    }
+}
+
 public enum Observability {
+    @TaskLocal public static var currentOperationContext: ObservabilityOperationContext?
+
+    public static func withOperationContext<T>(
+        _ context: ObservabilityOperationContext,
+        isolation: isolated (any Actor)? = #isolation,
+        operation: () async throws -> T
+    ) async rethrows -> T {
+        try await $currentOperationContext.withValue(context, operation: operation, isolation: isolation)
+    }
+
+    public static func childOperationContext(startedAt: Date = Date()) -> ObservabilityOperationContext {
+        if let currentOperationContext {
+            return currentOperationContext.child(startedAt: startedAt)
+        }
+        return ObservabilityOperationContext(startedAt: startedAt)
+    }
+
+    public static func operationContext(operationID: String, startedAt: Date) -> ObservabilityOperationContext {
+        if let currentOperationContext {
+            return ObservabilityOperationContext(
+                operationID: operationID,
+                workflowID: currentOperationContext.workflowID,
+                parentOperationID: currentOperationContext.operationID == operationID
+                    ? currentOperationContext.parentOperationID
+                    : currentOperationContext.operationID,
+                startedAt: startedAt
+            )
+        }
+        return ObservabilityOperationContext(operationID: operationID, startedAt: startedAt)
+    }
+
     public static func operationID() -> String {
         UUID().uuidString
     }

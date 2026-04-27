@@ -122,11 +122,13 @@ public enum TelemetryTranscriptionSource: String, Sendable, Equatable {
 }
 
 public enum TelemetryTranscriptionStage: String, Sendable, Equatable {
+    case preflight
     case download
     case audioConversion = "audio_conversion"
     case stt
     case diarization
     case postProcessing = "post_processing"
+    case persistence
 }
 
 public enum TelemetryCopySource: String, Sendable, Equatable {
@@ -148,6 +150,16 @@ public enum TelemetryMeetingRecordingTrigger: String, Sendable, Equatable {
     case manual
     case hotkey
     case calendarAutoStart = "calendar_auto_start"
+}
+
+public enum TelemetryMeetingOperationStage: String, Sendable, Equatable {
+    case permissions
+    case startRecording = "start_recording"
+    case recording
+    case stopRecording = "stop_recording"
+    case transcription
+    case completeTranscription = "complete_transcription"
+    case cancel
 }
 
 public enum TelemetryMeetingRecoverySource: String, Sendable, Equatable {
@@ -198,6 +210,7 @@ public enum TelemetryEventSpec: Sendable {
     case dictationFailed(errorType: String, errorDetail: String? = nil, device: RecordingDeviceInfo? = nil)
     case dictationOperation(
         operationID: String,
+        operationContext: ObservabilityOperationContext? = nil,
         outcome: ObservabilityOutcome,
         trigger: TelemetryDictationTrigger?,
         mode: TelemetryDictationMode?,
@@ -229,6 +242,7 @@ public enum TelemetryEventSpec: Sendable {
     )
     case transcriptionOperation(
         operationID: String,
+        operationContext: ObservabilityOperationContext? = nil,
         outcome: ObservabilityOutcome,
         source: TelemetryTranscriptionSource,
         stage: TelemetryTranscriptionStage?,
@@ -273,6 +287,7 @@ public enum TelemetryEventSpec: Sendable {
     )
     case llmOperation(
         operationID: String,
+        operationContext: ObservabilityOperationContext? = nil,
         feature: String,
         provider: String,
         streaming: Bool,
@@ -319,6 +334,7 @@ public enum TelemetryEventSpec: Sendable {
     case feedbackSubmitted(category: String)
     case feedbackOperation(
         operationID: String,
+        operationContext: ObservabilityOperationContext? = nil,
         category: String,
         outcome: ObservabilityOutcome,
         durationSeconds: Double,
@@ -344,8 +360,10 @@ public enum TelemetryEventSpec: Sendable {
     case meetingRecordingFailed(errorType: String, errorDetail: String? = nil)
     case meetingOperation(
         operationID: String,
+        operationContext: ObservabilityOperationContext? = nil,
         outcome: ObservabilityOutcome,
         trigger: TelemetryMeetingRecordingTrigger?,
+        stage: TelemetryMeetingOperationStage? = nil,
         durationSeconds: Double?,
         liveWordCount: Int?,
         liveTranscriptLagged: Bool?,
@@ -401,6 +419,7 @@ public enum TelemetryEventSpec: Sendable {
     )
     case cliOperation(
         operationID: String,
+        operationContext: ObservabilityOperationContext? = nil,
         command: String,
         subcommand: String?,
         outcome: ObservabilityOutcome,
@@ -413,6 +432,7 @@ public enum TelemetryEventSpec: Sendable {
     )
     case autoSaveOperation(
         operationID: String,
+        operationContext: ObservabilityOperationContext? = nil,
         scope: AutoSaveScope,
         format: AutoSaveFormat,
         outcome: ObservabilityOutcome,
@@ -565,6 +585,7 @@ extension TelemetryEventSpec {
             return Self.mergeDevice(props, device)
         case .dictationOperation(
             let operationID,
+            let operationContext,
             let outcome,
             let trigger,
             let mode,
@@ -575,6 +596,8 @@ extension TelemetryEventSpec {
         ):
             return Self.mergeDevice(Self.compactProps(
                 ("operation_id", operationID),
+                ("workflow_id", operationContext?.workflowID),
+                ("parent_operation_id", operationContext?.parentOperationID),
                 ("outcome", outcome.rawValue),
                 ("trigger", trigger?.rawValue),
                 ("mode", mode?.rawValue),
@@ -621,6 +644,7 @@ extension TelemetryEventSpec {
             return props
         case .transcriptionOperation(
             let operationID,
+            let operationContext,
             let outcome,
             let source,
             let stage,
@@ -638,6 +662,8 @@ extension TelemetryEventSpec {
         ):
             return Self.compactProps(
                 ("operation_id", operationID),
+                ("workflow_id", operationContext?.workflowID),
+                ("parent_operation_id", operationContext?.parentOperationID),
                 ("outcome", outcome.rawValue),
                 ("source", source.rawValue),
                 ("stage", stage?.rawValue),
@@ -721,6 +747,7 @@ extension TelemetryEventSpec {
             ]
         case .llmOperation(
             let operationID,
+            let operationContext,
             let feature,
             let provider,
             let streaming,
@@ -735,6 +762,8 @@ extension TelemetryEventSpec {
         ):
             return Self.compactProps(
                 ("operation_id", operationID),
+                ("workflow_id", operationContext?.workflowID),
+                ("parent_operation_id", operationContext?.parentOperationID),
                 ("feature", feature),
                 ("provider", provider),
                 ("streaming", Self.boolString(streaming)),
@@ -785,6 +814,7 @@ extension TelemetryEventSpec {
             return ["category": category]
         case .feedbackOperation(
             let operationID,
+            let operationContext,
             let category,
             let outcome,
             let durationSeconds,
@@ -794,6 +824,8 @@ extension TelemetryEventSpec {
         ):
             return Self.compactProps(
                 ("operation_id", operationID),
+                ("workflow_id", operationContext?.workflowID),
+                ("parent_operation_id", operationContext?.parentOperationID),
                 ("category", category),
                 ("outcome", outcome.rawValue),
                 ("duration_seconds", Self.format(durationSeconds)),
@@ -821,8 +853,10 @@ extension TelemetryEventSpec {
             return props
         case .meetingOperation(
             let operationID,
+            let operationContext,
             let outcome,
             let trigger,
+            let stage,
             let durationSeconds,
             let liveWordCount,
             let liveTranscriptLagged,
@@ -834,8 +868,11 @@ extension TelemetryEventSpec {
         ):
             return Self.compactProps(
                 ("operation_id", operationID),
+                ("workflow_id", operationContext?.workflowID),
+                ("parent_operation_id", operationContext?.parentOperationID),
                 ("outcome", outcome.rawValue),
                 ("trigger", trigger?.rawValue),
+                ("stage", stage?.rawValue),
                 ("duration_seconds", durationSeconds.map(Self.format)),
                 ("live_word_count", liveWordCount.map(String.init)),
                 ("live_transcript_lagged", liveTranscriptLagged.map(Self.boolString)),
@@ -921,6 +958,7 @@ extension TelemetryEventSpec {
             )
         case .cliOperation(
             let operationID,
+            let operationContext,
             let command,
             let subcommand,
             let outcome,
@@ -933,6 +971,8 @@ extension TelemetryEventSpec {
         ):
             return Self.compactProps(
                 ("operation_id", operationID),
+                ("workflow_id", operationContext?.workflowID),
+                ("parent_operation_id", operationContext?.parentOperationID),
                 ("command", command),
                 ("subcommand", subcommand),
                 ("outcome", outcome.rawValue),
@@ -943,9 +983,11 @@ extension TelemetryEventSpec {
                 ("exit_code", exitCode.map(String.init)),
                 ("error_type", errorType)
             )
-        case .autoSaveOperation(let operationID, let scope, let format, let outcome, let durationSeconds, let errorType):
+        case .autoSaveOperation(let operationID, let operationContext, let scope, let format, let outcome, let durationSeconds, let errorType):
             return Self.compactProps(
                 ("operation_id", operationID),
+                ("workflow_id", operationContext?.workflowID),
+                ("parent_operation_id", operationContext?.parentOperationID),
                 ("scope", scope.rawValue),
                 ("format", format.rawValue),
                 ("outcome", outcome.rawValue),
