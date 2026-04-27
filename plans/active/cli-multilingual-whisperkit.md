@@ -362,6 +362,132 @@ Three subagents researched Handy/VoiceInk, hyprnote (now `fastrepl/anarlog`)/Gra
 
 ---
 
+## Pre-Phase-1: Type and contract specification
+
+Resolve these before any Phase 1 code lands. Each unresolved item is a place where a coding agent will guess and probably guess wrong.
+
+### Concrete protocol shape (uses existing `MacParakeetCore` types)
+
+```swift
+import Foundation
+
+public typealias BCP47Language = String  // e.g. "en", "ja", "zh-Hant", "ko-KR"
+
+public enum STTProviderID: String, Sendable, Codable {
+    case parakeet
+    case whisper
+    // case qwen3 — v0.8+
+}
+
+public struct TranscribeOptions: Sendable {
+    public var language: BCP47Language?     // nil → engine auto-detects
+    public var includeWordTimestamps: Bool
+    public init(language: BCP47Language? = nil, includeWordTimestamps: Bool = false) { ... }
+}
+
+public protocol STTProvider: Sendable {
+    var identifier: STTProviderID { get }
+    var supportedLanguages: Set<BCP47Language> { get }
+    var isReady: Bool { get }
+
+    func prepare(modelIdentifier: String) async throws
+    func unload() async
+
+    /// Returns existing `STTResult` from `MacParakeetCore` (defined in
+    /// `Sources/MacParakeetCore/STT/STTResult.swift`). Do not invent a new
+    /// result type — reuse it for compatibility with existing consumers.
+    /// Progress callback matches existing `STTRuntime.transcribe` signature
+    /// `(currentStep, totalSteps)` so the watchdog can observe the same
+    /// callback contract for both engines.
+    func transcribe(
+        audioURL: URL,
+        options: TranscribeOptions,
+        onProgress: (@Sendable (Int, Int) -> Void)?
+    ) async throws -> STTResult
+}
+```
+
+**Locked types:**
+
+| Reference | Resolution |
+|---|---|
+| `AudioSamples` (in earlier draft) | **Replaced with `URL`** — matches existing `AsrManager.transcribe(audioURL:)` and existing `STTRuntime.transcribe(audioURL:...)` signatures. Audio file decoding stays in the engine, not the protocol. |
+| `TranscribeResult` (in earlier draft) | **Replaced with existing `STTResult`** — defined in `MacParakeetCore`. No new result type. |
+| `BCP47Language` | `typealias BCP47Language = String`. Validation at the CLI layer; protocol just passes through. |
+| Progress hook | `onProgress: (@Sendable (Int, Int) -> Void)?` matching existing `STTRuntime.transcribe` shape (current step, total steps). Watchdog subscribes to the same callback. |
+| `AsyncSemaphore` | **Not in Swift stdlib.** Coding agent picks one of: (a) implement a small `AsyncSemaphore` in `MacParakeetCore/Concurrency/AsyncSemaphore.swift` using continuation queue, (b) use a Task-chain serialization pattern inside the registry actor (no separate semaphore needed if every `prepare()` awaits the prior in-flight Task). Either is acceptable; (b) is fewer types. |
+
+### Specific files for Phase 1 refactor
+
+Existing Parakeet path lives at:
+- `Sources/MacParakeetCore/STT/STTRuntime.swift` — the actor (`STTRuntime`)
+- `Sources/MacParakeetCore/STT/STTClient.swift` — concrete client
+- `Sources/MacParakeetCore/STT/STTClientProtocol.swift` — protocol surface
+- `Sources/MacParakeetCore/STT/STTResult.swift` — result type (reuse, do not replace)
+- `Sources/MacParakeetCore/STT/STTScheduler.swift` — slot scheduler (per ADR-016)
+
+Phase 1 file plan (suggested layout; coding agent can adjust):
+- New: `Sources/MacParakeetCore/STT/STTProvider.swift` — protocol + `STTProviderID` + `TranscribeOptions`
+- New: `Sources/MacParakeetCore/STT/STTProviderRegistry.swift` — registry actor
+- New: `Sources/MacParakeetCore/STT/ParakeetProvider.swift` — wraps existing `AsrManager` plumbing; conforms to `STTProvider`
+- Refactor: `Sources/MacParakeetCore/STT/STTRuntime.swift` — becomes a thin consumer of `ParakeetProvider`, OR `STTRuntime` itself conforms to `STTProvider` directly. Either is fine; pick whichever requires fewer call-site changes elsewhere in the codebase.
+
+### "Parakeet TDT v3 is auto-only" — verify before Phase 1
+
+The plan's `--engine parakeet --language ja` → exit 7 rule is based on third-party signal (Hex's settings UI). Verify against actual FluidAudio 0.14.1 API before locking it in:
+
+1. Open `AsrManager.swift` in the resolved FluidAudio package after `swift package resolve` — typically at `.build/checkouts/FluidAudio/Sources/FluidAudio/Asr/AsrManager.swift` or similar.
+2. Check `transcribe()` signature: does it accept a `language:` parameter or `decodingOptions` containing one?
+3. **If yes:** delete the `--language with --engine parakeet → exit 7` rule. Pass the hint through to FluidAudio.
+4. **If no:** rule stands as written.
+
+Either outcome is acceptable; the goal is to not enforce a fictional restriction.
+
+### WhisperKit valid model identifiers
+
+The `--model <variant>` flag accepts any model published in `argmaxinc/whisperkit-coreml` on HuggingFace. As of 2026-04-26, common variants:
+
+- `tiny`, `tiny.en`
+- `base`, `base.en`
+- `small`, `small.en`
+- `large-v3`, `large-v3-v20240930_626MB`, `large-v3-v20240930_turbo_632MB`
+- `distil-whisper_distil-large-v3`
+
+WhisperKit resolves these as glob patterns; document in CLI help that the canonical reference is the `argmaxinc/whisperkit-coreml` HuggingFace repo. Default: `large-v3-v20240930_turbo_632MB`.
+
+### SHA256 source for `models verify`
+
+Use **WhisperKit's HubAPI** to fetch the model manifest, which carries HuggingFace LFS file hashes. Adopt as the source of truth — do not bundle a static manifest in the CLI binary (would go stale across releases).
+
+### Canonical structured-error envelope (all exit codes 2–7)
+
+Every non-zero exit emits this shape on stdout when `--json` is set:
+
+```json
+{
+  "error": {
+    "code": "model_missing" | "audio_invalid" | "cancelled" | "verification_failed" | "engine_hang" | "argument_invalid",
+    "message": "<human-readable summary>",
+    "details": { /* code-specific fields, may be empty {} */ }
+  }
+}
+```
+
+Per-code `details` payloads:
+
+| Code | Exit | `details` fields |
+|---|---|---|
+| `model_missing` | 2 | `{ "model": "<variant>", "engine": "parakeet" \| "whisper", "hint": "Run `macparakeet-cli models download <variant>`" }` |
+| `audio_invalid` | 3 | `{ "path": "<input>", "reason": "<format/codec/empty>" }` |
+| `cancelled` | 4 | `{ "signal": "SIGINT" \| "SIGTERM" }` |
+| `verification_failed` | 5 | `{ "model": "<variant>", "expected_sha256": "...", "actual_sha256": "..." }` |
+| `engine_hang` | 6 | `{ "engine": "...", "stalled_for_seconds": 60, "last_progress_pct": 0.42 }` |
+| `argument_invalid` | 7 | `{ "argument": "<flag-name>", "value": "<value>", "reason": "..." }` |
+
+The shape is a **public contract** under semver — never remove or rename fields; only add. Schema-lock test in Phase 3 covers this.
+
+---
+
 ## Implementation phases
 
 ### Phase 0 — Pre-work (informational, ~1 hour)
