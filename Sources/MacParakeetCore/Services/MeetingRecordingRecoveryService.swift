@@ -70,7 +70,7 @@ public final class MeetingRecordingRecoveryService: MeetingRecordingRecoveryServ
     ///
     /// Sessions whose audio is at or below this floor were almost always
     /// killed within a second of `MeetingRecordingService.startRecording`
-    /// writing the lock file but before any real audio frames were captured —
+    /// writing the lock file but before any real audio frames were captured -
     /// e.g., a force-quit, hard crash, or rapid dev-cycle restart. Surfacing
     /// these as "interrupted recordings" alarms the user over data that
     /// never existed and where `recover()` would error with
@@ -88,14 +88,21 @@ public final class MeetingRecordingRecoveryService: MeetingRecordingRecoveryServ
         var viable: [MeetingRecordingLockFile] = []
         viable.reserveCapacity(candidates.count)
         for lock in candidates {
-            if try canOfferRecovery(for: lock) {
+            do {
+                if try canOfferRecovery(for: lock) {
+                    viable.append(lock)
+                } else {
+                    // Auto-clean instead of skipping silently: the folder + lock
+                    // are otherwise immortal, accumulating across every crash
+                    // until the user manually deletes them. Logged for forensic
+                    // reference if a user reports missing recordings.
+                    purgeEmptySession(lock)
+                }
+            } catch {
+                logger.error(
+                    "meeting_recovery_viability_check_failed session=\(lock.sessionId.uuidString, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+                )
                 viable.append(lock)
-            } else {
-                // Auto-clean instead of skipping silently: the folder + lock
-                // are otherwise immortal, accumulating across every crash
-                // until the user manually deletes them. Logged for forensic
-                // reference if a user reports missing recordings.
-                purgeEmptySession(lock)
             }
         }
         return viable
@@ -119,6 +126,7 @@ public final class MeetingRecordingRecoveryService: MeetingRecordingRecoveryServ
 
     private func purgeEmptySession(_ lock: MeetingRecordingLockFile) {
         guard let folderURL = lock.folderURL else { return }
+        guard fileManager.fileExists(atPath: folderURL.path) else { return }
         do {
             try fileManager.removeItem(at: folderURL)
             logger.info(
