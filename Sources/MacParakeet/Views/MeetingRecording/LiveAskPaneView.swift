@@ -122,7 +122,7 @@ struct LiveAskPaneView: View {
                 .foregroundStyle(DesignSystem.Colors.textTertiary)
                 .padding(.leading, 4)
 
-            VStack(spacing: 8) {
+            VStack(spacing: 5) {
                 ForEach(LiveAskStarterPrompts.all, id: \.self) { entry in
                     StarterPromptPill(label: entry.label) {
                         fire(entry)
@@ -263,6 +263,22 @@ enum LiveAskStarterPrompts {
             prompt: "Catch me up on what I missed in the last few minutes — the most important points or shifts. Be terse, signal-rich."
         ),
         LiveAskPrompt(
+            label: "Decisions made",
+            prompt: "List the decisions reached in the meeting so far. For each, note what was decided and the brief context that explains why. Skip topics that were only discussed without a decision."
+        ),
+        LiveAskPrompt(
+            label: "Action items",
+            prompt: "List concrete action items from the meeting so far — what needs to happen next, by whom, and by when if mentioned. Be specific. Skip vague intentions."
+        ),
+        LiveAskPrompt(
+            label: "Who owns what?",
+            prompt: "Map who owns what from the meeting so far — assignments, commitments, areas of responsibility. If ownership for an item is unclear or unstated, flag that explicitly."
+        ),
+        LiveAskPrompt(
+            label: "What's unresolved?",
+            prompt: "List the open questions, unmade decisions, or topics still hanging from the meeting so far. Be specific."
+        ),
+        LiveAskPrompt(
             label: "What question is worth asking?",
             prompt: "Based on the meeting so far, suggest one sharp, useful question I could ask next that would advance the discussion or surface something important that hasn't been addressed."
         ),
@@ -273,10 +289,6 @@ enum LiveAskStarterPrompts {
         LiveAskPrompt(
             label: "Where are we going in circles?",
             prompt: "Have we revisited the same topic or argument without making progress? If so, point out where we're looping and what would actually move things forward."
-        ),
-        LiveAskPrompt(
-            label: "What's unresolved?",
-            prompt: "List the open questions, unmade decisions, or topics still hanging from the meeting so far. Be specific."
         ),
     ]
 }
@@ -339,7 +351,7 @@ private struct StarterPromptPill: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, DesignSystem.Spacing.md)
-            .padding(.vertical, 10)
+            .padding(.vertical, 7)
             .background(
                 RoundedRectangle(cornerRadius: 10)
                     .fill(isHovered
