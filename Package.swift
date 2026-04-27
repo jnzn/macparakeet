@@ -20,6 +20,8 @@ let package = Package(
         .package(url: "https://github.com/groue/GRDB.swift", from: "7.0.0"),
         // FluidAudio for Parakeet STT on CoreML/ANE
         .package(url: "https://github.com/FluidInference/FluidAudio", .upToNextMinor(from: "0.14.1")),
+        // WhisperKit for multilingual STT fallback (Korean + 95 other languages)
+        .package(url: "https://github.com/argmaxinc/argmax-oss-swift", exact: "0.9.4"),
         // ArgumentParser for CLI
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0"),
         // Sparkle for auto-updates (non-App Store distribution)
@@ -64,6 +66,7 @@ let package = Package(
             dependencies: [
                 .product(name: "GRDB", package: "GRDB.swift"),
                 .product(name: "FluidAudio", package: "FluidAudio"),
+                .product(name: "WhisperKit", package: "argmax-oss-swift"),
                 "MacParakeetObjCShims"
             ],
             path: "Sources/MacParakeetCore",

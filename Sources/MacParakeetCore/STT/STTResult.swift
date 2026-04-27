@@ -3,10 +3,12 @@ import Foundation
 public struct STTResult: Sendable {
     public let text: String
     public let words: [TimestampedWord]
+    public let language: String?
 
-    public init(text: String, words: [TimestampedWord] = []) {
+    public init(text: String, words: [TimestampedWord] = [], language: String? = nil) {
         self.text = text
         self.words = words
+        self.language = language
     }
 }
 

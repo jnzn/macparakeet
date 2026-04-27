@@ -1,0 +1,279 @@
+import Foundation
+
+#if canImport(WhisperKit)
+import WhisperKit
+#endif
+
+public actor WhisperEngine: STTTranscribing {
+    public static let defaultModelVariant = SpeechEnginePreference.defaultWhisperModelVariant
+
+    private let modelVariant: String
+    private let defaultLanguage: String?
+    private let downloadBase: URL
+
+    #if canImport(WhisperKit)
+    private var whisperKit: WhisperKit?
+    private var isLoaded = false
+    #endif
+
+    public init(
+        model: String = WhisperEngine.defaultModelVariant,
+        language: String? = nil,
+        downloadBase: URL? = nil
+    ) {
+        self.modelVariant = Self.normalizeModelVariant(model)
+        self.defaultLanguage = SpeechEnginePreference.normalizeLanguage(language)
+        self.downloadBase = downloadBase ?? Self.defaultDownloadBase
+    }
+
+    public static func make(
+        model: String = WhisperEngine.defaultModelVariant,
+        language: String? = nil
+    ) -> WhisperEngine {
+        WhisperEngine(model: model, language: language)
+    }
+
+    public static var defaultDownloadBase: URL {
+        URL(fileURLWithPath: AppPaths.whisperModelsDir, isDirectory: true)
+    }
+
+    public static func normalizeModelVariant(_ model: String) -> String {
+        let normalized = SpeechEnginePreference.normalizeModelVariant(model) ?? defaultModelVariant
+        if normalized.hasSuffix("-turbo") {
+            return String(normalized.dropLast("-turbo".count)) + "_turbo"
+        }
+        if normalized.contains("-turbo_") {
+            return normalized.replacingOccurrences(of: "-turbo_", with: "_turbo_")
+        }
+        if normalized.contains("-turbo-") {
+            return normalized.replacingOccurrences(of: "-turbo-", with: "_turbo_")
+        }
+        return normalized
+    }
+
+    public static func isModelDownloaded(
+        model: String = WhisperEngine.defaultModelVariant,
+        downloadBase: URL = WhisperEngine.defaultDownloadBase
+    ) -> Bool {
+        localModelFolder(model: model, downloadBase: downloadBase) != nil
+    }
+
+    public static func localModelFolder(
+        model: String = WhisperEngine.defaultModelVariant,
+        downloadBase: URL = WhisperEngine.defaultDownloadBase
+    ) -> URL? {
+        let normalized = normalizeModelVariant(model)
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: downloadBase.path),
+              let enumerator = fileManager.enumerator(
+                at: downloadBase,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+              ) else {
+            return nil
+        }
+
+        for case let url as URL in enumerator {
+            guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey]),
+                  values.isDirectory == true else {
+                continue
+            }
+            let folderName = url.lastPathComponent
+            if folderName == normalized || folderName.hasSuffix(normalized) || folderName.contains(normalized) {
+                return url
+            }
+        }
+
+        return nil
+    }
+
+    public func transcribe(
+        audioPath: String,
+        job: STTJobKind,
+        onProgress: (@Sendable (Int, Int) -> Void)? = nil
+    ) async throws -> STTResult {
+        try await transcribe(
+            audioURL: URL(fileURLWithPath: audioPath),
+            language: defaultLanguage,
+            onProgress: onProgress
+        )
+    }
+
+    public func transcribe(
+        audioURL: URL,
+        language: String?,
+        onProgress: (@Sendable (Int, Int) -> Void)? = nil
+    ) async throws -> STTResult {
+        #if canImport(WhisperKit)
+        do {
+            try await prepare(onProgress: nil)
+            guard let whisperKit else {
+                throw STTError.modelNotLoaded
+            }
+
+            let resolvedLanguage = SpeechEnginePreference.normalizeLanguage(language)
+            let decodeOptions = DecodingOptions(
+                language: resolvedLanguage,
+                usePrefillPrompt: resolvedLanguage != nil,
+                detectLanguage: resolvedLanguage == nil,
+                wordTimestamps: true
+            )
+
+            onProgress?(0, 100)
+            let callback: TranscriptionCallback = { _ in
+                onProgress?(50, 100)
+                return true
+            }
+            let results = await whisperKit.transcribeWithResults(
+                audioPaths: [audioURL.path],
+                decodeOptions: decodeOptions,
+                callback: callback
+            )
+
+            guard let first = results.first else {
+                throw STTError.invalidResponse
+            }
+
+            let partialResults = try first.get()
+            let merged = mergeTranscriptionResults(partialResults)
+            onProgress?(100, 100)
+            return STTResult(
+                text: merged.text,
+                words: Self.mapWordTimings(merged.allWords),
+                language: merged.language
+            )
+        } catch {
+            throw try Self.mapTranscriptionError(error)
+        }
+        #else
+        throw STTError.engineStartFailed("WhisperKit is not available in this build.")
+        #endif
+    }
+
+    public func prepare(onProgress: (@Sendable (String) -> Void)? = nil) async throws {
+        #if canImport(WhisperKit)
+        if isLoaded, whisperKit != nil { return }
+        guard let modelFolder = Self.localModelFolder(model: modelVariant, downloadBase: downloadBase) else {
+            throw STTError.engineStartFailed(
+                "Whisper model is not downloaded. Run `macparakeet-cli models download whisper-\(modelVariant)` first."
+            )
+        }
+
+        do {
+            try AppPaths.ensureDirectories()
+            onProgress?("Loading Whisper model...")
+            whisperKit = try await WhisperKit(WhisperKitConfig(
+                model: modelVariant,
+                downloadBase: downloadBase,
+                modelFolder: modelFolder.path,
+                verbose: false,
+                load: true,
+                download: false
+            ))
+            isLoaded = true
+            onProgress?("Ready")
+        } catch {
+            isLoaded = false
+            whisperKit = nil
+            throw try Self.mapWarmUpError(error)
+        }
+        #else
+        throw STTError.engineStartFailed("WhisperKit is not available in this build.")
+        #endif
+    }
+
+    public func unload() async {
+        #if canImport(WhisperKit)
+        await whisperKit?.unloadModels()
+        whisperKit = nil
+        isLoaded = false
+        #endif
+    }
+
+    public func isReady() -> Bool {
+        #if canImport(WhisperKit)
+        isLoaded && whisperKit != nil
+        #else
+        false
+        #endif
+    }
+
+    public static func downloadModel(
+        model: String = WhisperEngine.defaultModelVariant,
+        downloadBase: URL = WhisperEngine.defaultDownloadBase,
+        onProgress: (@Sendable (Int, Int) -> Void)? = nil
+    ) async throws -> URL {
+        #if canImport(WhisperKit)
+        try AppPaths.ensureDirectories()
+        return try await WhisperKit.download(
+            variant: normalizeModelVariant(model),
+            downloadBase: downloadBase,
+            progressCallback: { progress in
+                let total = max(Int(progress.totalUnitCount), 1)
+                let completed = max(0, Int(progress.completedUnitCount))
+                onProgress?(completed, total)
+            }
+        )
+        #else
+        throw STTError.engineStartFailed("WhisperKit is not available in this build.")
+        #endif
+    }
+
+    public static func makeTimestampedWord(
+        word: String,
+        startSeconds: Float,
+        endSeconds: Float,
+        probability: Float
+    ) -> TimestampedWord {
+        let startMs = Int((max(0, startSeconds) * 1_000).rounded())
+        let endMs = Int((max(0, endSeconds) * 1_000).rounded())
+        return TimestampedWord(
+            word: word,
+            startMs: startMs,
+            endMs: max(startMs, endMs),
+            confidence: min(1, max(0, Double(probability)))
+        )
+    }
+
+    #if canImport(WhisperKit)
+    static func mapWordTimings(_ words: [WordTiming]) -> [TimestampedWord] {
+        words.map {
+            makeTimestampedWord(
+                word: $0.word,
+                startSeconds: $0.start,
+                endSeconds: $0.end,
+                probability: $0.probability
+            )
+        }
+    }
+    #endif
+
+    private nonisolated static func mapWarmUpError(_ error: Error) throws -> STTError {
+        if error is CancellationError {
+            throw error
+        }
+        if let sttError = error as? STTError {
+            return sttError
+        }
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .notConnectedToInternet, .networkConnectionLost, .timedOut,
+                 .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed:
+                return .modelDownloadFailed
+            default:
+                return .engineStartFailed(urlError.localizedDescription)
+            }
+        }
+        return .engineStartFailed(error.localizedDescription)
+    }
+
+    private nonisolated static func mapTranscriptionError(_ error: Error) throws -> STTError {
+        if error is CancellationError {
+            throw error
+        }
+        if let sttError = error as? STTError {
+            return sttError
+        }
+        return .transcriptionFailed(error.localizedDescription)
+    }
+}

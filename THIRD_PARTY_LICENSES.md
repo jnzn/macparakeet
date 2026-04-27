@@ -35,6 +35,18 @@ This project bundles or downloads third-party software components. The following
 - License: MIT License
 - Source/notes: Speech recognition SDK
 
+### WhisperKit
+
+- License: MIT License
+- Source: <https://github.com/argmaxinc/argmax-oss-swift>
+- Used for: Optional multilingual speech recognition engine
+
+### swift-transformers
+
+- License: Apache License 2.0
+- Source: <https://github.com/huggingface/swift-transformers>
+- Used for: WhisperKit model/tokenizer support
+
 ### swift-argument-parser
 
 - License: Apache License 2.0
@@ -51,3 +63,9 @@ This project bundles or downloads third-party software components. The following
 - Provider: NVIDIA
 - Download source: Hugging Face
 - Bundling status: Not bundled in the app; downloaded at runtime
+
+## Whisper Models
+
+- License: MIT License
+- Provider: OpenAI Whisper model family, distributed through WhisperKit model downloads
+- Bundling status: Not bundled in the app; downloaded at runtime when the user installs a Whisper model

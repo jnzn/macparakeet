@@ -103,6 +103,7 @@ final class AppEnvironmentConfigurer {
             customWordRepo: env.customWordRepo,
             snippetRepo: env.snippetRepo,
             sttClient: env.sttScheduler,
+            speechEngineSwitcher: env.sttScheduler,
             meetingRecoveryService: env.meetingRecordingRecoveryService
         )
         settingsViewModel.onRecoverPendingMeetingRecordings = callbacks.onRecoverPendingMeetingRecordings

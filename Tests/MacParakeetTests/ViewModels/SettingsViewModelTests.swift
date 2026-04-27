@@ -701,6 +701,56 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(vm.parakeetStatus, .ready)
     }
 
+    func testWhisperDefaultLanguagePersistsNormalizedValue() {
+        viewModel.whisperDefaultLanguage = "KO_kr"
+        XCTAssertEqual(SpeechEnginePreference.whisperDefaultLanguage(defaults: testDefaults), "ko-kr")
+
+        viewModel.whisperDefaultLanguage = "auto"
+        XCTAssertNil(SpeechEnginePreference.whisperDefaultLanguage(defaults: testDefaults))
+    }
+
+    func testSpeechEngineChangeCallsSwitcherAndPersistsOnSuccess() async throws {
+        let switcher = MockSpeechEngineSwitcher()
+        viewModel.whisperModelStatus = .notLoaded
+        viewModel.configure(
+            permissionService: mockPermissions,
+            dictationRepo: mockRepo,
+            entitlementsService: entitlements,
+            checkoutURL: nil,
+            speechEngineSwitcher: switcher
+        )
+
+        viewModel.whisperModelStatus = .notLoaded
+        viewModel.speechEnginePreference = .whisper
+        try await Task.sleep(for: .milliseconds(100))
+
+        let preferences = await switcher.preferences
+        XCTAssertEqual(preferences, [.whisper])
+        XCTAssertEqual(SpeechEnginePreference.current(defaults: testDefaults), .whisper)
+        XCTAssertFalse(viewModel.speechEngineSwitching)
+        XCTAssertNil(viewModel.speechEngineError)
+    }
+
+    func testSpeechEngineChangeRevertsWhenSwitcherFails() async throws {
+        let switcher = MockSpeechEngineSwitcher(error: STTError.engineBusy)
+        viewModel.whisperModelStatus = .notLoaded
+        viewModel.configure(
+            permissionService: mockPermissions,
+            dictationRepo: mockRepo,
+            entitlementsService: entitlements,
+            checkoutURL: nil,
+            speechEngineSwitcher: switcher
+        )
+
+        viewModel.whisperModelStatus = .notLoaded
+        viewModel.speechEnginePreference = .whisper
+        try await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertEqual(viewModel.speechEnginePreference, .parakeet)
+        XCTAssertEqual(SpeechEnginePreference.current(defaults: testDefaults), .parakeet)
+        XCTAssertEqual(viewModel.speechEngineError, STTError.engineBusy.localizedDescription)
+    }
+
     // MARK: - Hotkey Trigger
 
     func testHotkeyTriggerDefaultsToFn() {
@@ -754,5 +804,21 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(vm2.silenceDelay, 5.0)
         XCTAssertFalse(vm2.saveAudioRecordings)
         XCTAssertFalse(vm2.saveTranscriptionAudio)
+    }
+}
+
+private actor MockSpeechEngineSwitcher: SpeechEngineSwitching {
+    private let error: Error?
+    private(set) var preferences: [SpeechEnginePreference] = []
+
+    init(error: Error? = nil) {
+        self.error = error
+    }
+
+    func setSpeechEngine(_ preference: SpeechEnginePreference) async throws {
+        preferences.append(preference)
+        if let error {
+            throw error
+        }
     }
 }

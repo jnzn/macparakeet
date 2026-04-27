@@ -194,6 +194,40 @@ final class MeetingRecordingServiceTests: XCTestCase {
         XCTAssertEqual(lockStore.deletes, [output.folderURL])
     }
 
+    func testRecordingCapturesSpeechEngineSelectionAtStart() async throws {
+        let captureService = MockMeetingAudioCaptureService()
+        let lockStore = RecordingLockFileStore()
+        let speechEngine = SpeechEngineSelection(engine: .whisper, language: "KO")
+        let sttClient = LeasingMeetingSTTClient(selection: speechEngine)
+        let service = MeetingRecordingService(
+            audioCaptureService: captureService,
+            audioConverter: MockMeetingAudioFileConverter(),
+            sttTranscriber: sttClient,
+            lockFileStore: lockStore
+        )
+
+        try await service.startRecording()
+        let activeLeaseCountAfterStart = await sttClient.activeLeaseCount
+        XCTAssertEqual(activeLeaseCountAfterStart, 1)
+        XCTAssertEqual(lockStore.writes.first?.file.speechEngine, SpeechEngineSelection(engine: .whisper, language: "ko"))
+
+        let microphoneBuffer = try XCTUnwrap(makeMonoFloatBuffer(frameCount: 80_000, sampleValue: 0.25))
+        await captureService.yield(.microphoneBuffer(
+            microphoneBuffer,
+            AVAudioTime(hostTime: AVAudioTime.hostTime(forSeconds: 100.0))
+        ))
+
+        let output = try await service.stopRecording()
+        defer { try? FileManager.default.removeItem(at: output.folderURL) }
+
+        let metadata = try MeetingRecordingMetadataStore.load(from: output.folderURL)
+        XCTAssertEqual(output.speechEngine, SpeechEngineSelection(engine: .whisper, language: "ko"))
+        XCTAssertEqual(metadata.speechEngine, SpeechEngineSelection(engine: .whisper, language: "ko"))
+        XCTAssertEqual(lockStore.writes.last?.file.speechEngine, SpeechEngineSelection(engine: .whisper, language: "ko"))
+        let activeLeaseCountAfterStop = await sttClient.activeLeaseCount
+        XCTAssertEqual(activeLeaseCountAfterStop, 0)
+    }
+
     func testStopRecordingKeepsLockWhenMixFails() async throws {
         let captureService = MockMeetingAudioCaptureService()
         let lockStore = RecordingLockFileStore()
@@ -1315,6 +1349,57 @@ private actor CountingMeetingSTTClient: STTClientProtocol {
             callCounts.system += 1
         }
         return STTResult(text: "", words: [])
+    }
+
+    func warmUp(onProgress: (@Sendable (String) -> Void)?) async throws {}
+
+    func backgroundWarmUp() async {}
+
+    func observeWarmUpProgress() async -> (id: UUID, stream: AsyncStream<STTWarmUpState>) {
+        let stream = AsyncStream<STTWarmUpState> { continuation in
+            continuation.yield(.ready)
+            continuation.finish()
+        }
+        return (UUID(), stream)
+    }
+
+    func removeWarmUpObserver(id: UUID) async {}
+
+    func isReady() async -> Bool { true }
+
+    func clearModelCache() async {}
+
+    func shutdown() async {}
+}
+
+private actor LeasingMeetingSTTClient: STTClientProtocol, SpeechEngineSessionManaging {
+    private let selection: SpeechEngineSelection
+    private var activeLeases: Set<UUID> = []
+
+    init(selection: SpeechEngineSelection) {
+        self.selection = selection
+    }
+
+    var activeLeaseCount: Int {
+        activeLeases.count
+    }
+
+    func beginSpeechEngineSession() async -> SpeechEngineLease {
+        let lease = SpeechEngineLease(selection: selection)
+        activeLeases.insert(lease.id)
+        return lease
+    }
+
+    func endSpeechEngineSession(_ lease: SpeechEngineLease) async {
+        activeLeases.remove(lease.id)
+    }
+
+    func transcribe(
+        audioPath: String,
+        job: STTJobKind,
+        onProgress: (@Sendable (Int, Int) -> Void)?
+    ) async throws -> STTResult {
+        STTResult(text: "", words: [])
     }
 
     func warmUp(onProgress: (@Sendable (String) -> Void)?) async throws {}

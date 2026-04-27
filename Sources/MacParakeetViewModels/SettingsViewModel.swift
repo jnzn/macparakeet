@@ -217,6 +217,25 @@ public final class SettingsViewModel {
             Telemetry.send(.settingChanged(setting: .speakerDiarization))
         }
     }
+    public var speechEnginePreference: SpeechEnginePreference {
+        didSet {
+            guard !isApplyingSpeechEngineState else { return }
+            applySpeechEngineChange(speechEnginePreference)
+        }
+    }
+    public var whisperDefaultLanguage: String {
+        didSet {
+            SpeechEnginePreference.saveWhisperDefaultLanguage(whisperDefaultLanguage, defaults: defaults)
+        }
+    }
+    public var speechEngineSwitching = false
+    public var speechEngineError: String?
+    public var whisperModelStatus: LocalModelStatus = .unknown
+    public var whisperModelStatusDetail: String = "Not checked yet."
+    public var whisperDownloading = false
+    public var isWhisperModelDownloaded: Bool {
+        whisperModelStatus == .ready || whisperModelStatus == .notLoaded
+    }
     public private(set) var pendingMeetingRecoveryCount = 0
     public var onRecoverPendingMeetingRecordings: (() -> Void)?
 
@@ -362,6 +381,7 @@ public final class SettingsViewModel {
     private var entitlementsService: EntitlementsService?
     private var launchAtLoginService: LaunchAtLoginControlling?
     private var sttClient: STTClientProtocol?
+    private var speechEngineSwitcher: SpeechEngineSwitching?
     private var meetingRecoveryService: MeetingRecordingRecoveryServicing?
     private let defaults: UserDefaults
     private let youtubeDownloadsDirPath: @Sendable () -> String
@@ -370,6 +390,7 @@ public final class SettingsViewModel {
     private let defaultInputDeviceUIDProvider: @Sendable () -> String?
     private let permissionPollingInterval: Duration
     private var isApplyingLaunchAtLoginState = false
+    private var isApplyingSpeechEngineState = false
     // `deinit` is nonisolated even though this type is `@MainActor`.
     // These handles are only mutated on the main actor during the view
     // model lifetime; unsafe access lets deinit cancel/unregister.
@@ -427,6 +448,8 @@ public final class SettingsViewModel {
         saveAudioRecordings = defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveAudioRecordingsKey) as? Bool ?? true
         saveTranscriptionAudio = defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveTranscriptionAudioKey) as? Bool ?? true
         speakerDiarization = defaults.object(forKey: UserDefaultsAppRuntimePreferences.speakerDiarizationKey) as? Bool ?? true
+        speechEnginePreference = SpeechEnginePreference.current(defaults: defaults)
+        whisperDefaultLanguage = SpeechEnginePreference.whisperDefaultLanguage(defaults: defaults) ?? "auto"
         autoSaveTranscripts = defaults.bool(forKey: AutoSaveService.enabledKey)
         autoSaveFormat = AutoSaveFormat(rawValue: defaults.string(forKey: AutoSaveService.formatKey) ?? "md") ?? .md
         autoSaveFolderPath = Self.resolveAutoSaveFolderPath(defaults: defaults, scope: .transcription)
@@ -583,6 +606,7 @@ public final class SettingsViewModel {
         customWordRepo: CustomWordRepositoryProtocol? = nil,
         snippetRepo: TextSnippetRepositoryProtocol? = nil,
         sttClient: STTClientProtocol? = nil,
+        speechEngineSwitcher: SpeechEngineSwitching? = nil,
         meetingRecoveryService: MeetingRecordingRecoveryServicing? = nil
     ) {
         self.permissionService = permissionService
@@ -594,6 +618,7 @@ public final class SettingsViewModel {
         self.customWordRepo = customWordRepo
         self.snippetRepo = snippetRepo
         self.sttClient = sttClient
+        self.speechEngineSwitcher = speechEngineSwitcher
         self.meetingRecoveryService = meetingRecoveryService
         refreshLaunchAtLoginStatus()
         refreshPermissions()
@@ -812,11 +837,13 @@ public final class SettingsViewModel {
         guard let sttClient else {
             parakeetStatus = .unknown
             parakeetStatusDetail = "Unavailable in this runtime."
+            refreshWhisperModelStatus()
             return
         }
 
         parakeetStatus = .checking
         parakeetStatusDetail = "Checking model state..."
+        refreshWhisperModelStatus()
 
         Task {
             let parakeetReady = await sttClient.isReady()
@@ -834,6 +861,83 @@ public final class SettingsViewModel {
                     self.parakeetStatusDetail = "Not downloaded yet."
                 }
 
+            }
+        }
+    }
+
+    public func refreshWhisperModelStatus() {
+        if WhisperEngine.isModelDownloaded(model: SpeechEnginePreference.whisperModelVariant(defaults: defaults)) {
+            whisperModelStatus = .notLoaded
+            whisperModelStatusDetail = "Downloaded. Loads automatically when Whisper is selected."
+        } else {
+            whisperModelStatus = .notDownloaded
+            whisperModelStatusDetail = "Not downloaded yet."
+        }
+    }
+
+    public func downloadWhisperModel() {
+        guard !whisperDownloading else { return }
+        whisperDownloading = true
+        whisperModelStatus = .repairing
+        whisperModelStatusDetail = "Downloading Whisper model..."
+
+        Task {
+            do {
+                _ = try await WhisperEngine.downloadModel(
+                    model: SpeechEnginePreference.whisperModelVariant(defaults: defaults)
+                ) { completed, total in
+                    let percent = total > 0 ? Int((Double(completed) / Double(total) * 100).rounded()) : 0
+                    Task { @MainActor [weak self] in
+                        self?.whisperModelStatusDetail = "Downloading Whisper model... \(min(max(percent, 0), 100))%"
+                    }
+                }
+                await MainActor.run {
+                    self.whisperDownloading = false
+                    self.refreshWhisperModelStatus()
+                }
+            } catch {
+                await MainActor.run {
+                    self.whisperDownloading = false
+                    self.whisperModelStatus = .failed
+                    self.whisperModelStatusDetail = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func applySpeechEngineChange(_ preference: SpeechEnginePreference) {
+        speechEngineError = nil
+
+        if preference == .whisper && !isWhisperModelDownloaded {
+            speechEngineError = "Download the Whisper model before switching engines."
+            isApplyingSpeechEngineState = true
+            speechEnginePreference = .parakeet
+            isApplyingSpeechEngineState = false
+            return
+        }
+
+        guard let speechEngineSwitcher else {
+            preference.save(to: defaults)
+            return
+        }
+
+        speechEngineSwitching = true
+        Task {
+            do {
+                try await speechEngineSwitcher.setSpeechEngine(preference)
+                await MainActor.run {
+                    preference.save(to: self.defaults)
+                    self.speechEngineSwitching = false
+                    self.refreshModelStatus()
+                }
+            } catch {
+                await MainActor.run {
+                    self.speechEngineSwitching = false
+                    self.speechEngineError = error.localizedDescription
+                    self.isApplyingSpeechEngineState = true
+                    self.speechEnginePreference = SpeechEnginePreference.current(defaults: self.defaults)
+                    self.isApplyingSpeechEngineState = false
+                }
             }
         }
     }

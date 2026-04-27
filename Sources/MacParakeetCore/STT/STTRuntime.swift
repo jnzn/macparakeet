@@ -8,6 +8,12 @@ protocol STTRuntimeProtocol: Sendable {
         job: STTJobKind,
         onProgress: (@Sendable (Int, Int) -> Void)?
     ) async throws -> STTResult
+    func transcribe(
+        audioPath: String,
+        job: STTJobKind,
+        speechEngine: SpeechEngineSelection,
+        onProgress: (@Sendable (Int, Int) -> Void)?
+    ) async throws -> STTResult
     func warmUp(onProgress: (@Sendable (String) -> Void)?) async throws
     func backgroundWarmUp() async
     func observeWarmUpProgress() async -> (id: UUID, stream: AsyncStream<STTWarmUpState>)
@@ -15,6 +21,7 @@ protocol STTRuntimeProtocol: Sendable {
     func isReady() async -> Bool
     func shutdown() async
     func clearModelCache() async
+    func setSpeechEngine(_ preference: SpeechEnginePreference) async throws
 }
 
 /// Sole owner of the shared Parakeet STT lifecycle.
@@ -31,20 +38,77 @@ public actor STTRuntime: STTRuntimeProtocol {
     private var initializationGeneration: UInt64 = 0
     private var warmUpProgressHandler: (@Sendable (String) -> Void)?
     private let modelVersion: AsrModelVersion
+    private var speechEngine: SpeechEnginePreference
+    private var whisperEngine: WhisperEngine?
+    private let whisperModelVariant: String
+    private var activeTranscriptionCount = 0
 
     private var backgroundWarmUpState: STTWarmUpState = .idle
     private var backgroundWarmUpTask: Task<Void, Never>?
     private var warmUpObservers: [UUID: AsyncStream<STTWarmUpState>.Continuation] = [:]
     private var backgroundWarmUpGeneration: UInt64 = 0
 
-    public init(modelVersion: AsrModelVersion = .v3) {
+    public init(
+        modelVersion: AsrModelVersion = .v3,
+        speechEngine: SpeechEnginePreference = .parakeet,
+        whisperModelVariant: String = SpeechEnginePreference.defaultWhisperModelVariant
+    ) {
         self.modelVersion = modelVersion
+        self.speechEngine = speechEngine
+        self.whisperModelVariant = WhisperEngine.normalizeModelVariant(whisperModelVariant)
     }
 
     func transcribe(
         audioPath: String,
         job: STTJobKind,
         onProgress: (@Sendable (Int, Int) -> Void)? = nil
+    ) async throws -> STTResult {
+        try await transcribe(
+            audioPath: audioPath,
+            job: job,
+            speechEngine: SpeechEngineSelection(
+                engine: speechEngine,
+                language: speechEngine == .whisper ? SpeechEnginePreference.whisperDefaultLanguage() : nil
+            ),
+            onProgress: onProgress
+        )
+    }
+
+    func transcribe(
+        audioPath: String,
+        job: STTJobKind,
+        speechEngine selection: SpeechEngineSelection,
+        onProgress: (@Sendable (Int, Int) -> Void)? = nil
+    ) async throws -> STTResult {
+        activeTranscriptionCount += 1
+        defer { activeTranscriptionCount -= 1 }
+
+        switch selection.engine {
+        case .parakeet:
+            return try await transcribeWithParakeet(audioPath: audioPath, job: job, onProgress: onProgress)
+        case .whisper:
+            return try await transcribeWithWhisper(audioPath: audioPath, language: selection.language, onProgress: onProgress)
+        }
+    }
+
+    private func transcribeWithWhisper(
+        audioPath: String,
+        language: String?,
+        onProgress: (@Sendable (Int, Int) -> Void)?
+    ) async throws -> STTResult {
+        let engine = whisperEngine ?? WhisperEngine(model: whisperModelVariant)
+        whisperEngine = engine
+        return try await engine.transcribe(
+            audioURL: URL(fileURLWithPath: audioPath),
+            language: language,
+            onProgress: onProgress
+        )
+    }
+
+    private func transcribeWithParakeet(
+        audioPath: String,
+        job: STTJobKind,
+        onProgress: (@Sendable (Int, Int) -> Void)?
     ) async throws -> STTResult {
         try await ensureInitialized()
 
@@ -109,7 +173,14 @@ public actor STTRuntime: STTRuntimeProtocol {
 
         let start = ContinuousClock.now
         do {
-            try await ensureInitialized()
+            switch speechEngine {
+            case .parakeet:
+                try await ensureInitialized()
+            case .whisper:
+                let engine = whisperEngine ?? WhisperEngine(model: whisperModelVariant)
+                whisperEngine = engine
+                try await engine.prepare(onProgress: onProgress)
+            }
             let elapsed = start.duration(to: .now)
             let seconds = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
             Telemetry.send(.modelLoaded(loadTimeSeconds: seconds))
@@ -181,6 +252,10 @@ public actor STTRuntime: STTRuntimeProtocol {
     }
 
     public func isReady() async -> Bool {
+        if speechEngine == .whisper {
+            return await whisperEngine?.isReady() ?? false
+        }
+
         guard let interactiveManager, let backgroundManager else { return false }
         let interactiveReady = await interactiveManager.isAvailable
         let backgroundReady = await backgroundManager.isAvailable
@@ -189,6 +264,69 @@ public actor STTRuntime: STTRuntimeProtocol {
 
     public func shutdown() async {
         invalidateBackgroundWarmUp()
+        await unloadWhisper()
+        await unloadParakeet()
+        warmUpProgressHandler = nil
+        setBackgroundWarmUpState(.idle)
+    }
+
+    public func clearModelCache() async {
+        await shutdown()
+        DownloadUtils.clearAllModelCaches()
+        try? FileManager.default.removeItem(atPath: AppPaths.whisperModelsDir)
+        setBackgroundWarmUpState(.idle)
+    }
+
+    public func setSpeechEngine(_ preference: SpeechEnginePreference) async throws {
+        guard preference != speechEngine else {
+            preference.save()
+            return
+        }
+
+        guard initializationTask == nil, activeTranscriptionCount == 0 else {
+            throw STTError.engineBusy
+        }
+
+        invalidateBackgroundWarmUp()
+        setBackgroundWarmUpState(.idle)
+
+        let previous = speechEngine
+        var preparedWhisper: WhisperEngine?
+
+        switch preference {
+        case .parakeet:
+            try await ensureInitialized()
+        case .whisper:
+            let engine = whisperEngine ?? WhisperEngine(
+                model: SpeechEnginePreference.whisperModelVariant(),
+                language: SpeechEnginePreference.whisperDefaultLanguage()
+            )
+            try await engine.prepare()
+            preparedWhisper = engine
+        }
+
+        if let preparedWhisper {
+            whisperEngine = preparedWhisper
+        }
+        speechEngine = preference
+        preference.save()
+
+        switch previous {
+        case .parakeet where preference != .parakeet:
+            await unloadParakeet()
+        case .whisper where preference != .whisper:
+            await unloadWhisper()
+        default:
+            break
+        }
+    }
+
+    public nonisolated static func isModelCached(version: AsrModelVersion = .v3) -> Bool {
+        let cacheDir = AsrModels.defaultCacheDirectory(for: version)
+        return AsrModels.modelsExist(at: cacheDir, version: version)
+    }
+
+    private func unloadParakeet() async {
         let inFlightInitialization = cancelInitialization()
         inFlightInitialization?.cancel()
         _ = try? await inFlightInitialization?.value
@@ -203,19 +341,12 @@ public actor STTRuntime: STTRuntimeProtocol {
             interactiveManager: interactiveManager,
             backgroundManager: backgroundManager
         )
-        warmUpProgressHandler = nil
-        setBackgroundWarmUpState(.idle)
     }
 
-    public func clearModelCache() async {
-        await shutdown()
-        DownloadUtils.clearAllModelCaches()
-        setBackgroundWarmUpState(.idle)
-    }
-
-    public nonisolated static func isModelCached(version: AsrModelVersion = .v3) -> Bool {
-        let cacheDir = AsrModels.defaultCacheDirectory(for: version)
-        return AsrModels.modelsExist(at: cacheDir, version: version)
+    private func unloadWhisper() async {
+        let engine = whisperEngine
+        whisperEngine = nil
+        await engine?.unload()
     }
 
     private func beginBackgroundWarmUp() -> UInt64 {
