@@ -46,7 +46,7 @@ public struct SpeechEngineSelection: Codable, Equatable, Sendable {
 }
 ```
 
-Language hints are normalized to lowercase BCP-47-ish tokens with `_` converted to `-`. `"auto"` and `"auto-detect"` are stored as `nil`, which tells WhisperKit to detect language.
+Language hints are normalized to canonical Whisper language codes. Region-style aliases such as `ko-KR`/`KO_kr` collapse to the primary Whisper code (`ko`). `"auto"` and `"auto-detect"` are stored as `nil`, which tells WhisperKit to detect language.
 
 ### 3. Add `WhisperEngine`
 

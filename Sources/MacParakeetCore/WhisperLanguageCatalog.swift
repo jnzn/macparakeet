@@ -147,8 +147,30 @@ public enum WhisperLanguageCatalog {
         "zh": ["mandarin"],
     ]
 
+    public static func canonicalCode(for rawCode: String?) -> String? {
+        guard let rawCode else { return nil }
+        let normalized = rawCode
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "_", with: "-")
+            .lowercased()
+        guard !normalized.isEmpty else { return nil }
+        guard normalized != autoCode, normalized != "auto-detect" else { return nil }
+
+        if byCode[normalized] != nil {
+            return normalized
+        }
+
+        if let primarySubtag = normalized.split(separator: "-", maxSplits: 1).first.map(String.init),
+           byCode[primarySubtag] != nil {
+            return primarySubtag
+        }
+
+        return normalized
+    }
+
     public static func language(forCode code: String) -> WhisperLanguage? {
-        byCode[code.lowercased()]
+        guard let canonical = canonicalCode(for: code) else { return nil }
+        return byCode[canonical]
     }
 
     /// User-facing label for the picker button. Falls back to upper-cased code
