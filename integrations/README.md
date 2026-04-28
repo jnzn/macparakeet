@@ -272,9 +272,12 @@ macparakeet-cli prompts run "<prompt-name>" \
   provider); Sparkle update checks (app, not CLI); and a single privacy-safe
   `cli_operation` event per `transcribe` invocation, posted to the
   self-hosted endpoint at `https://macparakeet.com/api/telemetry`. The
-  telemetry event ships outcome / duration / `input_kind` only — never the
-  file path, URL, transcript, or any user content (random per-process
-  session UUID, no persistent identifier). Disable it any of four ways:
+  telemetry event ships only allowlisted invocation metadata (`operation_id`,
+  `workflow_id`, `parent_operation_id`, `command`, `subcommand`, `outcome`,
+  `duration_seconds`, `input_kind`, `output_format`, `json`, `exit_code`,
+  `error_type`) — never the file path, URL, transcript, language value, or any
+  user content (random per-process session UUID, no persistent identifier).
+  Disable it any of four ways:
     - `MACPARAKEET_TELEMETRY=0` (per process)
     - `DO_NOT_TRACK=1` (industry-standard signal, also honored)
     - `macparakeet-cli config set telemetry off` (persists in the shared
