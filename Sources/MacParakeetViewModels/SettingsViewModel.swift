@@ -938,13 +938,14 @@ public final class SettingsViewModel {
         guard !whisperDownloading else { return }
         whisperDownloading = true
         whisperModelStatus = .repairing
-        let friendly = whisperVariantFriendlyName
+        let modelVariant = SpeechEnginePreference.whisperModelVariant(defaults: defaults)
+        let friendly = SpeechEnginePreference.friendlyVariantName(modelVariant)
         whisperModelStatusDetail = "Downloading Whisper \(friendly)..."
 
         Task {
             do {
                 _ = try await WhisperEngine.downloadModel(
-                    model: SpeechEnginePreference.whisperModelVariant(defaults: defaults)
+                    model: modelVariant
                 ) { completed, total in
                     let percent = total > 0 ? Int((Double(completed) / Double(total) * 100).rounded()) : 0
                     Task { @MainActor [weak self] in
