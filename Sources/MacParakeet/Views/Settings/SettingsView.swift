@@ -661,10 +661,10 @@ struct SettingsView: View {
     /// screen-recording-permission state since system audio capture is
     /// gated on it.
     private var meetingRecordingCardStatus: SettingsCardStatus? {
-        guard AppFeatures.meetingRecordingEnabled else { return nil }
-        return viewModel.screenRecordingGranted
-            ? SettingsCardStatus(.ok, label: "Ready")
-            : SettingsCardStatus(.recommended, label: "Permission needed")
+        SettingsStatusRules.meetingRecordingCardStatus(
+            meetingRecordingEnabled: AppFeatures.meetingRecordingEnabled,
+            screenRecordingGranted: viewModel.screenRecordingGranted
+        )
     }
 
     /// Calendar auto-start controls, rendered inline within the Meeting
@@ -1149,30 +1149,11 @@ struct SettingsView: View {
     }
 
     private var enginesModelsCardStatus: SettingsCardStatus? {
-        let parakeet = viewModel.parakeetStatus
-        let whisper = viewModel.whisperModelStatus
-        let active = viewModel.speechEnginePreference
-
-        if parakeet == .failed || whisper == .failed {
-            return SettingsCardStatus(.required, label: "Action needed")
-        }
-
-        let activeStatus: SettingsViewModel.LocalModelStatus
-        switch active {
-        case .parakeet: activeStatus = parakeet
-        case .whisper:  activeStatus = whisper
-        }
-
-        switch activeStatus {
-        case .notDownloaded:
-            return SettingsCardStatus(.recommended, label: "Download recommended")
-        case .ready, .notLoaded:
-            return parakeet == .ready || parakeet == .notLoaded
-                ? SettingsCardStatus(.ok, label: "Ready")
-                : nil
-        case .checking, .repairing, .unknown, .failed:
-            return nil
-        }
+        SettingsStatusRules.localModelsCardStatus(
+            parakeet: viewModel.parakeetStatus,
+            whisper: viewModel.whisperModelStatus,
+            activeEngine: viewModel.speechEnginePreference
+        )
     }
 
     private var whisperModelActionLabel: String {
@@ -1207,27 +1188,21 @@ struct SettingsView: View {
         }
     }
 
-    /// Roll-up of the three permissions: required first, optional second.
-    /// `.required` if a hard prerequisite is missing (mic or accessibility);
-    /// `.recommended` if only the optional Screen Recording is missing
-    /// (meetings won't work but the rest of the app does); `.ok` when all
-    /// surfaces are green.
+    /// Roll-up of the three permissions. `.required` if any feature gate is
+    /// missing; Screen Recording is required for meeting recording because the
+    /// runtime has no mic-only meeting fallback.
     private var permissionsCardStatus: SettingsCardStatus? {
-        let micOrAccessibilityMissing = !viewModel.microphoneGranted || !viewModel.accessibilityGranted
-        if micOrAccessibilityMissing {
-            return SettingsCardStatus(.required, label: "Action required")
-        }
-
-        if AppFeatures.meetingRecordingEnabled, !viewModel.screenRecordingGranted {
-            return SettingsCardStatus(.recommended, label: "Optional missing")
-        }
-
-        return SettingsCardStatus(.ok, label: "All granted")
+        SettingsStatusRules.permissionsCardStatus(
+            meetingRecordingEnabled: AppFeatures.meetingRecordingEnabled,
+            microphoneGranted: viewModel.microphoneGranted,
+            accessibilityGranted: viewModel.accessibilityGranted,
+            screenRecordingGranted: viewModel.screenRecordingGranted
+        )
     }
 
     private var permissionsCard: some View {
         let permissionsSubtitle = AppFeatures.meetingRecordingEnabled
-            ? "Microphone and Accessibility are required. Screen Recording is optional for meetings."
+            ? "Microphone and Accessibility are required. Screen Recording is required for meetings."
             : "Microphone and Accessibility are required."
 
         return SettingsCard(
@@ -1257,7 +1232,7 @@ struct SettingsView: View {
                     HStack {
                         rowText(
                             title: "Screen & System Audio Recording",
-                            detail: "Optional. Only used for meeting audio capture. MacParakeet never records your screen."
+                            detail: "Required for meeting audio capture. MacParakeet never records your screen."
                         )
                         Spacer()
                         permissionPill(granted: viewModel.screenRecordingGranted)
@@ -1689,4 +1664,3 @@ struct SettingsView: View {
         }
     }
 }
-
