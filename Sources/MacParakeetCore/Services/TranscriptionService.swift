@@ -25,6 +25,22 @@ public protocol TranscriptionServiceProtocol: Sendable {
     func transcribeURL(urlString: String, onProgress: (@Sendable (TranscriptionProgress) -> Void)?) async throws -> Transcription
 }
 
+public protocol SpeechEngineOverrideTranscriptionService: TranscriptionServiceProtocol {
+    func retranscribe(
+        existing transcription: Transcription,
+        fileURL: URL,
+        source: TelemetryTranscriptionSource,
+        speechEngineOverride: SpeechEngineSelection?,
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)?
+    ) async throws -> Transcription
+    func retranscribeMeeting(
+        existing transcription: Transcription,
+        recording: MeetingRecordingOutput,
+        speechEngineOverride: SpeechEngineSelection?,
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)?
+    ) async throws -> Transcription
+}
+
 extension TranscriptionServiceProtocol {
     public func transcribe(fileURL: URL) async throws -> Transcription {
         try await transcribe(fileURL: fileURL, source: .file, onProgress: nil)
@@ -61,6 +77,61 @@ extension TranscriptionServiceProtocol {
     ) async throws -> Transcription {
         try await transcribeMeeting(recording: recording, onProgress: onProgress)
     }
+
+    public func retranscribe(
+        existing transcription: Transcription,
+        fileURL: URL,
+        source: TelemetryTranscriptionSource,
+        speechEngineOverride: SpeechEngineSelection?,
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
+    ) async throws -> Transcription {
+        guard let speechEngineOverride else {
+            return try await retranscribe(
+                existing: transcription,
+                fileURL: fileURL,
+                source: source,
+                onProgress: onProgress
+            )
+        }
+        guard let routedService = self as? any SpeechEngineOverrideTranscriptionService else {
+            throw STTError.engineStartFailed(
+                "Pinned \(speechEngineOverride.engine.rawValue) speech engine cannot be honored by this transcription service."
+            )
+        }
+        return try await routedService.retranscribe(
+            existing: transcription,
+            fileURL: fileURL,
+            source: source,
+            speechEngineOverride: speechEngineOverride,
+            onProgress: onProgress
+        )
+    }
+
+    public func retranscribeMeeting(
+        existing transcription: Transcription,
+        recording: MeetingRecordingOutput,
+        speechEngineOverride: SpeechEngineSelection?,
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
+    ) async throws -> Transcription {
+        guard let speechEngineOverride else {
+            return try await retranscribeMeeting(
+                existing: transcription,
+                recording: recording,
+                onProgress: onProgress
+            )
+        }
+        guard let routedService = self as? any SpeechEngineOverrideTranscriptionService else {
+            throw STTError.engineStartFailed(
+                "Pinned \(speechEngineOverride.engine.rawValue) speech engine cannot be honored by this transcription service."
+            )
+        }
+        return try await routedService.retranscribeMeeting(
+            existing: transcription,
+            recording: recording,
+            speechEngineOverride: speechEngineOverride,
+            onProgress: onProgress
+        )
+    }
 }
 
 private struct TranscriptionOperationContext: Sendable {
@@ -85,7 +156,7 @@ private struct TranscriptionOperationContext: Sendable {
     }
 }
 
-public actor TranscriptionService: TranscriptionServiceProtocol {
+public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
     private let logger = Logger(subsystem: "com.macparakeet.core", category: "TranscriptionService")
     private let audioProcessor: AudioProcessorProtocol
     private let sttTranscriber: STTTranscribing
@@ -219,6 +290,22 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         source: TelemetryTranscriptionSource,
         onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
     ) async throws -> Transcription {
+        try await retranscribe(
+            existing: original,
+            fileURL: fileURL,
+            source: source,
+            speechEngineOverride: nil,
+            onProgress: onProgress
+        )
+    }
+
+    public func retranscribe(
+        existing original: Transcription,
+        fileURL: URL,
+        source: TelemetryTranscriptionSource,
+        speechEngineOverride: SpeechEngineSelection? = nil,
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
+    ) async throws -> Transcription {
         var transcription = makeRetranscriptionRecord(from: original)
         transcription.fileSizeBytes = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? Int)
             .flatMap { $0 } ?? original.fileSizeBytes
@@ -242,6 +329,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                 operation: operation,
                 tempFiles: [],
                 persistFailureStatus: false,
+                speechEngine: speechEngineOverride,
                 onProgress: onProgress
             )
         }
@@ -250,6 +338,20 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
     public func retranscribeMeeting(
         existing original: Transcription,
         recording: MeetingRecordingOutput,
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
+    ) async throws -> Transcription {
+        try await retranscribeMeeting(
+            existing: original,
+            recording: recording,
+            speechEngineOverride: nil,
+            onProgress: onProgress
+        )
+    }
+
+    public func retranscribeMeeting(
+        existing original: Transcription,
+        recording: MeetingRecordingOutput,
+        speechEngineOverride: SpeechEngineSelection? = nil,
         onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
     ) async throws -> Transcription {
         var transcription = makeRetranscriptionRecord(from: original)
@@ -279,6 +381,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                 transcription: &transcription,
                 operation: operation,
                 persistFailureStatus: false,
+                speechEngineOverride: speechEngineOverride,
                 onProgress: onProgress
             )
         }
@@ -488,6 +591,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         transcription: inout Transcription,
         operation: TranscriptionOperationContext,
         persistFailureStatus: Bool = true,
+        speechEngineOverride: SpeechEngineSelection? = nil,
         onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
     ) async throws -> Transcription {
         let processingStartedAt = Date()
@@ -507,6 +611,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
                 lifecycleStage: &lifecycleStage,
                 temporaryWavURLs: &temporaryWavURLs,
                 sourceWavURLs: &sourceWavURLs,
+                speechEngineOverride: speechEngineOverride,
                 onProgress: onProgress
             )
 
@@ -611,10 +716,12 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         lifecycleStage: inout TelemetryTranscriptionStage,
         temporaryWavURLs: inout [URL],
         sourceWavURLs: inout [AudioSource: URL],
+        speechEngineOverride: SpeechEngineSelection?,
         onProgress: (@Sendable (TranscriptionProgress) -> Void)?
     ) async throws -> [MeetingTranscriptFinalizer.SourceTranscript] {
         var outputs: [MeetingTranscriptFinalizer.SourceTranscript] = []
         let activeSources = [AudioSource.microphone, .system].filter { recording.sourceAlignment.track(for: $0) != nil }
+        let speechEngine = speechEngineOverride ?? (recording.speechEngineWasCaptured ? recording.speechEngine : nil)
 
         for (index, source) in activeSources.enumerated() {
             let fileURL = meetingAudioURL(for: source, recording: recording)
@@ -629,7 +736,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             let result = try await transcribeSpeech(
                 audioPath: wavURL.path,
                 job: .meetingFinalize,
-                speechEngine: recording.speechEngine,
+                speechEngine: speechEngine,
                 onProgress: meetingSourceProgressMapper(
                     sourceIndex: index,
                     sourceCount: activeSources.count,
@@ -770,6 +877,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         tempFiles: [URL],
         cleanUpDownloadedFiles: Bool = true,
         persistFailureStatus: Bool = true,
+        speechEngine: SpeechEngineSelection? = nil,
         onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
     ) async throws -> Transcription {
         var wavURL: URL?
@@ -795,7 +903,7 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
             let result = try await transcribeSpeech(
                 audioPath: wavURL.path,
                 job: sttJob,
-                speechEngine: nil,
+                speechEngine: speechEngine,
                 onProgress: sttProgress
             )
 

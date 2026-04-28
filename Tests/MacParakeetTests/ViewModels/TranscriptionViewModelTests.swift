@@ -1099,6 +1099,122 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertNil(lastFileURL, "Meeting retranscribe should use transcribeMeeting, not generic file transcription")
     }
 
+    func testRetranscribeMeetingPassesSpeechEngineOverride() async throws {
+        let archivedMeeting = try makeArchivedMeetingRecording(
+            speechEngine: SpeechEngineSelection(engine: .whisper, language: "ko")
+        )
+        defer { try? FileManager.default.removeItem(at: archivedMeeting.folderURL) }
+
+        let original = Transcription(
+            id: UUID(),
+            fileName: "Meeting Apr 5",
+            filePath: archivedMeeting.mixedURL.path,
+            durationMs: 2_000,
+            rawTranscript: "Old meeting transcript",
+            status: .completed,
+            sourceType: .meeting
+        )
+        mockRepo.transcriptions = [original]
+
+        let newResult = Transcription(
+            fileName: archivedMeeting.mixedURL.lastPathComponent,
+            rawTranscript: "Updated meeting transcript",
+            status: .completed
+        )
+        await mockService.configure(result: newResult)
+
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+
+        viewModel.retranscribe(
+            original,
+            speechEngineOverride: SpeechEngineSelection(engine: .parakeet)
+        )
+
+        try await Task.sleep(for: .milliseconds(300))
+
+        let override = await mockService.lastSpeechEngineOverride
+        XCTAssertEqual(override, SpeechEngineSelection(engine: .parakeet))
+        let lastMeetingRecording = await mockService.lastMeetingRecording
+        XCTAssertEqual(lastMeetingRecording?.speechEngine, SpeechEngineSelection(engine: .whisper, language: "ko"))
+    }
+
+    func testRetranscriptionEngineOptionUsesCapturedMeetingEngine() throws {
+        let archivedMeeting = try makeArchivedMeetingRecording(
+            speechEngine: SpeechEngineSelection(engine: .whisper, language: "KO")
+        )
+        defer { try? FileManager.default.removeItem(at: archivedMeeting.folderURL) }
+
+        viewModel = TranscriptionViewModel(isWhisperModelDownloaded: { true })
+        let original = Transcription(
+            id: UUID(),
+            fileName: "Korean Meeting",
+            filePath: archivedMeeting.mixedURL.path,
+            durationMs: 2_000,
+            rawTranscript: "Old meeting transcript",
+            status: .completed,
+            sourceType: .meeting
+        )
+
+        let option = try XCTUnwrap(viewModel.retranscriptionEngineOption(for: original))
+
+        XCTAssertEqual(option.primaryEngine, SpeechEngineSelection(engine: .whisper, language: "ko"))
+        XCTAssertEqual(option.alternativeEngine, SpeechEngineSelection(engine: .parakeet))
+        XCTAssertTrue(option.isAlternativeAvailable)
+        XCTAssertNil(option.unavailableReason)
+        XCTAssertEqual(option.title, "Try with Parakeet")
+    }
+
+    func testRetranscriptionEngineOptionUsesCurrentSettingsForLegacyMeetingMetadata() throws {
+        let suiteName = "TranscriptionViewModelTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        SpeechEnginePreference.whisper.save(to: defaults)
+        SpeechEnginePreference.saveWhisperDefaultLanguage("ja", defaults: defaults)
+        viewModel = TranscriptionViewModel(defaults: defaults, isWhisperModelDownloaded: { true })
+
+        let archivedMeeting = try makeArchivedMeetingRecording(speechEngine: nil)
+        defer { try? FileManager.default.removeItem(at: archivedMeeting.folderURL) }
+
+        let original = Transcription(
+            id: UUID(),
+            fileName: "Legacy Meeting",
+            filePath: archivedMeeting.mixedURL.path,
+            durationMs: 2_000,
+            rawTranscript: "Old meeting transcript",
+            status: .completed,
+            sourceType: .meeting
+        )
+
+        let option = try XCTUnwrap(viewModel.retranscriptionEngineOption(for: original))
+
+        XCTAssertEqual(option.primaryEngine, SpeechEngineSelection(engine: .whisper, language: "ja"))
+        XCTAssertEqual(option.alternativeEngine, SpeechEngineSelection(engine: .parakeet))
+    }
+
+    func testRetranscriptionEngineOptionDisablesMissingWhisperModel() throws {
+        let archivedMeeting = try makeArchivedMeetingRecording(
+            speechEngine: SpeechEngineSelection(engine: .parakeet)
+        )
+        defer { try? FileManager.default.removeItem(at: archivedMeeting.folderURL) }
+
+        viewModel = TranscriptionViewModel(isWhisperModelDownloaded: { false })
+        let original = Transcription(
+            id: UUID(),
+            fileName: "English Meeting",
+            filePath: archivedMeeting.mixedURL.path,
+            durationMs: 2_000,
+            rawTranscript: "Old meeting transcript",
+            status: .completed,
+            sourceType: .meeting
+        )
+
+        let option = try XCTUnwrap(viewModel.retranscriptionEngineOption(for: original))
+
+        XCTAssertEqual(option.alternativeEngine, SpeechEngineSelection(engine: .whisper))
+        XCTAssertFalse(option.isAlternativeAvailable)
+        XCTAssertEqual(option.unavailableReason, "Download the Whisper model in Settings before trying Whisper.")
+    }
+
     func testRetranscribeMeetingFallsBackToMixedAudioWhenArchivedMetadataIsMissing() async throws {
         let tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("retranscribe-meeting-fallback-\(UUID().uuidString)", isDirectory: true)
@@ -1252,7 +1368,9 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(mockRepo.transcriptions.first?.id, original.id)
     }
 
-    private func makeArchivedMeetingRecording() throws -> (folderURL: URL, mixedURL: URL) {
+    private func makeArchivedMeetingRecording(
+        speechEngine: SpeechEngineSelection? = SpeechEngineSelection(engine: .parakeet)
+    ) throws -> (folderURL: URL, mixedURL: URL) {
         let folderURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("meeting-archive-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
@@ -1264,26 +1382,37 @@ final class TranscriptionViewModelTests: XCTestCase {
         FileManager.default.createFile(atPath: microphoneURL.path, contents: Data([1]))
         FileManager.default.createFile(atPath: systemURL.path, contents: Data([2]))
 
-        let metadata = MeetingRecordingMetadata(
-            sourceAlignment: MeetingSourceAlignment(
-                meetingOriginHostTime: nil,
-                microphone: .init(
-                    firstHostTime: nil,
-                    lastHostTime: nil,
-                    startOffsetMs: 0,
-                    writtenFrameCount: 24_000,
-                    sampleRate: 48_000
-                ),
-                system: .init(
-                    firstHostTime: nil,
-                    lastHostTime: nil,
-                    startOffsetMs: 150,
-                    writtenFrameCount: 24_000,
-                    sampleRate: 48_000
-                )
+        let sourceAlignment = MeetingSourceAlignment(
+            meetingOriginHostTime: nil,
+            microphone: .init(
+                firstHostTime: nil,
+                lastHostTime: nil,
+                startOffsetMs: 0,
+                writtenFrameCount: 24_000,
+                sampleRate: 48_000
+            ),
+            system: .init(
+                firstHostTime: nil,
+                lastHostTime: nil,
+                startOffsetMs: 150,
+                writtenFrameCount: 24_000,
+                sampleRate: 48_000
             )
         )
-        try MeetingRecordingMetadataStore.save(metadata, folderURL: folderURL)
+
+        if let speechEngine {
+            let metadata = MeetingRecordingMetadata(
+                sourceAlignment: sourceAlignment,
+                speechEngine: speechEngine
+            )
+            try MeetingRecordingMetadataStore.save(metadata, folderURL: folderURL)
+        } else {
+            let legacyMetadata = try JSONEncoder().encode(["sourceAlignment": sourceAlignment])
+            try legacyMetadata.write(
+                to: folderURL.appendingPathComponent(MeetingRecordingMetadata.fileName),
+                options: .atomic
+            )
+        }
 
         return (folderURL: folderURL, mixedURL: mixedURL)
     }

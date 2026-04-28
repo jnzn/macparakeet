@@ -13,6 +13,34 @@ private struct ExportConfirmation: Identifiable {
     let format: String
 }
 
+private struct RetranscriptionConfirmation: Identifiable {
+    let id = UUID()
+    let speechEngineOverride: SpeechEngineSelection?
+
+    var title: String {
+        if let speechEngineOverride {
+            "Try with \(speechEngineOverride.engine.displayName)?"
+        } else {
+            "Retranscribe this file?"
+        }
+    }
+
+    var confirmLabel: String {
+        if let speechEngineOverride {
+            "Try with \(speechEngineOverride.engine.displayName)"
+        } else {
+            "Retranscribe"
+        }
+    }
+
+    var message: String {
+        if let speechEngineOverride {
+            return "This reruns the saved audio with \(speechEngineOverride.engine.displayName) for this attempt only. Meeting metadata and Settings stay unchanged. Existing prompt results and chats are preserved, but may no longer match the updated transcript."
+        }
+        return "This replaces the transcript text in place. Existing prompt results and chats are preserved, but may no longer match the updated transcript."
+    }
+}
+
 private enum TranscriptDisplayMode: String, CaseIterable, Hashable {
     case text = "Text"
     case timed = "Timed"
@@ -26,7 +54,7 @@ struct TranscriptResultView: View {
     @Bindable var promptsViewModel: PromptsViewModel
     var onBack: (() -> Void)?
     var onStartNew: (() -> Void)?
-    var onRetranscribe: ((Transcription) -> Void)?
+    var onRetranscribe: ((Transcription, SpeechEngineSelection?) -> Void)?
 
     @State private var backHovered = false
     @State private var headerExpanded = false
@@ -71,7 +99,8 @@ struct TranscriptResultView: View {
     @State private var scrollMonitor: Any?
     @State private var showPromptLibrary = false
     @State private var showGeneratePopover = false
-    @State private var showingRetranscribeAlert = false
+    @State private var retranscriptionConfirmation: RetranscriptionConfirmation?
+    @State private var showingEngineComparisonPopover = false
     @State private var showingCancelGenerationAlert: UUID?
     @FocusState private var chatInputFocused: Bool
     @FocusState private var meetingTitleFocused: Bool
@@ -387,21 +416,32 @@ struct TranscriptResultView: View {
                 exportOptionsPopover
             }
 
-            if let onRetranscribe, let filePath = transcription.filePath,
+            if onRetranscribe != nil, let filePath = transcription.filePath,
                FileManager.default.fileExists(atPath: filePath) {
                 Button {
-                    showingRetranscribeAlert = true
+                    retranscriptionConfirmation = RetranscriptionConfirmation(speechEngineOverride: nil)
                 } label: {
                     Label("Retranscribe", systemImage: "arrow.trianglehead.2.clockwise")
                 }
                 .buttonStyle(.bordered)
-                .alert("Retranscribe this file?", isPresented: $showingRetranscribeAlert) {
-                    Button("Cancel", role: .cancel) { }
-                    Button("Retranscribe", role: .destructive) {
-                        onRetranscribe(transcription)
+
+                if let option = viewModel.retranscriptionEngineOption(for: transcription) {
+                    Button {
+                        retranscriptionConfirmation = RetranscriptionConfirmation(
+                            speechEngineOverride: option.alternativeEngine
+                        )
+                    } label: {
+                        Label(option.title, systemImage: "arrow.triangle.2.circlepath")
                     }
-                } message: {
-                    Text("This replaces the transcript text in place. Existing prompt results and chats are preserved, but may no longer match the updated transcript.")
+                    .buttonStyle(.bordered)
+                    .disabled(!option.isAlternativeAvailable)
+                    .help(engineComparisonHelp(for: option))
+                    .onHover { hovering in
+                        showingEngineComparisonPopover = hovering && option.isAlternativeAvailable
+                    }
+                    .popover(isPresented: $showingEngineComparisonPopover, arrowEdge: .top) {
+                        engineComparisonPopover
+                    }
                 }
             }
 
@@ -418,9 +458,74 @@ struct TranscriptResultView: View {
             Spacer()
         }
         .padding(DesignSystem.Spacing.md)
+        .alert(item: $retranscriptionConfirmation) { confirmation in
+            Alert(
+                title: Text(confirmation.title),
+                message: Text(confirmation.message),
+                primaryButton: .destructive(Text(confirmation.confirmLabel)) {
+                    onRetranscribe?(transcription, confirmation.speechEngineOverride)
+                },
+                secondaryButton: .cancel()
+            )
+        }
         .popover(item: $exportConfirmation, arrowEdge: .top) { confirmation in
             exportConfirmationPopover(confirmation)
         }
+    }
+
+    private var engineComparisonPopover: some View {
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
+            Text("Engine tradeoffs")
+                .font(DesignSystem.Typography.caption.weight(.semibold))
+
+            Grid(alignment: .leading, horizontalSpacing: DesignSystem.Spacing.md, verticalSpacing: 6) {
+                GridRow {
+                    engineComparisonHeader("Engine")
+                    engineComparisonHeader("Best for")
+                    engineComparisonHeader("Language coverage")
+                }
+                GridRow {
+                    engineComparisonCell("Parakeet")
+                    engineComparisonCell("Fast reruns")
+                    engineComparisonCell("25 European languages, including English")
+                }
+                GridRow {
+                    engineComparisonCell("Whisper")
+                    engineComparisonCell("Broader language retry")
+                    engineComparisonCell("Korean, Chinese, Japanese, and more")
+                }
+            }
+
+            Text("Trying another engine affects only this rerun.")
+                .font(DesignSystem.Typography.caption)
+                .foregroundStyle(DesignSystem.Colors.textSecondary)
+        }
+        .padding(DesignSystem.Spacing.md)
+        .frame(width: 430)
+    }
+
+    private func engineComparisonHeader(_ text: String) -> some View {
+        Text(text)
+            .font(DesignSystem.Typography.caption.weight(.semibold))
+            .foregroundStyle(DesignSystem.Colors.textSecondary)
+    }
+
+    private func engineComparisonCell(_ text: String) -> some View {
+        Text(text)
+            .font(DesignSystem.Typography.caption)
+            .foregroundStyle(DesignSystem.Colors.textPrimary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func engineComparisonHelp(
+        for option: TranscriptionViewModel.RetranscriptionEngineOption
+    ) -> String {
+        let unavailable = option.unavailableReason.map { "\n\n\($0)" } ?? ""
+        return """
+        Parakeet: faster local reruns; 25 European languages, including English.
+        Whisper: slower, broader multilingual coverage for Korean, Chinese, Japanese, and more.
+        This changes only this rerun.\(unavailable)
+        """
     }
 
     private var activeTranscription: Transcription {

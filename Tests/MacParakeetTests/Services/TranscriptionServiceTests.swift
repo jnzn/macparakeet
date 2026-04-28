@@ -602,6 +602,105 @@ final class TranscriptionServiceTests: XCTestCase {
         XCTAssertEqual(selections, [SpeechEngineSelection(engine: .whisper, language: "ko")])
     }
 
+    func testRetranscribeMeetingCanOverrideCapturedSpeechEngineForOneRun() async throws {
+        let recordingFolder = URL(fileURLWithPath: AppPaths.tempDir)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: recordingFolder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: recordingFolder) }
+
+        let mixedURL = recordingFolder.appendingPathComponent("meeting.m4a")
+        let microphoneURL = recordingFolder.appendingPathComponent("microphone.m4a")
+        XCTAssertTrue(FileManager.default.createFile(atPath: mixedURL.path, contents: Data("mixed".utf8)))
+        XCTAssertTrue(FileManager.default.createFile(atPath: microphoneURL.path, contents: Data("microphone".utf8)))
+
+        await mockSTT.configure(result: STTResult(
+            text: "Retried with Parakeet",
+            words: [
+                TimestampedWord(word: "Retried", startMs: 0, endMs: 400, confidence: 0.9),
+            ],
+            language: "en"
+        ))
+
+        let recording = MeetingRecordingOutput(
+            sessionID: UUID(),
+            displayName: "Korean Meeting",
+            folderURL: recordingFolder,
+            mixedAudioURL: mixedURL,
+            microphoneAudioURL: microphoneURL,
+            systemAudioURL: recordingFolder.appendingPathComponent("system.m4a"),
+            durationSeconds: 1.0,
+            sourceAlignment: MeetingSourceAlignment(
+                meetingOriginHostTime: nil,
+                microphone: .init(firstHostTime: nil, lastHostTime: nil, startOffsetMs: 0, writtenFrameCount: 24_000, sampleRate: 48_000),
+                system: nil
+            ),
+            speechEngine: SpeechEngineSelection(engine: .whisper, language: "ko")
+        )
+        let original = Transcription(
+            fileName: "Korean Meeting",
+            filePath: mixedURL.path,
+            status: .completed,
+            sourceType: .meeting
+        )
+
+        _ = try await service.retranscribeMeeting(
+            existing: original,
+            recording: recording,
+            speechEngineOverride: SpeechEngineSelection(engine: .parakeet)
+        )
+
+        let selections = await mockSTT.speechEngineSelections
+        XCTAssertEqual(selections, [SpeechEngineSelection(engine: .parakeet)])
+        XCTAssertEqual(recording.speechEngine, SpeechEngineSelection(engine: .whisper, language: "ko"))
+    }
+
+    func testRetranscribeMeetingWithoutCapturedSpeechEngineUsesCurrentRouting() async throws {
+        let recordingFolder = URL(fileURLWithPath: AppPaths.tempDir)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: recordingFolder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: recordingFolder) }
+
+        let mixedURL = recordingFolder.appendingPathComponent("meeting.m4a")
+        let microphoneURL = recordingFolder.appendingPathComponent("microphone.m4a")
+        XCTAssertTrue(FileManager.default.createFile(atPath: mixedURL.path, contents: Data("mixed".utf8)))
+        XCTAssertTrue(FileManager.default.createFile(atPath: microphoneURL.path, contents: Data("microphone".utf8)))
+
+        await mockSTT.configure(result: STTResult(
+            text: "Legacy rerun",
+            words: [
+                TimestampedWord(word: "Legacy", startMs: 0, endMs: 400, confidence: 0.9),
+            ]
+        ))
+
+        let recording = MeetingRecordingOutput(
+            sessionID: UUID(),
+            displayName: "Legacy Meeting",
+            folderURL: recordingFolder,
+            mixedAudioURL: mixedURL,
+            microphoneAudioURL: microphoneURL,
+            systemAudioURL: recordingFolder.appendingPathComponent("system.m4a"),
+            durationSeconds: 1.0,
+            sourceAlignment: MeetingSourceAlignment(
+                meetingOriginHostTime: nil,
+                microphone: .init(firstHostTime: nil, lastHostTime: nil, startOffsetMs: 0, writtenFrameCount: 24_000, sampleRate: 48_000),
+                system: nil
+            ),
+            speechEngine: SpeechEngineSelection(engine: .parakeet),
+            speechEngineWasCaptured: false
+        )
+        let original = Transcription(
+            fileName: "Legacy Meeting",
+            filePath: mixedURL.path,
+            status: .completed,
+            sourceType: .meeting
+        )
+
+        _ = try await service.retranscribeMeeting(existing: original, recording: recording)
+
+        let selections = await mockSTT.speechEngineSelections
+        XCTAssertEqual(selections, [])
+    }
+
     func testTranscribeMeetingFailsWhenCapturedSpeechEngineCannotBeRouted() async throws {
         let recordingFolder = URL(fileURLWithPath: AppPaths.tempDir)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
