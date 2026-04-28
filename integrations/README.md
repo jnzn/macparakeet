@@ -12,7 +12,8 @@
   per-minute charges.
 - **Audio + video file transcription** -- accepts MP3 / WAV / MP4 / MOV /
   WebM / etc. via the bundled FFmpeg.
-- **YouTube transcription** via bundled yt-dlp.
+- **YouTube transcription** via yt-dlp. The app bundle seeds a signed helper
+  into MacParakeet's Application Support folder before first YouTube use.
 - **Persistent SQLite memory layer** -- everything transcribed is queryable
   later: dictation history, transcriptions, prompt outputs.
 - **Prompt library + LLM-backed summarization** -- bring your own provider

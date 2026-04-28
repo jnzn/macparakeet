@@ -493,8 +493,11 @@ final class MeetingRecordingFlowCoordinator {
         case .showError(let message):
             stopPillPolling()
             stopTranscriptObservation()
-            pillViewModel?.state = .error(message)
             panelViewModel?.state = .error(message)
+            pillViewModel?.state = .error(
+                panelViewModel?.compactErrorRecoveryMessage
+                    ?? "Meeting interrupted. Open Library to retry transcription or export captured audio."
+            )
             hideMeetingPanel()
 
         case .hidePill:

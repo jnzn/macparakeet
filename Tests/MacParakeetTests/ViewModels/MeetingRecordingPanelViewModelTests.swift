@@ -92,6 +92,10 @@ final class MeetingRecordingPanelViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.statusTitle, "Meeting interrupted", "Phase 4 copy refinement: 'Recording Error' → 'Meeting interrupted'")
         XCTAssertTrue(viewModel.statusMessage.hasPrefix("Boom"), "Detail leads")
         XCTAssertTrue(viewModel.statusMessage.contains("Library"), "Wrapper points the user at the Library for recovery")
+        XCTAssertEqual(
+            viewModel.compactErrorRecoveryMessage,
+            "Meeting interrupted. Open Library to retry transcription or export captured audio."
+        )
         XCTAssertFalse(viewModel.showsElapsedTime)
     }
 

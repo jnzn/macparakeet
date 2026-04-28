@@ -1137,12 +1137,6 @@ struct OnboardingFlowView: View {
     }
 
     private var continueButtonDisabled: Bool {
-        if viewModel.step == .meetingRecording {
-            return viewModel.isBusy || !(viewModel.screenRecordingGranted || viewModel.meetingRecordingSkipped)
-        }
-        if viewModel.step == .calendar {
-            return viewModel.isBusy || !(viewModel.calendarPermissionGranted || viewModel.calendarSkipped)
-        }
         return !viewModel.canContinueFromCurrentStep() || viewModel.isBusy
     }
 }

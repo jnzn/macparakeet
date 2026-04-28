@@ -162,6 +162,11 @@ public final class MeetingRecordingPanelViewModel {
         }
     }
 
+    public var compactErrorRecoveryMessage: String? {
+        guard case .error = state else { return nil }
+        return "Meeting interrupted. Open Library to retry transcription or export captured audio."
+    }
+
     public var showsLaggingIndicator: Bool {
         if case .recording = state {
             return isTranscriptionLagging

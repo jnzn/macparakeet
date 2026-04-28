@@ -75,7 +75,7 @@ fields and validation rules may have evolved.
 ````markdown
 ---
 name: macparakeet-stt
-version: 1.0.0
+version: 1.3.0
 author: <your-username>
 description: Local Parakeet TDT speech-to-text on Apple Silicon. Wraps macparakeet-cli (GPL-3.0-or-later).
 tags: [stt, transcription, voice, apple-silicon, local, parakeet]

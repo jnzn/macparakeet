@@ -430,7 +430,7 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertTrue(mockRepo.deleteCalledWith.contains(t.id))
     }
 
-    func testDeleteYouTubeTranscriptionRemovesStoredAudioFile() async throws {
+    func testDeleteYouTubeTranscriptionRemovesStoredAudioFile() throws {
         try AppPaths.ensureDirectories()
         let audioURL = URL(fileURLWithPath: AppPaths.youtubeDownloadsDir, isDirectory: true)
             .appendingPathComponent("yt-audio-\(UUID().uuidString).m4a")
@@ -451,11 +451,10 @@ final class TranscriptionViewModelTests: XCTestCase {
         viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
         viewModel.deleteTranscription(t)
 
-        try await waitForFileAbsence(at: audioURL)
         XCTAssertFalse(FileManager.default.fileExists(atPath: audioURL.path))
     }
 
-    func testDeleteYouTubeTranscriptionKeepsStoredAudioWhenRepoDeleteFails() throws {
+    func testDeleteYouTubeTranscriptionRemovesStoredAudioBeforeRepoDelete() throws {
         try AppPaths.ensureDirectories()
         let audioURL = URL(fileURLWithPath: AppPaths.youtubeDownloadsDir, isDirectory: true)
             .appendingPathComponent("yt-audio-\(UUID().uuidString).m4a")
@@ -477,8 +476,9 @@ final class TranscriptionViewModelTests: XCTestCase {
         viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
         viewModel.deleteTranscription(t)
 
-        XCTAssertTrue(FileManager.default.fileExists(atPath: audioURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: audioURL.path))
         XCTAssertEqual(viewModel.transcriptions.count, 1)
+        XCTAssertNotNil(viewModel.errorMessage)
     }
 
     func testDeleteFailureKeepsCurrentSelection() {
@@ -493,17 +493,6 @@ final class TranscriptionViewModelTests: XCTestCase {
 
         XCTAssertEqual(viewModel.currentTranscription?.id, t.id)
         XCTAssertEqual(viewModel.transcriptions.count, 1)
-    }
-
-    private func waitForFileAbsence(at url: URL, timeout: Duration = .seconds(1)) async throws {
-        let deadline = ContinuousClock.now + timeout
-        while FileManager.default.fileExists(atPath: url.path) {
-            guard ContinuousClock.now < deadline else {
-                XCTFail("Timed out waiting for file removal at \(url.path)")
-                return
-            }
-            try await Task.sleep(for: .milliseconds(20))
-        }
     }
 
     func testDeleteCurrentTranscriptionClearsSelection() {

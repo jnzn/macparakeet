@@ -318,6 +318,49 @@ final class TelemetryServiceTests: XCTestCase {
         XCTAssertLessThanOrEqual(description.count, 512)
     }
 
+    func testErrorDetailPropsAreSanitizedAtSerializationBoundary() throws {
+        let rawDetail = "Failed /Users/alice/private-meeting.m4a via https://example.com/token?secret=abc"
+        let specs: [TelemetryEventSpec] = [
+            .dictationFailed(errorType: "runtime", errorDetail: rawDetail),
+            .transcriptionFailed(source: .file, stage: .stt, errorType: "runtime", errorDetail: rawDetail),
+            .diarizationFailed(source: .meeting, errorType: "runtime", errorDetail: rawDetail),
+            .llmPromptResultFailed(provider: "openai", errorType: "provider", errorDetail: rawDetail),
+            .llmChatFailed(provider: "openai", errorType: "provider", errorDetail: rawDetail),
+            .llmTransformFailed(provider: "openai", errorType: "provider", errorDetail: rawDetail),
+            .licenseActivationFailed(errorType: "network", errorDetail: rawDetail),
+            .restoreFailed(errorType: "network", errorDetail: rawDetail),
+            .modelDownloadFailed(errorType: "network", errorDetail: rawDetail),
+            .meetingRecordingFailed(errorType: "runtime", errorDetail: rawDetail),
+            .meetingRecoveryFailed(count: 1, source: .settings, errorType: "runtime", errorDetail: rawDetail),
+        ]
+
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+
+        for spec in specs {
+            let event = TelemetryEvent(
+                spec: spec,
+                appVer: "0.4.2",
+                osVer: "15.3",
+                locale: "en-US",
+                chip: "Apple M1",
+                session: "test-session"
+            )
+            let data = try encoder.encode(event)
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            let props = try XCTUnwrap(json["props"] as? [String: String])
+            let eventName = spec.name.rawValue
+            let detail = try XCTUnwrap(props["error_detail"], "Missing error_detail for \(eventName)")
+
+            XCTAssertFalse(detail.contains("/Users/alice"), eventName)
+            XCTAssertFalse(detail.contains("private-meeting"), eventName)
+            XCTAssertFalse(detail.contains("example.com"), eventName)
+            XCTAssertTrue(detail.contains("<path>"), eventName)
+            XCTAssertTrue(detail.contains("<url>"), eventName)
+            XCTAssertLessThanOrEqual(detail.count, 512, eventName)
+        }
+    }
+
     func testTranscriptionCompletedSerializesDiarizationContext() throws {
         let event = TelemetryEvent(
             spec: .transcriptionCompleted(

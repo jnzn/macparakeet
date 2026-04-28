@@ -140,7 +140,7 @@ xcrun stapler staple "$APP_PATH"
 xcrun stapler validate "$APP_PATH"
 
 echo "[8/8] Gatekeeper assess…"
-spctl --assess --type execute --verbose=4 "$APP_PATH" || true
+spctl --assess --type execute --verbose=4 "$APP_PATH"
 
 if [[ "$CREATE_DMG" == "1" ]]; then
   DMG_PATH="$DIST_DIR/${APP_NAME}.dmg"
