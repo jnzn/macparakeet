@@ -121,7 +121,7 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 - [x] Voice stats dashboard
 - [x] UI polish (toggles, sidebar sections, copy improvements)
 - [x] Non-blocking transcription progress (bottom bar UX)
-- [x] Distribution: Notarized DMG via macparakeet.com + LemonSqueezy, Sparkle auto-updates
+- [x] Distribution: Notarized DMG via macparakeet.com/R2, Sparkle auto-updates
 
 ### v0.5 Data, UI & Prompts (Implemented)
 

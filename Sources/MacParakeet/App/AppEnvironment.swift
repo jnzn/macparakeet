@@ -73,7 +73,8 @@ final class AppEnvironment {
         accessibilityService = AccessibilityService()
         launchAtLoginService = LaunchAtLoginService()
 
-        // Licensing / entitlements (basic guards: 7-day trial + license unlock).
+        // Legacy licensing / entitlements. Current free/GPL builds always report
+        // unlocked, but the old activation plumbing is retained for compatibility.
         //
         // Production builds should embed these values in Info.plist via the dist script.
         // We still support env vars for local development.

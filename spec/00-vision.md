@@ -440,7 +440,7 @@ YouTube transcription and full export pipeline.
 Ship-quality polish. Direct distribution via notarized DMG.
 
 - Onboarding flow (permissions, first dictation)
-- Notarized DMG distribution (macparakeet.com + LemonSqueezy)
+- Notarized DMG distribution (macparakeet.com/R2 + Sparkle)
 - Sparkle auto-updates
 - Marketing site (macparakeet.com)
 - Accessibility (VoiceOver, keyboard navigation)
@@ -471,7 +471,7 @@ Ship-quality polish. Direct distribution via notarized DMG.
 | **YouTube downloads** | Standalone yt-dlp | macOS binary, auto-updates via `--update`. No Python needed. |
 | **UI framework** | SwiftUI | Native Mac experience. Menu bar + window. |
 | **Database** | SQLite (GRDB) | Single file. No server. Dictation history, custom words, settings. |
-| **Cloud option** | No cloud STT; optional LLM providers | Core speech stays local. AI and media downloads are user-triggered; updates, licensing, and opt-out telemetry/crash reporting are product-managed network surfaces. |
+| **Cloud option** | No cloud STT; optional LLM providers | Core speech stays local. AI and media downloads are user-triggered; updates and opt-out telemetry/crash reporting are product-managed network surfaces. Legacy licensing endpoints remain in code but the app is free/unlocked. |
 | **Pricing** | Free (GPL-3.0) | Zero friction. Maximum adoption. Community-driven development. |
 
 ---

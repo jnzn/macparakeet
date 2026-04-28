@@ -1623,15 +1623,15 @@ MacParakeet's brand is privacy. These are non-negotiable.
 | Opt-out telemetry | Self-hosted usage analytics and crash reporting can be disabled in Settings |
 | No accounts | No email, no login, no registration |
 | No cloud STT | All speech recognition runs locally on Apple Silicon; Parakeet is default and WhisperKit is optional |
-| User-controlled storage | Audio saved by default, user can disable or delete |
-| Explicit network surfaces | Model download, update checks, optional LLM providers, optional telemetry/crash reporting, licensing flows, and YouTube download |
+| User-controlled storage | File/YouTube/meeting audio is retained for playback/recovery unless deleted; dictation audio is opt-in |
+| Explicit network surfaces | Model download, update checks, optional LLM providers, optional telemetry/crash reporting, legacy licensing endpoints if invoked, and YouTube download |
 
 **What "supports a fully local setup" means:**
 - Parakeet STT runs on Apple Silicon Neural Engine (ANE) via FluidAudio CoreML; WhisperKit also runs locally when selected
 - Audio never leaves the device
 - Transcripts stay local unless the user explicitly enables external AI features
 - Users can remain fully local by sticking to offline/core features and local providers such as Ollama
-- Network access is limited to explicit product surfaces such as updates, telemetry, licensing, and media download
+- Network access is limited to explicit product surfaces such as updates, telemetry/crash reporting, model downloads, optional LLM providers, legacy licensing endpoints if invoked, and media download
 
 ---
 

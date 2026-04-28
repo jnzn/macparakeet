@@ -1,7 +1,8 @@
 import Foundation
 
 public struct LicensingConfig: Sendable {
-    /// Optional checkout URL used by the UI ("Buy" button).
+    /// Legacy checkout URL retained for old activation flows. Current free/GPL
+    /// builds do not show a purchase gate.
     public let checkoutURL: URL?
 
     /// Optional: if set, we require the activated license to match this variant/product.
@@ -58,4 +59,3 @@ public enum EntitlementsError: Error, LocalizedError, Sendable {
         }
     }
 }
-

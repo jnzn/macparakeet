@@ -291,7 +291,9 @@ swift run macparakeet-cli flow snippets delete <ID>
 
 ## LLM Commands
 
-All LLM commands require `--provider` and `--api-key` (except Ollama, LM Studio, and Local CLI).
+All LLM commands require `--provider`; `--api-key` is required only for providers
+that need one. Ollama, LM Studio, OpenAI-compatible local endpoints, and Local
+CLI can run without an API key.
 
 ### Supported Providers
 
@@ -299,6 +301,7 @@ All LLM commands require `--provider` and `--api-key` (except Ollama, LM Studio,
 |----------|--------------|-----------------|
 | `anthropic` | claude-sonnet-4-6 | Yes |
 | `openai` | gpt-4.1 | Yes |
+| `openai-compatible` | user-selected endpoint/model | Optional |
 | `gemini` | gemini-2.5-flash | Yes |
 | `openrouter` | anthropic/claude-sonnet-4 | Yes |
 | `ollama` | qwen3.5:4b | No (local) |

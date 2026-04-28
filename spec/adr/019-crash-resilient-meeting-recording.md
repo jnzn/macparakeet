@@ -19,7 +19,8 @@ unplayable — every byte of audio is on disk, but no decoder can
 locate samples without the index.
 
 Compounding the problem, three other artifacts only land on a clean
-stop: `metadata.json` (source-alignment offsets), `meeting.m4a` (the
+stop: `meeting-recording-metadata.json` (source-alignment offsets and captured
+speech engine), `meeting.m4a` (the
 mixed file FFmpeg produces from the two source files), and the full
 post-stop transcription pass. So a crash mid-recording silently
 loses the entire session — audio, alignment, and transcript — even
@@ -131,7 +132,7 @@ the session folder before any audio is captured:
 
 On `stopRecording()` (success path), the marker is rewritten to
 `state: "awaitingTranscription"` after the writers have been
-finalized, `metadata.json` is on disk, and `meeting.m4a` has been
+finalized, `meeting-recording-metadata.json` is on disk, and `meeting.m4a` has been
 mixed. The marker is **atomically deleted** only after the post-stop
 `Transcription` row has been saved. This keeps the audio recoverable
 if the app crashes in the clean-stop window between mixing and
@@ -150,10 +151,11 @@ post-stop pipeline:
 1. Truncate-repair the fragmented `microphone.m4a` and `system.m4a`
    (no-op for fragmented MP4 — they're already valid up to the last
    fragment; just verify with `AVAsset.tracks` loadability).
-2. Synthesize `metadata.json` from the audio file durations
+2. Synthesize `meeting-recording-metadata.json` from the audio file durations
    (`startOffsetMs = 0` for both since we don't have the original
-   alignment; acceptable degradation — user knows recording was
-   recovered).
+   alignment; acceptable degradation — user knows recording was recovered).
+   Use the speech engine captured in `recording.lock`, defaulting to Parakeet
+   for legacy lock files that predate ADR-021.
 3. Run `MeetingTranscriptFinalizer.finalize` via `STTScheduler` as a
    normal background job (recovery transcription is just another
    meeting-finalize task per ADR-016's slot model).

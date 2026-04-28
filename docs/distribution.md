@@ -26,7 +26,7 @@ FFMPEG_PATH=/absolute/path/to/static-ffmpeg scripts/dist/build_app_bundle.sh
 
 The script verifies the bundled binary has no non-system dylib dependencies (portability check via `otool -L`).
 
-Optional licensing config (recommended for production):
+Legacy licensing config (normally unset):
 
 ```bash
 export MACPARAKEET_CHECKOUT_URL="https://..."
@@ -34,7 +34,10 @@ export MACPARAKEET_LS_VARIANT_ID="12345"
 scripts/dist/build_app_bundle.sh
 ```
 
-These are embedded into `Info.plist` as:
+MacParakeet is now free/GPL-3.0 and `EntitlementsService.currentState()` always
+returns unlocked. These variables are retained for compatibility with legacy
+activation code and are not required for production builds. When set, they are
+embedded into `Info.plist` as:
 - `MacParakeetCheckoutURL`
 - `MacParakeetLemonSqueezyVariantID`
 

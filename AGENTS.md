@@ -40,8 +40,9 @@ swift run macparakeet-cli --help
 swift run macparakeet-cli health
 ```
 
-The full test suite runs in well under a minute. Run `swift test` before
-declaring code-change work complete; failures are deterministic.
+The full test suite is deterministic and normally finishes in roughly one to
+two minutes depending on SwiftPM cache state. Run `swift test` before declaring
+code-change work complete.
 
 ## Code Style
 
@@ -50,9 +51,9 @@ declaring code-change work complete; failures are deterministic.
   [`Sources/MacParakeetCore/Database/`](./Sources/MacParakeetCore/Database/)).
 - Comments explain *why*, not *what* -- well-named identifiers carry the what.
   Default to writing none.
-- `MacParakeetCore` has no UI dependencies (Foundation + GRDB + FluidAudio
-  only). One exception: `ExportService` imports AppKit for PDF/DOCX. No new
-  AppKit imports in Core.
+- `MacParakeetCore` has no UI dependencies (Foundation + GRDB + FluidAudio,
+  with optional WhisperKit). One exception: `ExportService` imports AppKit for
+  PDF/DOCX. No new AppKit imports in Core.
 - ViewModels live in their own SPM target (`Sources/MacParakeetViewModels/`)
   so they can be tested without the GUI.
 - Async/await for all I/O. No completion handlers, no Combine in new code.
@@ -78,9 +79,9 @@ Full spec is in [`spec/`](./spec/). Architectural decisions (locked) are in
 - **Local-first speech.** STT runs on the Apple Neural Engine. Audio and
   transcripts stay on-device for core dictation, transcription, and meeting
   recording. Network surfaces are limited to user-triggered LLM providers,
-  media downloads, model/update/licensing flows, and opt-out self-hosted
-  telemetry/crash reporting. Telemetry never includes audio or transcript
-  content.
+  media downloads, model/update flows, legacy licensing endpoints if invoked,
+  and opt-out self-hosted telemetry/crash reporting. Telemetry never includes
+  audio or transcript content.
 - **No accounts, no logins.** No identifying data is sent anywhere.
 - **The user database lives at**
   `~/Library/Application Support/MacParakeet/macparakeet.db`. Treat it as user
