@@ -83,6 +83,7 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertTrue(viewModel.saveAudioRecordings, "saveAudioRecordings should default to true")
         XCTAssertTrue(viewModel.saveTranscriptionAudio, "saveTranscriptionAudio should default to true")
         XCTAssertEqual(viewModel.meetingHotkeyTrigger, .chord(modifiers: ["command", "shift"], keyCode: 46))
+        XCTAssertEqual(viewModel.meetingAudioSourceMode, .microphoneAndSystem)
         XCTAssertEqual(
             viewModel.selectedMicrophoneDeviceUID,
             SettingsViewModel.systemDefaultMicrophoneSelection,
@@ -100,6 +101,10 @@ final class SettingsViewModelTests: XCTestCase {
         testDefaults.set(false, forKey: "saveAudioRecordings")
         testDefaults.set(false, forKey: "saveTranscriptionAudio")
         testDefaults.set("usb-mic-uid", forKey: UserDefaultsAppRuntimePreferences.selectedMicrophoneDeviceUIDKey)
+        testDefaults.set(
+            MeetingAudioSourceMode.systemOnly.rawValue,
+            forKey: UserDefaultsAppRuntimePreferences.meetingAudioSourceModeKey
+        )
         HotkeyTrigger.chord(modifiers: ["control", "option"], keyCode: 46)
             .save(to: testDefaults, defaultsKey: HotkeyTrigger.meetingDefaultsKey)
 
@@ -113,6 +118,7 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertFalse(vm.saveAudioRecordings)
         XCTAssertFalse(vm.saveTranscriptionAudio)
         XCTAssertEqual(vm.selectedMicrophoneDeviceUID, "usb-mic-uid")
+        XCTAssertEqual(vm.meetingAudioSourceMode, .systemOnly)
         XCTAssertEqual(vm.meetingHotkeyTrigger, .chord(modifiers: ["control", "option"], keyCode: 46))
     }
 
@@ -316,6 +322,15 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(
             HotkeyTrigger.current(defaults: testDefaults, defaultsKey: HotkeyTrigger.meetingDefaultsKey),
             trigger
+        )
+    }
+
+    func testMeetingAudioSourceModePersists() {
+        viewModel.meetingAudioSourceMode = .systemOnly
+
+        XCTAssertEqual(
+            testDefaults.string(forKey: UserDefaultsAppRuntimePreferences.meetingAudioSourceModeKey),
+            MeetingAudioSourceMode.systemOnly.rawValue
         )
     }
 
