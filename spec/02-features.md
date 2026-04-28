@@ -39,7 +39,7 @@ See [00-vision.md](./00-vision.md) for positioning and market context.
 │  v0.3 - "YouTube & Export"                                        │
 │  "Import from anywhere, export anything"                        │
 ├─────────────────────────────────────────────────────────────────┤
-│  • YouTube URL transcription (yt-dlp + Parakeet)                │
+│  • YouTube URL transcription (yt-dlp + local STT)               │
 │  • Full export (.txt, .srt, .vtt, .docx, .pdf, .json)          │
 └─────────────────────────────────────────────────────────────────┘
                               │
@@ -68,7 +68,7 @@ See [00-vision.md](./00-vision.md) for positioning and market context.
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  v0.6 - "Meeting Recording"                                      │
-│  "Record meetings locally, transcribe with Parakeet"             │
+│  "Record meetings locally, transcribe with local STT"            │
 ├─────────────────────────────────────────────────────────────────┤
 │  • Meeting recording (system audio + mic with echo mitigation)    │
 │  • Concurrent with dictation (ADR-015) — dictate during meetings │
@@ -77,6 +77,17 @@ See [00-vision.md](./00-vision.md) for positioning and market context.
 │  • Prompt library + multi-summary work automatically             │
 │  • Screen Recording permission flow                               │
 │  • Headphones guidance copy for cleanest speaker separation       │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  v0.7 - "Multilingual STT"                                       │
+│  "Keep Parakeet fast, add local Whisper for more languages"      │
+├─────────────────────────────────────────────────────────────────┤
+│  • WhisperKit engine option for non-Parakeet languages           │
+│  • Settings engine picker + Whisper language picker              │
+│  • CLI --engine parakeet|whisper --language                      │
+│  • Meeting engine/language pinning for live + recovery + final   │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -102,7 +113,7 @@ See [00-vision.md](./00-vision.md) for positioning and market context.
 **Goals:**
 - Reduce first-run friction (no mysterious permission failures).
 - Teach the core interaction model in under 60 seconds.
-- Download and warm up the local speech stack on first run: Parakeet STT plus default-on speaker-detection assets.
+- Download and warm up the default local speech stack on first run: Parakeet STT plus default-on speaker-detection assets. Optional Whisper is downloaded later only when the user chooses it.
 
 **Flow:**
 1. Welcome
@@ -110,7 +121,7 @@ See [00-vision.md](./00-vision.md) for positioning and market context.
 3. Accessibility permission
 4. Meeting recording permission (optional Screen & System Audio Recording)
 5. Hotkey instructions (configurable trigger + Esc)
-6. Speech stack setup (Parakeet + speaker detection, retry required)
+6. Speech stack setup (Parakeet + speaker detection, retry required; Whisper optional later)
 7. Ready
 
 **Model failure recovery:**
@@ -181,8 +192,8 @@ Both modes coexist with no configuration required. The 400ms threshold distingui
 ├─────────────────────────────────────────────────────────────────┤
 │ 5. Processing                                                    │
 │    - Overlay transitions to processing state                     │
-│    - Audio buffer → temp WAV → FluidAudio STT (CoreML/ANE)       │
-│    - Parakeet returns transcript (155x realtime, ~2.5% WER)      │
+│    - Audio buffer → temp WAV → selected local STT engine         │
+│    - Parakeet default returns transcript (~155x realtime)        │
 │    - (v0.2) Raw → clean pipeline → polished text                 │
 ├─────────────────────────────────────────────────────────────────┤
 │ 6. Result                                                        │
@@ -349,8 +360,8 @@ User drops file(s) onto window or menu bar icon
          │
          ▼
 ┌──────────────────┐
-│  FluidAudio STT  │ ── Transcribe with word-level timestamps
-│                  │    155x realtime on Apple Silicon (ANE)
+│  Local STT       │ ── Transcribe with word-level timestamps
+│                  │    Parakeet default, Whisper optional
 └────────┬─────────┘
          │
          ▼
@@ -410,7 +421,7 @@ Display in scrollable result view
 
 **Technical notes:**
 - FFmpeg (bundled) for format conversion to 16kHz mono WAV
-- Parakeet expects 16kHz mono WAV input
+- Local STT input is normalized to 16kHz mono WAV
 - Max file duration: configurable, default 4 hours
 - Large files show progress bar with estimated time remaining
 - Word-level timestamps preserved for subtitle export (v0.3)
@@ -620,10 +631,12 @@ Audio path is computed from ID by default. Files stored as WAV (16kHz mono). Use
 │ │ [Clear All Dictations...]                                    │ │
 │ └──────────────────────────────────────────────────────────────┘ │
 │                                                                  │
-│ SPEECH MODEL                                                     │
+│ SPEECH RECOGNITION                                               │
 │ ┌──────────────────────────────────────────────────────────────┐ │
-│ │ Parakeet (Speech)        Ready                 [Repair]      │ │
-│ │ [Check Now]                                                  │ │
+│ │ Engine: [ Parakeet ] [ Whisper ]                             │ │
+│ │ Whisper language: [ Auto-detect ▾ ]                          │ │
+│ │ Parakeet        Ready                         [Repair]       │ │
+│ │ Whisper         Not Downloaded                [Download]     │ │
 │ └──────────────────────────────────────────────────────────────┘ │
 │                                                                  │
 │ PERMISSIONS                                                      │
@@ -645,7 +658,9 @@ Audio path is computed from ID by default. Files stored as WAV (16kHz mono). Use
 | Silence delay | 1s, 1.5s, 2s, 3s, 5s | 2s |
 | Save audio recordings | On / Off | On |
 | Keep downloaded YouTube audio | On / Off | On |
-| Speech model controls | Check status / Repair | Available |
+| Speech recognition engine | Parakeet / Whisper | Parakeet |
+| Whisper language | Auto-detect or language code | Auto-detect |
+| Speech model controls | Parakeet repair / Whisper download | Available |
 
 **Acceptance criteria:**
 - [x] All settings persist across app restarts (UserDefaults or GRDB)
@@ -655,7 +670,7 @@ Audio path is computed from ID by default. Files stored as WAV (16kHz mono). Use
 - [x] YouTube storage toggle controls whether downloaded URL audio is kept after transcription
 - [x] "Clear All" requires confirmation, deletes audio files and database entries
 - [x] Permission status shown with current grant state
-- [x] Speech model panel shows status for Parakeet and allows repair with retry
+- [x] Speech Recognition panel shows Parakeet status/repair plus Whisper download/language controls
 
 ---
 
@@ -684,7 +699,7 @@ Audio path is computed from ID by default. Files stored as WAV (16kHz mono). Use
 
 ### F7: Clean Text Pipeline
 
-**What:** Deterministic text processing pipeline that cleans up Parakeet output without any LLM involvement. Fast, predictable, user-controllable.
+**What:** Deterministic text processing pipeline that cleans up raw STT output without any LLM involvement. Fast, predictable, user-controllable.
 
 **Why deterministic (not LLM):**
 1. **Predictable** -- Same input always produces same output. Users learn the system.
@@ -692,12 +707,12 @@ Audio path is computed from ID by default. Files stored as WAV (16kHz mono). Use
 3. **Controllable** -- Users manage their own word list and snippets. No AI surprises.
 4. **Debuggable** -- Pipeline reports exactly what it changed.
 
-Parakeet TDT already outputs good punctuation and capitalization natively, so the pipeline focuses on what STT cannot do: removing verbal fillers, applying domain-specific corrections, and expanding shorthand.
+Parakeet TDT already outputs good punctuation and capitalization natively, and WhisperKit can do the same for broader languages. The pipeline focuses on what STT cannot do: removing verbal fillers, applying domain-specific corrections, and expanding shorthand.
 
 **Pipeline steps (in order):**
 
 ```
-Audio → Parakeet → raw transcript → clean pipeline → paste
+Audio → local STT → raw transcript → clean pipeline → paste
                                     1. Filler removal (word list)
                                     2. Custom word replacements (user-defined)
                                     3. Snippet expansion (trigger → text)
@@ -729,7 +744,7 @@ Each custom word is a `(word, replacement)` pair with an enabled/disabled toggle
 
 **Step 3: Snippet expansion**
 
-Natural language trigger phrases that expand into longer text. Triggers are spoken phrases (not abbreviations) because Parakeet STT outputs natural speech — users say "my address" not "addr".
+Natural language trigger phrases that expand into longer text. Triggers are spoken phrases (not abbreviations) because STT outputs natural speech — users say "my address" not "addr".
 
 ```
 "my signature" → "Best regards,\nDavid"
@@ -753,7 +768,7 @@ Each snippet has a trigger phrase, expansion text, and use count for tracking.
 
 | Mode | Description | Default? |
 |------|-------------|----------|
-| Raw | Parakeet output as-is, no processing | No |
+| Raw | STT output as-is, no processing | No |
 | Clean | Filler removal + custom words + snippets + whitespace | **Yes** |
 
 **Database tables:**
@@ -783,7 +798,7 @@ CREATE TABLE text_snippets (
 **Performance target:** <1ms for entire pipeline (no LLM, pure string operations).
 
 **Acceptance criteria:**
-- [x] Filler words removed from Parakeet output
+- [x] Filler words removed from raw STT output
 - [x] Multi-word fillers handled correctly (checked before single-word)
 - [x] Sentence-start-only fillers preserved mid-sentence
 - [x] Custom word replacements applied (case-insensitive matching)
@@ -805,7 +820,7 @@ CREATE TABLE text_snippets (
 
 | Stage | Pipeline | Behavior |
 |------|----------|----------|
-| Raw | None | Parakeet output, no processing |
+| Raw | None | STT output, no processing |
 | Clean | Deterministic (F7) | Filler removal + custom words + snippets |
 | AI Formatter | Clean + provider-based LLM | Optional transcript cleanup using the configured LLM provider/local CLI |
 
@@ -939,7 +954,7 @@ Important constraints:
 │    "Make this formal and fix the capitalization"                 │
 ├─────────────────────────────────────────────────────────────────┤
 │ 4. Processing                                                    │
-│    - Command transcribed via Parakeet                            │
+│    - Command transcribed via local STT                           │
 │    - Selected text + command sent to Qwen3-8B                    │
 │    - LLM edits text according to command                         │
 ├─────────────────────────────────────────────────────────────────┤
@@ -965,7 +980,7 @@ Important constraints:
 **Technical implementation:**
 - Read selected text via Accessibility API (`AXUIElement`) with fallback retrieval chain
 - Enforce selected text hard cap: 16,000 characters with explicit error
-- Transcribe spoken command via Parakeet
+- Transcribe spoken command via local STT
 - Send `(selected_text, command)` to Qwen3-8B with system prompt: "Apply the user's command to the provided text. Return only the edited text, no explanation."
 - Replace selected text by simulating Cmd+V with the result (same paste mechanism as dictation)
 - Thinking mode for command interpretation (`temp=0.6, topP=0.95`) to ensure accurate command understanding
@@ -986,7 +1001,7 @@ Overlay shows selected text preview (truncated) so the user confirms the right t
 - [ ] Fn+Ctrl activates command mode when text is selected
 - [ ] "Command Mode" menu bar action enters same start flow
 - [ ] Selected text read from active app via Accessibility API
-- [ ] Spoken command transcribed via Parakeet
+- [ ] Spoken command transcribed via local STT
 - [ ] LLM applies command to selected text correctly
 - [ ] Result replaces selected text in the active app exactly once
 - [ ] Cmd+Z in target app undoes the replacement
@@ -1085,7 +1100,7 @@ User pastes YouTube URL
            │
            ▼
 ┌──────────────────────┐
-│  Parakeet STT        │ ── Transcribe with word timestamps
+│  Local STT           │ ── Transcribe with word timestamps
 │                      │    Emits chunk progress updates
 └──────────┬───────────┘
            │
@@ -1306,9 +1321,9 @@ new scheduling architecture.
 
 ---
 
-### F15: Whisper Mode — REMOVED
+### F15: Low-Energy "Whisper Mode" — REMOVED
 
-> **Removed:** Parakeet TDT is a fixed CoreML model with no tunable parameters for low-energy speech. "Whisper Mode" would amount to a mic gain preset — not a real STT feature. Users can adjust mic sensitivity in macOS System Settings. Removed to avoid shipping marketing fluff as a feature.
+> **Removed:** This historical feature was about low-volume/quiet speaking, not the WhisperKit speech engine added later in v0.7. Parakeet TDT has no tunable low-energy speech parameter; a "whisper mode" for quiet speech would amount to a mic gain preset. Users can adjust mic sensitivity in macOS System Settings.
 
 ---
 
@@ -1316,14 +1331,14 @@ new scheduling architecture.
 
 > Status: **IMPLEMENTED**
 
-**What:** Distribute MacParakeet as a notarized DMG via macparakeet.com and LemonSqueezy. Auto-updates via Sparkle.
+**What:** Distribute MacParakeet as a notarized DMG via macparakeet.com. Auto-updates via Sparkle.
 
-**Why not App Store:** MacParakeet bundles FFmpeg and yt-dlp as standalone binaries, uses Accessibility APIs for global hotkeys, and uses LemonSqueezy for licensing. App Store sandboxing would block the bundled binaries and the licensing model conflicts with App Store payments.
+**Why not App Store:** MacParakeet bundles FFmpeg and yt-dlp as standalone binaries and uses Accessibility APIs for global hotkeys. App Store sandboxing would block or complicate the core architecture.
 
 **Distribution pipeline (implemented):**
 - Notarized DMG signed with Developer ID
 - Direct download from downloads.macparakeet.com (Cloudflare R2)
-- LemonSqueezy product page (free, $0 — originally $49 one-time, now GPL-3.0)
+- GPL-3.0 open-source distribution (historically planned as LemonSqueezy paid distribution)
 - Sparkle 2 auto-updates via EdDSA-signed appcast
 - Privacy policy live at macparakeet.com/privacy
 
@@ -1484,9 +1499,11 @@ Prompt library and multi-summary system. Users control how AI processes transcri
 
 ---
 
-## v0.6 — Meeting Recording (In Progress)
+## v0.6 — Meeting Recording (Implemented on main; unreleased)
 
 The v0.6 release ships system audio + mic capture (ADR-014, ADR-015), the centralized STT runtime (ADR-016), calendar-driven auto-start (ADR-017), the live Ask tab (ADR-018), crash-resilient recording (ADR-019), and the live notepad + memo-steered summaries (ADR-020). The full v0.6 backlog lives in `spec/README.md`; the F-numbered entries below cover the ADR-020 feature surface that this PR introduces.
+
+Meeting transcription uses the current speech engine captured at recording start. Parakeet remains the default; WhisperKit can be selected before starting a meeting for languages outside Parakeet coverage.
 
 ### F36: Live Meeting Notepad
 
@@ -1585,12 +1602,12 @@ Read surrounding text from the active app via macOS Accessibility APIs (AXUIElem
 
 | Metric | Target | Notes |
 |--------|--------|-------|
-| Transcription speed | 155x realtime | Parakeet TDT on Apple Silicon (ANE via FluidAudio CoreML) |
+| Transcription speed | 155x realtime | Parakeet TDT on Apple Silicon (ANE via FluidAudio CoreML); WhisperKit is for coverage, not this latency target |
 | Dictation latency | <500ms end-to-end | From Fn release to text appearing |
 | Clean pipeline | <1ms | Deterministic, pure string operations |
-| Memory usage (idle) | <200MB | Menu bar + STT model standing by |
-| Memory usage (active) | <300MB | During transcription with STT loaded |
-| App size | <100MB | Plus ~6 GB STT model download on first run |
+| Memory usage (idle) | <200MB | Menu bar + default STT readiness path |
+| Memory usage (active) | Engine-dependent | Parakeet active slot is ~66 MB working RAM; Whisper depends on selected model |
+| App size | <100MB | Plus ~6 GB Parakeet model download and optional Whisper download |
 | Startup time | <2s | Cold start to menu bar ready |
 | File transcription | 1 hour audio in <25s | On M1 or better (ANE via CoreML) |
 
@@ -1602,19 +1619,19 @@ MacParakeet's brand is privacy. These are non-negotiable.
 
 | Requirement | Detail |
 |-------------|--------|
-| Core offline operation | Dictation and file transcription work fully offline after one-time model setup |
+| Core offline operation | Dictation, file transcription, and meeting recording work fully offline after local model setup |
 | Opt-out telemetry | Self-hosted usage analytics and crash reporting can be disabled in Settings |
 | No accounts | No email, no login, no registration |
-| No cloud STT | All speech recognition runs locally on Apple Silicon |
-| User-controlled storage | Audio saved by default, user can disable or delete |
-| Explicit network surfaces | Model download, update checks, optional LLM providers, optional telemetry/crash reporting, licensing flows, and YouTube download |
+| No cloud STT | All speech recognition runs locally on Apple Silicon; Parakeet is default and WhisperKit is optional |
+| User-controlled storage | File/YouTube/meeting audio is retained for playback/recovery unless deleted; dictation audio is opt-in |
+| Explicit network surfaces | Model download, update checks, optional LLM providers, optional telemetry/crash reporting, retained purchase activation endpoints if explicitly invoked, and YouTube download |
 
 **What "supports a fully local setup" means:**
-- Parakeet STT runs on Apple Silicon Neural Engine (ANE) via FluidAudio CoreML -- no cloud API
+- Parakeet STT runs on Apple Silicon Neural Engine (ANE) via FluidAudio CoreML; WhisperKit also runs locally when selected
 - Audio never leaves the device
 - Transcripts stay local unless the user explicitly enables external AI features
 - Users can remain fully local by sticking to offline/core features and local providers such as Ollama
-- Network access is limited to explicit product surfaces such as updates, telemetry, licensing, and media download
+- Network access is limited to explicit product surfaces such as updates, telemetry/crash reporting, model downloads, optional LLM providers, retained purchase activation endpoints if explicitly invoked, and media download
 
 ---
 
@@ -1625,8 +1642,8 @@ v0.1 Core MVP:
 ────────────────────────────────────────────────────────────────────
 
                    ┌──────────────────┐
-                   │  Parakeet STT    │ ← Foundation for everything
-                   │  (FluidAudio)   │
+                   │  Local STT       │ ← Foundation for everything
+                   │  Parakeet default│
                    └────────┬─────────┘
                             │
               ┌─────────────┼──────────────┐
@@ -1703,7 +1720,7 @@ v0.4 Polish & Launch:
 
 Cross-cutting dependency:
 
-      Parakeet STT ──► F1, F2, F11, F13, F14
+      Local STT ─────► F1, F2, F11, F13, F14, v0.6 meetings
       Accessibility ──► F1 (hotkey + paste)
       FFmpeg ──────────► F2, F11, F14
       yt-dlp ──────────► F11
@@ -1725,23 +1742,23 @@ FluidAudio model download → Audio capture (AVAudioEngine)
 
 | Feature | Why Excluded |
 |---------|--------------|
-| AI meeting notes / memory / CRM-style enrichment | That's Oatmeal, not MacParakeet |
-| Calendar integration | Meeting app territory |
+| Cross-meeting memory / CRM-style enrichment | That's Oatmeal, not MacParakeet |
+| Full calendar assistant | MacParakeet only has lightweight local calendar auto-start/stop support |
 | Entity extraction / memory | Meeting app territory |
 | Cloud processing | Privacy is the brand -- opt-in LLM providers only (ADR-011) |
 | Windows / Linux | macOS-only simplifies everything, Apple Silicon required |
 | Collaborative / multi-user | Single-user product |
-| Subscription pricing | Free and open-source (GPL-3.0) — no monetization |
-| Realtime streaming transcription | File-based and dictation-based only |
+| Required hosted subscription for core speech | Current core product is local-first and GPL-3.0. Official paid distribution, support, hosted services, or team features can exist, but core speech should not require a hosted subscription. |
+| Production-grade realtime captions | Meeting live preview is best-effort; final batch transcription remains authoritative |
 | ~~Video playback~~ | ~~We transcribe audio, not play video~~ (implemented in v0.6) |
 
 ---
 
 ## Licensing
 
-> Status: **HISTORICAL** — MacParakeet is now free and open-source (GPL-3.0) as of v0.5.
+> Status: **DORMANT** — Current public builds are free/GPL-3.0 and fully unlocked.
 
-The trial/Pro tier system (ADR-006) is no longer enforced. LemonSqueezy is kept as a $0 product for download tracking. License activation code remains in the codebase but all features are unlocked.
+The trial/Pro tier system (ADR-006) is no longer enforced in current public builds. LemonSqueezy is currently kept as a $0 product for download tracking. License activation code remains in the codebase while all current features are unlocked. This code is intentionally retained as future-option plumbing for GPL-compatible official paid distribution/support; agents must not remove it as dead code unless the project owner explicitly requests that removal and the decision is reflected in an ADR/spec update.
 
 ---
 

@@ -28,7 +28,17 @@ enum TranscribeSpeechEngine: String, ExpressibleByArgument, CaseIterable, Sendab
 struct TranscribeCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "transcribe",
-        abstract: "Transcribe an audio/video file or YouTube URL."
+        abstract: "Transcribe an audio/video file or YouTube URL.",
+        discussion: """
+        Telemetry: emits one privacy-safe `cli_operation` event per invocation with \
+        allowlisted invocation metadata (command, outcome, duration, input_kind, \
+        output_format, json, exit_code, error_type). It never includes the path, \
+        URL, transcript, language value, or user content. Disable with \
+        `MACPARAKEET_TELEMETRY=0`, `DO_NOT_TRACK=1`, the persistent \
+        `macparakeet-cli config set telemetry off`, or the GUI Settings toggle. \
+        Auto-disabled in CI (CI/GITHUB_ACTIONS/etc.). See \
+        https://github.com/moona3k/macparakeet/blob/main/docs/telemetry.md.
+        """
     )
 
     @Argument(help: "Path to audio/video file or YouTube URL to transcribe.")
@@ -43,7 +53,7 @@ struct TranscribeCommand: AsyncParsableCommand {
     @Option(help: "Speech engine: parakeet, whisper.")
     var engine: TranscribeSpeechEngine = .parakeet
 
-    @Option(help: "Language hint for Whisper, as a BCP-47/language code such as ko or en. Parakeet ignores this flag.")
+    @Option(help: "Language hint for Whisper, as a Whisper code such as ko or en. Parakeet ignores this flag.")
     var language: String?
 
     @Option(help: "Downloaded YouTube audio retention: app-default, keep, delete.")
@@ -55,7 +65,7 @@ struct TranscribeCommand: AsyncParsableCommand {
     @Flag(help: "Disable speaker diarization.")
     var noDiarize: Bool = false
 
-    @Flag(help: "Enable entitlement/trial checks to mirror GUI gating behavior.")
+    @Flag(help: "Run retained entitlement checks before transcribing. Current free builds remain unlocked.")
     var enforceEntitlements: Bool = false
 
     static func resolveProcessingMode(_ mode: TranscribeMode, storedMode: String?) -> Dictation.ProcessingMode {
@@ -69,6 +79,10 @@ struct TranscribeCommand: AsyncParsableCommand {
         }
     }
 
+    static func localFileURL(for input: String) -> URL {
+        URL(fileURLWithPath: expandTilde(input))
+    }
+
     func run() async throws {
         CLITelemetry.configureIfNeeded()
         let cliOperationContext = ObservabilityOperationContext()
@@ -77,7 +91,7 @@ struct TranscribeCommand: AsyncParsableCommand {
         let trimmedInput = input.trimmingCharacters(in: .whitespacesAndNewlines)
         let inputKind: ObservabilityInputKind = YouTubeURLValidator.isYouTubeURL(trimmedInput)
             ? .youtube
-            : (Observability.inputKind(for: URL(fileURLWithPath: trimmedInput)) ?? .unknown)
+            : (Observability.inputKind(for: Self.localFileURL(for: trimmedInput)) ?? .unknown)
 
         var sttClient: STTClient?
         var whisperEngine: WhisperEngine?
@@ -161,10 +175,10 @@ struct TranscribeCommand: AsyncParsableCommand {
                         }
                     }
                 } else {
-                    let url = URL(fileURLWithPath: trimmedInput)
+                    let url = Self.localFileURL(for: trimmedInput)
 
-                    guard FileManager.default.fileExists(atPath: trimmedInput) else {
-                        throw CLIError.fileNotFound(trimmedInput)
+                    guard FileManager.default.fileExists(atPath: url.path) else {
+                        throw CLIError.fileNotFound(url.path)
                     }
 
                     let ext = url.pathExtension.lowercased()

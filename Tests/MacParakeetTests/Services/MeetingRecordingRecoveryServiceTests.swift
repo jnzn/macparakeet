@@ -71,6 +71,23 @@ final class MeetingRecordingRecoveryServiceTests: XCTestCase {
         }
     }
 
+    func testRecoverContinuesWhenMixFails() async throws {
+        let fixture = try makeRecoverableSession()
+        audioConverter.errorToThrow = RecoveryTestError.mixFailed
+
+        let recovered = try await recoveryService.recover(fixture.lock)
+
+        XCTAssertTrue(recovered.recoveredFromCrash)
+        XCTAssertNil(try lockStore.read(folderURL: fixture.folderURL))
+        XCTAssertEqual(transcriptionService.recordings.count, 1)
+        XCTAssertEqual(audioConverter.mixes.count, 1)
+        XCTAssertEqual(audioConverter.mixes.first?.output, fixture.folderURL.appendingPathComponent("meeting.m4a"))
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: fixture.folderURL.appendingPathComponent("meeting.m4a").path),
+            "failed playback mix should not block source-based transcription"
+        )
+    }
+
     func testRecoverRetryReusesSavedTranscriptWhenLockDeletePreviouslyFailed() async throws {
         let fixture = try makeRecoverableSession()
         lockStore.deleteErrorsRemaining = 1
@@ -484,11 +501,15 @@ private final class RecoveryMockAudioConverter: AudioFileConverting, @unchecked 
 
     func convert(fileURL: URL) async throws -> URL { fileURL }
 
-    func mixToM4A(inputURLs: [URL], outputURL: URL) async throws {
-        if let errorToThrow { throw errorToThrow }
+    func mixToM4A(
+        inputURLs: [URL],
+        outputURL: URL,
+        sourceAlignment: MeetingSourceAlignment?
+    ) async throws {
         lock.withLock {
             mixes.append((inputURLs, outputURL))
         }
+        if let errorToThrow { throw errorToThrow }
         FileManager.default.createFile(atPath: outputURL.path, contents: Data("mixed".utf8))
     }
 }

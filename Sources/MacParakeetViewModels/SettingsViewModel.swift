@@ -901,7 +901,7 @@ public final class SettingsViewModel {
 
             if activeEngine == .whisper, activeEngineIsLoaded {
                 self.whisperModelStatus = .ready
-                self.whisperModelStatusDetail = "Loaded in memory and ready."
+                self.whisperModelStatusDetail = "Whisper \(self.whisperVariantFriendlyName) · Loaded in memory and ready."
             } else {
                 self.applyWhisperDownloadedStatus(modelDiskState.whisperDownloaded)
             }
@@ -915,32 +915,42 @@ public final class SettingsViewModel {
     }
 
     private func applyWhisperDownloadedStatus(_ isDownloaded: Bool) {
+        let friendly = whisperVariantFriendlyName
         if isDownloaded {
             // Optimistic file-based check; `refreshModelStatus()` will upgrade
             // to `.ready` after asking the runtime if Whisper is the active
             // engine and currently loaded.
             whisperModelStatus = .notLoaded
-            whisperModelStatusDetail = "Downloaded. Loads automatically when Whisper is selected."
+            whisperModelStatusDetail = "Whisper \(friendly) · Downloaded. Loads automatically when selected."
         } else {
             whisperModelStatus = .notDownloaded
-            whisperModelStatusDetail = "Not downloaded yet."
+            whisperModelStatusDetail = "Whisper \(friendly) · Not downloaded yet."
         }
+    }
+
+    private var whisperVariantFriendlyName: String {
+        SpeechEnginePreference.friendlyVariantName(
+            SpeechEnginePreference.whisperModelVariant(defaults: defaults)
+        )
     }
 
     public func downloadWhisperModel() {
         guard !whisperDownloading else { return }
         whisperDownloading = true
         whisperModelStatus = .repairing
-        whisperModelStatusDetail = "Downloading Whisper model..."
+        let modelVariant = SpeechEnginePreference.whisperModelVariant(defaults: defaults)
+        let friendly = SpeechEnginePreference.friendlyVariantName(modelVariant)
+        whisperModelStatusDetail = "Downloading Whisper \(friendly)..."
 
         Task {
             do {
                 _ = try await WhisperEngine.downloadModel(
-                    model: SpeechEnginePreference.whisperModelVariant(defaults: defaults)
+                    model: modelVariant
                 ) { completed, total in
                     let percent = total > 0 ? Int((Double(completed) / Double(total) * 100).rounded()) : 0
                     Task { @MainActor [weak self] in
-                        self?.whisperModelStatusDetail = "Downloading Whisper model... \(min(max(percent, 0), 100))%"
+                        guard let self else { return }
+                        self.whisperModelStatusDetail = "Downloading Whisper \(friendly)... \(min(max(percent, 0), 100))%"
                     }
                 }
                 await MainActor.run {

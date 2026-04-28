@@ -28,18 +28,27 @@ extension ModelsCommand {
         var json: Bool = false
 
         func run() async throws {
-            let sttClient = STTClient()
-            let diarizationService = DiarizationService()
-            let status = await loadSpeechStackStatus(
-                sttClient: sttClient,
-                diarizationService: diarizationService
-            )
-            if json {
-                try printJSON(SpeechStackPayload(status: status))
-            } else {
-                printSpeechStackStatus(status)
+            try await emitJSONOrRethrow(json: json) {
+                let sttClient = STTClient()
+                var sttClientNeedsShutdown = true
+                defer {
+                    if sttClientNeedsShutdown {
+                        Task { await sttClient.shutdown() }
+                    }
+                }
+                let diarizationService = DiarizationService()
+                let status = await loadSpeechStackStatus(
+                    sttClient: sttClient,
+                    diarizationService: diarizationService
+                )
+                await sttClient.shutdown()
+                sttClientNeedsShutdown = false
+                if json {
+                    try printJSON(SpeechStackPayload(status: status))
+                } else {
+                    printSpeechStackStatus(status)
+                }
             }
-            await sttClient.shutdown()
         }
     }
 
@@ -84,6 +93,12 @@ extension ModelsCommand {
         func run() async throws {
             let attempts = try validatedAttempts(attempts)
             let sttClient = STTClient()
+            var sttClientNeedsShutdown = true
+            defer {
+                if sttClientNeedsShutdown {
+                    Task { await sttClient.shutdown() }
+                }
+            }
             let diarizationService = DiarizationService()
             try await prepareSpeechStack(
                 attempts: attempts,
@@ -92,6 +107,7 @@ extension ModelsCommand {
                 log: { print($0) }
             )
             await sttClient.shutdown()
+            sttClientNeedsShutdown = false
         }
     }
 
@@ -107,6 +123,12 @@ extension ModelsCommand {
         func run() async throws {
             let attempts = try validatedAttempts(attempts)
             let sttClient = STTClient()
+            var sttClientNeedsShutdown = true
+            defer {
+                if sttClientNeedsShutdown {
+                    Task { await sttClient.shutdown() }
+                }
+            }
             let diarizationService = DiarizationService()
             try await prepareSpeechStack(
                 attempts: attempts,
@@ -115,6 +137,7 @@ extension ModelsCommand {
                 log: { print($0) }
             )
             await sttClient.shutdown()
+            sttClientNeedsShutdown = false
         }
     }
 

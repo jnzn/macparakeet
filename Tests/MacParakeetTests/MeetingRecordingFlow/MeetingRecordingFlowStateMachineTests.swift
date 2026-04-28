@@ -190,6 +190,16 @@ final class MeetingRecordingFlowStateMachineTests: XCTestCase {
         XCTAssertEqual(effects, [.cancelRecording, .hidePill, .updateMenuBar(.idle)])
     }
 
+    func testCancelFromCheckingPermissionsDiscardsPendingStart() {
+        var machine = MeetingRecordingFlowStateMachine()
+        _ = machine.handle(.startRequested)
+
+        let effects = machine.handle(.cancelRequested)
+
+        XCTAssertEqual(machine.state, .idle)
+        XCTAssertEqual(effects, [.cancelRecording, .hidePill, .updateMenuBar(.idle)])
+    }
+
     func testCancelFromTranscribingIsIgnored() {
         var machine = MeetingRecordingFlowStateMachine()
         _ = machine.handle(.startRequested)

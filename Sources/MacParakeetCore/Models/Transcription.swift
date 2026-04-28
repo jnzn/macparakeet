@@ -44,6 +44,12 @@ public struct Transcription: Codable, Identifiable, Sendable {
     /// summary generation (ADR-020 §3). `nil` for non-meeting transcripts
     /// and for meetings where the user took no notes.
     public var userNotes: String?
+    /// STT engine that produced this transcript (`"parakeet"` / `"whisper"`).
+    /// `nil` for rows created before the v0.8 engine-attribution migration.
+    public var engine: String?
+    /// Engine-specific model variant id (e.g. the Whisper model id).
+    /// `nil` for engines without variants and for legacy rows.
+    public var engineVariant: String?
     public var updatedAt: Date
 
     public enum TranscriptionStatus: String, Codable, Sendable {
@@ -80,6 +86,8 @@ public struct Transcription: Codable, Identifiable, Sendable {
         recoveredFromCrash: Bool = false,
         isTranscriptEdited: Bool = false,
         userNotes: String? = nil,
+        engine: String? = nil,
+        engineVariant: String? = nil,
         updatedAt: Date = Date()
     ) {
         self.id = id
@@ -108,6 +116,8 @@ public struct Transcription: Codable, Identifiable, Sendable {
         self.recoveredFromCrash = recoveredFromCrash
         self.isTranscriptEdited = isTranscriptEdited
         self.userNotes = userNotes
+        self.engine = engine
+        self.engineVariant = engineVariant
         self.updatedAt = updatedAt
     }
 }
@@ -158,7 +168,7 @@ extension Transcription: FetchableRecord, PersistableRecord {
         case rawTranscript, cleanTranscript, wordTimestamps, language
         case speakerCount, speakers, diarizationSegments, chatMessages
         case status, errorMessage, exportPath, sourceURL
-        case thumbnailURL, channelName, videoDescription, isFavorite, sourceType, recoveredFromCrash, isTranscriptEdited, userNotes, updatedAt
+        case thumbnailURL, channelName, videoDescription, isFavorite, sourceType, recoveredFromCrash, isTranscriptEdited, userNotes, engine, engineVariant, updatedAt
     }
 
     /// Backward-compatible decoding: `speakers` column may contain old `[String]` JSON
@@ -219,6 +229,8 @@ extension Transcription: FetchableRecord, PersistableRecord {
         recoveredFromCrash = try container.decodeIfPresent(Bool.self, forKey: .recoveredFromCrash) ?? false
         isTranscriptEdited = try container.decodeIfPresent(Bool.self, forKey: .isTranscriptEdited) ?? false
         userNotes = try container.decodeIfPresent(String.self, forKey: .userNotes)
+        engine = try container.decodeIfPresent(String.self, forKey: .engine)
+        engineVariant = try container.decodeIfPresent(String.self, forKey: .engineVariant)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
     }
 }

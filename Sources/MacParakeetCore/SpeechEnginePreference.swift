@@ -66,11 +66,7 @@ public enum SpeechEnginePreference: String, CaseIterable, Codable, Sendable {
     }
 
     public static func normalizeLanguage(_ language: String?) -> String? {
-        guard let language else { return nil }
-        let trimmed = language.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        let lowercased = trimmed.replacingOccurrences(of: "_", with: "-").lowercased()
-        return lowercased == "auto" || lowercased == "auto-detect" ? nil : lowercased
+        WhisperLanguageCatalog.canonicalCode(for: language)
     }
 
     public static func normalizeModelVariant(_ variant: String?) -> String? {
@@ -78,6 +74,49 @@ public enum SpeechEnginePreference: String, CaseIterable, Codable, Sendable {
         let trimmed = variant.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         return trimmed.hasPrefix("whisper-") ? String(trimmed.dropFirst("whisper-".count)) : trimmed
+    }
+
+    /// Maps an internal Whisper variant id to a short, user-friendly label.
+    /// Falls back to the raw variant if the shape is unrecognized so unknown
+    /// future variants degrade to something readable rather than empty.
+    public static func friendlyVariantName(_ rawVariant: String) -> String {
+        let normalized = normalizeModelVariant(rawVariant) ?? rawVariant
+        let lowered = normalized.lowercased()
+
+        let sizeOrder: [(token: String, label: String)] = [
+            ("large-v3", "Large v3"),
+            ("large-v2", "Large v2"),
+            ("large", "Large"),
+            ("medium", "Medium"),
+            ("small", "Small"),
+            ("base", "Base"),
+            ("tiny", "Tiny")
+        ]
+        let size = sizeOrder.first { variantPrefixMatches(lowered, token: $0.token) }?.label
+
+        let isTurbo = lowered.contains("turbo")
+
+        if let size {
+            return isTurbo ? "\(size) Turbo" : size
+        }
+        return rawVariant
+    }
+
+    private static func variantPrefixMatches(_ normalized: String, token: String) -> Bool {
+        guard normalized.hasPrefix(token) else { return false }
+        let remainder = normalized.dropFirst(token.count)
+        guard let separator = remainder.first else { return true }
+        guard separator == "-" || separator == "_" || separator == "." else { return false }
+
+        if !token.contains("-v"), separator == "-" {
+            let suffix = remainder.dropFirst()
+            if suffix.first == "v",
+               suffix.dropFirst().first?.isNumber == true {
+                return false
+            }
+        }
+
+        return true
     }
 }
 

@@ -169,31 +169,22 @@ public actor WhisperEngine: STTTranscribing {
                 throw STTError.modelNotLoaded
             }
 
-            let decodeOptions = Self.makeDecodingOptions(language: language)
+            let requestedLanguage = SpeechEnginePreference.normalizeLanguage(language)
 
             onProgress?(0, 100)
             let callback: TranscriptionCallback = { _ in
                 onProgress?(50, 100)
                 return true
             }
-            let results = await whisperKit.transcribeWithResults(
-                audioPaths: [audioURL.path],
-                decodeOptions: decodeOptions,
+            let result = try await Self.transcribeWithLanguageFallback(
+                whisperKit,
+                audioPath: audioURL.path,
+                requestedLanguage: requestedLanguage,
                 callback: callback
             )
 
-            guard let first = results.first else {
-                throw STTError.invalidResponse
-            }
-
-            let partialResults = try first.get()
-            let merged = TranscriptionUtilities.mergeTranscriptionResults(partialResults)
             onProgress?(100, 100)
-            return STTResult(
-                text: merged.text,
-                words: Self.mapWordTimings(merged.allWords),
-                language: merged.language
-            )
+            return Self.makeResult(from: result, modelVariant: modelVariant)
         } catch {
             throw try Self.mapTranscriptionError(error)
         }
@@ -302,12 +293,69 @@ public actor WhisperEngine: STTTranscribing {
         let resolvedLanguage = SpeechEnginePreference.normalizeLanguage(language)
         return DecodingOptions(
             language: resolvedLanguage,
-            // WhisperKit v0.18.0 can silently return empty text for explicit
-            // language hints when prefill prompt is enabled.
-            usePrefillPrompt: false,
+            usePrefillPrompt: resolvedLanguage != nil,
             detectLanguage: resolvedLanguage == nil,
             wordTimestamps: true
         )
+    }
+
+    private static func transcribeWithLanguageFallback(
+        _ whisperKit: WhisperKit,
+        audioPath: String,
+        requestedLanguage: String?,
+        callback: TranscriptionCallback
+    ) async throws -> TranscriptionResult {
+        let result = try await transcribeWithWhisperKit(
+            whisperKit,
+            audioPaths: [audioPath],
+            decodeOptions: makeDecodingOptions(language: requestedLanguage),
+            callback: callback
+        )
+
+        guard requestedLanguage != nil, shouldRetryWithoutForcedLanguage(result) else {
+            return result
+        }
+
+        return try await transcribeWithWhisperKit(
+            whisperKit,
+            audioPaths: [audioPath],
+            decodeOptions: makeDecodingOptions(language: nil),
+            callback: callback
+        )
+    }
+
+    private static func transcribeWithWhisperKit(
+        _ whisperKit: WhisperKit,
+        audioPaths: [String],
+        decodeOptions: DecodingOptions,
+        callback: TranscriptionCallback
+    ) async throws -> TranscriptionResult {
+        let results = await whisperKit.transcribeWithResults(
+            audioPaths: audioPaths,
+            decodeOptions: decodeOptions,
+            callback: callback
+        )
+
+        guard let first = results.first else {
+            throw STTError.invalidResponse
+        }
+
+        let partialResults = try first.get()
+        return TranscriptionUtilities.mergeTranscriptionResults(partialResults)
+    }
+
+    private static func makeResult(from merged: TranscriptionResult, modelVariant: String) -> STTResult {
+        STTResult(
+            text: merged.text,
+            words: Self.mapWordTimings(merged.allWords),
+            language: merged.language,
+            engine: .whisper,
+            engineVariant: modelVariant
+        )
+    }
+
+    static func shouldRetryWithoutForcedLanguage(_ result: TranscriptionResult) -> Bool {
+        result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && result.allWords.isEmpty
     }
 
     static func mapWordTimings(_ words: [WordTiming]) -> [TimestampedWord] {
