@@ -521,6 +521,21 @@ public final class DatabaseManager: Sendable {
             }
         }
 
+        // v0.8 - Engine attribution: capture which STT engine + variant produced
+        // each transcript/dictation. NULL for legacy rows is intentional —
+        // pre-Whisper data is unambiguously Parakeet but post-Whisper-merge
+        // rows of unknown engine should not be silently labeled.
+        migrator.registerMigration("v0.8-engine-attribution") { db in
+            try db.alter(table: "transcriptions") { t in
+                t.add(column: "engine", .text)
+                t.add(column: "engineVariant", .text)
+            }
+            try db.alter(table: "dictations") { t in
+                t.add(column: "engine", .text)
+                t.add(column: "engineVariant", .text)
+            }
+        }
+
         try migrator.migrate(dbQueue)
         try reconcileBuiltInPrompts()
     }

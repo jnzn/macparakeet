@@ -140,7 +140,9 @@ public actor WhisperEngine: STTTranscribing {
             return STTResult(
                 text: merged.text,
                 words: Self.mapWordTimings(merged.allWords),
-                language: merged.language
+                language: merged.language,
+                engine: .whisper,
+                engineVariant: modelVariant
             )
         } catch {
             throw try Self.mapTranscriptionError(error)
