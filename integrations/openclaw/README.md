@@ -26,14 +26,20 @@ All execution is local on the Apple Neural Engine. No cloud STT.
 ## Install
 
 ```bash
-brew install moona3k/tap/macparakeet-cli
-macparakeet-cli --version   # 1.0.0
+# 1. Install MacParakeet from https://macparakeet.com
+# 2. Make the bundled CLI available on $PATH
+ln -s /Applications/MacParakeet.app/Contents/MacOS/macparakeet-cli \
+      /usr/local/bin/macparakeet-cli
+# 3. Verify
+macparakeet-cli --version   # 1.3.0
 macparakeet-cli health --json
 ```
 
-Requires macOS 14.2+ on Apple Silicon. The brew formula installs
-ffmpeg + yt-dlp as runtime deps. First `transcribe` call downloads
-~6 GB of CoreML models to `~/Library/Application Support/MacParakeet/models/`.
+Requires macOS 14.2+ on Apple Silicon. The app bundle includes FFmpeg and
+the CLI. First `transcribe` call downloads ~6 GB of CoreML models to
+`~/Library/Application Support/MacParakeet/models/`. YouTube transcription
+installs `yt-dlp` on demand; `macparakeet-cli health --repair-binaries`
+can prepare it explicitly.
 
 ## Capabilities (CLI vocabulary)
 

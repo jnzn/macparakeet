@@ -81,6 +81,17 @@ done < <(
     \( -name "ffmpeg" -o -name "node" -o -name "node-arm64" -o -name "node-x86_64" \) -print0 2>/dev/null || true
 )
 
+while IFS= read -r -d '' bin; do
+  base="$(basename "$bin")"
+  if [[ "$base" == "$APP_NAME" ]]; then
+    continue
+  fi
+  echo "Signing bundled executable: $bin"
+  codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp "$bin"
+done < <(
+  find "$APP_PATH/Contents/MacOS" -maxdepth 1 -type f -perm -111 -print0 2>/dev/null || true
+)
+
 ENTITLEMENTS="$ROOT_DIR/scripts/dist/MacParakeet.entitlements"
 
 echo "[3/8] Codesigning app (hardened runtime + entitlements)…"

@@ -64,7 +64,9 @@ macparakeet-cli health --json
 ```
 
 Reports model readiness, database accessibility, and binary deps (FFmpeg,
-yt-dlp). Use this before issuing real work.
+yt-dlp). This is a non-mutating probe; it reports missing helper binaries but
+does not install or update them. Use `macparakeet-cli health --repair-binaries`
+when you explicitly want to repair helper binaries.
 
 ### Transcribe a file
 
@@ -201,7 +203,9 @@ macparakeet-cli health --json
 ```
 
 If it fails, report the `errorType`/message and stop. Do not guess that models,
-FFmpeg, yt-dlp, or the database are ready.
+FFmpeg, yt-dlp, or the database are ready. If `yt-dlp` is missing and the user
+wants YouTube transcription, run `macparakeet-cli health --repair-binaries`
+before retrying.
 
 ## Core Commands
 
@@ -267,9 +271,9 @@ macparakeet-cli prompts run "<prompt-name>" \
   UUID prefix (>= 4 chars), or case-insensitive name. Ambiguous prefixes
   produce a `.ambiguous` error; missing records produce `.notFound`.
 - **Privacy:** STT and database access never touch the network. The only
-  network egress paths are: YouTube downloads (yt-dlp), optional cloud LLM
-  provider calls (only when `prompts run --provider <cloud>`), and Sparkle
-  update checks (app, not CLI).
+  network egress paths are: explicit helper repair (`health --repair-binaries`),
+  YouTube downloads (yt-dlp), optional cloud LLM provider calls (only when
+  `prompts run --provider <cloud>`), and Sparkle update checks (app, not CLI).
 - **Concurrency:** the STT scheduler reserves one slot for dictation and
   shares a second slot for meeting / batch work (ADR-016). Multiple
   concurrent CLI calls share the background slot; expect serial transcription

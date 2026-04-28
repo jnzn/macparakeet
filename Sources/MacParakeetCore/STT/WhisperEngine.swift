@@ -4,12 +4,49 @@ import Foundation
 import WhisperKit
 #endif
 
+private final class AsyncPermit: @unchecked Sendable {
+    private let lock = NSLock()
+    private var permits: Int
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    init(value: Int = 1) {
+        permits = max(0, value)
+    }
+
+    func wait() async {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            if permits > 0 {
+                permits -= 1
+                lock.unlock()
+                continuation.resume()
+            } else {
+                waiters.append(continuation)
+                lock.unlock()
+            }
+        }
+    }
+
+    func signal() {
+        lock.lock()
+        if waiters.isEmpty {
+            permits += 1
+            lock.unlock()
+        } else {
+            let continuation = waiters.removeFirst()
+            lock.unlock()
+            continuation.resume()
+        }
+    }
+}
+
 public actor WhisperEngine: STTTranscribing {
     public static let defaultModelVariant = SpeechEnginePreference.defaultWhisperModelVariant
 
     private let modelVariant: String
     private let defaultLanguage: String?
     private let downloadBase: URL
+    private let transcriptionPermit = AsyncPermit()
 
     #if canImport(WhisperKit)
     private var whisperKit: WhisperKit?
@@ -110,9 +147,24 @@ public actor WhisperEngine: STTTranscribing {
         language: String?,
         onProgress: (@Sendable (Int, Int) -> Void)? = nil
     ) async throws -> STTResult {
+        await transcriptionPermit.wait()
+        defer { transcriptionPermit.signal() }
+        try Task.checkCancellation()
+        return try await transcribeLocked(
+            audioURL: audioURL,
+            language: language,
+            onProgress: onProgress
+        )
+    }
+
+    private func transcribeLocked(
+        audioURL: URL,
+        language: String?,
+        onProgress: (@Sendable (Int, Int) -> Void)? = nil
+    ) async throws -> STTResult {
         #if canImport(WhisperKit)
         do {
-            try await prepare(onProgress: nil)
+            try await prepareLocked(onProgress: nil)
             guard let whisperKit else {
                 throw STTError.modelNotLoaded
             }
@@ -151,6 +203,13 @@ public actor WhisperEngine: STTTranscribing {
     }
 
     public func prepare(onProgress: (@Sendable (String) -> Void)? = nil) async throws {
+        await transcriptionPermit.wait()
+        defer { transcriptionPermit.signal() }
+        try Task.checkCancellation()
+        try await prepareLocked(onProgress: onProgress)
+    }
+
+    private func prepareLocked(onProgress: (@Sendable (String) -> Void)? = nil) async throws {
         #if canImport(WhisperKit)
         if isLoaded, whisperKit != nil { return }
         guard let modelFolder = Self.localModelFolder(model: modelVariant, downloadBase: downloadBase) else {
@@ -183,6 +242,9 @@ public actor WhisperEngine: STTTranscribing {
     }
 
     public func unload() async {
+        await transcriptionPermit.wait()
+        defer { transcriptionPermit.signal() }
+
         #if canImport(WhisperKit)
         await whisperKit?.unloadModels()
         whisperKit = nil

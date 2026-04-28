@@ -76,6 +76,13 @@ public actor BinaryBootstrap {
         return targetPath
     }
 
+    public nonisolated static func resolveYtDlpPath(
+        fileManager: FileManager = .default,
+        path: String = AppPaths.ytDlpBinaryPath
+    ) -> String? {
+        fileManager.isExecutableFile(atPath: path) ? path : nil
+    }
+
     /// Weekly non-blocking update. Failures are intentionally ignored.
     public func autoUpdateYtDlpIfNeeded() async {
         guard shouldRunYtDlpUpdateCheck() else { return }
