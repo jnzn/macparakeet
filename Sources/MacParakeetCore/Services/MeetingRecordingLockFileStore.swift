@@ -7,8 +7,8 @@ public enum MeetingRecordingLockState: String, Codable, Sendable, Equatable {
 }
 
 public struct MeetingRecordingLockFile: Codable, Sendable, Equatable {
-    /// Schema version is intentionally left at 1 in v0.6 because the `notes`
-    /// field is a backward-compatible additive change (`decodeIfPresent`).
+    /// Schema version is intentionally left at 1 because `notes` and
+    /// `speechEngine` are backward-compatible additive fields (`decodeIfPresent`).
     /// See ADR-020 §9. The version guard in `MeetingRecordingLockFileStore.read()`
     /// uses `<=` so a lock file written by an OLDER app version is still
     /// readable; a future bump only needs to keep this property + bump the
@@ -24,6 +24,7 @@ public struct MeetingRecordingLockFile: Codable, Sendable, Equatable {
     public let pid: Int32
     public let displayName: String
     public let state: MeetingRecordingLockState
+    public let speechEngine: SpeechEngineSelection
     /// Free-form notes the user typed during the meeting. Persisted on
     /// every notepad debounce so a crash recovers what the user had written
     /// up to the last debounce fire. Decoded independently of the rest of
@@ -39,6 +40,7 @@ public struct MeetingRecordingLockFile: Codable, Sendable, Equatable {
         case pid
         case displayName
         case state
+        case speechEngine
         case notes
     }
 
@@ -49,6 +51,7 @@ public struct MeetingRecordingLockFile: Codable, Sendable, Equatable {
         pid: Int32 = ProcessInfo.processInfo.processIdentifier,
         displayName: String,
         state: MeetingRecordingLockState = .recording,
+        speechEngine: SpeechEngineSelection = SpeechEngineSelection(engine: .parakeet),
         notes: String? = nil,
         folderURL: URL? = nil
     ) {
@@ -58,6 +61,7 @@ public struct MeetingRecordingLockFile: Codable, Sendable, Equatable {
         self.pid = pid
         self.displayName = displayName
         self.state = state
+        self.speechEngine = speechEngine
         self.notes = notes
         self.folderURL = folderURL
     }
@@ -70,6 +74,8 @@ public struct MeetingRecordingLockFile: Codable, Sendable, Equatable {
         pid = try container.decode(Int32.self, forKey: .pid)
         displayName = try container.decode(String.self, forKey: .displayName)
         state = try container.decodeIfPresent(MeetingRecordingLockState.self, forKey: .state) ?? .recording
+        speechEngine = try container.decodeIfPresent(SpeechEngineSelection.self, forKey: .speechEngine)
+            ?? SpeechEngineSelection(engine: .parakeet)
         // Notes are decoded independently — see ADR-020 §9. If a future encoder
         // bug or hand-edited file produces a malformed `notes` value, recovery
         // of the audio metadata still succeeds; only the typed notes are lost.
@@ -85,6 +91,7 @@ public struct MeetingRecordingLockFile: Codable, Sendable, Equatable {
         try container.encode(pid, forKey: .pid)
         try container.encode(displayName, forKey: .displayName)
         try container.encode(state, forKey: .state)
+        try container.encode(speechEngine, forKey: .speechEngine)
         try container.encodeIfPresent(notes, forKey: .notes)
     }
 
@@ -96,6 +103,7 @@ public struct MeetingRecordingLockFile: Codable, Sendable, Equatable {
             pid: pid,
             displayName: displayName,
             state: state,
+            speechEngine: speechEngine,
             notes: notes,
             folderURL: folderURL
         )
@@ -109,6 +117,7 @@ public struct MeetingRecordingLockFile: Codable, Sendable, Equatable {
             pid: pid,
             displayName: displayName,
             state: state,
+            speechEngine: speechEngine,
             notes: notes,
             folderURL: folderURL
         )
@@ -122,6 +131,7 @@ public struct MeetingRecordingLockFile: Codable, Sendable, Equatable {
             pid: pid,
             displayName: displayName,
             state: state,
+            speechEngine: speechEngine,
             notes: notes,
             folderURL: folderURL
         )

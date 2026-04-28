@@ -63,10 +63,16 @@ jobs:
 
       - name: Swift 6 Language Mode
         timeout-minutes: 15
+        env:
+          # Argmax/WhisperKit v0.18.0 is required for real builds but is not
+          # Swift 6 language-mode clean yet. Keep this step focused on
+          # first-party MacParakeet sources while release/test builds compile
+          # the full WhisperKit dependency graph.
+          MACPARAKEET_SKIP_WHISPERKIT: "1"
         run: |
           mkdir -p .ci-logs
           set -o pipefail
-          swift build -Xswiftc -swift-version -Xswiftc 6 2>&1 | tee .ci-logs/swift-6-language-mode.log
+          swift build --build-path .build-swift6-no-whisper -Xswiftc -swift-version -Xswiftc 6 2>&1 | tee .ci-logs/swift-6-language-mode.log
 
       - name: Swift Test
         timeout-minutes: 20
