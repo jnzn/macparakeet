@@ -34,36 +34,38 @@ struct FlowWordsCommand: AsyncParsableCommand {
         var database: String?
 
         func run() async throws {
-            try AppPaths.ensureDirectories()
-            let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
-            let repo = CustomWordRepository(dbQueue: dbManager.dbQueue)
-            let all = try repo.fetchAll()
-            let words: [CustomWord]
-            switch source {
-            case .all:     words = all
-            case .manual:  words = all.filter { $0.source == .manual }
-            case .learned: words = all.filter { $0.source == .learned }
-            }
-
-            if json {
-                try printJSON(words)
-                return
-            }
-
-            if words.isEmpty {
-                print("No custom words configured.")
-                return
-            }
-
-            for word in words {
-                let status = word.isEnabled ? "+" : "-"
-                if let replacement = word.replacement {
-                    print("[\(status)] \(word.word) -> \(replacement)  [\(word.source.rawValue)]  (\(word.id.uuidString.prefix(8)))")
-                } else {
-                    print("[\(status)] \(word.word) (anchor)  [\(word.source.rawValue)]  (\(word.id.uuidString.prefix(8)))")
+            try emitJSONOrRethrow(json: json) {
+                try AppPaths.ensureDirectories()
+                let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
+                let repo = CustomWordRepository(dbQueue: dbManager.dbQueue)
+                let all = try repo.fetchAll()
+                let words: [CustomWord]
+                switch source {
+                case .all:     words = all
+                case .manual:  words = all.filter { $0.source == .manual }
+                case .learned: words = all.filter { $0.source == .learned }
                 }
+
+                if json {
+                    try printJSON(words)
+                    return
+                }
+
+                if words.isEmpty {
+                    print("No custom words configured.")
+                    return
+                }
+
+                for word in words {
+                    let status = word.isEnabled ? "+" : "-"
+                    if let replacement = word.replacement {
+                        print("[\(status)] \(word.word) -> \(replacement)  [\(word.source.rawValue)]  (\(word.id.uuidString.prefix(8)))")
+                    } else {
+                        print("[\(status)] \(word.word) (anchor)  [\(word.source.rawValue)]  (\(word.id.uuidString.prefix(8)))")
+                    }
+                }
+                print("\n\(words.count) word(s)")
             }
-            print("\n\(words.count) word(s)")
         }
     }
 

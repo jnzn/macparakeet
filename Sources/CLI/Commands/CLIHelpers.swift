@@ -282,6 +282,18 @@ extension CLIErrorEnvelope {
 /// surface through ArgumentParser's plain-text stderr path; the JSON
 /// envelope contract applies only to errors emitted after argument parsing
 /// succeeds.
+func emitJSONOrRethrow(json: Bool, _ body: () throws -> Void) throws {
+    do {
+        try body()
+    } catch let exit as ExitCode {
+        throw exit
+    } catch let cleanExit as CleanExit {
+        throw cleanExit
+    } catch {
+        try rethrowWithOptionalJSONEnvelope(error, json: json)
+    }
+}
+
 func emitJSONOrRethrow(json: Bool, _ body: () async throws -> Void) async throws {
     do {
         try await body()
@@ -290,12 +302,16 @@ func emitJSONOrRethrow(json: Bool, _ body: () async throws -> Void) async throws
     } catch let cleanExit as CleanExit {
         throw cleanExit
     } catch {
-        guard json else { throw error }
-        let envelope = CLIErrorEnvelope(error: error)
-        try? printJSON(envelope)
-        if error is ValidationError || error is CLIInputError {
-            throw ExitCode.validationFailure
-        }
-        throw ExitCode.failure
+        try rethrowWithOptionalJSONEnvelope(error, json: json)
     }
+}
+
+private func rethrowWithOptionalJSONEnvelope(_ error: Error, json: Bool) throws {
+    guard json else { throw error }
+    let envelope = CLIErrorEnvelope(error: error)
+    try? printJSON(envelope)
+    if error is ValidationError || error is CLIInputError {
+        throw ExitCode.validationFailure
+    }
+    throw ExitCode.failure
 }

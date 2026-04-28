@@ -46,33 +46,35 @@ extension PromptsCommand {
         var database: String?
 
         func run() throws {
-            try AppPaths.ensureDirectories()
-            let db = try DatabaseManager(path: resolvedDatabasePath(database))
-            let repo = PromptRepository(dbQueue: db.dbQueue)
+            try emitJSONOrRethrow(json: json) {
+                try AppPaths.ensureDirectories()
+                let db = try DatabaseManager(path: resolvedDatabasePath(database))
+                let repo = PromptRepository(dbQueue: db.dbQueue)
 
-            let prompts: [Prompt]
-            switch filter {
-            case .all:     prompts = try repo.fetchAll()
-            case .visible: prompts = try repo.fetchVisible(category: nil)
-            case .autoRun: prompts = try repo.fetchAutoRunPrompts()
-            }
+                let prompts: [Prompt]
+                switch filter {
+                case .all:     prompts = try repo.fetchAll()
+                case .visible: prompts = try repo.fetchVisible(category: nil)
+                case .autoRun: prompts = try repo.fetchAutoRunPrompts()
+                }
 
-            if json {
-                try printJSON(prompts)
-                return
-            }
+                if json {
+                    try printJSON(prompts)
+                    return
+                }
 
-            if prompts.isEmpty {
-                print("No prompts found.")
-                return
-            }
+                if prompts.isEmpty {
+                    print("No prompts found.")
+                    return
+                }
 
-            for p in prompts {
-                let badges = renderBadges(p)
-                print("\(p.id.uuidString.prefix(8))  \(p.name)\(badges)")
+                for p in prompts {
+                    let badges = renderBadges(p)
+                    print("\(p.id.uuidString.prefix(8))  \(p.name)\(badges)")
+                }
+                print()
+                print("\(prompts.count) prompt(s)")
             }
-            print()
-            print("\(prompts.count) prompt(s)")
         }
     }
 }
@@ -96,22 +98,24 @@ extension PromptsCommand {
         var database: String?
 
         func run() throws {
-            try AppPaths.ensureDirectories()
-            let db = try DatabaseManager(path: resolvedDatabasePath(database))
-            let repo = PromptRepository(dbQueue: db.dbQueue)
-            let prompt = try findPrompt(idOrName: idOrName, repo: repo)
+            try emitJSONOrRethrow(json: json) {
+                try AppPaths.ensureDirectories()
+                let db = try DatabaseManager(path: resolvedDatabasePath(database))
+                let repo = PromptRepository(dbQueue: db.dbQueue)
+                let prompt = try findPrompt(idOrName: idOrName, repo: repo)
 
-            if json {
-                try printJSON(prompt)
-                return
+                if json {
+                    try printJSON(prompt)
+                    return
+                }
+
+                print("ID:        \(prompt.id.uuidString)")
+                print("Name:      \(prompt.name)\(renderBadges(prompt))")
+                print("Category:  \(prompt.category.rawValue)")
+                print("Updated:   \(ISO8601DateFormatter().string(from: prompt.updatedAt))")
+                print()
+                print(prompt.content)
             }
-
-            print("ID:        \(prompt.id.uuidString)")
-            print("Name:      \(prompt.name)\(renderBadges(prompt))")
-            print("Category:  \(prompt.category.rawValue)")
-            print("Updated:   \(ISO8601DateFormatter().string(from: prompt.updatedAt))")
-            print()
-            print(prompt.content)
         }
     }
 }
@@ -374,13 +378,14 @@ extension PromptsCommand {
                 )
 
                 var output = ""
+                var jsonResult: LLMResult?
                 if json {
                     let result = try await service.generatePromptResultDetailed(
                         transcript: transcriptText,
                         systemPrompt: systemPrompt
                     )
                     output = result.output
-                    try printJSON(result)
+                    jsonResult = result
                 } else if stream {
                     let tokenStream = service.generatePromptResultStream(
                         transcript: transcriptText,
@@ -411,6 +416,10 @@ extension PromptsCommand {
                     try resultRepo.save(result)
                     // Status messages on stderr so stdout stays grep-able as the prompt output.
                     FileHandle.standardError.write(Data("\nSaved PromptResult \(result.id.uuidString.prefix(8))\n".utf8))
+                }
+
+                if let jsonResult {
+                    try printJSON(jsonResult)
                 }
             }
         }

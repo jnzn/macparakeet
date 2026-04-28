@@ -28,18 +28,20 @@ extension ModelsCommand {
         var json: Bool = false
 
         func run() async throws {
-            let sttClient = STTClient()
-            let diarizationService = DiarizationService()
-            let status = await loadSpeechStackStatus(
-                sttClient: sttClient,
-                diarizationService: diarizationService
-            )
-            if json {
-                try printJSON(SpeechStackPayload(status: status))
-            } else {
-                printSpeechStackStatus(status)
+            try await emitJSONOrRethrow(json: json) {
+                let sttClient = STTClient()
+                let diarizationService = DiarizationService()
+                let status = await loadSpeechStackStatus(
+                    sttClient: sttClient,
+                    diarizationService: diarizationService
+                )
+                await sttClient.shutdown()
+                if json {
+                    try printJSON(SpeechStackPayload(status: status))
+                } else {
+                    printSpeechStackStatus(status)
+                }
             }
-            await sttClient.shutdown()
         }
     }
 
