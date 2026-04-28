@@ -20,10 +20,12 @@ struct SettingsSearchField: View {
 
     /// Mirrors `SettingsRootViewModel.isSearching` so the clear-button
     /// affordance and the flat-results UI activate on the same predicate.
-    /// Without this, typing spaces would show an X but nothing else would
-    /// react — a confusing dead state.
+    /// Trims `.whitespacesAndNewlines` to match both the root VM and
+    /// `SettingsSearchIndex.matches` — without this, pasted whitespace
+    /// or newline-only queries would show an X but nothing else would
+    /// react.
     private var hasActiveQuery: Bool {
-        !query.trimmingCharacters(in: .whitespaces).isEmpty
+        !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
