@@ -25,6 +25,7 @@ This script builds the latest debug binary, stops stale `/Applications`/`dist` a
 ```
 macparakeet-cli
 ├── transcribe <input> [options]         Transcribe a file or YouTube URL
+│   └── --engine parakeet|whisper [--language <code>]
 ├── history                              View and manage history
 │   ├── dictations [--limit] [--json]    List recent dictations (default)
 │   ├── transcriptions [--limit] [--json]  List recent transcriptions
@@ -40,6 +41,7 @@ macparakeet-cli
 ├── health [--repair-models] [--json]    System health and model status
 ├── models                               Speech model lifecycle
 │   ├── status [--json]                  Show model status
+│   ├── download <model-id>              Download explicit model (Whisper)
 │   ├── warm-up [--attempts]             Warm up speech model
 │   ├── repair [--attempts]              Best-effort model repair
 │   └── clear                            Delete cached models
@@ -62,13 +64,21 @@ macparakeet-cli
 │   ├── delete <id-or-name>              Delete custom prompt (built-ins protected)
 │   ├── restore-defaults                 Re-show all built-in prompts
 │   └── run <id-or-name> --transcription <id> [--no-store] [--stream] [--extra ...]
+├── meetings                             Inspect and manage local meeting recordings
+│   ├── list [--limit] [--json]
+│   ├── show <meeting> [--json]
+│   ├── transcript <meeting> [--format text|json|srt|vtt]
+│   ├── notes {get,set,append,clear} <meeting>
+│   └── export <meeting> [--format md|json] [--stdout]
+├── calendar
+│   └── upcoming [--days N] [--filter link|participants|all] [--json]
 └── feedback <message> [options]         Submit feedback
 ```
 
 > **JSON output convention**: any query command marked `[--json]` emits a single
 > JSON document on stdout (ISO-8601 dates, sorted keys, pretty-printed). Pipe to
-> `jq` or any JSON tool. Side-effect commands (delete, favorite, etc.) print one
-> confirmation line and don't accept `--json`.
+> `jq` or any JSON tool. Side-effect commands generally print a confirmation line;
+> a few newer meeting-note commands also accept `--json` for agent workflows.
 
 > **Telemetry convention**: CLI telemetry uses the same opt-out preference as
 > the GUI and does not change stdout/stderr contracts. `transcribe` emits a
@@ -106,6 +116,20 @@ swift run macparakeet-cli transcribe "<FILE_OR_YOUTUBE_URL>" \
   --mode clean \
   --downloaded-audio keep
 ```
+
+### Speech Engine Selection
+
+Parakeet is the default and ignores `--language`. Use Whisper for languages outside Parakeet coverage after downloading the local Whisper model:
+
+```bash
+swift run macparakeet-cli models download whisper-large-v3-v20240930-turbo-632MB
+
+swift run macparakeet-cli transcribe "<FILE_OR_YOUTUBE_URL>" \
+  --engine whisper \
+  --language ko
+```
+
+`--language auto` or omitting `--language` lets Whisper detect the language.
 
 ### Speaker Diarization
 
@@ -202,11 +226,39 @@ swift run macparakeet-cli health
 swift run macparakeet-cli health --repair-models --repair-attempts 3
 ```
 
+## Meetings
+
+Meeting commands operate on `sourceType = meeting` transcriptions. `<meeting>` accepts a UUID, UUID prefix, or exact title.
+
+```bash
+swift run macparakeet-cli meetings list --limit 10
+swift run macparakeet-cli meetings show <meeting> --json
+swift run macparakeet-cli meetings transcript <meeting> --format srt
+
+swift run macparakeet-cli meetings notes get <meeting>
+swift run macparakeet-cli meetings notes append <meeting> --text "**Action:** follow up"
+cat notes.md | swift run macparakeet-cli meetings notes set <meeting> --stdin --json
+
+swift run macparakeet-cli meetings export <meeting> --format md --stdout
+```
+
+## Calendar
+
+Calendar commands inspect the same EventKit pipeline used by meeting auto-start. Calendar permission must already be granted through the GUI.
+
+```bash
+swift run macparakeet-cli calendar upcoming --days 1 --filter link
+swift run macparakeet-cli calendar upcoming --days 7 --filter all --json
+```
+
 ## Speech Model Lifecycle
 
 ```bash
 # Non-invasive status (does not force downloads)
 swift run macparakeet-cli models status
+
+# Explicit Whisper download
+swift run macparakeet-cli models download whisper-large-v3-v20240930-turbo-632MB
 
 # Warm-up (single attempt by default)
 swift run macparakeet-cli models warm-up
@@ -218,6 +270,8 @@ swift run macparakeet-cli models repair --attempts 5
 # Delete cached models
 swift run macparakeet-cli models clear
 ```
+
+`models warm-up` and `models repair` prepare the Parakeet + diarization speech stack. Whisper is downloaded explicitly with `models download`.
 
 ## Text Pipeline
 

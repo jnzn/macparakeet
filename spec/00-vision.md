@@ -53,7 +53,7 @@ No existing app nails all four: **Speed + Privacy + Simplicity + Fair Pricing**.
 
 Cloud services send your voice to remote servers, create accounts, charge monthly, and add server latency. Local apps either bury you in settings (MacWhisper has 50+ features) or charge a premium (Superwhisper at $250). Apple Dictation is free but slow, inaccurate, and has no custom vocabulary, no file transcription.
 
-**MacParakeet's answer:** Built from the ground up around Parakeet TDT -- the fastest, most accurate open-source STT model available. Fully local speech by default, with optional networked features. Three modes. Free. Done.
+**MacParakeet's answer:** Built from the ground up around Parakeet TDT for speed, with optional local WhisperKit for languages Parakeet does not cover. Fully local speech by default, with optional networked features. Three modes. Free. Done.
 
 ---
 
@@ -109,7 +109,7 @@ Every feature is available to everyone, forever. The code is public. Contributio
 | **Product type** | Native macOS app (menu bar + window) |
 | **Core function** | Voice dictation, file transcription, and meeting recording |
 | **Target users** | Developers, professionals, writers who want fast private voice input |
-| **Key differentiators** | Parakeet speed + fully local speech option + free/open-source |
+| **Key differentiators** | Parakeet speed + optional local multilingual Whisper fallback + free/open-source |
 | **Business model** | Free and open-source (GPL-3.0) |
 | **Platform** | macOS 14.2+, Apple Silicon only |
 
@@ -117,11 +117,11 @@ Every feature is available to everyone, forever. The code is public. Contributio
 
 ## What MacParakeet Is Not
 
-- **Not a meeting intelligence app** -- MacParakeet records and transcribes meetings, but does not do calendar integration, entity extraction, meeting memory, or action items. That intelligence layer is Oatmeal.
+- **Not a full meeting intelligence app** -- MacParakeet records and transcribes meetings, has lightweight calendar auto-start, live notes, Ask, and prompt-based action summaries. It does not do entity extraction, cross-meeting memory, CRM-style enrichment, or team intelligence. That deeper intelligence layer is Oatmeal.
 - **Not a note-taking app** -- It puts text where your cursor is. Your note app is your note app.
 - **Not a cloud service** -- No hosted transcription backend, no accounts, no sync product. Core speech stays local.
 - **Not an enterprise product** -- Single-user, single-Mac. No admin console, no team management (initially).
-- **Not a mobile app** -- macOS only. Apple Silicon required for Parakeet STT via FluidAudio CoreML on the Neural Engine.
+- **Not a mobile app** -- macOS only. Apple Silicon required for the local speech stack.
 - **Not a transcription editor** -- Drop a file, get text. We do not build a full editing environment around transcripts.
 
 ---
@@ -192,7 +192,7 @@ Every feature is available to everyone, forever. The code is public. Contributio
 |  2. Grant Screen Recording permission (first time only)               |
 |  3. Meeting pill appears — recording system audio + mic               |
 |  4. Click Stop when done                                              |
-|  5. Parakeet transcribes the mixed audio (~23s per hour)              |
+|  5. Local STT transcribes source audio (Parakeet by default)          |
 |  6. Result saved to library with full export/prompt support            |
 |                                                                       |
 |  Runs concurrently with dictation (ADR-015).                          |
@@ -227,7 +227,7 @@ Lawyers handling confidential case notes. Healthcare professionals with HIPAA co
 
 MacWhisper and Superwhisper users who balk at paying $30-$250. WisprFlow users tired of $144-180/year. People who searched "MacWhisper alternative" or "WisprFlow free alternative."
 
-**What they want:** A good product at a fair price. One-time purchase. No recurring charges.
+**What they want:** A good product without recurring charges. Free and open-source.
 
 ### Quaternary: Writers and Content Creators
 
@@ -263,7 +263,7 @@ Writers who think better out loud. Podcasters who need episode transcripts. Cont
 
 | Feature | MacParakeet | WisprFlow | MacWhisper | Superwhisper | Apple Dictation |
 |---------|-------------|-----------|------------|--------------|-----------------|
-| **STT Engine** | Parakeet TDT | Cloud AI | Whisper | Whisper | Apple Neural |
+| **STT Engine** | Parakeet default + optional WhisperKit | Cloud AI | Whisper | Whisper | Apple Neural |
 | **Speed (60 min)** | ~23 sec | ~30 sec* | ~2-4 min | ~2-4 min | Real-time only |
 | **WER** | ~2.5% | ~5%** | 7-12% | 7-12% | ~10-15% |
 | **Privacy** | Local-first speech | Cloud | Local | Local | Mostly local |
@@ -281,7 +281,7 @@ Writers who think better out loud. Podcasters who need episode transcripts. Cont
 ### Why We Win Each Segment
 
 - **vs WisprFlow**: Same speed class, but a fully local speech option + free vs $144-180/year. WisprFlow users who care about privacy or cost switch to us.
-- **vs MacWhisper**: Faster (Parakeet vs Whisper), simpler (2 modes vs 50+ features), plus system-wide dictation — and free.
+- **vs MacWhisper**: Faster default engine, simpler three-mode product, plus system-wide dictation and free/open-source distribution.
 - **vs Superwhisper**: Free vs $250, Parakeet-first architecture. No contest on price.
 - **vs Apple Dictation**: Faster, more accurate, custom words, file transcription. Same price (free), dramatically more capable.
 
@@ -291,14 +291,14 @@ Writers who think better out loud. Podcasters who need episode transcripts. Cont
 
 ### 1. Parakeet-First Architecture
 
-We are not a Whisper app that added Parakeet. We built the entire product around Parakeet TDT 0.6B-v3 from day one.
+We are not a Whisper app that added Parakeet. We built the entire product around Parakeet TDT 0.6B-v3 from day one, then added WhisperKit explicitly for language coverage.
 
 - **155x realtime** on the Neural Engine vs Whisper's 15-30x. Not an incremental improvement -- an order of magnitude.
 - **~2.5% WER** -- lower error rate than Whisper large-v3 at a fraction of the compute.
 - **Word-level timestamps** -- enables synced subtitles, precise seeking, confidence scoring.
 - **Technical vocabulary** -- better handling of code terms, acronyms, and proper nouns than Whisper.
 
-Competitors bolted Parakeet onto existing Whisper architectures. We optimized the entire pipeline for it.
+Competitors bolted Parakeet onto existing Whisper architectures. We optimized the default pipeline for Parakeet while routing optional Whisper through the same scheduler/runtime control plane.
 
 ### 2. Local-First, Zero-Compromise Speech
 
@@ -404,7 +404,7 @@ A new user should be able to:
 4. See clean text appear at their cursor
 5. Think "this is better than anything I have tried"
 
-All within 60 seconds of first launch. No tutorial, no onboarding wizard, no account creation.
+All within 60 seconds of first launch. A short permissions/model setup flow is acceptable; accounts and tutorials are not.
 
 ---
 
@@ -432,7 +432,7 @@ Clean pipeline makes dictation output polish-ready.
 
 YouTube transcription and full export pipeline.
 
-- YouTube URL transcription (yt-dlp + Parakeet)
+- YouTube URL transcription (yt-dlp + local STT)
 - Export formats (.txt, .srt, .vtt, .docx, .pdf, .json)
 
 ### v0.4: Polish + Launch
@@ -446,6 +446,20 @@ Ship-quality polish. Direct distribution via notarized DMG.
 - Accessibility (VoiceOver, keyboard navigation)
 - UI Localization (English UI first, structure for future languages; STT already supports 25 European languages)
 
+### v0.6: Meeting Recording
+
+- System audio + mic capture with fragmented source files and crash recovery
+- Live meeting pill + Notes / Transcript / Ask panel
+- Calendar auto-start/auto-stop affordances
+- Source-aware final transcription with prompt results and chat in the library
+
+### v0.7: Multilingual STT
+
+- Optional local WhisperKit engine for languages outside Parakeet coverage
+- Settings speech-engine picker and Whisper language picker
+- CLI `transcribe --engine parakeet|whisper --language`
+- Meeting recordings pin engine/language for live preview, recovery, and finalization
+
 ---
 
 ## Key Decisions
@@ -453,7 +467,7 @@ Ship-quality polish. Direct distribution via notarized DMG.
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | **Platform** | macOS 14.2+, Apple Silicon only | FluidAudio CoreML requires Apple Silicon. |
-| **STT engine** | Parakeet TDT 0.6B-v3 | Fastest and most accurate open-source STT. 155x realtime on ANE, ~2.5% WER via FluidAudio CoreML. |
+| **STT engine** | Parakeet TDT 0.6B-v3 by default; optional WhisperKit | Parakeet gives the latency target for supported languages; WhisperKit keeps broader multilingual speech local. |
 | **YouTube downloads** | Standalone yt-dlp | macOS binary, auto-updates via `--update`. No Python needed. |
 | **UI framework** | SwiftUI | Native Mac experience. Menu bar + window. |
 | **Database** | SQLite (GRDB) | Single file. No server. Dictation history, custom words, settings. |

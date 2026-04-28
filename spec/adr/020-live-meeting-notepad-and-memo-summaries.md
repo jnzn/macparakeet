@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-04-25 (proposed) · Amended 2026-04-25 (post-review) · Implemented 2026-04-25 (Phases 1–4)
 > Related: ADR-013 (prompt library + multi-summary), ADR-014 (meeting recording), ADR-017 (calendar auto-start), ADR-018 (live meeting Ask tab), ADR-019 (crash-resilient meeting recording)
+> Naming Note (2026-04-28): The persisted table remains `summaries`, but the current Swift names are `PromptResult`, `PromptResultRepository`, and `PromptResultsViewModel`.
 
 ## Amendment (2026-04-25, post-review)
 
@@ -39,7 +40,7 @@ The underlying primitives mostly exist:
 
 - `MeetingRecordingPanelView` already has tab infrastructure (Transcript / Ask, ⌘1/⌘2)
 - `Prompt.builtInPrompts()` already seeds prompts; new ones are additive
-- `SummaryViewModel` already accepts a prompt and runs it against the transcript
+- `PromptResultsViewModel` already accepts a prompt and runs it against the transcript
 - `MeetingRecordingRecoveryService` + `MeetingRecordingLockFileStore` already persist meeting state every second
 - `TranscriptionRepository` migrations are routine
 
@@ -85,7 +86,7 @@ Empty notes is a valid state — short meetings, audio-only attention, anything 
 
 A separate `meeting_notes` table was considered for future versioning support and was rejected as premature. If multi-version notes ever become a feature, the column can be promoted to a table without breaking history (same shape as the v0.5 `transcriptions.summary` → `summaries` table promotion).
 
-**Soft length cap of 8,000 words.** The schema column is unbounded (`TEXT`), but the user-facing surface enforces a soft cap. `LiveNotesPaneView` displays an inline footer notice once the user crosses 7,500 words ("Approaching 8,000-word soft cap; longer notes may be truncated for summary generation."). At summary generation time, `SummaryViewModel` truncates `userNotes` to 8,000 words *for the prompt only* (the persisted note is unmodified) and surfaces a small banner above the new summary: "Notes were truncated to 8,000 words for this summary; full notes preserved." The cap exists to protect the LLM context window — at typical English word-to-token ratios, 8,000 words ≈ 11k tokens, leaving budget for transcript + system prompt + response in even modest context windows. The cap is intentionally soft so users typing fast during very long meetings are not silently censored from their own data.
+**Soft length cap of 8,000 words.** The schema column is unbounded (`TEXT`), but the user-facing surface enforces a soft cap. `LiveNotesPaneView` displays an inline footer notice once the user crosses 7,500 words ("Approaching 8,000-word soft cap; longer notes may be truncated for summary generation."). At summary generation time, `PromptResultsViewModel` truncates `userNotes` to 8,000 words *for the prompt only* (the persisted note is unmodified) and surfaces a small banner above the new summary: "Notes were truncated to 8,000 words for this summary; full notes preserved." The cap exists to protect the LLM context window — at typical English word-to-token ratios, 8,000 words ≈ 11k tokens, leaving budget for transcript + system prompt + response in even modest context windows. The cap is intentionally soft so users typing fast during very long meetings are not silently censored from their own data.
 
 ### 4. `{{userNotes}}` template variable threaded into prompt rendering
 
@@ -133,7 +134,7 @@ Output:
 
 ### 6. Snapshot user notes on the summary record
 
-Per the prompt-snapshot principle from ADR-013, each `Summary` record gains a `userNotesSnapshot: String?` column. The value of `userNotes` at the moment of summary generation is captured alongside the existing prompt snapshot. Editing notes after a summary has been generated does not retroactively change that summary's metadata.
+Per the prompt-snapshot principle from ADR-013, each `PromptResult` record gains a `userNotesSnapshot: String?` column. The value of `userNotes` at the moment of summary generation is captured alongside the existing prompt snapshot. Editing notes after a summary has been generated does not retroactively change that summary's metadata.
 
 This makes summaries self-contained for the same reason ADR-013 made them self-contained: a summary should always accurately reflect what produced it.
 
@@ -272,11 +273,11 @@ The invariant is therefore enforced by surface area, not by hope.
                           │
                           ▼ at summary generation
         ┌─────────────────────────────────────────┐
-        │ SummaryViewModel                        │
+        │ PromptResultsViewModel                  │
         │   ├── reads userNotes from row          │
         │   ├── PromptTemplateRenderer            │
         │   │   {{userNotes}}, {{transcript}}     │
-        │   └── snapshots userNotes on Summary    │
+        │   └── snapshots userNotes on PromptResult│
         └─────────────────────────────────────────┘
                           │
                           ▼
@@ -395,14 +396,14 @@ If post-implementation the diff is genuinely too large to review in one sitting,
 - `PromptTemplateRenderer` *(new)*: `{{key}}` substitution. Single-pass simultaneous: all replacements collected, applied atomically. Empty-string fallback for missing keys. Adversarial-input tests (user notes containing `{{transcript}}` literals) verify single-pass semantics.
 - `Prompt.builtInPrompts()`: add "Memo-Steered Notes" prompt; update copy on existing built-ins to optionally reference `{{userNotes}}` (per-prompt judgment per Rationale §"Which prompt classes benefit").
 - Auto-run insertion guard: when seeding the new prompt, set `isAutoRun = true` only if at least one existing prompt currently has `isAutoRun = true`; otherwise insert with `isAutoRun = false`.
-- `Summary` model: add `userNotesSnapshot: String?`
-- `SummaryRepository`: read/write the snapshot column
+- `PromptResult` model: add `userNotesSnapshot: String?`
+- `PromptResultRepository`: read/write the snapshot column
 
 ### ViewModels (MacParakeetViewModels)
 
 - `MeetingNotesViewModel` *(new, `@MainActor @Observable`)*: owns `notesText: String` with `private(set)` external visibility (only `TextEditor` `$binding` mutates it). Debounced 250ms idle writes call `MeetingRecordingService.updateNotes(_:)` — never touches the lock file directly. Exposes `commit()` for finalize, `restore(_:)` for recovery. Soft-cap warning surfaces at 7,500 words.
 - `MeetingRecordingPanelViewModel` (extended): compose `notesViewModel`; `LivePanelTab` gains `.notes`; default selection becomes `.notes`; tab-state hint values exposed for view binding (used at default panel widths; collapsed at narrow widths per §1).
-- `SummaryViewModel`: read `userNotes` from row at generation; truncate to 8,000-word soft cap *for the prompt only* (full notes preserved); thread into `PromptTemplateRenderer`; record snapshot on resulting `Summary`; surface a "Notes truncated for summary" banner when truncation occurs.
+- `PromptResultsViewModel`: read `userNotes` from row at generation; truncate to 8,000-word soft cap *for the prompt only* (full notes preserved); thread into `PromptTemplateRenderer`; record snapshot on resulting `PromptResult`; surface a "Notes truncated for summary" banner when truncation occurs.
 
 ### View layer (MacParakeet)
 
@@ -425,19 +426,19 @@ If post-implementation the diff is genuinely too large to review in one sitting,
 - `MeetingRecordingService.updateNotes(_:)`: serializes with state-transition writes (concurrent state change + notes write does not corrupt the lock file or revert the state)
 - Lock-file round-trip: notes persisted and restored; **old-format lock file** (no `notes` key) decodes with `notes = nil`; **malformed `notes` field** decodes with `notes = nil` and audio metadata still recovers
 - `MeetingRecordingRecoveryService`: recovered session opens with restored notes
-- `SummaryViewModel`: `userNotes` flows into rendered prompt; snapshot recorded on `Summary`; **8,000-word truncation** applies to prompt input only (full notes preserved on row); banner surfaces when truncation occurs
+- `PromptResultsViewModel`: `userNotes` flows into rendered prompt; snapshot recorded on `PromptResult`; **8,000-word truncation** applies to prompt input only (full notes preserved on row); banner surfaces when truncation occurs
 - Slash command literal-string insertion: `/action` inserts the literal `**Action:** ` characters (not interpreted as markdown by the editor)
 - Built-in "Memo-Steered Notes" prompt rendering with empty `userNotes` (graceful)
 - Built-in "Memo-Steered Notes" prompt rendering with non-empty `userNotes`
 - Existing prompts unchanged when `userNotes` is empty (no regression on default output)
 - Auto-run insertion guard: when seeded into a database with zero auto-run prompts, the new prompt is inserted with `isAutoRun = false`; when seeded with at least one auto-run prompt, inserted with `isAutoRun = true`
-- `Summary` detail view: NULL `userNotesSnapshot` and empty-string snapshot both render the section omitted (not an empty block)
+- Prompt-result detail view: NULL `userNotesSnapshot` and empty-string snapshot both render the section omitted (not an empty block)
 
 ## Phased Rollout
 
 Single PR; phased commit clusters so review can walk it linearly:
 
-1. **Phase 1 — Schema + plumbing (no UI):** migration, model fields, `PromptTemplateRenderer`, prompt updates, `SummaryViewModel` integration, tests
+1. **Phase 1 — Schema + plumbing (no UI):** migration, model fields, `PromptTemplateRenderer`, prompt updates, `PromptResultsViewModel` integration, tests
 2. **Phase 2 — Notes pane + auto-save + recovery:** view + VM, panel restructure to three tabs, lock-file integration, recovery integration, tests
 3. **Phase 3 — Slash commands + tab polish:** popover, command insertion, tab state-hint labels, title auto-reveal animation, optional one-line transcript ticker inside Notes (evaluate before merge)
 4. **Phase 4 — Pre-meeting + degradation copy:** rich countdown toast for calendar-triggered starts, STT-failure copy refinement, speaker color tokens in live transcript

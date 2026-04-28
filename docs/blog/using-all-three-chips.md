@@ -203,6 +203,8 @@ These aren't the reason we're making this change — the architecture is. But th
 
 ## Why Parakeet, Not Whisper
 
+> Update: MacParakeet now includes optional local WhisperKit recognition for languages Parakeet does not cover. This section explains why Parakeet remains the default engine.
+
 A natural question: why not use OpenAI's Whisper? It's the most well-known open-source speech model.
 
 The short answer is that Parakeet is better at the job:

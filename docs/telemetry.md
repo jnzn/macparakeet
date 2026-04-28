@@ -15,7 +15,7 @@
 - **Local-first still** — Audio never leaves the device. Only non-identifying usage signals are sent.
 
 **Privacy promise (updated):**
-> "Your audio and transcriptions never leave your device. MacParakeet collects non-identifying usage statistics — like which features are popular and how long transcriptions take — to help us improve. No personal data is ever collected. You can opt out anytime in Settings."
+> "Telemetry never includes your audio, transcripts, notes, prompts, or file names. MacParakeet collects non-identifying usage statistics — like which features are popular and how long transcriptions take — to help us improve. You can opt out anytime in Settings."
 
 ---
 
@@ -151,7 +151,7 @@ identify a user.
 | `transcription_completed` | `source`, `audio_duration_seconds`, `processing_seconds`, `word_count`, `speaker_count`, `diarization_requested`, `diarization_applied` | Real-world performance and speaker-label coverage across file, YouTube, and meeting pipelines |
 | `transcription_cancelled` | `source`, `audio_duration_seconds`, `stage` (download, audio_conversion, stt, diarization, post_processing) | Where do users abandon jobs? |
 | `transcription_failed` | `source`, `stage`, `error_type` | What's breaking, and in which pipeline stage? |
-| `transcription_operation` | `operation_id`, `workflow_id`, `parent_operation_id`, `outcome`, `source`, `stage`, `duration_seconds`, `audio_duration_seconds`, `processing_seconds`, `word_count`, `speaker_count`, `diarization_requested`, `diarization_applied`, `input_kind`, `media_extension`, `file_size_bucket`, `error_type` | One wide outcome event per file, YouTube, or meeting transcription |
+| `transcription_operation` | `operation_id`, `workflow_id`, `parent_operation_id`, `outcome`, `source`, `stage`, `duration_seconds`, `audio_duration_seconds`, `processing_seconds`, `word_count`, `speaker_count`, `diarization_requested`, `diarization_applied`, `speech_engine`, `language_hint`, `detected_language`, `input_kind`, `media_extension`, `file_size_bucket`, `error_type` | One wide outcome event per file, YouTube, or meeting transcription |
 
 `transcription_operation` is the broad product-health outcome event. Its
 `stage` values are `preflight`, `download`, `audio_conversion`, `stt`,
@@ -225,7 +225,7 @@ events remain useful for diarization-specific timing and failure analysis.
 | `processing_mode_changed` | `mode` (raw, clean) | Is the clean pipeline valued? |
 | `custom_word_added` | — | Are custom words used? (NOT the word itself) |
 | `snippet_added` | — | Are snippets used? |
-| `setting_changed` | `setting` (save_history, audio_retention, menu_bar_only, hide_pill, save_transcription_audio, speaker_diarization, auto_save, meeting_auto_save, meeting_hotkey, file_transcription_hotkey, youtube_transcription_hotkey, microphone_selection, launch_at_login, silence_auto_stop, voice_return) | Which settings get toggled? |
+| `setting_changed` | `setting` (save_history, audio_retention, menu_bar_only, hide_pill, save_transcription_audio, speaker_diarization, auto_save, meeting_auto_save, meeting_hotkey, file_transcription_hotkey, youtube_transcription_hotkey, microphone_selection, speech_engine, whisper_default_language, launch_at_login, silence_auto_stop, voice_return) | Which settings get toggled? |
 | `telemetry_opted_out` | — | How many opt out? (send this one last event, then stop) |
 
 ### 6. Licensing — "Is the business working?"
@@ -247,10 +247,10 @@ events remain useful for diarization-specific timing and failure analysis.
 
 | Event | Props | Question It Answers |
 |---|---|---|
-| `model_loaded` | `load_time_seconds` | How long does model warmup take on different chips? |
-| `model_download_started` | — | First-run experience tracking |
-| `model_download_completed` | `duration_seconds` | How long is the 6 GB download? |
-| `model_download_failed` | `error_type` | Are downloads failing? |
+| `model_loaded` | `model_kind` (parakeet, whisper, diarization), `load_time_seconds` | How long does model warmup take on different chips? |
+| `model_download_started` | `model_kind` | First-run and optional-model experience tracking |
+| `model_download_completed` | `model_kind`, `duration_seconds` | How long do model downloads take? |
+| `model_download_failed` | `model_kind`, `error_type` | Are downloads failing? |
 
 ### 8. Permissions — "Is onboarding smooth?"
 
