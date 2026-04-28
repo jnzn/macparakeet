@@ -2,7 +2,8 @@ import Foundation
 
 public struct LicensingConfig: Sendable {
     /// Legacy checkout URL retained for old activation flows. Current free/GPL
-    /// builds do not show a purchase gate.
+    /// builds do not show a purchase gate. Keep this plumbing unless a project
+    /// owner explicitly decides to remove the future paid-distribution option.
     public let checkoutURL: URL?
 
     /// Optional: if set, we require the activated license to match this variant/product.

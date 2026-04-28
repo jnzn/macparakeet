@@ -102,7 +102,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 | ADR-020 | Live meeting notepad + memo-steered summaries (implemented) | `spec/adr/020-live-meeting-notepad-and-memo-summaries.md` |
 | ADR-021 | WhisperKit as optional multilingual STT engine (implemented) | `spec/adr/021-whisperkit-multilingual-stt.md` |
 
-> Historical ADRs (still in `spec/adr/`, kept for context): ADR-003 (one-time purchase pricing), ADR-006 (trial + license activation), ADR-008 (local LLM runtime). The app is now free/GPL-3.0.
+> Historical ADRs (still in `spec/adr/`, kept for context): ADR-003 (one-time purchase pricing), ADR-006 (trial + license activation), ADR-008 (local LLM runtime). The app is now free/GPL-3.0. The old LemonSqueezy/trial entitlement plumbing is intentionally retained as future-option code; do not remove it as dead code without explicit owner direction and an ADR/spec update.
 
 ## Current Phase
 
@@ -310,7 +310,7 @@ In-app feedback creates GitHub Issues via a Cloudflare Pages Function. User emai
 2. **ADRs are locked** -- Don't second-guess architectural decisions in `spec/adr/`.
 3. **Never lose user data** -- Graceful degradation for dictation history and transcriptions.
 4. **UI philosophy** -- Minimal during dictation, rich for transcription results.
-5. **Local-first** -- Speech recognition stays on-device by default. Optional provider and media-download flows are user-triggered; model/update flows and self-hosted telemetry/crash reporting are product-managed surfaces. Legacy licensing endpoints remain in code but the app is free/GPL-3.0 and always unlocked. Telemetry is opt-out in Settings and never includes audio or transcript content.
+5. **Local-first** -- Speech recognition stays on-device by default. Optional provider and media-download flows are user-triggered; model/update flows and self-hosted telemetry/crash reporting are product-managed surfaces. Legacy licensing endpoints remain in code but the app is free/GPL-3.0 and always unlocked. That licensing plumbing is intentionally retained as future-option code, not cleanup fodder. Telemetry is opt-out in Settings and never includes audio or transcript content.
 6. **Simplicity is the product** -- Resist feature creep. MacParakeet does three things well.
 7. **Fast feedback loops for agents** -- Design everything so the agent can verify its own work: tests for logic, CLI for headless smoke-testing, build errors that surface immediately.
 8. **Bounded agent discretion** -- Agents should choose the simplest process that works, but behavior changes must follow `spec/10-ai-coding-method.md` kernel workflow.

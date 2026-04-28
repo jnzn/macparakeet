@@ -82,6 +82,12 @@ Full spec is in [`spec/`](./spec/). Architectural decisions (locked) are in
   media downloads, model/update flows, legacy licensing endpoints if invoked,
   and opt-out self-hosted telemetry/crash reporting. Telemetry never includes
   audio or transcript content.
+- **Legacy purchase activation is intentionally retained.** The old
+  LemonSqueezy/trial entitlement code is dormant in current free/GPL builds,
+  but it is deliberate future-option plumbing. Do not delete or "clean up"
+  `EntitlementsService`, `LemonSqueezyLicenseAPI`, entitlement state, or
+  trial/license telemetry as dead code unless explicitly requested by the
+  project owner and reflected in an ADR/spec update.
 - **No accounts, no logins.** No identifying data is sent anywhere.
 - **The user database lives at**
   `~/Library/Application Support/MacParakeet/macparakeet.db`. Treat it as user
