@@ -240,7 +240,9 @@ public actor WhisperEngine: STTTranscribing {
         let resolvedLanguage = SpeechEnginePreference.normalizeLanguage(language)
         return DecodingOptions(
             language: resolvedLanguage,
-            usePrefillPrompt: resolvedLanguage != nil,
+            // WhisperKit v0.18.0 can silently return empty text for explicit
+            // language hints when prefill prompt is enabled.
+            usePrefillPrompt: false,
             detectLanguage: resolvedLanguage == nil,
             wordTimestamps: true
         )
