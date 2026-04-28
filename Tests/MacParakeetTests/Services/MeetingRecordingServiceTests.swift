@@ -291,7 +291,7 @@ final class MeetingRecordingServiceTests: XCTestCase {
         try? FileManager.default.removeItem(at: output.folderURL)
     }
 
-    func testStopRecordingKeepsLockWhenMixFails() async throws {
+    func testStopRecordingReturnsOutputAndKeepsLockWhenMixFails() async throws {
         let captureService = MockMeetingAudioCaptureService()
         let lockStore = RecordingLockFileStore()
         let service = MeetingRecordingService(
@@ -309,13 +309,14 @@ final class MeetingRecordingServiceTests: XCTestCase {
             AVAudioTime(hostTime: AVAudioTime.hostTime(forSeconds: 100.0))
         ))
 
-        do {
-            _ = try await service.stopRecording()
-            XCTFail("Expected mix failure")
-        } catch {
-            XCTAssertTrue(lockStore.deletes.isEmpty)
-            try? FileManager.default.removeItem(at: writtenFolder)
-        }
+        let output = try await service.stopRecording()
+        defer { try? FileManager.default.removeItem(at: writtenFolder) }
+
+        XCTAssertEqual(output.folderURL, writtenFolder)
+        XCTAssertNotNil(output.sourceAlignment.microphone)
+        XCTAssertNil(output.sourceAlignment.system)
+        XCTAssertTrue(lockStore.deletes.isEmpty)
+        XCTAssertEqual(lockStore.writes.last?.file.state, .awaitingTranscription)
     }
 
     func testCancelRecordingDeletesLockAndSessionFolder() async throws {
@@ -719,6 +720,7 @@ final class MeetingRecordingServiceTests: XCTestCase {
             audioConverter.capturedMixedInputs(),
             [output.microphoneAudioURL, output.systemAudioURL]
         )
+        XCTAssertEqual(audioConverter.capturedSourceAlignment(), output.sourceAlignment)
     }
 
     func testAsymmetricSourceCadenceDoesNotInflateSystemChunkTimeline() async throws {
@@ -1171,7 +1173,11 @@ private final class MockMeetingAudioFileConverter: AudioFileConverting, @uncheck
         fileURL
     }
 
-    func mixToM4A(inputURLs: [URL], outputURL: URL) async throws {
+    func mixToM4A(
+        inputURLs: [URL],
+        outputURL: URL,
+        sourceAlignment: MeetingSourceAlignment?
+    ) async throws {
         FileManager.default.createFile(atPath: outputURL.path, contents: Data("mixed".utf8))
     }
 }
@@ -1181,7 +1187,11 @@ private final class ThrowingMeetingAudioFileConverter: AudioFileConverting, @unc
         fileURL
     }
 
-    func mixToM4A(inputURLs: [URL], outputURL: URL) async throws {
+    func mixToM4A(
+        inputURLs: [URL],
+        outputURL: URL,
+        sourceAlignment: MeetingSourceAlignment?
+    ) async throws {
         throw MeetingAudioError.mixFailed("simulated")
     }
 }
@@ -1189,20 +1199,30 @@ private final class ThrowingMeetingAudioFileConverter: AudioFileConverting, @unc
 private final class RecordingMeetingAudioFileConverter: AudioFileConverting, @unchecked Sendable {
     private let lock = NSLock()
     private var mixedInputs: [URL] = []
+    private var mixedSourceAlignment: MeetingSourceAlignment?
 
     func convert(fileURL: URL) async throws -> URL {
         fileURL
     }
 
-    func mixToM4A(inputURLs: [URL], outputURL: URL) async throws {
+    func mixToM4A(
+        inputURLs: [URL],
+        outputURL: URL,
+        sourceAlignment: MeetingSourceAlignment?
+    ) async throws {
         lock.withLock {
             mixedInputs = inputURLs
+            mixedSourceAlignment = sourceAlignment
         }
         FileManager.default.createFile(atPath: outputURL.path, contents: Data("mixed".utf8))
     }
 
     func capturedMixedInputs() -> [URL] {
         lock.withLock { mixedInputs }
+    }
+
+    func capturedSourceAlignment() -> MeetingSourceAlignment? {
+        lock.withLock { mixedSourceAlignment }
     }
 }
 
