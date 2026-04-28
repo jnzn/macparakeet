@@ -266,10 +266,26 @@ macparakeet-cli prompts run "<prompt-name>" \
 - **Lookups:** records that take an `<id-or-name>` argument accept full UUID,
   UUID prefix (>= 4 chars), or case-insensitive name. Ambiguous prefixes
   produce a `.ambiguous` error; missing records produce `.notFound`.
-- **Privacy:** STT and database access never touch the network. The only
-  network egress paths are: YouTube downloads (yt-dlp), optional cloud LLM
-  provider calls (only when `prompts run --provider <cloud>`), and Sparkle
-  update checks (app, not CLI).
+- **Privacy:** STT and database access never touch the network. Network
+  egress paths are: YouTube downloads (yt-dlp); optional cloud LLM provider
+  calls (only when `prompts run --provider <cloud>` or `llm` against a hosted
+  provider); Sparkle update checks (app, not CLI); and a single privacy-safe
+  `cli_operation` event per `transcribe` invocation, posted to the
+  self-hosted endpoint at `https://macparakeet.com/api/telemetry`. The
+  telemetry event ships outcome / duration / `input_kind` only — never the
+  file path, URL, transcript, or any user content (random per-process
+  session UUID, no persistent identifier). Disable it any of four ways:
+    - `MACPARAKEET_TELEMETRY=0` (per process)
+    - `DO_NOT_TRACK=1` (industry-standard signal, also honored)
+    - `macparakeet-cli config set telemetry off` (persists in the shared
+      UserDefaults suite the GUI reads)
+    - "Help improve MacParakeet" toggle in the GUI Settings → Privacy card
+
+  Auto-disabled in CI environments (`CI`, `GITHUB_ACTIONS`, `GITLAB_CI`,
+  `BUILDKITE`, `CIRCLECI`, `TRAVIS`, `JENKINS_URL`, `TF_BUILD`,
+  `TEAMCITY_VERSION` — any one set to a truthy value). Override CI auto-
+  disable with `MACPARAKEET_TELEMETRY=1`. See `docs/telemetry.md` for the
+  full event catalog and the Worker-side PII redaction policy.
 - **Concurrency:** the STT scheduler reserves one slot for dictation and
   shares a second slot for meeting / batch work (ADR-016). Multiple
   concurrent CLI calls share the background slot; expect serial transcription

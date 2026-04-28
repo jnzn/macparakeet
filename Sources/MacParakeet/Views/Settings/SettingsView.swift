@@ -943,11 +943,27 @@ struct SettingsView: View {
             subtitle: "Your audio and transcriptions never leave your device.",
             icon: "hand.raised"
         ) {
-            settingsToggleRow(
-                title: "Help improve MacParakeet",
-                detail: "Send non-identifying usage statistics like feature popularity and performance metrics. No personal data is collected.",
-                isOn: $viewModel.telemetryEnabled
-            )
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
+                settingsToggleRow(
+                    title: "Help improve MacParakeet",
+                    detail: "Send non-identifying usage statistics like feature popularity and performance metrics. No personal data is collected.",
+                    isOn: $viewModel.telemetryEnabled
+                )
+                Button {
+                    if let url = URL(string: "https://github.com/moona3k/macparakeet/blob/main/docs/telemetry.md") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("See the full event catalog")
+                        Image(systemName: "arrow.up.right.square")
+                            .font(.caption)
+                    }
+                }
+                .buttonStyle(.link)
+                .font(DesignSystem.Typography.caption)
+                .accessibilityHint("Opens the telemetry documentation on GitHub in your browser.")
+            }
         }
     }
 
