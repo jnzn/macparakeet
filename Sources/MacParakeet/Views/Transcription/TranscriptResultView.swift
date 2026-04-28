@@ -614,7 +614,9 @@ struct TranscriptResultView: View {
         case .parakeet:
             return "Parakeet TDT"
         case .whisper:
-            let variant = activeTranscription.engineVariant ?? SpeechEnginePreference.defaultWhisperModelVariant
+            guard let variant = activeTranscription.engineVariant else {
+                return "Whisper"
+            }
             return "Whisper \(SpeechEnginePreference.friendlyVariantName(variant))"
         }
     }

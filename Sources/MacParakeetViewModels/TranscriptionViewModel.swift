@@ -634,7 +634,7 @@ public final class TranscriptionViewModel {
                 return "Parakeet TDT \u{00B7} Neural Engine"
             case .whisper:
                 let friendly = SpeechEnginePreference.friendlyVariantName(whisperVariant)
-                return "Whisper \(friendly) \u{00B7} Apple Silicon"
+                return "Whisper \(friendly) \u{00B7} Neural Engine"
             }
         case .identifyingSpeakers:
             return "May take several minutes per hour of audio. Speaker labels are approximate \u{2014} click to rename."
