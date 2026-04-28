@@ -837,17 +837,29 @@ public final class SettingsViewModel {
     public func refreshModelStatus() {
         modelStatusRefreshGeneration += 1
         let refreshGeneration = modelStatusRefreshGeneration
+        let whisperModelVariant = SpeechEnginePreference.whisperModelVariant(defaults: defaults)
 
         guard let sttClient else {
             parakeetStatus = .unknown
             parakeetStatusDetail = "Unavailable in this runtime."
-            refreshWhisperModelStatus()
+            whisperModelStatus = .checking
+            whisperModelStatusDetail = "Checking model state..."
+            Task { @MainActor [weak self] in
+                let whisperDownloaded = await Task.detached(priority: .userInitiated) {
+                    WhisperEngine.isModelDownloaded(model: whisperModelVariant)
+                }.value
+                guard let self, self.modelStatusRefreshGeneration == refreshGeneration else {
+                    return
+                }
+                self.applyWhisperDownloadedStatus(whisperDownloaded)
+            }
             return
         }
 
         parakeetStatus = .checking
         parakeetStatusDetail = "Checking model state..."
-        refreshWhisperModelStatus()
+        whisperModelStatus = .checking
+        whisperModelStatusDetail = "Checking model state..."
 
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -861,7 +873,6 @@ public final class SettingsViewModel {
             // can't pair the new preference with the old engine's readiness.
             let activeEngine = self.speechEnginePreference
             let isSpeechModelCached = self.isSpeechModelCached
-            let whisperModelVariant = SpeechEnginePreference.whisperModelVariant(defaults: self.defaults)
 
             async let activeEngineLoaded = sttClient.isReady()
             async let diskState = Task.detached(priority: .userInitiated) {
@@ -891,18 +902,20 @@ public final class SettingsViewModel {
             if activeEngine == .whisper, activeEngineIsLoaded {
                 self.whisperModelStatus = .ready
                 self.whisperModelStatusDetail = "Loaded in memory and ready."
-            } else if modelDiskState.whisperDownloaded {
-                self.whisperModelStatus = .notLoaded
-                self.whisperModelStatusDetail = "Downloaded. Loads automatically when Whisper is selected."
             } else {
-                self.whisperModelStatus = .notDownloaded
-                self.whisperModelStatusDetail = "Not downloaded yet."
+                self.applyWhisperDownloadedStatus(modelDiskState.whisperDownloaded)
             }
         }
     }
 
     public func refreshWhisperModelStatus() {
-        if WhisperEngine.isModelDownloaded(model: SpeechEnginePreference.whisperModelVariant(defaults: defaults)) {
+        applyWhisperDownloadedStatus(
+            WhisperEngine.isModelDownloaded(model: SpeechEnginePreference.whisperModelVariant(defaults: defaults))
+        )
+    }
+
+    private func applyWhisperDownloadedStatus(_ isDownloaded: Bool) {
+        if isDownloaded {
             // Optimistic file-based check; `refreshModelStatus()` will upgrade
             // to `.ready` after asking the runtime if Whisper is the active
             // engine and currently loaded.
