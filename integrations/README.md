@@ -65,8 +65,10 @@ macparakeet-cli health --json
 
 Reports model readiness, database accessibility, and binary deps (FFmpeg,
 yt-dlp). This is a non-mutating probe; it reports missing helper binaries but
-does not install or update them. Use `macparakeet-cli health --repair-binaries`
-when you explicitly want to repair helper binaries.
+does not install or update them. App-bundled CLI installs include a signed
+yt-dlp helper seed for YouTube transcription; use
+`macparakeet-cli health --repair-binaries` when you explicitly want to fetch
+the latest managed helper binary.
 
 ### Transcribe a file
 
@@ -204,9 +206,10 @@ macparakeet-cli health --json
 ```
 
 If it fails, report the `errorType`/message and stop. Do not guess that models,
-FFmpeg, yt-dlp, or the database are ready. If `yt-dlp` is missing and the user
-wants YouTube transcription, run `macparakeet-cli health --repair-binaries`
-before retrying.
+FFmpeg, yt-dlp, or the database are ready. App-bundled CLI installs should
+already have a signed yt-dlp helper seed; if `yt-dlp` is still missing and the
+user wants YouTube transcription, run
+`macparakeet-cli health --repair-binaries` before retrying.
 
 ## Core Commands
 

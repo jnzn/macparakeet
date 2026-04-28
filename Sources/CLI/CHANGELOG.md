@@ -107,6 +107,10 @@ by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
   meeting recording folders after deleting their database rows.
 - Local transcription and export output paths now expand `~`; export also
   creates parent directories and sanitizes default file names.
+- App-bundled CLI installs now include a signed `yt-dlp` helper seed. YouTube
+  transcription seeds the managed App Support helper from the bundle before
+  falling back to network install, while `health --json` remains non-mutating
+  and `health --repair-binaries` explicitly fetches the latest helper.
 
 ## [1.3.0] -- 2026-04-26
 

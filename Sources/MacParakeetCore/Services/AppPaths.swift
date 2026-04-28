@@ -47,6 +47,14 @@ public enum AppPaths {
         "\(binDir)/yt-dlp"
     }
 
+    /// Resolve bundled yt-dlp seed binary from app resources.
+    /// Returns nil when running outside an app bundle or when yt-dlp is not present.
+    public static func bundledYtDlpPath() -> String? {
+        guard let resourcePath = Bundle.main.resourcePath else { return nil }
+        let ytDlpPath = (resourcePath as NSString).appendingPathComponent("yt-dlp")
+        return FileManager.default.isExecutableFile(atPath: ytDlpPath) ? ytDlpPath : nil
+    }
+
     /// Cached discover feed
     public static var discoverCachePath: String {
         "\(appSupportDir)/discover-cache.json"

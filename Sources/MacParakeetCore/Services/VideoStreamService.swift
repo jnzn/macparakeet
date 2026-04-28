@@ -195,10 +195,10 @@ public final class VideoStreamService: Sendable {
 
     private func resolveYtDlpPath() throws -> String {
         let candidates = [
-            AppPaths.ytDlpBinaryPath,
+            BinaryBootstrap.resolveYtDlpPath(),
             "/opt/homebrew/bin/yt-dlp",
             "/usr/local/bin/yt-dlp",
-        ]
+        ].compactMap { $0 }
         for path in candidates {
             if FileManager.default.isExecutableFile(atPath: path) {
                 return path

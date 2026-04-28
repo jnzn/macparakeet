@@ -35,11 +35,11 @@ macparakeet-cli --version   # 1.3.0
 macparakeet-cli health --json
 ```
 
-Requires macOS 14.2+ on Apple Silicon. The app bundle includes FFmpeg and
-the CLI. First `transcribe` call downloads ~6 GB of CoreML models to
-`~/Library/Application Support/MacParakeet/models/`. YouTube transcription
-installs `yt-dlp` on demand; `macparakeet-cli health --repair-binaries`
-can prepare it explicitly.
+Requires macOS 14.2+ on Apple Silicon. The app bundle includes FFmpeg,
+yt-dlp, and the CLI. First `transcribe` call downloads ~6 GB of CoreML models
+to `~/Library/Application Support/MacParakeet/models/`. YouTube transcription
+seeds the managed `yt-dlp` helper from the app bundle; `macparakeet-cli health
+--repair-binaries` explicitly fetches the latest helper.
 
 ## Capabilities (CLI vocabulary)
 
