@@ -431,7 +431,8 @@ final class TranscriptionViewModelTests: XCTestCase {
     }
 
     func testDeleteYouTubeTranscriptionRemovesStoredAudioFile() async throws {
-        let audioURL = URL(fileURLWithPath: NSTemporaryDirectory())
+        try AppPaths.ensureDirectories()
+        let audioURL = URL(fileURLWithPath: AppPaths.youtubeDownloadsDir, isDirectory: true)
             .appendingPathComponent("yt-audio-\(UUID().uuidString).m4a")
         let created = FileManager.default.createFile(atPath: audioURL.path, contents: Data("audio".utf8))
         XCTAssertTrue(created)
@@ -455,7 +456,8 @@ final class TranscriptionViewModelTests: XCTestCase {
     }
 
     func testDeleteYouTubeTranscriptionKeepsStoredAudioWhenRepoDeleteFails() throws {
-        let audioURL = URL(fileURLWithPath: NSTemporaryDirectory())
+        try AppPaths.ensureDirectories()
+        let audioURL = URL(fileURLWithPath: AppPaths.youtubeDownloadsDir, isDirectory: true)
             .appendingPathComponent("yt-audio-\(UUID().uuidString).m4a")
         let created = FileManager.default.createFile(atPath: audioURL.path, contents: Data("audio".utf8))
         XCTAssertTrue(created)

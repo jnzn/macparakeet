@@ -11,16 +11,31 @@ public enum TranscriptionAssetCleanup {
         for transcription: Transcription,
         fileManager: FileManager = .default
     ) {
-        guard let filePath = transcription.filePath else { return }
+        guard let filePath = transcription.filePath, !filePath.isEmpty else { return }
 
         switch transcription.sourceType {
         case .youtube:
-            removeItem(at: URL(fileURLWithPath: filePath), fileManager: fileManager)
+            removeYouTubeFile(at: URL(fileURLWithPath: filePath), fileManager: fileManager)
         case .meeting:
             removeMeetingFolder(containing: URL(fileURLWithPath: filePath), fileManager: fileManager)
         case .file:
             return
         }
+    }
+
+    private static func removeYouTubeFile(at fileURL: URL, fileManager: FileManager) {
+        let downloadsRootURL = URL(fileURLWithPath: AppPaths.youtubeDownloadsDir, isDirectory: true)
+            .standardizedFileURL
+        let targetURL = fileURL.standardizedFileURL
+
+        guard targetURL.path.hasPrefix(downloadsRootURL.path + "/") else {
+            logger.warning(
+                "Refusing to remove YouTube asset outside app support: \(targetURL.path, privacy: .private)"
+            )
+            return
+        }
+
+        removeItem(at: targetURL, fileManager: fileManager)
     }
 
     private static func removeMeetingFolder(containing fileURL: URL, fileManager: FileManager) {

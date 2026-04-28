@@ -123,6 +123,12 @@ struct HealthCommand: AsyncParsableCommand {
 
         // 5. Local speech stack
         let sttClient = STTClient()
+        var sttClientNeedsShutdown = true
+        defer {
+            if sttClientNeedsShutdown {
+                Task { await sttClient.shutdown() }
+            }
+        }
         let diarizationService = DiarizationService()
         let status = await loadSpeechStackStatus(
             sttClient: sttClient,
@@ -152,6 +158,7 @@ struct HealthCommand: AsyncParsableCommand {
         }
         if !json { print() }
         await sttClient.shutdown()
+        sttClientNeedsShutdown = false
 
         // 6. Bundled FFmpeg
         let ffmpeg: HealthReport.Binary

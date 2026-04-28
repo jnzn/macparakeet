@@ -61,7 +61,9 @@ final class HistoryCommandTests: XCTestCase {
         let db = try DatabaseManager(path: dbURL.path)
         let repo = TranscriptionRepository(dbQueue: db.dbQueue)
 
-        let audioURL = temporaryAssetURL(pathExtension: "m4a")
+        try AppPaths.ensureDirectories()
+        let audioURL = URL(fileURLWithPath: AppPaths.youtubeDownloadsDir, isDirectory: true)
+            .appendingPathComponent("macparakeet-cli-asset-\(UUID().uuidString).m4a")
         defer { try? FileManager.default.removeItem(at: audioURL) }
         _ = FileManager.default.createFile(atPath: audioURL.path, contents: Data("audio".utf8))
 
