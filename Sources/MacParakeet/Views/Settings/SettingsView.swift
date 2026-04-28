@@ -10,6 +10,8 @@ struct SettingsView: View {
     @Bindable var llmSettingsViewModel: LLMSettingsViewModel
     let updater: SPUUpdater
 
+    @State private var rootViewModel = SettingsRootViewModel()
+    @FocusState private var searchFieldFocused: Bool
     @State private var automaticallyChecksForUpdates: Bool
     @State private var automaticallyDownloadsUpdates: Bool
     @State private var showClearAllAlert = false
@@ -26,27 +28,20 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
-                headerCard
-                audioInputCard
-                dictationCard
-                if AppFeatures.meetingRecordingEnabled {
-                    meetingRecordingCard
-                    calendarCard
+        VStack(spacing: 0) {
+            settingsHeaderShell
+                .padding(.horizontal, DesignSystem.Spacing.lg)
+                .padding(.top, DesignSystem.Spacing.md)
+                .padding(.bottom, DesignSystem.Spacing.sm)
+
+            Group {
+                switch rootViewModel.activeTab {
+                case .modes:
+                    modesTabContent
+                case .engine, .ai, .system:
+                    placeholderTabContent(for: rootViewModel.activeTab)
                 }
-                transcriptionCard
-                aiProviderCard
-                storageCard
-                generalCard
-                updatesCard
-                localModelsCard
-                privacyCard
-                permissionsCard
-                onboardingCard
-                aboutCard
             }
-            .padding(DesignSystem.Spacing.lg)
         }
         .background(DesignSystem.Colors.background)
         .alert("Clear All Dictations?", isPresented: $showClearAllAlert) {
@@ -86,6 +81,79 @@ struct SettingsView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             viewModel.refreshPermissions()
+        }
+    }
+
+    // MARK: - Tabbed Shell
+
+    /// Top-of-panel header: tab bar on the left, search field on the right.
+    /// Status badges on tab pills are wired empty in the foundation chunk;
+    /// they will be driven by sub-VMs as tab composition lands.
+    private var settingsHeaderShell: some View {
+        HStack(spacing: DesignSystem.Spacing.md) {
+            SettingsTabBar(
+                activeTab: $rootViewModel.activeTab,
+                tabBadges: [:]
+            )
+
+            Spacer(minLength: DesignSystem.Spacing.md)
+
+            SettingsSearchField(
+                query: $rootViewModel.searchQuery,
+                isFocused: $searchFieldFocused
+            )
+            .frame(maxWidth: 280)
+        }
+    }
+
+    /// All 15 existing cards under the Modes tab during the foundation chunk.
+    /// Subsequent commits on `feat/settings-ia` redistribute these into the
+    /// four-tab IA per `plans/active/2026-04-settings-ia-overhaul.md`.
+    private var modesTabContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
+                headerCard
+                audioInputCard
+                dictationCard
+                if AppFeatures.meetingRecordingEnabled {
+                    meetingRecordingCard
+                    calendarCard
+                }
+                transcriptionCard
+                aiProviderCard
+                storageCard
+                generalCard
+                updatesCard
+                localModelsCard
+                privacyCard
+                permissionsCard
+                onboardingCard
+                aboutCard
+            }
+            .padding(DesignSystem.Spacing.lg)
+        }
+    }
+
+    /// Empty-state placeholder for tabs whose composition has not landed yet.
+    /// Visible only on the `feat/settings-ia` branch during incremental
+    /// development; replaced by real tab content before merge to `main`.
+    private func placeholderTabContent(for tab: SettingsTab) -> some View {
+        let info = SettingsTabMetadata.for(tab)
+        return ScrollView {
+            VStack(spacing: DesignSystem.Spacing.lg) {
+                SettingsCard(
+                    title: info.title,
+                    subtitle: "This tab's content is part of the in-progress Settings IA refactor.",
+                    icon: info.systemImage
+                ) {
+                    SettingsEmptyState(
+                        icon: info.systemImage,
+                        title: "Coming next",
+                        message: "\(info.title) tab content will land in the next commit on this branch."
+                    )
+                }
+            }
+            .padding(DesignSystem.Spacing.lg)
         }
     }
 
@@ -1074,7 +1142,7 @@ struct SettingsView: View {
         icon: String,
         @ViewBuilder content: @escaping () -> Content
     ) -> some View {
-        SettingsCardContainer(title: title, subtitle: subtitle, icon: icon, content: content)
+        SettingsCard(title: title, subtitle: subtitle, icon: icon, content: content)
     }
 
     private func settingsToggleRow(
@@ -1082,13 +1150,7 @@ struct SettingsView: View {
         detail: String,
         isOn: Binding<Bool>
     ) -> some View {
-        HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
-            rowText(title: title, detail: detail)
-            Spacer(minLength: DesignSystem.Spacing.md)
-            Toggle("", isOn: isOn)
-                .labelsHidden()
-                .toggleStyle(.switch)
-        }
+        SettingsToggleRow(title: title, detail: detail, isOn: isOn)
     }
 
     private func rowText(title: String, detail: String) -> some View {
@@ -1355,57 +1417,3 @@ struct SettingsView: View {
     }
 }
 
-// MARK: - Settings Card with Hover
-
-private struct SettingsCardContainer<Content: View>: View {
-    let title: String
-    let subtitle: String
-    let icon: String
-    @ViewBuilder let content: () -> Content
-
-    @State private var isHovered = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
-            HStack(alignment: .top, spacing: DesignSystem.Spacing.sm) {
-                Image(systemName: icon)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(DesignSystem.Colors.accent)
-                    .frame(width: 30, height: 30)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(DesignSystem.Colors.accent.opacity(0.12))
-                    )
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(DesignSystem.Typography.sectionTitle)
-                    Text(subtitle)
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            content()
-        }
-        .padding(DesignSystem.Spacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
-                .fill(DesignSystem.Colors.cardBackground)
-                .cardShadow(isHovered ? DesignSystem.Shadows.cardHover : DesignSystem.Shadows.cardRest)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
-                .strokeBorder(
-                    isHovered ? DesignSystem.Colors.accent.opacity(0.2) : DesignSystem.Colors.border.opacity(0.6),
-                    lineWidth: 0.5
-                )
-        )
-        .onHover { hovering in
-            withAnimation(DesignSystem.Animation.hoverTransition) {
-                isHovered = hovering
-            }
-        }
-    }
-}
