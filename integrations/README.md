@@ -111,7 +111,7 @@ macparakeet-cli history search "what did I say about" --json
 macparakeet-cli prompts list --json
 macparakeet-cli prompts run "Action items" \
   --transcription <id-or-prefix> \
-  --provider anthropic --api-key "$ANTHROPIC_API_KEY" \
+  --provider anthropic \
   --model claude-sonnet-4-6 \
   --json
 ```
@@ -229,7 +229,7 @@ Only use prompt/LLM commands when the user asks for generated output:
 macparakeet-cli prompts list --json
 macparakeet-cli prompts run "<prompt-name>" \
   --transcription "<id-or-prefix-or-title>" \
-  --provider "<provider>" --api-key "$PROVIDER_API_KEY" --model "<model>" \
+  --provider "<provider>" --api-key-env "PROVIDER_API_KEY" --model "<model>" \
   --json
 ```
 
@@ -253,11 +253,10 @@ macparakeet-cli prompts run "<prompt-name>" \
   never goes to stderr regardless of code; parse-time failures still use
   ArgumentParser's plain-text stderr path. Full table in
   `Sources/CLI/CHANGELOG.md` "Exit codes" section.
-- **API keys:** pass via `"$VAR"` shell expansion (e.g.
-  `--api-key "$ANTHROPIC_API_KEY"`), not literally. CLI does not read
-  `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` directly -- but a literal
-  `--api-key sk-...` lands in shell history and `ps`. Env-var expansion
-  avoids both.
+- **API keys:** prefer provider env vars or `--api-key-env NAME`. Hosted
+  providers read `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, and
+  `OPENROUTER_API_KEY` directly. Avoid `--api-key sk-...`; command-line
+  arguments can appear in shell history and process listings.
 - **JSON flag shape:** read-only query commands take `--json` (a binary flag);
   `transcribe` and `export` take `--format json` because they emit one of
   several formats (txt / srt / vtt / json / docx / pdf). Both produce stable

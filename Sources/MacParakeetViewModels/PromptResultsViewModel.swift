@@ -316,7 +316,13 @@ public final class PromptResultsViewModel {
     public func autoGeneratePromptResults(transcript: String, transcriptionId: UUID) -> [UUID] {
         guard transcript.count > Self.autoGenerationTranscriptLengthThreshold else { return [] }
 
-        let autoPrompts = (try? promptRepo?.fetchAutoRunPrompts()) ?? [Prompt.defaultPrompt]
+        let autoPrompts: [Prompt]
+        do {
+            autoPrompts = try promptRepo?.fetchAutoRunPrompts() ?? []
+        } catch {
+            logger.warning("Skipping auto-run prompts because preferences could not be loaded: \(error.localizedDescription, privacy: .public)")
+            return []
+        }
         guard !autoPrompts.isEmpty else { return [] }
 
         let userNotes = fetchUserNotes(for: transcriptionId)

@@ -77,6 +77,26 @@ ArgumentParser's plain-text stderr path with exit code `2`. Downstream
 agents that branch on `errorType` should also handle the parse-error case
 by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
 
+## [Unreleased]
+
+### Added
+
+- LLM-backed commands now accept `--api-key-env NAME`; hosted providers also
+  read `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, and
+  `OPENROUTER_API_KEY` directly.
+
+### Fixed
+
+- Applied the `--json` failure-envelope contract consistently across read-only
+  CLI surfaces such as history, stats, prompts, calendar, flow vocabulary, and
+  model status.
+- `prompts run --json` now emits a single JSON object even when saving the
+  generated `PromptResult` fails.
+- CLI deletion now removes app-owned dictation audio, YouTube audio, and
+  meeting recording folders after deleting their database rows.
+- Local transcription and export output paths now expand `~`; export also
+  creates parent directories and sanitizes default file names.
+
 ## [1.3.0] -- 2026-04-26
 
 ### Added

@@ -607,6 +607,7 @@ final class MockLLMService: LLMServiceProtocol, @unchecked Sendable {
 
 final class MockPromptRepository: PromptRepositoryProtocol, @unchecked Sendable {
     var prompts: [Prompt] = []
+    var fetchAutoRunPromptsError: Error?
 
     func save(_ prompt: Prompt) throws {
         if let index = prompts.firstIndex(where: { $0.id == prompt.id }) {
@@ -636,7 +637,10 @@ final class MockPromptRepository: PromptRepositoryProtocol, @unchecked Sendable 
     }
 
     func fetchAutoRunPrompts() throws -> [Prompt] {
-        prompts.filter(\.isAutoRun)
+        if let fetchAutoRunPromptsError {
+            throw fetchAutoRunPromptsError
+        }
+        return prompts.filter(\.isAutoRun)
     }
 
     func delete(id: UUID) throws -> Bool {

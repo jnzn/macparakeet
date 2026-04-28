@@ -27,31 +27,33 @@ struct FlowSnippetsCommand: AsyncParsableCommand {
         var database: String?
 
         func run() async throws {
-            try AppPaths.ensureDirectories()
-            let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
-            let repo = TextSnippetRepository(dbQueue: dbManager.dbQueue)
-            let snippets = try repo.fetchAll()
+            try emitJSONOrRethrow(json: json) {
+                try AppPaths.ensureDirectories()
+                let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
+                let repo = TextSnippetRepository(dbQueue: dbManager.dbQueue)
+                let snippets = try repo.fetchAll()
 
-            if json {
-                try printJSON(snippets)
-                return
-            }
-
-            if snippets.isEmpty {
-                print("No text snippets configured.")
-                return
-            }
-
-            for snippet in snippets {
-                let status = snippet.isEnabled ? "+" : "-"
-                var line = "[\(status)] Say: \"\(snippet.trigger)\" -> \(snippet.expansion)"
-                if snippet.useCount > 0 {
-                    line += "  (used \(snippet.useCount)x)"
+                if json {
+                    try printJSON(snippets)
+                    return
                 }
-                line += "  (\(snippet.id.uuidString.prefix(8)))"
-                print(line)
+
+                if snippets.isEmpty {
+                    print("No text snippets configured.")
+                    return
+                }
+
+                for snippet in snippets {
+                    let status = snippet.isEnabled ? "+" : "-"
+                    var line = "[\(status)] Say: \"\(snippet.trigger)\" -> \(snippet.expansion)"
+                    if snippet.useCount > 0 {
+                        line += "  (used \(snippet.useCount)x)"
+                    }
+                    line += "  (\(snippet.id.uuidString.prefix(8)))"
+                    print(line)
+                }
+                print("\n\(snippets.count) snippet(s)")
             }
-            print("\n\(snippets.count) snippet(s)")
         }
     }
 

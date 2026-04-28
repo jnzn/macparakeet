@@ -255,6 +255,24 @@ final class PromptResultsViewModelTests: XCTestCase {
         XCTAssertEqual(llm.summarizeCallCount, 0)
     }
 
+    func testAutoGeneratePromptResultsSkipsWhenAutoRunPromptFetchFails() {
+        promptRepo.fetchAutoRunPromptsError = PromptAutoRunFetchError()
+        viewModel.configure(
+            llmService: llm,
+            promptRepo: promptRepo,
+            promptResultRepo: promptResultRepo
+        )
+
+        let queuedIDs = viewModel.autoGeneratePromptResults(
+            transcript: String(repeating: "Long transcript ", count: 50),
+            transcriptionId: UUID()
+        )
+
+        XCTAssertTrue(queuedIDs.isEmpty)
+        XCTAssertTrue(viewModel.pendingGenerations.isEmpty)
+        XCTAssertEqual(llm.summarizeCallCount, 0)
+    }
+
     // MARK: - ADR-020 §4–§6 — userNotes plumbing
 
     func testGeneratePromptResultSubstitutesUserNotesIntoSystemPrompt() async throws {
@@ -521,3 +539,5 @@ final class PromptResultsViewModelTests: XCTestCase {
         XCTAssertEqual(resultUnder, underCap)
     }
 }
+
+private struct PromptAutoRunFetchError: Error {}

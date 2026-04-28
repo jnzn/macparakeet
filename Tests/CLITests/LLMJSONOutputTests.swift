@@ -164,6 +164,29 @@ final class LLMJSONOutputTests: XCTestCase {
         XCTAssertEqual(CLIErrorType.key(for: UnknownError()), "runtime")
     }
 
+    func testSyncJSONWrapperEmitsEnvelopeForPostParseFailure() throws {
+        var thrownError: Error?
+        let output = try captureStandardOutput {
+            do {
+                try emitJSONOrRethrow(json: true) {
+                    throw CLILookupError.notFound("No transcription matching 'missing'")
+                }
+            } catch {
+                thrownError = error
+            }
+        }
+
+        let exit = try XCTUnwrap(thrownError as? ExitCode)
+        XCTAssertEqual(exit, .failure)
+
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any]
+        )
+        XCTAssertEqual(object["ok"] as? Bool, false)
+        XCTAssertEqual(object["errorType"] as? String, "lookup")
+        XCTAssertTrue((object["error"] as? String)?.contains("No transcription") == true)
+    }
+
     // MARK: - Helpers
 
     private func assertParseRejects<C: ParsableCommand>(
