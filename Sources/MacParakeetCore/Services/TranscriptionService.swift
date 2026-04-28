@@ -1071,6 +1071,8 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
         transcription.status = .processing
         transcription.errorMessage = nil
         transcription.exportPath = nil
+        transcription.engine = nil
+        transcription.engineVariant = nil
         transcription.isTranscriptEdited = false
         transcription.updatedAt = Date()
         return transcription

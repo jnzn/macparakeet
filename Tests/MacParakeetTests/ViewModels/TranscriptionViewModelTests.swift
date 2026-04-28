@@ -125,7 +125,7 @@ final class TranscriptionViewModelTests: XCTestCase {
         viewModel.transcribeFile(url: URL(fileURLWithPath: "/tmp/myfile.wav"))
 
         try await waitUntil {
-            self.viewModel.progressSubline == "Whisper Large v3 Turbo · Apple Silicon"
+            self.viewModel.progressSubline == "Whisper Large v3 Turbo · Neural Engine"
         }
         XCTAssertEqual(viewModel.progressHeadline, "Running speech recognition")
 
@@ -1186,7 +1186,7 @@ final class TranscriptionViewModelTests: XCTestCase {
         )
 
         try await waitUntil {
-            self.viewModel.progressSubline == "Whisper Large v3 Turbo · Apple Silicon"
+            self.viewModel.progressSubline == "Whisper Large v3 Turbo · Neural Engine"
         }
         let override = await mockService.lastSpeechEngineOverride
         XCTAssertEqual(override, SpeechEngineSelection(engine: .whisper, language: "ko"))
