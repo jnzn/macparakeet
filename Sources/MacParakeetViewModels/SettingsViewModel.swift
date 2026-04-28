@@ -845,28 +845,49 @@ public final class SettingsViewModel {
         parakeetStatusDetail = "Checking model state..."
         refreshWhisperModelStatus()
 
-        Task {
-            let parakeetReady = await sttClient.isReady()
-            let parakeetCached = isSpeechModelCached()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            // `sttClient.isReady()` returns the *active* engine's loaded state
+            // (see STTRuntime.isReady), so we apply it to whichever engine is
+            // currently selected and keep the inactive engine on its disk-cache
+            // status. Without this branch, switching to Whisper left the
+            // Whisper badge stuck at "Not Loaded" forever.
+            let activeEngineLoaded = await sttClient.isReady()
+            let parakeetCached = self.isSpeechModelCached()
+            let whisperDownloaded = WhisperEngine.isModelDownloaded(
+                model: SpeechEnginePreference.whisperModelVariant(defaults: self.defaults)
+            )
+            let activeEngine = self.speechEnginePreference
 
-            await MainActor.run {
-                if self.speechEnginePreference == .parakeet, parakeetReady {
-                    self.parakeetStatus = .ready
-                    self.parakeetStatusDetail = "Loaded in memory and ready."
-                } else if parakeetCached {
-                    self.parakeetStatus = .notLoaded
-                    self.parakeetStatusDetail = "Downloaded. Loads automatically when needed."
-                } else {
-                    self.parakeetStatus = .notDownloaded
-                    self.parakeetStatusDetail = "Not downloaded yet."
-                }
+            if activeEngine == .parakeet, activeEngineLoaded {
+                self.parakeetStatus = .ready
+                self.parakeetStatusDetail = "Loaded in memory and ready."
+            } else if parakeetCached {
+                self.parakeetStatus = .notLoaded
+                self.parakeetStatusDetail = "Downloaded. Loads automatically when needed."
+            } else {
+                self.parakeetStatus = .notDownloaded
+                self.parakeetStatusDetail = "Not downloaded yet."
+            }
 
+            if activeEngine == .whisper, activeEngineLoaded {
+                self.whisperModelStatus = .ready
+                self.whisperModelStatusDetail = "Loaded in memory and ready."
+            } else if whisperDownloaded {
+                self.whisperModelStatus = .notLoaded
+                self.whisperModelStatusDetail = "Downloaded. Loads automatically when Whisper is selected."
+            } else {
+                self.whisperModelStatus = .notDownloaded
+                self.whisperModelStatusDetail = "Not downloaded yet."
             }
         }
     }
 
     public func refreshWhisperModelStatus() {
         if WhisperEngine.isModelDownloaded(model: SpeechEnginePreference.whisperModelVariant(defaults: defaults)) {
+            // Optimistic file-based check; `refreshModelStatus()` will upgrade
+            // to `.ready` after asking the runtime if Whisper is the active
+            // engine and currently loaded.
             whisperModelStatus = .notLoaded
             whisperModelStatusDetail = "Downloaded. Loads automatically when Whisper is selected."
         } else {
@@ -922,22 +943,23 @@ public final class SettingsViewModel {
         }
 
         speechEngineSwitching = true
-        Task {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            // `defer` fires even on cancellation or unexpected early exit, so
+            // the segmented Picker can never get pinned in the disabled
+            // "Switching..." state.
+            defer {
+                self.speechEngineSwitching = false
+                self.refreshModelStatus()
+            }
             do {
                 try await speechEngineSwitcher.setSpeechEngine(preference)
-                await MainActor.run {
-                    preference.save(to: self.defaults)
-                    self.speechEngineSwitching = false
-                    self.refreshModelStatus()
-                }
+                preference.save(to: self.defaults)
             } catch {
-                await MainActor.run {
-                    self.speechEngineSwitching = false
-                    self.speechEngineError = error.localizedDescription
-                    self.isApplyingSpeechEngineState = true
-                    self.speechEnginePreference = SpeechEnginePreference.current(defaults: self.defaults)
-                    self.isApplyingSpeechEngineState = false
-                }
+                self.speechEngineError = error.localizedDescription
+                self.isApplyingSpeechEngineState = true
+                self.speechEnginePreference = SpeechEnginePreference.current(defaults: self.defaults)
+                self.isApplyingSpeechEngineState = false
             }
         }
     }
