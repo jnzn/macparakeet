@@ -165,10 +165,9 @@ struct SettingsView: View {
     }
 
     /// System tab — everything that isn't daily-ops, ordered by frequency of
-    /// use. Reset & Cleanup will be fenced off at the bottom by a divider in
-    /// a later commit. For now the destructive controls still live inside
-    /// `storageCard`; this is the only inherited layout that doesn't yet
-    /// match the final IA.
+    /// use. Destructive controls are fenced off at the bottom inside
+    /// `resetCleanupCard`, separated by a visible divider so a user
+    /// scrolling through configuration can't fat-finger a wipe.
     private var systemTabContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
@@ -179,8 +178,30 @@ struct SettingsView: View {
                 privacyCard
                 onboardingCard
                 aboutCard
+
+                resetCleanupSeparator
+                resetCleanupCard
             }
             .padding(DesignSystem.Spacing.lg)
+        }
+    }
+
+    /// Visual fence between configuration and destructive operations.
+    /// "Danger zone"-style cue without the heavy chrome — a faint divider
+    /// plus a small caption is enough signal at the cadence the user
+    /// actually scans this tab.
+    private var resetCleanupSeparator: some View {
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
+            Rectangle()
+                .fill(DesignSystem.Colors.border.opacity(0.4))
+                .frame(height: 0.5)
+                .padding(.top, DesignSystem.Spacing.sm)
+
+            Text("Reset & Cleanup")
+                .font(DesignSystem.Typography.caption.weight(.medium))
+                .foregroundStyle(.tertiary)
+                .textCase(.uppercase)
+                .tracking(0.6)
         }
     }
 
@@ -772,10 +793,13 @@ struct SettingsView: View {
 
     // MARK: - Storage
 
+    /// Storage card is read-only stats + retention toggles. Destructive
+    /// operations moved to `resetCleanupCard` so the configuration surface
+    /// can stay scrollable without exposing a wipe button to a misclick.
     private var storageCard: some View {
-        settingsCard(
+        SettingsCard(
             title: "Storage",
-            subtitle: "Manage recordings and disk usage.",
+            subtitle: "Retention preferences and current disk usage.",
             icon: "internaldrive"
         ) {
             VStack(spacing: DesignSystem.Spacing.md) {
@@ -819,40 +843,55 @@ struct SettingsView: View {
                         detail: viewModel.formattedYouTubeStorage
                     )
                 }
-
-                VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
-                    maintenanceGroup(
-                        label: "Delete data",
-                        detail: "Removes rows from your library. Lifetime stats are preserved."
-                    ) {
-                        Button("Clear All Dictations...", role: .destructive) {
-                            showClearAllAlert = true
-                        }
-                        .buttonStyle(.bordered)
-
-                        Button("Clear Downloaded YouTube Audio...", role: .destructive) {
-                            showClearYouTubeAudioAlert = true
-                        }
-                        .buttonStyle(.bordered)
-                    }
-
-                    maintenanceGroup(
-                        label: "Reset counters",
-                        detail: "Zeros lifetime stats. Your dictation history is untouched."
-                    ) {
-                        Button("Reset Lifetime Stats...", role: .destructive) {
-                            showResetLifetimeStatsAlert = true
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                }
-                .padding(DesignSystem.Spacing.sm)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
-                        .fill(DesignSystem.Colors.errorRed.opacity(0.06))
-                )
             }
+        }
+    }
+
+    // MARK: - Reset & Cleanup
+
+    /// Holds every destructive operation in the app. Lives at the bottom of
+    /// the System tab behind a visible divider; the card itself uses the
+    /// `.required` chip semantically (red dot) to telegraph severity even
+    /// when the user lands here scrolled past the divider.
+    private var resetCleanupCard: some View {
+        SettingsCard(
+            title: "Reset & Cleanup",
+            subtitle: "Permanent. These cannot be undone.",
+            icon: "trash",
+            status: SettingsCardStatus(.required, label: "Destructive")
+        ) {
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+                maintenanceGroup(
+                    label: "Delete data",
+                    detail: "Removes rows from your library. Lifetime stats are preserved."
+                ) {
+                    Button("Clear All Dictations...", role: .destructive) {
+                        showClearAllAlert = true
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button("Clear Downloaded YouTube Audio...", role: .destructive) {
+                        showClearYouTubeAudioAlert = true
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                maintenanceGroup(
+                    label: "Reset counters",
+                    detail: "Zeros lifetime stats. Your dictation history is untouched."
+                ) {
+                    Button("Reset Lifetime Stats...", role: .destructive) {
+                        showResetLifetimeStatsAlert = true
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+            .padding(DesignSystem.Spacing.sm)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                    .fill(DesignSystem.Colors.errorRed.opacity(0.06))
+            )
         }
     }
 
@@ -1029,15 +1068,34 @@ struct SettingsView: View {
         }
     }
 
+    /// Roll-up of the three permissions: required first, optional second.
+    /// `.required` if a hard prerequisite is missing (mic or accessibility);
+    /// `.recommended` if only the optional Screen Recording is missing
+    /// (meetings won't work but the rest of the app does); `.ok` when all
+    /// surfaces are green.
+    private var permissionsCardStatus: SettingsCardStatus? {
+        let micOrAccessibilityMissing = !viewModel.microphoneGranted || !viewModel.accessibilityGranted
+        if micOrAccessibilityMissing {
+            return SettingsCardStatus(.required, label: "Action required")
+        }
+
+        if AppFeatures.meetingRecordingEnabled, !viewModel.screenRecordingGranted {
+            return SettingsCardStatus(.recommended, label: "Optional missing")
+        }
+
+        return SettingsCardStatus(.ok, label: "All granted")
+    }
+
     private var permissionsCard: some View {
         let permissionsSubtitle = AppFeatures.meetingRecordingEnabled
             ? "Microphone and Accessibility are required. Screen Recording is optional for meetings."
             : "Microphone and Accessibility are required."
 
-        return settingsCard(
+        return SettingsCard(
             title: "Permissions",
             subtitle: permissionsSubtitle,
-            icon: "lock.shield"
+            icon: "lock.shield",
+            status: permissionsCardStatus
         ) {
             VStack(spacing: DesignSystem.Spacing.md) {
                 HStack {
