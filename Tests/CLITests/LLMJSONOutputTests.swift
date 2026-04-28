@@ -187,6 +187,34 @@ final class LLMJSONOutputTests: XCTestCase {
         XCTAssertTrue((object["error"] as? String)?.contains("No transcription") == true)
     }
 
+    func testJSONWrapperUsesDocumentedValidationMisuseExitCode() throws {
+        var thrownError: Error?
+        let output = try captureStandardOutput {
+            do {
+                try emitJSONOrRethrow(json: true) {
+                    throw ValidationError("bad combo")
+                }
+            } catch {
+                thrownError = error
+            }
+        }
+
+        let exit = try XCTUnwrap(thrownError as? ExitCode)
+        XCTAssertEqual(exit.rawValue, 2)
+
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any]
+        )
+        XCTAssertEqual(object["ok"] as? Bool, false)
+        XCTAssertEqual(object["errorType"] as? String, "validation")
+    }
+
+    func testCLINormalizesArgumentParserValidationExitCodeToPublicContract() {
+        XCTAssertEqual(CLI.normalizedExitCode(for: ExitCode.validationFailure).rawValue, 2)
+        XCTAssertEqual(CLI.normalizedExitCode(for: ValidationError("bad combo")).rawValue, 2)
+        XCTAssertEqual(CLI.normalizedExitCode(for: ExitCode.failure), .failure)
+    }
+
     // MARK: - Helpers
 
     private func assertParseRejects<C: ParsableCommand>(

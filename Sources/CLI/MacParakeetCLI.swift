@@ -1,4 +1,5 @@
 import ArgumentParser
+import Darwin
 
 @main
 struct CLI: AsyncParsableCommand {
@@ -23,4 +24,45 @@ struct CLI: AsyncParsableCommand {
         ],
         defaultSubcommand: nil
     )
+
+    static func main() async {
+        await main(nil)
+    }
+
+    static func main(_ arguments: [String]?) async {
+        do {
+            var command = try parseAsRoot(arguments)
+            if var asyncCommand = command as? AsyncParsableCommand {
+                try await asyncCommand.run()
+            } else {
+                try command.run()
+            }
+        } catch {
+            exitWithNormalizedError(error)
+        }
+    }
+
+    static func normalizedExitCode(for error: Error) -> ExitCode {
+        if let exitCode = error as? ExitCode {
+            return normalizedExitCode(for: exitCode)
+        }
+        return normalizedExitCode(for: exitCode(for: error))
+    }
+
+    static func normalizedExitCode(for exitCode: ExitCode) -> ExitCode {
+        exitCode == .validationFailure ? cliValidationMisuseExitCode : exitCode
+    }
+
+    private static func exitWithNormalizedError(_ error: Error) -> Never {
+        let exitCode = normalizedExitCode(for: error)
+        let message = fullMessage(for: error)
+        if !message.isEmpty {
+            if exitCode.isSuccess {
+                print(message)
+            } else {
+                printErr(message)
+            }
+        }
+        Darwin.exit(exitCode.rawValue)
+    }
 }

@@ -130,8 +130,7 @@ by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
 - `transcribe` now initializes the shared telemetry client and emits a
   privacy-safe `cli_operation` product-health event after execution. This does
   not change stdout, stderr, JSON schemas, or exit codes; it follows the GUI
-  telemetry preference and can be disabled per process with
-  `MACPARAKEET_TELEMETRY=0`.
+  telemetry preference and the CLI opt-out controls documented above.
 
 ### Fixed
 
