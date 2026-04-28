@@ -38,8 +38,12 @@ struct SettingsView: View {
                 switch rootViewModel.activeTab {
                 case .modes:
                     modesTabContent
-                case .engine, .ai, .system:
-                    placeholderTabContent(for: rootViewModel.activeTab)
+                case .engine:
+                    engineTabContent
+                case .ai:
+                    aiTabContent
+                case .system:
+                    systemTabContent
                 }
             }
         }
@@ -88,7 +92,7 @@ struct SettingsView: View {
 
     /// Top-of-panel header: tab bar on the left, search field on the right.
     /// Status badges on tab pills are wired empty in the foundation chunk;
-    /// they will be driven by sub-VMs as tab composition lands.
+    /// they will be driven by sub-VMs as the sub-VM split lands.
     private var settingsHeaderShell: some View {
         HStack(spacing: DesignSystem.Spacing.md) {
             SettingsTabBar(
@@ -106,27 +110,65 @@ struct SettingsView: View {
         }
     }
 
-    /// All 15 existing cards under the Modes tab during the foundation chunk.
-    /// Subsequent commits on `feat/settings-ia` redistribute these into the
-    /// four-tab IA per `plans/active/2026-04-settings-ia-overhaul.md`.
+    /// Modes tab — daily-ops config for the three product modes, plus the
+    /// Audio Input prerequisite that gates them. The legacy `headerCard`
+    /// "Workspace Controls" was eliminated (its stat chips are redundant
+    /// with Storage / Permissions / per-mode chips). The legacy `generalCard`
+    /// was split: "Show idle pill" lives on the Dictation card now;
+    /// Launch at Login + Menu Bar Only moved to the System Startup card.
+    /// The Calendar card was folded into Meeting Recording.
     private var modesTabContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
-                headerCard
                 audioInputCard
                 dictationCard
+                transcriptionCard
                 if AppFeatures.meetingRecordingEnabled {
                     meetingRecordingCard
-                    calendarCard
                 }
-                transcriptionCard
-                aiProviderCard
-                storageCard
-                generalCard
-                updatesCard
+            }
+            .padding(DesignSystem.Spacing.lg)
+        }
+    }
+
+    /// Engine tab — speech recognition stack. Holds the existing
+    /// `localModelsCard` for now (engine selector + language + model status).
+    /// Sub-VM split (`EngineSettingsViewModel`) and a per-card decomposition
+    /// (Engine selector / Language / Models) land in a later commit.
+    private var engineTabContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
                 localModelsCard
-                privacyCard
+            }
+            .padding(DesignSystem.Spacing.lg)
+        }
+    }
+
+    /// AI tab — LLM provider config. Reuses the existing `aiProviderCard`
+    /// which already wraps `LLMSettingsView`. Empty-state polish + the
+    /// "last-attempt-failed" yellow status indicator land in a later commit.
+    private var aiTabContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
+                aiProviderCard
+            }
+            .padding(DesignSystem.Spacing.lg)
+        }
+    }
+
+    /// System tab — everything that isn't daily-ops, ordered by frequency of
+    /// use. Reset & Cleanup will be fenced off at the bottom by a divider in
+    /// a later commit. For now the destructive controls still live inside
+    /// `storageCard`; this is the only inherited layout that doesn't yet
+    /// match the final IA.
+    private var systemTabContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
+                startupCard
                 permissionsCard
+                storageCard
+                updatesCard
+                privacyCard
                 onboardingCard
                 aboutCard
             }
@@ -134,73 +176,16 @@ struct SettingsView: View {
         }
     }
 
-    /// Empty-state placeholder for tabs whose composition has not landed yet.
-    /// Visible only on the `feat/settings-ia` branch during incremental
-    /// development; replaced by real tab content before merge to `main`.
-    private func placeholderTabContent(for tab: SettingsTab) -> some View {
-        let info = SettingsTabMetadata.for(tab)
-        return ScrollView {
-            VStack(spacing: DesignSystem.Spacing.lg) {
-                SettingsCard(
-                    title: info.title,
-                    subtitle: "This tab's content is part of the in-progress Settings IA refactor.",
-                    icon: info.systemImage
-                ) {
-                    SettingsEmptyState(
-                        icon: info.systemImage,
-                        title: "Coming next",
-                        message: "\(info.title) tab content will land in the next commit on this branch."
-                    )
-                }
-            }
-            .padding(DesignSystem.Spacing.lg)
-        }
-    }
-
-    // MARK: - Header
-
-    private var headerCard: some View {
-        settingsCard(
-            title: "Workspace Controls",
-            subtitle: "Everything runs locally on your Mac.",
-            icon: "slider.horizontal.3"
-        ) {
-            LazyVGrid(
-                columns: Array(repeating: GridItem(.flexible(), spacing: DesignSystem.Spacing.md), count: 4),
-                spacing: DesignSystem.Spacing.md
-            ) {
-                statChip(
-                    title: "Dictations",
-                    value: "\(viewModel.dictationCount)"
-                )
-
-                statChip(
-                    title: "YouTube Cache",
-                    value: viewModel.formattedYouTubeStorage
-                )
-
-                statChip(
-                    title: "Microphone",
-                    value: viewModel.microphoneGranted ? "Granted" : "Missing",
-                    isHealthy: viewModel.microphoneGranted
-                )
-
-                statChip(
-                    title: "Accessibility",
-                    value: viewModel.accessibilityGranted ? "Granted" : "Missing",
-                    isHealthy: viewModel.accessibilityGranted
-                )
-            }
-        }
-    }
-
     // MARK: - Audio Input
 
     private var audioInputCard: some View {
-        settingsCard(
+        SettingsCard(
             title: "Audio Input",
             subtitle: "Choose the microphone used for dictation and meetings.",
-            icon: "mic"
+            icon: "mic",
+            status: viewModel.microphoneGranted
+                ? SettingsCardStatus(.ok, label: "Granted")
+                : SettingsCardStatus(.required, label: "Permission required")
         ) {
             VStack(spacing: DesignSystem.Spacing.md) {
                 HStack(alignment: .center) {
@@ -323,23 +308,19 @@ struct SettingsView: View {
         .accessibilityValue("\(Int(max(0, min(1, level)) * 100)) percent")
     }
 
-    // MARK: - General
+    // MARK: - Startup
 
-    private var generalCard: some View {
+    /// OS-integration card in System tab. Renamed from the legacy
+    /// `generalCard` and stripped of "Show idle pill" (which moved to the
+    /// Dictation card during the IA refactor — the idle pill is a
+    /// dictation-UX choice, not OS chrome).
+    private var startupCard: some View {
         settingsCard(
-            title: "General",
-            subtitle: "How MacParakeet shows up on your Mac.",
-            icon: "gearshape"
+            title: "Startup",
+            subtitle: "How MacParakeet shows up on your Mac at sign-in.",
+            icon: "power"
         ) {
             VStack(spacing: DesignSystem.Spacing.md) {
-                settingsToggleRow(
-                    title: "Show dictation pill at all times",
-                    detail: "When off, the pill hides until you press the hotkey.",
-                    isOn: $viewModel.showIdlePill
-                )
-
-                Divider()
-
                 settingsToggleRow(
                     title: "Launch at login",
                     detail: "Start MacParakeet automatically when you sign in.",
@@ -438,6 +419,18 @@ struct SettingsView: View {
                         .frame(width: 140)
                     }
                 }
+
+                Divider()
+
+                // Relocated from the legacy `generalCard` during the IA
+                // refactor. The idle pill *is* the dictation summon button,
+                // so it belongs alongside the dictation hotkey, not in the
+                // OS-integration startup section.
+                settingsToggleRow(
+                    title: "Show dictation pill at all times",
+                    detail: "When off, the pill hides until you press the hotkey.",
+                    isOn: $viewModel.showIdlePill
+                )
             }
         }
     }
@@ -445,10 +438,11 @@ struct SettingsView: View {
     // MARK: - Transcription
 
     private var meetingRecordingCard: some View {
-        settingsCard(
+        SettingsCard(
             title: "Meeting Recording",
-            subtitle: "Dedicated controls for system-audio + mic capture.",
-            icon: "record.circle"
+            subtitle: "System-audio + mic capture, with optional calendar auto-start.",
+            icon: "record.circle",
+            status: meetingRecordingCardStatus
         ) {
             VStack(spacing: DesignSystem.Spacing.md) {
                 HStack(alignment: .center) {
@@ -501,7 +495,43 @@ struct SettingsView: View {
                 if viewModel.meetingAutoSave {
                     meetingAutoSaveOptionsView
                 }
+
+                Divider()
+
+                // Calendar section folded in from the legacy standalone
+                // `calendarCard`. Calendar is meeting-only — folding it
+                // here removes a card without losing any controls.
+                meetingCalendarSection
             }
+        }
+    }
+
+    /// Header status chip for the Meeting Recording card. Surfaces the
+    /// screen-recording-permission state since system audio capture is
+    /// gated on it.
+    private var meetingRecordingCardStatus: SettingsCardStatus? {
+        guard AppFeatures.meetingRecordingEnabled else { return nil }
+        return viewModel.screenRecordingGranted
+            ? SettingsCardStatus(.ok, label: "Ready")
+            : SettingsCardStatus(.recommended, label: "Permission needed")
+    }
+
+    /// Calendar auto-start controls, rendered inline within the Meeting
+    /// Recording card after the auto-save section. Visually demoted to a
+    /// section heading so it reads as part of meeting setup.
+    private var meetingCalendarSection: some View {
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
+            HStack(spacing: 6) {
+                Image(systemName: "calendar")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Text("Calendar auto-start")
+                    .font(DesignSystem.Typography.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+
+            CalendarSettingsView(viewModel: viewModel)
         }
     }
 
@@ -514,18 +544,6 @@ struct SettingsView: View {
             onChooseFolder: { viewModel.chooseMeetingAutoSaveFolder(url: $0) },
             onClearFolder: { viewModel.clearMeetingAutoSaveFolder() }
         )
-    }
-
-    // MARK: - Calendar Auto-Start
-
-    private var calendarCard: some View {
-        settingsCard(
-            title: "Calendar",
-            subtitle: "Reminders before scheduled meetings, powered by your macOS calendar.",
-            icon: "calendar"
-        ) {
-            CalendarSettingsView(viewModel: viewModel)
-        }
     }
 
     private var transcriptionCard: some View {
@@ -1161,24 +1179,6 @@ struct SettingsView: View {
                 .font(DesignSystem.Typography.caption)
                 .foregroundStyle(.secondary)
         }
-    }
-
-    private func statChip(title: String, value: String, isHealthy: Bool = true) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(DesignSystem.Typography.caption)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(DesignSystem.Typography.sectionTitle)
-                .foregroundStyle(isHealthy ? .primary : DesignSystem.Colors.errorRed)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, DesignSystem.Spacing.md)
-        .padding(.vertical, DesignSystem.Spacing.sm)
-        .background(
-            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
-                .fill(DesignSystem.Colors.surfaceElevated)
-        )
     }
 
     @ViewBuilder
