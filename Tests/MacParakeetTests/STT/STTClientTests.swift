@@ -82,13 +82,24 @@ final class STTClientTests: XCTestCase {
         XCTAssertEqual(word.endMs, 2920)
     }
 
-    func testWhisperDecodeOptionsForForcedLanguageDisablePrefillPrompt() {
+    func testWhisperDecodeOptionsForForcedLanguageEnablePrefillPrompt() {
         #if canImport(WhisperKit)
         let options = WhisperEngine.makeDecodingOptions(language: "KO_kr")
 
         XCTAssertEqual(options.language, "ko-kr")
-        XCTAssertFalse(options.usePrefillPrompt)
+        XCTAssertTrue(options.usePrefillPrompt)
         XCTAssertFalse(options.detectLanguage)
+        XCTAssertTrue(options.wordTimestamps)
+        #endif
+    }
+
+    func testWhisperDecodeOptionsForAutoLanguageDetectsLanguageWithoutPrefillPrompt() {
+        #if canImport(WhisperKit)
+        let options = WhisperEngine.makeDecodingOptions(language: nil)
+
+        XCTAssertNil(options.language)
+        XCTAssertFalse(options.usePrefillPrompt)
+        XCTAssertTrue(options.detectLanguage)
         XCTAssertTrue(options.wordTimestamps)
         #endif
     }
