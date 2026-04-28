@@ -1,6 +1,33 @@
 // swift-tools-version: 5.9
 
 import PackageDescription
+import Foundation
+
+let skipWhisperKit = ProcessInfo.processInfo.environment["MACPARAKEET_SKIP_WHISPERKIT"] == "1"
+
+let packageDependencies: [Package.Dependency] = [
+    // GRDB for SQLite (dictation history + transcription records)
+    .package(url: "https://github.com/groue/GRDB.swift", from: "7.0.0"),
+    // FluidAudio for Parakeet STT on CoreML/ANE
+    .package(url: "https://github.com/FluidInference/FluidAudio", .upToNextMinor(from: "0.14.1")),
+    // ArgumentParser for CLI
+    .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0"),
+    // Sparkle for auto-updates (non-App Store distribution)
+    .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.0")
+] + (skipWhisperKit ? [] : [
+    // WhisperKit for multilingual STT fallback (Korean + 95 other languages).
+    // Argmax is not Swift 6 language-mode clean yet, so CI can omit this package
+    // only for the first-party Swift 6 syntax/concurrency compile check.
+    .package(url: "https://github.com/argmaxinc/argmax-oss-swift", exact: "0.18.0")
+])
+
+let coreDependencies: [Target.Dependency] = [
+    .product(name: "GRDB", package: "GRDB.swift"),
+    .product(name: "FluidAudio", package: "FluidAudio"),
+    "MacParakeetObjCShims"
+] + (skipWhisperKit ? [] : [
+    .product(name: "WhisperKit", package: "argmax-oss-swift")
+])
 
 let package = Package(
     name: "MacParakeet",
@@ -15,18 +42,7 @@ let package = Package(
         .library(name: "MacParakeetCore", targets: ["MacParakeetCore"]),
         .library(name: "MacParakeetViewModels", targets: ["MacParakeetViewModels"])
     ],
-    dependencies: [
-        // GRDB for SQLite (dictation history + transcription records)
-        .package(url: "https://github.com/groue/GRDB.swift", from: "7.0.0"),
-        // FluidAudio for Parakeet STT on CoreML/ANE
-        .package(url: "https://github.com/FluidInference/FluidAudio", .upToNextMinor(from: "0.14.1")),
-        // WhisperKit for multilingual STT fallback (Korean + 95 other languages)
-        .package(url: "https://github.com/argmaxinc/argmax-oss-swift", exact: "0.9.4"),
-        // ArgumentParser for CLI
-        .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0"),
-        // Sparkle for auto-updates (non-App Store distribution)
-        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.0")
-    ],
+    dependencies: packageDependencies,
     targets: [
         // Main GUI app
         .executableTarget(
@@ -63,12 +79,7 @@ let package = Package(
         // Shared core library (no UI dependencies)
         .target(
             name: "MacParakeetCore",
-            dependencies: [
-                .product(name: "GRDB", package: "GRDB.swift"),
-                .product(name: "FluidAudio", package: "FluidAudio"),
-                .product(name: "WhisperKit", package: "argmax-oss-swift"),
-                "MacParakeetObjCShims"
-            ],
+            dependencies: coreDependencies,
             path: "Sources/MacParakeetCore",
             exclude: ["Resources"]
         ),

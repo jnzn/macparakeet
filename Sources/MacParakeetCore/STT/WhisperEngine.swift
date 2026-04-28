@@ -73,18 +73,24 @@ public actor WhisperEngine: STTTranscribing {
             return nil
         }
 
+        var candidates: [URL] = []
         for case let url as URL in enumerator {
             guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey]),
                   values.isDirectory == true else {
                 continue
             }
             let folderName = url.lastPathComponent
-            if folderName == normalized || folderName.hasSuffix(normalized) || folderName.contains(normalized) {
+            if folderName.caseInsensitiveCompare(normalized) == .orderedSame {
                 return url
+            }
+            if isTokenBoundaryModelFolder(folderName: folderName, normalizedModel: normalized) {
+                candidates.append(url)
             }
         }
 
-        return nil
+        return candidates.max { lhs, rhs in
+            lhs.lastPathComponent.count < rhs.lastPathComponent.count
+        }
     }
 
     public func transcribe(
@@ -111,13 +117,7 @@ public actor WhisperEngine: STTTranscribing {
                 throw STTError.modelNotLoaded
             }
 
-            let resolvedLanguage = SpeechEnginePreference.normalizeLanguage(language)
-            let decodeOptions = DecodingOptions(
-                language: resolvedLanguage,
-                usePrefillPrompt: resolvedLanguage != nil,
-                detectLanguage: resolvedLanguage == nil,
-                wordTimestamps: true
-            )
+            let decodeOptions = Self.makeDecodingOptions(language: language)
 
             onProgress?(0, 100)
             let callback: TranscriptionCallback = { _ in
@@ -135,7 +135,7 @@ public actor WhisperEngine: STTTranscribing {
             }
 
             let partialResults = try first.get()
-            let merged = mergeTranscriptionResults(partialResults)
+            let merged = TranscriptionUtilities.mergeTranscriptionResults(partialResults)
             onProgress?(100, 100)
             return STTResult(
                 text: merged.text,
@@ -236,6 +236,16 @@ public actor WhisperEngine: STTTranscribing {
     }
 
     #if canImport(WhisperKit)
+    static func makeDecodingOptions(language: String?) -> DecodingOptions {
+        let resolvedLanguage = SpeechEnginePreference.normalizeLanguage(language)
+        return DecodingOptions(
+            language: resolvedLanguage,
+            usePrefillPrompt: false,
+            detectLanguage: resolvedLanguage == nil,
+            wordTimestamps: true
+        )
+    }
+
     static func mapWordTimings(_ words: [WordTiming]) -> [TimestampedWord] {
         words.map {
             makeTimestampedWord(
@@ -247,6 +257,34 @@ public actor WhisperEngine: STTTranscribing {
         }
     }
     #endif
+
+    private static func isTokenBoundaryModelFolder(folderName: String, normalizedModel: String) -> Bool {
+        let folder = folderName.lowercased()
+        let model = normalizedModel.lowercased()
+        guard !model.isEmpty else { return false }
+
+        var searchRange: Range<String.Index>? = folder.startIndex..<folder.endIndex
+        while let range = folder.range(of: model, range: searchRange) {
+            let before = range.lowerBound == folder.startIndex
+                ? nil
+                : folder[folder.index(before: range.lowerBound)]
+            let after = range.upperBound == folder.endIndex
+                ? nil
+                : folder[range.upperBound]
+
+            if isModelNameBoundary(before) && isModelNameBoundary(after) {
+                return true
+            }
+            searchRange = range.upperBound..<folder.endIndex
+        }
+
+        return false
+    }
+
+    private static func isModelNameBoundary(_ character: Character?) -> Bool {
+        guard let character else { return true }
+        return character == "-" || character == "_" || character == "/" || character == "."
+    }
 
     private nonisolated static func mapWarmUpError(_ error: Error) throws -> STTError {
         if error is CancellationError {

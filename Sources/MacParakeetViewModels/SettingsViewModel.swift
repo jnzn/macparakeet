@@ -850,7 +850,7 @@ public final class SettingsViewModel {
             let parakeetCached = isSpeechModelCached()
 
             await MainActor.run {
-                if parakeetReady {
+                if self.speechEnginePreference == .parakeet, parakeetReady {
                     self.parakeetStatus = .ready
                     self.parakeetStatusDetail = "Loaded in memory and ready."
                 } else if parakeetCached {

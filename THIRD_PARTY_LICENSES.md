@@ -47,6 +47,36 @@ This project bundles or downloads third-party software components. The following
 - Source: <https://github.com/huggingface/swift-transformers>
 - Used for: WhisperKit model/tokenizer support
 
+### swift-jinja
+
+- License: Apache License 2.0
+- Source: <https://github.com/huggingface/swift-jinja>
+- Used for: Transitive dependency of swift-transformers
+
+### swift-collections
+
+- License: Apache License 2.0
+- Source: <https://github.com/apple/swift-collections>
+- Used for: Transitive dependency of swift-transformers
+
+### swift-crypto
+
+- License: Apache License 2.0
+- Source: <https://github.com/apple/swift-crypto>
+- Used for: Transitive dependency of swift-transformers
+
+### swift-asn1
+
+- License: Apache License 2.0
+- Source: <https://github.com/apple/swift-asn1>
+- Used for: Transitive dependency of swift-crypto
+
+### yyjson
+
+- License: MIT License
+- Source: <https://github.com/ibireme/yyjson>
+- Used for: Transitive dependency of swift-transformers
+
 ### swift-argument-parser
 
 - License: Apache License 2.0

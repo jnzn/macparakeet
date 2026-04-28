@@ -75,6 +75,12 @@ macparakeet-cli transcribe /path/to/audio.mp3 --format json
 Parakeet is the default engine. Use Whisper per invocation for Korean or other
 non-Parakeet languages:
 
+Whisper requires a local model download before first use:
+
+```bash
+macparakeet-cli models download whisper-large-v3-v20240930-turbo-632MB
+```
+
 ```bash
 macparakeet-cli transcribe /path/to/korean.mp3 --engine whisper --language ko --format json
 ```
@@ -201,6 +207,7 @@ FFmpeg, yt-dlp, or the database are ready.
 
 ```bash
 macparakeet-cli transcribe "<path-or-youtube-url>" --format json
+macparakeet-cli models download whisper-large-v3-v20240930-turbo-632MB
 macparakeet-cli transcribe "<path-or-youtube-url>" --engine whisper --language ko --format json
 macparakeet-cli history transcriptions --json
 macparakeet-cli history search-transcriptions "<query>" --json

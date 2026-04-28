@@ -289,7 +289,8 @@ final class DictationOverlayViewModel {
             return recordingMode == .holdToTalk ? "holdToTalk" : "recording"
         case .cancelled: return "cancelled"
         case .processing:
-            return sessionKind == .command ? "commandProcessing" : "processing"
+            let messageSuffix = visibleProcessingMessage == nil ? "" : "Message"
+            return sessionKind == .command ? "commandProcessing\(messageSuffix)" : "processing\(messageSuffix)"
         case .formatting:
             return sessionKind == .command ? "commandFormatting" : "formatting"
         case .success: return "success"
