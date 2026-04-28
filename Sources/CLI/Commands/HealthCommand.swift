@@ -186,7 +186,7 @@ struct HealthCommand: AsyncParsableCommand {
         let ytDlp: HealthReport.Binary
         if repairBinaries {
             do {
-                let path = try await BinaryBootstrap().ensureYtDlpAvailable()
+                let path = try await BinaryBootstrap().ensureYtDlpAvailable(allowNetworkUpdate: true)
                 ytDlp = .init(status: "ready", path: path, error: nil)
             } catch {
                 ytDlp = .init(status: "missing", path: nil, error: error.localizedDescription)

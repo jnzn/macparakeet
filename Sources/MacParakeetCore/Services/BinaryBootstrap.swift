@@ -43,6 +43,7 @@ public actor BinaryBootstrap {
     private let fileManager: FileManager
     private let ensureDirectories: @Sendable () throws -> Void
     private let ytDlpBinaryPath: @Sendable () -> String
+    private let bundledYtDlpPath: @Sendable () -> String?
     private let tempDirPath: @Sendable () -> String
 
     public init(
@@ -52,6 +53,7 @@ public actor BinaryBootstrap {
         fileManager: FileManager = .default,
         ensureDirectories: @escaping @Sendable () throws -> Void = { try AppPaths.ensureDirectories() },
         ytDlpBinaryPath: @escaping @Sendable () -> String = { AppPaths.ytDlpBinaryPath },
+        bundledYtDlpPath: @escaping @Sendable () -> String? = { AppPaths.bundledYtDlpPath() },
         tempDirPath: @escaping @Sendable () -> String = { AppPaths.tempDir }
     ) {
         self.session = session
@@ -60,15 +62,28 @@ public actor BinaryBootstrap {
         self.fileManager = fileManager
         self.ensureDirectories = ensureDirectories
         self.ytDlpBinaryPath = ytDlpBinaryPath
+        self.bundledYtDlpPath = bundledYtDlpPath
         self.tempDirPath = tempDirPath
     }
 
-    public func ensureYtDlpAvailable() async throws -> String {
+    public func ensureYtDlpAvailable(allowNetworkUpdate: Bool = false) async throws -> String {
         try ensureDirectories()
 
         let targetPath = ytDlpBinaryPath()
+        if allowNetworkUpdate {
+            try await installYtDlp(at: targetPath)
+            defaults.set(now(), forKey: Self.ytDlpLastUpdateCheckKey)
+            return targetPath
+        }
+
         if fileManager.isExecutableFile(atPath: targetPath) {
-            await autoUpdateYtDlpIfNeeded()
+            return targetPath
+        }
+
+        if let bundledPath = bundledYtDlpPath(),
+           fileManager.isExecutableFile(atPath: bundledPath)
+        {
+            try installExecutable(from: URL(fileURLWithPath: bundledPath), toPath: targetPath)
             return targetPath
         }
 
@@ -78,9 +93,16 @@ public actor BinaryBootstrap {
 
     public nonisolated static func resolveYtDlpPath(
         fileManager: FileManager = .default,
-        path: String = AppPaths.ytDlpBinaryPath
+        managedPath: String = AppPaths.ytDlpBinaryPath,
+        bundledPath: String? = AppPaths.bundledYtDlpPath()
     ) -> String? {
-        fileManager.isExecutableFile(atPath: path) ? path : nil
+        if fileManager.isExecutableFile(atPath: managedPath) {
+            return managedPath
+        }
+        if let bundledPath, fileManager.isExecutableFile(atPath: bundledPath) {
+            return bundledPath
+        }
+        return nil
     }
 
     /// Weekly non-blocking update. Failures are intentionally ignored.

@@ -78,7 +78,7 @@ while IFS= read -r -d '' bin; do
   fi
 done < <(
   find "$APP_PATH/Contents/Resources" -maxdepth 1 -type f -perm -111 \
-    \( -name "ffmpeg" -o -name "node" -o -name "node-arm64" -o -name "node-x86_64" \) -print0 2>/dev/null || true
+    \( -name "ffmpeg" -o -name "yt-dlp" -o -name "node" -o -name "node-arm64" -o -name "node-x86_64" \) -print0 2>/dev/null || true
 )
 
 while IFS= read -r -d '' bin; do

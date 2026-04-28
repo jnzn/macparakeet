@@ -230,6 +230,12 @@ swift run macparakeet-cli health --repair-models --repair-attempts 3
 swift run macparakeet-cli health --repair-binaries
 ```
 
+`health --json` is a non-mutating readiness probe: it can report an existing
+managed or app-bundled `yt-dlp`, but it does not install or update helper
+binaries. `health --repair-binaries` explicitly fetches the latest managed
+`yt-dlp` copy. App-bundled CLI installs include a signed `yt-dlp` seed so
+YouTube URL transcription works without a first-use helper download.
+
 ## Meetings
 
 Meeting commands operate on `sourceType = meeting` transcriptions. `<meeting>` accepts a UUID, UUID prefix, or exact title.
