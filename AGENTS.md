@@ -79,10 +79,10 @@ Full spec is in [`spec/`](./spec/). Architectural decisions (locked) are in
 - **Local-first speech.** STT runs on the Apple Neural Engine. Audio and
   transcripts stay on-device for core dictation, transcription, and meeting
   recording. Network surfaces are limited to user-triggered LLM providers,
-  media downloads, model/update flows, legacy licensing endpoints if invoked,
-  and opt-out self-hosted telemetry/crash reporting. Telemetry never includes
-  audio or transcript content.
-- **Legacy purchase activation is intentionally retained.** The old
+  media downloads, model/update flows, retained purchase activation endpoints
+  if explicitly invoked, and opt-out self-hosted telemetry/crash reporting.
+  Telemetry never includes audio or transcript content.
+- **Retained purchase activation is intentional.** The old
   LemonSqueezy/trial entitlement code is dormant in current free/GPL builds,
   but it is deliberate future-option plumbing. Do not delete or "clean up"
   `EntitlementsService`, `LemonSqueezyLicenseAPI`, entitlement state, or

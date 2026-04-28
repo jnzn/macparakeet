@@ -73,8 +73,9 @@ final class AppEnvironment {
         accessibilityService = AccessibilityService()
         launchAtLoginService = LaunchAtLoginService()
 
-        // Legacy licensing / entitlements. Current free/GPL builds always report
-        // unlocked, but the old activation plumbing is retained for compatibility.
+        // Retained purchase activation / entitlements. Current free/GPL builds
+        // always report unlocked, but the old activation plumbing is preserved
+        // as future-option support for official paid distribution/support.
         //
         // Production builds should embed these values in Info.plist via the dist script.
         // We still support env vars for local development.

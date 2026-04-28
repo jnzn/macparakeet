@@ -149,7 +149,7 @@ swift run macparakeet-cli transcribe "<FILE>"
 swift run macparakeet-cli transcribe "<FILE>" --format json
 ```
 
-## Legacy Entitlements Parity
+## Retained Entitlements Parity
 
 Use this only when exercising the same entitlement check path the GUI uses:
 
@@ -158,7 +158,9 @@ swift run macparakeet-cli transcribe "<FILE_OR_YOUTUBE_URL>" \
   --enforce-entitlements
 ```
 
-On the current branch, the app is effectively unlocked, so `--enforce-entitlements` should still pass unless you are explicitly validating legacy licensing code.
+On the current branch, the app is effectively unlocked, so
+`--enforce-entitlements` should still pass unless you are explicitly validating
+retained purchase activation code.
 
 ## Export
 

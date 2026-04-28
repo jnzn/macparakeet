@@ -239,14 +239,14 @@ events remain useful for diarization-specific timing and failure analysis.
 
 | Event | Props | Question It Answers |
 |---|---|---|
-| `trial_started` | — | When do trials begin? (dead, free app) |
-| `trial_expired` | — | Are people hitting the trial wall? (dead, free app) |
-| `purchase_started` | — | Are people attempting to buy? (dead, free app) |
-| `license_activated` | — | Conversion! |
-| `license_activation_failed` | `error_type` | What blocks purchases? |
-| `restore_attempted` | — | Are people trying to restore? (dead, free app) |
-| `restore_succeeded` | — | Restore success rate (dead, free app) |
-| `restore_failed` | `error_type` | What blocks restores? (dead, free app) |
+| `trial_started` | — | When do trials begin? (currently not emitted in free builds) |
+| `trial_expired` | — | Are people hitting the trial wall? (currently not emitted in free builds) |
+| `purchase_started` | — | Are people attempting to buy? (currently not emitted in free builds) |
+| `license_activated` | — | Official paid distribution/support conversion, if re-enabled |
+| `license_activation_failed` | `error_type` | What blocks purchase activation, if re-enabled? |
+| `restore_attempted` | — | Are people trying to restore? (currently not emitted in free builds) |
+| `restore_succeeded` | — | Restore success rate, if paid activation is re-enabled |
+| `restore_failed` | `error_type` | What blocks restores, if paid activation is re-enabled? |
 
 ### 7. Performance — "Is the app fast?"
 
@@ -537,6 +537,6 @@ External AI review of the telemetry design. Each point was evaluated and accepte
 - **A/B testing** — Not needed now, but the event infrastructure supports it
 - **Funnel analysis** — Can be done with SQL (session-based event sequences)
 - **~~Speaker diarization telemetry~~** — ✅ Shipped: `diarization_started`, `diarization_completed`, `diarization_failed`
-- **Legacy licensing telemetry** -- Keep unfired trial/purchase/restore event
+- **Retained licensing telemetry** -- Keep unfired trial/purchase/restore event
   names unless the project owner explicitly decides to remove the future
   paid-distribution option and records that decision in an ADR/spec update

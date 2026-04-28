@@ -73,7 +73,7 @@ Features are scoped to transcript-level actions. No dictation-time LLM processin
 
 ### Quality over locality for text intelligence
 
-Local 8B models produce mediocre summaries. Cloud models (Claude Sonnet, GPT-4o) produce excellent ones. Users expect quality. The cost of cloud API calls is pennies per transcript — far cheaper than the subscription pricing that would fund a hosted backend.
+Local 8B models produce mediocre summaries. Cloud models (Claude Sonnet, GPT-4o) produce excellent ones. Users expect quality. The cost of cloud API calls is pennies per transcript for users who bring their own keys, avoiding a hosted backend dependency for the current LLM design.
 
 ### Zero resource impact
 
@@ -224,7 +224,7 @@ Rejected. Spawning an external daemon violates App Store sandboxing, adds distri
 
 ### Build a hosted backend (proxy API keys through our server)
 
-Rejected. Adds server costs (requiring subscription pricing — conflicts with ADR-003), adds a reliability dependency, and adds a privacy concern (we'd see transcript text). Users bringing their own keys is simpler, cheaper, and more private.
+Rejected for the current LLM design. Adds server costs, requires a separate hosted-service monetization model, adds a reliability dependency, and adds a privacy concern (we'd see transcript text). Users bringing their own keys is simpler, cheaper, and more private. This does not prohibit future paid hosted services if explicitly designed and documented.
 
 ### Anthropic native Messages API (historical alternative)
 

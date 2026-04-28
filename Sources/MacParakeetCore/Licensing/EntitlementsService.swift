@@ -13,7 +13,7 @@ public actor EntitlementsService: EntitlementsChecking {
     private let store: KeyValueStore
     private let api: LicenseAPI
 
-    /// Legacy 7-day trial duration retained for activation-code compatibility.
+    /// 7-day trial duration retained for activation-code compatibility.
     /// `currentState` and `assertCanTranscribe` always unlock free/GPL builds.
     private let trialLength: TimeInterval = 7 * 24 * 60 * 60
 

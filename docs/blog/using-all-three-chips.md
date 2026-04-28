@@ -240,4 +240,4 @@ That's what we're building.
 
 ---
 
-*MacParakeet is a fast, private, local-first voice app for macOS with system-wide dictation and file transcription. No cloud. No subscriptions. Learn more at [macparakeet.com](https://macparakeet.com).*
+*MacParakeet is a fast, private, local-first voice app for macOS with system-wide dictation and file transcription. Core speech runs locally with no cloud STT subscription required. Learn more at [macparakeet.com](https://macparakeet.com).*

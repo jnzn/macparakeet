@@ -33,7 +33,7 @@ These decisions are final. Do not second-guess them.
 | Local STT | Parakeet TDT 0.6B-v3 via FluidAudio CoreML/ANE by default; WhisperKit optional | Parakeet gives 155x realtime and low RAM for supported languages; Whisper adds broad multilingual coverage locally |
 | Database | SQLite via GRDB | Single file, embedded, zero config |
 | Platform | macOS 14.2+ (Apple Silicon only) | FluidAudio requires Apple Silicon; Swift 6.0 |
-| Business model | Free and open-source (GPL-3.0) | Originally $49 one-time (ADR-003), went free with open-source release in v0.5 |
+| Business model | Current public build free/GPL/unlocked; official paid distribution/support remains possible | Originally $49 one-time (ADR-003), went free with open-source release in v0.5; retained purchase activation plumbing is future-option code |
 
 ## Architecture Decision Records (ADRs)
 
@@ -43,10 +43,10 @@ All ADRs live in `spec/adr/`. These are locked -- they record decisions already 
 |-----|----------|
 | [ADR-001](adr/001-parakeet-stt.md) | Parakeet TDT 0.6B-v3 as primary STT engine |
 | [ADR-002](adr/002-local-only.md) | Local processing with optional external AI/telemetry surfaces |
-| [ADR-003](adr/003-one-time-purchase.md) | One-time purchase pricing ($49) |
+| [ADR-003](adr/003-one-time-purchase.md) | Historical one-time purchase pricing; paid official distribution reference |
 | [ADR-004](adr/004-deterministic-pipeline.md) | Deterministic text processing pipeline |
 | [ADR-005](adr/005-onboarding-first-run.md) | First-run onboarding flow |
-| [ADR-006](adr/006-trial-and-license-activation.md) | Trial + license key activation |
+| [ADR-006](adr/006-trial-and-license-activation.md) | Dormant trial + license key activation plumbing retained |
 | [ADR-007](adr/007-fluidaudio-coreml-migration.md) | FluidAudio CoreML migration (Python elimination) |
 | [ADR-008](adr/008-local-llm-runtime-and-model.md) | Local LLM runtime baseline (historical — removed) |
 | [ADR-009](adr/009-custom-hotkey.md) | Custom hotkey support (any single key + chord combos) |
