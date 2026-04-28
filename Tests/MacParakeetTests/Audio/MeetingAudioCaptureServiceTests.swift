@@ -80,7 +80,7 @@ final class MeetingAudioCaptureServiceTests: XCTestCase {
         XCTAssertGreaterThan(buffer.rmsLevel, 0)
     }
 
-    func testEventsStreamRetainsFiveSecondsOfBurstSystemAudioBuffers() async throws {
+    func testEventsStreamRetainsBurstSystemAudioBuffersWithoutDropping() async throws {
         let microphone = MockMeetingMicrophoneCapture()
         let systemTap = MockMeetingSystemAudioTap()
         let service = MeetingAudioCaptureService(
@@ -91,15 +91,12 @@ final class MeetingAudioCaptureServiceTests: XCTestCase {
         let events = await service.events
         _ = try await service.start()
 
-        // 500 callbacks * 480 frames @ 48kHz = 5 seconds of source audio.
-        // After 48kHz -> 16kHz resampling, that is exactly 80,000 samples,
-        // enough for the first live-transcription chunk if no events are dropped.
         let burstBuffer = try XCTUnwrap(makeInterleavedFloatStereoBuffer(
             sampleRate: 48_000,
-            samples: [Float](repeating: 0.25, count: 960)
+            samples: [Float](repeating: 0.25, count: 96)
         ))
 
-        for _ in 0..<500 {
+        for _ in 0..<2_100 {
             systemTap.emit(buffer: burstBuffer, time: AVAudioTime(hostTime: 1))
         }
 
@@ -113,7 +110,33 @@ final class MeetingAudioCaptureServiceTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(systemBufferCount, 500)
+        XCTAssertEqual(systemBufferCount, 2_100)
+    }
+
+    func testEmitsRuntimeErrorEventWhenMicrophoneStalls() async throws {
+        let microphone = MockMeetingMicrophoneCapture()
+        let service = MeetingAudioCaptureService(
+            microphoneCapture: microphone,
+            systemAudioTapFactory: { MockMeetingSystemAudioTap() }
+        )
+
+        let events = await service.events
+        _ = try await service.start()
+        defer { Task { await service.stop() } }
+
+        microphone.emitStall(.captureRuntimeFailure("microphone capture started but delivered no buffers within 2 seconds"))
+
+        var iterator = events.makeAsyncIterator()
+        let emitted = await iterator.next()
+        guard case let .error(error)? = emitted else {
+            XCTFail("Expected .error event, got \(String(describing: emitted))")
+            return
+        }
+        guard case .captureRuntimeFailure(let message) = error else {
+            XCTFail("Expected captureRuntimeFailure, got \(error)")
+            return
+        }
+        XCTAssertTrue(message.contains("microphone capture started"))
     }
 
     func testStartReturnsVPIOSuccessReportWhenAvailable() async throws {
@@ -301,6 +324,7 @@ final class MeetingAudioCaptureServiceTests: XCTestCase {
 
 private final class MockMeetingMicrophoneCapture: MeetingMicrophoneCapturing, @unchecked Sendable {
     private var handler: AudioBufferHandler?
+    private var stallObserver: StallObserver?
     private let startHandler: (MeetingMicProcessingMode) throws -> MeetingMicrophoneCaptureStartReport
     private(set) var requestedModes: [MeetingMicProcessingMode] = []
 
@@ -317,19 +341,26 @@ private final class MockMeetingMicrophoneCapture: MeetingMicrophoneCapturing, @u
 
     func start(
         processingMode: MeetingMicProcessingMode,
-        handler: @escaping AudioBufferHandler
+        handler: @escaping AudioBufferHandler,
+        onStall: StallObserver?
     ) throws -> MeetingMicrophoneCaptureStartReport {
         self.handler = handler
+        self.stallObserver = onStall
         requestedModes.append(processingMode)
         return try startHandler(processingMode)
     }
 
     func stop() {
         handler = nil
+        stallObserver = nil
     }
 
     func emit(buffer: AVAudioPCMBuffer, time: AVAudioTime) {
         handler?(buffer, time)
+    }
+
+    func emitStall(_ error: MeetingAudioError) {
+        stallObserver?(error)
     }
 }
 

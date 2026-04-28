@@ -52,6 +52,7 @@ func meetingInputDeviceAttempts(
 
 public final class MicrophoneCapture: @unchecked Sendable {
     public typealias AudioBufferHandler = @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void
+    public typealias StallObserver = @Sendable (MeetingAudioError) -> Void
     private enum LifecycleState {
         case idle
         case starting
@@ -70,6 +71,7 @@ public final class MicrophoneCapture: @unchecked Sendable {
 
     private var state: LifecycleState = .idle
     private var bufferHandler: AudioBufferHandler?
+    private var stallObserver: StallObserver?
     private var firstBufferReceived = false
     private var watchdogWorkItem: DispatchWorkItem?
 
@@ -101,7 +103,8 @@ public final class MicrophoneCapture: @unchecked Sendable {
 
     public func start(
         processingMode: MeetingMicProcessingMode = .raw,
-        handler: @escaping AudioBufferHandler
+        handler: @escaping AudioBufferHandler,
+        onStall: StallObserver? = nil
     ) throws -> MeetingMicrophoneCaptureStartReport {
         var startError: Error?
         var didStart = false
@@ -124,7 +127,10 @@ public final class MicrophoneCapture: @unchecked Sendable {
             let inputNode = audioEngine.inputNode
             let inputDeviceAttempts = makeInputDeviceAttempts()
             state = .starting
-            handlerLock.withLock { bufferHandler = handler }
+            handlerLock.withLock {
+                bufferHandler = handler
+                stallObserver = onStall
+            }
             do {
                 startReport = try installTapAndStartEngineWithFallback(
                     inputNode: inputNode,
@@ -134,7 +140,10 @@ public final class MicrophoneCapture: @unchecked Sendable {
                 state = .running
                 didStart = true
             } catch {
-                handlerLock.withLock { bufferHandler = nil }
+                handlerLock.withLock {
+                    bufferHandler = nil
+                    stallObserver = nil
+                }
                 state = .idle
                 if let meetingError = error as? MeetingAudioError {
                     startError = meetingError
@@ -169,6 +178,7 @@ public final class MicrophoneCapture: @unchecked Sendable {
             audioEngine.stop()
             handlerLock.withLock {
                 bufferHandler = nil
+                stallObserver = nil
             }
             resetDiagnosticsState()
             state = .idle
@@ -409,7 +419,11 @@ public final class MicrophoneCapture: @unchecked Sendable {
                 guard let self else { return }
                 let shouldLog = self.watchdogLock.withLock { !self.firstBufferReceived }
                 guard shouldLog else { return }
+                let error = MeetingAudioError.captureRuntimeFailure(
+                    "microphone capture started but delivered no buffers within 2 seconds"
+                )
                 self.logger.warning("microphone_capture_no_buffers_within_timeout")
+                self.handlerLock.withLock { self.stallObserver }?(error)
             }
             watchdogWorkItem = item
             return item

@@ -31,18 +31,12 @@ final class MeetingAudioStorageWriter {
     private var systemInput: AVAssetWriterInput?
     private var microphoneConverter: AVAudioConverter?
     private var systemConverter: AVAudioConverter?
-    /// PTS counter — increments for both successfully appended buffers AND
-    /// dropped buffers (when `input.isReadyForMoreMediaData == false`). Used
-    /// as the `presentationTimeSamples` for each new sample buffer so
-    /// dropped frames produce a silent gap that preserves wall-clock
-    /// alignment in the output file. NOT what callers should report as
-    /// "frames on disk" — see `microphoneActualFrameCount` for that.
+    /// PTS counter for successfully appended buffers.
     private var microphoneWrittenFrames: Int64 = 0
     private var systemWrittenFrames: Int64 = 0
     /// Frames actually appended to the writer input (success path only).
     /// Used by `metrics(for:)` so the source-alignment metadata reports
-    /// what's truly on disk rather than the PTS counter, which could include
-    /// phantom frames from dropped buffers under sustained load.
+    /// what's truly on disk.
     private var microphoneActualFrameCount: Int64 = 0
     private var systemActualFrameCount: Int64 = 0
     private let sampleBufferFactory = PCMBufferToSampleBuffer()
@@ -169,15 +163,8 @@ final class MeetingAudioStorageWriter {
 
         let converted = try convertIfNeeded(buffer, converter: &converter)
         guard input.isReadyForMoreMediaData else {
-            logger.warning("Meeting audio writer input not ready, dropping buffer (\(converted.frameLength, privacy: .public) frames)")
-            // Advance the PTS counter so the next appended sample buffer
-            // lands at the correct wall-clock offset (silent gap for the
-            // dropped frames). `actualFrameCount` intentionally does NOT
-            // advance — `metrics(for:)` reports it as
-            // `writtenFrameCount`, and that value must match what's truly
-            // on disk so source-alignment downstream consumers can trust it.
-            writtenFrames += Int64(converted.frameLength)
-            return
+            logger.error("Meeting audio writer input not ready, failing capture before dropping \(converted.frameLength, privacy: .public) frames")
+            throw MeetingAudioError.storageFailed("audio writer backpressure")
         }
 
         let sampleBuffer = try sampleBufferFactory.makeSampleBuffer(

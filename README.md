@@ -43,18 +43,16 @@
 
 ---
 
-MacParakeet runs NVIDIA's Parakeet TDT on Apple's Neural Engine via [FluidAudio](https://github.com/FluidInference/FluidAudio) CoreML. The stable DMG handles system-wide dictation and file/URL transcription. Labs features on `main` add meeting recording and optional local WhisperKit recognition for languages Parakeet does not cover. All speech recognition happens on your Mac.
+MacParakeet runs NVIDIA's Parakeet TDT on Apple's Neural Engine via [FluidAudio](https://github.com/FluidInference/FluidAudio) CoreML. The current release handles system-wide dictation, file/URL transcription, meeting recording, and optional local WhisperKit recognition for languages Parakeet does not cover. All speech recognition happens on your Mac.
 
 ## Release status
 
-The [notarized DMG](https://downloads.macparakeet.com/MacParakeet.dmg) is the stable release channel. It intentionally lags `main` while larger features are tested.
+The [notarized DMG](https://downloads.macparakeet.com/MacParakeet.dmg) is the stable release channel.
 
 | Channel | Status | Includes |
 |---------|--------|----------|
-| Stable DMG | Recommended for normal use | Dictation, file/video/YouTube transcription, exports, vocabulary, AI features |
-| Labs on `main` | Beta, under active testing | Meeting recording, live meeting notes/Ask, crash recovery, optional WhisperKit multilingual STT |
-
-Meeting recording and WhisperKit are **Labs/Beta** features right now. They are implemented on `main`, but they are not in the current public DMG release yet.
+| Stable DMG | Recommended for normal use | Dictation, file/video/YouTube transcription, meeting recording, local WhisperKit fallback, exports, vocabulary, AI features |
+| `main` branch | Development | Next fixes and features before they ship to the stable DMG |
 
 ## What it does
 
@@ -62,7 +60,7 @@ Meeting recording and WhisperKit are **Labs/Beta** features right now. They are 
 
 **File transcription** — Drag audio or video files, or paste a YouTube URL. Full transcript with word-level timestamps, speaker labels, and export to 7 formats (TXT, Markdown, SRT, VTT, DOCX, PDF, JSON). Assign global hotkeys to trigger File or YouTube transcription from anywhere.
 
-**Meeting recording (Labs/Beta, `main` only)** — Record system audio and microphone together, see a live local transcript preview, take notes during the call, then save the finalized transcript to the library with export, prompts, and chat. This is under testing and not included in the current DMG release.
+**Meeting recording** — Record system audio and microphone together, see a live local transcript preview, take notes during the call, then save the finalized transcript to the library with export, prompts, and chat.
 
 **Text cleanup** — Filler word removal, custom word replacements, text snippets with triggers. Deterministic pipeline, no LLM needed.
 
@@ -74,13 +72,13 @@ Meeting recording and WhisperKit are **Labs/Beta** features right now. They are 
 - ~2.5% word error rate (Parakeet TDT 0.6B-v3)
 - ~66 MB working memory per active Parakeet inference slot
 - 25 European languages with Parakeet auto-detection
-- Optional local WhisperKit engine for Korean, Japanese, Chinese, and many other languages (Labs/Beta on `main`; not in the current DMG)
+- Optional local WhisperKit engine for Korean, Japanese, Chinese, and many other languages
 
 ### Limitations
 
 - Apple Silicon only (M1/M2/M3/M4)
 - Parakeet is best for English and supported European languages
-- WhisperKit multilingual support is currently a Labs/Beta feature on `main` and requires a separate local model download before first use
+- WhisperKit multilingual support requires a separate local model download before first use
 
 ## Get it
 
@@ -88,7 +86,7 @@ Meeting recording and WhisperKit are **Labs/Beta** features right now. They are 
 
 First launch downloads the speech model (~6 GB) plus speaker-detection assets (~130 MB). Everything works fully offline after that.
 
-The DMG is the stable release. Labs features such as meeting recording and WhisperKit multilingual STT are currently available only by building from `main`.
+The DMG is the stable release.
 
 **Build from source:**
 
@@ -111,14 +109,14 @@ swift run macparakeet-cli models status
 swift run macparakeet-cli history
 ```
 
-The Whisper CLI commands above require a `main` build with the Labs WhisperKit engine.
+The Whisper CLI commands above require a downloaded local WhisperKit model.
 
 ## Tech stack
 
 | Layer | Choice |
 |-------|--------|
-| STT | Parakeet TDT 0.6B-v3 via [FluidAudio](https://github.com/FluidInference/FluidAudio) CoreML (stable default) + optional WhisperKit Labs engine on `main` |
-| STT orchestration | Shared runtime + explicit scheduler with a reserved dictation slot and a shared meeting/file slot on `main`; speech-engine routing and meeting-session pinning for Labs features |
+| STT | Parakeet TDT 0.6B-v3 via [FluidAudio](https://github.com/FluidInference/FluidAudio) CoreML (default) + optional local WhisperKit engine |
+| STT orchestration | Shared runtime + explicit scheduler with a reserved dictation slot and a shared meeting/file slot; speech-engine routing and meeting-session pinning |
 | Language | Swift 6.0 + SwiftUI |
 | Database | SQLite via GRDB |
 | Auto-updates | Sparkle 2 |
@@ -161,20 +159,20 @@ AI features are entirely **opt-in** and separate from speech recognition — tra
 | Cloud | Anthropic (Claude), OpenAI, Google Gemini, OpenRouter |
 | Local | Ollama, LM Studio |
 | Custom | OpenAI-Compatible (any API-shaped endpoint — vLLM, LocalAI, LiteLLM, llama.cpp server, third-party hosts) |
-| CLI | Claude Code, Codex (runs as subprocess) |
+| CLI subprocess | Claude Code, Codex, or another configured command |
 
-**Setup:** In Settings → AI Provider, pick a provider, enter an API key (cloud) or confirm the local server is running, select a model, and hit Test Connection. Cloud providers store keys in the macOS Keychain. Local providers (Ollama, LM Studio, CLI) keep everything on-device.
+**Setup:** In Settings → AI Provider, pick a provider, enter an API key (cloud) or confirm the local server/CLI command is available, select a model, and hit Test Connection. Cloud providers store keys in the macOS Keychain. Ollama and LM Studio can keep LLM inference on-device. CLI subprocess providers run the configured command locally, but that command may contact its own cloud service.
 
 ## Privacy
 
-All speech recognition runs locally. Parakeet uses the Neural Engine; the Labs WhisperKit engine also runs on-device. Your audio never leaves your Mac.
+All speech recognition runs locally. Parakeet uses the Neural Engine; the optional WhisperKit engine also runs on-device. Your audio never leaves your Mac.
 
 - **No cloud STT.** The model runs on-device. No audio is transmitted.
 - **No accounts.** No login, no email, no registration.
 - **Opt-out telemetry.** Non-identifying usage analytics and crash reporting go to a self-hosted endpoint only when telemetry is enabled. No persistent IDs, no IP storage, and no transcript/audio content is transmitted. [Source code is right here](Sources/MacParakeetCore/Services/TelemetryService.swift) — verify it yourself.
 - **Temp files cleaned up.** Audio deleted after transcription unless you save it.
 
-**What does use the network:** AI summaries and chat connect to configured LLM providers or CLI tools when you choose them. Sparkle checks for app updates. YouTube transcription downloads video via yt-dlp. Telemetry and crash reports go to our self-hosted server unless you opt out. Core dictation and transcription stay fully offline.
+**What does use the network:** AI summaries and chat connect to configured LLM providers, or to whatever service a configured CLI tool chooses to use, when you choose them. Sparkle checks for app updates. YouTube transcription downloads video via yt-dlp. Telemetry and crash reports go to our self-hosted server unless you opt out. Core dictation and transcription stay fully offline.
 
 **Note:** Builds from source also send telemetry by default. Opt out in Settings or set `MACPARAKEET_TELEMETRY_URL` to override.
 

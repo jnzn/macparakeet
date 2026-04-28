@@ -79,6 +79,10 @@ by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
 
 ## [Unreleased]
 
+No changes yet.
+
+## [1.4.0] -- 2026-04-28
+
 ### Added
 
 - LLM-backed commands now accept `--api-key-env NAME`; hosted providers also
@@ -104,7 +108,9 @@ by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
 - `prompts run --json` now emits a single JSON object even when saving the
   generated `PromptResult` fails.
 - CLI deletion now removes app-owned dictation audio, YouTube audio, and
-  meeting recording folders after deleting their database rows.
+  meeting recording folders before deleting their database rows. If managed
+  audio cleanup fails, deletion fails visibly instead of leaving app-owned
+  audio behind silently.
 - Local transcription and export output paths now expand `~`; export also
   creates parent directories and sanitizes default file names.
 - App-bundled CLI installs now include a signed `yt-dlp` helper seed. YouTube
