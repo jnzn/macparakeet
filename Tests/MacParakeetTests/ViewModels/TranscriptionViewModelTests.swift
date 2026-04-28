@@ -112,6 +112,27 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.progress, "Preparing...", "Initial progress should be 'Preparing...'")
     }
 
+    func testTranscribeFileProgressSublineUsesSelectedEngineSnapshot() async throws {
+        let suiteName = "TranscriptionViewModelTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        SpeechEnginePreference.whisper.save(to: defaults)
+        viewModel = TranscriptionViewModel(defaults: defaults)
+        await mockService.configureProgress(phases: [.transcribing(percent: 42)])
+        await mockService.configureDelay(milliseconds: 250)
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+
+        viewModel.transcribeFile(url: URL(fileURLWithPath: "/tmp/myfile.wav"))
+
+        try await waitUntil {
+            self.viewModel.progressSubline == "Whisper Large v3 Turbo · Apple Silicon"
+        }
+        XCTAssertEqual(viewModel.progressHeadline, "Running speech recognition")
+
+        viewModel.cancelTranscription()
+        try await waitUntil { !self.viewModel.isTranscribing }
+    }
+
     func testTranscribeFileClearsErrorMessage() async throws {
         await mockService.configure(error: NSError(domain: "test", code: 1, userInfo: [
             NSLocalizedDescriptionKey: "First error"
@@ -1136,6 +1157,42 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(override, SpeechEngineSelection(engine: .parakeet))
         let lastMeetingRecording = await mockService.lastMeetingRecording
         XCTAssertEqual(lastMeetingRecording?.speechEngine, SpeechEngineSelection(engine: .whisper, language: "ko"))
+    }
+
+    func testRetranscribeProgressSublineUsesSpeechEngineOverride() async throws {
+        let suiteName = "TranscriptionViewModelTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        SpeechEnginePreference.parakeet.save(to: defaults)
+        viewModel = TranscriptionViewModel(defaults: defaults)
+
+        let tmpFile = FileManager.default.temporaryDirectory.appendingPathComponent("retranscribe-progress-\(UUID().uuidString).mp3")
+        FileManager.default.createFile(atPath: tmpFile.path, contents: Data([0]))
+        defer { try? FileManager.default.removeItem(at: tmpFile) }
+
+        let original = Transcription(
+            fileName: "lecture.mp3",
+            filePath: tmpFile.path,
+            rawTranscript: "Old transcript",
+            status: .completed
+        )
+        await mockService.configureProgress(phases: [.transcribing(percent: 25)])
+        await mockService.configureDelay(milliseconds: 250)
+        viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
+
+        viewModel.retranscribe(
+            original,
+            speechEngineOverride: SpeechEngineSelection(engine: .whisper, language: "ko")
+        )
+
+        try await waitUntil {
+            self.viewModel.progressSubline == "Whisper Large v3 Turbo · Apple Silicon"
+        }
+        let override = await mockService.lastSpeechEngineOverride
+        XCTAssertEqual(override, SpeechEngineSelection(engine: .whisper, language: "ko"))
+
+        viewModel.cancelTranscription()
+        try await waitUntil { !self.viewModel.isTranscribing }
     }
 
     func testRetranscriptionEngineOptionUsesCapturedMeetingEngine() throws {

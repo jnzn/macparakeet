@@ -526,13 +526,23 @@ public final class DatabaseManager: Sendable {
         // pre-Whisper data is unambiguously Parakeet but post-Whisper-merge
         // rows of unknown engine should not be silently labeled.
         migrator.registerMigration("v0.8-engine-attribution") { db in
+            let transcriptionColumns = try db.columns(in: "transcriptions").map(\.name)
             try db.alter(table: "transcriptions") { t in
-                t.add(column: "engine", .text)
-                t.add(column: "engineVariant", .text)
+                if !transcriptionColumns.contains("engine") {
+                    t.add(column: "engine", .text)
+                }
+                if !transcriptionColumns.contains("engineVariant") {
+                    t.add(column: "engineVariant", .text)
+                }
             }
+            let dictationColumns = try db.columns(in: "dictations").map(\.name)
             try db.alter(table: "dictations") { t in
-                t.add(column: "engine", .text)
-                t.add(column: "engineVariant", .text)
+                if !dictationColumns.contains("engine") {
+                    t.add(column: "engine", .text)
+                }
+                if !dictationColumns.contains("engineVariant") {
+                    t.add(column: "engineVariant", .text)
+                }
             }
         }
 

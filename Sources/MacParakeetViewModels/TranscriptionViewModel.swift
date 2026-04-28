@@ -102,6 +102,7 @@ public final class TranscriptionViewModel {
     private var promptResultRepo: PromptResultRepositoryProtocol?
     private var transcriptionTask: Task<Void, Never>?
     private var activeTranscriptionTaskID: UUID?
+    private var activeProgressSpeechEngine: SpeechEngineSelection?
     private var activeDropRequestID: UUID?
     private var dropPendingCount = 0
     private var dropAccepted = false
@@ -321,7 +322,12 @@ public final class TranscriptionViewModel {
               FileManager.default.fileExists(atPath: filePath) else { return }
 
         let url = URL(fileURLWithPath: filePath)
-        let taskID = beginNewTranscription(source: .localFile, fileName: original.fileName, clearCurrent: true)
+        let taskID = beginNewTranscription(
+            source: .localFile,
+            fileName: original.fileName,
+            clearCurrent: true,
+            speechEngine: speechEngineOverride
+        )
         let retranscriptionSource: TelemetryTranscriptionSource = switch original.sourceType {
         case .file:
             .file
@@ -445,12 +451,14 @@ public final class TranscriptionViewModel {
     private func beginNewTranscription(
         source: SourceKind,
         fileName: String,
-        clearCurrent: Bool = false
+        clearCurrent: Bool = false,
+        speechEngine: SpeechEngineSelection? = nil
     ) -> UUID {
         transcriptionTask?.cancel()
 
         let taskID = UUID()
         activeTranscriptionTaskID = taskID
+        activeProgressSpeechEngine = speechEngine ?? SpeechEngineSelection.current(defaults: defaults)
         transcribingFileName = fileName
         beginTranscription(source: source)
 
@@ -542,6 +550,7 @@ public final class TranscriptionViewModel {
         progress = ""
         transcriptionProgress = nil
         transcribingFileName = ""
+        activeProgressSpeechEngine = nil
         progressPhase = .preparing
         progressHeadline = Self.headline(for: .preparing)
         progressSubline = nil
@@ -556,12 +565,12 @@ public final class TranscriptionViewModel {
         self.transcriptionProgress = progress.fraction
         self.progressPhase = phase
         self.progressHeadline = Self.headline(for: phase)
-        let engine = SpeechEnginePreference.current(defaults: defaults)
+        let speechEngine = activeProgressSpeechEngine ?? SpeechEngineSelection.current(defaults: defaults)
         let whisperVariant = SpeechEnginePreference.whisperModelVariant(defaults: defaults)
         self.progressSubline = Self.subline(
             for: phase,
             sourceKind: sourceKind,
-            engine: engine,
+            engine: speechEngine.engine,
             whisperVariant: whisperVariant
         )
     }

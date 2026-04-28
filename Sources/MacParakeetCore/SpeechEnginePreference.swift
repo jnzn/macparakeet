@@ -96,11 +96,7 @@ public enum SpeechEnginePreference: String, CaseIterable, Codable, Sendable {
             ("base", "Base"),
             ("tiny", "Tiny")
         ]
-        var size: String?
-        for entry in sizeOrder where lowered.hasPrefix(entry.token) {
-            size = entry.label
-            break
-        }
+        let size = sizeOrder.first { lowered.hasPrefix($0.token) }?.label
 
         let isTurbo = lowered.contains("turbo")
 
