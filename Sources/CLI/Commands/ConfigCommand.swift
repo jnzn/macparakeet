@@ -50,8 +50,10 @@ struct ConfigCommand: AsyncParsableCommand {
         var json: Bool = false
 
         func run() async throws {
-            let value = try ConfigCommand.read(key: key)
-            try printResult(key: key, value: value, json: json)
+            try await emitJSONOrRethrow(json: json) {
+                let value = try ConfigCommand.read(key: key)
+                try printResult(key: key, value: value, json: json)
+            }
         }
     }
 
@@ -71,8 +73,10 @@ struct ConfigCommand: AsyncParsableCommand {
         var json: Bool = false
 
         func run() async throws {
-            let written = try ConfigCommand.write(key: key, value: value)
-            try printResult(key: key, value: written, json: json)
+            try await emitJSONOrRethrow(json: json) {
+                let written = try ConfigCommand.write(key: key, value: value)
+                try printResult(key: key, value: written, json: json)
+            }
         }
     }
 
@@ -86,23 +90,29 @@ struct ConfigCommand: AsyncParsableCommand {
         var json: Bool = false
 
         func run() async throws {
-            var entries: [(String, String)] = []
-            for key in ConfigCommand.supportedKeys {
-                let value = (try? ConfigCommand.read(key: key)) ?? "(error)"
-                entries.append((key, value))
-            }
-            if json {
-                let dict = Dictionary(uniqueKeysWithValues: entries)
-                try printJSON(dict)
-            } else {
-                for (key, value) in entries {
-                    print("\(key) = \(value)")
+            try await emitJSONOrRethrow(json: json) {
+                var entries: [(String, String)] = []
+                for key in ConfigCommand.supportedKeys {
+                    entries.append((key, try ConfigCommand.read(key: key)))
+                }
+                if json {
+                    let dict = Dictionary(uniqueKeysWithValues: entries)
+                    try printJSON(dict)
+                } else {
+                    for (key, value) in entries {
+                        print("\(key) = \(value)")
+                    }
                 }
             }
         }
     }
 
     // MARK: - Read / Write
+    //
+    // Both throw `ValidationError` for unsupported keys / invalid values so the
+    // CLI's `--json` failure envelope contract picks them up with
+    // `errorType: "validation"` and exit code 2 (misuse). See
+    // `Sources/CLI/CHANGELOG.md` "Exit codes" / "--json failure envelope".
 
     static func read(key: String, defaults: UserDefaults? = nil) throws -> String {
         let store = defaults ?? macParakeetAppDefaults()
@@ -111,7 +121,7 @@ struct ConfigCommand: AsyncParsableCommand {
             let on = AppPreferences.isTelemetryEnabled(defaults: store)
             return on ? "on" : "off"
         default:
-            throw ConfigError.unknownKey(key)
+            throw unknownKeyError(key)
         }
     }
 
@@ -126,7 +136,7 @@ struct ConfigCommand: AsyncParsableCommand {
             store.set(parsed, forKey: AppPreferences.telemetryEnabledKey)
             return parsed ? "on" : "off"
         default:
-            throw ConfigError.unknownKey(key)
+            throw unknownKeyError(key)
         }
     }
 
@@ -138,8 +148,12 @@ struct ConfigCommand: AsyncParsableCommand {
         case "off", "false", "no", "0", "disable", "disabled":
             return false
         default:
-            throw ConfigError.invalidValue(key: key, value: value)
+            throw ValidationError("Invalid value for \(key): '\(value)'. Use on/off (or true/false, yes/no, 1/0).")
         }
+    }
+
+    private static func unknownKeyError(_ key: String) -> ValidationError {
+        ValidationError("Unknown config key: '\(key)'. Supported: \(ConfigCommand.supportedKeys.joined(separator: ", ")).")
     }
 }
 
@@ -153,19 +167,5 @@ private func printResult(key: String, value: String, json: Bool) throws {
         try printJSON(ConfigKeyValue(key: key, value: value))
     } else {
         print(value)
-    }
-}
-
-enum ConfigError: Error, LocalizedError, Equatable {
-    case unknownKey(String)
-    case invalidValue(key: String, value: String)
-
-    var errorDescription: String? {
-        switch self {
-        case .unknownKey(let key):
-            return "Unknown config key: \(key). Supported: \(ConfigCommand.supportedKeys.joined(separator: ", "))."
-        case .invalidValue(let key, let value):
-            return "Invalid value for \(key): '\(value)'. Use on/off (or true/false, yes/no, 1/0)."
-        }
     }
 }

@@ -1,3 +1,4 @@
+import ArgumentParser
 import XCTest
 @testable import CLI
 @testable import MacParakeetCore
@@ -40,12 +41,11 @@ final class ConfigCommandTests: XCTestCase {
         XCTAssertEqual(try ConfigCommand.read(key: "telemetry", defaults: defaults), "on")
     }
 
-    func testReadUnknownKeyThrows() {
+    func testReadUnknownKeyThrowsValidationError() {
+        // Maps to errorType="validation" / exit code 2 in --json failure envelope.
         XCTAssertThrowsError(try ConfigCommand.read(key: "bogus", defaults: defaults)) { error in
-            guard case ConfigError.unknownKey(let key)? = error as? ConfigError else {
-                return XCTFail("Expected ConfigError.unknownKey, got \(error)")
-            }
-            XCTAssertEqual(key, "bogus")
+            XCTAssertTrue(error is ValidationError, "Expected ValidationError, got \(type(of: error))")
+            XCTAssertTrue("\(error)".contains("bogus"))
         }
     }
 
@@ -78,29 +78,32 @@ final class ConfigCommandTests: XCTestCase {
         }
     }
 
-    func testWriteRejectsInvalidValue() {
+    func testWriteRejectsInvalidValueAsValidationError() {
         XCTAssertThrowsError(try ConfigCommand.write(key: "telemetry", value: "maybe", defaults: defaults)) { error in
-            guard case ConfigError.invalidValue(let key, let value)? = error as? ConfigError else {
-                return XCTFail("Expected ConfigError.invalidValue, got \(error)")
-            }
-            XCTAssertEqual(key, "telemetry")
-            XCTAssertEqual(value, "maybe")
+            XCTAssertTrue(error is ValidationError, "Expected ValidationError, got \(type(of: error))")
+            XCTAssertTrue("\(error)".contains("maybe"))
         }
         // Defaults must not have been mutated.
         XCTAssertNil(defaults.object(forKey: AppPreferences.telemetryEnabledKey))
     }
 
-    func testWriteUnknownKeyThrows() {
+    func testWriteUnknownKeyThrowsValidationError() {
         XCTAssertThrowsError(try ConfigCommand.write(key: "bogus", value: "on", defaults: defaults)) { error in
-            guard case ConfigError.unknownKey? = error as? ConfigError else {
-                return XCTFail("Expected ConfigError.unknownKey, got \(error)")
-            }
+            XCTAssertTrue(error is ValidationError, "Expected ValidationError, got \(type(of: error))")
         }
     }
 
     // MARK: - parseBool
 
     func testParseBoolRejectsEmpty() {
-        XCTAssertThrowsError(try ConfigCommand.parseBool("", key: "telemetry"))
+        XCTAssertThrowsError(try ConfigCommand.parseBool("", key: "telemetry")) { error in
+            XCTAssertTrue(error is ValidationError)
+        }
+    }
+
+    func testParseBoolRejectsWhitespaceOnly() {
+        XCTAssertThrowsError(try ConfigCommand.parseBool("   ", key: "telemetry")) { error in
+            XCTAssertTrue(error is ValidationError)
+        }
     }
 }

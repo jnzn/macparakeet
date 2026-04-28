@@ -75,11 +75,11 @@ struct CLIOperationPrivacyTests {
         #expect(unexpected.isEmpty, "cli_operation introduced new prop key(s) \(unexpected) — review for privacy and update docs/telemetry.md + integrations/README.md before merging.")
     }
 
-    @Test("input_kind is the enum case name, not user-supplied content")
+    @Test("input_kind serializes to the enum case name; no path/URL substrings leak into any prop value")
     func inputKindIsEnumOnly() {
-        // Even when the file is a malicious filename like
-        // `..//Users/secret/sensitive_recording.m4a`, the only thing that ends
-        // up in props is the ObservabilityInputKind enum case.
+        // Defense in depth: if a future refactor of `compactProps` started
+        // splatting the original input string into a prop value, the contains()
+        // assertions below would catch it.
         let event = TelemetryEventSpec.cliOperation(
             operationID: "op-1",
             operationContext: nil,
