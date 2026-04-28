@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import MacParakeetCore
+import os
 
 struct ModelsCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
@@ -8,6 +9,7 @@ struct ModelsCommand: AsyncParsableCommand {
         abstract: "Inspect and manage the local speech and speaker models.",
         subcommands: [
             Status.self,
+            Download.self,
             WarmUp.self,
             Repair.self,
             Clear.self,
@@ -38,6 +40,35 @@ extension ModelsCommand {
                 printSpeechStackStatus(status)
             }
             await sttClient.shutdown()
+        }
+    }
+
+    struct Download: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "download",
+            abstract: "Download a local speech model without starting a transcription."
+        )
+
+        @Argument(help: "Model identifier. Use whisper-large-v3-v20240930-turbo-632MB for Whisper.")
+        var variant: String
+
+        func run() async throws {
+            let model = try resolveWhisperDownloadModel(variant)
+            print("Whisper: downloading \(model)...")
+            let lastPercent = OSAllocatedUnfairLock(initialState: -1)
+            let modelURL = try await WhisperEngine.downloadModel(model: model) { completed, total in
+                let percent = total > 0 ? Int((Double(completed) / Double(total) * 100).rounded()) : 0
+                let clamped = min(max(percent, 0), 100)
+                let shouldPrint = lastPercent.withLock { last in
+                    guard last != clamped else { return false }
+                    last = clamped
+                    return true
+                }
+                if shouldPrint {
+                    print("Whisper: downloading \(clamped)%")
+                }
+            }
+            print("Whisper: ready at \(modelURL.path)")
         }
     }
 
@@ -97,9 +128,21 @@ extension ModelsCommand {
             let sttClient = STTClient()
             await sttClient.clearModelCache()
             DiarizationService.clearModelCache()
+            try? FileManager.default.removeItem(atPath: AppPaths.whisperModelsDir)
             print("Local speech and speaker model caches cleared")
         }
     }
+}
+
+func resolveWhisperDownloadModel(_ variant: String) throws -> String {
+    let normalizedInput = variant.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalizedInput.isEmpty else {
+        throw ValidationError("Model variant cannot be empty.")
+    }
+    guard normalizedInput.hasPrefix("whisper-") else {
+        throw ValidationError("Only whisper-* model identifiers are supported by models download.")
+    }
+    return WhisperEngine.normalizeModelVariant(normalizedInput)
 }
 
 struct SpeechStackPayload: Encodable {
