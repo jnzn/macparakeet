@@ -96,7 +96,7 @@ public enum SpeechEnginePreference: String, CaseIterable, Codable, Sendable {
             ("base", "Base"),
             ("tiny", "Tiny")
         ]
-        let size = sizeOrder.first { lowered.hasPrefix($0.token) }?.label
+        let size = sizeOrder.first { variantPrefixMatches(lowered, token: $0.token) }?.label
 
         let isTurbo = lowered.contains("turbo")
 
@@ -104,6 +104,23 @@ public enum SpeechEnginePreference: String, CaseIterable, Codable, Sendable {
             return isTurbo ? "\(size) Turbo" : size
         }
         return rawVariant
+    }
+
+    private static func variantPrefixMatches(_ normalized: String, token: String) -> Bool {
+        guard normalized.hasPrefix(token) else { return false }
+        let remainder = normalized.dropFirst(token.count)
+        guard let separator = remainder.first else { return true }
+        guard separator == "-" || separator == "_" || separator == "." else { return false }
+
+        if !token.contains("-v"), separator == "-" {
+            let suffix = remainder.dropFirst()
+            if suffix.first == "v",
+               suffix.dropFirst().first?.isNumber == true {
+                return false
+            }
+        }
+
+        return true
     }
 }
 

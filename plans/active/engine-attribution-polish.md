@@ -50,7 +50,7 @@ public static func friendlyVariantName(_ rawVariant: String) -> String
 | Engine | Subline |
 |---|---|
 | Parakeet | `"Parakeet TDT · Neural Engine"` |
-| Whisper | `"Whisper {friendlyVariant} · Apple Silicon"` |
+| Whisper | `"Whisper {friendlyVariant} · Neural Engine"` |
 
 (Use middle-dot `·` not bullet — tighter visual.)
 
@@ -58,7 +58,7 @@ public static func friendlyVariantName(_ rawVariant: String) -> String
 
 ### Schema migration
 
-`Sources/MacParakeetCore/Database/DatabaseManager.swift`, new migration `v0.7.7-engine-attribution`:
+`Sources/MacParakeetCore/Database/DatabaseManager.swift`, new migration `v0.8-engine-attribution`:
 
 ```sql
 ALTER TABLE transcriptions ADD COLUMN engine TEXT;
@@ -117,7 +117,7 @@ Populate engine fields from `STTResult`:
   - Migration: existing rows decode with nil engine.
   - Save path: `STTResult.engine` round-trips to persisted `Transcription.engine`.
   - CLI JSON: `engine` field present in output.
-- Manual smoke: dev app, swap to Whisper, transcribe short file, confirm progress card shows `"Whisper Large v3 Turbo · Apple Silicon"`, detail view shows attribution line, JSON CLI output contains engine fields.
+- Manual smoke: dev app, swap to Whisper, transcribe short file, confirm progress card shows `"Whisper Large v3 Turbo · Neural Engine"`, detail view shows attribution line, JSON CLI output contains engine fields.
 
 ## Risks
 
