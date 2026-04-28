@@ -22,6 +22,7 @@ protocol STTRuntimeProtocol: Sendable {
     func shutdown() async
     func clearModelCache() async
     func setSpeechEngine(_ preference: SpeechEnginePreference) async throws
+    func currentSpeechEngineSelection() async -> SpeechEngineSelection
 }
 
 /// Sole owner of the shared Parakeet STT lifecycle.
@@ -298,7 +299,7 @@ public actor STTRuntime: STTRuntimeProtocol {
             try await ensureInitialized()
         case .whisper:
             let engine = whisperEngine ?? WhisperEngine(
-                model: SpeechEnginePreference.whisperModelVariant(),
+                model: whisperModelVariant,
                 language: SpeechEnginePreference.whisperDefaultLanguage()
             )
             try await engine.prepare()
@@ -319,6 +320,13 @@ public actor STTRuntime: STTRuntimeProtocol {
         default:
             break
         }
+    }
+
+    public func currentSpeechEngineSelection() async -> SpeechEngineSelection {
+        SpeechEngineSelection(
+            engine: speechEngine,
+            language: speechEngine == .whisper ? SpeechEnginePreference.whisperDefaultLanguage() : nil
+        )
     }
 
     public nonisolated static func isModelCached(version: AsrModelVersion = .v3) -> Bool {

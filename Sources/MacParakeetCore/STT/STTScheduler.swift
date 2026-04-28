@@ -175,7 +175,7 @@ public actor STTScheduler: STTManaging, SpeechEngineRoutedTranscribing, SpeechEn
     }
 
     public func beginSpeechEngineSession() async -> SpeechEngineLease {
-        let lease = SpeechEngineLease(selection: SpeechEngineSelection.current())
+        let lease = SpeechEngineLease(selection: await runtime.currentSpeechEngineSelection())
         activeSpeechEngineSessionIDs.insert(lease.id)
         return lease
     }

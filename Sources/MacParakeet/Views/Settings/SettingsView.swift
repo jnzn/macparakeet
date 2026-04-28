@@ -783,6 +783,7 @@ struct SettingsView: View {
                         Text("Parakeet").tag(SpeechEnginePreference.parakeet)
                         Text("Whisper").tag(SpeechEnginePreference.whisper)
                     }
+                    .labelsHidden()
                     .pickerStyle(.segmented)
                     .frame(width: 220)
                     .disabled(viewModel.speechEngineSwitching)
@@ -831,11 +832,40 @@ struct SettingsView: View {
                     detail: viewModel.whisperModelStatusDetail,
                     status: viewModel.whisperModelStatus,
                     isRepairing: viewModel.whisperDownloading,
-                    actionLabel: viewModel.isWhisperModelDownloaded ? "Downloaded" : "Download"
+                    actionLabel: whisperModelActionLabel,
+                    actionDisabled: !isWhisperModelActionEnabled
                 ) {
                     viewModel.downloadWhisperModel()
                 }
             }
+        }
+    }
+
+    private var whisperModelActionLabel: String {
+        switch viewModel.whisperModelStatus {
+        case .notDownloaded:
+            return "Download"
+        case .notLoaded:
+            return "Repair"
+        case .failed:
+            return "Retry"
+        case .ready:
+            return "Ready"
+        case .checking:
+            return "Checking"
+        case .repairing:
+            return "Working..."
+        case .unknown:
+            return "Check"
+        }
+    }
+
+    private var isWhisperModelActionEnabled: Bool {
+        switch viewModel.whisperModelStatus {
+        case .notDownloaded, .notLoaded, .failed:
+            return !viewModel.whisperDownloading
+        case .unknown, .checking, .ready, .repairing:
+            return false
         }
     }
 
@@ -1138,6 +1168,7 @@ struct SettingsView: View {
         status: SettingsViewModel.LocalModelStatus,
         isRepairing: Bool,
         actionLabel: String = "Repair",
+        actionDisabled: Bool = false,
         onRepair: @escaping () -> Void
     ) -> some View {
         HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
@@ -1157,7 +1188,7 @@ struct SettingsView: View {
                 onRepair()
             }
             .buttonStyle(.bordered)
-            .disabled(isRepairing || actionLabel == "Downloaded")
+            .disabled(isRepairing || actionDisabled)
         }
     }
 

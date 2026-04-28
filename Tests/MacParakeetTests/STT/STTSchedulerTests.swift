@@ -170,6 +170,16 @@ final class STTSchedulerTests: XCTestCase {
         XCTAssertEqual(count, 1)
     }
 
+    func testSpeechEngineSessionLeaseUsesRuntimeSelection() async {
+        let runtime = MockSTTRuntime()
+        await runtime.setCurrentSelection(SpeechEngineSelection(engine: .whisper, language: "KO"))
+        let scheduler = STTScheduler(runtimeProvider: runtime)
+
+        let lease = await scheduler.beginSpeechEngineSession()
+
+        XCTAssertEqual(lease.selection, SpeechEngineSelection(engine: .whisper, language: "ko"))
+    }
+
     func testRoutedTranscribeForwardsSpeechEngineSelection() async throws {
         let runtime = MockSTTRuntime()
         let scheduler = STTScheduler(runtimeProvider: runtime)
@@ -423,6 +433,7 @@ private actor MockSTTRuntime: STTRuntimeProtocol {
     private(set) var clearModelCacheCallCount = 0
     private(set) var shutdownCallCount = 0
     private(set) var setSpeechEngineCallCount = 0
+    private var selection = SpeechEngineSelection(engine: .parakeet)
     private var ready = false
 
     func transcribe(
@@ -496,7 +507,16 @@ private actor MockSTTRuntime: STTRuntimeProtocol {
 
     func setSpeechEngine(_ preference: SpeechEnginePreference) async throws {
         setSpeechEngineCallCount += 1
+        selection = SpeechEngineSelection(engine: preference)
         ready = false
+    }
+
+    func currentSpeechEngineSelection() async -> SpeechEngineSelection {
+        selection
+    }
+
+    func setCurrentSelection(_ selection: SpeechEngineSelection) {
+        self.selection = selection
     }
 
     func block(path: String) {

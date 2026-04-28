@@ -183,6 +183,13 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         }
 
         let sessionID = UUID()
+        startingSessionID = sessionID
+        defer {
+            if startingSessionID == sessionID {
+                startingSessionID = nil
+            }
+        }
+
         let folderURL = URL(fileURLWithPath: AppPaths.meetingRecordingsDir, isDirectory: true)
             .appendingPathComponent(sessionID.uuidString, isDirectory: true)
         let writer = try MeetingAudioStorageWriter(folderURL: folderURL)
@@ -207,12 +214,6 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             mixedAudioURL: writer.mixedAudioURL,
             speechEngine: speechEngine
         )
-        startingSessionID = session.id
-        defer {
-            if startingSessionID == session.id {
-                startingSessionID = nil
-            }
-        }
         self.writer = writer
         self.currentSession = session
 

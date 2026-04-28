@@ -61,6 +61,16 @@ private actor FailingYouTubeDownloader: YouTubeDownloading {
     }
 }
 
+private actor NonRoutedSTTTranscriber: STTTranscribing {
+    func transcribe(
+        audioPath: String,
+        job: STTJobKind,
+        onProgress: (@Sendable (Int, Int) -> Void)?
+    ) async throws -> STTResult {
+        STTResult(text: "default engine")
+    }
+}
+
 private struct FailingEntitlements: EntitlementsChecking {
     let error: Error
     let state: EntitlementsState?
@@ -590,6 +600,49 @@ final class TranscriptionServiceTests: XCTestCase {
 
         let selections = await mockSTT.speechEngineSelections
         XCTAssertEqual(selections, [SpeechEngineSelection(engine: .whisper, language: "ko")])
+    }
+
+    func testTranscribeMeetingFailsWhenCapturedSpeechEngineCannotBeRouted() async throws {
+        let recordingFolder = URL(fileURLWithPath: AppPaths.tempDir)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: recordingFolder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: recordingFolder) }
+
+        let mixedURL = recordingFolder.appendingPathComponent("meeting.m4a")
+        let microphoneURL = recordingFolder.appendingPathComponent("microphone.m4a")
+        XCTAssertTrue(FileManager.default.createFile(atPath: mixedURL.path, contents: Data("mixed".utf8)))
+        XCTAssertTrue(FileManager.default.createFile(atPath: microphoneURL.path, contents: Data("microphone".utf8)))
+
+        let service = TranscriptionService(
+            audioProcessor: mockAudio,
+            sttTranscriber: NonRoutedSTTTranscriber(),
+            transcriptionRepo: transcriptionRepo
+        )
+        let recording = MeetingRecordingOutput(
+            sessionID: UUID(),
+            displayName: "Korean Meeting",
+            folderURL: recordingFolder,
+            mixedAudioURL: mixedURL,
+            microphoneAudioURL: microphoneURL,
+            systemAudioURL: recordingFolder.appendingPathComponent("system.m4a"),
+            durationSeconds: 1.0,
+            sourceAlignment: MeetingSourceAlignment(
+                meetingOriginHostTime: nil,
+                microphone: .init(firstHostTime: nil, lastHostTime: nil, startOffsetMs: 0, writtenFrameCount: 24_000, sampleRate: 48_000),
+                system: nil
+            ),
+            speechEngine: SpeechEngineSelection(engine: .whisper, language: "ko")
+        )
+
+        do {
+            _ = try await service.transcribeMeeting(recording: recording)
+            XCTFail("Expected pinned speech engine routing to fail for a non-routed transcriber")
+        } catch let error as STTError {
+            guard case .engineStartFailed(let reason) = error else {
+                return XCTFail("Unexpected STT error: \(error)")
+            }
+            XCTAssertTrue(reason.contains("Pinned whisper speech engine"))
+        }
     }
 
     func testTranscribeMeetingAppliesOptionalSystemDiarizationAdditively() async throws {

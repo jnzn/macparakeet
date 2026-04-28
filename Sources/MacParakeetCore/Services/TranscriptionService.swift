@@ -740,8 +740,12 @@ public actor TranscriptionService: TranscriptionServiceProtocol {
         speechEngine: SpeechEngineSelection?,
         onProgress: (@Sendable (Int, Int) -> Void)?
     ) async throws -> STTResult {
-        if let speechEngine,
-           let routed = sttTranscriber as? any SpeechEngineRoutedTranscribing {
+        if let speechEngine {
+            guard let routed = sttTranscriber as? any SpeechEngineRoutedTranscribing else {
+                throw STTError.engineStartFailed(
+                    "Pinned \(speechEngine.engine.rawValue) speech engine cannot be honored by this transcriber."
+                )
+            }
             return try await routed.transcribe(
                 audioPath: audioPath,
                 job: job,

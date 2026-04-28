@@ -11,6 +11,7 @@ final class SettingsViewModelTests: XCTestCase {
     var mockPermissions: MockPermissionService!
     var mockLaunchAtLogin: MockLaunchAtLoginService!
     var testDefaults: UserDefaults!
+    var testDefaultsSuiteName: String!
     var entitlements: EntitlementsService!
     var youtubeDownloadsTestDir: URL!
 
@@ -24,8 +25,8 @@ final class SettingsViewModelTests: XCTestCase {
         try? FileManager.default.createDirectory(at: youtubeDownloadsTestDir, withIntermediateDirectories: true)
 
         // Use a unique suite name for isolated UserDefaults per test
-        let suiteName = "com.macparakeet.tests.\(UUID().uuidString)"
-        testDefaults = UserDefaults(suiteName: suiteName)!
+        testDefaultsSuiteName = "com.macparakeet.tests.\(UUID().uuidString)"
+        testDefaults = UserDefaults(suiteName: testDefaultsSuiteName)!
 
         viewModel = SettingsViewModel(
             defaults: testDefaults,
@@ -43,13 +44,14 @@ final class SettingsViewModelTests: XCTestCase {
 
     override func tearDown() {
         // Clean up the test UserDefaults suite
-        if let suiteName = testDefaults.volatileDomainNames.first {
-            testDefaults.removePersistentDomain(forName: suiteName)
+        if let testDefaultsSuiteName {
+            testDefaults.removePersistentDomain(forName: testDefaultsSuiteName)
         }
         if let youtubeDownloadsTestDir {
             try? FileManager.default.removeItem(at: youtubeDownloadsTestDir)
         }
         testDefaults = nil
+        testDefaultsSuiteName = nil
     }
 
     // MARK: - Initial Values
@@ -722,7 +724,7 @@ final class SettingsViewModelTests: XCTestCase {
 
         viewModel.whisperModelStatus = .notLoaded
         viewModel.speechEnginePreference = .whisper
-        try await Task.sleep(for: .milliseconds(100))
+        try await waitForSpeechEngineSwitchingToFinish()
 
         let preferences = await switcher.preferences
         XCTAssertEqual(preferences, [.whisper])
@@ -744,11 +746,26 @@ final class SettingsViewModelTests: XCTestCase {
 
         viewModel.whisperModelStatus = .notLoaded
         viewModel.speechEnginePreference = .whisper
-        try await Task.sleep(for: .milliseconds(100))
+        try await waitForSpeechEngineSwitchingToFinish()
 
         XCTAssertEqual(viewModel.speechEnginePreference, .parakeet)
         XCTAssertEqual(SpeechEnginePreference.current(defaults: testDefaults), .parakeet)
         XCTAssertEqual(viewModel.speechEngineError, STTError.engineBusy.localizedDescription)
+    }
+
+    private func waitForSpeechEngineSwitchingToFinish(
+        timeout: Duration = .seconds(2),
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async throws {
+        let start = ContinuousClock.now
+        while viewModel.speechEngineSwitching {
+            if start.duration(to: .now) > timeout {
+                XCTFail("Timed out waiting for speech engine switch to finish", file: file, line: line)
+                return
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
     }
 
     // MARK: - Hotkey Trigger

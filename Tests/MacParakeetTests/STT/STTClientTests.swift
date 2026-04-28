@@ -1,5 +1,8 @@
 import XCTest
 @testable import MacParakeetCore
+#if canImport(WhisperKit)
+import WhisperKit
+#endif
 
 final class STTClientTests: XCTestCase {
 
@@ -79,6 +82,17 @@ final class STTClientTests: XCTestCase {
         XCTAssertEqual(word.endMs, 2920)
     }
 
+    func testWhisperDecodeOptionsForForcedLanguageDisablePrefillPrompt() {
+        #if canImport(WhisperKit)
+        let options = WhisperEngine.makeDecodingOptions(language: "KO_kr")
+
+        XCTAssertEqual(options.language, "ko-kr")
+        XCTAssertFalse(options.usePrefillPrompt)
+        XCTAssertFalse(options.detectLanguage)
+        XCTAssertTrue(options.wordTimestamps)
+        #endif
+    }
+
     func testWhisperModelVariantNormalization() {
         XCTAssertEqual(
             WhisperEngine.normalizeModelVariant("whisper-large-v3-v20240930-turbo"),
@@ -115,6 +129,57 @@ final class STTClientTests: XCTestCase {
                 downloadBase: root
             )?.lastPathComponent,
             "openai_whisper-large-v3-v20240930_turbo_632MB"
+        )
+    }
+
+    func testWhisperModelFolderPrefersExactMatch() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let boundaryMatch = root
+            .appendingPathComponent("openai_whisper-large-v3-v20240930_turbo_632MB", isDirectory: true)
+        let exactMatch = root
+            .appendingPathComponent("large-v3-v20240930_turbo_632MB", isDirectory: true)
+        try FileManager.default.createDirectory(at: boundaryMatch, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: exactMatch, withIntermediateDirectories: true)
+
+        XCTAssertEqual(
+            WhisperEngine.localModelFolder(
+                model: "whisper-large-v3-v20240930-turbo-632MB",
+                downloadBase: root
+            )?.resolvingSymlinksInPath(),
+            exactMatch.resolvingSymlinksInPath()
+        )
+    }
+
+    func testWhisperModelFolderRejectsPartialNonBoundaryMatch() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let partialMatch = root
+            .appendingPathComponent("notlarge-v3-v20240930_turbo_632MBsuffix", isDirectory: true)
+        try FileManager.default.createDirectory(at: partialMatch, withIntermediateDirectories: true)
+
+        XCTAssertNil(WhisperEngine.localModelFolder(
+            model: "whisper-large-v3-v20240930-turbo-632MB",
+            downloadBase: root
+        ))
+    }
+
+    func testWhisperModelFolderFindsLaterBoundaryMatch() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let nestedMatch = root
+            .appendingPathComponent("notlarge-v3-v20240930_turbo_632MBsuffix-openai_whisper-large-v3-v20240930_turbo_632MB", isDirectory: true)
+        try FileManager.default.createDirectory(at: nestedMatch, withIntermediateDirectories: true)
+
+        XCTAssertEqual(
+            WhisperEngine.localModelFolder(
+                model: "whisper-large-v3-v20240930-turbo-632MB",
+                downloadBase: root
+            )?.resolvingSymlinksInPath(),
+            nestedMatch.resolvingSymlinksInPath()
         )
     }
 
