@@ -534,7 +534,9 @@ public actor DictationService: DictationServiceProtocol {
             processingMode: mode,
             status: .completed,
             hidden: !saveHistory,
-            wordCount: wc
+            wordCount: wc,
+            engine: result.engine.rawValue,
+            engineVariant: result.engineVariant
         )
 
         if saveHistory, shouldSaveAudio?() ?? false {

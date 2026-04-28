@@ -154,6 +154,22 @@ final class TranscriptionServiceTests: XCTestCase {
         XCTAssertEqual(try transcriptionRepo.fetch(id: result.id)?.language, "ko")
     }
 
+    func testTranscribeFilePersistsEngineAttributionFromSTTResult() async throws {
+        await mockSTT.configure(result: STTResult(
+            text: "hello world",
+            engine: .whisper,
+            engineVariant: SpeechEnginePreference.defaultWhisperModelVariant
+        ))
+
+        let result = try await service.transcribe(fileURL: URL(fileURLWithPath: "/tmp/whisper.mp3"))
+
+        XCTAssertEqual(result.engine, "whisper")
+        XCTAssertEqual(result.engineVariant, SpeechEnginePreference.defaultWhisperModelVariant)
+        let fetched = try transcriptionRepo.fetch(id: result.id)
+        XCTAssertEqual(fetched?.engine, "whisper")
+        XCTAssertEqual(fetched?.engineVariant, SpeechEnginePreference.defaultWhisperModelVariant)
+    }
+
     func testTranscribeFileDurationUsesMaximumWordEnd() async throws {
         await mockSTT.configure(result: STTResult(
             text: "out of order",
