@@ -167,6 +167,43 @@ final class MeetingRecordingServiceTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(lockStore.deletes.count, 1)
     }
 
+    func testTaskCancellationDuringAsyncEventsSetupReleasesLeaseAndState() async throws {
+        let captureService = BlockingEventsMeetingAudioCaptureService()
+        let lockStore = RecordingLockFileStore()
+        let sttClient = LeasingMeetingSTTClient(
+            selection: SpeechEngineSelection(engine: .whisper, language: "KO")
+        )
+        let service = MeetingRecordingService(
+            audioCaptureService: captureService,
+            audioConverter: MockMeetingAudioFileConverter(),
+            sttTranscriber: sttClient,
+            lockFileStore: lockStore
+        )
+
+        let startTask = Task {
+            try await service.startRecording()
+        }
+        await captureService.waitForEventsCall()
+
+        startTask.cancel()
+        await captureService.releaseEvents()
+
+        do {
+            try await startTask.value
+            XCTFail("startRecording() must not report success after task cancellation")
+        } catch is CancellationError {
+            // Expected.
+        }
+
+        let isRecordingAfterCancellation = await service.isRecording
+        let activeLeaseCount = await sttClient.activeLeaseCount
+        let startCallCount = await captureService.startCallCount
+        XCTAssertFalse(isRecordingAfterCancellation)
+        XCTAssertEqual(activeLeaseCount, 0)
+        XCTAssertEqual(startCallCount, 0)
+        XCTAssertGreaterThanOrEqual(lockStore.deletes.count, 1)
+    }
+
     func testStopRecordingKeepsLockUntilTranscriptionCompletes() async throws {
         let captureService = MockMeetingAudioCaptureService()
         let lockStore = RecordingLockFileStore()
@@ -226,6 +263,32 @@ final class MeetingRecordingServiceTests: XCTestCase {
         XCTAssertEqual(lockStore.writes.last?.file.speechEngine, SpeechEngineSelection(engine: .whisper, language: "ko"))
         let activeLeaseCountAfterStop = await sttClient.activeLeaseCount
         XCTAssertEqual(activeLeaseCountAfterStop, 0)
+    }
+
+    func testLivePreviewUsesCapturedSpeechEngineSelection() async throws {
+        let captureService = MockMeetingAudioCaptureService()
+        let speechEngine = SpeechEngineSelection(engine: .whisper, language: "KO")
+        let sttClient = LeasingMeetingSTTClient(selection: speechEngine)
+        let service = MeetingRecordingService(
+            audioCaptureService: captureService,
+            audioConverter: MockMeetingAudioFileConverter(),
+            sttTranscriber: sttClient
+        )
+
+        try await service.startRecording()
+
+        let microphoneBuffer = try XCTUnwrap(makeMonoFloatBuffer(frameCount: 80_000, sampleValue: 0.25))
+        await captureService.yield(.microphoneBuffer(
+            microphoneBuffer,
+            AVAudioTime(hostTime: AVAudioTime.hostTime(forSeconds: 100.0))
+        ))
+        try await waitForRoutedLiveChunkSelection(sttClient)
+
+        let routedSelections = await sttClient.routedSelections
+        XCTAssertEqual(routedSelections, [SpeechEngineSelection(engine: .whisper, language: "ko")])
+
+        let output = try await service.stopRecording()
+        try? FileManager.default.removeItem(at: output.folderURL)
     }
 
     func testStopRecordingKeepsLockWhenMixFails() async throws {
@@ -757,6 +820,20 @@ final class MeetingRecordingServiceTests: XCTestCase {
         while await client.liveChunkCallCount == 0 {
             if startedAt.duration(to: .now) > timeout {
                 XCTFail("Timed out waiting for live chunk transcription to start")
+                return
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
+    private func waitForRoutedLiveChunkSelection(
+        _ client: LeasingMeetingSTTClient,
+        timeout: Duration = .seconds(1)
+    ) async throws {
+        let startedAt = ContinuousClock.now
+        while await client.routedSelections.isEmpty {
+            if startedAt.duration(to: .now) > timeout {
+                XCTFail("Timed out waiting for routed live chunk transcription")
                 return
             }
             try await Task.sleep(for: .milliseconds(20))
@@ -1372,9 +1449,10 @@ private actor CountingMeetingSTTClient: STTClientProtocol {
     func shutdown() async {}
 }
 
-private actor LeasingMeetingSTTClient: STTClientProtocol, SpeechEngineSessionManaging {
+private actor LeasingMeetingSTTClient: STTClientProtocol, SpeechEngineRoutedTranscribing, SpeechEngineSessionManaging {
     private let selection: SpeechEngineSelection
     private var activeLeases: Set<UUID> = []
+    private(set) var routedSelections: [SpeechEngineSelection] = []
 
     init(selection: SpeechEngineSelection) {
         self.selection = selection
@@ -1400,6 +1478,18 @@ private actor LeasingMeetingSTTClient: STTClientProtocol, SpeechEngineSessionMan
         onProgress: (@Sendable (Int, Int) -> Void)?
     ) async throws -> STTResult {
         STTResult(text: "", words: [])
+    }
+
+    func transcribe(
+        audioPath: String,
+        job: STTJobKind,
+        speechEngine: SpeechEngineSelection,
+        onProgress: (@Sendable (Int, Int) -> Void)?
+    ) async throws -> STTResult {
+        if job == .meetingLiveChunk {
+            routedSelections.append(speechEngine)
+        }
+        return STTResult(text: "", words: [])
     }
 
     func warmUp(onProgress: (@Sendable (String) -> Void)?) async throws {}
