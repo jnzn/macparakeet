@@ -57,7 +57,7 @@ struct SettingsTabBar: View {
 
                 if let badge {
                     Circle()
-                        .fill(color(for: badge))
+                        .fill(badge.color)
                         .frame(width: 5, height: 5)
                 }
             }
@@ -80,15 +80,6 @@ struct SettingsTabBar: View {
         .help("\(metadata.title) (⌘\(metadata.shortcutDigit))")
         .accessibilityLabel(accessibilityLabel(for: tab, badge: badge))
         .accessibilityAddTraits(isActive ? .isSelected : [])
-    }
-
-    private func color(for status: SettingsStatusChip.Status) -> Color {
-        switch status {
-        case .ok: return DesignSystem.Colors.successGreen
-        case .recommended: return DesignSystem.Colors.warningAmber
-        case .required: return DesignSystem.Colors.errorRed
-        case .info: return DesignSystem.Colors.textSecondary
-        }
     }
 
     private func accessibilityLabel(for tab: SettingsTab, badge: SettingsStatusChip.Status?) -> String {

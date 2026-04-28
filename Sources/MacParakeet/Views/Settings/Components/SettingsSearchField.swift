@@ -18,6 +18,14 @@ struct SettingsSearchField: View {
     @Binding var query: String
     @FocusState.Binding var isFocused: Bool
 
+    /// Mirrors `SettingsRootViewModel.isSearching` so the clear-button
+    /// affordance and the flat-results UI activate on the same predicate.
+    /// Without this, typing spaces would show an X but nothing else would
+    /// react — a confusing dead state.
+    private var hasActiveQuery: Bool {
+        !query.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
     var body: some View {
         HStack(spacing: DesignSystem.Spacing.sm) {
             Image(systemName: "magnifyingglass")
@@ -36,7 +44,7 @@ struct SettingsSearchField: View {
                     return .ignored
                 }
 
-            if !query.isEmpty {
+            if hasActiveQuery {
                 Button {
                     query = ""
                     isFocused = true
