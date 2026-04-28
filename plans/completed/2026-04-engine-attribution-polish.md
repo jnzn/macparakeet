@@ -1,7 +1,7 @@
 # Engine Attribution Polish
 
-> Status: **ACTIVE** — single-PR scope, Tier 1 (live) + Tier 2 (persisted) combined.
-> Branch: `feat/engine-attribution-polish` (separate worktree).
+> Status: **IMPLEMENTED** — shipped in PR #171 (merged 2026-04-28).
+> Commits: `caa2d6cd`, `2e702514`, `fa168f5c`, `82411da8`, `1ee9e88c`, `52cdfa84`.
 
 ## Problem
 
