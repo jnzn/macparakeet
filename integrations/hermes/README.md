@@ -50,7 +50,7 @@ commands:
   run_prompt: |
     macparakeet-cli prompts run "{prompt_id_or_name}" \
       --transcription {transcription_id} \
-      --provider {provider} --api-key "{api_key}" --model "{model}"
+      --provider {provider} --api-key-env "{api_key_env}" --model "{model}"
   health: macparakeet-cli health --json
 ```
 

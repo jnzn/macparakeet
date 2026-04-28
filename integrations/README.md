@@ -113,7 +113,8 @@ macparakeet-cli history search "what did I say about" --json
 macparakeet-cli prompts list --json
 macparakeet-cli prompts run "Action items" \
   --transcription <id-or-prefix> \
-  --provider anthropic --api-key "$ANTHROPIC_API_KEY" \
+  --provider anthropic \
+  --api-key-env ANTHROPIC_API_KEY \
   --model claude-sonnet-4-6 \
   --json
 ```
@@ -233,7 +234,7 @@ Only use prompt/LLM commands when the user asks for generated output:
 macparakeet-cli prompts list --json
 macparakeet-cli prompts run "<prompt-name>" \
   --transcription "<id-or-prefix-or-title>" \
-  --provider "<provider>" --api-key "$PROVIDER_API_KEY" --model "<model>" \
+  --provider "<provider>" --api-key-env "PROVIDER_API_KEY" --model "<model>" \
   --json
 ```
 
@@ -257,11 +258,10 @@ macparakeet-cli prompts run "<prompt-name>" \
   never goes to stderr regardless of code; parse-time failures still use
   ArgumentParser's plain-text stderr path. Full table in
   `Sources/CLI/CHANGELOG.md` "Exit codes" section.
-- **API keys:** pass via `"$VAR"` shell expansion (e.g.
-  `--api-key "$ANTHROPIC_API_KEY"`), not literally. CLI does not read
-  `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` directly -- but a literal
-  `--api-key sk-...` lands in shell history and `ps`. Env-var expansion
-  avoids both.
+- **API keys:** prefer provider env vars or `--api-key-env NAME`. Hosted
+  providers read `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, and
+  `OPENROUTER_API_KEY` directly. Avoid `--api-key sk-...`; command-line
+  arguments can appear in shell history and process listings.
 - **JSON flag shape:** read-only query commands take `--json` (a binary flag);
   `transcribe` and `export` take `--format json` because they emit one of
   several formats (txt / srt / vtt / json / docx / pdf). Both produce stable
@@ -270,10 +270,30 @@ macparakeet-cli prompts run "<prompt-name>" \
 - **Lookups:** records that take an `<id-or-name>` argument accept full UUID,
   UUID prefix (>= 4 chars), or case-insensitive name. Ambiguous prefixes
   produce a `.ambiguous` error; missing records produce `.notFound`.
-- **Privacy:** STT and database access never touch the network. The only
-  network egress paths are: explicit helper repair (`health --repair-binaries`),
+- **Privacy:** STT and database access never touch the network. Network
+  egress paths are: explicit helper repair (`health --repair-binaries`),
   YouTube downloads (yt-dlp), optional cloud LLM provider calls (only when
-  `prompts run --provider <cloud>`), and Sparkle update checks (app, not CLI).
+  `prompts run --provider <cloud>` or `llm` against a hosted provider),
+  Sparkle update checks (app, not CLI), and a single privacy-safe
+  `cli_operation` event per `transcribe` invocation, posted to the self-hosted
+  endpoint at `https://macparakeet.com/api/telemetry`. The telemetry event
+  ships only allowlisted invocation metadata (`operation_id`, `workflow_id`,
+  `parent_operation_id`, `command`, `subcommand`, `outcome`,
+  `duration_seconds`, `input_kind`, `output_format`, `json`, `exit_code`,
+  `error_type`) -- never the file path, URL, transcript, language value, or any
+  user content (random per-process session UUID, no persistent identifier).
+  Disable it any of four ways:
+    - `MACPARAKEET_TELEMETRY=0` (per process)
+    - `DO_NOT_TRACK=1` (industry-standard signal, also honored)
+    - `macparakeet-cli config set telemetry off` (persists in the shared
+      UserDefaults suite the GUI reads)
+    - "Help improve MacParakeet" toggle in the GUI Settings → Privacy card
+
+  Auto-disabled in CI environments (`CI`, `GITHUB_ACTIONS`, `GITLAB_CI`,
+  `BUILDKITE`, `CIRCLECI`, `TRAVIS`, `JENKINS_URL`, `TF_BUILD`,
+  `TEAMCITY_VERSION` — any one set to a truthy value). Override CI auto-
+  disable with `MACPARAKEET_TELEMETRY=1`. See `docs/telemetry.md` for the
+  full event catalog and the Worker-side PII redaction policy.
 - **Concurrency:** the STT scheduler reserves one slot for dictation and
   shares a second slot for meeting / batch work (ADR-016). Multiple
   concurrent CLI calls share the background slot; expect serial transcription

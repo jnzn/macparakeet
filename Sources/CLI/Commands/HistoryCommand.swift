@@ -37,36 +37,38 @@ struct DictationsSubcommand: ParsableCommand {
     var database: String?
 
     func run() throws {
-        try AppPaths.ensureDirectories()
-        let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
-        let repo = DictationRepository(dbQueue: dbManager.dbQueue)
-        let dictations = try repo.fetchAll(limit: limit)
+        try emitJSONOrRethrow(json: json) {
+            try AppPaths.ensureDirectories()
+            let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
+            let repo = DictationRepository(dbQueue: dbManager.dbQueue)
+            let dictations = try repo.fetchAll(limit: limit)
 
-        if json {
-            try printJSON(dictations)
-            return
+            if json {
+                try printJSON(dictations)
+                return
+            }
+
+            if dictations.isEmpty {
+                print("No dictations found.")
+                return
+            }
+
+            let formatter = DateFormatter()
+            formatter.dateStyle = .short
+            formatter.timeStyle = .short
+
+            for d in dictations {
+                let date = formatter.string(from: d.createdAt)
+                let seconds = d.durationMs / 1000
+                let text = d.cleanTranscript ?? d.rawTranscript
+                let preview = text.count > 80 ? String(text.prefix(80)) + "..." : text
+                print("[\(date)] (\(seconds)s) \(preview)  (\(d.id.uuidString.prefix(8)))")
+            }
+
+            let stats = try repo.stats()
+            print()
+            print("Total: \(stats.visibleCount) dictations")
         }
-
-        if dictations.isEmpty {
-            print("No dictations found.")
-            return
-        }
-
-        let formatter = DateFormatter()
-        formatter.dateStyle = .short
-        formatter.timeStyle = .short
-
-        for d in dictations {
-            let date = formatter.string(from: d.createdAt)
-            let seconds = d.durationMs / 1000
-            let text = d.cleanTranscript ?? d.rawTranscript
-            let preview = text.count > 80 ? String(text.prefix(80)) + "..." : text
-            print("[\(date)] (\(seconds)s) \(preview)  (\(d.id.uuidString.prefix(8)))")
-        }
-
-        let stats = try repo.stats()
-        print()
-        print("Total: \(stats.visibleCount) dictations")
     }
 }
 
@@ -86,36 +88,38 @@ struct TranscriptionsSubcommand: ParsableCommand {
     var database: String?
 
     func run() throws {
-        try AppPaths.ensureDirectories()
-        let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
-        let repo = TranscriptionRepository(dbQueue: dbManager.dbQueue)
-        let transcriptions = try repo.fetchAll(limit: limit)
+        try emitJSONOrRethrow(json: json) {
+            try AppPaths.ensureDirectories()
+            let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
+            let repo = TranscriptionRepository(dbQueue: dbManager.dbQueue)
+            let transcriptions = try repo.fetchAll(limit: limit)
 
-        if json {
-            try printJSON(transcriptions)
-            return
-        }
-
-        if transcriptions.isEmpty {
-            print("No transcriptions found.")
-            return
-        }
-
-        let formatter = DateFormatter()
-        formatter.dateStyle = .short
-        formatter.timeStyle = .short
-
-        for t in transcriptions {
-            let date = formatter.string(from: t.createdAt)
-            let status = "\(t.status)"
-            let duration: String
-            if let ms = t.durationMs {
-                let s = ms / 1000
-                duration = "\(s / 60)m \(s % 60)s"
-            } else {
-                duration = "—"
+            if json {
+                try printJSON(transcriptions)
+                return
             }
-            print("[\(date)] \(t.fileName) (\(duration)) [\(status)]  (\(t.id.uuidString.prefix(8)))")
+
+            if transcriptions.isEmpty {
+                print("No transcriptions found.")
+                return
+            }
+
+            let formatter = DateFormatter()
+            formatter.dateStyle = .short
+            formatter.timeStyle = .short
+
+            for t in transcriptions {
+                let date = formatter.string(from: t.createdAt)
+                let status = "\(t.status)"
+                let duration: String
+                if let ms = t.durationMs {
+                    let s = ms / 1000
+                    duration = "\(s / 60)m \(s % 60)s"
+                } else {
+                    duration = "—"
+                }
+                print("[\(date)] \(t.fileName) (\(duration)) [\(status)]  (\(t.id.uuidString.prefix(8)))")
+            }
         }
     }
 }
@@ -139,34 +143,36 @@ struct SearchSubcommand: ParsableCommand {
     var database: String?
 
     func run() throws {
-        try AppPaths.ensureDirectories()
-        let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
-        let repo = DictationRepository(dbQueue: dbManager.dbQueue)
-        let results = try repo.search(query: query, limit: limit)
+        try emitJSONOrRethrow(json: json) {
+            try AppPaths.ensureDirectories()
+            let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
+            let repo = DictationRepository(dbQueue: dbManager.dbQueue)
+            let results = try repo.search(query: query, limit: limit)
 
-        if json {
-            try printJSON(results)
-            return
+            if json {
+                try printJSON(results)
+                return
+            }
+
+            if results.isEmpty {
+                print("No results for \"\(query)\".")
+                return
+            }
+
+            let formatter = DateFormatter()
+            formatter.dateStyle = .short
+            formatter.timeStyle = .short
+
+            for d in results {
+                let date = formatter.string(from: d.createdAt)
+                let text = d.cleanTranscript ?? d.rawTranscript
+                let preview = text.count > 80 ? String(text.prefix(80)) + "..." : text
+                print("[\(date)] \(preview)")
+            }
+
+            print()
+            print("\(results.count) result(s)")
         }
-
-        if results.isEmpty {
-            print("No results for \"\(query)\".")
-            return
-        }
-
-        let formatter = DateFormatter()
-        formatter.dateStyle = .short
-        formatter.timeStyle = .short
-
-        for d in results {
-            let date = formatter.string(from: d.createdAt)
-            let text = d.cleanTranscript ?? d.rawTranscript
-            let preview = text.count > 80 ? String(text.prefix(80)) + "..." : text
-            print("[\(date)] \(preview)")
-        }
-
-        print()
-        print("\(results.count) result(s)")
     }
 }
 
@@ -189,40 +195,42 @@ struct SearchTranscriptionsSubcommand: ParsableCommand {
     var database: String?
 
     func run() throws {
-        try AppPaths.ensureDirectories()
-        let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
-        let repo = TranscriptionRepository(dbQueue: dbManager.dbQueue)
-        let results = try repo.search(query: query, limit: limit)
+        try emitJSONOrRethrow(json: json) {
+            try AppPaths.ensureDirectories()
+            let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
+            let repo = TranscriptionRepository(dbQueue: dbManager.dbQueue)
+            let results = try repo.search(query: query, limit: limit)
 
-        if json {
-            try printJSON(results)
-            return
-        }
-
-        if results.isEmpty {
-            print("No transcriptions matching \"\(query)\".")
-            return
-        }
-
-        let formatter = DateFormatter()
-        formatter.dateStyle = .short
-        formatter.timeStyle = .short
-
-        for t in results {
-            let date = formatter.string(from: t.createdAt)
-            let fav = t.isFavorite ? " *" : ""
-            let duration: String
-            if let ms = t.durationMs {
-                let s = ms / 1000
-                duration = "\(s / 60)m \(s % 60)s"
-            } else {
-                duration = "—"
+            if json {
+                try printJSON(results)
+                return
             }
-            print("[\(date)] \(t.fileName) (\(duration)) [\(t.status)]\(fav)  (\(t.id.uuidString.prefix(8)))")
-        }
 
-        print()
-        print("\(results.count) result(s)")
+            if results.isEmpty {
+                print("No transcriptions matching \"\(query)\".")
+                return
+            }
+
+            let formatter = DateFormatter()
+            formatter.dateStyle = .short
+            formatter.timeStyle = .short
+
+            for t in results {
+                let date = formatter.string(from: t.createdAt)
+                let fav = t.isFavorite ? " *" : ""
+                let duration: String
+                if let ms = t.durationMs {
+                    let s = ms / 1000
+                    duration = "\(s / 60)m \(s % 60)s"
+                } else {
+                    duration = "—"
+                }
+                print("[\(date)] \(t.fileName) (\(duration)) [\(t.status)]\(fav)  (\(t.id.uuidString.prefix(8)))")
+            }
+
+            print()
+            print("\(results.count) result(s)")
+        }
     }
 }
 
@@ -244,9 +252,33 @@ struct DeleteDictationSubcommand: ParsableCommand {
         let repo = DictationRepository(dbQueue: dbManager.dbQueue)
 
         let dictation = try findDictation(id: id, repo: repo)
-        _ = try repo.delete(id: dictation.id)
+        let deleted = try repo.delete(id: dictation.id)
+        guard deleted else {
+            throw CLILookupError.notFound("No dictation matching '\(id)'")
+        }
+        if let path = dictation.audioPath {
+            removeOwnedDictationAudio(at: path)
+        }
         let preview = String(dictation.rawTranscript.prefix(60))
         print("Deleted dictation: \"\(preview)\"")
+    }
+}
+
+private func removeOwnedDictationAudio(at path: String, fileManager: FileManager = .default) {
+    let rootURL = URL(fileURLWithPath: AppPaths.dictationsDir, isDirectory: true)
+        .standardizedFileURL
+    let targetURL = URL(fileURLWithPath: path).standardizedFileURL
+
+    guard targetURL.path.hasPrefix(rootURL.path + "/") else {
+        printErr("Refusing to remove dictation audio outside app-owned dictations directory: \(targetURL.path)")
+        return
+    }
+
+    guard fileManager.fileExists(atPath: targetURL.path) else { return }
+    do {
+        try fileManager.removeItem(at: targetURL)
+    } catch {
+        printErr("Failed to remove dictation audio at \(targetURL.path): \(error.localizedDescription)")
     }
 }
 
@@ -268,7 +300,11 @@ struct DeleteTranscriptionSubcommand: ParsableCommand {
         let repo = TranscriptionRepository(dbQueue: dbManager.dbQueue)
 
         let transcription = try findTranscription(id: id, repo: repo)
-        _ = try repo.delete(id: transcription.id)
+        let deleted = try repo.delete(id: transcription.id)
+        guard deleted else {
+            throw CLILookupError.notFound("No transcription matching '\(id)'")
+        }
+        TranscriptionAssetCleanup.removeOwnedAssets(for: transcription)
         print("Deleted transcription: \"\(transcription.fileName)\"")
     }
 }
@@ -286,39 +322,41 @@ struct FavoritesSubcommand: ParsableCommand {
     var database: String?
 
     func run() throws {
-        try AppPaths.ensureDirectories()
-        let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
-        let repo = TranscriptionRepository(dbQueue: dbManager.dbQueue)
-        let favorites = try repo.fetchFavorites()
+        try emitJSONOrRethrow(json: json) {
+            try AppPaths.ensureDirectories()
+            let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
+            let repo = TranscriptionRepository(dbQueue: dbManager.dbQueue)
+            let favorites = try repo.fetchFavorites()
 
-        if json {
-            try printJSON(favorites)
-            return
-        }
-
-        if favorites.isEmpty {
-            print("No favorite transcriptions.")
-            return
-        }
-
-        let formatter = DateFormatter()
-        formatter.dateStyle = .short
-        formatter.timeStyle = .short
-
-        for t in favorites {
-            let date = formatter.string(from: t.createdAt)
-            let duration: String
-            if let ms = t.durationMs {
-                let s = ms / 1000
-                duration = "\(s / 60)m \(s % 60)s"
-            } else {
-                duration = "—"
+            if json {
+                try printJSON(favorites)
+                return
             }
-            print("* [\(date)] \(t.fileName) (\(duration)) [\(t.status)]  (\(t.id.uuidString.prefix(8)))")
-        }
 
-        print()
-        print("\(favorites.count) favorite(s)")
+            if favorites.isEmpty {
+                print("No favorite transcriptions.")
+                return
+            }
+
+            let formatter = DateFormatter()
+            formatter.dateStyle = .short
+            formatter.timeStyle = .short
+
+            for t in favorites {
+                let date = formatter.string(from: t.createdAt)
+                let duration: String
+                if let ms = t.durationMs {
+                    let s = ms / 1000
+                    duration = "\(s / 60)m \(s % 60)s"
+                } else {
+                    duration = "—"
+                }
+                print("* [\(date)] \(t.fileName) (\(duration)) [\(t.status)]  (\(t.id.uuidString.prefix(8)))")
+            }
+
+            print()
+            print("\(favorites.count) favorite(s)")
+        }
     }
 }
 

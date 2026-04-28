@@ -167,6 +167,43 @@ final class MeetingRecordingServiceTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(lockStore.deletes.count, 1)
     }
 
+    func testTaskCancellationDuringAsyncEventsSetupReleasesLeaseAndState() async throws {
+        let captureService = BlockingEventsMeetingAudioCaptureService()
+        let lockStore = RecordingLockFileStore()
+        let sttClient = LeasingMeetingSTTClient(
+            selection: SpeechEngineSelection(engine: .whisper, language: "KO")
+        )
+        let service = MeetingRecordingService(
+            audioCaptureService: captureService,
+            audioConverter: MockMeetingAudioFileConverter(),
+            sttTranscriber: sttClient,
+            lockFileStore: lockStore
+        )
+
+        let startTask = Task {
+            try await service.startRecording()
+        }
+        await captureService.waitForEventsCall()
+
+        startTask.cancel()
+        await captureService.releaseEvents()
+
+        do {
+            try await startTask.value
+            XCTFail("startRecording() must not report success after task cancellation")
+        } catch is CancellationError {
+            // Expected.
+        }
+
+        let isRecordingAfterCancellation = await service.isRecording
+        let activeLeaseCount = await sttClient.activeLeaseCount
+        let startCallCount = await captureService.startCallCount
+        XCTAssertFalse(isRecordingAfterCancellation)
+        XCTAssertEqual(activeLeaseCount, 0)
+        XCTAssertEqual(startCallCount, 0)
+        XCTAssertGreaterThanOrEqual(lockStore.deletes.count, 1)
+    }
+
     func testStopRecordingKeepsLockUntilTranscriptionCompletes() async throws {
         let captureService = MockMeetingAudioCaptureService()
         let lockStore = RecordingLockFileStore()
@@ -228,7 +265,33 @@ final class MeetingRecordingServiceTests: XCTestCase {
         XCTAssertEqual(activeLeaseCountAfterStop, 0)
     }
 
-    func testStopRecordingKeepsLockWhenMixFails() async throws {
+    func testLivePreviewUsesCapturedSpeechEngineSelection() async throws {
+        let captureService = MockMeetingAudioCaptureService()
+        let speechEngine = SpeechEngineSelection(engine: .whisper, language: "KO")
+        let sttClient = LeasingMeetingSTTClient(selection: speechEngine)
+        let service = MeetingRecordingService(
+            audioCaptureService: captureService,
+            audioConverter: MockMeetingAudioFileConverter(),
+            sttTranscriber: sttClient
+        )
+
+        try await service.startRecording()
+
+        let microphoneBuffer = try XCTUnwrap(makeMonoFloatBuffer(frameCount: 80_000, sampleValue: 0.25))
+        await captureService.yield(.microphoneBuffer(
+            microphoneBuffer,
+            AVAudioTime(hostTime: AVAudioTime.hostTime(forSeconds: 100.0))
+        ))
+        try await waitForRoutedLiveChunkSelection(sttClient)
+
+        let routedSelections = await sttClient.routedSelections
+        XCTAssertEqual(routedSelections, [SpeechEngineSelection(engine: .whisper, language: "ko")])
+
+        let output = try await service.stopRecording()
+        try? FileManager.default.removeItem(at: output.folderURL)
+    }
+
+    func testStopRecordingReturnsOutputAndKeepsLockWhenMixFails() async throws {
         let captureService = MockMeetingAudioCaptureService()
         let lockStore = RecordingLockFileStore()
         let service = MeetingRecordingService(
@@ -246,13 +309,14 @@ final class MeetingRecordingServiceTests: XCTestCase {
             AVAudioTime(hostTime: AVAudioTime.hostTime(forSeconds: 100.0))
         ))
 
-        do {
-            _ = try await service.stopRecording()
-            XCTFail("Expected mix failure")
-        } catch {
-            XCTAssertTrue(lockStore.deletes.isEmpty)
-            try? FileManager.default.removeItem(at: writtenFolder)
-        }
+        let output = try await service.stopRecording()
+        defer { try? FileManager.default.removeItem(at: writtenFolder) }
+
+        XCTAssertEqual(output.folderURL, writtenFolder)
+        XCTAssertNotNil(output.sourceAlignment.microphone)
+        XCTAssertNil(output.sourceAlignment.system)
+        XCTAssertTrue(lockStore.deletes.isEmpty)
+        XCTAssertEqual(lockStore.writes.last?.file.state, .awaitingTranscription)
     }
 
     func testCancelRecordingDeletesLockAndSessionFolder() async throws {
@@ -656,6 +720,7 @@ final class MeetingRecordingServiceTests: XCTestCase {
             audioConverter.capturedMixedInputs(),
             [output.microphoneAudioURL, output.systemAudioURL]
         )
+        XCTAssertEqual(audioConverter.capturedSourceAlignment(), output.sourceAlignment)
     }
 
     func testAsymmetricSourceCadenceDoesNotInflateSystemChunkTimeline() async throws {
@@ -757,6 +822,20 @@ final class MeetingRecordingServiceTests: XCTestCase {
         while await client.liveChunkCallCount == 0 {
             if startedAt.duration(to: .now) > timeout {
                 XCTFail("Timed out waiting for live chunk transcription to start")
+                return
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
+    private func waitForRoutedLiveChunkSelection(
+        _ client: LeasingMeetingSTTClient,
+        timeout: Duration = .seconds(1)
+    ) async throws {
+        let startedAt = ContinuousClock.now
+        while await client.routedSelections.isEmpty {
+            if startedAt.duration(to: .now) > timeout {
+                XCTFail("Timed out waiting for routed live chunk transcription")
                 return
             }
             try await Task.sleep(for: .milliseconds(20))
@@ -1094,7 +1173,11 @@ private final class MockMeetingAudioFileConverter: AudioFileConverting, @uncheck
         fileURL
     }
 
-    func mixToM4A(inputURLs: [URL], outputURL: URL) async throws {
+    func mixToM4A(
+        inputURLs: [URL],
+        outputURL: URL,
+        sourceAlignment: MeetingSourceAlignment?
+    ) async throws {
         FileManager.default.createFile(atPath: outputURL.path, contents: Data("mixed".utf8))
     }
 }
@@ -1104,7 +1187,11 @@ private final class ThrowingMeetingAudioFileConverter: AudioFileConverting, @unc
         fileURL
     }
 
-    func mixToM4A(inputURLs: [URL], outputURL: URL) async throws {
+    func mixToM4A(
+        inputURLs: [URL],
+        outputURL: URL,
+        sourceAlignment: MeetingSourceAlignment?
+    ) async throws {
         throw MeetingAudioError.mixFailed("simulated")
     }
 }
@@ -1112,20 +1199,30 @@ private final class ThrowingMeetingAudioFileConverter: AudioFileConverting, @unc
 private final class RecordingMeetingAudioFileConverter: AudioFileConverting, @unchecked Sendable {
     private let lock = NSLock()
     private var mixedInputs: [URL] = []
+    private var mixedSourceAlignment: MeetingSourceAlignment?
 
     func convert(fileURL: URL) async throws -> URL {
         fileURL
     }
 
-    func mixToM4A(inputURLs: [URL], outputURL: URL) async throws {
+    func mixToM4A(
+        inputURLs: [URL],
+        outputURL: URL,
+        sourceAlignment: MeetingSourceAlignment?
+    ) async throws {
         lock.withLock {
             mixedInputs = inputURLs
+            mixedSourceAlignment = sourceAlignment
         }
         FileManager.default.createFile(atPath: outputURL.path, contents: Data("mixed".utf8))
     }
 
     func capturedMixedInputs() -> [URL] {
         lock.withLock { mixedInputs }
+    }
+
+    func capturedSourceAlignment() -> MeetingSourceAlignment? {
+        lock.withLock { mixedSourceAlignment }
     }
 }
 
@@ -1372,9 +1469,10 @@ private actor CountingMeetingSTTClient: STTClientProtocol {
     func shutdown() async {}
 }
 
-private actor LeasingMeetingSTTClient: STTClientProtocol, SpeechEngineSessionManaging {
+private actor LeasingMeetingSTTClient: STTClientProtocol, SpeechEngineRoutedTranscribing, SpeechEngineSessionManaging {
     private let selection: SpeechEngineSelection
     private var activeLeases: Set<UUID> = []
+    private(set) var routedSelections: [SpeechEngineSelection] = []
 
     init(selection: SpeechEngineSelection) {
         self.selection = selection
@@ -1400,6 +1498,18 @@ private actor LeasingMeetingSTTClient: STTClientProtocol, SpeechEngineSessionMan
         onProgress: (@Sendable (Int, Int) -> Void)?
     ) async throws -> STTResult {
         STTResult(text: "", words: [])
+    }
+
+    func transcribe(
+        audioPath: String,
+        job: STTJobKind,
+        speechEngine: SpeechEngineSelection,
+        onProgress: (@Sendable (Int, Int) -> Void)?
+    ) async throws -> STTResult {
+        if job == .meetingLiveChunk {
+            routedSelections.append(speechEngine)
+        }
+        return STTResult(text: "", words: [])
     }
 
     func warmUp(onProgress: (@Sendable (String) -> Void)?) async throws {}

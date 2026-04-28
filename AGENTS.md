@@ -7,10 +7,18 @@
 
 ## What this project is
 
-MacParakeet is a fast, private, local-first voice app for macOS with three
-co-equal modes: system-wide dictation, file transcription, and meeting
-recording. Powered by NVIDIA Parakeet TDT 0.6B v3 via FluidAudio CoreML on
-the Apple Neural Engine.
+MacParakeet is a fast, private, local-first voice app for macOS. Stable
+releases focus on system-wide dictation and file transcription; the `main`
+branch product direction has three co-equal modes: system-wide dictation, file
+transcription, and meeting recording. Parakeet TDT 0.6B v3 via FluidAudio
+CoreML on the Apple Neural Engine is the default STT engine. WhisperKit is also
+available on `main` as an optional local multilingual engine for languages
+Parakeet does not cover.
+
+**Release status:** the public DMG is the stable channel and currently ships
+dictation + file/URL transcription. Meeting recording and WhisperKit
+multilingual STT are Labs/Beta features implemented on `main`, under active
+testing, and not in the current public DMG yet.
 
 Free and open-source (GPL-3.0). Apple Silicon only. Requires macOS 14.2+.
 
@@ -39,8 +47,9 @@ swift run macparakeet-cli --help
 swift run macparakeet-cli health
 ```
 
-The full test suite runs in well under a minute. Run `swift test` before
-declaring code-change work complete; failures are deterministic.
+The full test suite is deterministic and normally finishes in roughly one to
+two minutes depending on SwiftPM cache state. Run `swift test` before declaring
+code-change work complete.
 
 ## Code Style
 
@@ -49,9 +58,9 @@ declaring code-change work complete; failures are deterministic.
   [`Sources/MacParakeetCore/Database/`](./Sources/MacParakeetCore/Database/)).
 - Comments explain *why*, not *what* -- well-named identifiers carry the what.
   Default to writing none.
-- `MacParakeetCore` has no UI dependencies (Foundation + GRDB + FluidAudio
-  only). One exception: `ExportService` imports AppKit for PDF/DOCX. No new
-  AppKit imports in Core.
+- `MacParakeetCore` has no UI dependencies (Foundation + GRDB + FluidAudio,
+  with optional WhisperKit). One exception: `ExportService` imports AppKit for
+  PDF/DOCX. No new AppKit imports in Core.
 - ViewModels live in their own SPM target (`Sources/MacParakeetViewModels/`)
   so they can be tested without the GUI.
 - Async/await for all I/O. No completion handlers, no Combine in new code.
@@ -77,9 +86,15 @@ Full spec is in [`spec/`](./spec/). Architectural decisions (locked) are in
 - **Local-first speech.** STT runs on the Apple Neural Engine. Audio and
   transcripts stay on-device for core dictation, transcription, and meeting
   recording. Network surfaces are limited to user-triggered LLM providers,
-  media downloads, model/update/licensing flows, and opt-out self-hosted
-  telemetry/crash reporting. Telemetry never includes audio or transcript
-  content.
+  media downloads, model/update flows, retained purchase activation endpoints
+  if explicitly invoked, and opt-out self-hosted telemetry/crash reporting.
+  Telemetry never includes audio or transcript content.
+- **Retained purchase activation is intentional.** The old
+  LemonSqueezy/trial entitlement code is dormant in current free/GPL builds,
+  but it is deliberate future-option plumbing. Do not delete or "clean up"
+  `EntitlementsService`, `LemonSqueezyLicenseAPI`, entitlement state, or
+  trial/license telemetry as dead code unless explicitly requested by the
+  project owner and reflected in an ADR/spec update.
 - **No accounts, no logins.** No identifying data is sent anywhere.
 - **The user database lives at**
   `~/Library/Application Support/MacParakeet/macparakeet.db`. Treat it as user
@@ -92,7 +107,8 @@ Full spec is in [`spec/`](./spec/). Architectural decisions (locked) are in
 |------|------|
 | App bundle | `/Applications/MacParakeet.app` |
 | Database | `~/Library/Application Support/MacParakeet/macparakeet.db` |
-| CoreML STT models (~6 GB) | `~/Library/Application Support/MacParakeet/models/stt/` |
+| Parakeet CoreML STT models (~6 GB) | FluidAudio default cache |
+| WhisperKit STT models | `~/Library/Application Support/MacParakeet/models/stt/whisper/` |
 | Settings | `~/Library/Preferences/com.macparakeet.plist` |
 | Logs | `~/Library/Logs/MacParakeet/` |
 

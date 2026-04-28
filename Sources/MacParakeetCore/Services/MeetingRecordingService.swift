@@ -202,7 +202,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         let now = Date()
         let speechEngineLease = await speechEngineSessionManager?.beginSpeechEngineSession()
         currentSpeechEngineLease = speechEngineLease
-        let speechEngine = speechEngineLease?.selection ?? SpeechEngineSelection.current()
+        let speechEngine = speechEngineLease?.selection ?? SpeechEngineSelection(engine: .parakeet)
         let session = Session(
             id: sessionID,
             displayName: Self.resolveDisplayName(title: title, fallbackDate: now),
@@ -228,41 +228,36 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             )
             try lockFileStore.write(initialLock, folderURL: session.folderURL)
             currentLockFile = initialLock
-        } catch {
-            self.writer = nil
-            await finalizeWriter(writer)
-            await releaseSpeechEngineLease()
-            cleanupState()
-            try? fileManager.removeItem(at: folderURL)
-            throw error
-        }
 
-        let events = await audioCaptureService.events
-        try await validateStartStillCurrent(session)
-        self.latestLevels = MeetingAudioLevels()
-        await captureOrchestrator.reset()
-        try await validateStartStillCurrent(session)
-        micConditioner = SoftwareAECConditioner()
-        transcriptAssembler.reset()
-        isTranscriptionLagging = false
-        captureFailed = false
-        sourceCaptureMetrics = [:]
-        recentSystemRms = 0
-        recentProcessedMicRms = 0
-        latestSystemSignalAt = nil
-        syncLagEmaMs = nil
-        syncLagWarningActive = false
-        lastLoggedSyncLagBucketMs = nil
+            let events = await audioCaptureService.events
+            try await validateStartStillCurrent(session)
+            self.latestLevels = MeetingAudioLevels()
+            await captureOrchestrator.reset()
+            try await validateStartStillCurrent(session)
+            micConditioner = SoftwareAECConditioner()
+            transcriptAssembler.reset()
+            isTranscriptionLagging = false
+            captureFailed = false
+            sourceCaptureMetrics = [:]
+            recentSystemRms = 0
+            recentProcessedMicRms = 0
+            latestSystemSignalAt = nil
+            syncLagEmaMs = nil
+            syncLagWarningActive = false
+            lastLoggedSyncLagBucketMs = nil
 
-        await liveChunkTranscriber.startSession(
-            .init(id: session.id, chunkFolderURL: session.chunkFolderURL),
-            onEvent: { [weak self] event in
-                await self?.handleLiveChunkTranscriberEvent(event, sessionID: session.id)
-            }
-        )
-        try await validateStartStillCurrent(session)
+            await liveChunkTranscriber.startSession(
+                .init(
+                    id: session.id,
+                    chunkFolderURL: session.chunkFolderURL,
+                    speechEngine: session.speechEngine
+                ),
+                onEvent: { [weak self] event in
+                    await self?.handleLiveChunkTranscriberEvent(event, sessionID: session.id)
+                }
+            )
+            try await validateStartStillCurrent(session)
 
-        do {
             let captureStartReport = try await audioCaptureService.start()
             try await validateStartStillCurrent(session)
             configureMicConditioner(from: captureStartReport.microphone)
@@ -274,18 +269,46 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             }
             logger.info("Meeting recording started: \(sessionID.uuidString, privacy: .public)")
         } catch {
-            processingTask?.cancel()
-            processingTask = nil
-            await liveChunkTranscriber.finishSession()
-            let writer = self.writer
-            self.writer = nil
-            await finalizeWriter(writer)
-            await releaseSpeechEngineLease()
-            cleanupState()
-            try? lockFileStore.delete(folderURL: folderURL)
-            try? fileManager.removeItem(at: folderURL)
+            await cleanupFailedStart(folderURL: folderURL)
             throw error
         }
+    }
+
+    private func cleanupFailedStart(folderURL: URL) async {
+        processingTask?.cancel()
+        processingTask = nil
+        await liveChunkTranscriber.finishSession()
+        let writer = self.writer
+        self.writer = nil
+        await finalizeWriter(writer)
+        await releaseSpeechEngineLease()
+        cleanupState()
+
+        do {
+            try lockFileStore.delete(folderURL: folderURL)
+        } catch {
+            logFailedStartCleanupError(operation: "delete lock", error: error)
+        }
+
+        do {
+            try fileManager.removeItem(at: folderURL)
+        } catch {
+            if !isMissingFileError(error) {
+                logFailedStartCleanupError(operation: "remove folder", error: error)
+            }
+        }
+    }
+
+    private func logFailedStartCleanupError(operation: String, error: Error) {
+        let nsError = error as NSError
+        logger.warning(
+            "Meeting failed-start cleanup \(operation, privacy: .public) failed: \(nsError.domain, privacy: .public)#\(nsError.code, privacy: .public)"
+        )
+    }
+
+    private func isMissingFileError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        return nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileNoSuchFileError
     }
 
     private func validateStartStillCurrent(_ session: Session) async throws {
@@ -355,12 +378,15 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         }
 
         do {
-            try await audioConverter.mixToM4A(inputURLs: inputURLs, outputURL: session.mixedAudioURL)
+            try await audioConverter.mixToM4A(
+                inputURLs: inputURLs,
+                outputURL: session.mixedAudioURL,
+                sourceAlignment: sourceAlignment
+            )
         } catch {
-            await liveChunkTranscriber.finishSession()
-            await releaseSpeechEngineLease()
-            cleanupState()
-            throw MeetingAudioError.mixFailed(error.localizedDescription)
+            logger.error(
+                "meeting_mix_failed_nonfatal session=\(session.id.uuidString, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+            )
         }
 
         let finalNotes = currentNotes

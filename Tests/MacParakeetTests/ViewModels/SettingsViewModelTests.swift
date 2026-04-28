@@ -713,7 +713,7 @@ final class SettingsViewModelTests: XCTestCase {
         )
 
         try await waitUntil { vm.whisperModelStatus == .ready }
-        XCTAssertEqual(vm.whisperModelStatusDetail, "Loaded in memory and ready.")
+        XCTAssertEqual(vm.whisperModelStatusDetail, "Whisper Large v3 Turbo · Loaded in memory and ready.")
         XCTAssertEqual(vm.parakeetStatus, .notLoaded)
         XCTAssertEqual(vm.parakeetStatusDetail, "Downloaded. Loads automatically when needed.")
     }
@@ -749,7 +749,7 @@ final class SettingsViewModelTests: XCTestCase {
 
     func testWhisperDefaultLanguagePersistsNormalizedValue() {
         viewModel.whisperDefaultLanguage = "KO_kr"
-        XCTAssertEqual(SpeechEnginePreference.whisperDefaultLanguage(defaults: testDefaults), "ko-kr")
+        XCTAssertEqual(SpeechEnginePreference.whisperDefaultLanguage(defaults: testDefaults), "ko")
 
         viewModel.whisperDefaultLanguage = "auto"
         XCTAssertNil(SpeechEnginePreference.whisperDefaultLanguage(defaults: testDefaults))

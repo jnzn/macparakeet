@@ -650,6 +650,37 @@ final class DatabaseManagerTests: XCTestCase {
         try? FileManager.default.removeItem(atPath: dbPath)
     }
 
+    func testEngineAttributionMigrationToleratesExistingColumnsWhenMigrationMarkerIsMissing() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+        let dbPath = tempDir.appendingPathComponent("engine_attribution_rerun_\(UUID().uuidString).db").path
+        defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+        let manager1 = try DatabaseManager(path: dbPath)
+        try manager1.dbQueue.write { db in
+            try db.execute(
+                sql: "DELETE FROM grdb_migrations WHERE identifier = ?",
+                arguments: ["v0.8-engine-attribution"]
+            )
+        }
+
+        let manager2 = try DatabaseManager(path: dbPath)
+        try manager2.dbQueue.read { db in
+            let transcriptionColumns = try db.columns(in: "transcriptions").map(\.name)
+            let dictationColumns = try db.columns(in: "dictations").map(\.name)
+            XCTAssertTrue(transcriptionColumns.contains("engine"))
+            XCTAssertTrue(transcriptionColumns.contains("engineVariant"))
+            XCTAssertTrue(dictationColumns.contains("engine"))
+            XCTAssertTrue(dictationColumns.contains("engineVariant"))
+
+            let migrationRecorded = try Bool.fetchOne(
+                db,
+                sql: "SELECT EXISTS(SELECT 1 FROM grdb_migrations WHERE identifier = ?)",
+                arguments: ["v0.8-engine-attribution"]
+            ) ?? false
+            XCTAssertTrue(migrationRecorded)
+        }
+    }
+
     /// Recreates the dictations table at its v0.5 shape (after `v0.5-private-dictation`
     /// added `hidden` and `wordCount`). Used by partial-migration test fixtures so the
     /// v0.7.4 lifetime-stats backfill has a real table to read from.

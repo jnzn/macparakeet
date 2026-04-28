@@ -102,6 +102,8 @@ public final class TranscriptionViewModel {
     private var promptResultRepo: PromptResultRepositoryProtocol?
     private var transcriptionTask: Task<Void, Never>?
     private var activeTranscriptionTaskID: UUID?
+    private var activeProgressSpeechEngine: SpeechEngineSelection?
+    private var activeProgressWhisperVariant: String?
     private var activeDropRequestID: UUID?
     private var dropPendingCount = 0
     private var dropAccepted = false
@@ -321,7 +323,12 @@ public final class TranscriptionViewModel {
               FileManager.default.fileExists(atPath: filePath) else { return }
 
         let url = URL(fileURLWithPath: filePath)
-        let taskID = beginNewTranscription(source: .localFile, fileName: original.fileName, clearCurrent: true)
+        let taskID = beginNewTranscription(
+            source: .localFile,
+            fileName: original.fileName,
+            clearCurrent: true,
+            speechEngine: speechEngineOverride
+        )
         let retranscriptionSource: TelemetryTranscriptionSource = switch original.sourceType {
         case .file:
             .file
@@ -445,12 +452,18 @@ public final class TranscriptionViewModel {
     private func beginNewTranscription(
         source: SourceKind,
         fileName: String,
-        clearCurrent: Bool = false
+        clearCurrent: Bool = false,
+        speechEngine: SpeechEngineSelection? = nil
     ) -> UUID {
         transcriptionTask?.cancel()
 
         let taskID = UUID()
         activeTranscriptionTaskID = taskID
+        let progressSpeechEngine = speechEngine ?? SpeechEngineSelection.current(defaults: defaults)
+        activeProgressSpeechEngine = progressSpeechEngine
+        activeProgressWhisperVariant = progressSpeechEngine.engine == .whisper
+            ? SpeechEnginePreference.whisperModelVariant(defaults: defaults)
+            : nil
         transcribingFileName = fileName
         beginTranscription(source: source)
 
@@ -542,6 +555,8 @@ public final class TranscriptionViewModel {
         progress = ""
         transcriptionProgress = nil
         transcribingFileName = ""
+        activeProgressSpeechEngine = nil
+        activeProgressWhisperVariant = nil
         progressPhase = .preparing
         progressHeadline = Self.headline(for: .preparing)
         progressSubline = nil
@@ -556,7 +571,15 @@ public final class TranscriptionViewModel {
         self.transcriptionProgress = progress.fraction
         self.progressPhase = phase
         self.progressHeadline = Self.headline(for: phase)
-        self.progressSubline = Self.subline(for: phase, sourceKind: sourceKind)
+        let speechEngine = activeProgressSpeechEngine ?? SpeechEngineSelection.current(defaults: defaults)
+        let whisperVariant = activeProgressWhisperVariant
+            ?? SpeechEnginePreference.whisperModelVariant(defaults: defaults)
+        self.progressSubline = Self.subline(
+            for: phase,
+            sourceKind: sourceKind,
+            engine: speechEngine.engine,
+            whisperVariant: whisperVariant
+        )
     }
 
     private static func mapPhase(from progress: TranscriptionProgress) -> ProgressPhase {
@@ -601,14 +624,25 @@ public final class TranscriptionViewModel {
         }
     }
 
-    private static func subline(for phase: ProgressPhase, sourceKind: SourceKind) -> String? {
+    private static func subline(
+        for phase: ProgressPhase,
+        sourceKind: SourceKind,
+        engine: SpeechEnginePreference,
+        whisperVariant: String
+    ) -> String? {
         switch phase {
         case .downloading:
             return sourceKind == .youtubeURL
                 ? "Longer videos take more time to fetch"
                 : nil
         case .transcribing:
-            return "Runs entirely on-device using the Neural Engine"
+            switch engine {
+            case .parakeet:
+                return "Parakeet TDT \u{00B7} Neural Engine"
+            case .whisper:
+                let friendly = SpeechEnginePreference.friendlyVariantName(whisperVariant)
+                return "Whisper \(friendly) \u{00B7} Neural Engine"
+            }
         case .identifyingSpeakers:
             return "May take several minutes per hour of audio. Speaker labels are approximate \u{2014} click to rename."
         default:

@@ -32,6 +32,28 @@ final class TranscriptionRepositoryTests: XCTestCase {
         XCTAssertNil(fetched)
     }
 
+    func testEngineAttributionRoundTrips() throws {
+        let transcription = Transcription(
+            fileName: "engine.mp3",
+            engine: SpeechEnginePreference.whisper.rawValue,
+            engineVariant: SpeechEnginePreference.defaultWhisperModelVariant
+        )
+        try repo.save(transcription)
+
+        let fetched = try repo.fetch(id: transcription.id)
+        XCTAssertEqual(fetched?.engine, "whisper")
+        XCTAssertEqual(fetched?.engineVariant, SpeechEnginePreference.defaultWhisperModelVariant)
+    }
+
+    func testLegacyTranscriptionDecodesWithNilEngineFields() throws {
+        let transcription = Transcription(fileName: "legacy.mp3")
+        try repo.save(transcription)
+
+        let fetched = try repo.fetch(id: transcription.id)
+        XCTAssertNil(fetched?.engine)
+        XCTAssertNil(fetched?.engineVariant)
+    }
+
     func testFetchAll() throws {
         let t1 = Transcription(
             createdAt: Date(timeIntervalSinceNow: -100),

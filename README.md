@@ -43,13 +43,26 @@
 
 ---
 
-MacParakeet runs NVIDIA's Parakeet TDT on Apple's Neural Engine via [FluidAudio](https://github.com/FluidInference/FluidAudio) CoreML. It handles system-wide dictation and file/URL transcription. All speech recognition happens on your Mac.
+MacParakeet runs NVIDIA's Parakeet TDT on Apple's Neural Engine via [FluidAudio](https://github.com/FluidInference/FluidAudio) CoreML. The stable DMG handles system-wide dictation and file/URL transcription. Labs features on `main` add meeting recording and optional local WhisperKit recognition for languages Parakeet does not cover. All speech recognition happens on your Mac.
+
+## Release status
+
+The [notarized DMG](https://downloads.macparakeet.com/MacParakeet.dmg) is the stable release channel. It intentionally lags `main` while larger features are tested.
+
+| Channel | Status | Includes |
+|---------|--------|----------|
+| Stable DMG | Recommended for normal use | Dictation, file/video/YouTube transcription, exports, vocabulary, AI features |
+| Labs on `main` | Beta, under active testing | Meeting recording, live meeting notes/Ask, crash recovery, optional WhisperKit multilingual STT |
+
+Meeting recording and WhisperKit are **Labs/Beta** features right now. They are implemented on `main`, but they are not in the current public DMG release yet.
 
 ## What it does
 
 **Dictation** — Press a hotkey in any app, speak, text gets pasted. Hold for push-to-talk, double-tap for persistent recording. Works system-wide.
 
 **File transcription** — Drag audio or video files, or paste a YouTube URL. Full transcript with word-level timestamps, speaker labels, and export to 7 formats (TXT, Markdown, SRT, VTT, DOCX, PDF, JSON). Assign global hotkeys to trigger File or YouTube transcription from anywhere.
+
+**Meeting recording (Labs/Beta, `main` only)** — Record system audio and microphone together, see a live local transcript preview, take notes during the call, then save the finalized transcript to the library with export, prompts, and chat. This is under testing and not included in the current DMG release.
 
 **Text cleanup** — Filler word removal, custom word replacements, text snippets with triggers. Deterministic pipeline, no LLM needed.
 
@@ -60,19 +73,22 @@ MacParakeet runs NVIDIA's Parakeet TDT on Apple's Neural Engine via [FluidAudio]
 - ~155x realtime — 60 min of audio in ~23 seconds
 - ~2.5% word error rate (Parakeet TDT 0.6B-v3)
 - ~66 MB working memory per active Parakeet inference slot
-- 25 European languages with auto-detection
+- 25 European languages with Parakeet auto-detection
+- Optional local WhisperKit engine for Korean, Japanese, Chinese, and many other languages (Labs/Beta on `main`; not in the current DMG)
 
 ### Limitations
 
 - Apple Silicon only (M1/M2/M3/M4)
-- Best with English — supports 25 European languages but accuracy varies
-- No CJK language support (Korean, Japanese, Chinese, etc.)
+- Parakeet is best for English and supported European languages
+- WhisperKit multilingual support is currently a Labs/Beta feature on `main` and requires a separate local model download before first use
 
 ## Get it
 
 **Download:** Grab the [notarized DMG](https://downloads.macparakeet.com/MacParakeet.dmg) or visit [macparakeet.com](https://macparakeet.com). Drag to Applications, done.
 
 First launch downloads the speech model (~6 GB) plus speaker-detection assets (~130 MB). Everything works fully offline after that.
+
+The DMG is the stable release. Labs features such as meeting recording and WhisperKit multilingual STT are currently available only by building from `main`.
 
 **Build from source:**
 
@@ -89,16 +105,20 @@ The dev script creates a signed `.app` bundle so macOS grants mic and accessibil
 
 ```bash
 swift run macparakeet-cli transcribe /path/to/audio.mp3
+swift run macparakeet-cli models download whisper-large-v3-v20240930-turbo-632MB
+swift run macparakeet-cli transcribe /path/to/korean.mp3 --engine whisper --language ko --format json
 swift run macparakeet-cli models status
 swift run macparakeet-cli history
 ```
+
+The Whisper CLI commands above require a `main` build with the Labs WhisperKit engine.
 
 ## Tech stack
 
 | Layer | Choice |
 |-------|--------|
-| STT | Parakeet TDT 0.6B-v3 via [FluidAudio](https://github.com/FluidInference/FluidAudio) CoreML (Neural Engine) |
-| STT orchestration | Shared runtime + explicit scheduler with a reserved dictation slot and a shared batch slot for transcription |
+| STT | Parakeet TDT 0.6B-v3 via [FluidAudio](https://github.com/FluidInference/FluidAudio) CoreML (stable default) + optional WhisperKit Labs engine on `main` |
+| STT orchestration | Shared runtime + explicit scheduler with a reserved dictation slot and a shared meeting/file slot on `main`; speech-engine routing and meeting-session pinning for Labs features |
 | Language | Swift 6.0 + SwiftUI |
 | Database | SQLite via GRDB |
 | Auto-updates | Sparkle 2 |
@@ -130,7 +150,7 @@ AI features are entirely **opt-in** and separate from speech recognition — tra
 
 **What it does:**
 
-- **Summarize** — After a transcription finishes, click Summarize and pick a prompt ("Meeting Notes", "Action Items", "Key Quotes", etc.) or write your own. The LLM processes the transcript and streams back a summary. You can generate multiple summaries per transcript, each in its own tab. Prompts marked as auto-run generate summaries automatically for new transcriptions.
+- **Summarize** — After a transcription finishes, click Summarize and pick a prompt ("Memo-Steered Notes", "Summary", "Action Items & Decisions", etc.) or write your own. The LLM processes the transcript and streams back a summary. You can generate multiple summaries per transcript, each in its own tab. Prompts marked as auto-run generate summaries automatically for new transcriptions.
 - **Chat** — Ask questions about a transcript in a multi-turn chat interface. The LLM answers based on the transcript content.
 - **AI formatter** — Optionally run your dictation and file transcripts through your AI provider to clean up grammar, punctuation, and paragraphing. Toggle on/off, customize the prompt, or reset to default.
 
@@ -147,7 +167,7 @@ AI features are entirely **opt-in** and separate from speech recognition — tra
 
 ## Privacy
 
-All speech recognition runs on the Neural Engine. Your audio never leaves your Mac.
+All speech recognition runs locally. Parakeet uses the Neural Engine; the Labs WhisperKit engine also runs on-device. Your audio never leaves your Mac.
 
 - **No cloud STT.** The model runs on-device. No audio is transmitted.
 - **No accounts.** No login, no email, no registration.

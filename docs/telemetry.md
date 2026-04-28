@@ -15,7 +15,7 @@
 - **Local-first still** — Audio never leaves the device. Only non-identifying usage signals are sent.
 
 **Privacy promise (updated):**
-> "Your audio and transcriptions never leave your device. MacParakeet collects non-identifying usage statistics — like which features are popular and how long transcriptions take — to help us improve. No personal data is ever collected. You can opt out anytime in Settings."
+> "Telemetry never includes your audio, transcripts, notes, prompts, or file names. MacParakeet collects non-identifying usage statistics — like which features are popular and how long transcriptions take — to help us improve. You can opt out anytime in Settings."
 
 ---
 
@@ -215,7 +215,8 @@ events remain useful for diarization-specific timing and failure analysis.
 | `meeting_operation` | `operation_id`, `workflow_id`, `parent_operation_id`, `outcome`, `trigger`, `stage`, `duration_seconds`, `live_word_count`, `live_transcript_lagged`, `microphone_track_present`, `system_track_present`, `notes_used`, `notes_length_bucket`, `error_type` | One wide outcome event for the full meeting capture + transcription flow |
 
 `meeting_operation.stage` values are `permissions`, `start_recording`,
-`stop_recording`, `transcription`, `complete_transcription`, and `cancel`.
+`recording`, `stop_recording`, `transcription`, `complete_transcription`, and
+`cancel`.
 
 ### 5. Settings & Customization — "How do people configure the app?"
 
@@ -225,38 +226,42 @@ events remain useful for diarization-specific timing and failure analysis.
 | `processing_mode_changed` | `mode` (raw, clean) | Is the clean pipeline valued? |
 | `custom_word_added` | — | Are custom words used? (NOT the word itself) |
 | `snippet_added` | — | Are snippets used? |
-| `setting_changed` | `setting` (save_history, audio_retention, menu_bar_only, hide_pill, save_transcription_audio, speaker_diarization, auto_save, meeting_auto_save, meeting_hotkey, file_transcription_hotkey, youtube_transcription_hotkey, microphone_selection, launch_at_login, silence_auto_stop, voice_return) | Which settings get toggled? |
+| `setting_changed` | `setting` (save_history, audio_retention, menu_bar_only, hide_pill, save_transcription_audio, speaker_diarization, auto_save, meeting_auto_save, meeting_hotkey, file_transcription_hotkey, youtube_transcription_hotkey, microphone_selection, launch_at_login, silence_auto_stop, voice_return, calendar_auto_start_mode, calendar_reminder_minutes, calendar_trigger_filter, calendar_auto_stop_enabled, calendar_included_calendars) | Which settings get toggled? |
 | `telemetry_opted_out` | — | How many opt out? (send this one last event, then stop) |
 
 ### 6. Licensing — "Is the business working?"
 
-> Note: App is now free/GPL-3.0. The licensing enum cases are kept in `TelemetryEventName` for the historical $0 LemonSqueezy product, but most are dead code — only `license_activated` and `license_activation_failed` are wired today.
+> Note: App is now free/GPL-3.0. The licensing enum cases are intentionally
+> retained for the historical LemonSqueezy/trial entitlement surface and for a
+> possible future paid official distribution. Most are not emitted today; do not
+> remove them as dead code without explicit owner direction and an ADR/spec
+> update.
 
 | Event | Props | Question It Answers |
 |---|---|---|
-| `trial_started` | — | When do trials begin? (dead, free app) |
-| `trial_expired` | — | Are people hitting the trial wall? (dead, free app) |
-| `purchase_started` | — | Are people attempting to buy? (dead, free app) |
-| `license_activated` | — | Conversion! |
-| `license_activation_failed` | `error_type` | What blocks purchases? |
-| `restore_attempted` | — | Are people trying to restore? (dead, free app) |
-| `restore_succeeded` | — | Restore success rate (dead, free app) |
-| `restore_failed` | `error_type` | What blocks restores? (dead, free app) |
+| `trial_started` | — | When do trials begin? (currently not emitted in free builds) |
+| `trial_expired` | — | Are people hitting the trial wall? (currently not emitted in free builds) |
+| `purchase_started` | — | Are people attempting to buy? (currently not emitted in free builds) |
+| `license_activated` | — | Official paid distribution/support conversion, if re-enabled |
+| `license_activation_failed` | `error_type` | What blocks purchase activation, if re-enabled? |
+| `restore_attempted` | — | Are people trying to restore? (currently not emitted in free builds) |
+| `restore_succeeded` | — | Restore success rate, if paid activation is re-enabled |
+| `restore_failed` | `error_type` | What blocks restores, if paid activation is re-enabled? |
 
 ### 7. Performance — "Is the app fast?"
 
 | Event | Props | Question It Answers |
 |---|---|---|
 | `model_loaded` | `load_time_seconds` | How long does model warmup take on different chips? |
-| `model_download_started` | — | First-run experience tracking |
-| `model_download_completed` | `duration_seconds` | How long is the 6 GB download? |
+| `model_download_started` | — | First-run model setup funnel |
+| `model_download_completed` | `duration_seconds` | How long do model downloads take? |
 | `model_download_failed` | `error_type` | Are downloads failing? |
 
 ### 8. Permissions — "Is onboarding smooth?"
 
 | Event | Props | Question It Answers |
 |---|---|---|
-| `permission_prompted` | `permission` (microphone, accessibility, screen_recording) | How many prompts are shown? |
+| `permission_prompted` | `permission` (microphone, accessibility, screen_recording, calendar) | How many prompts are shown? |
 | `permission_granted` | `permission` | Grant rate |
 | `permission_denied` | `permission` | Denial rate — is something confusing? |
 
@@ -274,8 +279,27 @@ events remain useful for diarization-specific timing and failure analysis.
 | `cli_operation` | `operation_id`, `workflow_id`, `parent_operation_id`, `command`, `subcommand`, `outcome`, `duration_seconds`, `input_kind`, `output_format`, `json`, `exit_code`, `error_type` | Which CLI workflows are used by scripts/agents, and where they fail |
 
 CLI telemetry is initialized by `macparakeet-cli transcribe` and uses the same
-app preference as the GUI. Users and automation can also set
-`MACPARAKEET_TELEMETRY=0` to force-disable CLI telemetry for a process.
+app preference as the GUI. Override resolution order (first match wins):
+
+1. `MACPARAKEET_TELEMETRY=0/false/no/off` → force-off for this process
+2. `MACPARAKEET_TELEMETRY=1/true/yes/on` → force-on for this process
+3. `DO_NOT_TRACK=1` → force-off (industry-standard signal, also honored by
+   Homebrew, GitLab, VS Code)
+4. CI auto-disable: any of `CI`, `GITHUB_ACTIONS`, `GITLAB_CI`, `BUILDKITE`,
+   `CIRCLECI`, `TRAVIS`, `JENKINS_URL`, `TF_BUILD`, `TEAMCITY_VERSION` set to
+   a truthy value (avoids 1000-job agent runs flooding the endpoint)
+5. Persisted UserDefaults `telemetryEnabled` (default: true)
+
+CLI-only users (no GUI) can persist their preference via:
+
+```bash
+macparakeet-cli config set telemetry off   # also accepts on, true/false, 1/0
+macparakeet-cli config get telemetry
+macparakeet-cli config list
+```
+
+The CLI writes to the shared UserDefaults suite (`com.macparakeet.MacParakeet`),
+so a later GUI install picks the same preference up automatically.
 
 > **Important:** `error_occurred` includes a `description` field for full error visibility. The **Cloudflare Worker redacts PII server-side** before storage:
 > - File paths (`/Users/...`, `~/...`) → `[PATH]`
@@ -513,4 +537,6 @@ External AI review of the telemetry design. Each point was evaluated and accepte
 - **A/B testing** — Not needed now, but the event infrastructure supports it
 - **Funnel analysis** — Can be done with SQL (session-based event sequences)
 - **~~Speaker diarization telemetry~~** — ✅ Shipped: `diarization_started`, `diarization_completed`, `diarization_failed`
-- **Clean up dead licensing events** — Remove unfired trial/purchase/restore event names from Swift enum and worker allowlist
+- **Retained licensing telemetry** -- Keep unfired trial/purchase/restore event
+  names unless the project owner explicitly decides to remove the future
+  paid-distribution option and records that decision in an ADR/spec update

@@ -50,7 +50,7 @@ final class STTClientTests: XCTestCase {
         SpeechEnginePreference.saveWhisperDefaultLanguage("KO_kr", defaults: defaults)
 
         XCTAssertEqual(SpeechEnginePreference.current(defaults: defaults), .whisper)
-        XCTAssertEqual(SpeechEnginePreference.whisperDefaultLanguage(defaults: defaults), "ko-kr")
+        XCTAssertEqual(SpeechEnginePreference.whisperDefaultLanguage(defaults: defaults), "ko")
 
         SpeechEnginePreference.saveWhisperDefaultLanguage("auto", defaults: defaults)
         XCTAssertNil(SpeechEnginePreference.whisperDefaultLanguage(defaults: defaults))
@@ -82,14 +82,48 @@ final class STTClientTests: XCTestCase {
         XCTAssertEqual(word.endMs, 2920)
     }
 
-    func testWhisperDecodeOptionsForForcedLanguageDisablePrefillPromptRegression() {
+    func testWhisperDecodeOptionsForForcedLanguageUsesPrefillPrompt() {
         #if canImport(WhisperKit)
         let options = WhisperEngine.makeDecodingOptions(language: "KO_kr")
 
-        XCTAssertEqual(options.language, "ko-kr")
-        XCTAssertFalse(options.usePrefillPrompt)
+        XCTAssertEqual(options.language, "ko")
+        XCTAssertTrue(options.usePrefillPrompt)
         XCTAssertFalse(options.detectLanguage)
         XCTAssertTrue(options.wordTimestamps)
+        #endif
+    }
+
+    func testWhisperDecodeOptionsForAutoLanguageDetectsWithoutPrefillPrompt() {
+        #if canImport(WhisperKit)
+        let options = WhisperEngine.makeDecodingOptions(language: "auto")
+
+        XCTAssertNil(options.language)
+        XCTAssertFalse(options.usePrefillPrompt)
+        XCTAssertTrue(options.detectLanguage)
+        XCTAssertTrue(options.wordTimestamps)
+        #endif
+    }
+
+    func testWhisperForcedLanguageFallbackOnlyRetriesEmptyResults() {
+        #if canImport(WhisperKit)
+        let empty = TranscriptionResult(text: "  \n", segments: [], language: "ko", timings: TranscriptionTimings())
+        XCTAssertTrue(WhisperEngine.shouldRetryWithoutForcedLanguage(empty))
+
+        let textOnly = TranscriptionResult(text: "hello", segments: [], language: "en", timings: TranscriptionTimings())
+        XCTAssertFalse(WhisperEngine.shouldRetryWithoutForcedLanguage(textOnly))
+
+        let withWords = TranscriptionResult(
+            text: "",
+            segments: [
+                TranscriptionSegment(
+                    text: "",
+                    words: [WordTiming(word: "hello", tokens: [], start: 0, end: 0.5, probability: 0.9)]
+                ),
+            ],
+            language: "en",
+            timings: TranscriptionTimings()
+        )
+        XCTAssertFalse(WhisperEngine.shouldRetryWithoutForcedLanguage(withWords))
         #endif
     }
 
