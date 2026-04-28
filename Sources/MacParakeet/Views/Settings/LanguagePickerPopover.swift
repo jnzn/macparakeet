@@ -295,13 +295,13 @@ private struct KeyEventCatcher: NSViewRepresentable {
                         return event
                     }
                     switch event.keyCode {
-                    case 125: // arrow down
+                    case KeyCode.arrowDown:
                         self.onDown?()
                         return nil
-                    case 126: // arrow up
+                    case KeyCode.arrowUp:
                         self.onUp?()
                         return nil
-                    case 36, 76: // return / numpad enter
+                    case KeyCode.returnKey, KeyCode.keypadEnter:
                         self.onReturn?()
                         return nil
                     default:
@@ -325,6 +325,13 @@ private struct KeyEventCatcher: NSViewRepresentable {
                 return true
             }
             return false
+        }
+
+        private enum KeyCode {
+            static let arrowDown: UInt16 = 125
+            static let arrowUp: UInt16 = 126
+            static let returnKey: UInt16 = 36
+            static let keypadEnter: UInt16 = 76
         }
 
         deinit {
