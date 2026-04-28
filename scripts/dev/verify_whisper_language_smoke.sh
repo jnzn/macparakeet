@@ -46,7 +46,8 @@ import json
 import sys
 
 path, expected_language = sys.argv[1], sys.argv[2]
-raw = open(path, encoding="utf-8").read()
+with open(path, encoding="utf-8") as f:
+    raw = f.read()
 start = raw.find("{")
 end = raw.rfind("}")
 if start == -1 or end == -1 or end < start:
