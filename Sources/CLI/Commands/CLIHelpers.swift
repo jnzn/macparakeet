@@ -65,7 +65,11 @@ private func isUUIDPrefixCandidate(_ value: String) -> Bool {
 
 private func uuidPrefixSearchKey(_ value: String) -> String? {
     let lowered = value.lowercased()
-    guard lowered.count >= minimumUUIDPrefixLength else { return nil }
+    guard lowered.count >= minimumUUIDPrefixLength,
+          isUUIDPrefixCandidate(lowered)
+    else {
+        return nil
+    }
     return lowered
 }
 

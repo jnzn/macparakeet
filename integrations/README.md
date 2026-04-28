@@ -284,7 +284,7 @@ macparakeet-cli prompts run "<prompt-name>" \
   ships only allowlisted invocation metadata (`operation_id`, `workflow_id`,
   `parent_operation_id`, `command`, `subcommand`, `outcome`,
   `duration_seconds`, `input_kind`, `output_format`, `json`, `exit_code`,
-  `error_type`) -- never the file path, URL, transcript, language value, or any
+  `error_type`) — never the file path, URL, transcript, language value, or any
   user content (random per-process session UUID, no persistent identifier).
   Disable it any of four ways:
     - `MACPARAKEET_TELEMETRY=0` (per process)
