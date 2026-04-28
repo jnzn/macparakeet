@@ -24,6 +24,7 @@ struct SettingsErrorBanner: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(DesignSystem.Colors.errorRed)
+                .accessibilityHidden(true)
 
             Text(message)
                 .font(DesignSystem.Typography.caption)
