@@ -35,7 +35,7 @@ struct MeetingsCommand: AsyncParsableCommand {
         }
 
         func run() async throws {
-            try await emitJSONOrRethrow(json: json) {
+            try emitJSONOrRethrow(json: json) {
                 let repo = try makeTranscriptionRepository(database: database)
                 let meetings = try repo.fetchBySourceType(.meeting, limit: limit)
                     .map(MeetingListItem.init)
@@ -75,7 +75,7 @@ struct MeetingsCommand: AsyncParsableCommand {
         var database: String?
 
         func run() async throws {
-            try await emitJSONOrRethrow(json: json) {
+            try emitJSONOrRethrow(json: json) {
                 let repo = try makeTranscriptionRepository(database: database)
                 let transcription = try findMeeting(idOrName: meeting, repo: repo)
                 let record = MeetingRecord(transcription)
@@ -150,7 +150,7 @@ struct MeetingsCommand: AsyncParsableCommand {
             var database: String?
 
             func run() async throws {
-                try await emitJSONOrRethrow(json: json) {
+                try emitJSONOrRethrow(json: json) {
                     let repo = try makeTranscriptionRepository(database: database)
                     let transcription = try findMeeting(idOrName: meeting, repo: repo)
                     let envelope = MeetingNotesRecord(transcription)
@@ -192,7 +192,7 @@ struct MeetingsCommand: AsyncParsableCommand {
             }
 
             func run() async throws {
-                try await emitJSONOrRethrow(json: json) {
+                try emitJSONOrRethrow(json: json) {
                     let repo = try makeTranscriptionRepository(database: database)
                     let transcription = try findMeeting(idOrName: meeting, repo: repo)
                     let notes = try notesInput(text: text, stdin: stdin)
@@ -231,7 +231,7 @@ struct MeetingsCommand: AsyncParsableCommand {
             }
 
             func run() async throws {
-                try await emitJSONOrRethrow(json: json) {
+                try emitJSONOrRethrow(json: json) {
                     let repo = try makeTranscriptionRepository(database: database)
                     let transcription = try findMeeting(idOrName: meeting, repo: repo)
                     let addition = try notesInput(text: text, stdin: stdin)
@@ -256,7 +256,7 @@ struct MeetingsCommand: AsyncParsableCommand {
             var database: String?
 
             func run() async throws {
-                try await emitJSONOrRethrow(json: json) {
+                try emitJSONOrRethrow(json: json) {
                     let repo = try makeTranscriptionRepository(database: database)
                     let transcription = try findMeeting(idOrName: meeting, repo: repo)
                     try repo.updateUserNotes(id: transcription.id, userNotes: nil)
@@ -289,7 +289,7 @@ struct MeetingsCommand: AsyncParsableCommand {
         var database: String?
 
         func run() async throws {
-            try await emitJSONOrRethrow(json: stdout && format == .json) {
+            try emitJSONOrRethrow(json: stdout && format == .json) {
                 let repo = try makeTranscriptionRepository(database: database)
                 let transcription = try findMeeting(idOrName: meeting, repo: repo)
                 let content = try exportContent(for: transcription, format: format)

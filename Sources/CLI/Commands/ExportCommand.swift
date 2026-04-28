@@ -55,16 +55,20 @@ struct ExportCommand: AsyncParsableCommand {
             print(content)
         } else {
             let outputURL = resolveOutputURL(transcription: transcription)
+            try FileManager.default.createDirectory(
+                at: outputURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
             try await writeExport(transcription: transcription, exportService: exportService, url: outputURL)
             print("Exported to \(outputURL.path)")
         }
     }
 
-    private func resolveOutputURL(transcription: Transcription) -> URL {
+    func resolveOutputURL(transcription: Transcription) -> URL {
         if let output {
-            return URL(fileURLWithPath: output)
+            return URL(fileURLWithPath: expandTilde(output))
         }
-        let baseName = URL(fileURLWithPath: transcription.fileName).deletingPathExtension().lastPathComponent
+        let baseName = TranscriptSegmenter.sanitizedExportStem(from: transcription.fileName)
         let fileName = "\(baseName).\(format.fileExtension)"
         return URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(fileName)
     }

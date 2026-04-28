@@ -69,6 +69,10 @@ struct TranscribeCommand: AsyncParsableCommand {
         }
     }
 
+    static func localFileURL(for input: String) -> URL {
+        URL(fileURLWithPath: expandTilde(input))
+    }
+
     func run() async throws {
         CLITelemetry.configureIfNeeded()
         let cliOperationContext = ObservabilityOperationContext()
@@ -77,7 +81,7 @@ struct TranscribeCommand: AsyncParsableCommand {
         let trimmedInput = input.trimmingCharacters(in: .whitespacesAndNewlines)
         let inputKind: ObservabilityInputKind = YouTubeURLValidator.isYouTubeURL(trimmedInput)
             ? .youtube
-            : (Observability.inputKind(for: URL(fileURLWithPath: trimmedInput)) ?? .unknown)
+            : (Observability.inputKind(for: Self.localFileURL(for: trimmedInput)) ?? .unknown)
 
         var sttClient: STTClient?
         var whisperEngine: WhisperEngine?
@@ -161,10 +165,10 @@ struct TranscribeCommand: AsyncParsableCommand {
                         }
                     }
                 } else {
-                    let url = URL(fileURLWithPath: trimmedInput)
+                    let url = Self.localFileURL(for: trimmedInput)
 
-                    guard FileManager.default.fileExists(atPath: trimmedInput) else {
-                        throw CLIError.fileNotFound(trimmedInput)
+                    guard FileManager.default.fileExists(atPath: url.path) else {
+                        throw CLIError.fileNotFound(url.path)
                     }
 
                     let ext = url.pathExtension.lowercased()
