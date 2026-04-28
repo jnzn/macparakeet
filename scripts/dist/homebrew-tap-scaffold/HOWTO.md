@@ -34,8 +34,8 @@ In the macparakeet repo, on a tagged commit:
 
 ```bash
 swift build -c release --product macparakeet-cli
-mkdir -p dist/macparakeet-cli-1.0.0-darwin-arm64
-cp .build/release/macparakeet-cli dist/macparakeet-cli-1.0.0-darwin-arm64/
+mkdir -p dist/macparakeet-cli-1.4.0-darwin-arm64
+cp .build/release/macparakeet-cli dist/macparakeet-cli-1.4.0-darwin-arm64/
 ```
 
 ### 3. Sign + notarize the binary
@@ -47,46 +47,39 @@ exact identity is in `scripts/dist/sign_notarize.sh`.
 codesign --sign "Developer ID Application: <YOUR NAME> (<TEAMID>)" \
          --options runtime \
          --timestamp \
-         dist/macparakeet-cli-1.0.0-darwin-arm64/macparakeet-cli
+         dist/macparakeet-cli-1.4.0-darwin-arm64/macparakeet-cli
 
 # Pack for notarization
-ditto -c -k --keepParent dist/macparakeet-cli-1.0.0-darwin-arm64 \
-      dist/macparakeet-cli-1.0.0-darwin-arm64.zip
+ditto -c -k --keepParent dist/macparakeet-cli-1.4.0-darwin-arm64 \
+      dist/macparakeet-cli-1.4.0-darwin-arm64.zip
 
 # Submit. The notarytool keychain profile name is whatever was set up
 # previously (search scripts/dist/ for the actual name).
-xcrun notarytool submit dist/macparakeet-cli-1.0.0-darwin-arm64.zip \
-      --keychain-profile <profile-name> --wait
+xcrun notarytool submit dist/macparakeet-cli-1.4.0-darwin-arm64.zip \
+      --keychain-profile <profile-name>
 ```
 
-> **Heads up:** `notarytool submit --wait` intermittently SIGBUS-crashes
-> (exit 138) on macOS 15+ even after a successful upload. The upload
-> usually succeeds despite the crash. If `--wait` exits non-zero:
->
-> 1. Run `xcrun notarytool history --keychain-profile <profile>` to find
->    the most recent submission ID.
-> 2. Poll its status with `xcrun notarytool info <id> --keychain-profile <profile>`
->    until it reads `Accepted`.
-> 3. If the upload itself failed, resubmit cleanly without `--wait`.
->
-> Resubmitting after a SIGBUS usually works on the next try.
+Poll the returned submission ID with
+`xcrun notarytool info <id> --keychain-profile <profile>` until it reads
+`Accepted`. Do not use `notarytool submit --wait`; the app release pipeline
+avoids it because it can SIGBUS-crash on some macOS/Xcode combinations.
 
 ### 4. Tar + checksum
 
 ```bash
 cd dist
-tar -czf macparakeet-cli-1.0.0-darwin-arm64.tar.gz \
-        macparakeet-cli-1.0.0-darwin-arm64
-shasum -a 256 macparakeet-cli-1.0.0-darwin-arm64.tar.gz
+tar -czf macparakeet-cli-1.4.0-darwin-arm64.tar.gz \
+        macparakeet-cli-1.4.0-darwin-arm64
+shasum -a 256 macparakeet-cli-1.4.0-darwin-arm64.tar.gz
 # Copy the SHA256 hex into the formula's `sha256` field.
 ```
 
 ### 5. Publish the GitHub release
 
 ```bash
-gh release create cli-v1.0.0 \
-  dist/macparakeet-cli-1.0.0-darwin-arm64.tar.gz \
-  --title "macparakeet-cli 1.0.0" \
+gh release create cli-v1.4.0 \
+  dist/macparakeet-cli-1.4.0-darwin-arm64.tar.gz \
+  --title "macparakeet-cli 1.4.0" \
   --notes-file Sources/CLI/CHANGELOG.md
 ```
 
@@ -98,7 +91,7 @@ from the app's release tags.
 ```bash
 cd ~/code/homebrew-tap
 # Update Formula/macparakeet-cli.rb's `sha256` line with the value from step 4.
-git add . && git commit -m "Add macparakeet-cli 1.0.0" && git push
+git add . && git commit -m "Add macparakeet-cli 1.4.0" && git push
 ```
 
 ### 7. Verify end-to-end
@@ -108,11 +101,11 @@ brew untap moona3k/tap 2>/dev/null   # if previously tapped
 brew tap moona3k/tap
 brew install macparakeet-cli
 
-macparakeet-cli --version    # 1.0.0
+macparakeet-cli --version    # 1.4.0
 macparakeet-cli health --json
 ```
 
-## After 1.0.0
+## After the first release
 
 For each subsequent CLI release:
 

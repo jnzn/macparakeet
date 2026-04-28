@@ -28,6 +28,30 @@ final class PromptsCommandTests: XCTestCase {
         XCTAssertEqual(found.id, p.id)
     }
 
+    func testFindPromptRejectsShortUUIDPrefixUnlessItIsName() throws {
+        let db = try DatabaseManager()
+        let repo = PromptRepository(dbQueue: db.dbQueue)
+        let uuid = UUID(uuidString: "DDBBCCAA-1111-1111-1111-111111111111")!
+        let p = Prompt(id: uuid, name: "Custom", content: "Hello")
+        try repo.save(p)
+
+        XCTAssertThrowsError(try findPrompt(idOrName: "ddb", repo: repo)) { error in
+            guard let lookupError = error as? CLILookupError else {
+                return XCTFail("Expected CLILookupError, got \(error)")
+            }
+            if case .shortUUIDPrefix(let minimumLength) = lookupError {
+                XCTAssertEqual(minimumLength, 4)
+            } else {
+                XCTFail("Expected .shortUUIDPrefix, got \(lookupError)")
+            }
+        }
+
+        let nameOnly = Prompt(name: "dd", content: "Name")
+        try repo.save(nameOnly)
+        let foundByName = try findPrompt(idOrName: "dd", repo: repo)
+        XCTAssertEqual(foundByName.id, nameOnly.id)
+    }
+
     func testFindPromptByNameCaseInsensitive() throws {
         let db = try DatabaseManager()
         let repo = PromptRepository(dbQueue: db.dbQueue)

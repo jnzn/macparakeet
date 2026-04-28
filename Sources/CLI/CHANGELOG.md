@@ -79,6 +79,10 @@ by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
 
 ## [Unreleased]
 
+No changes yet.
+
+## [1.4.0] -- 2026-04-28
+
 ### Added
 
 - LLM-backed commands now accept `--api-key-env NAME`; hosted providers also
@@ -104,9 +108,15 @@ by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
 - `prompts run --json` now emits a single JSON object even when saving the
   generated `PromptResult` fails.
 - CLI deletion now removes app-owned dictation audio, YouTube audio, and
-  meeting recording folders after deleting their database rows.
+  meeting recording folders before deleting their database rows. If managed
+  audio cleanup fails, deletion fails visibly instead of leaving app-owned
+  audio behind silently.
 - Local transcription and export output paths now expand `~`; export also
   creates parent directories and sanitizes default file names.
+- App-bundled CLI installs now include a signed `yt-dlp` helper seed. YouTube
+  transcription seeds the managed App Support helper from the bundle before
+  falling back to network install, while `health --json` remains non-mutating
+  and `health --repair-binaries` explicitly fetches the latest helper.
 
 ## [1.3.0] -- 2026-04-26
 
@@ -139,6 +149,11 @@ by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
   prompt results. This restores GUI/CLI parity for notes-steered meeting
   prompts while keeping LLM invocation explicitly under `prompts`.
 - Meeting retranscription now preserves durable user-authored meeting notes.
+- `health --json` is now a non-mutating readiness probe for helper binaries:
+  it reports whether `yt-dlp` is installed without downloading or updating it.
+  Use `health --repair-binaries` to explicitly install/update helper binaries.
+- UUID prefix lookup now enforces the documented minimum prefix length of
+  four characters before matching database records by ID prefix.
 
 ## [1.2.0] -- 2026-04-26
 
@@ -253,8 +268,8 @@ complete enough to commit to. This release marks that commitment.
   semantics.
 - **`--format json` (transcribe, export) vs `--json` (read-only queries)**
   is deliberate, not a bug. `transcribe` and `export` carry a `--format`
-  selector because they emit one of several formats (txt / srt / vtt / json /
-  docx / pdf); `--json` on read-only query commands is a binary flag because
+  selector because they emit one of several formats (`transcribe`: text / json;
+  `export`: txt / markdown / srt / vtt / json); `--json` on read-only query commands is a binary flag because
   their output shape is conceptually fixed -- it's either JSON or human.
   Unifying this would be a major-version breaking change; we are not doing
   that in 1.0.

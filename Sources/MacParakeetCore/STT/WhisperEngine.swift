@@ -4,12 +4,112 @@ import Foundation
 import WhisperKit
 #endif
 
+final class AsyncPermit: @unchecked Sendable {
+    private final class WaitState: @unchecked Sendable {
+        var cancelled = false
+        var completed = false
+    }
+
+    private struct Waiter {
+        let state: WaitState
+        let continuation: CheckedContinuation<Void, Error>
+    }
+
+    private let lock = NSLock()
+    private var permits: Int
+    private var waiterOrder: [UUID] = []
+    private var waiterHeadIndex = 0
+    private var waiters: [UUID: Waiter] = [:]
+
+    init(value: Int = 1) {
+        permits = max(0, value)
+    }
+
+    func wait() async throws {
+        let id = UUID()
+        let state = WaitState()
+        try await withTaskCancellationHandler {
+            let _: Void = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                lock.lock()
+                if state.cancelled {
+                    state.completed = true
+                    lock.unlock()
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+                if permits > 0 {
+                    permits -= 1
+                    state.completed = true
+                    lock.unlock()
+                    continuation.resume()
+                } else {
+                    waiterOrder.append(id)
+                    waiters[id] = Waiter(state: state, continuation: continuation)
+                    lock.unlock()
+                }
+            }
+        } onCancel: {
+            cancelWaiter(id: id, state: state)
+        }
+    }
+
+    private func cancelWaiter(id: UUID, state: WaitState) {
+        lock.lock()
+        if state.completed {
+            lock.unlock()
+            return
+        }
+        guard let waiter = waiters.removeValue(forKey: id) else {
+            state.cancelled = true
+            lock.unlock()
+            return
+        }
+        state.completed = true
+        lock.unlock()
+        waiter.continuation.resume(throwing: CancellationError())
+    }
+
+    func signal() {
+        lock.lock()
+        while waiterHeadIndex < waiterOrder.count {
+            let id = waiterOrder[waiterHeadIndex]
+            waiterHeadIndex += 1
+            guard let waiter = waiters.removeValue(forKey: id) else {
+                continue
+            }
+            waiter.state.completed = true
+            compactWaiterOrderIfNeeded()
+            lock.unlock()
+            waiter.continuation.resume()
+            return
+        }
+        permits += 1
+        compactWaiterOrderIfNeeded()
+        lock.unlock()
+    }
+
+    func pendingWaiterCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return waiters.count
+    }
+
+    private func compactWaiterOrderIfNeeded() {
+        guard waiterHeadIndex > 64, waiterHeadIndex * 2 > waiterOrder.count else {
+            return
+        }
+        waiterOrder = Array(waiterOrder.dropFirst(waiterHeadIndex))
+        waiterHeadIndex = 0
+    }
+}
+
 public actor WhisperEngine: STTTranscribing {
     public static let defaultModelVariant = SpeechEnginePreference.defaultWhisperModelVariant
 
     private let modelVariant: String
     private let defaultLanguage: String?
     private let downloadBase: URL
+    private let transcriptionPermit = AsyncPermit()
 
     #if canImport(WhisperKit)
     private var whisperKit: WhisperKit?
@@ -110,9 +210,24 @@ public actor WhisperEngine: STTTranscribing {
         language: String?,
         onProgress: (@Sendable (Int, Int) -> Void)? = nil
     ) async throws -> STTResult {
+        try await transcriptionPermit.wait()
+        defer { transcriptionPermit.signal() }
+        try Task.checkCancellation()
+        return try await transcribeLocked(
+            audioURL: audioURL,
+            language: language,
+            onProgress: onProgress
+        )
+    }
+
+    private func transcribeLocked(
+        audioURL: URL,
+        language: String?,
+        onProgress: (@Sendable (Int, Int) -> Void)? = nil
+    ) async throws -> STTResult {
         #if canImport(WhisperKit)
         do {
-            try await prepare(onProgress: nil)
+            try await prepareLocked(onProgress: nil)
             guard let whisperKit else {
                 throw STTError.modelNotLoaded
             }
@@ -142,6 +257,13 @@ public actor WhisperEngine: STTTranscribing {
     }
 
     public func prepare(onProgress: (@Sendable (String) -> Void)? = nil) async throws {
+        try await transcriptionPermit.wait()
+        defer { transcriptionPermit.signal() }
+        try Task.checkCancellation()
+        try await prepareLocked(onProgress: onProgress)
+    }
+
+    private func prepareLocked(onProgress: (@Sendable (String) -> Void)? = nil) async throws {
         #if canImport(WhisperKit)
         if isLoaded, whisperKit != nil { return }
         guard let modelFolder = Self.localModelFolder(model: modelVariant, downloadBase: downloadBase) else {
@@ -174,6 +296,14 @@ public actor WhisperEngine: STTTranscribing {
     }
 
     public func unload() async {
+        do {
+            try await transcriptionPermit.wait()
+        } catch {
+            return
+        }
+        defer { transcriptionPermit.signal() }
+        guard !Task.isCancelled else { return }
+
         #if canImport(WhisperKit)
         await whisperKit?.unloadModels()
         whisperKit = nil

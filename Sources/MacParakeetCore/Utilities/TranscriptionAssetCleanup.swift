@@ -1,6 +1,17 @@
 import Foundation
 import os
 
+public enum TranscriptionAssetCleanupError: Error, LocalizedError {
+    case removalFailed(path: String, reason: String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .removalFailed(_, let reason):
+            return "Could not remove app-owned audio: \(reason)"
+        }
+    }
+}
+
 public enum TranscriptionAssetCleanup {
     private static let logger = Logger(
         subsystem: "com.macparakeet.core",
@@ -10,20 +21,20 @@ public enum TranscriptionAssetCleanup {
     public static func removeOwnedAssets(
         for transcription: Transcription,
         fileManager: FileManager = .default
-    ) {
+    ) throws {
         guard let filePath = transcription.filePath, !filePath.isEmpty else { return }
 
         switch transcription.sourceType {
         case .youtube:
-            removeYouTubeFile(at: URL(fileURLWithPath: filePath), fileManager: fileManager)
+            try removeYouTubeFile(at: URL(fileURLWithPath: filePath), fileManager: fileManager)
         case .meeting:
-            removeMeetingFolder(containing: URL(fileURLWithPath: filePath), fileManager: fileManager)
+            try removeMeetingFolder(containing: URL(fileURLWithPath: filePath), fileManager: fileManager)
         case .file:
             return
         }
     }
 
-    private static func removeYouTubeFile(at fileURL: URL, fileManager: FileManager) {
+    private static func removeYouTubeFile(at fileURL: URL, fileManager: FileManager) throws {
         let downloadsRootURL = URL(fileURLWithPath: AppPaths.youtubeDownloadsDir, isDirectory: true)
             .standardizedFileURL
         let targetURL = fileURL.standardizedFileURL
@@ -35,10 +46,10 @@ public enum TranscriptionAssetCleanup {
             return
         }
 
-        removeItem(at: targetURL, fileManager: fileManager)
+        try removeItem(at: targetURL, fileManager: fileManager)
     }
 
-    private static func removeMeetingFolder(containing fileURL: URL, fileManager: FileManager) {
+    private static func removeMeetingFolder(containing fileURL: URL, fileManager: FileManager) throws {
         let meetingRootURL = URL(fileURLWithPath: AppPaths.meetingRecordingsDir, isDirectory: true)
             .standardizedFileURL
         let folderURL = fileURL.deletingLastPathComponent().standardizedFileURL
@@ -49,16 +60,20 @@ public enum TranscriptionAssetCleanup {
             )
             return
         }
-        removeItem(at: folderURL, fileManager: fileManager)
+        try removeItem(at: folderURL, fileManager: fileManager)
     }
 
-    private static func removeItem(at url: URL, fileManager: FileManager) {
+    private static func removeItem(at url: URL, fileManager: FileManager) throws {
         guard fileManager.fileExists(atPath: url.path) else { return }
         do {
             try fileManager.removeItem(at: url)
         } catch {
             logger.warning(
                 "Failed to remove transcription asset at \(url.path, privacy: .private): \(String(describing: error), privacy: .private)"
+            )
+            throw TranscriptionAssetCleanupError.removalFailed(
+                path: url.path,
+                reason: error.localizedDescription
             )
         }
     }

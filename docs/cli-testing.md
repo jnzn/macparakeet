@@ -38,7 +38,8 @@ macparakeet-cli
 │   └── unfavorite <id>                  Remove from favorites
 ├── export <id> [options]                Export a transcription to file
 ├── stats [--json]                       Show voice stats dashboard
-├── health [--repair-models] [--json]    System health and model status
+├── health [--repair-models] [--repair-binaries] [--json]
+│                                         System health and model/helper status
 ├── models                               Speech model lifecycle
 │   ├── status [--json]                  Show model status
 │   ├── download <model-id>              Download explicit model (Whisper)
@@ -164,7 +165,7 @@ retained purchase activation code.
 
 ## Export
 
-Export a transcription by its UUID (or UUID prefix). Supported formats: txt, markdown, srt, vtt, json.
+Export a transcription by its UUID or UUID prefix of at least 4 characters. Supported formats: txt, markdown, srt, vtt, json.
 
 ```bash
 # List transcriptions to find the ID
@@ -211,7 +212,7 @@ swift run macparakeet-cli history delete-dictation <ID>
 swift run macparakeet-cli history delete-transcription <ID>
 ```
 
-IDs support UUID prefix matching (e.g., `3a7b` matches `3a7b1234-...`).
+IDs support UUID prefix matching with at least 4 characters (e.g., `3a7b` matches `3a7b1234-...`).
 
 ### Favorites
 
@@ -226,7 +227,14 @@ swift run macparakeet-cli history unfavorite <ID>
 ```bash
 swift run macparakeet-cli health
 swift run macparakeet-cli health --repair-models --repair-attempts 3
+swift run macparakeet-cli health --repair-binaries
 ```
+
+`health --json` is a non-mutating readiness probe: it can report an existing
+managed or app-bundled `yt-dlp`, but it does not install or update helper
+binaries. `health --repair-binaries` explicitly fetches the latest managed
+`yt-dlp` copy. App-bundled CLI installs include a signed `yt-dlp` seed so
+YouTube URL transcription works without a first-use helper download.
 
 ## Meetings
 
@@ -396,7 +404,7 @@ without launching the app.
 swift run macparakeet-cli prompts list
 swift run macparakeet-cli prompts list --filter auto-run --json | jq '.[].name'
 
-# Show full content. <id-or-name> accepts UUID, UUID prefix, or exact name.
+# Show full content. <id-or-name> accepts UUID, UUID prefix of at least 4 characters, or exact name.
 swift run macparakeet-cli prompts show "Summary"
 swift run macparakeet-cli prompts show A4882688
 

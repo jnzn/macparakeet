@@ -252,25 +252,24 @@ struct DeleteDictationSubcommand: ParsableCommand {
         let repo = DictationRepository(dbQueue: dbManager.dbQueue)
 
         let dictation = try findDictation(id: id, repo: repo)
+        if let path = dictation.audioPath {
+            try removeOwnedDictationAudio(at: path)
+        }
         let deleted = try repo.delete(id: dictation.id)
         guard deleted else {
             throw CLILookupError.notFound("No dictation matching '\(id)'")
-        }
-        if let path = dictation.audioPath {
-            removeOwnedDictationAudio(at: path)
         }
         let preview = String(dictation.rawTranscript.prefix(60))
         print("Deleted dictation: \"\(preview)\"")
     }
 }
 
-private func removeOwnedDictationAudio(at path: String, fileManager: FileManager = .default) {
+private func removeOwnedDictationAudio(at path: String, fileManager: FileManager = .default) throws {
     let rootURL = URL(fileURLWithPath: AppPaths.dictationsDir, isDirectory: true)
         .standardizedFileURL
     let targetURL = URL(fileURLWithPath: path).standardizedFileURL
 
     guard targetURL.path.hasPrefix(rootURL.path + "/") else {
-        printErr("Refusing to remove dictation audio outside app-owned dictations directory: \(targetURL.path)")
         return
     }
 
@@ -278,7 +277,10 @@ private func removeOwnedDictationAudio(at path: String, fileManager: FileManager
     do {
         try fileManager.removeItem(at: targetURL)
     } catch {
-        printErr("Failed to remove dictation audio at \(targetURL.path): \(error.localizedDescription)")
+        throw TranscriptionAssetCleanupError.removalFailed(
+            path: targetURL.path,
+            reason: error.localizedDescription
+        )
     }
 }
 
@@ -300,11 +302,11 @@ struct DeleteTranscriptionSubcommand: ParsableCommand {
         let repo = TranscriptionRepository(dbQueue: dbManager.dbQueue)
 
         let transcription = try findTranscription(id: id, repo: repo)
+        try TranscriptionAssetCleanup.removeOwnedAssets(for: transcription)
         let deleted = try repo.delete(id: transcription.id)
         guard deleted else {
             throw CLILookupError.notFound("No transcription matching '\(id)'")
         }
-        TranscriptionAssetCleanup.removeOwnedAssets(for: transcription)
         print("Deleted transcription: \"\(transcription.fileName)\"")
     }
 }

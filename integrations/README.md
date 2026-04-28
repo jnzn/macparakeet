@@ -12,12 +12,14 @@
   per-minute charges.
 - **Audio + video file transcription** -- accepts MP3 / WAV / MP4 / MOV /
   WebM / etc. via the bundled FFmpeg.
-- **YouTube transcription** via bundled yt-dlp.
+- **YouTube transcription** via yt-dlp. The app bundle seeds a signed helper
+  into MacParakeet's Application Support folder before first YouTube use.
 - **Persistent SQLite memory layer** -- everything transcribed is queryable
   later: dictation history, transcriptions, prompt outputs.
 - **Prompt library + LLM-backed summarization** -- bring your own provider
-  (OpenAI, Anthropic, Ollama, LM Studio, OpenAI-compatible local), or skip
-  the LLM entirely and consume raw transcripts.
+  (OpenAI, Anthropic, Ollama, LM Studio, OpenAI-compatible local, or a
+  configured CLI subprocess), or skip the LLM entirely and consume raw
+  transcripts.
 - **JSON output everywhere** -- every read-only command supports `--json`
   with a stable schema (see
   [`../Sources/CLI/CHANGELOG.md`](../Sources/CLI/CHANGELOG.md) for the
@@ -64,7 +66,11 @@ macparakeet-cli health --json
 ```
 
 Reports model readiness, database accessibility, and binary deps (FFmpeg,
-yt-dlp). Use this before issuing real work.
+yt-dlp). This is a non-mutating probe; it reports missing helper binaries but
+does not install or update them. App-bundled CLI installs include a signed
+yt-dlp helper seed for YouTube transcription; use
+`macparakeet-cli health --repair-binaries` when you explicitly want to fetch
+the latest managed helper binary.
 
 ### Transcribe a file
 
@@ -202,7 +208,10 @@ macparakeet-cli health --json
 ```
 
 If it fails, report the `errorType`/message and stop. Do not guess that models,
-FFmpeg, yt-dlp, or the database are ready.
+FFmpeg, yt-dlp, or the database are ready. App-bundled CLI installs should
+already have a signed yt-dlp helper seed; if `yt-dlp` is still missing and the
+user wants YouTube transcription, run
+`macparakeet-cli health --repair-binaries` before retrying.
 
 ## Core Commands
 
@@ -267,13 +276,15 @@ macparakeet-cli prompts run "<prompt-name>" \
   UUID prefix (>= 4 chars), or case-insensitive name. Ambiguous prefixes
   produce a `.ambiguous` error; missing records produce `.notFound`.
 - **Privacy:** STT and database access never touch the network. Network
-  egress paths are: YouTube downloads (yt-dlp); optional cloud LLM provider
-  calls (only when `prompts run --provider <cloud>` or `llm` against a hosted
-  provider); Sparkle update checks (app, not CLI); and a single privacy-safe
-  `cli_operation` event per `transcribe` invocation, posted to the
-  self-hosted endpoint at `https://macparakeet.com/api/telemetry`. The
-  telemetry event ships only allowlisted invocation metadata (`operation_id`,
-  `workflow_id`, `parent_operation_id`, `command`, `subcommand`, `outcome`,
+  egress paths are: explicit helper repair (`health --repair-binaries`),
+  YouTube downloads (yt-dlp), optional LLM provider calls (only when
+  `prompts run` or `llm` targets a hosted provider, or when a configured
+  Local CLI command contacts its own service), Sparkle update checks (app,
+  not CLI), and a single privacy-safe
+  `cli_operation` event per `transcribe` invocation, posted to the self-hosted
+  endpoint at `https://macparakeet.com/api/telemetry`. The telemetry event
+  ships only allowlisted invocation metadata (`operation_id`, `workflow_id`,
+  `parent_operation_id`, `command`, `subcommand`, `outcome`,
   `duration_seconds`, `input_kind`, `output_format`, `json`, `exit_code`,
   `error_type`) — never the file path, URL, transcript, language value, or any
   user content (random per-process session UUID, no persistent identifier).

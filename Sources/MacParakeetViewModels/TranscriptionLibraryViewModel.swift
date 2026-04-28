@@ -29,6 +29,7 @@ public final class TranscriptionLibraryViewModel {
     public var searchText: String = "" { didSet { recomputeFiltered() } }
     public var sortOrder: LibrarySortOrder = .dateDescending { didSet { recomputeFiltered() } }
     public private(set) var filteredTranscriptions: [Transcription] = []
+    public var errorMessage: String?
 
     private var transcriptionRepo: TranscriptionRepositoryProtocol?
     public let scope: TranscriptionLibraryScope
@@ -93,25 +94,29 @@ public final class TranscriptionLibraryViewModel {
     public func toggleFavorite(_ transcription: Transcription) {
         let newValue = !transcription.isFavorite
         do {
+            errorMessage = nil
             try transcriptionRepo?.updateFavorite(id: transcription.id, isFavorite: newValue)
             if let idx = transcriptions.firstIndex(where: { $0.id == transcription.id }) {
                 transcriptions[idx].isFavorite = newValue
             }
             Telemetry.send(.transcriptionFavorited(isFavorite: newValue))
         } catch {
-            // DB failed — don't update UI state
+            logger.error("Failed to update transcription favorite: \(error.localizedDescription, privacy: .private)")
+            errorMessage = "Failed to update favorite: \(error.localizedDescription)"
         }
     }
 
     public func deleteTranscription(_ transcription: Transcription) {
         do {
+            errorMessage = nil
+            try TranscriptionDeletionCleanup.removeOwnedAssets(for: transcription)
             let deleted = try transcriptionRepo?.delete(id: transcription.id) ?? false
             guard deleted else { return }
-            TranscriptionDeletionCleanup.removeOwnedAssets(for: transcription)
             transcriptions.removeAll { $0.id == transcription.id }
             Telemetry.send(.transcriptionDeleted)
         } catch {
-            // DB failed — don't remove from UI
+            logger.error("Failed to delete transcription: \(error.localizedDescription, privacy: .private)")
+            errorMessage = "Failed to delete transcription: \(error.localizedDescription)"
         }
     }
 }
