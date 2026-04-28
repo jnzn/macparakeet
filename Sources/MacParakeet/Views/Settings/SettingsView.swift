@@ -12,6 +12,14 @@ struct SettingsView: View {
 
     @State private var rootViewModel = SettingsRootViewModel()
     @FocusState private var searchFieldFocused: Bool
+    /// Set when a search-result row is tapped. Each tab's `ScrollView`
+    /// watches this via `.task(id:)`; whichever ScrollView is on screen
+    /// when this transitions to a non-nil anchor scrolls itself there
+    /// and clears the target. Using `task(id:)` (not `onChange`) so it
+    /// fires both on transition AND on initial mount of the destination
+    /// tab — important because tapping a result almost always triggers
+    /// a tab swap, which mounts a new ScrollView.
+    @State private var pendingScrollTarget: String?
     @State private var automaticallyChecksForUpdates: Bool
     @State private var automaticallyDownloadsUpdates: Bool
     @State private var showClearAllAlert = false
@@ -34,20 +42,32 @@ struct SettingsView: View {
                 .padding(.top, DesignSystem.Spacing.md)
                 .padding(.bottom, DesignSystem.Spacing.sm)
 
+            // The tab bar stays visible during search so the user can
+            // bail back to a tab at any time. Search results replace
+            // the tab body; pending scroll targets only fire after the
+            // user picks a result and the destination tab mounts.
             Group {
-                switch rootViewModel.activeTab {
-                case .modes:
-                    modesTabContent
-                case .engine:
-                    engineTabContent
-                case .ai:
-                    aiTabContent
-                case .system:
-                    systemTabContent
+                if rootViewModel.isSearching {
+                    SettingsSearchResultsList(
+                        results: SettingsSearchIndex.matches(rootViewModel.searchQuery),
+                        onSelect: handleSearchResultTap
+                    )
+                } else {
+                    switch rootViewModel.activeTab {
+                    case .modes:
+                        modesTabContent
+                    case .engine:
+                        engineTabContent
+                    case .ai:
+                        aiTabContent
+                    case .system:
+                        systemTabContent
+                    }
                 }
             }
         }
         .background(DesignSystem.Colors.background)
+        .background(focusSearchHotkey)
         .alert("Clear All Dictations?", isPresented: $showClearAllAlert) {
             Button("Cancel", role: .cancel) {}
             Button("Clear All", role: .destructive) {
@@ -159,6 +179,32 @@ struct SettingsView: View {
         return nil
     }
 
+    /// Search-result tap handler. Order of operations matters:
+    /// 1. Set the scroll target so `task(id:)` on the destination tab's
+    ///    ScrollView sees a non-nil value when it mounts.
+    /// 2. Switch to the result's tab — this swaps the body away from
+    ///    the search results and into the destination tab's ScrollView.
+    /// 3. Clear the search query — this also drops `isSearching` to
+    ///    false. SwiftUI batches these so the user perceives one swap.
+    private func handleSearchResultTap(_ entry: SettingsSearchEntry) {
+        pendingScrollTarget = entry.cardAnchor
+        rootViewModel.activeTab = entry.tab
+        rootViewModel.clearSearch()
+    }
+
+    /// Hidden button that registers ⌘F as a focus shortcut. Lives in a
+    /// `.background` so it's not visible but still reachable by the
+    /// keyboard-shortcut dispatcher. macOS convention.
+    private var focusSearchHotkey: some View {
+        Button("Focus Search") {
+            searchFieldFocused = true
+        }
+        .keyboardShortcut("f", modifiers: .command)
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
+    }
+
     /// Modes tab — daily-ops config for the three product modes, plus the
     /// Audio Input prerequisite that gates them. The legacy `headerCard`
     /// "Workspace Controls" was eliminated (its stat chips are redundant
@@ -167,16 +213,13 @@ struct SettingsView: View {
     /// Launch at Login + Menu Bar Only moved to the System Startup card.
     /// The Calendar card was folded into Meeting Recording.
     private var modesTabContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
-                audioInputCard
-                dictationCard
-                transcriptionCard
-                if AppFeatures.meetingRecordingEnabled {
-                    meetingRecordingCard
-                }
+        scrollableTabBody {
+            audioInputCard.id("audio.input")
+            dictationCard.id("dictation")
+            transcriptionCard.id("transcription")
+            if AppFeatures.meetingRecordingEnabled {
+                meetingRecordingCard.id("meeting")
             }
-            .padding(DesignSystem.Spacing.lg)
         }
     }
 
@@ -191,13 +234,10 @@ struct SettingsView: View {
     /// Sub-VM split (`EngineSettingsViewModel`) lands in a later commit;
     /// the cards keep reading from `viewModel` for now.
     private var engineTabContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
-                engineSelectorCard
-                engineLanguageCard
-                enginesModelsCard
-            }
-            .padding(DesignSystem.Spacing.lg)
+        scrollableTabBody {
+            engineSelectorCard.id("engine.selector")
+            engineLanguageCard.id("engine.language")
+            enginesModelsCard.id("engine.models")
         }
     }
 
@@ -209,11 +249,8 @@ struct SettingsView: View {
     /// opt-in), and we only flag yellow on a real failure the user
     /// can act on.
     private var aiTabContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
-                aiProviderCard
-            }
-            .padding(DesignSystem.Spacing.lg)
+        scrollableTabBody {
+            aiProviderCard.id("ai.provider")
         }
     }
 
@@ -222,20 +259,52 @@ struct SettingsView: View {
     /// `resetCleanupCard`, separated by a visible divider so a user
     /// scrolling through configuration can't fat-finger a wipe.
     private var systemTabContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
-                startupCard
-                permissionsCard
-                storageCard
-                updatesCard
-                privacyCard
-                onboardingCard
-                aboutCard
+        scrollableTabBody {
+            startupCard.id("system.startup")
+            permissionsCard.id("system.permissions")
+            storageCard.id("system.storage")
+            updatesCard.id("system.updates")
+            privacyCard.id("system.privacy")
+            onboardingCard.id("system.onboarding")
+            aboutCard.id("system.about")
 
-                resetCleanupSeparator
-                resetCleanupCard
+            resetCleanupSeparator
+            resetCleanupCard.id("system.reset")
+        }
+    }
+
+    /// Common scaffold for all four tab bodies: ScrollView wrapped in a
+    /// `ScrollViewReader`, with a `.task(id: pendingScrollTarget)` that
+    /// scrolls to a search-result anchor when the parent sets one.
+    ///
+    /// Using `task(id:)` (not `onChange`) means we react both to in-tab
+    /// transitions AND to the destination tab's freshly-mounted ScrollView
+    /// — important because tapping a search result usually triggers a
+    /// tab swap, mounting a new ScrollView that needs to scroll to a
+    /// target the parent set just before the swap.
+    @ViewBuilder
+    private func scrollableTabBody<Content: View>(
+        @ViewBuilder _ cards: @escaping () -> Content
+    ) -> some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
+                    cards()
+                }
+                .padding(DesignSystem.Spacing.lg)
             }
-            .padding(DesignSystem.Spacing.lg)
+            .task(id: pendingScrollTarget) {
+                guard let target = pendingScrollTarget else { return }
+                // Tiny delay so the destination ScrollView has had a
+                // layout pass before we ask it to scroll. Without this,
+                // scrollTo on a freshly-mounted ScrollView is a no-op
+                // because the target id isn't registered yet.
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                withAnimation(DesignSystem.Animation.contentSwap) {
+                    proxy.scrollTo(target, anchor: .top)
+                }
+                pendingScrollTarget = nil
+            }
         }
     }
 
