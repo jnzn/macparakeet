@@ -846,7 +846,11 @@ struct SettingsView: View {
         case .notDownloaded:
             return "Download"
         case .notLoaded:
-            return "Repair"
+            // The badge already says "Downloaded ✓"; pairing it with "Repair"
+            // implied the model was broken. The button actually re-runs the
+            // download (fast no-op via HuggingFace cache when files are
+            // intact), so name it for what it does.
+            return "Re-download"
         case .failed:
             return "Retry"
         case .ready:
@@ -1322,7 +1326,11 @@ struct SettingsView: View {
         case .ready:
             ("checkmark.circle.fill", "Ready", DesignSystem.Colors.successGreen)
         case .notLoaded:
-            ("pause.circle.fill", "Not Loaded", .secondary)
+            // The model is on disk and will lazy-load on first use; this is a
+            // healthy idle state, not an error. Earlier copy ("Not Loaded"
+            // with a pause icon) read as broken and prompted users to hit
+            // Repair to "fix" something that wasn't actually broken.
+            ("checkmark.circle.fill", "Downloaded", DesignSystem.Colors.successGreen)
         case .notDownloaded:
             ("arrow.down.circle.fill", "Not Downloaded", DesignSystem.Colors.errorRed)
         case .repairing:
