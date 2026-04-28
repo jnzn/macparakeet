@@ -31,7 +31,7 @@ All execution is local on the Apple Neural Engine. No cloud STT.
 ln -s /Applications/MacParakeet.app/Contents/MacOS/macparakeet-cli \
       /usr/local/bin/macparakeet-cli
 # 3. Verify
-macparakeet-cli --version   # 1.3.0
+macparakeet-cli --version   # 1.4.0
 macparakeet-cli health --json
 ```
 
@@ -75,7 +75,7 @@ fields and validation rules may have evolved.
 ````markdown
 ---
 name: macparakeet-stt
-version: 1.3.0
+version: 1.4.0
 author: <your-username>
 description: Local Parakeet TDT speech-to-text on Apple Silicon. Wraps macparakeet-cli (GPL-3.0-or-later).
 tags: [stt, transcription, voice, apple-silicon, local, parakeet]
