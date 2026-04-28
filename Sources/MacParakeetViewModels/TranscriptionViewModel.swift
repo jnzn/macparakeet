@@ -103,6 +103,7 @@ public final class TranscriptionViewModel {
     private var transcriptionTask: Task<Void, Never>?
     private var activeTranscriptionTaskID: UUID?
     private var activeProgressSpeechEngine: SpeechEngineSelection?
+    private var activeProgressWhisperVariant: String?
     private var activeDropRequestID: UUID?
     private var dropPendingCount = 0
     private var dropAccepted = false
@@ -458,7 +459,11 @@ public final class TranscriptionViewModel {
 
         let taskID = UUID()
         activeTranscriptionTaskID = taskID
-        activeProgressSpeechEngine = speechEngine ?? SpeechEngineSelection.current(defaults: defaults)
+        let progressSpeechEngine = speechEngine ?? SpeechEngineSelection.current(defaults: defaults)
+        activeProgressSpeechEngine = progressSpeechEngine
+        activeProgressWhisperVariant = progressSpeechEngine.engine == .whisper
+            ? SpeechEnginePreference.whisperModelVariant(defaults: defaults)
+            : nil
         transcribingFileName = fileName
         beginTranscription(source: source)
 
@@ -551,6 +556,7 @@ public final class TranscriptionViewModel {
         transcriptionProgress = nil
         transcribingFileName = ""
         activeProgressSpeechEngine = nil
+        activeProgressWhisperVariant = nil
         progressPhase = .preparing
         progressHeadline = Self.headline(for: .preparing)
         progressSubline = nil
@@ -566,7 +572,8 @@ public final class TranscriptionViewModel {
         self.progressPhase = phase
         self.progressHeadline = Self.headline(for: phase)
         let speechEngine = activeProgressSpeechEngine ?? SpeechEngineSelection.current(defaults: defaults)
-        let whisperVariant = SpeechEnginePreference.whisperModelVariant(defaults: defaults)
+        let whisperVariant = activeProgressWhisperVariant
+            ?? SpeechEnginePreference.whisperModelVariant(defaults: defaults)
         self.progressSubline = Self.subline(
             for: phase,
             sourceKind: sourceKind,

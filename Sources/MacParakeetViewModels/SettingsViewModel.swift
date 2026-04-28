@@ -949,7 +949,7 @@ public final class SettingsViewModel {
                     let percent = total > 0 ? Int((Double(completed) / Double(total) * 100).rounded()) : 0
                     Task { @MainActor [weak self] in
                         guard let self else { return }
-                        self.whisperModelStatusDetail = "Downloading Whisper \(self.whisperVariantFriendlyName)... \(min(max(percent, 0), 100))%"
+                        self.whisperModelStatusDetail = "Downloading Whisper \(friendly)... \(min(max(percent, 0), 100))%"
                     }
                 }
                 await MainActor.run {

@@ -9,8 +9,8 @@ final class SpeechEnginePreferenceTests: XCTestCase {
 
     func testFriendlyVariantNameFallsBackToRawForUnknownShape() {
         XCTAssertEqual(
-            SpeechEnginePreference.friendlyVariantName("xyzzy-experimental-build"),
-            "xyzzy-experimental-build"
+            SpeechEnginePreference.friendlyVariantName("large-v30-experimental-build"),
+            "large-v30-experimental-build"
         )
     }
 }
