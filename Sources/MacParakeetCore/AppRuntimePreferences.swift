@@ -35,7 +35,7 @@ public enum MeetingAudioSourceMode: String, CaseIterable, Hashable, Sendable, Eq
         case .microphoneAndSystem:
             return "Capture your microphone and computer audio. Weak mic bleed is suppressed live."
         case .systemOnly:
-            return "Capture computer audio only. Use for browser video, podcasts, lectures, and webinars."
+            return "Capture computer audio for meetings. Your microphone is still used for dictation."
         }
     }
 

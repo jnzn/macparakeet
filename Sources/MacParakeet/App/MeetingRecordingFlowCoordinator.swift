@@ -59,6 +59,7 @@ final class MeetingRecordingFlowCoordinator {
     private var completedTranscription: Transcription?
     private var currentMeetingOperationContext: ObservabilityOperationContext?
     private var currentMeetingTrigger: TelemetryMeetingRecordingTrigger?
+    private var pendingAudioSourceMode: MeetingAudioSourceMode?
 
     init(
         meetingRecordingService: MeetingRecordingServiceProtocol,
@@ -192,6 +193,7 @@ final class MeetingRecordingFlowCoordinator {
         )
         pendingTrigger = nil
         pendingTitle = nil
+        pendingAudioSourceMode = nil
         currentMeetingOperationContext = nil
         currentMeetingTrigger = nil
         if wasCalendarTriggered {
@@ -235,6 +237,7 @@ final class MeetingRecordingFlowCoordinator {
             let gen = stateMachine.generation
             actionTask = Task { @MainActor in
                 let sourceMode = meetingAudioSourceModeProvider()
+                self.pendingAudioSourceMode = sourceMode
                 let microphoneGranted: Bool
                 if sourceMode.capturesMicrophone {
                     let microphoneStatus = await permissionService.checkMicrophonePermission()
@@ -340,14 +343,16 @@ final class MeetingRecordingFlowCoordinator {
             // can't smuggle a stale trigger / title into this start.
             let trigger = pendingTrigger
             let title = pendingTitle
+            let sourceMode = pendingAudioSourceMode ?? meetingAudioSourceModeProvider()
             pendingTrigger = nil
             pendingTitle = nil
+            pendingAudioSourceMode = nil
             let operationContext = currentMeetingOperationContext ?? ObservabilityOperationContext()
             currentMeetingOperationContext = operationContext
             currentMeetingTrigger = trigger
             actionTask = Task { @MainActor in
                 do {
-                    try await meetingRecordingService.startRecording(title: title)
+                    try await meetingRecordingService.startRecording(title: title, sourceMode: sourceMode)
                     Telemetry.send(.meetingRecordingStarted(trigger: trigger))
                     self.onRecordingBegan()
                     self.sendEvent(.recordingStarted(generation: gen))
@@ -480,6 +485,7 @@ final class MeetingRecordingFlowCoordinator {
             let cancelledTrigger = currentMeetingTrigger ?? pendingTrigger
             pendingTrigger = nil
             pendingTitle = nil
+            pendingAudioSourceMode = nil
             actionTask?.cancel()
             actionTask = Task { @MainActor in
                 // Stop the in-flight debounce so it can't fire against a

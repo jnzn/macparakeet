@@ -39,6 +39,7 @@ struct MeetingTranscriptNoiseFilter {
             return CleanupResult(microphoneWords: [], removedMicrophoneWordCount: 0)
         }
 
+        let systemTokenWords = normalizedSystemTokenWords(from: systemWords)
         var indexesToDrop = Set<Int>()
         for run in contiguousRuns(in: microphoneWords) {
             if isFillerOnly(run.words) {
@@ -46,7 +47,7 @@ struct MeetingTranscriptNoiseFilter {
                 continue
             }
 
-            if isObviousSystemDuplicate(microphoneRun: run.words, systemWords: systemWords) {
+            if isObviousSystemDuplicate(microphoneRun: run.words, systemTokenWords: systemTokenWords) {
                 indexesToDrop.formUnion(run.indexes)
             }
         }
@@ -95,12 +96,12 @@ struct MeetingTranscriptNoiseFilter {
 
     private static func isObviousSystemDuplicate(
         microphoneRun: [WordTimestamp],
-        systemWords: [WordTimestamp]
+        systemTokenWords: [(token: String, word: WordTimestamp)]
     ) -> Bool {
         let micTokens = normalizedTokens(microphoneRun)
         guard !micTokens.isEmpty,
               micTokens.count <= duplicateMaxWords,
-              systemWords.count >= micTokens.count else {
+              systemTokenWords.count >= micTokens.count else {
             return false
         }
 
@@ -108,12 +109,6 @@ struct MeetingTranscriptNoiseFilter {
         let confidenceAllowsDrop = averageConfidence <= duplicateLowConfidenceThreshold
             || (micTokens.count <= 2 && averageConfidence <= duplicateShortConfidenceThreshold)
         guard confidenceAllowsDrop else { return false }
-
-        let systemTokenWords = systemWords.compactMap { word -> (token: String, word: WordTimestamp)? in
-            guard let token = normalizedToken(word.word) else { return nil }
-            return (token, word)
-        }
-        guard systemTokenWords.count >= micTokens.count else { return false }
 
         for startIndex in 0...(systemTokenWords.count - micTokens.count) {
             let candidate = systemTokenWords[startIndex..<(startIndex + micTokens.count)].map(\.token)
@@ -145,6 +140,13 @@ struct MeetingTranscriptNoiseFilter {
 
     private static func normalizedTokens(_ words: [WordTimestamp]) -> [String] {
         words.compactMap { normalizedToken($0.word) }
+    }
+
+    private static func normalizedSystemTokenWords(from words: [WordTimestamp]) -> [(token: String, word: WordTimestamp)] {
+        words.compactMap { word -> (token: String, word: WordTimestamp)? in
+            guard let token = normalizedToken(word.word) else { return nil }
+            return (token, word)
+        }
     }
 
     private static func normalizedToken(_ token: String) -> String? {

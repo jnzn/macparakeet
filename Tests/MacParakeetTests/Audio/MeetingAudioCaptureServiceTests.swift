@@ -142,10 +142,15 @@ final class MeetingAudioCaptureServiceTests: XCTestCase {
         microphone.emit(buffer: buffer, time: AVAudioTime(hostTime: 1))
         systemTap.emit(buffer: buffer, time: AVAudioTime(hostTime: 1))
 
-        try await Task.sleep(for: .milliseconds(50))
-        let events = await capturedEvents.values()
-        XCTAssertEqual(events.systemBufferCount, 1)
-        XCTAssertEqual(events.microphoneBufferCount, 0)
+        for _ in 0..<20 {
+            let events = await capturedEvents.values()
+            if events.systemBufferCount == 1 {
+                XCTAssertEqual(events.microphoneBufferCount, 0)
+                return
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTFail("Timed out waiting for system-only capture events")
     }
 
     func testEmitsRuntimeErrorEventWhenMicrophoneStalls() async throws {
