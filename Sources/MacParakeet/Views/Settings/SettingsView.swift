@@ -10,11 +10,18 @@ struct SettingsView: View {
     @Bindable var llmSettingsViewModel: LLMSettingsViewModel
     let updater: SPUUpdater
 
+    @State private var rootViewModel = SettingsRootViewModel()
+    @FocusState private var searchFieldFocused: Bool
+    /// Set when a search-result row is tapped. Each tab's `ScrollView`
+    /// watches this via `.task(id:)`; whichever ScrollView is on screen
+    /// when this transitions to a non-nil anchor scrolls itself there
+    /// and clears the target. Using `task(id:)` (not `onChange`) so it
+    /// fires both on transition AND on initial mount of the destination
+    /// tab — important because tapping a result almost always triggers
+    /// a tab swap, which mounts a new ScrollView.
+    @State private var pendingScrollTarget: String?
     @State private var automaticallyChecksForUpdates: Bool
     @State private var automaticallyDownloadsUpdates: Bool
-    @State private var showClearAllAlert = false
-    @State private var showClearYouTubeAudioAlert = false
-    @State private var showResetLifetimeStatsAlert = false
     @State private var copiedBuildIdentity = false
 
     init(viewModel: SettingsViewModel, llmSettingsViewModel: LLMSettingsViewModel, updater: SPUUpdater) {
@@ -26,53 +33,43 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
-                headerCard
-                audioInputCard
-                dictationCard
-                if AppFeatures.meetingRecordingEnabled {
-                    meetingRecordingCard
-                    calendarCard
+        VStack(spacing: 0) {
+            settingsHeaderShell
+                .padding(.horizontal, DesignSystem.Spacing.lg)
+                .padding(.top, DesignSystem.Spacing.md)
+                .padding(.bottom, DesignSystem.Spacing.sm)
+
+            // The tab bar stays visible during search so the user can
+            // bail back to a tab at any time. Search results replace
+            // the tab body; pending scroll targets only fire after the
+            // user picks a result and the destination tab mounts.
+            //
+            // The animation crossfades the body when entering/exiting
+            // search. Tab-to-tab swaps stay snappy: only `isSearching`
+            // is animated, not `activeTab`.
+            Group {
+                if rootViewModel.isSearching {
+                    SettingsSearchResultsList(
+                        results: SettingsSearchIndex.matches(rootViewModel.searchQuery),
+                        onSelect: handleSearchResultTap
+                    )
+                } else {
+                    switch rootViewModel.activeTab {
+                    case .modes:
+                        modesTabContent
+                    case .engine:
+                        engineTabContent
+                    case .ai:
+                        aiTabContent
+                    case .system:
+                        systemTabContent
+                    }
                 }
-                transcriptionCard
-                aiProviderCard
-                storageCard
-                generalCard
-                updatesCard
-                localModelsCard
-                privacyCard
-                permissionsCard
-                onboardingCard
-                aboutCard
             }
-            .padding(DesignSystem.Spacing.lg)
+            .animation(DesignSystem.Animation.contentSwap, value: rootViewModel.isSearching)
         }
         .background(DesignSystem.Colors.background)
-        .alert("Clear All Dictations?", isPresented: $showClearAllAlert) {
-            Button("Cancel", role: .cancel) {}
-            Button("Clear All", role: .destructive) {
-                viewModel.clearAllDictations()
-            }
-        } message: {
-            Text("This will permanently delete all \(viewModel.dictationCount) dictation\(viewModel.dictationCount == 1 ? "" : "s"), their audio files, and any private metric-only entries. Lifetime stats are not affected. This cannot be undone.")
-        }
-        .alert("Reset Lifetime Stats?", isPresented: $showResetLifetimeStatsAlert) {
-            Button("Cancel", role: .cancel) {}
-            Button("Reset", role: .destructive) {
-                viewModel.resetLifetimeStats()
-            }
-        } message: {
-            Text("This will zero your total words, total time, total dictation count, and longest dictation. Your dictation history is not affected. This cannot be undone.")
-        }
-        .alert("Clear Downloaded YouTube Audio?", isPresented: $showClearYouTubeAudioAlert) {
-            Button("Cancel", role: .cancel) {}
-            Button("Clear Audio", role: .destructive) {
-                viewModel.clearDownloadedYouTubeAudio()
-            }
-        } message: {
-            Text("This will permanently delete all downloaded YouTube audio files and detach them from existing transcriptions.")
-        }
+        .background(focusSearchHotkey)
         .onAppear {
             viewModel.refreshLaunchAtLoginStatus()
             viewModel.startPermissionPolling()
@@ -89,50 +86,251 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Header
+    // MARK: - Tabbed Shell
 
-    private var headerCard: some View {
-        settingsCard(
-            title: "Workspace Controls",
-            subtitle: "Everything runs locally on your Mac.",
-            icon: "slider.horizontal.3"
-        ) {
-            LazyVGrid(
-                columns: Array(repeating: GridItem(.flexible(), spacing: DesignSystem.Spacing.md), count: 4),
-                spacing: DesignSystem.Spacing.md
-            ) {
-                statChip(
-                    title: "Dictations",
-                    value: "\(viewModel.dictationCount)"
-                )
+    /// Top-of-panel header: tab bar on the left, search field on the right.
+    /// Tab badges roll up the worst per-card status the user can act on.
+    /// `.ok` / `.info` are intentionally silent on the badges — a
+    /// permanent green dot would just be visual debt.
+    private var settingsHeaderShell: some View {
+        HStack(spacing: DesignSystem.Spacing.md) {
+            SettingsTabBar(
+                activeTab: tabBindingExitingSearch,
+                tabBadges: tabBadges
+            )
 
-                statChip(
-                    title: "YouTube Cache",
-                    value: viewModel.formattedYouTubeStorage
-                )
+            Spacer(minLength: DesignSystem.Spacing.md)
 
-                statChip(
-                    title: "Microphone",
-                    value: viewModel.microphoneGranted ? "Granted" : "Missing",
-                    isHealthy: viewModel.microphoneGranted
-                )
+            SettingsSearchField(
+                query: $rootViewModel.searchQuery,
+                isFocused: $searchFieldFocused
+            )
+            .frame(maxWidth: 280)
+        }
+    }
 
-                statChip(
-                    title: "Accessibility",
-                    value: viewModel.accessibilityGranted ? "Granted" : "Missing",
-                    isHealthy: viewModel.accessibilityGranted
-                )
+    /// Per-tab attention badges. Only `.required` and `.recommended`
+    /// surface here — they're the two states that mean "the user has
+    /// something to do on this tab." `resetCleanupCard`'s `.required
+    /// "Destructive"` chip is intentionally excluded: the chip is a
+    /// severity *label* on a deliberate destination, not an action item.
+    /// Wraps `rootViewModel.activeTab` so that any tab tap during search
+    /// also exits search mode. Without this, the body stays gated on
+    /// `isSearching` first and the tab pill slides over to the new tab
+    /// while the search results remain on screen — the click looks
+    /// accepted but nothing useful happens. `clearSearch()` is a no-op
+    /// when not searching, so non-search tab taps are unaffected.
+    private var tabBindingExitingSearch: Binding<SettingsTab> {
+        Binding(
+            get: { rootViewModel.activeTab },
+            set: { newTab in
+                rootViewModel.activeTab = newTab
+                rootViewModel.clearSearch()
             }
+        )
+    }
+
+    private var tabBadges: [SettingsTab: SettingsStatusChip.Status] {
+        var badges: [SettingsTab: SettingsStatusChip.Status] = [:]
+
+        var modesStatuses: [SettingsCardStatus?] = [
+            viewModel.microphoneGranted
+                ? SettingsCardStatus(.ok, label: "Granted")
+                : SettingsCardStatus(.required, label: "Permission required")
+        ]
+        if AppFeatures.meetingRecordingEnabled {
+            modesStatuses.append(meetingRecordingCardStatus)
+        }
+        if let badge = Self.attentionBadge(for: modesStatuses) {
+            badges[.modes] = badge
+        }
+
+        if let badge = Self.attentionBadge(for: [
+            engineSelectorCardStatus,
+            enginesModelsCardStatus
+        ]) {
+            badges[.engine] = badge
+        }
+
+        if let badge = Self.attentionBadge(for: [aiProviderCardStatus]) {
+            badges[.ai] = badge
+        }
+
+        if let badge = Self.attentionBadge(for: [permissionsCardStatus]) {
+            badges[.system] = badge
+        }
+
+        return badges
+    }
+
+    /// Picks the worst actionable severity from a card-status list, or
+    /// returns nil when nothing is actionable (`.ok` / `.info` / no chip
+    /// at all). Static so it can't accidentally read view state.
+    private static func attentionBadge(for statuses: [SettingsCardStatus?]) -> SettingsStatusChip.Status? {
+        let actual = statuses.compactMap { $0?.status }
+        if actual.contains(.required) { return .required }
+        if actual.contains(.recommended) { return .recommended }
+        return nil
+    }
+
+    /// Search-result tap handler. Order of operations matters:
+    /// 1. Set the scroll target so `task(id:)` on the destination tab's
+    ///    ScrollView sees a non-nil value when it mounts.
+    /// 2. Switch to the result's tab — this swaps the body away from
+    ///    the search results and into the destination tab's ScrollView.
+    /// 3. Clear the search query — this also drops `isSearching` to
+    ///    false. SwiftUI batches these so the user perceives one swap.
+    private func handleSearchResultTap(_ entry: SettingsSearchEntry) {
+        pendingScrollTarget = entry.cardAnchor
+        rootViewModel.activeTab = entry.tab
+        rootViewModel.clearSearch()
+    }
+
+    /// Hidden button that registers ⌘F as a focus shortcut. Lives in a
+    /// `.background` so it's not visible but still reachable by the
+    /// keyboard-shortcut dispatcher. macOS convention.
+    private var focusSearchHotkey: some View {
+        Button("Focus Search") {
+            searchFieldFocused = true
+        }
+        .keyboardShortcut("f", modifiers: .command)
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
+    }
+
+    /// Modes tab — daily-ops config for the three product modes, plus the
+    /// Audio Input prerequisite that gates them. The legacy `headerCard`
+    /// "Workspace Controls" was eliminated (its stat chips are redundant
+    /// with Storage / Permissions / per-mode chips). The legacy `generalCard`
+    /// was split: "Show idle pill" lives on the Dictation card now;
+    /// Launch at Login + Menu Bar Only moved to the System Startup card.
+    /// The Calendar card was folded into Meeting Recording.
+    private var modesTabContent: some View {
+        scrollableTabBody {
+            audioInputCard.id("audio.input")
+            dictationCard.id("dictation")
+            transcriptionCard.id("transcription")
+            if AppFeatures.meetingRecordingEnabled {
+                meetingRecordingCard.id("meeting")
+            }
+        }
+    }
+
+    /// Engine tab — speech recognition stack, decomposed into three cards
+    /// so each surface owns one decision the user makes:
+    ///
+    /// 1. `engineSelectorCard` — which engine? (Parakeet vs Whisper)
+    /// 2. `engineLanguageCard` — which language? (Whisper only — Parakeet
+    ///    auto-detects from its 25 supported European languages)
+    /// 3. `enginesModelsCard` — what's the local model state?
+    ///
+    /// Sub-VM split (`EngineSettingsViewModel`) lands in a later commit;
+    /// the cards keep reading from `viewModel` for now.
+    private var engineTabContent: some View {
+        scrollableTabBody {
+            engineSelectorCard.id("engine.selector")
+            engineLanguageCard.id("engine.language")
+            enginesModelsCard.id("engine.models")
+        }
+    }
+
+    /// AI tab — LLM provider config. The card embeds `LLMSettingsView`,
+    /// which already serves as its own first-run UX (the provider picker
+    /// IS the call to action), so a separate empty-state card would be
+    /// redundant. The header chip rolls up the latest signal we have:
+    /// per locked decision #5 we never go red on the AI surface (it's
+    /// opt-in), and we only flag yellow on a real failure the user
+    /// can act on.
+    private var aiTabContent: some View {
+        scrollableTabBody {
+            aiProviderCard.id("ai.provider")
+        }
+    }
+
+    /// System tab — everything that isn't daily-ops, ordered by frequency of
+    /// use. Destructive controls are fenced off at the bottom inside
+    /// `resetCleanupCard`, separated by a visible divider so a user
+    /// scrolling through configuration can't fat-finger a wipe.
+    private var systemTabContent: some View {
+        scrollableTabBody {
+            startupCard.id("system.startup")
+            permissionsCard.id("system.permissions")
+            storageCard.id("system.storage")
+            updatesCard.id("system.updates")
+            privacyCard.id("system.privacy")
+            onboardingCard.id("system.onboarding")
+            aboutCard.id("system.about")
+
+            resetCleanupSeparator
+            resetCleanupCard.id("system.reset")
+        }
+    }
+
+    /// Common scaffold for all four tab bodies: ScrollView wrapped in a
+    /// `ScrollViewReader`, with a `.task(id: pendingScrollTarget)` that
+    /// scrolls to a search-result anchor when the parent sets one.
+    ///
+    /// Using `task(id:)` (not `onChange`) means we react both to in-tab
+    /// transitions AND to the destination tab's freshly-mounted ScrollView
+    /// — important because tapping a search result usually triggers a
+    /// tab swap, mounting a new ScrollView that needs to scroll to a
+    /// target the parent set just before the swap.
+    @ViewBuilder
+    private func scrollableTabBody<Content: View>(
+        @ViewBuilder _ cards: @escaping () -> Content
+    ) -> some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
+                    cards()
+                }
+                .padding(DesignSystem.Spacing.lg)
+            }
+            .task(id: pendingScrollTarget) {
+                guard let target = pendingScrollTarget else { return }
+                // Tiny delay so the destination ScrollView has had a
+                // layout pass before we ask it to scroll. Without this,
+                // scrollTo on a freshly-mounted ScrollView is a no-op
+                // because the target id isn't registered yet.
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                withAnimation(DesignSystem.Animation.contentSwap) {
+                    proxy.scrollTo(target, anchor: .top)
+                }
+                pendingScrollTarget = nil
+            }
+        }
+    }
+
+    /// Visual fence between configuration and destructive operations.
+    /// "Danger zone"-style cue without the heavy chrome — a faint divider
+    /// plus a small caption is enough signal at the cadence the user
+    /// actually scans this tab.
+    private var resetCleanupSeparator: some View {
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
+            Rectangle()
+                .fill(DesignSystem.Colors.border.opacity(0.4))
+                .frame(height: 0.5)
+                .padding(.top, DesignSystem.Spacing.sm)
+
+            Text("Reset & Cleanup")
+                .font(DesignSystem.Typography.caption.weight(.medium))
+                .foregroundStyle(.tertiary)
+                .textCase(.uppercase)
+                .tracking(0.6)
         }
     }
 
     // MARK: - Audio Input
 
     private var audioInputCard: some View {
-        settingsCard(
+        SettingsCard(
             title: "Audio Input",
             subtitle: "Choose the microphone used for dictation and meetings.",
-            icon: "mic"
+            icon: "mic",
+            status: viewModel.microphoneGranted
+                ? SettingsCardStatus(.ok, label: "Granted")
+                : SettingsCardStatus(.required, label: "Permission required")
         ) {
             VStack(spacing: DesignSystem.Spacing.md) {
                 HStack(alignment: .center) {
@@ -255,23 +453,19 @@ struct SettingsView: View {
         .accessibilityValue("\(Int(max(0, min(1, level)) * 100)) percent")
     }
 
-    // MARK: - General
+    // MARK: - Startup
 
-    private var generalCard: some View {
+    /// OS-integration card in System tab. Renamed from the legacy
+    /// `generalCard` and stripped of "Show idle pill" (which moved to the
+    /// Dictation card during the IA refactor — the idle pill is a
+    /// dictation-UX choice, not OS chrome).
+    private var startupCard: some View {
         settingsCard(
-            title: "General",
-            subtitle: "How MacParakeet shows up on your Mac.",
-            icon: "gearshape"
+            title: "Startup",
+            subtitle: "How MacParakeet shows up on your Mac at sign-in.",
+            icon: "power"
         ) {
             VStack(spacing: DesignSystem.Spacing.md) {
-                settingsToggleRow(
-                    title: "Show dictation pill at all times",
-                    detail: "When off, the pill hides until you press the hotkey.",
-                    isOn: $viewModel.showIdlePill
-                )
-
-                Divider()
-
                 settingsToggleRow(
                     title: "Launch at login",
                     detail: "Start MacParakeet automatically when you sign in.",
@@ -370,6 +564,18 @@ struct SettingsView: View {
                         .frame(width: 140)
                     }
                 }
+
+                Divider()
+
+                // Relocated from the legacy `generalCard` during the IA
+                // refactor. The idle pill *is* the dictation summon button,
+                // so it belongs alongside the dictation hotkey, not in the
+                // OS-integration startup section.
+                settingsToggleRow(
+                    title: "Show dictation pill at all times",
+                    detail: "When off, the pill hides until you press the hotkey.",
+                    isOn: $viewModel.showIdlePill
+                )
             }
         }
     }
@@ -377,10 +583,11 @@ struct SettingsView: View {
     // MARK: - Transcription
 
     private var meetingRecordingCard: some View {
-        settingsCard(
+        SettingsCard(
             title: "Meeting Recording",
-            subtitle: "Dedicated controls for system-audio + mic capture.",
-            icon: "record.circle"
+            subtitle: "System-audio + mic capture, with optional calendar auto-start.",
+            icon: "record.circle",
+            status: meetingRecordingCardStatus
         ) {
             VStack(spacing: DesignSystem.Spacing.md) {
                 HStack(alignment: .center) {
@@ -433,7 +640,43 @@ struct SettingsView: View {
                 if viewModel.meetingAutoSave {
                     meetingAutoSaveOptionsView
                 }
+
+                Divider()
+
+                // Calendar section folded in from the legacy standalone
+                // `calendarCard`. Calendar is meeting-only — folding it
+                // here removes a card without losing any controls.
+                meetingCalendarSection
             }
+        }
+    }
+
+    /// Header status chip for the Meeting Recording card. Surfaces the
+    /// screen-recording-permission state since system audio capture is
+    /// gated on it.
+    private var meetingRecordingCardStatus: SettingsCardStatus? {
+        SettingsStatusRules.meetingRecordingCardStatus(
+            meetingRecordingEnabled: AppFeatures.meetingRecordingEnabled,
+            screenRecordingGranted: viewModel.screenRecordingGranted
+        )
+    }
+
+    /// Calendar auto-start controls, rendered inline within the Meeting
+    /// Recording card after the auto-save section. Visually demoted to a
+    /// section heading so it reads as part of meeting setup.
+    private var meetingCalendarSection: some View {
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
+            HStack(spacing: 6) {
+                Image(systemName: "calendar")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Text("Calendar auto-start")
+                    .font(DesignSystem.Typography.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+
+            CalendarSettingsView(viewModel: viewModel)
         }
     }
 
@@ -446,18 +689,6 @@ struct SettingsView: View {
             onChooseFolder: { viewModel.chooseMeetingAutoSaveFolder(url: $0) },
             onClearFolder: { viewModel.clearMeetingAutoSaveFolder() }
         )
-    }
-
-    // MARK: - Calendar Auto-Start
-
-    private var calendarCard: some View {
-        settingsCard(
-            title: "Calendar",
-            subtitle: "Reminders before scheduled meetings, powered by your macOS calendar.",
-            icon: "calendar"
-        ) {
-            CalendarSettingsView(viewModel: viewModel)
-        }
     }
 
     private var transcriptionCard: some View {
@@ -667,21 +898,41 @@ struct SettingsView: View {
     // MARK: - AI Provider
 
     private var aiProviderCard: some View {
-        settingsCard(
+        SettingsCard(
             title: "AI Provider",
             subtitle: "Optional. Powers transcript summaries and chat.",
-            icon: "brain"
+            icon: "brain",
+            status: aiProviderCardStatus
         ) {
             LLMSettingsView(viewModel: llmSettingsViewModel)
         }
     }
 
+    /// AI tab is opt-in, so this never returns `.required`. We only show
+    /// signal when there is something actionable: yellow when the last
+    /// connection test failed (the user pressed "Test Connection" and it
+    /// errored), green when a saved configuration exists and nothing is
+    /// currently broken. Silent in the not-yet-configured state — the
+    /// card body already explains the empty case.
+    private var aiProviderCardStatus: SettingsCardStatus? {
+        if case .error = llmSettingsViewModel.connectionTestState {
+            return SettingsCardStatus(.recommended, label: "Last test failed")
+        }
+        if llmSettingsViewModel.isConfigured {
+            return SettingsCardStatus(.ok, label: "Configured")
+        }
+        return nil
+    }
+
     // MARK: - Storage
 
+    /// Storage card is read-only stats + retention toggles. Destructive
+    /// operations moved to `resetCleanupCard` so the configuration surface
+    /// can stay scrollable without exposing a wipe button to a misclick.
     private var storageCard: some View {
-        settingsCard(
+        SettingsCard(
             title: "Storage",
-            subtitle: "Manage recordings and disk usage.",
+            subtitle: "Retention preferences and current disk usage.",
             icon: "internaldrive"
         ) {
             VStack(spacing: DesignSystem.Spacing.md) {
@@ -725,50 +976,82 @@ struct SettingsView: View {
                         detail: viewModel.formattedYouTubeStorage
                     )
                 }
-
-                VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
-                    maintenanceGroup(
-                        label: "Delete data",
-                        detail: "Removes rows from your library. Lifetime stats are preserved."
-                    ) {
-                        Button("Clear All Dictations...", role: .destructive) {
-                            showClearAllAlert = true
-                        }
-                        .buttonStyle(.bordered)
-
-                        Button("Clear Downloaded YouTube Audio...", role: .destructive) {
-                            showClearYouTubeAudioAlert = true
-                        }
-                        .buttonStyle(.bordered)
-                    }
-
-                    maintenanceGroup(
-                        label: "Reset counters",
-                        detail: "Zeros lifetime stats. Your dictation history is untouched."
-                    ) {
-                        Button("Reset Lifetime Stats...", role: .destructive) {
-                            showResetLifetimeStatsAlert = true
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                }
-                .padding(DesignSystem.Spacing.sm)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
-                        .fill(DesignSystem.Colors.errorRed.opacity(0.06))
-                )
             }
         }
     }
 
-    // MARK: - Permissions
+    // MARK: - Reset & Cleanup
 
-    private var localModelsCard: some View {
-        settingsCard(
+    /// Holds every destructive operation in the app. Lives at the bottom of
+    /// the System tab behind a visible divider; the card itself uses the
+    /// `.required` chip semantically (red dot) to telegraph severity even
+    /// when the user lands here scrolled past the divider.
+    private var resetCleanupCard: some View {
+        SettingsCard(
+            title: "Reset & Cleanup",
+            subtitle: "Permanent. These cannot be undone.",
+            icon: "trash",
+            status: SettingsCardStatus(.required, label: "Destructive")
+        ) {
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+                maintenanceGroup(
+                    label: "Delete data",
+                    detail: "Removes rows from your library. Lifetime stats are preserved."
+                ) {
+                    SettingsDestructiveButton(
+                        title: "Clear All Dictations...",
+                        confirmationTitle: "Clear All Dictations?",
+                        confirmationMessage: "This will permanently delete all \(viewModel.dictationCount) dictation\(viewModel.dictationCount == 1 ? "" : "s"), their audio files, and any private metric-only entries. Lifetime stats are not affected. This cannot be undone.",
+                        confirmButtonLabel: "Clear All"
+                    ) {
+                        viewModel.clearAllDictations()
+                    }
+
+                    SettingsDestructiveButton(
+                        title: "Clear Downloaded YouTube Audio...",
+                        confirmationTitle: "Clear Downloaded YouTube Audio?",
+                        confirmationMessage: "This will permanently delete all downloaded YouTube audio files and detach them from existing transcriptions.",
+                        confirmButtonLabel: "Clear Audio"
+                    ) {
+                        viewModel.clearDownloadedYouTubeAudio()
+                    }
+                }
+
+                maintenanceGroup(
+                    label: "Reset counters",
+                    detail: "Zeros lifetime stats. Your dictation history is untouched."
+                ) {
+                    SettingsDestructiveButton(
+                        title: "Reset Lifetime Stats...",
+                        confirmationTitle: "Reset Lifetime Stats?",
+                        confirmationMessage: "This will zero your total words, total time, total dictation count, and longest dictation. Your dictation history is not affected. This cannot be undone.",
+                        confirmButtonLabel: "Reset"
+                    ) {
+                        viewModel.resetLifetimeStats()
+                    }
+                }
+            }
+            .padding(DesignSystem.Spacing.sm)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                    .fill(DesignSystem.Colors.errorRed.opacity(0.06))
+            )
+        }
+    }
+
+    // MARK: - Engine
+
+    /// Engine card: which speech recognition engine to use. Status chip
+    /// surfaces only signal — silent in the steady state, `.info` while
+    /// switching, `.required` if the last switch failed (the existing red
+    /// inline error is preserved underneath for the full message).
+    private var engineSelectorCard: some View {
+        SettingsCard(
             title: "Speech Recognition",
             subtitle: "Parakeet is fastest. Whisper adds Korean and broader multilingual coverage.",
-            icon: "cpu"
+            icon: "cpu",
+            status: engineSelectorCardStatus
         ) {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
                 HStack(alignment: .center) {
@@ -794,21 +1077,47 @@ struct SettingsView: View {
                         .font(DesignSystem.Typography.caption)
                         .foregroundStyle(DesignSystem.Colors.errorRed)
                 }
+            }
+        }
+    }
 
-                HStack(alignment: .center) {
-                    rowText(
-                        title: "Whisper language",
-                        detail: "Only used when Whisper is active. Auto-detect works for most files."
-                    )
-                    Spacer(minLength: DesignSystem.Spacing.md)
-                    LanguagePickerButton(
-                        selection: $viewModel.whisperDefaultLanguage,
-                        isDisabled: viewModel.speechEnginePreference != .whisper
-                    )
-                }
+    /// Whisper-only language card. Stays visible when Parakeet is active so
+    /// the user knows the control exists; the picker mutes itself and the
+    /// header chip reads "Inactive" so the visual state matches reality.
+    /// The picker button itself surfaces the current selection — no need for
+    /// a redundant left-side label.
+    private var engineLanguageCard: some View {
+        let isWhisperActive = viewModel.speechEnginePreference == .whisper
+        return SettingsCard(
+            title: "Whisper Language",
+            subtitle: "Only used when Whisper is the active engine. Auto-detect works for most files.",
+            icon: "globe",
+            status: isWhisperActive ? nil : SettingsCardStatus(.info, label: "Inactive")
+        ) {
+            HStack(alignment: .center) {
+                Text("Default language")
+                    .font(DesignSystem.Typography.body)
+                Spacer(minLength: DesignSystem.Spacing.md)
+                LanguagePickerButton(
+                    selection: $viewModel.whisperDefaultLanguage,
+                    isDisabled: !isWhisperActive
+                )
+            }
+        }
+    }
 
-                Divider()
-
+    /// Local-model dashboard. Status chip rolls up the worst severity across
+    /// both engines: any `.failed` → `.required`; missing model on the
+    /// active engine → `.recommended`; all `.ready` → `.ok`; transient
+    /// states → no chip (the per-row status pills already telegraph it).
+    private var enginesModelsCard: some View {
+        SettingsCard(
+            title: "Local Models",
+            subtitle: "Models live on this Mac. No audio is sent to the cloud.",
+            icon: "internaldrive",
+            status: enginesModelsCardStatus
+        ) {
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
                 modelStatusRow(
                     title: "Parakeet",
                     detail: viewModel.parakeetStatusDetail,
@@ -833,6 +1142,24 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    private var engineSelectorCardStatus: SettingsCardStatus? {
+        if viewModel.speechEngineSwitching {
+            return SettingsCardStatus(.info, label: "Switching…")
+        }
+        if viewModel.speechEngineError != nil {
+            return SettingsCardStatus(.required, label: "Action needed")
+        }
+        return nil
+    }
+
+    private var enginesModelsCardStatus: SettingsCardStatus? {
+        SettingsStatusRules.localModelsCardStatus(
+            parakeet: viewModel.parakeetStatus,
+            whisper: viewModel.whisperModelStatus,
+            activeEngine: viewModel.speechEnginePreference
+        )
     }
 
     private var whisperModelActionLabel: String {
@@ -867,15 +1194,28 @@ struct SettingsView: View {
         }
     }
 
+    /// Roll-up of the three permissions. `.required` if any feature gate is
+    /// missing; Screen Recording is required for meeting recording because the
+    /// runtime has no mic-only meeting fallback.
+    private var permissionsCardStatus: SettingsCardStatus? {
+        SettingsStatusRules.permissionsCardStatus(
+            meetingRecordingEnabled: AppFeatures.meetingRecordingEnabled,
+            microphoneGranted: viewModel.microphoneGranted,
+            accessibilityGranted: viewModel.accessibilityGranted,
+            screenRecordingGranted: viewModel.screenRecordingGranted
+        )
+    }
+
     private var permissionsCard: some View {
         let permissionsSubtitle = AppFeatures.meetingRecordingEnabled
-            ? "Microphone and Accessibility are required. Screen Recording is optional for meetings."
+            ? "Microphone and Accessibility are required. Screen Recording is required for meetings."
             : "Microphone and Accessibility are required."
 
-        return settingsCard(
+        return SettingsCard(
             title: "Permissions",
             subtitle: permissionsSubtitle,
-            icon: "lock.shield"
+            icon: "lock.shield",
+            status: permissionsCardStatus
         ) {
             VStack(spacing: DesignSystem.Spacing.md) {
                 HStack {
@@ -898,7 +1238,7 @@ struct SettingsView: View {
                     HStack {
                         rowText(
                             title: "Screen & System Audio Recording",
-                            detail: "Optional. Only used for meeting audio capture. MacParakeet never records your screen."
+                            detail: "Required for meeting audio capture. MacParakeet never records your screen."
                         )
                         Spacer()
                         permissionPill(granted: viewModel.screenRecordingGranted)
@@ -1091,7 +1431,7 @@ struct SettingsView: View {
         icon: String,
         @ViewBuilder content: @escaping () -> Content
     ) -> some View {
-        SettingsCardContainer(title: title, subtitle: subtitle, icon: icon, content: content)
+        SettingsCard(title: title, subtitle: subtitle, icon: icon, content: content)
     }
 
     private func settingsToggleRow(
@@ -1099,13 +1439,7 @@ struct SettingsView: View {
         detail: String,
         isOn: Binding<Bool>
     ) -> some View {
-        HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
-            rowText(title: title, detail: detail)
-            Spacer(minLength: DesignSystem.Spacing.md)
-            Toggle("", isOn: isOn)
-                .labelsHidden()
-                .toggleStyle(.switch)
-        }
+        SettingsToggleRow(title: title, detail: detail, isOn: isOn)
     }
 
     private func rowText(title: String, detail: String) -> some View {
@@ -1116,24 +1450,6 @@ struct SettingsView: View {
                 .font(DesignSystem.Typography.caption)
                 .foregroundStyle(.secondary)
         }
-    }
-
-    private func statChip(title: String, value: String, isHealthy: Bool = true) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(DesignSystem.Typography.caption)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(DesignSystem.Typography.sectionTitle)
-                .foregroundStyle(isHealthy ? .primary : DesignSystem.Colors.errorRed)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, DesignSystem.Spacing.md)
-        .padding(.vertical, DesignSystem.Spacing.sm)
-        .background(
-            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
-                .fill(DesignSystem.Colors.surfaceElevated)
-        )
     }
 
     @ViewBuilder
@@ -1368,61 +1684,6 @@ struct SettingsView: View {
     private func openAccessibilitySettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
             NSWorkspace.shared.open(url)
-        }
-    }
-}
-
-// MARK: - Settings Card with Hover
-
-private struct SettingsCardContainer<Content: View>: View {
-    let title: String
-    let subtitle: String
-    let icon: String
-    @ViewBuilder let content: () -> Content
-
-    @State private var isHovered = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
-            HStack(alignment: .top, spacing: DesignSystem.Spacing.sm) {
-                Image(systemName: icon)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(DesignSystem.Colors.accent)
-                    .frame(width: 30, height: 30)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(DesignSystem.Colors.accent.opacity(0.12))
-                    )
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(DesignSystem.Typography.sectionTitle)
-                    Text(subtitle)
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            content()
-        }
-        .padding(DesignSystem.Spacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
-                .fill(DesignSystem.Colors.cardBackground)
-                .cardShadow(isHovered ? DesignSystem.Shadows.cardHover : DesignSystem.Shadows.cardRest)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
-                .strokeBorder(
-                    isHovered ? DesignSystem.Colors.accent.opacity(0.2) : DesignSystem.Colors.border.opacity(0.6),
-                    lineWidth: 0.5
-                )
-        )
-        .onHover { hovering in
-            withAnimation(DesignSystem.Animation.hoverTransition) {
-                isHovered = hovering
-            }
         }
     }
 }
