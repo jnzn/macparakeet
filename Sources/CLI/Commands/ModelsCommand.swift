@@ -173,6 +173,8 @@ struct SpeechStackPayload: Encodable {
     let speechRuntimeReady: Bool
     let speakerModelsCached: Bool
     let speakerModelsPrepared: Bool
+    let whisperModelVariant: String
+    let whisperModelDownloaded: Bool
     let summary: String
 
     init(status: SpeechStackStatus) {
@@ -180,6 +182,8 @@ struct SpeechStackPayload: Encodable {
         self.speechRuntimeReady = status.speechRuntimeReady
         self.speakerModelsCached = status.speakerModelsCached
         self.speakerModelsPrepared = status.speakerModelsPrepared
+        self.whisperModelVariant = status.whisperModelVariant
+        self.whisperModelDownloaded = status.whisperModelDownloaded
         self.summary = status.summary
     }
 }
@@ -189,6 +193,8 @@ struct SpeechStackStatus: Sendable, Equatable {
     let speechRuntimeReady: Bool
     let speakerModelsCached: Bool
     let speakerModelsPrepared: Bool
+    let whisperModelVariant: String
+    let whisperModelDownloaded: Bool
 
     var summary: String {
         if speechRuntimeReady && speakerModelsPrepared {
@@ -217,7 +223,9 @@ func validatedAttempts(_ attempts: Int) throws -> Int {
 func loadSpeechStackStatus(
     sttClient: STTClientProtocol,
     diarizationService: DiarizationServiceProtocol,
-    isSpeechModelCached: @escaping @Sendable () -> Bool = { STTClient.isModelCached() }
+    isSpeechModelCached: @escaping @Sendable () -> Bool = { STTClient.isModelCached() },
+    whisperModelVariant: String = SpeechEnginePreference.whisperModelVariant(defaults: macParakeetAppDefaults()),
+    isWhisperModelDownloaded: @escaping @Sendable (String) -> Bool = { WhisperEngine.isModelDownloaded(model: $0) }
 ) async -> SpeechStackStatus {
     async let speechRuntimeReady = sttClient.isReady()
     async let speakerModelsCached = diarizationService.hasCachedModels()
@@ -227,7 +235,9 @@ func loadSpeechStackStatus(
         speechModelCached: isSpeechModelCached(),
         speechRuntimeReady: speechRuntimeReady,
         speakerModelsCached: speakerModelsCached,
-        speakerModelsPrepared: speakerModelsPrepared
+        speakerModelsPrepared: speakerModelsPrepared,
+        whisperModelVariant: whisperModelVariant,
+        whisperModelDownloaded: isWhisperModelDownloaded(whisperModelVariant)
     )
 }
 
@@ -239,6 +249,8 @@ func printSpeechStackStatus(_ status: SpeechStackStatus, includeHeader: Bool = t
     print("  Speech runtime loaded: \(status.speechRuntimeReady ? "Yes" : "No")")
     print("  Speaker models cached: \(status.speakerModelsCached ? "Yes" : "No")")
     print("  Speaker models prepared: \(status.speakerModelsPrepared ? "Yes" : "No")")
+    print("  Whisper model variant: \(status.whisperModelVariant)")
+    print("  Whisper model downloaded: \(status.whisperModelDownloaded ? "Yes" : "No")")
     print("  Status: \(status.summary)")
 }
 

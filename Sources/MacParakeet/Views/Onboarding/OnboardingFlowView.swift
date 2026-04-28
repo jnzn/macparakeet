@@ -387,7 +387,7 @@ struct OnboardingFlowView: View {
                 featureRow(
                     icon: "lock.shield.fill",
                     title: "100% local",
-                    detail: "Audio never leaves your Mac. No cloud. No accounts. No tracking."
+                    detail: "Audio never leaves your Mac. No cloud STT. No accounts. Non-identifying diagnostics only."
                 )
             }
         }
@@ -1137,12 +1137,6 @@ struct OnboardingFlowView: View {
     }
 
     private var continueButtonDisabled: Bool {
-        if viewModel.step == .meetingRecording {
-            return viewModel.isBusy || !(viewModel.screenRecordingGranted || viewModel.meetingRecordingSkipped)
-        }
-        if viewModel.step == .calendar {
-            return viewModel.isBusy || !(viewModel.calendarPermissionGranted || viewModel.calendarSkipped)
-        }
         return !viewModel.canContinueFromCurrentStep() || viewModel.isBusy
     }
 }

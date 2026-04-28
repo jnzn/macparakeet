@@ -14,6 +14,9 @@ struct HealthCommand: AsyncParsableCommand {
     @Option(name: .long, help: "Maximum repair attempts when --repair-models is set.")
     var repairAttempts: Int = 3
 
+    @Flag(name: .long, help: "Install or update helper binaries such as yt-dlp.")
+    var repairBinaries: Bool = false
+
     @Flag(name: .long, help: "Emit JSON instead of human-readable output.")
     var json: Bool = false
 
@@ -181,18 +184,29 @@ struct HealthCommand: AsyncParsableCommand {
 
         // 7. yt-dlp
         let ytDlp: HealthReport.Binary
-        do {
-            let path = try await BinaryBootstrap().ensureYtDlpAvailable()
+        if repairBinaries {
+            do {
+                let path = try await BinaryBootstrap().ensureYtDlpAvailable(allowNetworkUpdate: true)
+                ytDlp = .init(status: "ready", path: path, error: nil)
+            } catch {
+                ytDlp = .init(status: "missing", path: nil, error: error.localizedDescription)
+            }
+        } else if let path = BinaryBootstrap.resolveYtDlpPath() {
             ytDlp = .init(status: "ready", path: path, error: nil)
-        } catch {
-            ytDlp = .init(status: "missing", path: nil, error: error.localizedDescription)
+        } else {
+            ytDlp = .init(
+                status: "missing",
+                path: nil,
+                error: "Run `macparakeet-cli health --repair-binaries` or transcribe a YouTube URL to install yt-dlp."
+            )
         }
         report.ytDlp = ytDlp
         if !json {
             print("yt-dlp:")
             switch ytDlp.status {
             case "ready": print("  Status: Ready at \(ytDlp.path ?? "")")
-            default:      print("  Status: Not available — \(ytDlp.error ?? "unknown")")
+            default:
+                print("  Status: Not available — \(ytDlp.error ?? "unknown")")
             }
             print()
         }

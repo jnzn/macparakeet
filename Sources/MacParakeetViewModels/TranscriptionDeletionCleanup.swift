@@ -2,9 +2,7 @@ import Foundation
 import MacParakeetCore
 
 enum TranscriptionDeletionCleanup {
-    static func removeOwnedAssets(for transcription: Transcription) {
-        Task.detached(priority: .utility) {
-            TranscriptionAssetCleanup.removeOwnedAssets(for: transcription)
-        }
+    static func removeOwnedAssets(for transcription: Transcription) throws {
+        try TranscriptionAssetCleanup.removeOwnedAssets(for: transcription)
     }
 }

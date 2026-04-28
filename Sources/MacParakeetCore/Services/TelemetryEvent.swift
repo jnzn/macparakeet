@@ -581,7 +581,7 @@ extension TelemetryEventSpec {
             ), device)
         case .dictationFailed(let errorType, let errorDetail, let device):
             var props = ["error_type": errorType]
-            if let errorDetail { props["error_detail"] = errorDetail }
+            if let errorDetail = Self.sanitizedErrorDetail(errorDetail) { props["error_detail"] = errorDetail }
             return Self.mergeDevice(props, device)
         case .dictationOperation(
             let operationID,
@@ -640,7 +640,7 @@ extension TelemetryEventSpec {
                 "stage": stage.rawValue,
                 "error_type": errorType,
             ]
-            if let errorDetail { props["error_detail"] = errorDetail }
+            if let errorDetail = Self.sanitizedErrorDetail(errorDetail) { props["error_detail"] = errorDetail }
             return props
         case .transcriptionOperation(
             let operationID,
@@ -689,7 +689,7 @@ extension TelemetryEventSpec {
             ]
         case .diarizationFailed(let source, let errorType, let errorDetail):
             var props = ["source": source.rawValue, "error_type": errorType]
-            if let errorDetail { props["error_detail"] = errorDetail }
+            if let errorDetail = Self.sanitizedErrorDetail(errorDetail) { props["error_detail"] = errorDetail }
             return props
         case .exportUsed(let format):
             return ["format": format]
@@ -697,19 +697,19 @@ extension TelemetryEventSpec {
             return ["provider": provider]
         case .llmPromptResultFailed(let provider, let errorType, let errorDetail):
             var props = ["provider": provider, "error_type": errorType]
-            if let errorDetail { props["error_detail"] = errorDetail }
+            if let errorDetail = Self.sanitizedErrorDetail(errorDetail) { props["error_detail"] = errorDetail }
             return props
         case .llmChatUsed(let provider, let messageCount):
             return ["provider": provider, "message_count": "\(messageCount)"]
         case .llmChatFailed(let provider, let errorType, let errorDetail):
             var props = ["provider": provider, "error_type": errorType]
-            if let errorDetail { props["error_detail"] = errorDetail }
+            if let errorDetail = Self.sanitizedErrorDetail(errorDetail) { props["error_detail"] = errorDetail }
             return props
         case .llmTransformUsed(let provider):
             return ["provider": provider]
         case .llmTransformFailed(let provider, let errorType, let errorDetail):
             var props = ["provider": provider, "error_type": errorType]
-            if let errorDetail { props["error_detail"] = errorDetail }
+            if let errorDetail = Self.sanitizedErrorDetail(errorDetail) { props["error_detail"] = errorDetail }
             return props
         case .llmFormatterUsed(
             let provider,
@@ -790,10 +790,10 @@ extension TelemetryEventSpec {
             return ["step": step]
         case .licenseActivationFailed(let errorType, let errorDetail):
             var props = ["error_type": errorType]
-            if let errorDetail { props["error_detail"] = errorDetail }
+            if let errorDetail = Self.sanitizedErrorDetail(errorDetail) { props["error_detail"] = errorDetail }
             return props
         case .restoreFailed(let errorType, let errorDetail):
-            return Self.compactProps(("error_type", errorType), ("error_detail", errorDetail))
+            return Self.compactProps(("error_type", errorType), ("error_detail", Self.sanitizedErrorDetail(errorDetail)))
         case .permissionPrompted(let permission):
             return ["permission": permission.rawValue]
         case .permissionGranted(let permission):
@@ -808,7 +808,7 @@ extension TelemetryEventSpec {
             return ["duration_seconds": Self.format(durationSeconds)]
         case .modelDownloadFailed(let errorType, let errorDetail):
             var props = ["error_type": errorType]
-            if let errorDetail { props["error_detail"] = errorDetail }
+            if let errorDetail = Self.sanitizedErrorDetail(errorDetail) { props["error_detail"] = errorDetail }
             return props
         case .feedbackSubmitted(let category):
             return ["category": category]
@@ -849,7 +849,7 @@ extension TelemetryEventSpec {
             return ["duration_seconds": Self.format(durationSeconds)]
         case .meetingRecordingFailed(let errorType, let errorDetail):
             var props = ["error_type": errorType]
-            if let errorDetail { props["error_detail"] = errorDetail }
+            if let errorDetail = Self.sanitizedErrorDetail(errorDetail) { props["error_detail"] = errorDetail }
             return props
         case .meetingOperation(
             let operationID,
@@ -909,7 +909,7 @@ extension TelemetryEventSpec {
                 "source": source.rawValue,
                 "error_type": errorType,
             ]
-            if let errorDetail { props["error_detail"] = errorDetail }
+            if let errorDetail = Self.sanitizedErrorDetail(errorDetail) { props["error_detail"] = errorDetail }
             return props
         case .calendarReminderShown(let mode, let leadMinutes, let hasMeetUrl):
             return [
@@ -1012,6 +1012,11 @@ extension TelemetryEventSpec {
 
     private static func boolString(_ value: Bool) -> String {
         value ? "true" : "false"
+    }
+
+    private static func sanitizedErrorDetail(_ detail: String?) -> String? {
+        guard let detail, !detail.isEmpty else { return nil }
+        return String(TelemetryErrorClassifier.sanitize(detail).prefix(512))
     }
 
     private static func mergeDevice(_ base: [String: String]?, _ device: RecordingDeviceInfo?) -> [String: String]? {

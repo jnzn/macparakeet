@@ -434,16 +434,17 @@ public final class TranscriptionViewModel {
         }
 
         do {
+            try TranscriptionDeletionCleanup.removeOwnedAssets(for: transcription)
             let deleted = try repo.delete(id: transcription.id)
             guard deleted else { return }
-            TranscriptionDeletionCleanup.removeOwnedAssets(for: transcription)
             Telemetry.send(.transcriptionDeleted)
             if currentTranscription?.id == transcription.id {
                 currentTranscription = nil
             }
             loadTranscriptions()
         } catch {
-            logger.error("Failed to delete transcription: \(error.localizedDescription, privacy: .public)")
+            logger.error("Failed to delete transcription: \(error.localizedDescription, privacy: .private)")
+            errorMessage = "Failed to delete transcription: \(error.localizedDescription)"
         }
     }
 

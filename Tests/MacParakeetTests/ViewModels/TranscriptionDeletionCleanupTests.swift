@@ -7,7 +7,7 @@ final class TranscriptionDeletionCleanupTests: XCTestCase {
         try AppPaths.ensureDirectories()
     }
 
-    func testMeetingDeletionRemovesSessionFolder() async throws {
+    func testMeetingDeletionRemovesSessionFolder() throws {
         let folderURL = URL(fileURLWithPath: AppPaths.meetingRecordingsDir, isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
@@ -24,13 +24,12 @@ final class TranscriptionDeletionCleanupTests: XCTestCase {
             sourceType: .meeting
         )
 
-        TranscriptionDeletionCleanup.removeOwnedAssets(for: transcription)
+        try TranscriptionDeletionCleanup.removeOwnedAssets(for: transcription)
 
-        try await waitForFileAbsence(at: folderURL)
         XCTAssertFalse(FileManager.default.fileExists(atPath: folderURL.path))
     }
 
-    func testMeetingDeletionOutsideAppSupportIsIgnored() async throws {
+    func testMeetingDeletionOutsideAppSupportIsIgnored() throws {
         let folderURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
@@ -45,9 +44,8 @@ final class TranscriptionDeletionCleanupTests: XCTestCase {
             sourceType: .meeting
         )
 
-        TranscriptionDeletionCleanup.removeOwnedAssets(for: transcription)
+        try TranscriptionDeletionCleanup.removeOwnedAssets(for: transcription)
 
-        try await Task.sleep(for: .milliseconds(100))
         XCTAssertTrue(FileManager.default.fileExists(atPath: folderURL.path))
         try? FileManager.default.removeItem(at: folderURL)
     }
@@ -64,7 +62,7 @@ final class TranscriptionDeletionCleanupTests: XCTestCase {
             sourceType: .youtube
         )
 
-        TranscriptionAssetCleanup.removeOwnedAssets(for: transcription)
+        try TranscriptionAssetCleanup.removeOwnedAssets(for: transcription)
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path))
     }
@@ -82,7 +80,7 @@ final class TranscriptionDeletionCleanupTests: XCTestCase {
             sourceType: .youtube
         )
 
-        TranscriptionAssetCleanup.removeOwnedAssets(for: transcription)
+        try TranscriptionAssetCleanup.removeOwnedAssets(for: transcription)
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path))
     }
@@ -97,19 +95,9 @@ final class TranscriptionDeletionCleanupTests: XCTestCase {
             sourceType: .youtube
         )
 
-        TranscriptionAssetCleanup.removeOwnedAssets(for: transcription)
+        try TranscriptionAssetCleanup.removeOwnedAssets(for: transcription)
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: currentDirectory.path))
     }
 
-    private func waitForFileAbsence(at url: URL, timeout: Duration = .seconds(1)) async throws {
-        let deadline = ContinuousClock.now + timeout
-        while FileManager.default.fileExists(atPath: url.path) {
-            guard ContinuousClock.now < deadline else {
-                XCTFail("Timed out waiting for file removal at \(url.path)")
-                return
-            }
-            try await Task.sleep(for: .milliseconds(20))
-        }
-    }
 }

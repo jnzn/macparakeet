@@ -17,9 +17,10 @@ final class ModelLifecycleCommandTests: XCTestCase {
     }
 
     func testHealthParsesRepairFlags() throws {
-        let command = try HealthCommand.parse(["--repair-models", "--repair-attempts", "6"])
+        let command = try HealthCommand.parse(["--repair-models", "--repair-attempts", "6", "--repair-binaries"])
         XCTAssertTrue(command.repairModels)
         XCTAssertEqual(command.repairAttempts, 6)
+        XCTAssertTrue(command.repairBinaries)
     }
 
     func testResolveWhisperDownloadModelRequiresWhisperPrefix() throws {
@@ -65,7 +66,9 @@ final class ModelLifecycleCommandTests: XCTestCase {
         let status = await loadSpeechStackStatus(
             sttClient: stt,
             diarizationService: diarization,
-            isSpeechModelCached: { true }
+            isSpeechModelCached: { true },
+            whisperModelVariant: "large-v3-v20240930_turbo_632MB",
+            isWhisperModelDownloaded: { $0 == "large-v3-v20240930_turbo_632MB" }
         )
 
         XCTAssertEqual(
@@ -74,7 +77,9 @@ final class ModelLifecycleCommandTests: XCTestCase {
                 speechModelCached: true,
                 speechRuntimeReady: true,
                 speakerModelsCached: false,
-                speakerModelsPrepared: false
+                speakerModelsPrepared: false,
+                whisperModelVariant: "large-v3-v20240930_turbo_632MB",
+                whisperModelDownloaded: true
             )
         )
         XCTAssertEqual(status.summary, "Speech model present, speaker models missing")

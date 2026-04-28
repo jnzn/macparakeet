@@ -92,11 +92,9 @@ public final class MeetingRecordingRecoveryService: MeetingRecordingRecoveryServ
                 if try canOfferRecovery(for: lock) {
                     viable.append(lock)
                 } else {
-                    // Auto-clean instead of skipping silently: the folder + lock
-                    // are otherwise immortal, accumulating across every crash
-                    // until the user manually deletes them. Logged for forensic
-                    // reference if a user reports missing recordings.
-                    purgeEmptySession(lock)
+                    logger.info(
+                        "meeting_recovery_skipped_empty_session session=\(lock.sessionId.uuidString, privacy: .public)"
+                    )
                 }
             } catch {
                 logger.error(
@@ -122,21 +120,6 @@ public final class MeetingRecordingRecoveryService: MeetingRecordingRecoveryServ
         let micSize = fileSize(at: folderURL.appendingPathComponent("microphone.m4a"))
         let sysSize = fileSize(at: folderURL.appendingPathComponent("system.m4a"))
         return max(micSize, sysSize) >= Self.minViableAudioBytes
-    }
-
-    private func purgeEmptySession(_ lock: MeetingRecordingLockFile) {
-        guard let folderURL = lock.folderURL else { return }
-        guard fileManager.fileExists(atPath: folderURL.path) else { return }
-        do {
-            try fileManager.removeItem(at: folderURL)
-            logger.info(
-                "meeting_recovery_purged_empty_session session=\(lock.sessionId.uuidString, privacy: .public)"
-            )
-        } catch {
-            logger.error(
-                "meeting_recovery_purge_failed session=\(lock.sessionId.uuidString, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
-            )
-        }
     }
 
     public func recover(_ lock: MeetingRecordingLockFile) async throws -> Transcription {
