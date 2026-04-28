@@ -522,6 +522,25 @@ private final class RecoveryMockTranscriptionService: TranscriptionServiceProtoc
         )
     }
 
+    func retranscribe(
+        existing transcription: Transcription,
+        fileURL: URL,
+        source: TelemetryTranscriptionSource,
+        speechEngineOverride: SpeechEngineSelection?,
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)?
+    ) async throws -> Transcription {
+        fatalError("Not used")
+    }
+
+    func retranscribeMeeting(
+        existing transcription: Transcription,
+        recording: MeetingRecordingOutput,
+        speechEngineOverride: SpeechEngineSelection?,
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)?
+    ) async throws -> Transcription {
+        fatalError("Not used")
+    }
+
     func transcribeURL(
         urlString: String,
         onProgress: (@Sendable (TranscriptionProgress) -> Void)?
