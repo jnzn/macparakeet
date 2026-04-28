@@ -93,11 +93,9 @@ func findTranscription(id: String, repo: TranscriptionRepository) throws -> Tran
         return t
     }
 
-    // Prefix match
-    let all = try repo.fetchAll()
     let lowered = trimmed.lowercased()
     if let prefix = uuidPrefixSearchKey(trimmed) {
-        let matches = all.filter { $0.id.uuidString.lowercased().hasPrefix(prefix) }
+        let matches = try repo.fetchByIDPrefix(prefix)
 
         if matches.count == 1 { return matches[0] }
         if matches.count > 1 {
@@ -105,7 +103,7 @@ func findTranscription(id: String, repo: TranscriptionRepository) throws -> Tran
         }
     }
 
-    let nameMatches = all.filter { $0.fileName.lowercased() == lowered }
+    let nameMatches = try repo.fetchByFileName(lowered)
     if nameMatches.count == 1 { return nameMatches[0] }
     if nameMatches.count > 1 {
         throw CLILookupError.ambiguous("Multiple transcriptions named '\(trimmed)'. Use ID instead.")
