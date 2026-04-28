@@ -84,34 +84,65 @@ public final class TranscriptionRepository: TranscriptionRepositoryProtocol {
         }
     }
 
+    public func fetchByIDPrefix(_ idPrefix: String) throws -> [Transcription] {
+        try fetchByIDPrefix(idPrefix, sourceType: nil)
+    }
+
     public func fetchBySourceType(
         _ sourceType: Transcription.SourceType,
         idPrefix: String
+    ) throws -> [Transcription] {
+        try fetchByIDPrefix(idPrefix, sourceType: sourceType)
+    }
+
+    private func fetchByIDPrefix(
+        _ idPrefix: String,
+        sourceType: Transcription.SourceType?
     ) throws -> [Transcription] {
         let trimmed = idPrefix.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
         let textPattern = escapedLikePattern(trimmed.lowercased()) + "%"
         let compactPattern = escapedLikePattern(trimmed.lowercased().replacingOccurrences(of: "-", with: "")) + "%"
+        var sql = "(lower(id) LIKE ? ESCAPE '\\' OR lower(hex(id)) LIKE ? ESCAPE '\\')"
+        var arguments: [String] = [textPattern, compactPattern]
+        if let sourceType {
+            sql = "sourceType = ? AND \(sql)"
+            arguments.insert(sourceType.rawValue, at: 0)
+        }
         return try dbQueue.read { db in
             try Transcription
-                .filter(
-                    sql: "sourceType = ? AND (lower(id) LIKE ? ESCAPE '\\' OR lower(hex(id)) LIKE ? ESCAPE '\\')",
-                    arguments: [sourceType.rawValue, textPattern, compactPattern]
-                )
+                .filter(sql: sql, arguments: StatementArguments(arguments))
                 .order(Transcription.Columns.createdAt.desc)
                 .fetchAll(db)
         }
+    }
+
+    public func fetchByFileName(_ fileName: String) throws -> [Transcription] {
+        try fetchByFileName(fileName, sourceType: nil)
     }
 
     public func fetchBySourceType(
         _ sourceType: Transcription.SourceType,
         fileName: String
     ) throws -> [Transcription] {
+        try fetchByFileName(fileName, sourceType: sourceType)
+    }
+
+    private func fetchByFileName(
+        _ fileName: String,
+        sourceType: Transcription.SourceType?
+    ) throws -> [Transcription] {
         let trimmed = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
+        var sql = "lower(fileName) = lower(?)"
+        var arguments: [String] = [trimmed]
+        if let sourceType {
+            sql = "sourceType = ? AND \(sql)"
+            arguments.insert(sourceType.rawValue, at: 0)
+        }
         return try dbQueue.read { db in
             try Transcription
-                .filter(sql: "sourceType = ? AND lower(fileName) = lower(?)", arguments: [sourceType.rawValue, trimmed])
+                .filter(sql: sql, arguments: StatementArguments(arguments))
                 .order(Transcription.Columns.createdAt.desc)
                 .fetchAll(db)
         }
