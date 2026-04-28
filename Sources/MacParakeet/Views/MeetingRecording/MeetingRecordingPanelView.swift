@@ -16,9 +16,8 @@ struct MeetingRecordingPanelView: View {
             paneContent
             // Notes and Ask own their own bottom UI (Notes shows a soft-cap
             // footer when relevant; Ask owns its composer + follow-up pills).
-            // The Stop control lives on the floating recording pill, so the
-            // panel footer is reserved for transcript-specific controls
-            // (Copy, auto-scroll toggle).
+            // The footer stays transcript-specific (Copy, auto-scroll toggle);
+            // the stop control is in the always-visible header.
             if viewModel.selectedTab == .transcript {
                 Divider()
                 footer
@@ -154,6 +153,12 @@ struct MeetingRecordingPanelView: View {
                     Text("\(viewModel.wordCount) words")
                         .font(.system(size: 10, weight: .regular).monospacedDigit())
                         .foregroundStyle(DesignSystem.Colors.textTertiary.opacity(0.8))
+                }
+
+                if viewModel.canStop {
+                    StopRecordingButton {
+                        viewModel.onStop?()
+                    }
                 }
             }
 
@@ -311,98 +316,6 @@ struct BreathingSeedOfLifeView: View {
     }
 }
 
-/// Stop button with inline "End?" confirmation.
-/// First click shows "End?" label. Second click within 3s confirms.
-/// Auto-reverts to icon if not confirmed.
-private struct StopRecordingButton: View {
-    var onStop: () -> Void
-
-    @State private var isHovered = false
-    @State private var confirming = false
-    @State private var countdownProgress: CGFloat = 1.0
-    @State private var revertTask: Task<Void, Never>?
-
-    var body: some View {
-        Group {
-            if confirming {
-                // Confirmation state — "End?" text button
-                Button {
-                    revertTask?.cancel()
-                    confirming = false
-                    onStop()
-                } label: {
-                    Text("Click to end")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(DesignSystem.Colors.errorRed)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(
-                            Capsule()
-                                .fill(DesignSystem.Colors.surfaceElevated)
-                                .overlay(
-                                    GeometryReader { geo in
-                                        Capsule()
-                                            .fill(DesignSystem.Colors.errorRed.opacity(0.2))
-                                            .frame(width: geo.size.width * countdownProgress)
-                                    }
-                                    .clipShape(Capsule())
-                                )
-                                .overlay(
-                                    Capsule()
-                                        .stroke(DesignSystem.Colors.errorRed.opacity(0.3), lineWidth: 0.5)
-                                )
-                        )
-                }
-                .buttonStyle(.plain)
-                .transition(.scale(scale: 0.8).combined(with: .opacity))
-            } else {
-                // Default state — stop square icon
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(isHovered ? DesignSystem.Colors.errorRed : DesignSystem.Colors.textTertiary.opacity(0.6))
-                    .frame(width: 13, height: 13)
-                    .padding(9)
-                    .background(
-                        Circle()
-                            .fill(isHovered
-                                ? DesignSystem.Colors.errorRed.opacity(0.15)
-                                : DesignSystem.Colors.surfaceElevated
-                            )
-                            .overlay(
-                                Circle()
-                                    .stroke(isHovered ? DesignSystem.Colors.errorRed.opacity(0.3) : .clear, lineWidth: 0.5)
-                            )
-                    )
-                    .shadow(color: isHovered ? DesignSystem.Colors.errorRed.opacity(0.25) : .clear, radius: 6)
-                    .scaleEffect(isHovered ? 1.08 : 1.0)
-                    .animation(.easeOut(duration: 0.15), value: isHovered)
-                    .onHover { hovering in
-                        isHovered = hovering
-                    }
-                    .onTapGesture {
-                        countdownProgress = 1.0
-                        withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
-                            confirming = true
-                        }
-                        withAnimation(.linear(duration: 3)) {
-                            countdownProgress = 0
-                        }
-                        revertTask?.cancel()
-                        revertTask = Task { @MainActor in
-                            try? await Task.sleep(for: .seconds(3))
-                            guard !Task.isCancelled else { return }
-                            withAnimation(.easeOut(duration: 0.2)) {
-                                confirming = false
-                            }
-                        }
-                    }
-                    .transition(.scale(scale: 0.8).combined(with: .opacity))
-            }
-        }
-        .help(confirming ? "Click to confirm" : "End recording")
-        .onDisappear { revertTask?.cancel() }
-    }
-}
-
 /// Polished footer button with hover background and press feedback.
 private struct FooterButton: View {
     let label: String
@@ -499,4 +412,3 @@ private struct FooterIconButton: View {
         }
     }
 }
-

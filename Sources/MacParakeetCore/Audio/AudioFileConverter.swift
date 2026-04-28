@@ -3,7 +3,17 @@ import os
 
 public protocol AudioFileConverting: Sendable {
     func convert(fileURL: URL) async throws -> URL
-    func mixToM4A(inputURLs: [URL], outputURL: URL) async throws
+    func mixToM4A(
+        inputURLs: [URL],
+        outputURL: URL,
+        sourceAlignment: MeetingSourceAlignment?
+    ) async throws
+}
+
+public extension AudioFileConverting {
+    func mixToM4A(inputURLs: [URL], outputURL: URL) async throws {
+        try await mixToM4A(inputURLs: inputURLs, outputURL: outputURL, sourceAlignment: nil)
+    }
 }
 
 /// Converts audio/video files to 16kHz mono WAV using FFmpeg subprocess.
@@ -64,7 +74,11 @@ public final class AudioFileConverter: AudioFileConverting, Sendable {
     /// For mic+system dual input, preserve channel separation as stereo:
     /// channel 1 = microphone, channel 2 = system.
     /// For single-input sessions, output a mono AAC file.
-    public func mixToM4A(inputURLs: [URL], outputURL: URL) async throws {
+    public func mixToM4A(
+        inputURLs: [URL],
+        outputURL: URL,
+        sourceAlignment: MeetingSourceAlignment? = nil
+    ) async throws {
         guard !inputURLs.isEmpty else {
             throw AudioProcessorError.conversionFailed("No audio files to mix")
         }
@@ -75,7 +89,8 @@ public final class AudioFileConverter: AudioFileConverting, Sendable {
             try await runFFmpegMix(
                 ffmpegPath: primaryPath,
                 inputURLs: inputURLs,
-                outputURL: outputURL
+                outputURL: outputURL,
+                sourceAlignment: sourceAlignment
             )
         } catch let error as AudioProcessorError {
             guard case .conversionFailed(let reason) = error,
@@ -87,7 +102,8 @@ public final class AudioFileConverter: AudioFileConverting, Sendable {
             try await runFFmpegMix(
                 ffmpegPath: fallbackPath,
                 inputURLs: inputURLs,
-                outputURL: outputURL
+                outputURL: outputURL,
+                sourceAlignment: sourceAlignment
             )
         }
     }
@@ -106,7 +122,11 @@ public final class AudioFileConverter: AudioFileConverting, Sendable {
         ]
     }
 
-    public func ffmpegMixArguments(inputPaths: [String], outputPath: String) -> [String] {
+    public func ffmpegMixArguments(
+        inputPaths: [String],
+        outputPath: String,
+        sourceAlignment: MeetingSourceAlignment? = nil
+    ) -> [String] {
         var args = ["-nostdin"]
         for inputPath in inputPaths {
             args.append(contentsOf: ["-i", inputPath])
@@ -114,9 +134,14 @@ public final class AudioFileConverter: AudioFileConverting, Sendable {
 
         let outputArgs: [String]
         if inputPaths.count == 2 {
+            let microphoneDelayMs = max(0, sourceAlignment?.microphone?.startOffsetMs ?? 0)
+            let systemDelayMs = max(0, sourceAlignment?.system?.startOffsetMs ?? 0)
             args.append(contentsOf: [
                 "-filter_complex",
-                "[0:a]pan=stereo|c0=c0|c1=0*c0[a0];[1:a]pan=stereo|c0=0*c0|c1=c0[a1];[a0][a1]amix=inputs=2:duration=longest:normalize=0[a]",
+                dualSourceMixFilter(
+                    microphoneDelayMs: microphoneDelayMs,
+                    systemDelayMs: systemDelayMs
+                ),
                 "-map", "[a]"
             ])
             outputArgs = [
@@ -150,6 +175,19 @@ public final class AudioFileConverter: AudioFileConverting, Sendable {
             "-y", outputPath,
         ])
         return args
+    }
+
+    private func dualSourceMixFilter(microphoneDelayMs: Int, systemDelayMs: Int) -> String {
+        [
+            "[0:a]pan=stereo|c0=c0|c1=0*c0,adelay=\(stereoDelay(microphoneDelayMs))[a0]",
+            "[1:a]pan=stereo|c0=0*c0|c1=c0,adelay=\(stereoDelay(systemDelayMs))[a1]",
+            "[a0][a1]amix=inputs=2:duration=longest:normalize=0[a]",
+        ]
+        .joined(separator: ";")
+    }
+
+    private func stereoDelay(_ delayMs: Int) -> String {
+        "\(delayMs)|\(delayMs)"
     }
 
     // MARK: - Private
@@ -211,7 +249,8 @@ public final class AudioFileConverter: AudioFileConverting, Sendable {
     private func runFFmpegMix(
         ffmpegPath: String,
         inputURLs: [URL],
-        outputURL: URL
+        outputURL: URL,
+        sourceAlignment: MeetingSourceAlignment?
     ) async throws {
         // The mix output URL is supplied by the caller, but the contract on
         // failure is "no partial output left behind" -- callers can re-run
@@ -229,7 +268,8 @@ public final class AudioFileConverter: AudioFileConverting, Sendable {
         process.executableURL = URL(fileURLWithPath: ffmpegPath)
         process.arguments = ffmpegMixArguments(
             inputPaths: inputURLs.map(\.path),
-            outputPath: outputURL.path
+            outputPath: outputURL.path,
+            sourceAlignment: sourceAlignment
         )
 
         let tempDir = try ensureTempDir()

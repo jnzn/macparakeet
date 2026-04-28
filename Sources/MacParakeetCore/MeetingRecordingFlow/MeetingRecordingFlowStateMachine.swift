@@ -81,6 +81,10 @@ public struct MeetingRecordingFlowStateMachine: Equatable, Sendable {
             state = .idle
             return [.updateMenuBar(.idle), .presentPermissionAlert(reason)]
 
+        case (.checkingPermissions, .cancelRequested):
+            state = .idle
+            return [.cancelRecording, .hidePill, .updateMenuBar(.idle)]
+
         case (.starting, .recordingStarted(let gen)):
             guard gen == generation else { return [] }
             state = .recording
