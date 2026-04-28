@@ -9,7 +9,7 @@ import MacParakeetCore
 /// (no GUI) persist preferences like opting out of telemetry — and a later GUI
 /// install picks the same values up automatically. Without this, CLI-only
 /// users would have no way to opt out of telemetry except per-process env vars.
-struct ConfigCommand: AsyncParsableCommand {
+struct ConfigCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "config",
         abstract: "Read or write CLI/app configuration values.",
@@ -20,8 +20,10 @@ struct ConfigCommand: AsyncParsableCommand {
 
         Supported keys:
           telemetry   on|off   Anonymous, non-identifying usage analytics
-                               (default: on). See docs/telemetry.md for the
-                               full event catalog.
+                               (default: on)
+
+        Full event catalog:
+          https://github.com/moona3k/macparakeet/blob/main/docs/telemetry.md
 
         Per-process overrides (env vars, do not require `config set`):
           MACPARAKEET_TELEMETRY=0   Force-off for one invocation
@@ -37,7 +39,7 @@ struct ConfigCommand: AsyncParsableCommand {
 
     // MARK: - Subcommands
 
-    struct GetCommand: AsyncParsableCommand {
+    struct GetCommand: ParsableCommand {
         static let configuration = CommandConfiguration(
             commandName: "get",
             abstract: "Print the current value of a configuration key."
@@ -49,15 +51,15 @@ struct ConfigCommand: AsyncParsableCommand {
         @Flag(name: .long, help: "Emit JSON instead of plain text.")
         var json: Bool = false
 
-        func run() async throws {
-            try await emitJSONOrRethrow(json: json) {
+        func run() throws {
+            try emitJSONOrRethrow(json: json) {
                 let value = try ConfigCommand.read(key: key)
                 try printResult(key: key, value: value, json: json)
             }
         }
     }
 
-    struct SetCommand: AsyncParsableCommand {
+    struct SetCommand: ParsableCommand {
         static let configuration = CommandConfiguration(
             commandName: "set",
             abstract: "Write a configuration value."
@@ -72,15 +74,15 @@ struct ConfigCommand: AsyncParsableCommand {
         @Flag(name: .long, help: "Emit JSON instead of plain text.")
         var json: Bool = false
 
-        func run() async throws {
-            try await emitJSONOrRethrow(json: json) {
+        func run() throws {
+            try emitJSONOrRethrow(json: json) {
                 let written = try ConfigCommand.write(key: key, value: value)
                 try printResult(key: key, value: written, json: json)
             }
         }
     }
 
-    struct ListCommand: AsyncParsableCommand {
+    struct ListCommand: ParsableCommand {
         static let configuration = CommandConfiguration(
             commandName: "list",
             abstract: "Print all configurable keys and their current values."
@@ -89,8 +91,8 @@ struct ConfigCommand: AsyncParsableCommand {
         @Flag(name: .long, help: "Emit JSON instead of plain text.")
         var json: Bool = false
 
-        func run() async throws {
-            try await emitJSONOrRethrow(json: json) {
+        func run() throws {
+            try emitJSONOrRethrow(json: json) {
                 var entries: [(String, String)] = []
                 for key in ConfigCommand.supportedKeys {
                     entries.append((key, try ConfigCommand.read(key: key)))
@@ -141,7 +143,7 @@ struct ConfigCommand: AsyncParsableCommand {
     }
 
     static func parseBool(_ value: String, key: String) throws -> Bool {
-        let v = value.trimmingCharacters(in: .whitespaces).lowercased()
+        let v = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         switch v {
         case "on", "true", "yes", "1", "enable", "enabled":
             return true

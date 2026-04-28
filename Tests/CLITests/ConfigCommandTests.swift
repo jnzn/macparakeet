@@ -106,4 +106,9 @@ final class ConfigCommandTests: XCTestCase {
             XCTAssertTrue(error is ValidationError)
         }
     }
+
+    func testParseBoolTrimsNewlines() throws {
+        XCTAssertTrue(try ConfigCommand.parseBool("\n on \n", key: "telemetry"))
+        XCTAssertFalse(try ConfigCommand.parseBool("\n off \n", key: "telemetry"))
+    }
 }

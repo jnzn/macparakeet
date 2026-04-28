@@ -1,6 +1,5 @@
 import XCTest
 @testable import CLI
-@testable import MacParakeetCore
 
 final class CLITelemetryTests: XCTestCase {
 

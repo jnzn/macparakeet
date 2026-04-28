@@ -73,6 +73,16 @@ struct CLIOperationPrivacyTests {
         let actual = Set((event.props ?? [:]).keys)
         let unexpected = actual.subtracting(allowed)
         #expect(unexpected.isEmpty, "cli_operation introduced new prop key(s) \(unexpected) — review for privacy and update docs/telemetry.md + integrations/README.md before merging.")
+
+        let requiredForTranscribeFailure: Set<String> = [
+            "operation_id", "workflow_id",
+            "command",
+            "outcome", "duration_seconds",
+            "input_kind", "output_format", "json",
+            "exit_code", "error_type"
+        ]
+        let missing = requiredForTranscribeFailure.subtracting(actual)
+        #expect(missing.isEmpty, "cli_operation dropped required transcribe failure prop key(s) \(missing) — this is a schema regression.")
     }
 
     @Test("input_kind serializes to the enum case name; no path/URL substrings leak into any prop value")
