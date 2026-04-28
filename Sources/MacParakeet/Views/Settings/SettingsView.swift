@@ -846,7 +846,11 @@ struct SettingsView: View {
         case .notDownloaded:
             return "Download"
         case .notLoaded:
-            return "Repair"
+            // The badge already says "Downloaded ✓"; pairing it with "Repair"
+            // implied the model was broken. The button actually re-runs the
+            // download (fast no-op via HuggingFace cache when files are
+            // intact), so name it for what it does.
+            return "Re-download"
         case .failed:
             return "Retry"
         case .ready:
