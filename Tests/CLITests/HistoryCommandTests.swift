@@ -23,7 +23,9 @@ final class HistoryCommandTests: XCTestCase {
         let db = try DatabaseManager(path: dbURL.path)
         let repo = DictationRepository(dbQueue: db.dbQueue)
 
-        let audioURL = temporaryAssetURL(pathExtension: "m4a")
+        try AppPaths.ensureDirectories()
+        let audioURL = URL(fileURLWithPath: AppPaths.dictationsDir, isDirectory: true)
+            .appendingPathComponent("macparakeet-cli-dictation-\(UUID().uuidString).m4a")
         defer { try? FileManager.default.removeItem(at: audioURL) }
         _ = FileManager.default.createFile(atPath: audioURL.path, contents: Data("audio".utf8))
 
@@ -40,6 +42,31 @@ final class HistoryCommandTests: XCTestCase {
 
         XCTAssertNil(try repo.fetch(id: dictation.id))
         XCTAssertFalse(FileManager.default.fileExists(atPath: audioURL.path))
+    }
+
+    func testDeleteDictationCommandLeavesExternalAudioFile() throws {
+        let dbURL = temporaryDatabaseURL()
+        defer { try? FileManager.default.removeItem(at: dbURL) }
+        let db = try DatabaseManager(path: dbURL.path)
+        let repo = DictationRepository(dbQueue: db.dbQueue)
+
+        let audioURL = temporaryAssetURL(pathExtension: "m4a")
+        defer { try? FileManager.default.removeItem(at: audioURL) }
+        _ = FileManager.default.createFile(atPath: audioURL.path, contents: Data("audio".utf8))
+
+        let dictation = Dictation(durationMs: 2000, rawTranscript: "Delete me", audioPath: audioURL.path)
+        try repo.save(dictation)
+
+        let command = try DeleteDictationSubcommand.parse([
+            dictation.id.uuidString,
+            "--database", dbURL.path,
+        ])
+        _ = try captureStandardOutput {
+            try command.run()
+        }
+
+        XCTAssertNil(try repo.fetch(id: dictation.id))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: audioURL.path))
     }
 
     // MARK: - Delete Transcription
