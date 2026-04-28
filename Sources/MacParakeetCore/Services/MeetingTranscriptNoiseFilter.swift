@@ -30,6 +30,7 @@ struct MeetingTranscriptNoiseFilter {
     private static let duplicateMaxWords = 10
     private static let duplicateLowConfidenceThreshold = 0.65
     private static let duplicateShortConfidenceThreshold = 0.80
+    private static let allowedTokenCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "'"))
 
     static func cleanFinalMicrophoneWords(
         microphoneWords: [WordTimestamp],
@@ -111,8 +112,8 @@ struct MeetingTranscriptNoiseFilter {
         guard confidenceAllowsDrop else { return false }
 
         for startIndex in 0...(systemTokenWords.count - micTokens.count) {
-            let candidate = systemTokenWords[startIndex..<(startIndex + micTokens.count)].map(\.token)
-            guard candidate == micTokens else { continue }
+            let candidate = systemTokenWords[startIndex..<(startIndex + micTokens.count)].lazy.map(\.token)
+            guard candidate.elementsEqual(micTokens) else { continue }
 
             let systemWindow = systemTokenWords[startIndex..<(startIndex + micTokens.count)].map(\.word)
             if rangesOverlapWithTolerance(lhs: microphoneRun, rhs: systemWindow) {
@@ -150,8 +151,7 @@ struct MeetingTranscriptNoiseFilter {
     }
 
     private static func normalizedToken(_ token: String) -> String? {
-        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "'"))
-        let normalized = String(token.lowercased().unicodeScalars.filter { allowed.contains($0) })
+        let normalized = String(token.lowercased().unicodeScalars.filter { allowedTokenCharacters.contains($0) })
         return normalized.isEmpty ? nil : normalized
     }
 }
