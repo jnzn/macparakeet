@@ -10,7 +10,7 @@ A **fast, private, local-first voice app** for macOS with three co-equal modes: 
 
 **Domain:** [macparakeet.com](https://macparakeet.com)
 
-**Pricing:** Free and open-source (GPL-3.0)
+**Pricing:** Current public build is free and open-source (GPL-3.0); official paid distribution/support remains possible.
 
 ## Quick Navigation
 
@@ -63,7 +63,7 @@ MacParakeet is extracted from the OatFlow feature in Oatmeal but is maintained i
 |---|-------------|---------|
 | **Focus** | Voice dictation + file transcription + meeting recording | Meeting memory + calendar |
 | **Complexity** | Simple, focused | Complex, powerful |
-| **Pricing** | Free (GPL-3.0) | Freemium + Pro |
+| **Pricing** | Current public build free/GPL; official paid distribution/support possible | Freemium + Pro |
 | **Value prop** | "Fast local transcription" | "Remembers everything" |
 
 ## Product Decisions (Settled)
@@ -102,7 +102,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 | ADR-020 | Live meeting notepad + memo-steered summaries (implemented) | `spec/adr/020-live-meeting-notepad-and-memo-summaries.md` |
 | ADR-021 | WhisperKit as optional multilingual STT engine (implemented) | `spec/adr/021-whisperkit-multilingual-stt.md` |
 
-> Historical ADRs (still in `spec/adr/`, kept for context): ADR-003 (one-time purchase pricing), ADR-006 (trial + license activation), ADR-008 (local LLM runtime). The app is now free/GPL-3.0. The old LemonSqueezy/trial entitlement plumbing is intentionally retained as future-option code; do not remove it as dead code without explicit owner direction and an ADR/spec update.
+> Historical/dormant ADRs (still in `spec/adr/`, kept for context): ADR-003 (one-time purchase pricing), ADR-006 (trial + license activation), ADR-008 (local LLM runtime). Current public builds are free/GPL-3.0 and unlocked. The old LemonSqueezy/trial entitlement plumbing is intentionally retained as future-option code for GPL-compatible official paid distribution/support; do not remove it as dead code without explicit owner direction and an ADR/spec update.
 
 ## Current Phase
 
@@ -310,7 +310,7 @@ In-app feedback creates GitHub Issues via a Cloudflare Pages Function. User emai
 2. **ADRs are locked** -- Don't second-guess architectural decisions in `spec/adr/`.
 3. **Never lose user data** -- Graceful degradation for dictation history and transcriptions.
 4. **UI philosophy** -- Minimal during dictation, rich for transcription results.
-5. **Local-first** -- Speech recognition stays on-device by default. Optional provider and media-download flows are user-triggered; model/update flows and self-hosted telemetry/crash reporting are product-managed surfaces. Legacy licensing endpoints remain in code but the app is free/GPL-3.0 and always unlocked. That licensing plumbing is intentionally retained as future-option code, not cleanup fodder. Telemetry is opt-out in Settings and never includes audio or transcript content.
+5. **Local-first** -- Speech recognition stays on-device by default. Optional provider and media-download flows are user-triggered; model/update flows and self-hosted telemetry/crash reporting are product-managed surfaces. Retained purchase activation endpoints remain in code but current public builds are free/GPL-3.0 and always unlocked. That licensing plumbing is intentionally retained as future-option code for GPL-compatible official paid distribution/support, not cleanup fodder. Telemetry is opt-out in Settings and never includes audio or transcript content.
 6. **Simplicity is the product** -- Resist feature creep. MacParakeet does three things well.
 7. **Fast feedback loops for agents** -- Design everything so the agent can verify its own work: tests for logic, CLI for headless smoke-testing, build errors that surface immediately.
 8. **Bounded agent discretion** -- Agents should choose the simplest process that works, but behavior changes must follow `spec/10-ai-coding-method.md` kernel workflow.
@@ -453,7 +453,7 @@ open Package.swift  # Select MacParakeet scheme
 | Accessibility | Global hotkey, paste simulation | First dictation use |
 | Screen & System Audio Recording | System audio capture for meeting recording (Core Audio Taps) | First meeting recording use |
 
-1. **Offline-first** -- Dictation and file transcription work fully offline. Network is limited to user-triggered downloads/providers, update checks, legacy licensing endpoints if invoked, and opt-out anonymous telemetry.
+1. **Offline-first** -- Dictation and file transcription work fully offline. Network is limited to user-triggered downloads/providers, update checks, retained purchase activation endpoints if explicitly invoked, and opt-out anonymous telemetry.
 2. **Temp files deleted** -- Audio removed after transcription (unless user saves)
 3. **Non-identifying telemetry** -- Anonymous, session-scoped, opt-out in Settings. No persistent IDs, no IP storage, no content. See `docs/telemetry.md` and ADR-012.
 4. **No accounts** -- No login, no email, no tracking

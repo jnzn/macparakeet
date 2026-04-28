@@ -1093,7 +1093,7 @@ Dictation ready
 
 ### Privacy Guarantees
 
-1. **No cloud STT** — Speech recognition stays local. Network is used only for explicit surfaces such as model downloads, update checks, optional LLM providers, optional telemetry/crash reporting, legacy licensing endpoints if invoked, and user-initiated YouTube downloads.
+1. **No cloud STT** — Speech recognition stays local. Network is used only for explicit surfaces such as model downloads, update checks, optional LLM providers, optional telemetry/crash reporting, retained purchase activation endpoints if explicitly invoked, and user-initiated YouTube downloads.
 2. **Temp files cleaned** — Audio files in `$TMPDIR` deleted immediately after transcription
 3. **No accounts** — No login, no email, no user tracking
 4. **Telemetry is opt-out** — Self-hosted usage analytics and crash reporting run only while telemetry is enabled
@@ -1329,7 +1329,7 @@ open Package.swift
 
 2. **Protocol-first services.** Every service has a protocol. Tests inject mocks. No singletons.
 
-3. **Local-only for user data.** Core speech inference has no cloud or API-key dependency. Network is only for model artifacts, optional LLM providers, update/telemetry surfaces, legacy license activation/validation if invoked, and user-initiated media downloads.
+3. **Local-only for user data.** Core speech inference has no cloud or API-key dependency. Network is only for model artifacts, optional LLM providers, update/telemetry surfaces, retained purchase activation/validation if explicitly invoked, and user-initiated media downloads.
 
 4. **Fast launch + onboarding pre-warm.** App launch stays lightweight; first-run onboarding prepares STT model so core features feel ready immediately afterward.
 

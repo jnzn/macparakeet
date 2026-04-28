@@ -1624,14 +1624,14 @@ MacParakeet's brand is privacy. These are non-negotiable.
 | No accounts | No email, no login, no registration |
 | No cloud STT | All speech recognition runs locally on Apple Silicon; Parakeet is default and WhisperKit is optional |
 | User-controlled storage | File/YouTube/meeting audio is retained for playback/recovery unless deleted; dictation audio is opt-in |
-| Explicit network surfaces | Model download, update checks, optional LLM providers, optional telemetry/crash reporting, legacy licensing endpoints if invoked, and YouTube download |
+| Explicit network surfaces | Model download, update checks, optional LLM providers, optional telemetry/crash reporting, retained purchase activation endpoints if explicitly invoked, and YouTube download |
 
 **What "supports a fully local setup" means:**
 - Parakeet STT runs on Apple Silicon Neural Engine (ANE) via FluidAudio CoreML; WhisperKit also runs locally when selected
 - Audio never leaves the device
 - Transcripts stay local unless the user explicitly enables external AI features
 - Users can remain fully local by sticking to offline/core features and local providers such as Ollama
-- Network access is limited to explicit product surfaces such as updates, telemetry/crash reporting, model downloads, optional LLM providers, legacy licensing endpoints if invoked, and media download
+- Network access is limited to explicit product surfaces such as updates, telemetry/crash reporting, model downloads, optional LLM providers, retained purchase activation endpoints if explicitly invoked, and media download
 
 ---
 
@@ -1748,7 +1748,7 @@ FluidAudio model download → Audio capture (AVAudioEngine)
 | Cloud processing | Privacy is the brand -- opt-in LLM providers only (ADR-011) |
 | Windows / Linux | macOS-only simplifies everything, Apple Silicon required |
 | Collaborative / multi-user | Single-user product |
-| Subscription pricing | Free and open-source (GPL-3.0) — no monetization |
+| Required hosted subscription for core speech | Current core product is local-first and GPL-3.0. Official paid distribution, support, hosted services, or team features can exist, but core speech should not require a hosted subscription. |
 | Production-grade realtime captions | Meeting live preview is best-effort; final batch transcription remains authoritative |
 | ~~Video playback~~ | ~~We transcribe audio, not play video~~ (implemented in v0.6) |
 
@@ -1756,9 +1756,9 @@ FluidAudio model download → Audio capture (AVAudioEngine)
 
 ## Licensing
 
-> Status: **HISTORICAL** — MacParakeet is now free and open-source (GPL-3.0) as of v0.5.
+> Status: **DORMANT** — Current public builds are free/GPL-3.0 and fully unlocked.
 
-The trial/Pro tier system (ADR-006) is no longer enforced. LemonSqueezy is kept as a $0 product for download tracking. License activation code remains in the codebase but all features are unlocked. This code is intentionally retained as future-option plumbing; agents must not remove it as dead code unless the project owner explicitly requests that removal and the decision is reflected in an ADR/spec update.
+The trial/Pro tier system (ADR-006) is no longer enforced in current public builds. LemonSqueezy is currently kept as a $0 product for download tracking. License activation code remains in the codebase while all current features are unlocked. This code is intentionally retained as future-option plumbing for GPL-compatible official paid distribution/support; agents must not remove it as dead code unless the project owner explicitly requests that removal and the decision is reflected in an ADR/spec update.
 
 ---
 
