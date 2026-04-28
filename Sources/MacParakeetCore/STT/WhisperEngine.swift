@@ -118,30 +118,18 @@ public actor WhisperEngine: STTTranscribing {
             }
 
             let requestedLanguage = SpeechEnginePreference.normalizeLanguage(language)
-            let decodeOptions = Self.makeDecodingOptions(language: requestedLanguage)
 
             onProgress?(0, 100)
             let callback: TranscriptionCallback = { _ in
                 onProgress?(50, 100)
                 return true
             }
-            let result = try await Self.transcribeWithWhisperKit(
+            let result = try await Self.transcribeWithLanguageFallback(
                 whisperKit,
-                audioPaths: [audioURL.path],
-                decodeOptions: decodeOptions,
+                audioPath: audioURL.path,
+                requestedLanguage: requestedLanguage,
                 callback: callback
             )
-
-            if requestedLanguage != nil, Self.shouldRetryWithoutForcedLanguage(result) {
-                let fallback = try await Self.transcribeWithWhisperKit(
-                    whisperKit,
-                    audioPaths: [audioURL.path],
-                    decodeOptions: Self.makeDecodingOptions(language: nil),
-                    callback: callback
-                )
-                onProgress?(100, 100)
-                return Self.makeResult(from: fallback, modelVariant: modelVariant)
-            }
 
             onProgress?(100, 100)
             return Self.makeResult(from: result, modelVariant: modelVariant)
@@ -246,6 +234,31 @@ public actor WhisperEngine: STTTranscribing {
             usePrefillPrompt: resolvedLanguage != nil,
             detectLanguage: resolvedLanguage == nil,
             wordTimestamps: true
+        )
+    }
+
+    private static func transcribeWithLanguageFallback(
+        _ whisperKit: WhisperKit,
+        audioPath: String,
+        requestedLanguage: String?,
+        callback: TranscriptionCallback
+    ) async throws -> TranscriptionResult {
+        let result = try await transcribeWithWhisperKit(
+            whisperKit,
+            audioPaths: [audioPath],
+            decodeOptions: makeDecodingOptions(language: requestedLanguage),
+            callback: callback
+        )
+
+        guard requestedLanguage != nil, shouldRetryWithoutForcedLanguage(result) else {
+            return result
+        }
+
+        return try await transcribeWithWhisperKit(
+            whisperKit,
+            audioPaths: [audioPath],
+            decodeOptions: makeDecodingOptions(language: nil),
+            callback: callback
         )
     }
 

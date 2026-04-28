@@ -283,8 +283,32 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         await finalizeWriter(writer)
         await releaseSpeechEngineLease()
         cleanupState()
-        try? lockFileStore.delete(folderURL: folderURL)
-        try? fileManager.removeItem(at: folderURL)
+
+        do {
+            try lockFileStore.delete(folderURL: folderURL)
+        } catch {
+            logFailedStartCleanupError(operation: "delete lock", error: error)
+        }
+
+        do {
+            try fileManager.removeItem(at: folderURL)
+        } catch {
+            if !isMissingFileError(error) {
+                logFailedStartCleanupError(operation: "remove folder", error: error)
+            }
+        }
+    }
+
+    private func logFailedStartCleanupError(operation: String, error: Error) {
+        let nsError = error as NSError
+        logger.warning(
+            "Meeting failed-start cleanup \(operation, privacy: .public) failed: \(nsError.domain, privacy: .public)#\(nsError.code, privacy: .public)"
+        )
+    }
+
+    private func isMissingFileError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        return nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileNoSuchFileError
     }
 
     private func validateStartStillCurrent(_ session: Session) async throws {
