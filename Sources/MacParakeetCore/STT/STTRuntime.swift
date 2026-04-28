@@ -153,7 +153,7 @@ public actor STTRuntime: STTRuntimeProtocol {
             let result = try await manager.transcribe(audioURL, decoderState: &decoderState)
             let words = Self.mergeTokenTimingsIntoWords(result.tokenTimings)
             onProgress?(100, 100)
-            return STTResult(text: result.text, words: words)
+            return STTResult(text: result.text, words: words, engine: .parakeet, engineVariant: nil)
         } catch {
             throw try Self.mapTranscriptionError(error)
         }

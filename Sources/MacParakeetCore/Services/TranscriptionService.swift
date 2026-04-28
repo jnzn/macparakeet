@@ -631,6 +631,13 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
             transcription.rawTranscript = finalized.rawTranscript
             transcription.wordTimestamps = finalized.words
             transcription.language = Self.commonDetectedLanguage(from: sourceResults) ?? transcription.language
+            // Both meeting source transcripts (mic + system) run through the
+            // same `SpeechEngineSelection`, so taking the first source's
+            // engine attribution is authoritative for the merged transcript.
+            if let engineSource = sourceResults.first {
+                transcription.engine = engineSource.result.engine.rawValue
+                transcription.engineVariant = engineSource.result.engineVariant
+            }
             transcription.durationMs = max(
                 Int((recording.durationSeconds * 1000).rounded()),
                 finalized.durationMs ?? 0
@@ -919,6 +926,8 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
             transcription.rawTranscript = result.text
             transcription.wordTimestamps = words
             transcription.language = result.language ?? transcription.language
+            transcription.engine = result.engine.rawValue
+            transcription.engineVariant = result.engineVariant
             transcription.durationMs = words.map(\.endMs).max()
 
             let diarizationApplied: Bool
@@ -1062,6 +1071,8 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
         transcription.status = .processing
         transcription.errorMessage = nil
         transcription.exportPath = nil
+        transcription.engine = nil
+        transcription.engineVariant = nil
         transcription.isTranscriptEdited = false
         transcription.updatedAt = Date()
         return transcription
