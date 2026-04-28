@@ -91,13 +91,14 @@ struct SettingsView: View {
     // MARK: - Tabbed Shell
 
     /// Top-of-panel header: tab bar on the left, search field on the right.
-    /// Status badges on tab pills are wired empty in the foundation chunk;
-    /// they will be driven by sub-VMs as the sub-VM split lands.
+    /// Tab badges roll up the worst per-card status the user can act on.
+    /// `.ok` / `.info` are intentionally silent on the badges — a
+    /// permanent green dot would just be visual debt.
     private var settingsHeaderShell: some View {
         HStack(spacing: DesignSystem.Spacing.md) {
             SettingsTabBar(
                 activeTab: $rootViewModel.activeTab,
-                tabBadges: [:]
+                tabBadges: tabBadges
             )
 
             Spacer(minLength: DesignSystem.Spacing.md)
@@ -108,6 +109,54 @@ struct SettingsView: View {
             )
             .frame(maxWidth: 280)
         }
+    }
+
+    /// Per-tab attention badges. Only `.required` and `.recommended`
+    /// surface here — they're the two states that mean "the user has
+    /// something to do on this tab." `resetCleanupCard`'s `.required
+    /// "Destructive"` chip is intentionally excluded: the chip is a
+    /// severity *label* on a deliberate destination, not an action item.
+    private var tabBadges: [SettingsTab: SettingsStatusChip.Status] {
+        var badges: [SettingsTab: SettingsStatusChip.Status] = [:]
+
+        var modesStatuses: [SettingsCardStatus?] = [
+            viewModel.microphoneGranted
+                ? SettingsCardStatus(.ok, label: "Granted")
+                : SettingsCardStatus(.required, label: "Permission required")
+        ]
+        if AppFeatures.meetingRecordingEnabled {
+            modesStatuses.append(meetingRecordingCardStatus)
+        }
+        if let badge = Self.attentionBadge(for: modesStatuses) {
+            badges[.modes] = badge
+        }
+
+        if let badge = Self.attentionBadge(for: [
+            engineSelectorCardStatus,
+            enginesModelsCardStatus
+        ]) {
+            badges[.engine] = badge
+        }
+
+        if let badge = Self.attentionBadge(for: [aiProviderCardStatus]) {
+            badges[.ai] = badge
+        }
+
+        if let badge = Self.attentionBadge(for: [permissionsCardStatus]) {
+            badges[.system] = badge
+        }
+
+        return badges
+    }
+
+    /// Picks the worst actionable severity from a card-status list, or
+    /// returns nil when nothing is actionable (`.ok` / `.info` / no chip
+    /// at all). Static so it can't accidentally read view state.
+    private static func attentionBadge(for statuses: [SettingsCardStatus?]) -> SettingsStatusChip.Status? {
+        let actual = statuses.compactMap { $0?.status }
+        if actual.contains(.required) { return .required }
+        if actual.contains(.recommended) { return .recommended }
+        return nil
     }
 
     /// Modes tab — daily-ops config for the three product modes, plus the
