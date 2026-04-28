@@ -46,10 +46,12 @@ struct SettingsCard<Content: View>: View {
                         RoundedRectangle(cornerRadius: 8)
                             .fill(DesignSystem.Colors.accent.opacity(0.12))
                     )
+                    .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(DesignSystem.Typography.sectionTitle)
+                        .accessibilityAddTraits(.isHeader)
                     Text(subtitle)
                         .font(DesignSystem.Typography.caption)
                         .foregroundStyle(.secondary)
