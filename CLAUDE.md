@@ -4,7 +4,7 @@
 
 ## What is MacParakeet?
 
-A **fast, private, local-first voice app** for macOS with three co-equal modes: system-wide dictation, file transcription, and meeting recording. Powered by NVIDIA's Parakeet TDT via FluidAudio CoreML on the Neural Engine.
+A **fast, private, local-first voice app** for macOS with three co-equal modes: system-wide dictation, file transcription, and meeting recording. Parakeet TDT via FluidAudio CoreML on the Neural Engine is the default speech engine; WhisperKit is the optional local multilingual engine for Korean, Japanese, Chinese, and other languages outside Parakeet's coverage.
 
 **North Star:** Fast, local-first voice app for Mac.
 
@@ -50,7 +50,7 @@ A **fast, private, local-first voice app** for macOS with three co-equal modes: 
 | Platform | macOS 14.2+ | Apple Silicon only |
 | Language | Swift 6.0 | SwiftUI for UI |
 | Database | SQLite | GRDB (single file, dictation history + transcriptions + meeting recordings) |
-| STT | Parakeet TDT 0.6B-v3 | Via FluidAudio CoreML/ANE (~2.5% WER, 155x realtime, 25 European languages) |
+| STT | Parakeet TDT 0.6B-v3 + optional WhisperKit | Parakeet via FluidAudio CoreML/ANE is default (~2.5% WER, 155x realtime, 25 European languages); WhisperKit adds broader local multilingual coverage |
 | Audio | AVAudioEngine + Core Audio + Core Audio Taps | Mic capture for dictation; Core Audio Taps for system audio (meeting recording); FFmpeg (bundled) for video file conversion |
 | YouTube | yt-dlp | Standalone macOS binary, weekly non-blocking auto-update via `--update` |
 | Auto-Update | Sparkle 2 | In-app updates via EdDSA-signed appcast (non-App Store) |
@@ -100,19 +100,21 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 | ADR-018 | Live meeting Ask tab (Insights dropped per amendment; Ask shipped) | `spec/adr/018-live-meeting-insights-and-ask.md` |
 | ADR-019 | Crash-resilient meeting recording (implemented) | `spec/adr/019-crash-resilient-meeting-recording.md` |
 | ADR-020 | Live meeting notepad + memo-steered summaries (implemented) | `spec/adr/020-live-meeting-notepad-and-memo-summaries.md` |
+| ADR-021 | WhisperKit as optional multilingual STT engine (implemented) | `spec/adr/021-whisperkit-multilingual-stt.md` |
 
 > Historical ADRs (still in `spec/adr/`, kept for context): ADR-003 (one-time purchase pricing), ADR-006 (trial + license activation), ADR-008 (local LLM runtime). The app is now free/GPL-3.0.
 
 ## Current Phase
 
-**v0.6 In Progress** -- ~249 source files, ~128 test files, 1713 tests passing (1700 XCTest + 13 Swift Testing, as of 2026-04-26)
+**Current main branch** -- v0.6 meeting recording and v0.7 multilingual STT are implemented on main but not yet part of the public release.
 
 - **v0.1** MVP -- System-wide dictation, file transcription, overlay, history, export, SQLite, CLI, STT engine
 - **v0.2** Clean Pipeline -- Text processing (filler removal, custom words, snippets), Vocabulary UI, feedback form
 - **v0.3** YouTube & Export -- YouTube URL transcription, DOCX/PDF/JSON export, drag-and-drop enhancements
 - **v0.4** Polish + Launch -- Diarization, custom hotkeys, Sparkle updates, LLM providers, voice stats, distribution
 - **v0.5** Data, UI & Prompts -- Private dictation, multi-conversation chat, favorites, video player, split-pane detail, library grid, prompt library, multi-summary, open-source release
-- **v0.6** Meeting Recording (in progress) -- System audio + raw mic capture via Core Audio Taps/AVAudioEngine, fragmented MP4 source files + crash recovery (ADR-019), software AEC + transcript-layer suppression, concurrent with dictation (ADR-015), centralized STT runtime + scheduler (ADR-016), sacred-geometry recording pill + meeting panel, library integration, prompt/summary/chat support (ADR-014), live notepad + memo-steered summaries with `{{userNotes}}` template variable + slash commands (ADR-020)
+- **v0.6** Meeting Recording (main branch, unreleased) -- System audio + raw mic capture via Core Audio Taps/AVAudioEngine, fragmented MP4 source files + crash recovery (ADR-019), software AEC + transcript-layer suppression, concurrent with dictation (ADR-015), centralized STT runtime + scheduler (ADR-016), sacred-geometry recording pill + Notes/Transcript/Ask meeting panel, library integration, prompt/result/chat support (ADR-014), live notepad + memo-steered summaries with `{{userNotes}}` template variable + slash commands (ADR-020)
+- **v0.7** Multilingual STT (main branch, unreleased) -- WhisperKit engine option for non-Parakeet languages, persisted speech-engine preference, Whisper language picker/default, CLI `transcribe --engine parakeet|whisper --language`, Whisper model download path, engine pinning for active meeting sessions and crash recovery (ADR-021)
 
 ## Key Patterns
 
@@ -124,11 +126,11 @@ MacParakeet has three primary modes that are equal in importance:
 2. **File transcription** -- Drag-drop audio/video files for full transcription (MacWhisper-style)
 3. **Meeting recording** -- Capture system audio + mic simultaneously, transcribe locally (simple Granola-style)
 
-All three modes share the same Parakeet STT backend but have different UI flows, audio sources, and data models. **Dictation and meeting recording run concurrently** (ADR-015) -- a user can dictate freely during a meeting recording. Each flow owns its own AVAudioEngine; macOS HAL handles mic multiplexing.
+All three modes share the same STT scheduler/runtime path but have different UI flows, audio sources, and data models. Parakeet is the default engine; Whisper can be selected globally or per CLI call for languages Parakeet does not cover. **Dictation and meeting recording run concurrently** (ADR-015) -- a user can dictate freely during a meeting recording. Each flow owns its own AVAudioEngine; macOS HAL handles mic multiplexing.
 
-ADR-016 defines the STT architecture as one process-wide runtime/scheduler path with a reserved dictation slot and a shared background slot where meeting work outranks file transcription.
+ADR-016 defines the STT architecture as one process-wide scheduler path with a reserved dictation slot and a shared background slot where meeting work outranks file transcription. ADR-021 extends that path with speech-engine routing, engine-switch guards, and meeting-session engine leases.
 
-### STT Integration (Parakeet via FluidAudio)
+### STT Integration (Parakeet default, Whisper optional)
 
 - Native Swift SDK via FluidAudio (CoreML on the Neural Engine)
 - Parakeet TDT 0.6B-v3 returns word-level timestamps + confidence scores
@@ -137,9 +139,12 @@ ADR-016 defines the STT architecture as one process-wide runtime/scheduler path 
 - ~66 MB working memory per active Parakeet inference slot (vs ~2 GB+ on GPU/MLX)
 - ~6 GB CoreML speech model bundle downloaded during onboarding
 - ~130 MB diarization asset bundle prepared alongside onboarding/default speaker-detection readiness
+- WhisperKit is available as a local secondary engine for broader language coverage; default model variant is `large-v3-v20240930_turbo_632MB`
+- Whisper language hints are optional (`auto` means detect); persisted default is stored in `UserDefaults` and exposed in Settings
 - One process-wide `STTRuntime` owner manages model lifecycle for the app
 - The default STT topology uses 2 execution slots: reserved dictation + shared meeting/batch
 - One `STTScheduler` owns slot assignment, priority, backpressure, cancellation, and job-scoped progress
+- Active meeting recordings capture the selected engine/language at start; engine switching is blocked while speech work or a meeting engine lease is active
 
 **Swift API:**
 ```swift
@@ -156,6 +161,7 @@ let result = try await manager.transcribe(audioSamples, source: .system)
 ```
 CPU:  MacParakeet app (UI, hotkeys, clipboard, history)
 ANE:  Parakeet STT (via FluidAudio/CoreML) -- dedicated ML chip
+CPU/GPU/CoreML as selected by WhisperKit: optional multilingual STT
 ```
 
 ### Database
@@ -431,7 +437,8 @@ open Package.swift  # Select MacParakeet scheme
 |------|------|
 | App bundle | `/Applications/MacParakeet.app` |
 | Database | `~/Library/Application Support/MacParakeet/macparakeet.db` |
-| STT models | `~/Library/Application Support/MacParakeet/models/stt/` (CoreML, ~6 GB) |
+| Parakeet STT models | FluidAudio default cache (CoreML, ~6 GB) |
+| Whisper STT models | `~/Library/Application Support/MacParakeet/models/stt/whisper/` |
 | yt-dlp binary | `~/Library/Application Support/MacParakeet/bin/yt-dlp` |
 | FFmpeg binary | `~/Library/Application Support/MacParakeet/bin/ffmpeg` |
 | Settings | `~/Library/Preferences/com.macparakeet.plist` |

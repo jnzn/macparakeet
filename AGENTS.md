@@ -9,8 +9,9 @@
 
 MacParakeet is a fast, private, local-first voice app for macOS with three
 co-equal modes: system-wide dictation, file transcription, and meeting
-recording. Powered by NVIDIA Parakeet TDT 0.6B v3 via FluidAudio CoreML on
-the Apple Neural Engine.
+recording. Parakeet TDT 0.6B v3 via FluidAudio CoreML on the Apple Neural
+Engine is the default STT engine. WhisperKit is also available as an optional
+local multilingual engine for languages Parakeet does not cover.
 
 Free and open-source (GPL-3.0). Apple Silicon only. Requires macOS 14.2+.
 
@@ -92,7 +93,8 @@ Full spec is in [`spec/`](./spec/). Architectural decisions (locked) are in
 |------|------|
 | App bundle | `/Applications/MacParakeet.app` |
 | Database | `~/Library/Application Support/MacParakeet/macparakeet.db` |
-| CoreML STT models (~6 GB) | `~/Library/Application Support/MacParakeet/models/stt/` |
+| Parakeet CoreML STT models (~6 GB) | FluidAudio default cache |
+| WhisperKit STT models | `~/Library/Application Support/MacParakeet/models/stt/whisper/` |
 | Settings | `~/Library/Preferences/com.macparakeet.plist` |
 | Logs | `~/Library/Logs/MacParakeet/` |
 
