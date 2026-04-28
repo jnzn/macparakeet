@@ -45,6 +45,10 @@ struct SettingsRow<Trailing: View>: View {
 /// Convenience for the common case: a row whose trailing control is a
 /// `Toggle`. Visually identical to the old `settingsToggleRow` helper so
 /// migration is byte-for-byte compatible.
+///
+/// VoiceOver reads the row as one element ("Save dictation history,
+/// switch, off"). The visible title is the toggle's accessibility label
+/// so the toggle isn't an orphaned "switch, off" announcement.
 struct SettingsToggleRow: View {
     let title: String
     let detail: String
@@ -55,6 +59,8 @@ struct SettingsToggleRow: View {
             Toggle("", isOn: $isOn)
                 .labelsHidden()
                 .toggleStyle(.switch)
+                .accessibilityLabel(title)
+                .accessibilityHint(detail)
         }
     }
 }

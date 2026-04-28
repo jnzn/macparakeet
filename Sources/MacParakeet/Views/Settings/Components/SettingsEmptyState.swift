@@ -31,6 +31,7 @@ struct SettingsEmptyState: View {
                 .font(.system(size: 28, weight: .light))
                 .foregroundStyle(DesignSystem.Colors.accent.opacity(0.7))
                 .padding(.bottom, 4)
+                .accessibilityHidden(true)
 
             Text(title)
                 .font(DesignSystem.Typography.sectionTitle)
