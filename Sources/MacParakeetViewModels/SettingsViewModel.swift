@@ -852,12 +852,15 @@ public final class SettingsViewModel {
             // currently selected and keep the inactive engine on its disk-cache
             // status. Without this branch, switching to Whisper left the
             // Whisper badge stuck at "Not Loaded" forever.
+            //
+            // Snapshot the engine before the await so a mid-suspension toggle
+            // can't pair the new preference with the old engine's readiness.
+            let activeEngine = self.speechEnginePreference
             let activeEngineLoaded = await sttClient.isReady()
             let parakeetCached = self.isSpeechModelCached()
             let whisperDownloaded = WhisperEngine.isModelDownloaded(
                 model: SpeechEnginePreference.whisperModelVariant(defaults: self.defaults)
             )
-            let activeEngine = self.speechEnginePreference
 
             if activeEngine == .parakeet, activeEngineLoaded {
                 self.parakeetStatus = .ready
