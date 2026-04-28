@@ -321,9 +321,7 @@ final class DictationFlowCoordinator {
 
         case .showProcessingState:
             overlayViewModel?.stopTimer()
-            overlayViewModel?.processingMessage = settingsViewModel.speechEnginePreference == .whisper
-                ? "Transcribing..."
-                : nil
+            overlayViewModel?.processingMessage = nil
             overlayViewModel?.busyProcessingMessage = nil
             overlayViewModel?.state = .processing
 
