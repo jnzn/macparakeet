@@ -18,6 +18,28 @@ struct SettingsStatusChip: View {
         case recommended
         case required
         case info
+
+        /// Single source of truth for status tint. Reused by `SettingsTabBar`
+        /// for the per-tab badge dot so the two surfaces never drift.
+        var color: Color {
+            switch self {
+            case .ok: return DesignSystem.Colors.successGreen
+            case .recommended: return DesignSystem.Colors.warningAmber
+            case .required: return DesignSystem.Colors.errorRed
+            case .info: return DesignSystem.Colors.textSecondary
+            }
+        }
+
+        /// Spoken before the human-readable label so VoiceOver users hear
+        /// the severity first ("Action required: Permission needed").
+        var accessibilityPrefix: String {
+            switch self {
+            case .ok: return "Status OK"
+            case .recommended: return "Action recommended"
+            case .required: return "Action required"
+            case .info: return "Status"
+            }
+        }
     }
 
     let status: Status
@@ -26,48 +48,21 @@ struct SettingsStatusChip: View {
     var body: some View {
         HStack(spacing: 6) {
             Circle()
-                .fill(tint)
+                .fill(status.color)
                 .frame(width: 6, height: 6)
 
             Text(label)
                 .font(DesignSystem.Typography.micro.weight(.medium))
-                .foregroundStyle(textColor)
+                .foregroundStyle(status.color)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(
             Capsule()
-                .fill(tint.opacity(0.12))
+                .fill(status.color.opacity(0.12))
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(accessibilityPrefix): \(label)")
-    }
-
-    private var tint: Color {
-        switch status {
-        case .ok: return DesignSystem.Colors.successGreen
-        case .recommended: return DesignSystem.Colors.warningAmber
-        case .required: return DesignSystem.Colors.errorRed
-        case .info: return DesignSystem.Colors.textSecondary
-        }
-    }
-
-    private var textColor: Color {
-        switch status {
-        case .ok: return DesignSystem.Colors.successGreen
-        case .recommended: return DesignSystem.Colors.warningAmber
-        case .required: return DesignSystem.Colors.errorRed
-        case .info: return DesignSystem.Colors.textSecondary
-        }
-    }
-
-    private var accessibilityPrefix: String {
-        switch status {
-        case .ok: return "Status OK"
-        case .recommended: return "Action recommended"
-        case .required: return "Action required"
-        case .info: return "Status"
-        }
+        .accessibilityLabel("\(status.accessibilityPrefix): \(label)")
     }
 }
 
