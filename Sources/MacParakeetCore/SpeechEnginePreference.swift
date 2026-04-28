@@ -66,11 +66,7 @@ public enum SpeechEnginePreference: String, CaseIterable, Codable, Sendable {
     }
 
     public static func normalizeLanguage(_ language: String?) -> String? {
-        guard let language else { return nil }
-        let trimmed = language.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        let lowercased = trimmed.replacingOccurrences(of: "_", with: "-").lowercased()
-        return lowercased == "auto" || lowercased == "auto-detect" ? nil : lowercased
+        WhisperLanguageCatalog.canonicalCode(for: language)
     }
 
     public static func normalizeModelVariant(_ variant: String?) -> String? {

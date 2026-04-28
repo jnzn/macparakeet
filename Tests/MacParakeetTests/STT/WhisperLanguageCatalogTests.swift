@@ -39,6 +39,12 @@ final class WhisperLanguageCatalogTests: XCTestCase {
         XCTAssertEqual(WhisperLanguageCatalog.language(forCode: "ko")?.englishName, "Korean")
     }
 
+    func testLookupCanonicalizesLegacyRegionTags() {
+        XCTAssertEqual(WhisperLanguageCatalog.canonicalCode(for: "KO_kr"), "ko")
+        XCTAssertEqual(WhisperLanguageCatalog.language(forCode: "ko-kr")?.englishName, "Korean")
+        XCTAssertEqual(WhisperLanguageCatalog.displayLabel(for: "ko-kr"), "Korean")
+    }
+
     func testLookupReturnsNilForUnknownCode() {
         XCTAssertNil(WhisperLanguageCatalog.language(forCode: "xx"))
     }
