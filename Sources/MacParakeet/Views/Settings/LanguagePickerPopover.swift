@@ -17,15 +17,16 @@ struct LanguagePickerButton: View {
         Button {
             isShowing = true
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: DesignSystem.Spacing.xs) {
                 Text(WhisperLanguageCatalog.displayLabel(for: selection))
+                    .font(DesignSystem.Typography.bodySmall)
                     .lineLimit(1)
-                Spacer(minLength: 4)
+                Spacer(minLength: DesignSystem.Spacing.xs)
                 Image(systemName: "chevron.up.chevron.down")
                     .imageScale(.small)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DesignSystem.Colors.textSecondary)
             }
-            .frame(width: 160)
+            .frame(width: LanguagePickerLayout.buttonWidth)
         }
         .buttonStyle(.bordered)
         .disabled(isDisabled)
@@ -66,18 +67,19 @@ struct LanguagePickerPopover: View {
             Divider()
             list
         }
-        .frame(width: 280)
+        .frame(width: LanguagePickerLayout.popoverWidth)
         .onAppear { searchFocused = true }
     }
 
     // MARK: - Search field
 
     private var searchField: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: DesignSystem.Spacing.xs) {
             Image(systemName: "magnifyingglass")
                 .imageScale(.small)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DesignSystem.Colors.textSecondary)
             TextField("Search languages", text: $query)
+                .font(DesignSystem.Typography.bodySmall)
                 .textFieldStyle(.plain)
                 .focused($searchFocused)
                 .onSubmit { commitHighlighted() }
@@ -88,14 +90,14 @@ struct LanguagePickerPopover: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .imageScale(.small)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(DesignSystem.Colors.textTertiary)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.horizontal, DesignSystem.Spacing.sm)
+        .padding(.vertical, DesignSystem.Spacing.sm)
     }
 
     // MARK: - List
@@ -123,14 +125,14 @@ struct LanguagePickerPopover: View {
                             row(for: language)
                                 .id(language.code)
                             if index == 0 && language.code == WhisperLanguageCatalog.autoCode && rows.count > 1 {
-                                Divider().padding(.horizontal, 8)
+                                Divider().padding(.horizontal, DesignSystem.Spacing.sm)
                             }
                         }
                     }
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, DesignSystem.Spacing.xs)
             }
-            .frame(maxHeight: 320)
+            .frame(maxHeight: LanguagePickerLayout.listMaxHeight)
             .background(KeyEventCatcher(
                 onUp: { moveHighlight(by: -1, proxy: proxy) },
                 onDown: { moveHighlight(by: 1, proxy: proxy) },
@@ -150,10 +152,10 @@ struct LanguagePickerPopover: View {
 
     private var emptyState: some View {
         Text("No matches")
-            .font(.callout)
-            .foregroundStyle(.secondary)
+            .font(DesignSystem.Typography.bodySmall)
+            .foregroundStyle(DesignSystem.Colors.textSecondary)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 24)
+            .padding(.vertical, DesignSystem.Spacing.lg)
     }
 
     // MARK: - Row
@@ -165,32 +167,33 @@ struct LanguagePickerPopover: View {
         return Button {
             commit(language.code)
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: DesignSystem.Spacing.sm) {
                 Image(systemName: "checkmark")
                     .imageScale(.small)
-                    .foregroundStyle(isSelected ? Color.accentColor : .clear)
-                    .frame(width: 12)
+                    .foregroundStyle(isSelected ? DesignSystem.Colors.accent : .clear)
+                    .frame(width: LanguagePickerLayout.checkmarkWidth)
                 Text(language.englishName)
-                    .foregroundStyle(.primary)
+                    .font(DesignSystem.Typography.bodySmall)
+                    .foregroundStyle(DesignSystem.Colors.textPrimary)
                     .lineLimit(1)
-                Spacer(minLength: 8)
+                Spacer(minLength: DesignSystem.Spacing.sm)
                 if !language.nativeName.isEmpty
                     && language.nativeName != language.englishName {
                     Text(language.nativeName)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .font(DesignSystem.Typography.bodySmall)
+                        .foregroundStyle(DesignSystem.Colors.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
+            .padding(.horizontal, DesignSystem.Spacing.sm)
+            .padding(.vertical, DesignSystem.Spacing.xs)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(isHighlighted ? Color.accentColor.opacity(0.18) : Color.clear)
+                RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius, style: .continuous)
+                    .fill(isHighlighted ? DesignSystem.Colors.accent.opacity(LanguagePickerLayout.highlightOpacity) : Color.clear)
             )
-            .padding(.horizontal, 4)
+            .padding(.horizontal, DesignSystem.Spacing.xs)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -225,6 +228,14 @@ struct LanguagePickerPopover: View {
         selection = code
         onCommit()
     }
+}
+
+private enum LanguagePickerLayout {
+    static let buttonWidth: CGFloat = 160
+    static let popoverWidth: CGFloat = 280
+    static let listMaxHeight: CGFloat = 320
+    static let checkmarkWidth: CGFloat = 12
+    static let highlightOpacity = 0.18
 }
 
 // MARK: - Key event catcher
@@ -268,6 +279,9 @@ private struct KeyEventCatcher: NSViewRepresentable {
                     guard let self, let window = self.window, event.window === window else {
                         return event
                     }
+                    guard !self.shouldPassThrough(event, in: window) else {
+                        return event
+                    }
                     switch event.keyCode {
                     case 125: // arrow down
                         self.onDown?()
@@ -286,6 +300,19 @@ private struct KeyEventCatcher: NSViewRepresentable {
                 NSEvent.removeMonitor(monitor)
                 self.monitor = nil
             }
+        }
+
+        private func shouldPassThrough(_ event: NSEvent, in window: NSWindow) -> Bool {
+            if !event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
+                return true
+            }
+            if let textView = window.firstResponder as? NSTextView, textView.hasMarkedText() {
+                return true
+            }
+            if let fieldEditor = window.fieldEditor(false, for: nil) as? NSTextView, fieldEditor.hasMarkedText() {
+                return true
+            }
+            return false
         }
 
         deinit {

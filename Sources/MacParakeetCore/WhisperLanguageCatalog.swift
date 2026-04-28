@@ -130,6 +130,23 @@ public enum WhisperLanguageCatalog {
         uniqueKeysWithValues: all.map { ($0.code, $0) }
     )
 
+    /// WhisperKit accepts a handful of alternate names for the same language
+    /// token. Keep those searchable so the UI does not hide supported inputs
+    /// behind one preferred English label.
+    private static let aliasesByCode: [String: [String]] = [
+        "ca": ["valencian"],
+        "es": ["castilian"],
+        "ht": ["haitian"],
+        "lb": ["letzeburgesch"],
+        "my": ["myanmar"],
+        "nl": ["flemish"],
+        "pa": ["panjabi"],
+        "ps": ["pushto"],
+        "ro": ["moldavian", "moldovan"],
+        "si": ["sinhalese"],
+        "zh": ["mandarin"],
+    ]
+
     public static func language(forCode code: String) -> WhisperLanguage? {
         byCode[code.lowercased()]
     }
@@ -145,28 +162,36 @@ public enum WhisperLanguageCatalog {
 
     /// Returns languages ranked by relevance to `query`.
     /// Empty query returns the alphabetical list as-is (no Auto row).
-    /// Ranking: code-exact (0) → English-prefix (1) → native-prefix (2) → English-substring (3) → native-substring (4).
+    /// Ranking: code-exact → code-prefix → English-prefix → native-prefix
+    /// → alias-prefix → English-substring → native-substring → alias-substring.
     /// Within a rank, alphabetical by English name.
     public static func search(_ query: String) -> [WhisperLanguage] {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let trimmed = normalizedSearchTerm(query)
         guard !trimmed.isEmpty else { return all }
 
         var results: [(rank: Int, language: WhisperLanguage)] = []
         for language in all {
-            let english = language.englishName.lowercased()
-            let native = language.nativeName.lowercased()
-            let code = language.code.lowercased()
+            let english = normalizedSearchTerm(language.englishName)
+            let native = normalizedSearchTerm(language.nativeName)
+            let code = normalizedSearchTerm(language.code)
+            let aliases = aliasesByCode[language.code, default: []].map(normalizedSearchTerm)
             let rank: Int
             if code == trimmed {
                 rank = 0
-            } else if english.hasPrefix(trimmed) {
+            } else if code.hasPrefix(trimmed) {
                 rank = 1
-            } else if !native.isEmpty && native.hasPrefix(trimmed) {
+            } else if english.hasPrefix(trimmed) {
                 rank = 2
-            } else if english.contains(trimmed) {
+            } else if !native.isEmpty && native.hasPrefix(trimmed) {
                 rank = 3
-            } else if native.contains(trimmed) {
+            } else if aliases.contains(where: { $0.hasPrefix(trimmed) }) {
                 rank = 4
+            } else if english.contains(trimmed) {
+                rank = 5
+            } else if native.contains(trimmed) {
+                rank = 6
+            } else if aliases.contains(where: { $0.contains(trimmed) }) {
+                rank = 7
             } else {
                 continue
             }
@@ -179,5 +204,12 @@ public enum WhisperLanguageCatalog {
                 return lhs.language.englishName < rhs.language.englishName
             }
             .map(\.language)
+    }
+
+    private static func normalizedSearchTerm(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+            .lowercased()
     }
 }

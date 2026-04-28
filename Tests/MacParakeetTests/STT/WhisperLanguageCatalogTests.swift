@@ -58,11 +58,15 @@ final class WhisperLanguageCatalogTests: XCTestCase {
 
     func testCodeExactMatchOutranksPrefixMatch() {
         // "es" is the Spanish code AND the prefix of "Estonian".
-        // Spanish should come first because code-exact (rank 0) outranks
-        // English-prefix (rank 1).
+        // Spanish should come first because code-exact outranks English-prefix.
         let results = WhisperLanguageCatalog.search("es")
         XCTAssertEqual(results.first?.code, "es", "code match should rank above prefix match")
         XCTAssertTrue(results.contains { $0.code == "et" }, "Estonian should still appear")
+    }
+
+    func testCodePrefixMatchesMultiCharacterCodes() {
+        let results = WhisperLanguageCatalog.search("yu")
+        XCTAssertEqual(results.first?.code, "yue")
     }
 
     func testEnglishPrefixMatchesAreReturned() {
@@ -74,6 +78,17 @@ final class WhisperLanguageCatalogTests: XCTestCase {
         // Typing the first jamo of 한국어 should find Korean via native-prefix.
         let results = WhisperLanguageCatalog.search("한")
         XCTAssertEqual(results.first?.code, "ko")
+    }
+
+    func testAliasSearchFindsWhisperKitNames() {
+        XCTAssertEqual(WhisperLanguageCatalog.search("mandarin").first?.code, "zh")
+        XCTAssertEqual(WhisperLanguageCatalog.search("castilian").first?.code, "es")
+        XCTAssertEqual(WhisperLanguageCatalog.search("myanmar").first?.code, "my")
+    }
+
+    func testNativeScriptSearchIsDiacriticInsensitive() {
+        let results = WhisperLanguageCatalog.search("espanol")
+        XCTAssertEqual(results.first?.code, "es")
     }
 
     func testNoMatchReturnsEmpty() {
