@@ -235,16 +235,17 @@ final class MeetingRecordingRecoveryServiceTests: XCTestCase {
 
     // MARK: - discoverPendingRecoveries - empty-session filter
 
-    func testDiscoverFiltersStubSessionAndPurgesFolder() async throws {
+    func testDiscoverFiltersStubSessionWithoutDeletingFolder() async throws {
         let stub = try makeEmptyStubSession()
 
         let pending = try await recoveryService.discoverPendingRecoveries()
 
         XCTAssertTrue(pending.isEmpty, "stub session with init-only audio should be filtered")
-        XCTAssertFalse(
+        XCTAssertTrue(
             FileManager.default.fileExists(atPath: stub.folderURL.path),
-            "stub session folder should be auto-purged so it doesn't accumulate"
+            "discovery must not delete recording folders before explicit recover/discard"
         )
+        XCTAssertNotNil(try lockStore.read(folderURL: stub.folderURL))
     }
 
     func testDiscoverFiltersSessionWithNoAudioFiles() async throws {
@@ -262,7 +263,8 @@ final class MeetingRecordingRecoveryServiceTests: XCTestCase {
         let pending = try await recoveryService.discoverPendingRecoveries()
 
         XCTAssertTrue(pending.isEmpty, "session with no audio files should be filtered")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: folderURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: folderURL.path))
+        XCTAssertNotNil(try lockStore.read(folderURL: folderURL))
     }
 
     func testDiscoverKeepsSessionWithViableAudio() async throws {
@@ -283,7 +285,8 @@ final class MeetingRecordingRecoveryServiceTests: XCTestCase {
 
         XCTAssertEqual(pending.map(\.sessionId), [viable.lock.sessionId])
         XCTAssertTrue(FileManager.default.fileExists(atPath: viable.folderURL.path))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: stub.folderURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: stub.folderURL.path))
+        XCTAssertNotNil(try lockStore.read(folderURL: stub.folderURL))
     }
 
     func testDiscoverKeepsSessionWhenOnlyOneChannelHasViableAudio() async throws {

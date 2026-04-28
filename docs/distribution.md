@@ -139,13 +139,16 @@ The build script accepts `VERSION` and `BUILD_NUMBER` env vars:
 
 ```bash
 VERSION=0.1.1 scripts/dist/build_app_bundle.sh   # set version explicitly
-scripts/dist/build_app_bundle.sh                   # defaults: VERSION=0.1.0, BUILD_NUMBER=UTC timestamp
+scripts/dist/build_app_bundle.sh                   # local/dev only: VERSION defaults to 0.0.0
 ```
 
 - **Patch bump** (0.1.x): Bug fixes, UX improvements to existing features
 - **Minor bump** (0.x.0): New user-facing features (e.g., speaker diarization GUI, batch processing)
 - **Build number**: Auto-generated UTC timestamp — always increases, which is what Sparkle uses to detect updates
 - Both new downloads (R2 DMG) and existing users (Sparkle appcast) get the same DMG
+- **Release builds must set `VERSION=X.Y.Z` explicitly.** The script's default
+  `0.0.0` is intentionally non-release metadata so local bundles cannot be
+  mistaken for a production Sparkle update.
 
 ### Step 1: Build
 

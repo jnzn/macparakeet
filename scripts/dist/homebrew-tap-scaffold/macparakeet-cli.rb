@@ -14,10 +14,10 @@
 class MacparakeetCli < Formula
   desc "Local STT, transcription, and prompt automation for Apple Silicon"
   homepage "https://macparakeet.com"
-  url "https://github.com/moona3k/macparakeet/releases/download/cli-v1.0.0/macparakeet-cli-1.0.0-darwin-arm64.tar.gz"
+  url "https://github.com/moona3k/macparakeet/releases/download/cli-v1.3.0/macparakeet-cli-1.3.0-darwin-arm64.tar.gz"
   sha256 "REPLACE_WITH_TARBALL_SHA256_AT_RELEASE_TIME"
   license "GPL-3.0-or-later"
-  version "1.0.0"
+  version "1.3.0"
 
   # macOS 14.2+ (Sonoma) — required by FluidAudio + Swift 6 runtime.
   # Homebrew's `depends_on macos:` only accepts major-version symbols, so

@@ -66,7 +66,9 @@ final class ModelLifecycleCommandTests: XCTestCase {
         let status = await loadSpeechStackStatus(
             sttClient: stt,
             diarizationService: diarization,
-            isSpeechModelCached: { true }
+            isSpeechModelCached: { true },
+            whisperModelVariant: "large-v3-v20240930_turbo_632MB",
+            isWhisperModelDownloaded: { $0 == "large-v3-v20240930_turbo_632MB" }
         )
 
         XCTAssertEqual(
@@ -75,7 +77,9 @@ final class ModelLifecycleCommandTests: XCTestCase {
                 speechModelCached: true,
                 speechRuntimeReady: true,
                 speakerModelsCached: false,
-                speakerModelsPrepared: false
+                speakerModelsPrepared: false,
+                whisperModelVariant: "large-v3-v20240930_turbo_632MB",
+                whisperModelDownloaded: true
             )
         )
         XCTAssertEqual(status.summary, "Speech model present, speaker models missing")

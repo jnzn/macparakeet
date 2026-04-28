@@ -14,7 +14,7 @@ set -euo pipefail
 # Environment variables:
 #   APP_NAME            (default: MacParakeet)
 #   BUNDLE_ID           (default: com.macparakeet.MacParakeet)
-#   VERSION             (default: 0.1.0)
+#   VERSION             (default: 0.0.0; release builds must set this explicitly)
 #   BUILD_NUMBER        (default: UTC timestamp, e.g. 20260213220512)
 #   BUILD_GIT_COMMIT    (default: current git short SHA)
 #   BUILD_DATE_UTC      (default: current UTC ISO-8601 timestamp)
@@ -37,7 +37,7 @@ DIST_DIR="$ROOT_DIR/dist"
 
 APP_NAME="${APP_NAME:-MacParakeet}"
 BUNDLE_ID="${BUNDLE_ID:-com.macparakeet.MacParakeet}"
-VERSION="${VERSION:-0.1.0}"
+VERSION="${VERSION:-0.0.0}"
 BUILD_NUMBER="${BUILD_NUMBER:-$(date -u +%Y%m%d%H%M%S)}"
 BUILD_GIT_COMMIT="${BUILD_GIT_COMMIT:-$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)}"
 BUILD_DATE_UTC="${BUILD_DATE_UTC:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
@@ -53,9 +53,15 @@ CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
 FRAMEWORKS_DIR="$CONTENTS_DIR/Frameworks"
+LEGAL_DIR="$RESOURCES_DIR/Legal"
 
 rm -rf "$APP_DIR"
-mkdir -p "$MACOS_DIR" "$RESOURCES_DIR" "$FRAMEWORKS_DIR"
+mkdir -p "$MACOS_DIR" "$RESOURCES_DIR" "$FRAMEWORKS_DIR" "$LEGAL_DIR"
+
+if [[ "$VERSION" == "0.0.0" ]]; then
+  echo "Warning: VERSION not set; building a local/dev bundle with CFBundleShortVersionString=0.0.0." >&2
+  echo "Set VERSION=X.Y.Z for release builds so Sparkle and release metadata are correct." >&2
+fi
 
 build_swiftpm() {
   if [[ "$SKIP_BUILD" == "1" ]]; then
@@ -446,6 +452,16 @@ else
   echo "Error: Assets/AppIcon.icns not found. Cannot build production app without icon." >&2
   exit 1
 fi
+
+# Ship license/notice material with the app bundle so downloaded artifacts carry
+# the GPL and third-party notices for bundled/downloaded helper binaries.
+if [[ -f "$ROOT_DIR/LICENSE" ]]; then
+  cp "$ROOT_DIR/LICENSE" "$LEGAL_DIR/LICENSE"
+fi
+if [[ -f "$ROOT_DIR/THIRD_PARTY_LICENSES.md" ]]; then
+  cp "$ROOT_DIR/THIRD_PARTY_LICENSES.md" "$LEGAL_DIR/THIRD_PARTY_LICENSES.md"
+fi
+echo "Bundled legal notices: $LEGAL_DIR"
 
 echo "[3/4] Writing Info.plist…"
 INFO_PLIST="$CONTENTS_DIR/Info.plist"
