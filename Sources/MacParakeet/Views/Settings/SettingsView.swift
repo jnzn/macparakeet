@@ -131,14 +131,22 @@ struct SettingsView: View {
         }
     }
 
-    /// Engine tab — speech recognition stack. Holds the existing
-    /// `localModelsCard` for now (engine selector + language + model status).
-    /// Sub-VM split (`EngineSettingsViewModel`) and a per-card decomposition
-    /// (Engine selector / Language / Models) land in a later commit.
+    /// Engine tab — speech recognition stack, decomposed into three cards
+    /// so each surface owns one decision the user makes:
+    ///
+    /// 1. `engineSelectorCard` — which engine? (Parakeet vs Whisper)
+    /// 2. `engineLanguageCard` — which language? (Whisper only — Parakeet
+    ///    auto-detects from its 25 supported European languages)
+    /// 3. `enginesModelsCard` — what's the local model state?
+    ///
+    /// Sub-VM split (`EngineSettingsViewModel`) lands in a later commit;
+    /// the cards keep reading from `viewModel` for now.
     private var engineTabContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
-                localModelsCard
+                engineSelectorCard
+                engineLanguageCard
+                enginesModelsCard
             }
             .padding(DesignSystem.Spacing.lg)
         }
@@ -848,13 +856,18 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Permissions
+    // MARK: - Engine
 
-    private var localModelsCard: some View {
-        settingsCard(
+    /// Engine card: which speech recognition engine to use. Status chip
+    /// surfaces only signal — silent in the steady state, `.info` while
+    /// switching, `.required` if the last switch failed (the existing red
+    /// inline error is preserved underneath for the full message).
+    private var engineSelectorCard: some View {
+        SettingsCard(
             title: "Speech Recognition",
             subtitle: "Parakeet is fastest. Whisper adds Korean and broader multilingual coverage.",
-            icon: "cpu"
+            icon: "cpu",
+            status: engineSelectorCardStatus
         ) {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
                 HStack(alignment: .center) {
@@ -880,21 +893,47 @@ struct SettingsView: View {
                         .font(DesignSystem.Typography.caption)
                         .foregroundStyle(DesignSystem.Colors.errorRed)
                 }
+            }
+        }
+    }
 
-                HStack(alignment: .center) {
-                    rowText(
-                        title: "Whisper language",
-                        detail: "Only used when Whisper is active. Auto-detect works for most files."
-                    )
-                    Spacer(minLength: DesignSystem.Spacing.md)
-                    LanguagePickerButton(
-                        selection: $viewModel.whisperDefaultLanguage,
-                        isDisabled: viewModel.speechEnginePreference != .whisper
-                    )
-                }
+    /// Whisper-only language card. Stays visible when Parakeet is active so
+    /// the user knows the control exists; the picker mutes itself and the
+    /// header chip reads "Inactive" so the visual state matches reality.
+    /// The picker button itself surfaces the current selection — no need for
+    /// a redundant left-side label.
+    private var engineLanguageCard: some View {
+        let isWhisperActive = viewModel.speechEnginePreference == .whisper
+        return SettingsCard(
+            title: "Whisper Language",
+            subtitle: "Only used when Whisper is the active engine. Auto-detect works for most files.",
+            icon: "globe",
+            status: isWhisperActive ? nil : SettingsCardStatus(.info, label: "Inactive")
+        ) {
+            HStack(alignment: .center) {
+                Text("Default language")
+                    .font(DesignSystem.Typography.body)
+                Spacer(minLength: DesignSystem.Spacing.md)
+                LanguagePickerButton(
+                    selection: $viewModel.whisperDefaultLanguage,
+                    isDisabled: !isWhisperActive
+                )
+            }
+        }
+    }
 
-                Divider()
-
+    /// Local-model dashboard. Status chip rolls up the worst severity across
+    /// both engines: any `.failed` → `.required`; missing model on the
+    /// active engine → `.recommended`; all `.ready` → `.ok`; transient
+    /// states → no chip (the per-row status pills already telegraph it).
+    private var enginesModelsCard: some View {
+        SettingsCard(
+            title: "Local Models",
+            subtitle: "Models live on this Mac. No audio is sent to the cloud.",
+            icon: "internaldrive",
+            status: enginesModelsCardStatus
+        ) {
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
                 modelStatusRow(
                     title: "Parakeet",
                     detail: viewModel.parakeetStatusDetail,
@@ -918,6 +957,43 @@ struct SettingsView: View {
                     viewModel.downloadWhisperModel()
                 }
             }
+        }
+    }
+
+    private var engineSelectorCardStatus: SettingsCardStatus? {
+        if viewModel.speechEngineSwitching {
+            return SettingsCardStatus(.info, label: "Switching…")
+        }
+        if viewModel.speechEngineError != nil {
+            return SettingsCardStatus(.required, label: "Action needed")
+        }
+        return nil
+    }
+
+    private var enginesModelsCardStatus: SettingsCardStatus? {
+        let parakeet = viewModel.parakeetStatus
+        let whisper = viewModel.whisperModelStatus
+        let active = viewModel.speechEnginePreference
+
+        if parakeet == .failed || whisper == .failed {
+            return SettingsCardStatus(.required, label: "Action needed")
+        }
+
+        let activeStatus: SettingsViewModel.LocalModelStatus
+        switch active {
+        case .parakeet: activeStatus = parakeet
+        case .whisper:  activeStatus = whisper
+        }
+
+        switch activeStatus {
+        case .notDownloaded:
+            return SettingsCardStatus(.recommended, label: "Download recommended")
+        case .ready, .notLoaded:
+            return parakeet == .ready || parakeet == .notLoaded
+                ? SettingsCardStatus(.ok, label: "Ready")
+                : nil
+        case .checking, .repairing, .unknown, .failed:
+            return nil
         }
     }
 
