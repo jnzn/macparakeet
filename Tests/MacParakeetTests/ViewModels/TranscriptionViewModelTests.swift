@@ -1130,7 +1130,7 @@ final class TranscriptionViewModelTests: XCTestCase {
             speechEngineOverride: SpeechEngineSelection(engine: .parakeet)
         )
 
-        try await Task.sleep(for: .milliseconds(300))
+        try await waitUntil { !self.viewModel.isTranscribing }
 
         let override = await mockService.lastSpeechEngineOverride
         XCTAssertEqual(override, SpeechEngineSelection(engine: .parakeet))
