@@ -142,11 +142,26 @@ public final class SettingsViewModel {
             Telemetry.send(.settingChanged(setting: .microphoneSelection))
         }
     }
+    public var meetingAudioSourceMode: MeetingAudioSourceMode {
+        didSet {
+            defaults.set(
+                meetingAudioSourceMode.rawValue,
+                forKey: UserDefaultsAppRuntimePreferences.meetingAudioSourceModeKey
+            )
+            Telemetry.send(.settingChanged(setting: .meetingAudioSourceMode))
+        }
+    }
     public var microphoneDeviceOptions: [MicrophoneDeviceOption] = []
     public var microphoneTestState: MicrophoneTestState = .idle
     public var microphoneTestLevel: Float = 0
     public var selectedMicrophoneStatusText: String {
         if selectedMicrophoneDeviceUID == Self.systemDefaultMicrophoneSelection {
+            if meetingAudioSourceMode == .systemOnly {
+                if let currentDefault = microphoneDeviceOptions.first(where: \.isDefault) {
+                    return "Using macOS System Default for dictation: \(currentDefault.name). Meeting recording is set to System Audio Only."
+                }
+                return "Using macOS System Default for dictation. Meeting recording is set to System Audio Only."
+            }
             if let currentDefault = microphoneDeviceOptions.first(where: \.isDefault) {
                 return "Using macOS System Default: \(currentDefault.name)."
             }
@@ -157,6 +172,9 @@ public final class SettingsViewModel {
         }
         guard selected.isAvailable else {
             return "Selected microphone is unavailable. MacParakeet will use System Default until it returns."
+        }
+        if meetingAudioSourceMode == .systemOnly {
+            return "Using \(selected.name) for dictation. Meeting recording is set to System Audio Only."
         }
         return "Using \(selected.name) for dictation and meeting microphone capture."
     }
@@ -442,6 +460,7 @@ public final class SettingsViewModel {
         selectedMicrophoneDeviceUID = Self.normalizedMicrophoneSelection(
             defaults.string(forKey: UserDefaultsAppRuntimePreferences.selectedMicrophoneDeviceUIDKey)
         )
+        meetingAudioSourceMode = MeetingAudioSourceMode.current(defaults: defaults)
         voiceReturnEnabled = defaults.bool(forKey: UserDefaultsAppRuntimePreferences.voiceReturnEnabledKey)
         voiceReturnTrigger = defaults.string(forKey: UserDefaultsAppRuntimePreferences.voiceReturnTriggerKey) ?? "press return"
         processingMode = Self.normalizedProcessingMode(defaults.string(forKey: UserDefaultsAppRuntimePreferences.processingModeKey))

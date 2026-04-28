@@ -39,6 +39,7 @@ final class MeetingRecordingFlowCoordinator {
     private let conversationRepo: ChatConversationRepositoryProtocol
     private let configStore: LLMConfigStoreProtocol
     private let cliConfigStore: LocalCLIConfigStore
+    private let meetingAudioSourceModeProvider: @MainActor @Sendable () -> MeetingAudioSourceMode
     private var llmService: LLMServiceProtocol?
     private let onMenuBarIconUpdate: (BreathWaveIcon.MenuBarState) -> Void
     private let onTranscriptionReady: (Transcription) -> Void
@@ -58,6 +59,7 @@ final class MeetingRecordingFlowCoordinator {
     private var completedTranscription: Transcription?
     private var currentMeetingOperationContext: ObservabilityOperationContext?
     private var currentMeetingTrigger: TelemetryMeetingRecordingTrigger?
+    private var pendingAudioSourceMode: MeetingAudioSourceMode?
 
     init(
         meetingRecordingService: MeetingRecordingServiceProtocol,
@@ -67,6 +69,7 @@ final class MeetingRecordingFlowCoordinator {
         conversationRepo: ChatConversationRepositoryProtocol,
         configStore: LLMConfigStoreProtocol,
         cliConfigStore: LocalCLIConfigStore = LocalCLIConfigStore(),
+        meetingAudioSourceModeProvider: @escaping @MainActor @Sendable () -> MeetingAudioSourceMode = { .microphoneAndSystem },
         llmService: LLMServiceProtocol?,
         onMenuBarIconUpdate: @escaping (BreathWaveIcon.MenuBarState) -> Void,
         onTranscriptionReady: @escaping (Transcription) -> Void,
@@ -80,6 +83,7 @@ final class MeetingRecordingFlowCoordinator {
         self.conversationRepo = conversationRepo
         self.configStore = configStore
         self.cliConfigStore = cliConfigStore
+        self.meetingAudioSourceModeProvider = meetingAudioSourceModeProvider
         self.llmService = llmService
         self.onMenuBarIconUpdate = onMenuBarIconUpdate
         self.onTranscriptionReady = onTranscriptionReady
@@ -189,6 +193,7 @@ final class MeetingRecordingFlowCoordinator {
         )
         pendingTrigger = nil
         pendingTitle = nil
+        pendingAudioSourceMode = nil
         currentMeetingOperationContext = nil
         currentMeetingTrigger = nil
         if wasCalendarTriggered {
@@ -231,16 +236,22 @@ final class MeetingRecordingFlowCoordinator {
         case .checkPermissions:
             let gen = stateMachine.generation
             actionTask = Task { @MainActor in
-                let microphoneStatus = await permissionService.checkMicrophonePermission()
+                let sourceMode = meetingAudioSourceModeProvider()
+                self.pendingAudioSourceMode = sourceMode
                 let microphoneGranted: Bool
-                switch microphoneStatus {
-                case .granted:
+                if sourceMode.capturesMicrophone {
+                    let microphoneStatus = await permissionService.checkMicrophonePermission()
+                    switch microphoneStatus {
+                    case .granted:
+                        microphoneGranted = true
+                    case .denied:
+                        microphoneGranted = false
+                    case .notDetermined:
+                        Telemetry.send(.permissionPrompted(permission: .microphone))
+                        microphoneGranted = await permissionService.requestMicrophonePermission()
+                    }
+                } else {
                     microphoneGranted = true
-                case .denied:
-                    microphoneGranted = false
-                case .notDetermined:
-                    Telemetry.send(.permissionPrompted(permission: .microphone))
-                    microphoneGranted = await permissionService.requestMicrophonePermission()
                 }
 
                 if !microphoneGranted {
@@ -249,7 +260,9 @@ final class MeetingRecordingFlowCoordinator {
                     self.sendEvent(.permissionsDenied(generation: gen, reason: .microphone))
                     return
                 }
-                Telemetry.send(.permissionGranted(permission: .microphone))
+                if sourceMode.capturesMicrophone {
+                    Telemetry.send(.permissionGranted(permission: .microphone))
+                }
 
                 let existingScreenGrant = permissionService.checkScreenRecordingPermission()
                 if !existingScreenGrant {
@@ -330,14 +343,16 @@ final class MeetingRecordingFlowCoordinator {
             // can't smuggle a stale trigger / title into this start.
             let trigger = pendingTrigger
             let title = pendingTitle
+            let sourceMode = pendingAudioSourceMode ?? meetingAudioSourceModeProvider()
             pendingTrigger = nil
             pendingTitle = nil
+            pendingAudioSourceMode = nil
             let operationContext = currentMeetingOperationContext ?? ObservabilityOperationContext()
             currentMeetingOperationContext = operationContext
             currentMeetingTrigger = trigger
             actionTask = Task { @MainActor in
                 do {
-                    try await meetingRecordingService.startRecording(title: title)
+                    try await meetingRecordingService.startRecording(title: title, sourceMode: sourceMode)
                     Telemetry.send(.meetingRecordingStarted(trigger: trigger))
                     self.onRecordingBegan()
                     self.sendEvent(.recordingStarted(generation: gen))
@@ -470,6 +485,7 @@ final class MeetingRecordingFlowCoordinator {
             let cancelledTrigger = currentMeetingTrigger ?? pendingTrigger
             pendingTrigger = nil
             pendingTitle = nil
+            pendingAudioSourceMode = nil
             actionTask?.cancel()
             actionTask = Task { @MainActor in
                 // Stop the in-flight debounce so it can't fire against a

@@ -689,6 +689,41 @@ final class MeetingRecordingServiceTests: XCTestCase {
         XCTAssertEqual(counts.system, 0)
     }
 
+    func testSystemOnlyCaptureProducesSystemSourceOnly() async throws {
+        let captureService = MockMeetingAudioCaptureService(
+            startReport: MeetingAudioCaptureStartReport(sourceMode: .systemOnly)
+        )
+        let audioConverter = RecordingMeetingAudioFileConverter()
+        let sttClient = CountingMeetingSTTClient()
+        let service = MeetingRecordingService(
+            audioCaptureService: captureService,
+            audioConverter: audioConverter,
+            sttTranscriber: sttClient
+        )
+
+        try await service.startRecording(sourceMode: .systemOnly)
+
+        let systemBuffer = try XCTUnwrap(makeMonoFloatBuffer(frameCount: 80_000, sampleValue: 0.5))
+        await captureService.yield(.systemBuffer(
+            systemBuffer,
+            AVAudioTime(hostTime: AVAudioTime.hostTime(forSeconds: 100.0))
+        ))
+        try await waitForMeetingSTTCall(sttClient) { $0.system >= 1 }
+
+        let output = try await service.stopRecording()
+        defer { try? FileManager.default.removeItem(at: output.folderURL) }
+
+        XCTAssertNil(output.sourceAlignment.microphone)
+        XCTAssertNotNil(output.sourceAlignment.system)
+        XCTAssertEqual(audioConverter.capturedMixedInputs(), [output.systemAudioURL])
+
+        let requestedSourceModes = await captureService.requestedSourceModes
+        XCTAssertEqual(requestedSourceModes, [.systemOnly])
+        let counts = await sttClient.callCounts
+        XCTAssertEqual(counts.microphone, 0)
+        XCTAssertGreaterThanOrEqual(counts.system, 1)
+    }
+
     func testStopRecordingMixesDualSourcesInMicrophoneThenSystemOrder() async throws {
         let captureService = MockMeetingAudioCaptureService()
         let audioConverter = RecordingMeetingAudioFileConverter()
@@ -836,6 +871,21 @@ final class MeetingRecordingServiceTests: XCTestCase {
         while await client.routedSelections.isEmpty {
             if startedAt.duration(to: .now) > timeout {
                 XCTFail("Timed out waiting for routed live chunk transcription")
+                return
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
+    private func waitForMeetingSTTCall(
+        _ client: CountingMeetingSTTClient,
+        timeout: Duration = .seconds(1),
+        _ predicate: @escaping ((microphone: Int, system: Int)) -> Bool
+    ) async throws {
+        let startedAt = ContinuousClock.now
+        while !predicate(await client.callCounts) {
+            if startedAt.duration(to: .now) > timeout {
+                XCTFail("Timed out waiting for meeting STT call")
                 return
             }
             try await Task.sleep(for: .milliseconds(20))
@@ -991,7 +1041,7 @@ private actor BlockingEventsMeetingAudioCaptureService: MeetingAudioCapturing {
         }
     }
 
-    func start() async throws -> MeetingAudioCaptureStartReport {
+    func start(sourceMode: MeetingAudioSourceMode?) async throws -> MeetingAudioCaptureStartReport {
         startCallCount += 1
         return MeetingAudioCaptureStartReport(
             microphone: MeetingMicrophoneCaptureStartReport(
@@ -1024,7 +1074,20 @@ private actor BlockingEventsMeetingAudioCaptureService: MeetingAudioCapturing {
 private actor MockMeetingAudioCaptureService: MeetingAudioCapturing {
     private var continuation: AsyncStream<MeetingAudioCaptureEvent>.Continuation?
     private var stream: AsyncStream<MeetingAudioCaptureEvent>?
+    private let startReport: MeetingAudioCaptureStartReport
     private(set) var startCallCount = 0
+    private(set) var requestedSourceModes: [MeetingAudioSourceMode?] = []
+
+    init(
+        startReport: MeetingAudioCaptureStartReport = MeetingAudioCaptureStartReport(
+            microphone: MeetingMicrophoneCaptureStartReport(
+                requestedMode: .vpioPreferred,
+                effectiveMode: .vpio
+            )
+        )
+    ) {
+        self.startReport = startReport
+    }
 
     var events: AsyncStream<MeetingAudioCaptureEvent> {
         if let stream {
@@ -1038,15 +1101,11 @@ private actor MockMeetingAudioCaptureService: MeetingAudioCapturing {
         return stream
     }
 
-    func start() async throws -> MeetingAudioCaptureStartReport {
+    func start(sourceMode: MeetingAudioSourceMode?) async throws -> MeetingAudioCaptureStartReport {
         startCallCount += 1
+        requestedSourceModes.append(sourceMode)
         _ = events
-        return MeetingAudioCaptureStartReport(
-            microphone: MeetingMicrophoneCaptureStartReport(
-                requestedMode: .vpioPreferred,
-                effectiveMode: .vpio
-            )
-        )
+        return startReport
     }
 
     func stop() async {
@@ -1080,7 +1139,7 @@ private actor BlockingStartMeetingAudioCaptureService: MeetingAudioCapturing {
         return stream
     }
 
-    func start() async throws -> MeetingAudioCaptureStartReport {
+    func start(sourceMode: MeetingAudioSourceMode?) async throws -> MeetingAudioCaptureStartReport {
         startCallCount += 1
         resumeSatisfiedStartWaiters()
 
