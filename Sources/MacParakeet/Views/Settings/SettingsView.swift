@@ -958,6 +958,7 @@ struct SettingsView: View {
                         Text("See the full event catalog")
                         Image(systemName: "arrow.up.right.square")
                             .font(.caption)
+                            .accessibilityHidden(true)
                     }
                 }
                 .buttonStyle(.link)
