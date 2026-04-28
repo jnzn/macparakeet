@@ -6,6 +6,7 @@ actor LiveChunkTranscriber {
     struct SessionContext: Sendable {
         let id: UUID
         let chunkFolderURL: URL
+        let speechEngine: SpeechEngineSelection
     }
 
     struct OrderedResult: Sendable {
@@ -133,6 +134,21 @@ actor LiveChunkTranscriber {
             .appendingPathComponent("\(source.rawValue)-\(chunk.startMs)-\(chunk.endMs).wav")
         try writeChunkAudio(samples: chunk.samples, to: chunkURL)
         defer { try? FileManager.default.removeItem(at: chunkURL) }
+        if let routedTranscriber = sttTranscriber as? any SpeechEngineRoutedTranscribing {
+            return try await routedTranscriber.transcribe(
+                audioPath: chunkURL.path,
+                job: .meetingLiveChunk,
+                speechEngine: context.speechEngine,
+                onProgress: nil
+            )
+        }
+
+        guard context.speechEngine == SpeechEngineSelection(engine: .parakeet) else {
+            throw STTError.engineStartFailed(
+                "Pinned \(context.speechEngine.engine.rawValue) speech engine cannot be honored by this transcriber."
+            )
+        }
+
         return try await sttTranscriber.transcribe(
             audioPath: chunkURL.path,
             job: .meetingLiveChunk,

@@ -53,7 +53,7 @@ struct TranscribeCommand: AsyncParsableCommand {
     @Option(help: "Speech engine: parakeet, whisper.")
     var engine: TranscribeSpeechEngine = .parakeet
 
-    @Option(help: "Language hint for Whisper, as a BCP-47/language code such as ko or en. Parakeet ignores this flag.")
+    @Option(help: "Language hint for Whisper, as a Whisper code such as ko or en. Parakeet ignores this flag.")
     var language: String?
 
     @Option(help: "Downloaded YouTube audio retention: app-default, keep, delete.")

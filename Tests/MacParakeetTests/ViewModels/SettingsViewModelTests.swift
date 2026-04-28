@@ -749,7 +749,7 @@ final class SettingsViewModelTests: XCTestCase {
 
     func testWhisperDefaultLanguagePersistsNormalizedValue() {
         viewModel.whisperDefaultLanguage = "KO_kr"
-        XCTAssertEqual(SpeechEnginePreference.whisperDefaultLanguage(defaults: testDefaults), "ko-kr")
+        XCTAssertEqual(SpeechEnginePreference.whisperDefaultLanguage(defaults: testDefaults), "ko")
 
         viewModel.whisperDefaultLanguage = "auto"
         XCTAssertNil(SpeechEnginePreference.whisperDefaultLanguage(defaults: testDefaults))
