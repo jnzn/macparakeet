@@ -43,6 +43,10 @@ struct SettingsView: View {
             // bail back to a tab at any time. Search results replace
             // the tab body; pending scroll targets only fire after the
             // user picks a result and the destination tab mounts.
+            //
+            // The animation crossfades the body when entering/exiting
+            // search. Tab-to-tab swaps stay snappy: only `isSearching`
+            // is animated, not `activeTab`.
             Group {
                 if rootViewModel.isSearching {
                     SettingsSearchResultsList(
@@ -62,6 +66,7 @@ struct SettingsView: View {
                     }
                 }
             }
+            .animation(DesignSystem.Animation.contentSwap, value: rootViewModel.isSearching)
         }
         .background(DesignSystem.Colors.background)
         .background(focusSearchHotkey)

@@ -1,4 +1,5 @@
 import XCTest
+@testable import MacParakeetCore
 @testable import MacParakeetViewModels
 
 final class SettingsSearchIndexTests: XCTestCase {
@@ -77,6 +78,29 @@ final class SettingsSearchIndexTests: XCTestCase {
     func testEveryTabHasAtLeastOneEntry() {
         let tabs = Set(SettingsSearchIndex.entries.map(\.tab))
         XCTAssertEqual(tabs, Set(SettingsTab.allCases), "Every tab should be reachable via search")
+    }
+
+    func testMeetingEntriesGatedOnFeatureFlag() {
+        // The flag is a compile-time constant, so only one arm runs in
+        // any given build. Asserting both directions documents the
+        // contract and forces a deliberate update if the gate semantics
+        // change. Ids: card + sub-card + cross-tab permission row.
+        let meetingGatedIds: Set<String> = ["meeting", "meeting.calendar", "system.permissions.screen"]
+        let presentIds = Set(SettingsSearchIndex.entries.map(\.id))
+        let intersection = presentIds.intersection(meetingGatedIds)
+
+        if AppFeatures.meetingRecordingEnabled {
+            XCTAssertEqual(
+                intersection,
+                meetingGatedIds,
+                "All meeting-gated entries should be present when the flag is on"
+            )
+        } else {
+            XCTAssertTrue(
+                intersection.isEmpty,
+                "No meeting-gated entries should appear when the flag is off"
+            )
+        }
     }
 
     func testResultsArePreservedInIndexOrder() {

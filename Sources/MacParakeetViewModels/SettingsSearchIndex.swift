@@ -1,4 +1,5 @@
 import Foundation
+import MacParakeetCore
 
 /// One searchable destination in the Settings panel — either a whole card
 /// or a specific row within a card. All entries point to a stable
@@ -69,10 +70,32 @@ public struct SettingsSearchEntry: Identifiable, Hashable, Sendable {
 /// **Maintenance:** when a Settings card is added, renamed, or moved
 /// between tabs, update both the entries here and the `cardAnchor` on
 /// the corresponding view's `.id(...)` modifier in `SettingsView.swift`.
-/// `SettingsSearchIndexTests.testEveryAnchorAppearsInView` keeps the
-/// two in sync.
+/// Anchor drift is currently caught by manual review — the index and
+/// the view are coupled by string convention, not by a compiler check.
+///
+/// **Feature flags:** entries pointing at meeting-recording surfaces
+/// are filtered out when `AppFeatures.meetingRecordingEnabled` is
+/// `false`, so search never lands on a card or row that won't render.
 public enum SettingsSearchIndex {
-    public static let entries: [SettingsSearchEntry] = [
+    /// Ids whose destination card or row is gated on
+    /// `AppFeatures.meetingRecordingEnabled`. When the flag is off these
+    /// entries are filtered out so search never lands on a destination
+    /// that won't render.
+    private static let meetingGatedIds: Set<String> = [
+        "meeting",
+        "meeting.calendar",
+        "system.permissions.screen"
+    ]
+
+    public static var entries: [SettingsSearchEntry] {
+        guard !AppFeatures.meetingRecordingEnabled else { return allEntries }
+        return allEntries.filter { !meetingGatedIds.contains($0.id) }
+    }
+
+    /// Full unfiltered catalog. Order matters: result lists are produced
+    /// by `entries.filter(...)`, and tests assert that the filter is
+    /// stable in index order.
+    private static let allEntries: [SettingsSearchEntry] = [
         // MARK: Modes
         SettingsSearchEntry(
             id: "audio.input",
@@ -104,6 +127,38 @@ public enum SettingsSearchIndex {
             title: "Transcription",
             subtitle: "How file and YouTube transcription behaves.",
             keywords: ["file", "youtube", "drag drop", "audio file", "video file", "transcribe"],
+            cardAnchor: "transcription"
+        ),
+        SettingsSearchEntry(
+            id: "transcription.hotkey.file",
+            tab: .modes,
+            title: "File transcription hotkey",
+            subtitle: "in Transcription",
+            keywords: ["hotkey", "shortcut", "file", "drag drop", "audio file", "video file"],
+            cardAnchor: "transcription"
+        ),
+        SettingsSearchEntry(
+            id: "transcription.hotkey.youtube",
+            tab: .modes,
+            title: "YouTube transcription hotkey",
+            subtitle: "in Transcription",
+            keywords: ["hotkey", "shortcut", "youtube", "url", "video"],
+            cardAnchor: "transcription"
+        ),
+        SettingsSearchEntry(
+            id: "transcription.diarization",
+            tab: .modes,
+            title: "Speaker detection",
+            subtitle: "in Transcription",
+            keywords: ["speaker", "diarization", "pyannote", "who said what", "speakers"],
+            cardAnchor: "transcription"
+        ),
+        SettingsSearchEntry(
+            id: "transcription.autosave",
+            tab: .modes,
+            title: "Auto-save transcripts to disk",
+            subtitle: "in Transcription",
+            keywords: ["auto save", "autosave", "export", "save", "disk", "folder", "file"],
             cardAnchor: "transcription"
         ),
         SettingsSearchEntry(
