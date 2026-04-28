@@ -1322,7 +1322,11 @@ struct SettingsView: View {
         case .ready:
             ("checkmark.circle.fill", "Ready", DesignSystem.Colors.successGreen)
         case .notLoaded:
-            ("pause.circle.fill", "Not Loaded", .secondary)
+            // The model is on disk and will lazy-load on first use; this is a
+            // healthy idle state, not an error. Earlier copy ("Not Loaded"
+            // with a pause icon) read as broken and prompted users to hit
+            // Repair to "fix" something that wasn't actually broken.
+            ("checkmark.circle.fill", "Downloaded", DesignSystem.Colors.successGreen)
         case .notDownloaded:
             ("arrow.down.circle.fill", "Not Downloaded", DesignSystem.Colors.errorRed)
         case .repairing:
