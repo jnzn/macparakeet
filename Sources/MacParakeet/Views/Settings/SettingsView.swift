@@ -801,16 +801,10 @@ struct SettingsView: View {
                         detail: "Only used when Whisper is active. Auto-detect works for most files."
                     )
                     Spacer(minLength: DesignSystem.Spacing.md)
-                    Picker("Whisper language", selection: $viewModel.whisperDefaultLanguage) {
-                        Text("Auto").tag("auto")
-                        Text("English").tag("en")
-                        Text("Korean").tag("ko")
-                        Text("Japanese").tag("ja")
-                        Text("Mandarin").tag("zh")
-                    }
-                    .labelsHidden()
-                    .frame(width: 160)
-                    .disabled(viewModel.speechEnginePreference != .whisper)
+                    LanguagePickerButton(
+                        selection: $viewModel.whisperDefaultLanguage,
+                        isDisabled: viewModel.speechEnginePreference != .whisper
+                    )
                 }
 
                 Divider()
