@@ -274,8 +274,27 @@ events remain useful for diarization-specific timing and failure analysis.
 | `cli_operation` | `operation_id`, `workflow_id`, `parent_operation_id`, `command`, `subcommand`, `outcome`, `duration_seconds`, `input_kind`, `output_format`, `json`, `exit_code`, `error_type` | Which CLI workflows are used by scripts/agents, and where they fail |
 
 CLI telemetry is initialized by `macparakeet-cli transcribe` and uses the same
-app preference as the GUI. Users and automation can also set
-`MACPARAKEET_TELEMETRY=0` to force-disable CLI telemetry for a process.
+app preference as the GUI. Override resolution order (first match wins):
+
+1. `MACPARAKEET_TELEMETRY=0/false/no/off` → force-off for this process
+2. `MACPARAKEET_TELEMETRY=1/true/yes/on` → force-on for this process
+3. `DO_NOT_TRACK=1` → force-off (industry-standard signal, also honored by
+   Homebrew, GitLab, VS Code)
+4. CI auto-disable: any of `CI`, `GITHUB_ACTIONS`, `GITLAB_CI`, `BUILDKITE`,
+   `CIRCLECI`, `TRAVIS`, `JENKINS_URL`, `TF_BUILD`, `TEAMCITY_VERSION` set to
+   a truthy value (avoids 1000-job agent runs flooding the endpoint)
+5. Persisted UserDefaults `telemetryEnabled` (default: true)
+
+CLI-only users (no GUI) can persist their preference via:
+
+```bash
+macparakeet-cli config set telemetry off   # also accepts on, true/false, 1/0
+macparakeet-cli config get telemetry
+macparakeet-cli config list
+```
+
+The CLI writes to the shared UserDefaults suite (`com.macparakeet.MacParakeet`),
+so a later GUI install picks the same preference up automatically.
 
 > **Important:** `error_occurred` includes a `description` field for full error visibility. The **Cloudflare Worker redacts PII server-side** before storage:
 > - File paths (`/Users/...`, `~/...`) → `[PATH]`

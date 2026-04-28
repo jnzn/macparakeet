@@ -82,3 +82,9 @@ This matrix traces each requirement ID from `requirements.yaml` to its implement
 | REQ-STT-003 | `MacParakeetCore/STT/STTScheduler.swift`, `MacParakeetCore/STT/STTClient.swift`, `MacParakeetViewModels/SettingsViewModel.swift`, `MacParakeet/Views/Settings/SettingsView.swift`, `MacParakeet/App/AppEnvironment.swift`, `MacParakeet/App/AppEnvironmentConfigurer.swift` | `STTSchedulerTests.swift`, `SettingsViewModelTests.swift` |
 | REQ-TRANS-002 | `CLI/Commands/TranscribeCommand.swift`, `CLI/Commands/ModelsCommand.swift`, `MacParakeetCore/STT/STTResult.swift`, `MacParakeetCore/Services/TranscriptionService.swift`, `MacParakeetCore/Services/AppPaths.swift` | `TranscribeCommandTests.swift`, `ModelLifecycleCommandTests.swift`, `TranscriptionServiceTests.swift` |
 | REQ-MEET-007 | `MacParakeetCore/Services/MeetingRecordingService.swift`, `MacParakeetCore/Services/MeetingRecordingMetadata.swift`, `MacParakeetCore/Services/MeetingRecordingOutput.swift`, `MacParakeetCore/Services/MeetingRecordingLockFileStore.swift`, `MacParakeetCore/Services/MeetingRecordingRecoveryService.swift`, `MacParakeetCore/Services/TranscriptionService.swift` | `MeetingRecordingServiceTests.swift`, `MeetingRecordingLockFileStoreTests.swift`, `MeetingRecordingRecoveryServiceTests.swift`, `TranscriptionServiceTests.swift`, `STTSchedulerTests.swift` |
+
+## CLI Public Surface
+
+| Requirement | Source Files | Test Files |
+|------------|-------------|------------|
+| REQ-CLI-001 | `CLI/MacParakeetCLI.swift`, `CLI/Commands/CLIHelpers.swift`, `CLI/Commands/CLITelemetry.swift`, `CLI/Commands/ConfigCommand.swift`, `CLI/Commands/TranscribeCommand.swift`, `MacParakeetCore/Services/TelemetryEvent.swift`, `MacParakeet/Views/Settings/SettingsView.swift` | `LLMJSONOutputTests.swift`, `CLITelemetryTests.swift`, `ConfigCommandTests.swift`, `CLIOperationPrivacyTests.swift` |
