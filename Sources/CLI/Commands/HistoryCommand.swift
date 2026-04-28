@@ -252,7 +252,10 @@ struct DeleteDictationSubcommand: ParsableCommand {
         let repo = DictationRepository(dbQueue: dbManager.dbQueue)
 
         let dictation = try findDictation(id: id, repo: repo)
-        _ = try repo.delete(id: dictation.id)
+        let deleted = try repo.delete(id: dictation.id)
+        guard deleted else {
+            throw CLILookupError.notFound("No dictation matching '\(id)'")
+        }
         if let path = dictation.audioPath {
             try? FileManager.default.removeItem(atPath: path)
         }
@@ -279,7 +282,10 @@ struct DeleteTranscriptionSubcommand: ParsableCommand {
         let repo = TranscriptionRepository(dbQueue: dbManager.dbQueue)
 
         let transcription = try findTranscription(id: id, repo: repo)
-        _ = try repo.delete(id: transcription.id)
+        let deleted = try repo.delete(id: transcription.id)
+        guard deleted else {
+            throw CLILookupError.notFound("No transcription matching '\(id)'")
+        }
         TranscriptionAssetCleanup.removeOwnedAssets(for: transcription)
         print("Deleted transcription: \"\(transcription.fileName)\"")
     }
