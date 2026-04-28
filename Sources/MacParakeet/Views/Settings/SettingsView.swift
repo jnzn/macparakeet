@@ -95,7 +95,7 @@ struct SettingsView: View {
     private var settingsHeaderShell: some View {
         HStack(spacing: DesignSystem.Spacing.md) {
             SettingsTabBar(
-                activeTab: $rootViewModel.activeTab,
+                activeTab: tabBindingExitingSearch,
                 tabBadges: tabBadges
             )
 
@@ -114,6 +114,22 @@ struct SettingsView: View {
     /// something to do on this tab." `resetCleanupCard`'s `.required
     /// "Destructive"` chip is intentionally excluded: the chip is a
     /// severity *label* on a deliberate destination, not an action item.
+    /// Wraps `rootViewModel.activeTab` so that any tab tap during search
+    /// also exits search mode. Without this, the body stays gated on
+    /// `isSearching` first and the tab pill slides over to the new tab
+    /// while the search results remain on screen — the click looks
+    /// accepted but nothing useful happens. `clearSearch()` is a no-op
+    /// when not searching, so non-search tab taps are unaffected.
+    private var tabBindingExitingSearch: Binding<SettingsTab> {
+        Binding(
+            get: { rootViewModel.activeTab },
+            set: { newTab in
+                rootViewModel.activeTab = newTab
+                rootViewModel.clearSearch()
+            }
+        )
+    }
+
     private var tabBadges: [SettingsTab: SettingsStatusChip.Status] {
         var badges: [SettingsTab: SettingsStatusChip.Status] = [:]
 

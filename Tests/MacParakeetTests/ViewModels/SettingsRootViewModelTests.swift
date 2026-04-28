@@ -60,6 +60,14 @@ final class SettingsRootViewModelTests: XCTestCase {
         vm.searchQuery = "   "
         XCTAssertFalse(vm.isSearching, "Whitespace-only query should not count as searching")
 
+        // `.whitespacesAndNewlines` matters here: the index trims newlines
+        // before matching, so if `isSearching` only trimmed `.whitespaces`
+        // a pasted newline would put the UI into search mode while the
+        // index returned zero results — a confusing "No matches" state
+        // for an effectively empty query.
+        vm.searchQuery = "\n\t"
+        XCTAssertFalse(vm.isSearching, "Newline / tab-only query should not count as searching")
+
         vm.searchQuery = "hotkey"
         XCTAssertTrue(vm.isSearching)
     }

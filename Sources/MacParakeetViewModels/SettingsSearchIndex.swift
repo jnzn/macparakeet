@@ -10,10 +10,10 @@ import MacParakeetCore
 /// they want to land on the row, not just the parent card. The `subtitle`
 /// carries the breadcrumb ("in Permissions") so the result is legible.
 public struct SettingsSearchEntry: Identifiable, Hashable, Sendable {
-    /// Stable id used both as the result-list row id and as the
-    /// `ScrollViewReader` target on the destination card. Card-level
-    /// entries match the `cardAnchor`; row-level entries get a `.row.X`
-    /// suffix so they're unique within the index.
+    /// Stable, unique id for this entry — used as the result-list row
+    /// id. Navigation targets the destination card via `cardAnchor`, so
+    /// multiple entries (for example, row-level matches inside the same
+    /// card) can share an anchor while keeping distinct ids.
     public let id: String
     public let tab: SettingsTab
     public let title: String

@@ -7,8 +7,7 @@ import Foundation
 ///   UserDefaults so a user who lives in System (e.g. while auditing
 ///   permissions) returns there on next launch.
 /// - `searchQuery` — top-of-panel search text; non-empty switches the panel
-///   into flat-results mode (the search index itself lands in a later session
-///   and is not part of the foundation chunk).
+///   into flat-results mode.
 ///
 /// Intentionally **does not** own per-tab state. Sub-VMs (`Modes`, `Engine`,
 /// `AI`, `System`) will be wired in subsequent commits and addressed by the
@@ -33,8 +32,12 @@ public final class SettingsRootViewModel {
 
     /// `true` when the user has typed something into the search field. The
     /// view collapses the tab layout into flat results in this state.
+    /// Trims `.whitespacesAndNewlines` so a pasted newline can't enter
+    /// search mode while `SettingsSearchIndex.matches` (which also trims
+    /// newlines) returns nothing — that mismatch produces a confusing
+    /// "No matches" state for what is effectively an empty query.
     public var isSearching: Bool {
-        !searchQuery.trimmingCharacters(in: .whitespaces).isEmpty
+        !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private let defaults: UserDefaults

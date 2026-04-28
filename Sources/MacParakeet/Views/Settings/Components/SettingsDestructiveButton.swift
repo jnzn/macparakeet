@@ -5,8 +5,8 @@ import SwiftUI
 /// Wraps the SwiftUI `.alert` modifier and `Button(role: .destructive)` pattern
 /// behind a single primitive, so the Reset & Cleanup card can declare three
 /// destructive actions without each one re-implementing the confirmation
-/// dance. Native `.alert` is intentionally preserved (not a custom modal) per
-/// the locked decision in `plans/active/2026-04-settings-ia-overhaul.md`.
+/// dance. Uses the native `.alert` modifier — a custom modal would buy a
+/// different look but no actual behavior the platform doesn't already give us.
 struct SettingsDestructiveButton: View {
     let title: String
     let confirmationTitle: String
