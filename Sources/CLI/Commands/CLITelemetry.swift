@@ -57,22 +57,25 @@ enum CLITelemetry {
         return .none
     }
 
+    /// Variables that conventionally mark a CI/automation context.
+    /// Hoisted out of `isCIEnvironment` so it isn't reallocated per call.
+    private static let ciEnvVars: [String] = [
+        "CI",
+        "GITHUB_ACTIONS",
+        "GITLAB_CI",
+        "BUILDKITE",
+        "CIRCLECI",
+        "TRAVIS",
+        "JENKINS_URL",
+        "TF_BUILD",
+        "TEAMCITY_VERSION"
+    ]
+
     /// Detects common CI/automation contexts. Conservative: only treats a variable as
     /// CI-positive when it's set to a truthy value, so `CI=false` (yes, some setups
     /// pass that) does not trigger auto-disable.
     static func isCIEnvironment(env: [String: String]) -> Bool {
-        let ciVars = [
-            "CI",
-            "GITHUB_ACTIONS",
-            "GITLAB_CI",
-            "BUILDKITE",
-            "CIRCLECI",
-            "TRAVIS",
-            "JENKINS_URL",
-            "TF_BUILD",
-            "TEAMCITY_VERSION"
-        ]
-        for name in ciVars {
+        for name in ciEnvVars {
             guard let raw = env[name]?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
                 continue
             }
