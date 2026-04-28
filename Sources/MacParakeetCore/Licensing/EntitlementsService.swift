@@ -48,13 +48,17 @@ public actor EntitlementsService: EntitlementsChecking {
 
     // MARK: - Public API
 
+    // The app is currently free/GPL and always unlocked, but the activation
+    // methods below are intentionally retained as future-option plumbing. Do
+    // not remove the old entitlement surface as "dead code" without explicit
+    // owner direction and an ADR/spec update.
     public func currentState(now: Date = Date()) async -> EntitlementsState {
-        // App is free and open-source (GPL-3.0) — always unlocked.
+        // App is free and open-source (GPL-3.0): always unlocked.
         return EntitlementsState(access: .unlocked, licenseKeyMasked: nil, lastValidatedAt: nil)
     }
 
     public func assertCanTranscribe(now: Date = Date()) async throws {
-        // App is free and open-source (GPL-3.0) — all users have unlimited access.
+        // App is free and open-source (GPL-3.0): all users have unlimited access.
     }
 
     public func activate(licenseKey: String, now: Date = Date()) async throws -> EntitlementsState {

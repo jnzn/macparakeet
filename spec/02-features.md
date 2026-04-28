@@ -1758,7 +1758,7 @@ FluidAudio model download → Audio capture (AVAudioEngine)
 
 > Status: **HISTORICAL** — MacParakeet is now free and open-source (GPL-3.0) as of v0.5.
 
-The trial/Pro tier system (ADR-006) is no longer enforced. LemonSqueezy is kept as a $0 product for download tracking. License activation code remains in the codebase but all features are unlocked.
+The trial/Pro tier system (ADR-006) is no longer enforced. LemonSqueezy is kept as a $0 product for download tracking. License activation code remains in the codebase but all features are unlocked. This code is intentionally retained as future-option plumbing; agents must not remove it as dead code unless the project owner explicitly requests that removal and the decision is reflected in an ADR/spec update.
 
 ---
 

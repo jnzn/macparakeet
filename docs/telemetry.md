@@ -231,7 +231,11 @@ events remain useful for diarization-specific timing and failure analysis.
 
 ### 6. Licensing — "Is the business working?"
 
-> Note: App is now free/GPL-3.0. The licensing enum cases are kept in `TelemetryEventName` for the historical $0 LemonSqueezy product, but most are dead code — only `license_activated` and `license_activation_failed` are wired today.
+> Note: App is now free/GPL-3.0. The licensing enum cases are intentionally
+> retained for the historical LemonSqueezy/trial entitlement surface and for a
+> possible future paid official distribution. Most are not emitted today; do not
+> remove them as dead code without explicit owner direction and an ADR/spec
+> update.
 
 | Event | Props | Question It Answers |
 |---|---|---|
@@ -533,4 +537,6 @@ External AI review of the telemetry design. Each point was evaluated and accepte
 - **A/B testing** — Not needed now, but the event infrastructure supports it
 - **Funnel analysis** — Can be done with SQL (session-based event sequences)
 - **~~Speaker diarization telemetry~~** — ✅ Shipped: `diarization_started`, `diarization_completed`, `diarization_failed`
-- **Clean up dead licensing events** — Remove unfired trial/purchase/restore event names from Swift enum and worker allowlist
+- **Legacy licensing telemetry** -- Keep unfired trial/purchase/restore event
+  names unless the project owner explicitly decides to remove the future
+  paid-distribution option and records that decision in an ADR/spec update
