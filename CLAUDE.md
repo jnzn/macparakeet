@@ -310,7 +310,7 @@ In-app feedback creates GitHub Issues via a Cloudflare Pages Function. User emai
 2. **ADRs are locked** -- Don't second-guess architectural decisions in `spec/adr/`.
 3. **Never lose user data** -- Graceful degradation for dictation history and transcriptions.
 4. **UI philosophy** -- Minimal during dictation, rich for transcription results.
-5. **Local-first** -- Speech recognition stays on-device by default. Optional provider and media-download flows are user-triggered; model/update/licensing flows and self-hosted telemetry/crash reporting are product-managed surfaces. Telemetry is opt-out in Settings and never includes audio or transcript content.
+5. **Local-first** -- Speech recognition stays on-device by default. Optional provider and media-download flows are user-triggered; model/update flows and self-hosted telemetry/crash reporting are product-managed surfaces. Legacy licensing endpoints remain in code but the app is free/GPL-3.0 and always unlocked. Telemetry is opt-out in Settings and never includes audio or transcript content.
 6. **Simplicity is the product** -- Resist feature creep. MacParakeet does three things well.
 7. **Fast feedback loops for agents** -- Design everything so the agent can verify its own work: tests for logic, CLI for headless smoke-testing, build errors that surface immediately.
 8. **Bounded agent discretion** -- Agents should choose the simplest process that works, but behavior changes must follow `spec/10-ai-coding-method.md` kernel workflow.
@@ -453,7 +453,7 @@ open Package.swift  # Select MacParakeet scheme
 | Accessibility | Global hotkey, paste simulation | First dictation use |
 | Screen & System Audio Recording | System audio capture for meeting recording (Core Audio Taps) | First meeting recording use |
 
-1. **Offline-first** -- Dictation and file transcription work fully offline. Network is limited to user-triggered downloads/providers, update/licensing flows, and opt-out anonymous telemetry.
+1. **Offline-first** -- Dictation and file transcription work fully offline. Network is limited to user-triggered downloads/providers, update checks, legacy licensing endpoints if invoked, and opt-out anonymous telemetry.
 2. **Temp files deleted** -- Audio removed after transcription (unless user saves)
 3. **Non-identifying telemetry** -- Anonymous, session-scoped, opt-out in Settings. No persistent IDs, no IP storage, no content. See `docs/telemetry.md` and ADR-012.
 4. **No accounts** -- No login, no email, no tracking
@@ -482,7 +482,7 @@ open Package.swift  # Select MacParakeet scheme
 | Manual NSApplication.run() | No SwiftUI `App` protocol -- manual `NSApplication.shared.run()` for reliable CLI execution without .app bundle. Same pattern as Oatmeal. |
 | NSStatusItem for menu bar | Menu bar via `NSStatusBar.system.statusItem()`, not SwiftUI `MenuBarExtra` |
 | NSWindow + NSHostingView | Main window created programmatically, SwiftUI content hosted via `NSHostingView` |
-| Core library has no UI deps | `MacParakeetCore` imports Foundation + GRDB + FluidAudio, never SwiftUI. **Exception:** `ExportService` imports AppKit for PDF/DOCX generation -- no Foundation-only alternative on macOS. |
+| Core library has no UI deps | `MacParakeetCore` imports Foundation + GRDB + FluidAudio plus optional WhisperKit, never SwiftUI. **Exception:** `ExportService` imports AppKit for PDF/DOCX generation -- no Foundation-only alternative on macOS. |
 | ViewModels in separate target | `MacParakeetViewModels/` -- testable without GUI, depends only on Core |
 | Views organized by feature | `Views/Dictation/`, `Views/Transcription/`, not flat |
 | Observable ViewModels | `@MainActor @Observable` on all ViewModels |

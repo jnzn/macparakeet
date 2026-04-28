@@ -149,8 +149,9 @@ Users who want local-only LLM can install Ollama (`brew install ollama && ollama
             ▼                        ▼
    ┌─────────────────┐   ┌──────────────────┐   ┌────────────────┐
    │  Cloud API       │   │  Local Runtime   │   │  CLI Tool      │
-   │  (Claude/GPT/    │   │  (Ollama)        │   │  (claude -p,   │
+   │  (Claude/GPT/    │   │  (Ollama,        │   │  (claude -p,   │
    │   Gemini)        │   │                  │   │   codex exec)  │
+   │                  │   │   LM Studio)     │   │                │
    └─────────────────┘   └──────────────────┘   └────────────────┘
 ```
 
@@ -162,12 +163,12 @@ public struct LLMProviderConfig: Codable, Sendable, Equatable {
     public let id: LLMProviderID       // .anthropic, .openai, .ollama, etc.
     public let baseURL: URL
     public let apiKey: String?         // nil for local providers; client injects Bearer ollama for Ollama
-    public let modelName: String       // "claude-sonnet-4-20250514", "gpt-4o", "llama3.2"
-    public let isLocal: Bool           // true for Ollama on the current branch
+    public let modelName: String       // "claude-sonnet-4-6", "gpt-4.1", "qwen3.5:4b"
+    public let isLocal: Bool           // true for Ollama, LM Studio, and loopback OpenAI-compatible endpoints
 }
 
 public enum LLMProviderID: String, Codable, Sendable, CaseIterable {
-    case anthropic, openai, gemini, openrouter, ollama, localCLI
+    case anthropic, openai, openaiCompatible, gemini, openrouter, ollama, lmstudio, localCLI
     // localCLI runs CLI tools (claude -p, codex exec) as subprocesses — no HTTP, no API key.
 }
 

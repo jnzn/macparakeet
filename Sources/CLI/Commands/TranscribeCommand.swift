@@ -65,7 +65,7 @@ struct TranscribeCommand: AsyncParsableCommand {
     @Flag(help: "Disable speaker diarization.")
     var noDiarize: Bool = false
 
-    @Flag(help: "Enable entitlement/trial checks to mirror GUI gating behavior.")
+    @Flag(help: "Run legacy entitlement checks before transcribing. Current free builds remain unlocked.")
     var enforceEntitlements: Bool = false
 
     static func resolveProcessingMode(_ mode: TranscribeMode, storedMode: String?) -> Dictation.ProcessingMode {

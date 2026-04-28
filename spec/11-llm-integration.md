@@ -64,6 +64,7 @@ The service boundary stays stable even though the transport is mixed.
 |----------|------|-----------------|------|
 | Anthropic | Cloud | `https://api.anthropic.com/v1/` | `Authorization: Bearer` |
 | OpenAI | Cloud | `https://api.openai.com/v1` | `Authorization: Bearer` |
+| OpenAI-Compatible | Custom | User-supplied | Optional API key; local loopback endpoints are treated as local |
 | Google Gemini | Cloud | `https://generativelanguage.googleapis.com/v1beta/openai` | `Authorization: Bearer` |
 | Ollama | Local | `http://localhost:11434/v1` | `apiKey: nil` in config; client injects `Bearer ollama` |
 | LM Studio | Local | `http://localhost:1234/v1` | `apiKey: nil` in config |
@@ -83,16 +84,18 @@ public struct LLMProviderConfig: Codable, Sendable, Equatable {
     public let id: LLMProviderID
     public let baseURL: URL
     public let apiKey: String?         // nil for local providers; client injects Bearer ollama for Ollama
-    public let modelName: String       // e.g. "claude-sonnet-4-20250514", "llama3.2"
-    public let isLocal: Bool           // true for Ollama on the current branch
+    public let modelName: String       // e.g. "claude-sonnet-4-6", "gpt-4.1", "qwen3.5:4b"
+    public let isLocal: Bool           // true for Ollama, LM Studio, and loopback OpenAI-compatible endpoints
 }
 
 public enum LLMProviderID: String, Codable, Sendable, CaseIterable {
     case anthropic
     case openai
+    case openaiCompatible
     case gemini
     case openrouter
     case ollama
+    case lmstudio
     case localCLI    // CLI tools (claude -p, codex exec) — no HTTP, no API key
 }
 ```
@@ -372,30 +375,26 @@ Respond with only the transformed text. Do not add explanations or preamble.
 
 > Historical note: this section predates the Prompt Library in [spec/12-processing-layer.md](12-processing-layer.md). The `summary` column shipped, but prompt persistence now lives in the prompt/summary model described in spec/12 rather than a standalone custom-transform store.
 
-### Transcription table (existing, add column)
+The original implementation added `transcriptions.summary`. The current branch
+migrated that legacy column into the `summaries` table, whose Swift model is
+`PromptResult`. Prompt templates live in `prompts`, generated outputs live in
+`summaries`, and transcript chat lives in `chat_conversations`. See
+[spec/01-data-model.md](01-data-model.md) and
+[spec/12-processing-layer.md](12-processing-layer.md) for the authoritative
+schema.
 
-```sql
-ALTER TABLE transcriptions ADD COLUMN summary TEXT;
-```
-
-### Custom transforms (new, UserDefaults — not DB)
-
-```swift
-struct CustomTransform: Codable, Identifiable {
-    let id: UUID
-    var name: String        // "Make formal"
-    var prompt: String      // "Rewrite the following text in a formal tone: {text}"
-    var isBuiltIn: Bool     // true for shipped transforms, false for user-created
-}
-```
-
-Custom transforms were the original plan. The current branch instead routes summary/transform prompting through the Prompt Library architecture in [spec/12-processing-layer.md](12-processing-layer.md).
+Custom transforms were the original plan for this spec. The current branch
+routes summary/transform prompting through the Prompt Library architecture in
+[spec/12-processing-layer.md](12-processing-layer.md).
 
 ---
 
 ## CLI Support
 
-All CLI LLM commands require `--provider` and `--api-key` (except Ollama, LM Studio, and Local CLI). Supported providers: `anthropic`, `openai`, `gemini`, `openrouter`, `ollama`, `lmstudio`, `cli`.
+All CLI LLM commands require `--provider`; `--api-key` is required only for
+cloud providers that need one. Supported providers: `anthropic`, `openai`,
+`openaiCompatible`/`openai-compatible`, `gemini`, `openrouter`, `ollama`,
+`lmstudio`, and `cli`.
 
 ```bash
 # Test provider connectivity
