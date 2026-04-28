@@ -113,6 +113,41 @@ final class MeetingAudioCaptureServiceTests: XCTestCase {
         XCTAssertEqual(systemBufferCount, 2_100)
     }
 
+    func testSystemOnlyModeStartsSystemTapWithoutMicrophone() async throws {
+        let microphone = MockMeetingMicrophoneCapture()
+        let systemTap = MockMeetingSystemAudioTap()
+        let service = MeetingAudioCaptureService(
+            microphoneCapture: microphone,
+            systemAudioTapFactory: { systemTap },
+            sourceModeProvider: { .systemOnly }
+        )
+
+        let capturedEvents = CapturedMeetingCaptureEvents()
+        let report = try await service.start { event in
+            Task {
+                await capturedEvents.append(event)
+            }
+        }
+        defer { Task { await service.stop() } }
+
+        XCTAssertEqual(report.sourceMode, .systemOnly)
+        XCTAssertFalse(report.microphoneStarted)
+        XCTAssertTrue(microphone.requestedModes.isEmpty)
+        XCTAssertEqual(systemTap.startCallCount, 1)
+
+        let buffer = try XCTUnwrap(makeInterleavedFloatStereoBuffer(
+            sampleRate: 48_000,
+            samples: [0.25, 0.25, 0.25, 0.25]
+        ))
+        microphone.emit(buffer: buffer, time: AVAudioTime(hostTime: 1))
+        systemTap.emit(buffer: buffer, time: AVAudioTime(hostTime: 1))
+
+        try await Task.sleep(for: .milliseconds(50))
+        let events = await capturedEvents.values()
+        XCTAssertEqual(events.systemBufferCount, 1)
+        XCTAssertEqual(events.microphoneBufferCount, 0)
+    }
+
     func testEmitsRuntimeErrorEventWhenMicrophoneStalls() async throws {
         let microphone = MockMeetingMicrophoneCapture()
         let service = MeetingAudioCaptureService(
@@ -367,8 +402,10 @@ private final class MockMeetingMicrophoneCapture: MeetingMicrophoneCapturing, @u
 private final class MockMeetingSystemAudioTap: MeetingSystemAudioTapping, @unchecked Sendable {
     private var handler: AudioBufferHandler?
     private var stallObserver: StallObserver?
+    private(set) var startCallCount = 0
 
     func start(handler: @escaping AudioBufferHandler, onStall: StallObserver?) throws {
+        startCallCount += 1
         self.handler = handler
         self.stallObserver = onStall
     }
@@ -396,5 +433,25 @@ private actor CapturedPCMBuffer {
 
     func value() -> AVAudioPCMBuffer? {
         buffer
+    }
+}
+
+private actor CapturedMeetingCaptureEvents {
+    private var microphoneBufferCount = 0
+    private var systemBufferCount = 0
+
+    func append(_ event: MeetingAudioCaptureEvent) {
+        switch event {
+        case .microphoneBuffer:
+            microphoneBufferCount += 1
+        case .systemBuffer:
+            systemBufferCount += 1
+        case .error:
+            break
+        }
+    }
+
+    func values() -> (microphoneBufferCount: Int, systemBufferCount: Int) {
+        (microphoneBufferCount, systemBufferCount)
     }
 }

@@ -52,6 +52,9 @@ final class AppEnvironment {
         let selectedInputDeviceUIDProvider: @Sendable () -> String? = { [runtimePreferences] in
             runtimePreferences.selectedMicrophoneDeviceUID
         }
+        let meetingAudioSourceModeProvider: @Sendable () -> MeetingAudioSourceMode = { [runtimePreferences] in
+            runtimePreferences.meetingAudioSourceMode
+        }
 
         sttRuntime = STTRuntime(
             speechEngine: SpeechEnginePreference.current(),
@@ -63,7 +66,8 @@ final class AppEnvironment {
         )
         meetingRecordingService = MeetingRecordingService(
             audioCaptureService: MeetingAudioCaptureService(
-                selectedInputDeviceUIDProvider: selectedInputDeviceUIDProvider
+                selectedInputDeviceUIDProvider: selectedInputDeviceUIDProvider,
+                sourceModeProvider: meetingAudioSourceModeProvider
             ),
             sttTranscriber: sttScheduler
         )

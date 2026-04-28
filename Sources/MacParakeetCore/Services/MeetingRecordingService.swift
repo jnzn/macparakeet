@@ -260,7 +260,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
 
             let captureStartReport = try await audioCaptureService.start()
             try await validateStartStillCurrent(session)
-            configureMicConditioner(from: captureStartReport.microphone)
+            configureMicConditioner(from: captureStartReport)
             processingTask = Task { [weak self] in
                 guard let self else { return }
                 for await event in events {
@@ -630,21 +630,30 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         }
     }
 
-    private func configureMicConditioner(from report: MeetingMicrophoneCaptureStartReport) {
-        switch report.effectiveMode {
+    private func configureMicConditioner(from report: MeetingAudioCaptureStartReport) {
+        guard report.microphoneStarted else {
+            micConditioner = SoftwareAECConditioner()
+            logger.info(
+                "meeting_mic_conditioner_skipped source_mode=\(report.sourceMode.rawValue, privacy: .public)"
+            )
+            return
+        }
+
+        let microphone = report.microphone
+        switch microphone.effectiveMode {
         case .vpio:
             micConditioner = VPIOConditioner()
         case .raw:
             micConditioner = SoftwareAECConditioner()
         }
 
-        if report.fellBackToRaw {
+        if microphone.fellBackToRaw {
             logger.notice(
-                "meeting_mic_conditioner_fallback requested=\(String(describing: report.requestedMode), privacy: .public) effective=raw requested_policy=\(String(describing: self.requestedMicProcessingMode), privacy: .public)"
+                "meeting_mic_conditioner_fallback requested=\(String(describing: microphone.requestedMode), privacy: .public) effective=raw requested_policy=\(String(describing: self.requestedMicProcessingMode), privacy: .public)"
             )
         } else {
             logger.info(
-                "meeting_mic_conditioner_selected requested=\(String(describing: report.requestedMode), privacy: .public) effective=\(report.effectiveMode.rawValue, privacy: .public)"
+                "meeting_mic_conditioner_selected requested=\(String(describing: microphone.requestedMode), privacy: .public) effective=\(microphone.effectiveMode.rawValue, privacy: .public)"
             )
         }
     }

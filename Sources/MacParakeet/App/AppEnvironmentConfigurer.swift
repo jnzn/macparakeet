@@ -207,6 +207,7 @@ final class AppEnvironmentConfigurer {
             transcriptionRepo: env.transcriptionRepo,
             conversationRepo: env.chatConversationRepo,
             configStore: env.llmConfigStore,
+            meetingAudioSourceModeProvider: { env.runtimePreferences.meetingAudioSourceMode },
             llmService: hasLLMConfig ? env.llmService : nil,
             onMenuBarIconUpdate: { _ in callbacks.onMenuBarIconUpdate() },
             onTranscriptionReady: { [weak self] transcription in

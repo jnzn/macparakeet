@@ -39,6 +39,7 @@ final class MeetingRecordingFlowCoordinator {
     private let conversationRepo: ChatConversationRepositoryProtocol
     private let configStore: LLMConfigStoreProtocol
     private let cliConfigStore: LocalCLIConfigStore
+    private let meetingAudioSourceModeProvider: @MainActor @Sendable () -> MeetingAudioSourceMode
     private var llmService: LLMServiceProtocol?
     private let onMenuBarIconUpdate: (BreathWaveIcon.MenuBarState) -> Void
     private let onTranscriptionReady: (Transcription) -> Void
@@ -67,6 +68,7 @@ final class MeetingRecordingFlowCoordinator {
         conversationRepo: ChatConversationRepositoryProtocol,
         configStore: LLMConfigStoreProtocol,
         cliConfigStore: LocalCLIConfigStore = LocalCLIConfigStore(),
+        meetingAudioSourceModeProvider: @escaping @MainActor @Sendable () -> MeetingAudioSourceMode = { .microphoneAndSystem },
         llmService: LLMServiceProtocol?,
         onMenuBarIconUpdate: @escaping (BreathWaveIcon.MenuBarState) -> Void,
         onTranscriptionReady: @escaping (Transcription) -> Void,
@@ -80,6 +82,7 @@ final class MeetingRecordingFlowCoordinator {
         self.conversationRepo = conversationRepo
         self.configStore = configStore
         self.cliConfigStore = cliConfigStore
+        self.meetingAudioSourceModeProvider = meetingAudioSourceModeProvider
         self.llmService = llmService
         self.onMenuBarIconUpdate = onMenuBarIconUpdate
         self.onTranscriptionReady = onTranscriptionReady
@@ -231,16 +234,21 @@ final class MeetingRecordingFlowCoordinator {
         case .checkPermissions:
             let gen = stateMachine.generation
             actionTask = Task { @MainActor in
-                let microphoneStatus = await permissionService.checkMicrophonePermission()
+                let sourceMode = meetingAudioSourceModeProvider()
                 let microphoneGranted: Bool
-                switch microphoneStatus {
-                case .granted:
+                if sourceMode.capturesMicrophone {
+                    let microphoneStatus = await permissionService.checkMicrophonePermission()
+                    switch microphoneStatus {
+                    case .granted:
+                        microphoneGranted = true
+                    case .denied:
+                        microphoneGranted = false
+                    case .notDetermined:
+                        Telemetry.send(.permissionPrompted(permission: .microphone))
+                        microphoneGranted = await permissionService.requestMicrophonePermission()
+                    }
+                } else {
                     microphoneGranted = true
-                case .denied:
-                    microphoneGranted = false
-                case .notDetermined:
-                    Telemetry.send(.permissionPrompted(permission: .microphone))
-                    microphoneGranted = await permissionService.requestMicrophonePermission()
                 }
 
                 if !microphoneGranted {
@@ -249,7 +257,9 @@ final class MeetingRecordingFlowCoordinator {
                     self.sendEvent(.permissionsDenied(generation: gen, reason: .microphone))
                     return
                 }
-                Telemetry.send(.permissionGranted(permission: .microphone))
+                if sourceMode.capturesMicrophone {
+                    Telemetry.send(.permissionGranted(permission: .microphone))
+                }
 
                 let existingScreenGrant = permissionService.checkScreenRecordingPermission()
                 if !existingScreenGrant {
