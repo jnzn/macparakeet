@@ -10,8 +10,14 @@ public enum MeetingAudioCaptureEvent: Sendable {
 
 public protocol MeetingAudioCapturing: Sendable {
     var events: AsyncStream<MeetingAudioCaptureEvent> { get async }
-    func start() async throws -> MeetingAudioCaptureStartReport
+    func start(sourceMode: MeetingAudioSourceMode?) async throws -> MeetingAudioCaptureStartReport
     func stop() async
+}
+
+public extension MeetingAudioCapturing {
+    func start() async throws -> MeetingAudioCaptureStartReport {
+        try await start(sourceMode: nil)
+    }
 }
 
 protocol MeetingMicrophoneCapturing: Sendable {
@@ -51,6 +57,7 @@ public actor MeetingAudioCaptureService {
     private let microphoneCapture: any MeetingMicrophoneCapturing
     private let systemAudioTapFactory: @Sendable () throws -> any MeetingSystemAudioTapping
     private let micProcessingMode: MeetingMicProcessingMode
+    private let sourceModeProvider: @Sendable () -> MeetingAudioSourceMode
     private let eventSink = EventSink()
 
     private var systemAudioTap: (any MeetingSystemAudioTapping)?
@@ -61,12 +68,14 @@ public actor MeetingAudioCaptureService {
 
     public init(
         micProcessingMode: MeetingMicProcessingMode = .raw,
-        selectedInputDeviceUIDProvider: @escaping @Sendable () -> String? = { nil }
+        selectedInputDeviceUIDProvider: @escaping @Sendable () -> String? = { nil },
+        sourceModeProvider: @escaping @Sendable () -> MeetingAudioSourceMode = { .microphoneAndSystem }
     ) {
         self.microphoneCapture = MicrophoneCapture(
             selectedInputDeviceUIDProvider: selectedInputDeviceUIDProvider
         )
         self.micProcessingMode = micProcessingMode
+        self.sourceModeProvider = sourceModeProvider
         self.systemAudioTapFactory = {
             guard #available(macOS 14.2, *) else {
                 throw MeetingAudioError.unsupportedPlatform
@@ -78,21 +87,25 @@ public actor MeetingAudioCaptureService {
     init(
         microphoneCaptureFactory: @escaping MeetingMicrophoneCaptureFactory,
         systemAudioTapFactory: @escaping @Sendable () throws -> any MeetingSystemAudioTapping,
-        micProcessingMode: MeetingMicProcessingMode = .raw
+        micProcessingMode: MeetingMicProcessingMode = .raw,
+        sourceModeProvider: @escaping @Sendable () -> MeetingAudioSourceMode = { .microphoneAndSystem }
     ) {
         self.microphoneCapture = microphoneCaptureFactory()
         self.systemAudioTapFactory = systemAudioTapFactory
         self.micProcessingMode = micProcessingMode
+        self.sourceModeProvider = sourceModeProvider
     }
 
     init(
         microphoneCapture: any MeetingMicrophoneCapturing,
         systemAudioTapFactory: @escaping @Sendable () throws -> any MeetingSystemAudioTapping,
-        micProcessingMode: MeetingMicProcessingMode = .raw
+        micProcessingMode: MeetingMicProcessingMode = .raw,
+        sourceModeProvider: @escaping @Sendable () -> MeetingAudioSourceMode = { .microphoneAndSystem }
     ) {
         self.microphoneCapture = microphoneCapture
         self.systemAudioTapFactory = systemAudioTapFactory
         self.micProcessingMode = micProcessingMode
+        self.sourceModeProvider = sourceModeProvider
     }
 
     public var events: AsyncStream<MeetingAudioCaptureEvent> {
@@ -109,45 +122,53 @@ public actor MeetingAudioCaptureService {
         return stream
     }
 
-    public func start() async throws -> MeetingAudioCaptureStartReport {
+    public func start(sourceMode sourceModeOverride: MeetingAudioSourceMode? = nil) async throws -> MeetingAudioCaptureStartReport {
         _ = events
         let continuation = eventContinuation
-        return try await start { event in
+        return try await start(sourceMode: sourceModeOverride) { event in
             continuation?.yield(event)
         }
     }
 
-    public func start(handler: @escaping EventHandler) async throws -> MeetingAudioCaptureStartReport {
+    public func start(
+        sourceMode sourceModeOverride: MeetingAudioSourceMode? = nil,
+        handler: @escaping EventHandler
+    ) async throws -> MeetingAudioCaptureStartReport {
         guard !isCapturing else {
             throw MeetingAudioError.alreadyRunning
         }
 
         let tap = try systemAudioTapFactory()
+        let sourceMode = sourceModeOverride ?? sourceModeProvider()
         eventSink.setHandler(handler)
-        let microphoneStartReport: MeetingMicrophoneCaptureStartReport
+        var microphoneStartReport: MeetingMicrophoneCaptureStartReport?
+        var attemptedMicrophoneStart = false
 
         do {
-            microphoneStartReport = try microphoneCapture.start(
-                processingMode: micProcessingMode,
-                handler: { [weak self] buffer, time in
-                    guard let copy = Self.deepCopyBuffer(buffer) else {
-                        Logger(subsystem: "com.macparakeet.core", category: "MeetingAudioCaptureService")
-                            .warning("deepCopyBuffer nil for microphone capture: format=\(buffer.format.commonFormat.rawValue) rate=\(buffer.format.sampleRate) ch=\(buffer.format.channelCount) interleaved=\(buffer.format.isInterleaved) frames=\(buffer.frameLength)")
-                        self?.eventSink.emit(
-                            .error(
-                                .captureRuntimeFailure(
-                                    "microphone buffer copy failed (format=\(buffer.format.commonFormat.rawValue) rate=\(buffer.format.sampleRate) channels=\(buffer.format.channelCount))"
+            if sourceMode.capturesMicrophone {
+                attemptedMicrophoneStart = true
+                microphoneStartReport = try microphoneCapture.start(
+                    processingMode: micProcessingMode,
+                    handler: { [weak self] buffer, time in
+                        guard let copy = Self.deepCopyBuffer(buffer) else {
+                            Logger(subsystem: "com.macparakeet.core", category: "MeetingAudioCaptureService")
+                                .warning("deepCopyBuffer nil for microphone capture: format=\(buffer.format.commonFormat.rawValue) rate=\(buffer.format.sampleRate) ch=\(buffer.format.channelCount) interleaved=\(buffer.format.isInterleaved) frames=\(buffer.frameLength)")
+                            self?.eventSink.emit(
+                                .error(
+                                    .captureRuntimeFailure(
+                                        "microphone buffer copy failed (format=\(buffer.format.commonFormat.rawValue) rate=\(buffer.format.sampleRate) channels=\(buffer.format.channelCount))"
+                                    )
                                 )
                             )
-                        )
-                        return
+                            return
+                        }
+                        self?.eventSink.emit(.microphoneBuffer(copy, time))
+                    },
+                    onStall: { [weak self] error in
+                        self?.eventSink.emit(.error(error))
                     }
-                    self?.eventSink.emit(.microphoneBuffer(copy, time))
-                },
-                onStall: { [weak self] error in
-                    self?.eventSink.emit(.error(error))
-                }
-            )
+                )
+            }
 
             try tap.start(
                 handler: { [weak self] buffer, time in
@@ -170,7 +191,9 @@ public actor MeetingAudioCaptureService {
                 }
             )
         } catch {
-            microphoneCapture.stop()
+            if attemptedMicrophoneStart {
+                microphoneCapture.stop()
+            }
             tap.stop()
             finishEventStream()
             eventSink.setHandler(nil)
@@ -180,9 +203,12 @@ public actor MeetingAudioCaptureService {
         systemAudioTap = tap
         isCapturing = true
         logger.info(
-            "Meeting audio capture started requested_mic_mode=\(String(describing: microphoneStartReport.requestedMode), privacy: .public) effective_mic_mode=\(microphoneStartReport.effectiveMode.rawValue, privacy: .public)"
+            "Meeting audio capture started source_mode=\(sourceMode.rawValue, privacy: .public) microphone_started=\(microphoneStartReport != nil, privacy: .public) requested_mic_mode=\(String(describing: microphoneStartReport?.requestedMode), privacy: .public) effective_mic_mode=\(microphoneStartReport?.effectiveMode.rawValue ?? "none", privacy: .public)"
         )
-        return MeetingAudioCaptureStartReport(microphone: microphoneStartReport)
+        return MeetingAudioCaptureStartReport(
+            sourceMode: sourceMode,
+            microphone: microphoneStartReport
+        )
     }
 
     public func stop() {

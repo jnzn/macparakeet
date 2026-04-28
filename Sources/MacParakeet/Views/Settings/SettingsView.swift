@@ -585,7 +585,7 @@ struct SettingsView: View {
     private var meetingRecordingCard: some View {
         SettingsCard(
             title: "Meeting Recording",
-            subtitle: "System-audio + mic capture, with optional calendar auto-start.",
+            subtitle: "Dedicated controls for meeting audio capture.",
             icon: "record.circle",
             status: meetingRecordingCardStatus
         ) {
@@ -609,6 +609,24 @@ struct SettingsView: View {
                             hotkeyConflictText
                         }
                     }
+                }
+
+                Divider()
+
+                HStack(alignment: .center) {
+                    rowText(
+                        title: "Audio sources",
+                        detail: viewModel.meetingAudioSourceMode.detail
+                    )
+                    Spacer(minLength: DesignSystem.Spacing.md)
+                    Picker("Audio sources", selection: $viewModel.meetingAudioSourceMode) {
+                        ForEach(MeetingAudioSourceMode.allCases, id: \.self) { mode in
+                            Text(mode.displayTitle).tag(mode)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(minWidth: 220, idealWidth: 260, maxWidth: 320)
                 }
 
                 if viewModel.pendingMeetingRecoveryCount > 0 {
