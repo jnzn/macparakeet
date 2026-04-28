@@ -391,6 +391,7 @@ public final class SettingsViewModel {
     private let permissionPollingInterval: Duration
     private var isApplyingLaunchAtLoginState = false
     private var isApplyingSpeechEngineState = false
+    private var modelStatusRefreshGeneration = 0
     // `deinit` is nonisolated even though this type is `@MainActor`.
     // These handles are only mutated on the main actor during the view
     // model lifetime; unsafe access lets deinit cancel/unregister.
@@ -834,6 +835,9 @@ public final class SettingsViewModel {
     }
 
     public func refreshModelStatus() {
+        modelStatusRefreshGeneration += 1
+        let refreshGeneration = modelStatusRefreshGeneration
+
         guard let sttClient else {
             parakeetStatus = .unknown
             parakeetStatusDetail = "Unavailable in this runtime."
@@ -856,16 +860,27 @@ public final class SettingsViewModel {
             // Snapshot the engine before the await so a mid-suspension toggle
             // can't pair the new preference with the old engine's readiness.
             let activeEngine = self.speechEnginePreference
-            let activeEngineLoaded = await sttClient.isReady()
-            let parakeetCached = self.isSpeechModelCached()
-            let whisperDownloaded = WhisperEngine.isModelDownloaded(
-                model: SpeechEnginePreference.whisperModelVariant(defaults: self.defaults)
-            )
+            let isSpeechModelCached = self.isSpeechModelCached
+            let whisperModelVariant = SpeechEnginePreference.whisperModelVariant(defaults: self.defaults)
 
-            if activeEngine == .parakeet, activeEngineLoaded {
+            async let activeEngineLoaded = sttClient.isReady()
+            async let diskState = Task.detached(priority: .userInitiated) {
+                (
+                    parakeetCached: isSpeechModelCached(),
+                    whisperDownloaded: WhisperEngine.isModelDownloaded(model: whisperModelVariant)
+                )
+            }.value
+
+            let (activeEngineIsLoaded, modelDiskState) = await (activeEngineLoaded, diskState)
+            guard self.modelStatusRefreshGeneration == refreshGeneration,
+                  self.speechEnginePreference == activeEngine else {
+                return
+            }
+
+            if activeEngine == .parakeet, activeEngineIsLoaded {
                 self.parakeetStatus = .ready
                 self.parakeetStatusDetail = "Loaded in memory and ready."
-            } else if parakeetCached {
+            } else if modelDiskState.parakeetCached {
                 self.parakeetStatus = .notLoaded
                 self.parakeetStatusDetail = "Downloaded. Loads automatically when needed."
             } else {
@@ -873,10 +888,10 @@ public final class SettingsViewModel {
                 self.parakeetStatusDetail = "Not downloaded yet."
             }
 
-            if activeEngine == .whisper, activeEngineLoaded {
+            if activeEngine == .whisper, activeEngineIsLoaded {
                 self.whisperModelStatus = .ready
                 self.whisperModelStatusDetail = "Loaded in memory and ready."
-            } else if whisperDownloaded {
+            } else if modelDiskState.whisperDownloaded {
                 self.whisperModelStatus = .notLoaded
                 self.whisperModelStatusDetail = "Downloaded. Loads automatically when Whisper is selected."
             } else {

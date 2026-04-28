@@ -15,6 +15,24 @@ final class SettingsViewModelTests: XCTestCase {
     var entitlements: EntitlementsService!
     var youtubeDownloadsTestDir: URL!
 
+    private func waitUntil(
+        timeout: Duration = .seconds(1),
+        pollInterval: Duration = .milliseconds(10),
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        _ condition: () -> Bool
+    ) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now + timeout
+        while !condition() {
+            if clock.now >= deadline {
+                XCTFail("Timed out waiting for condition", file: file, line: line)
+                return
+            }
+            try await Task.sleep(for: pollInterval)
+        }
+    }
+
     override func setUp() {
         mockRepo = MockDictationRepository()
         mockTranscriptionRepo = MockTranscriptionRepository()
@@ -672,6 +690,32 @@ final class SettingsViewModelTests: XCTestCase {
 
         try await Task.sleep(for: .milliseconds(120))
         XCTAssertEqual(vm.parakeetStatus, .notDownloaded)
+    }
+
+    func testRefreshModelStatusMarksActiveWhisperReady() async throws {
+        SpeechEnginePreference.whisper.save(to: testDefaults)
+        let vm = SettingsViewModel(
+            defaults: testDefaults,
+            youtubeDownloadsDirPath: { [youtubeDownloadsTestDir] in
+                youtubeDownloadsTestDir?.path ?? AppPaths.youtubeDownloadsDir
+            },
+            isSpeechModelCached: { true }
+        )
+        let stt = MockSTTClient()
+        await stt.setReady(true)
+
+        vm.configure(
+            permissionService: mockPermissions,
+            dictationRepo: mockRepo,
+            entitlementsService: entitlements,
+            checkoutURL: nil,
+            sttClient: stt
+        )
+
+        try await waitUntil { vm.whisperModelStatus == .ready }
+        XCTAssertEqual(vm.whisperModelStatusDetail, "Loaded in memory and ready.")
+        XCTAssertEqual(vm.parakeetStatus, .notLoaded)
+        XCTAssertEqual(vm.parakeetStatusDetail, "Downloaded. Loads automatically when needed.")
     }
 
     func testRepairParakeetModelUsesRetryAndEndsReady() async throws {
