@@ -240,7 +240,7 @@ public actor WhisperEngine: STTTranscribing {
         let resolvedLanguage = SpeechEnginePreference.normalizeLanguage(language)
         return DecodingOptions(
             language: resolvedLanguage,
-            usePrefillPrompt: false,
+            usePrefillPrompt: resolvedLanguage != nil,
             detectLanguage: resolvedLanguage == nil,
             wordTimestamps: true
         )
