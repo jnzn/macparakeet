@@ -6,6 +6,17 @@ import SwiftUI
 @MainActor
 @Observable
 public final class TranscriptionViewModel {
+    public struct RetranscriptionEngineOption: Equatable, Sendable {
+        public let primaryEngine: SpeechEngineSelection
+        public let alternativeEngine: SpeechEngineSelection
+        public let isAlternativeAvailable: Bool
+        public let unavailableReason: String?
+
+        public var title: String {
+            "Try with \(alternativeEngine.engine.displayName)"
+        }
+    }
+
     public enum SourceKind: Sendable {
         case localFile
         case youtubeURL
@@ -96,9 +107,21 @@ public final class TranscriptionViewModel {
     private var dropAccepted = false
     private static let configurationError = "Transcription services are unavailable. Please try again."
     private let logger = Logger(subsystem: "com.macparakeet.viewmodels", category: "TranscriptionViewModel")
+    private let defaults: UserDefaults
+    private let isWhisperModelDownloaded: () -> Bool
     public var promptResultsViewModel: PromptResultsViewModel?
 
-    public init() {}
+    public init(
+        defaults: UserDefaults = .standard,
+        isWhisperModelDownloaded: (() -> Bool)? = nil
+    ) {
+        self.defaults = defaults
+        self.isWhisperModelDownloaded = isWhisperModelDownloaded ?? {
+            WhisperEngine.isModelDownloaded(
+                model: SpeechEnginePreference.whisperModelVariant(defaults: defaults)
+            )
+        }
+    }
 
     public func configure(
         transcriptionService: TranscriptionServiceProtocol,
@@ -247,7 +270,49 @@ public final class TranscriptionViewModel {
         return "Unsupported file type. Supported formats: \(formats)."
     }
 
-    public func retranscribe(_ original: Transcription) {
+    public func retranscriptionEngineOption(for original: Transcription) -> RetranscriptionEngineOption? {
+        guard original.sourceType == .meeting,
+              let filePath = original.filePath,
+              FileManager.default.fileExists(atPath: filePath) else {
+            return nil
+        }
+
+        let mixedAudioURL = URL(fileURLWithPath: filePath)
+        let primaryEngine: SpeechEngineSelection
+        if let archivedRecording = archivedMeetingRecording(
+            for: original,
+            mixedAudioURL: mixedAudioURL,
+            logFailure: false
+        ),
+           archivedRecording.speechEngineWasCaptured {
+            primaryEngine = archivedRecording.speechEngine
+        } else {
+            primaryEngine = SpeechEngineSelection.current(defaults: defaults)
+        }
+
+        let alternativePreference = primaryEngine.engine.alternative
+        let alternativeEngine = SpeechEngineSelection(
+            engine: alternativePreference,
+            language: alternativePreference == .whisper
+                ? SpeechEnginePreference.whisperDefaultLanguage(defaults: defaults)
+                : nil
+        )
+        let unavailableReason: String?
+        if alternativePreference == .whisper && !isWhisperModelDownloaded() {
+            unavailableReason = "Download the Whisper model in Settings before trying Whisper."
+        } else {
+            unavailableReason = nil
+        }
+
+        return RetranscriptionEngineOption(
+            primaryEngine: primaryEngine,
+            alternativeEngine: alternativeEngine,
+            isAlternativeAvailable: unavailableReason == nil,
+            unavailableReason: unavailableReason
+        )
+    }
+
+    public func retranscribe(_ original: Transcription, speechEngineOverride: SpeechEngineSelection? = nil) {
         guard let service = transcriptionService else {
             reportMissingConfiguration("transcriptionService", action: "retranscribe")
             return
@@ -280,6 +345,7 @@ public final class TranscriptionViewModel {
                     result = try await service.retranscribeMeeting(
                         existing: original,
                         recording: meetingRecording,
+                        speechEngineOverride: speechEngineOverride,
                         onProgress: progressHandler
                     )
                 } else {
@@ -287,6 +353,7 @@ public final class TranscriptionViewModel {
                         existing: original,
                         fileURL: url,
                         source: retranscriptionSource,
+                        speechEngineOverride: speechEngineOverride,
                         onProgress: progressHandler
                     )
                 }
@@ -323,7 +390,8 @@ public final class TranscriptionViewModel {
 
     private func archivedMeetingRecording(
         for original: Transcription,
-        mixedAudioURL: URL
+        mixedAudioURL: URL,
+        logFailure: Bool = true
     ) -> MeetingRecordingOutput? {
         let durationSeconds = Double(original.durationMs ?? 0) / 1000.0
         do {
@@ -333,9 +401,11 @@ public final class TranscriptionViewModel {
                 durationSeconds: durationSeconds
             )
         } catch {
-            logger.notice(
-                "Meeting retranscribe falling back to mixed audio path file=\(original.fileName, privacy: .private) error=\(error.localizedDescription, privacy: .private)"
-            )
+            if logFailure {
+                logger.notice(
+                    "Meeting retranscribe falling back to mixed audio path file=\(original.fileName, privacy: .private) error=\(error.localizedDescription, privacy: .private)"
+                )
+            }
             return nil
         }
     }

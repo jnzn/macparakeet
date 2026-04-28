@@ -10,6 +10,7 @@ public struct MeetingRecordingOutput: Sendable, Equatable {
     public let durationSeconds: TimeInterval
     public let sourceAlignment: MeetingSourceAlignment
     public let speechEngine: SpeechEngineSelection
+    public let speechEngineWasCaptured: Bool
     /// Free-form notes the user typed during the meeting, captured at finalize
     /// time. Threaded through to `Transcription.userNotes` by the caller so
     /// post-meeting summary generation can steer on what the user emphasized
@@ -26,6 +27,7 @@ public struct MeetingRecordingOutput: Sendable, Equatable {
         durationSeconds: TimeInterval,
         sourceAlignment: MeetingSourceAlignment,
         speechEngine: SpeechEngineSelection = SpeechEngineSelection(engine: .parakeet),
+        speechEngineWasCaptured: Bool = true,
         userNotes: String? = nil
     ) {
         self.sessionID = sessionID
@@ -37,6 +39,7 @@ public struct MeetingRecordingOutput: Sendable, Equatable {
         self.durationSeconds = durationSeconds
         self.sourceAlignment = sourceAlignment
         self.speechEngine = speechEngine
+        self.speechEngineWasCaptured = speechEngineWasCaptured
         self.userNotes = userNotes
     }
 
@@ -69,7 +72,8 @@ public struct MeetingRecordingOutput: Sendable, Equatable {
             systemAudioURL: systemAudioURL,
             durationSeconds: durationSeconds,
             sourceAlignment: metadata.sourceAlignment,
-            speechEngine: metadata.speechEngine
+            speechEngine: metadata.speechEngine,
+            speechEngineWasCaptured: metadata.speechEngineWasCaptured
         )
     }
 }

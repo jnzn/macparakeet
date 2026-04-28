@@ -10,6 +10,24 @@ public enum SpeechEnginePreference: String, CaseIterable, Codable, Sendable {
 
     public static let defaultWhisperModelVariant = "large-v3-v20240930_turbo_632MB"
 
+    public var displayName: String {
+        switch self {
+        case .parakeet:
+            "Parakeet"
+        case .whisper:
+            "Whisper"
+        }
+    }
+
+    public var alternative: SpeechEnginePreference {
+        switch self {
+        case .parakeet:
+            .whisper
+        case .whisper:
+            .parakeet
+        }
+    }
+
     public static func current(defaults: UserDefaults = .standard) -> SpeechEnginePreference {
         guard let rawValue = defaults.string(forKey: defaultsKey),
               let preference = SpeechEnginePreference(rawValue: rawValue) else {

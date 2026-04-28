@@ -53,6 +53,7 @@ public struct MeetingRecordingMetadata: Sendable, Codable, Equatable {
 
     public let sourceAlignment: MeetingSourceAlignment
     public let speechEngine: SpeechEngineSelection
+    public let speechEngineWasCaptured: Bool
 
     public init(
         sourceAlignment: MeetingSourceAlignment,
@@ -60,6 +61,7 @@ public struct MeetingRecordingMetadata: Sendable, Codable, Equatable {
     ) {
         self.sourceAlignment = sourceAlignment
         self.speechEngine = speechEngine
+        self.speechEngineWasCaptured = true
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -70,8 +72,9 @@ public struct MeetingRecordingMetadata: Sendable, Codable, Equatable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         sourceAlignment = try container.decode(MeetingSourceAlignment.self, forKey: .sourceAlignment)
-        speechEngine = try container.decodeIfPresent(SpeechEngineSelection.self, forKey: .speechEngine)
-            ?? SpeechEngineSelection(engine: .parakeet)
+        let decodedSpeechEngine = try container.decodeIfPresent(SpeechEngineSelection.self, forKey: .speechEngine)
+        speechEngine = decodedSpeechEngine ?? SpeechEngineSelection(engine: .parakeet)
+        speechEngineWasCaptured = decodedSpeechEngine != nil
     }
 }
 
