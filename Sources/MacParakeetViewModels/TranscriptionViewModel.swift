@@ -108,17 +108,19 @@ public final class TranscriptionViewModel {
     private static let configurationError = "Transcription services are unavailable. Please try again."
     private let logger = Logger(subsystem: "com.macparakeet.viewmodels", category: "TranscriptionViewModel")
     private let defaults: UserDefaults
-    private let isWhisperModelDownloaded: @Sendable () -> Bool
+    private let isWhisperModelDownloaded: () -> Bool
     public var promptResultsViewModel: PromptResultsViewModel?
 
     public init(
         defaults: UserDefaults = .standard,
-        isWhisperModelDownloaded: @escaping @Sendable () -> Bool = {
-            WhisperEngine.isModelDownloaded(model: SpeechEnginePreference.whisperModelVariant())
-        }
+        isWhisperModelDownloaded: (() -> Bool)? = nil
     ) {
         self.defaults = defaults
-        self.isWhisperModelDownloaded = isWhisperModelDownloaded
+        self.isWhisperModelDownloaded = isWhisperModelDownloaded ?? {
+            WhisperEngine.isModelDownloaded(
+                model: SpeechEnginePreference.whisperModelVariant(defaults: defaults)
+            )
+        }
     }
 
     public func configure(
