@@ -28,7 +28,14 @@ enum TranscribeSpeechEngine: String, ExpressibleByArgument, CaseIterable, Sendab
 struct TranscribeCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "transcribe",
-        abstract: "Transcribe an audio/video file or YouTube URL."
+        abstract: "Transcribe an audio/video file or YouTube URL.",
+        discussion: """
+        Telemetry: emits one privacy-safe `cli_operation` event per invocation \
+        (command/outcome/duration/input_kind — never the path, URL, or transcript). \
+        Disable with `MACPARAKEET_TELEMETRY=0`, `DO_NOT_TRACK=1`, the persistent \
+        `macparakeet-cli config set telemetry off`, or the GUI Settings toggle. \
+        Auto-disabled in CI (CI/GITHUB_ACTIONS/etc.). See docs/telemetry.md.
+        """
     )
 
     @Argument(help: "Path to audio/video file or YouTube URL to transcribe.")
