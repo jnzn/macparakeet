@@ -556,7 +556,14 @@ public final class TranscriptionViewModel {
         self.transcriptionProgress = progress.fraction
         self.progressPhase = phase
         self.progressHeadline = Self.headline(for: phase)
-        self.progressSubline = Self.subline(for: phase, sourceKind: sourceKind)
+        let engine = SpeechEnginePreference.current(defaults: defaults)
+        let whisperVariant = SpeechEnginePreference.whisperModelVariant(defaults: defaults)
+        self.progressSubline = Self.subline(
+            for: phase,
+            sourceKind: sourceKind,
+            engine: engine,
+            whisperVariant: whisperVariant
+        )
     }
 
     private static func mapPhase(from progress: TranscriptionProgress) -> ProgressPhase {
@@ -601,14 +608,25 @@ public final class TranscriptionViewModel {
         }
     }
 
-    private static func subline(for phase: ProgressPhase, sourceKind: SourceKind) -> String? {
+    private static func subline(
+        for phase: ProgressPhase,
+        sourceKind: SourceKind,
+        engine: SpeechEnginePreference,
+        whisperVariant: String
+    ) -> String? {
         switch phase {
         case .downloading:
             return sourceKind == .youtubeURL
                 ? "Longer videos take more time to fetch"
                 : nil
         case .transcribing:
-            return "Runs entirely on-device using the Neural Engine"
+            switch engine {
+            case .parakeet:
+                return "Parakeet TDT \u{00B7} Neural Engine"
+            case .whisper:
+                let friendly = SpeechEnginePreference.friendlyVariantName(whisperVariant)
+                return "Whisper \(friendly) \u{00B7} Apple Silicon"
+            }
         case .identifyingSpeakers:
             return "May take several minutes per hour of audio. Speaker labels are approximate \u{2014} click to rename."
         default:
