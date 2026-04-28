@@ -4,13 +4,24 @@
 
 ## What is MacParakeet?
 
-A **fast, private, local-first voice app** for macOS with three co-equal modes: system-wide dictation, file transcription, and meeting recording. Parakeet TDT via FluidAudio CoreML on the Neural Engine is the default speech engine; WhisperKit is the optional local multilingual engine for Korean, Japanese, Chinese, and other languages outside Parakeet's coverage.
+A **fast, private, local-first voice app** for macOS. The stable DMG ships system-wide dictation and file/URL transcription. The `main` branch also contains Labs/Beta meeting recording and optional local WhisperKit multilingual STT for Korean, Japanese, Chinese, and other languages outside Parakeet's coverage.
 
 **North Star:** Fast, local-first voice app for Mac.
 
 **Domain:** [macparakeet.com](https://macparakeet.com)
 
 **Pricing:** Current public build is free and open-source (GPL-3.0); official paid distribution/support remains possible.
+
+## Release Channels
+
+| Channel | Agent Assumption | Features |
+|---------|------------------|----------|
+| Stable DMG | User-facing release, recommended for normal use | Dictation, file/video/YouTube transcription, exports, vocabulary, AI features |
+| `main` Labs | Implemented but under active testing | Meeting recording, live meeting notes/Ask, crash recovery, optional WhisperKit multilingual STT |
+
+When editing public-facing docs, preserve this distinction: meeting recording
+and WhisperKit are in source on `main`, but they are not in the current public
+DMG release yet.
 
 ## Quick Navigation
 
@@ -49,9 +60,9 @@ A **fast, private, local-first voice app** for macOS with three co-equal modes: 
 |-------|--------|-------|
 | Platform | macOS 14.2+ | Apple Silicon only |
 | Language | Swift 6.0 | SwiftUI for UI |
-| Database | SQLite | GRDB (single file, dictation history + transcriptions + meeting recordings) |
-| STT | Parakeet TDT 0.6B-v3 + optional WhisperKit | Parakeet via FluidAudio CoreML/ANE is default (~2.5% WER, 155x realtime, 25 European languages); WhisperKit adds broader local multilingual coverage |
-| Audio | AVAudioEngine + Core Audio + Core Audio Taps | Mic capture for dictation; Core Audio Taps for system audio (meeting recording); FFmpeg (bundled) for video file conversion |
+| Database | SQLite | GRDB (single file, dictation history + transcriptions + Labs meeting recordings) |
+| STT | Parakeet TDT 0.6B-v3 + optional WhisperKit | Parakeet via FluidAudio CoreML/ANE is default (~2.5% WER, 155x realtime, 25 European languages); WhisperKit adds broader local multilingual coverage in Labs on `main` |
+| Audio | AVAudioEngine + Core Audio + Core Audio Taps | Mic capture for dictation; Core Audio Taps for Labs meeting recording; FFmpeg (bundled) for video file conversion |
 | YouTube | yt-dlp | Standalone macOS binary, weekly non-blocking auto-update via `--update` |
 | Auto-Update | Sparkle 2 | In-app updates via EdDSA-signed appcast (non-App Store) |
 
@@ -61,7 +72,7 @@ MacParakeet is extracted from the OatFlow feature in Oatmeal but is maintained i
 
 | | MacParakeet | Oatmeal |
 |---|-------------|---------|
-| **Focus** | Voice dictation + file transcription + meeting recording | Meeting memory + calendar |
+| **Focus** | Voice dictation + file transcription; Labs meeting recording on `main` | Meeting memory + calendar |
 | **Complexity** | Simple, focused | Complex, powerful |
 | **Pricing** | Current public build free/GPL; official paid distribution/support possible | Freemium + Pro |
 | **Value prop** | "Fast local transcription" | "Remembers everything" |
@@ -106,7 +117,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 
 ## Current Phase
 
-**Current main branch** -- v0.6 meeting recording and v0.7 multilingual STT are implemented on main but not yet part of the public release.
+**Current main branch** -- v0.6 meeting recording and v0.7 multilingual STT are implemented on `main` as Labs/Beta features but are not yet part of the public DMG release.
 
 - **v0.1** MVP -- System-wide dictation, file transcription, overlay, history, export, SQLite, CLI, STT engine
 - **v0.2** Clean Pipeline -- Text processing (filler removal, custom words, snippets), Vocabulary UI, feedback form
@@ -120,13 +131,13 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 
 ### Three Co-Equal Modes
 
-MacParakeet has three primary modes that are equal in importance:
+MacParakeet has three primary modes in the `main` branch product direction:
 
 1. **System-wide dictation** -- Press hotkey anywhere on macOS, speak, text is pasted (WisprFlow-style)
 2. **File transcription** -- Drag-drop audio/video files for full transcription (MacWhisper-style)
-3. **Meeting recording** -- Capture system audio + mic simultaneously, transcribe locally (simple Granola-style)
+3. **Meeting recording** -- Labs/Beta on `main`; capture system audio + mic simultaneously, transcribe locally (simple Granola-style)
 
-All three modes share the same STT scheduler/runtime path but have different UI flows, audio sources, and data models. Parakeet is the default engine; Whisper can be selected globally or per CLI call for languages Parakeet does not cover. **Dictation and meeting recording run concurrently** (ADR-015) -- a user can dictate freely during a meeting recording. Each flow owns its own AVAudioEngine; macOS HAL handles mic multiplexing.
+All three modes share the same STT scheduler/runtime path on `main` but have different UI flows, audio sources, and data models. Parakeet is the default engine; Whisper can be selected globally or per CLI call for languages Parakeet does not cover. **Dictation and meeting recording run concurrently** (ADR-015) -- a user can dictate freely during a meeting recording. Each flow owns its own AVAudioEngine; macOS HAL handles mic multiplexing.
 
 ADR-016 defines the STT architecture as one process-wide scheduler path with a reserved dictation slot and a shared background slot where meeting work outranks file transcription. ADR-021 extends that path with speech-engine routing, engine-switch guards, and meeting-session engine leases.
 
@@ -146,16 +157,21 @@ ADR-016 defines the STT architecture as one process-wide scheduler path with a r
 - One `STTScheduler` owns slot assignment, priority, backpressure, cancellation, and job-scoped progress
 - Active meeting recordings capture the selected engine/language at start; engine switching is blocked while speech work or a meeting engine lease is active
 
-**Swift API:**
+**Project STT entry point:**
 ```swift
-let models = try await AsrModels.downloadAndLoad(version: .v3)
-let manager = AsrManager(config: .default)
-try await manager.initialize(models: models)
-
-let result = try await manager.transcribe(audioSamples, source: .system)
+// App code uses the shared scheduler from AppEnvironment.
+let result = try await sttScheduler.transcribe(
+    audioPath: audioPath,
+    job: .fileTranscription,
+    onProgress: nil
+)
 // result.text contains the transcription
 // result.words contains word-level timestamps + confidence
 ```
+
+Use `STTRuntime`/`STTScheduler` for app flows. Direct `AsrModels`/`AsrManager`
+usage belongs inside the runtime wrapper; creating standalone STT clients in app
+code bypasses ADR-016's process-wide scheduler.
 
 **Two-chip architecture:**
 ```
@@ -259,7 +275,7 @@ macparakeet/
 ├── Package.swift       # Swift package manifest
 ├── spec/               # THE SPEC (authoritative, prescriptive)
 │   ├── README.md       # Spec index + roadmap
-│   ├── 00-vision.md through 12-processing-layer.md
+│   ├── 00-vision.md through 13-agent-workflows.md
 │   └── adr/            # Architecture Decision Records (locked)
 ├── docs/               # Research, explorations (informative)
 │   ├── brand-identity.md   # Logo, colors, typography, brand voice
@@ -283,7 +299,8 @@ macparakeet/
 │   ├── MacParakeetCore/        # Shared library (no UI deps)
 │   └── MacParakeetViewModels/  # ViewModels (testable, depends on Core)
 ├── Tests/
-│   └── MacParakeetTests/   # Unit, database, and integration tests
+│   ├── MacParakeetTests/   # Unit, database, integration, ViewModel tests
+│   └── CLITests/           # CLI parsing, output, and helper tests
 ├── Assets/             # App icon (.icns + source PNG) and SVG logos
 └── scripts/            # Build, test, and release scripts
 ```
@@ -320,7 +337,7 @@ In-app feedback creates GitHub Issues via a Cloudflare Pages Function. User emai
 
 **Keep docs aligned with code.** Stale documentation is worse than no documentation.
 
-After completing work: update spec progress in `spec/README.md` and `spec/02-features.md`, update test counts in `README.md` and this file, archive completed plans to `plans/completed/`, mark outdated docs with `> Status: **HISTORICAL**` header.
+After completing work: update spec progress in `spec/README.md` and `spec/02-features.md`, update README/agent docs when user-visible behavior or release status changes, archive completed plans to `plans/completed/`, and mark outdated docs with `> Status: **HISTORICAL**` headers.
 
 Document status headers: `**ACTIVE**` (authoritative), `**IMPLEMENTED**` (done, still accurate), `**HISTORICAL**` (superseded), `**PROPOSAL**` (under discussion).
 
@@ -390,8 +407,8 @@ See `spec/09-testing.md` for full strategy. Key points:
 ### Running Tests
 
 ```bash
-swift test              # Fast feedback (unit + database tests)
-swift test --parallel   # Full suite in parallel
+swift test              # Full deterministic suite, usually ~1-2 minutes
+swift test --parallel   # Optional parallel run when chasing wall-clock time
 ```
 
 ### AI Agent Testing Loop
@@ -399,7 +416,7 @@ swift test --parallel   # Full suite in parallel
 1. **Before coding:** `swift test` to establish baseline
 2. **After changes:** `swift test` to verify no regressions
 3. **Bug fix:** Write test that reproduces bug, then fix
-4. Tests must be: **deterministic**, **fast** (<30s), **clear errors**
+4. Tests must be: **deterministic**, reasonably fast, and have **clear errors**. Use focused tests for quick iteration; the full suite usually takes ~1-2 minutes.
 
 ### What We Skip
 
@@ -516,6 +533,9 @@ These are hard-won lessons. Don't repeat them.
 ### General
 
 - **Dead code from iterating on approaches** -- When switching approaches, delete old code entirely. Don't leave `_ = unusedVar` artifacts.
+- **Retained purchase activation is intentional** -- Do not delete `EntitlementsService`, `LemonSqueezyLicenseAPI`, entitlement state, or trial/license telemetry as dead code unless the project owner explicitly requests it and the decision is reflected in an ADR/spec update.
+- **Meeting recovery artifacts are user data** -- Do not delete meeting session folders, lock files, or source audio outside the recovery/discard flows without explicit user intent.
+- **CLI is a public contract** -- Preserve `macparakeet-cli` behavior and update `Sources/CLI/CHANGELOG.md` for compatibility-relevant changes.
 - **Review agents catch real bugs** -- Running a review agent on critical flows catches P0 issues. Worth the 60 seconds.
 - **CI duplicates without workflow concurrency** -- Add `concurrency` with `cancel-in-progress: true` and a stable group key to avoid duplicate pipelines.
 
