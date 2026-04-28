@@ -387,7 +387,7 @@ struct OnboardingFlowView: View {
                 featureRow(
                     icon: "lock.shield.fill",
                     title: "100% local",
-                    detail: "Audio never leaves your Mac. No cloud. No accounts. No tracking."
+                    detail: "Audio never leaves your Mac. No cloud STT. No accounts. Non-identifying diagnostics only."
                 )
             }
         }

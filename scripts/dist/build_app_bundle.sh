@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Build a distributable MacParakeet.app bundle from the SwiftPM executable.
+# Build a distributable MacParakeet.app bundle from release executables.
 #
 # This script:
-# - builds the `MacParakeet` SwiftPM product in Release
-# - assembles a minimal .app bundle (Info.plist + executable + bundled helper binaries)
+# - builds the `MacParakeet` app and `macparakeet-cli` products in Release
+# - assembles a minimal .app bundle (Info.plist + executables + bundled helper binaries)
 # - bundles FFmpeg into Resources and optionally bundles `node` for yt-dlp JS runtime support
 #
 # Outputs:
@@ -70,8 +70,24 @@ build_swiftpm() {
   pushd "$ROOT_DIR" >/dev/null
   if [[ "$UNIVERSAL" == "1" ]]; then
     swift build -c release --arch arm64 --arch x86_64 --product MacParakeet
+    swift build -c release --arch arm64 --arch x86_64 --product macparakeet-cli
   else
     swift build -c release --product MacParakeet
+    swift build -c release --product macparakeet-cli
+  fi
+  popd >/dev/null
+}
+
+build_cli_swiftpm() {
+  if [[ "$SKIP_BUILD" == "1" ]]; then
+    return 0
+  fi
+
+  pushd "$ROOT_DIR" >/dev/null
+  if [[ "$UNIVERSAL" == "1" ]]; then
+    swift build -c release --arch arm64 --arch x86_64 --product macparakeet-cli
+  else
+    swift build -c release --product macparakeet-cli
   fi
   popd >/dev/null
 }
@@ -140,12 +156,36 @@ copy_resource_bundles() {
   fi
 }
 
+swiftpm_release_bin_dir() {
+  pushd "$ROOT_DIR" >/dev/null
+  if [[ "$UNIVERSAL" == "1" ]]; then
+    swift build -c release --arch arm64 --arch x86_64 --product "$1" --show-bin-path
+  else
+    swift build -c release --product "$1" --show-bin-path
+  fi
+  popd >/dev/null
+}
+
+copy_cli_binary() {
+  build_cli_swiftpm
+
+  local cli_bin_dir
+  cli_bin_dir="$(swiftpm_release_bin_dir macparakeet-cli)"
+  local cli_bin_path="$cli_bin_dir/macparakeet-cli"
+  if [[ ! -f "$cli_bin_path" ]]; then
+    echo "Failed to locate CLI Release binary at: $cli_bin_path" >&2
+    exit 1
+  fi
+
+  cp "$cli_bin_path" "$MACOS_DIR/macparakeet-cli"
+  chmod +x "$MACOS_DIR/macparakeet-cli"
+  echo "Bundled CLI: $MACOS_DIR/macparakeet-cli"
+}
+
 if [[ "$BUILD_SYSTEM" == "swiftpm" ]]; then
   build_swiftpm
   # Locate the release binary produced by SwiftPM.
-  pushd "$ROOT_DIR" >/dev/null
-  BIN_DIR="$(swift build -c release --product MacParakeet --show-bin-path)"
-  popd >/dev/null
+  BIN_DIR="$(swiftpm_release_bin_dir MacParakeet)"
   BIN_PATH="$BIN_DIR/MacParakeet"
   if [[ ! -f "$BIN_PATH" ]]; then
     echo "Failed to locate Release binary at: $BIN_PATH" >&2
@@ -159,6 +199,8 @@ else
   build_xcodebuild
   echo "[2/4] Assembling app bundle…"
 fi
+
+copy_cli_binary
 
 # Bundle FFmpeg (required at runtime for media demux/conversion).
 #

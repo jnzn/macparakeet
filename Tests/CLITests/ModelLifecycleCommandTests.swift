@@ -17,9 +17,10 @@ final class ModelLifecycleCommandTests: XCTestCase {
     }
 
     func testHealthParsesRepairFlags() throws {
-        let command = try HealthCommand.parse(["--repair-models", "--repair-attempts", "6"])
+        let command = try HealthCommand.parse(["--repair-models", "--repair-attempts", "6", "--repair-binaries"])
         XCTAssertTrue(command.repairModels)
         XCTAssertEqual(command.repairAttempts, 6)
+        XCTAssertTrue(command.repairBinaries)
     }
 
     func testResolveWhisperDownloadModelRequiresWhisperPrefix() throws {

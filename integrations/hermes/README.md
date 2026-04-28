@@ -23,7 +23,7 @@ the local Parakeet TDT pipeline without any cloud STT dependency.
 ln -s /Applications/MacParakeet.app/Contents/MacOS/macparakeet-cli \
       /usr/local/bin/macparakeet-cli
 # 3. Verify
-macparakeet-cli --version   # 1.0.0
+macparakeet-cli --version   # 1.3.0
 macparakeet-cli health --json
 ```
 

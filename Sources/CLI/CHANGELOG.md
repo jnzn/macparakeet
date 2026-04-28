@@ -109,6 +109,11 @@ by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
   prompt results. This restores GUI/CLI parity for notes-steered meeting
   prompts while keeping LLM invocation explicitly under `prompts`.
 - Meeting retranscription now preserves durable user-authored meeting notes.
+- `health --json` is now a non-mutating readiness probe for helper binaries:
+  it reports whether `yt-dlp` is installed without downloading or updating it.
+  Use `health --repair-binaries` to explicitly install/update helper binaries.
+- UUID prefix lookup now enforces the documented minimum prefix length of
+  four characters before matching database records by ID prefix.
 
 ## [1.2.0] -- 2026-04-26
 

@@ -31,12 +31,15 @@ enum CLILookupError: Error, LocalizedError {
     case notFound(String)
     case ambiguous(String)
     case emptyID
+    case shortUUIDPrefix(minimumLength: Int)
 
     var errorDescription: String? {
         switch self {
         case .notFound(let msg): return msg
         case .ambiguous(let msg): return msg
         case .emptyID: return "ID must not be empty."
+        case .shortUUIDPrefix(let minimumLength):
+            return "UUID prefixes must be at least \(minimumLength) characters."
         }
     }
 }
@@ -49,6 +52,31 @@ enum CLIInputError: Error, LocalizedError {
         case .empty: return "Input is empty."
         }
     }
+}
+
+private let minimumUUIDPrefixLength = 4
+
+private func isUUIDPrefixCandidate(_ value: String) -> Bool {
+    value.allSatisfy { char in
+        char == "-" || char.isHexDigit
+    }
+}
+
+private func uuidPrefixSearchKey(_ value: String) -> String? {
+    let lowered = value.lowercased()
+    guard lowered.count >= minimumUUIDPrefixLength else { return nil }
+    return lowered
+}
+
+private func shortUUIDPrefixErrorIfApplicable(_ value: String) -> CLILookupError? {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty,
+          trimmed.count < minimumUUIDPrefixLength,
+          isUUIDPrefixCandidate(trimmed)
+    else {
+        return nil
+    }
+    return .shortUUIDPrefix(minimumLength: minimumUUIDPrefixLength)
 }
 
 // MARK: - Transcription Lookup (shared by export, delete, favorite, unfavorite)
@@ -67,11 +95,13 @@ func findTranscription(id: String, repo: TranscriptionRepository) throws -> Tran
     // Prefix match
     let all = try repo.fetchAll()
     let lowered = trimmed.lowercased()
-    let matches = all.filter { $0.id.uuidString.lowercased().hasPrefix(lowered) }
+    if let prefix = uuidPrefixSearchKey(trimmed) {
+        let matches = all.filter { $0.id.uuidString.lowercased().hasPrefix(prefix) }
 
-    if matches.count == 1 { return matches[0] }
-    if matches.count > 1 {
-        throw CLILookupError.ambiguous("Multiple transcriptions match '\(trimmed)'. Be more specific.")
+        if matches.count == 1 { return matches[0] }
+        if matches.count > 1 {
+            throw CLILookupError.ambiguous("Multiple transcriptions match '\(trimmed)'. Be more specific.")
+        }
     }
 
     let nameMatches = all.filter { $0.fileName.lowercased() == lowered }
@@ -79,6 +109,7 @@ func findTranscription(id: String, repo: TranscriptionRepository) throws -> Tran
     if nameMatches.count > 1 {
         throw CLILookupError.ambiguous("Multiple transcriptions named '\(trimmed)'. Use ID instead.")
     }
+    if let error = shortUUIDPrefixErrorIfApplicable(trimmed) { throw error }
 
     throw CLILookupError.notFound("No transcription matching '\(trimmed)'")
 }
@@ -93,12 +124,12 @@ func findMeeting(idOrName: String, repo: TranscriptionRepository) throws -> Tran
         return transcription
     }
 
-    let lowered = trimmed.lowercased()
-
-    let prefixMatches = try repo.fetchBySourceType(.meeting, idPrefix: lowered)
-    if prefixMatches.count == 1 { return prefixMatches[0] }
-    if prefixMatches.count > 1 {
-        throw CLILookupError.ambiguous("Multiple meetings match '\(trimmed)'. Be more specific.")
+    if let prefix = uuidPrefixSearchKey(trimmed) {
+        let prefixMatches = try repo.fetchBySourceType(.meeting, idPrefix: prefix)
+        if prefixMatches.count == 1 { return prefixMatches[0] }
+        if prefixMatches.count > 1 {
+            throw CLILookupError.ambiguous("Multiple meetings match '\(trimmed)'. Be more specific.")
+        }
     }
 
     let nameMatches = try repo.fetchBySourceType(.meeting, fileName: trimmed)
@@ -106,6 +137,7 @@ func findMeeting(idOrName: String, repo: TranscriptionRepository) throws -> Tran
     if nameMatches.count > 1 {
         throw CLILookupError.ambiguous("Multiple meetings named '\(trimmed)'. Use ID instead.")
     }
+    if let error = shortUUIDPrefixErrorIfApplicable(trimmed) { throw error }
 
     throw CLILookupError.notFound("No meeting matching '\(trimmed)'")
 }
@@ -113,22 +145,27 @@ func findMeeting(idOrName: String, repo: TranscriptionRepository) throws -> Tran
 // MARK: - Dictation Lookup
 
 func findDictation(id: String, repo: DictationRepository) throws -> Dictation {
-    guard !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+    let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else {
         throw CLILookupError.emptyID
     }
 
-    if let uuid = UUID(uuidString: id), let d = try repo.fetch(id: uuid) {
+    if let uuid = UUID(uuidString: trimmed), let d = try repo.fetch(id: uuid) {
         return d
     }
 
+    guard let prefix = uuidPrefixSearchKey(trimmed) else {
+        throw shortUUIDPrefixErrorIfApplicable(trimmed) ?? CLILookupError.notFound("No dictation matching '\(trimmed)'")
+    }
+
     let all = try repo.fetchAll()
-    let matches = all.filter { $0.id.uuidString.lowercased().hasPrefix(id.lowercased()) }
+    let matches = all.filter { $0.id.uuidString.lowercased().hasPrefix(prefix) }
 
     guard let match = matches.first else {
-        throw CLILookupError.notFound("No dictation matching '\(id)'")
+        throw CLILookupError.notFound("No dictation matching '\(trimmed)'")
     }
     guard matches.count == 1 else {
-        throw CLILookupError.ambiguous("Multiple dictations match '\(id)'. Be more specific.")
+        throw CLILookupError.ambiguous("Multiple dictations match '\(trimmed)'. Be more specific.")
     }
     return match
 }
@@ -149,10 +186,12 @@ func findPrompt(idOrName: String, repo: PromptRepository) throws -> Prompt {
     let all = try repo.fetchAll()
     let lowered = trimmed.lowercased()
 
-    let prefixMatches = all.filter { $0.id.uuidString.lowercased().hasPrefix(lowered) }
-    if prefixMatches.count == 1 { return prefixMatches[0] }
-    if prefixMatches.count > 1 {
-        throw CLILookupError.ambiguous("Multiple prompts match '\(trimmed)' as ID prefix. Be more specific.")
+    if let prefix = uuidPrefixSearchKey(trimmed) {
+        let prefixMatches = all.filter { $0.id.uuidString.lowercased().hasPrefix(prefix) }
+        if prefixMatches.count == 1 { return prefixMatches[0] }
+        if prefixMatches.count > 1 {
+            throw CLILookupError.ambiguous("Multiple prompts match '\(trimmed)' as ID prefix. Be more specific.")
+        }
     }
 
     let nameMatches = all.filter { $0.name.lowercased() == lowered }
@@ -160,6 +199,7 @@ func findPrompt(idOrName: String, repo: PromptRepository) throws -> Prompt {
     if nameMatches.count > 1 {
         throw CLILookupError.ambiguous("Multiple prompts named '\(trimmed)'. Use ID instead.")
     }
+    if let error = shortUUIDPrefixErrorIfApplicable(trimmed) { throw error }
 
     throw CLILookupError.notFound("No prompt matching '\(trimmed)'")
 }

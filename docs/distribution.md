@@ -14,8 +14,9 @@ scripts/dist/build_app_bundle.sh
 
 This creates `dist/MacParakeet.app` and bundles:
 - `Assets/AppIcon.icns` into `Contents/Resources/AppIcon.icns` (app icon for Dock, Finder, DMG)
+- `macparakeet-cli` into `Contents/MacOS/macparakeet-cli`
 - SwiftPM resource bundles into `Contents/Resources/`
-- Standalone helper binaries (yt-dlp and FFmpeg) into `Contents/Resources/` when configured by the build scripts
+- Standalone helper binaries (FFmpeg and optional Node runtime) into `Contents/Resources/` when configured by the build scripts
 - No Python runtime or `uv` bootstrap is bundled (FluidAudio/CoreML STT is native Swift)
 
 `build_app_bundle.sh` automatically downloads a **statically-linked FFmpeg** from [ffmpeg.martin-riedl.de](https://ffmpeg.martin-riedl.de/) (macOS arm64, SHA256-verified). No Homebrew dependency. To use a custom binary instead, set `FFMPEG_PATH`:
