@@ -10,8 +10,14 @@ public enum MeetingAudioCaptureEvent: Sendable {
 
 public protocol MeetingAudioCapturing: Sendable {
     var events: AsyncStream<MeetingAudioCaptureEvent> { get async }
-    func start() async throws -> MeetingAudioCaptureStartReport
+    func start(sourceMode: MeetingAudioSourceMode?) async throws -> MeetingAudioCaptureStartReport
     func stop() async
+}
+
+public extension MeetingAudioCapturing {
+    func start() async throws -> MeetingAudioCaptureStartReport {
+        try await start(sourceMode: nil)
+    }
 }
 
 protocol MeetingMicrophoneCapturing: Sendable {
@@ -116,26 +122,31 @@ public actor MeetingAudioCaptureService {
         return stream
     }
 
-    public func start() async throws -> MeetingAudioCaptureStartReport {
+    public func start(sourceMode sourceModeOverride: MeetingAudioSourceMode? = nil) async throws -> MeetingAudioCaptureStartReport {
         _ = events
         let continuation = eventContinuation
-        return try await start { event in
+        return try await start(sourceMode: sourceModeOverride) { event in
             continuation?.yield(event)
         }
     }
 
-    public func start(handler: @escaping EventHandler) async throws -> MeetingAudioCaptureStartReport {
+    public func start(
+        sourceMode sourceModeOverride: MeetingAudioSourceMode? = nil,
+        handler: @escaping EventHandler
+    ) async throws -> MeetingAudioCaptureStartReport {
         guard !isCapturing else {
             throw MeetingAudioError.alreadyRunning
         }
 
         let tap = try systemAudioTapFactory()
-        let sourceMode = sourceModeProvider()
+        let sourceMode = sourceModeOverride ?? sourceModeProvider()
         eventSink.setHandler(handler)
         var microphoneStartReport: MeetingMicrophoneCaptureStartReport?
+        var attemptedMicrophoneStart = false
 
         do {
             if sourceMode.capturesMicrophone {
+                attemptedMicrophoneStart = true
                 microphoneStartReport = try microphoneCapture.start(
                     processingMode: micProcessingMode,
                     handler: { [weak self] buffer, time in
@@ -180,7 +191,7 @@ public actor MeetingAudioCaptureService {
                 }
             )
         } catch {
-            if microphoneStartReport != nil {
+            if attemptedMicrophoneStart {
                 microphoneCapture.stop()
             }
             tap.stop()

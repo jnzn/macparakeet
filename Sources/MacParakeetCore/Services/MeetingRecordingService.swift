@@ -21,7 +21,7 @@ public protocol MeetingRecordingServiceProtocol: Sendable {
     /// `title` lets callers (e.g., the calendar auto-start path) pre-name
     /// the recording. `nil` or whitespace-only falls back to the default
     /// "Meeting <date>" label.
-    func startRecording(title: String?) async throws
+    func startRecording(title: String?, sourceMode: MeetingAudioSourceMode?) async throws
     func stopRecording() async throws -> MeetingRecordingOutput
     func completeTranscription(for recording: MeetingRecordingOutput) async
     func cancelRecording() async
@@ -42,8 +42,12 @@ public protocol MeetingRecordingServiceProtocol: Sendable {
 public extension MeetingRecordingServiceProtocol {
     /// Existing manual / hotkey callers use the no-arg form — the calendar
     /// path is the only caller that has a meaningful title to pass.
+    func startRecording(title: String?) async throws {
+        try await startRecording(title: title, sourceMode: nil)
+    }
+
     func startRecording() async throws {
-        try await startRecording(title: nil)
+        try await startRecording(title: nil, sourceMode: nil)
     }
 }
 
@@ -177,7 +181,10 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         return stream
     }
 
-    public func startRecording(title: String? = nil) async throws {
+    public func startRecording(
+        title: String? = nil,
+        sourceMode: MeetingAudioSourceMode? = nil
+    ) async throws {
         guard currentSession == nil, startingSessionID == nil else {
             throw MeetingAudioError.alreadyRunning
         }
@@ -258,7 +265,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             )
             try await validateStartStillCurrent(session)
 
-            let captureStartReport = try await audioCaptureService.start()
+            let captureStartReport = try await audioCaptureService.start(sourceMode: sourceMode)
             try await validateStartStillCurrent(session)
             configureMicConditioner(from: captureStartReport)
             processingTask = Task { [weak self] in

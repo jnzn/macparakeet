@@ -701,7 +701,7 @@ final class MeetingRecordingServiceTests: XCTestCase {
             sttTranscriber: sttClient
         )
 
-        try await service.startRecording()
+        try await service.startRecording(sourceMode: .systemOnly)
 
         let systemBuffer = try XCTUnwrap(makeMonoFloatBuffer(frameCount: 80_000, sampleValue: 0.5))
         await captureService.yield(.systemBuffer(
@@ -717,6 +717,8 @@ final class MeetingRecordingServiceTests: XCTestCase {
         XCTAssertNotNil(output.sourceAlignment.system)
         XCTAssertEqual(audioConverter.capturedMixedInputs(), [output.systemAudioURL])
 
+        let requestedSourceModes = await captureService.requestedSourceModes
+        XCTAssertEqual(requestedSourceModes, [.systemOnly])
         let counts = await sttClient.callCounts
         XCTAssertEqual(counts.microphone, 0)
         XCTAssertGreaterThanOrEqual(counts.system, 1)
@@ -1039,7 +1041,7 @@ private actor BlockingEventsMeetingAudioCaptureService: MeetingAudioCapturing {
         }
     }
 
-    func start() async throws -> MeetingAudioCaptureStartReport {
+    func start(sourceMode: MeetingAudioSourceMode?) async throws -> MeetingAudioCaptureStartReport {
         startCallCount += 1
         return MeetingAudioCaptureStartReport(
             microphone: MeetingMicrophoneCaptureStartReport(
@@ -1074,6 +1076,7 @@ private actor MockMeetingAudioCaptureService: MeetingAudioCapturing {
     private var stream: AsyncStream<MeetingAudioCaptureEvent>?
     private let startReport: MeetingAudioCaptureStartReport
     private(set) var startCallCount = 0
+    private(set) var requestedSourceModes: [MeetingAudioSourceMode?] = []
 
     init(
         startReport: MeetingAudioCaptureStartReport = MeetingAudioCaptureStartReport(
@@ -1098,8 +1101,9 @@ private actor MockMeetingAudioCaptureService: MeetingAudioCapturing {
         return stream
     }
 
-    func start() async throws -> MeetingAudioCaptureStartReport {
+    func start(sourceMode: MeetingAudioSourceMode?) async throws -> MeetingAudioCaptureStartReport {
         startCallCount += 1
+        requestedSourceModes.append(sourceMode)
         _ = events
         return startReport
     }
@@ -1135,7 +1139,7 @@ private actor BlockingStartMeetingAudioCaptureService: MeetingAudioCapturing {
         return stream
     }
 
-    func start() async throws -> MeetingAudioCaptureStartReport {
+    func start(sourceMode: MeetingAudioSourceMode?) async throws -> MeetingAudioCaptureStartReport {
         startCallCount += 1
         resumeSatisfiedStartWaiters()
 
