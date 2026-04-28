@@ -2,6 +2,12 @@ import AppKit
 import MacParakeetCore
 import MacParakeetViewModels
 
+enum MeetingRecordingQuitState {
+    case starting
+    case recording
+    case finishing
+}
+
 @MainActor
 final class MeetingRecordingFlowCoordinator {
     var isMeetingRecordingActive: Bool {
@@ -10,6 +16,19 @@ final class MeetingRecordingFlowCoordinator {
             return false
         case .checkingPermissions, .starting, .recording, .stopping, .transcribing:
             return true
+        }
+    }
+
+    var quitState: MeetingRecordingQuitState? {
+        switch stateMachine.state {
+        case .idle, .finishing:
+            return nil
+        case .checkingPermissions, .starting:
+            return .starting
+        case .recording:
+            return .recording
+        case .stopping, .transcribing:
+            return .finishing
         }
     }
 
@@ -35,6 +54,7 @@ final class MeetingRecordingFlowCoordinator {
     private var autoDismissTask: Task<Void, Never>?
     private var pillPollingTask: Task<Void, Never>?
     private var transcriptObservationTask: Task<Void, Never>?
+    private var activeFlowSettlementWaiters: [CheckedContinuation<Void, Never>] = []
     private var completedTranscription: Transcription?
     private var currentMeetingOperationContext: ObservabilityOperationContext?
     private var currentMeetingTrigger: TelemetryMeetingRecordingTrigger?
@@ -108,6 +128,27 @@ final class MeetingRecordingFlowCoordinator {
         }
     }
 
+    func stopRecordingAndWaitForCompletion() async {
+        switch stateMachine.state {
+        case .checkingPermissions, .starting:
+            sendEvent(.cancelRequested)
+        default:
+            sendEvent(.stopRequested)
+        }
+        await waitForActiveFlowToSettle()
+        if let actionTask {
+            await actionTask.value
+        }
+    }
+
+    func discardRecordingAndWaitForCompletion() async {
+        sendEvent(.cancelRequested)
+        await waitForActiveFlowToSettle()
+        if let actionTask {
+            await actionTask.value
+        }
+    }
+
     /// Calendar-driven entry point. Marks the next start as auto-start so
     /// telemetry distinguishes it and pre-names the recording with the
     /// event title, then enters the normal start flow. No-op if a recording
@@ -156,9 +197,27 @@ final class MeetingRecordingFlowCoordinator {
         }
     }
 
+    private func waitForActiveFlowToSettle() async {
+        while isMeetingRecordingActive {
+            await withCheckedContinuation { continuation in
+                activeFlowSettlementWaiters.append(continuation)
+            }
+        }
+    }
+
     private func sendEvent(_ event: MeetingRecordingFlowEvent) {
         let effects = stateMachine.handle(event)
         executeEffects(effects)
+        resumeActiveFlowSettlementWaitersIfNeeded()
+    }
+
+    private func resumeActiveFlowSettlementWaitersIfNeeded() {
+        guard !isMeetingRecordingActive, !activeFlowSettlementWaiters.isEmpty else { return }
+        let waiters = activeFlowSettlementWaiters
+        activeFlowSettlementWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
     }
 
     private func executeEffects(_ effects: [MeetingRecordingFlowEffect]) {
@@ -408,6 +467,9 @@ final class MeetingRecordingFlowCoordinator {
         case .cancelRecording:
             let durationSeconds = Double(panelViewModel?.elapsedSeconds ?? 0)
             let notesVM = panelViewModel?.notesViewModel
+            let cancelledTrigger = currentMeetingTrigger ?? pendingTrigger
+            pendingTrigger = nil
+            pendingTitle = nil
             actionTask?.cancel()
             actionTask = Task { @MainActor in
                 // Stop the in-flight debounce so it can't fire against a
@@ -420,6 +482,7 @@ final class MeetingRecordingFlowCoordinator {
                 Telemetry.send(.meetingRecordingCancelled(durationSeconds: durationSeconds))
                 self.sendMeetingOperation(
                     outcome: .cancelled,
+                    trigger: cancelledTrigger,
                     stage: .cancel,
                     durationSeconds: durationSeconds
                 )

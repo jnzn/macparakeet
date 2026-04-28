@@ -190,11 +190,11 @@ public final class MeetingRecordingRecoveryService: MeetingRecordingRecoveryServ
         do {
             try await audioConverter.mixToM4A(
                 inputURLs: recoveredSources.map(\.url),
-                outputURL: mixedURL
+                outputURL: mixedURL,
+                sourceAlignment: sourceAlignment
             )
         } catch {
-            logger.error("meeting_recovery_mix_failed session=\(lock.sessionId.uuidString, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
-            throw MeetingRecordingRecoveryError.mixFailed(error.localizedDescription)
+            logger.error("meeting_recovery_mix_failed_nonfatal session=\(lock.sessionId.uuidString, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
         }
 
         // Clamp the wall-clock fallback to non-negative. If the user's clock

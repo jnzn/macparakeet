@@ -378,12 +378,15 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         }
 
         do {
-            try await audioConverter.mixToM4A(inputURLs: inputURLs, outputURL: session.mixedAudioURL)
+            try await audioConverter.mixToM4A(
+                inputURLs: inputURLs,
+                outputURL: session.mixedAudioURL,
+                sourceAlignment: sourceAlignment
+            )
         } catch {
-            await liveChunkTranscriber.finishSession()
-            await releaseSpeechEngineLease()
-            cleanupState()
-            throw MeetingAudioError.mixFailed(error.localizedDescription)
+            logger.error(
+                "meeting_mix_failed_nonfatal session=\(session.id.uuidString, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+            )
         }
 
         let finalNotes = currentNotes

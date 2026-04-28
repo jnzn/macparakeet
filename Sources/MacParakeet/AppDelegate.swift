@@ -40,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var meetingAutoStartCoordinator: MeetingAutoStartCoordinator?
     private var hasPresentedHotkeyUnavailableAlert = false
     private var environmentSetupTask: Task<Void, Never>?
+    private var meetingQuitTask: Task<Void, Never>?
 
     // MARK: - View Models
 
@@ -248,6 +249,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         // Don't quit when window closes — dictation/menu bar features stay available.
         false
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard meetingRecordingFlowCoordinator?.quitState != nil else {
+            return .terminateNow
+        }
+
+        guard meetingQuitTask == nil else {
+            return .terminateCancel
+        }
+
+        return presentActiveMeetingQuitAlert()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows _: Bool) -> Bool {
@@ -478,6 +491,76 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         meetingRecordingFlowCoordinator?.toggleRecording(trigger: trigger)
+    }
+
+    private func presentActiveMeetingQuitAlert() -> NSApplication.TerminateReply {
+        guard let quitState = meetingRecordingFlowCoordinator?.quitState else {
+            return .terminateNow
+        }
+
+        NSApp.activate(ignoringOtherApps: true)
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+
+        switch quitState {
+        case .starting:
+            alert.messageText = "Meeting Recording Is Starting"
+            alert.informativeText = "Cancel the pending recording before quitting, or keep MacParakeet open."
+            alert.addButton(withTitle: "Cancel Recording & Quit")
+            alert.addButton(withTitle: "Cancel Quit")
+            if alert.buttons.indices.contains(0) {
+                alert.buttons[0].hasDestructiveAction = true
+            }
+            if alert.runModal() == .alertFirstButtonReturn {
+                finishMeetingThenQuit(discard: true)
+            }
+
+        case .recording:
+            alert.messageText = "Meeting Recording in Progress"
+            alert.informativeText = "End and transcribe the meeting before quitting, discard the recording, or keep MacParakeet open."
+            alert.addButton(withTitle: "End & Transcribe")
+            alert.addButton(withTitle: "Discard Recording")
+            alert.addButton(withTitle: "Cancel Quit")
+            if alert.buttons.indices.contains(1) {
+                alert.buttons[1].hasDestructiveAction = true
+            }
+            switch alert.runModal() {
+            case .alertFirstButtonReturn:
+                finishMeetingThenQuit(discard: false)
+            case .alertSecondButtonReturn:
+                finishMeetingThenQuit(discard: true)
+            default:
+                break
+            }
+
+        case .finishing:
+            alert.messageText = "Meeting Transcription in Progress"
+            alert.informativeText = "MacParakeet is saving the meeting. Finish transcription before quitting, or keep the app open."
+            alert.addButton(withTitle: "Finish & Quit")
+            alert.addButton(withTitle: "Cancel Quit")
+            if alert.runModal() == .alertFirstButtonReturn {
+                finishMeetingThenQuit(discard: false)
+            }
+        }
+
+        return .terminateCancel
+    }
+
+    private func finishMeetingThenQuit(discard: Bool) {
+        guard let coordinator = meetingRecordingFlowCoordinator else { return }
+
+        meetingQuitTask?.cancel()
+        meetingQuitTask = Task { @MainActor [weak self, coordinator] in
+            if discard {
+                await coordinator.discardRecordingAndWaitForCompletion()
+            } else {
+                await coordinator.stopRecordingAndWaitForCompletion()
+            }
+            guard !Task.isCancelled else { return }
+            self?.meetingQuitTask = nil
+            NSApp.terminate(nil)
+        }
     }
 
     // MARK: - Alerts
