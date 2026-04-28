@@ -39,4 +39,12 @@ final class TranscribeCommandTests: XCTestCase {
         XCTAssertEqual(command.engine, .parakeet)
         XCTAssertNil(command.language)
     }
+
+    func testLocalFileURLExpandsTilde() {
+        let url = TranscribeCommand.localFileURL(for: "~/sample.wav")
+        XCTAssertEqual(
+            url.path,
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("sample.wav").path
+        )
+    }
 }

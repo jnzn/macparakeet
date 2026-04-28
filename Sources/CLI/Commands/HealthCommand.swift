@@ -18,6 +18,12 @@ struct HealthCommand: AsyncParsableCommand {
     var json: Bool = false
 
     func run() async throws {
+        try await emitJSONOrRethrow(json: json) {
+            try await runHealthCheck()
+        }
+    }
+
+    private func runHealthCheck() async throws {
         let validatedRepairAttempts: Int?
         if repairModels {
             validatedRepairAttempts = try validatedAttempts(repairAttempts)
@@ -117,10 +123,12 @@ struct HealthCommand: AsyncParsableCommand {
 
         // 5. Local speech stack
         let sttClient = STTClient()
-        // CLI is about to exit anyway, but `defer` guarantees shutdown runs
-        // even if a future change adds a throw between init and the explicit
-        // shutdown below. Detached because defer can't await.
-        defer { Task { await sttClient.shutdown() } }
+        var sttClientNeedsShutdown = true
+        defer {
+            if sttClientNeedsShutdown {
+                Task { await sttClient.shutdown() }
+            }
+        }
         let diarizationService = DiarizationService()
         let status = await loadSpeechStackStatus(
             sttClient: sttClient,
@@ -149,6 +157,8 @@ struct HealthCommand: AsyncParsableCommand {
             }
         }
         if !json { print() }
+        await sttClient.shutdown()
+        sttClientNeedsShutdown = false
 
         // 6. Bundled FFmpeg
         let ffmpeg: HealthReport.Binary

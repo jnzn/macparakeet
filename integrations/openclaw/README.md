@@ -46,7 +46,7 @@ ffmpeg + yt-dlp as runtime deps. First `transcribe` call downloads
 | Search transcriptions | `macparakeet-cli history search-transcriptions "<query>" --json` |
 | Search dictations | `macparakeet-cli history search "<query>" --json` |
 | List prompts | `macparakeet-cli prompts list --json` |
-| Run a prompt on a transcription | `macparakeet-cli prompts run <prompt-name> --transcription <id-or-name> --provider <p> --api-key "$KEY" --model <m>` |
+| Run a prompt on a transcription | `macparakeet-cli prompts run <prompt-name> --transcription <id-or-name> --provider <p> --api-key-env KEY_ENV --model <m>` |
 
 ## Conventions
 
