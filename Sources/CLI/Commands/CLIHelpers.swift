@@ -3,6 +3,7 @@ import Foundation
 import MacParakeetCore
 
 let macParakeetAppDefaultsSuiteName = "com.macparakeet.MacParakeet"
+let cliValidationMisuseExitCode = ExitCode(2)
 
 func macParakeetAppDefaults() -> UserDefaults {
     UserDefaults(suiteName: macParakeetAppDefaultsSuiteName) ?? .standard
@@ -311,7 +312,7 @@ private func rethrowWithOptionalJSONEnvelope(_ error: Error, json: Bool) throws 
     let envelope = CLIErrorEnvelope(error: error)
     try? printJSON(envelope)
     if error is ValidationError || error is CLIInputError {
-        throw ExitCode.validationFailure
+        throw cliValidationMisuseExitCode
     }
     throw ExitCode.failure
 }

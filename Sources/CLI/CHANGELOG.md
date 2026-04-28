@@ -84,6 +84,17 @@ by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
 - LLM-backed commands now accept `--api-key-env NAME`; hosted providers also
   read `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, and
   `OPENROUTER_API_KEY` directly.
+- `config` command namespace for users who only install the CLI (no GUI):
+  `macparakeet-cli config get telemetry`, `config set telemetry on|off`, and
+  `config list`. Values persist in the same UserDefaults suite the GUI reads
+  (`com.macparakeet.MacParakeet`), so a later GUI install picks them up.
+- `transcribe` now honors `DO_NOT_TRACK=1` (industry-standard, also honored
+  by Homebrew, GitLab, VS Code) and auto-disables telemetry in CI environments
+  (`CI`, `GITHUB_ACTIONS`, `GITLAB_CI`, `BUILDKITE`, `CIRCLECI`, `TRAVIS`,
+  `JENKINS_URL`, `TF_BUILD`, `TEAMCITY_VERSION` set to a truthy value). The
+  CI auto-disable can be overridden with `MACPARAKEET_TELEMETRY=1` for
+  developers smoke-testing telemetry from a CI shell. `MACPARAKEET_TELEMETRY=0`
+  remains the explicit per-process kill switch.
 
 ### Fixed
 
@@ -119,8 +130,7 @@ by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
 - `transcribe` now initializes the shared telemetry client and emits a
   privacy-safe `cli_operation` product-health event after execution. This does
   not change stdout, stderr, JSON schemas, or exit codes; it follows the GUI
-  telemetry preference and can be disabled per process with
-  `MACPARAKEET_TELEMETRY=0`.
+  telemetry preference and the CLI opt-out controls documented above.
 
 ### Fixed
 

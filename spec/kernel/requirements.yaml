@@ -16,6 +16,7 @@
 #   PLAY  - Video/audio playback
 #   LIB   - Transcription library
 #   MEET  - Meeting recording
+#   CLI   - Public command-line surface
 
 # --- v0.1 Core MVP ---
 
@@ -226,4 +227,11 @@ REQ-TRANS-002:
 REQ-MEET-007:
   description: Meeting recordings capture the active speech engine and Whisper language at recording start for live preview, metadata, crash recovery, and final transcription
   version: v0.7
+  status: implemented
+
+# --- CLI Public Surface ---
+
+REQ-CLI-001:
+  description: CLI transcription telemetry emits a privacy-safe cli_operation event, honors explicit env/CI/UserDefaults opt-out controls, and exposes config get/set/list for the persisted telemetry preference
+  version: cli-1.3.0
   status: implemented
