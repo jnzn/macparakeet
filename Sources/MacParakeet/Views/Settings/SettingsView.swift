@@ -22,9 +22,6 @@ struct SettingsView: View {
     @State private var pendingScrollTarget: String?
     @State private var automaticallyChecksForUpdates: Bool
     @State private var automaticallyDownloadsUpdates: Bool
-    @State private var showClearAllAlert = false
-    @State private var showClearYouTubeAudioAlert = false
-    @State private var showResetLifetimeStatsAlert = false
     @State private var copiedBuildIdentity = false
 
     init(viewModel: SettingsViewModel, llmSettingsViewModel: LLMSettingsViewModel, updater: SPUUpdater) {
@@ -68,30 +65,6 @@ struct SettingsView: View {
         }
         .background(DesignSystem.Colors.background)
         .background(focusSearchHotkey)
-        .alert("Clear All Dictations?", isPresented: $showClearAllAlert) {
-            Button("Cancel", role: .cancel) {}
-            Button("Clear All", role: .destructive) {
-                viewModel.clearAllDictations()
-            }
-        } message: {
-            Text("This will permanently delete all \(viewModel.dictationCount) dictation\(viewModel.dictationCount == 1 ? "" : "s"), their audio files, and any private metric-only entries. Lifetime stats are not affected. This cannot be undone.")
-        }
-        .alert("Reset Lifetime Stats?", isPresented: $showResetLifetimeStatsAlert) {
-            Button("Cancel", role: .cancel) {}
-            Button("Reset", role: .destructive) {
-                viewModel.resetLifetimeStats()
-            }
-        } message: {
-            Text("This will zero your total words, total time, total dictation count, and longest dictation. Your dictation history is not affected. This cannot be undone.")
-        }
-        .alert("Clear Downloaded YouTube Audio?", isPresented: $showClearYouTubeAudioAlert) {
-            Button("Cancel", role: .cancel) {}
-            Button("Clear Audio", role: .destructive) {
-                viewModel.clearDownloadedYouTubeAudio()
-            }
-        } message: {
-            Text("This will permanently delete all downloaded YouTube audio files and detach them from existing transcriptions.")
-        }
         .onAppear {
             viewModel.refreshLaunchAtLoginStatus()
             viewModel.startPermissionPolling()
@@ -1004,25 +977,37 @@ struct SettingsView: View {
                     label: "Delete data",
                     detail: "Removes rows from your library. Lifetime stats are preserved."
                 ) {
-                    Button("Clear All Dictations...", role: .destructive) {
-                        showClearAllAlert = true
+                    SettingsDestructiveButton(
+                        title: "Clear All Dictations...",
+                        confirmationTitle: "Clear All Dictations?",
+                        confirmationMessage: "This will permanently delete all \(viewModel.dictationCount) dictation\(viewModel.dictationCount == 1 ? "" : "s"), their audio files, and any private metric-only entries. Lifetime stats are not affected. This cannot be undone.",
+                        confirmButtonLabel: "Clear All"
+                    ) {
+                        viewModel.clearAllDictations()
                     }
-                    .buttonStyle(.bordered)
 
-                    Button("Clear Downloaded YouTube Audio...", role: .destructive) {
-                        showClearYouTubeAudioAlert = true
+                    SettingsDestructiveButton(
+                        title: "Clear Downloaded YouTube Audio...",
+                        confirmationTitle: "Clear Downloaded YouTube Audio?",
+                        confirmationMessage: "This will permanently delete all downloaded YouTube audio files and detach them from existing transcriptions.",
+                        confirmButtonLabel: "Clear Audio"
+                    ) {
+                        viewModel.clearDownloadedYouTubeAudio()
                     }
-                    .buttonStyle(.bordered)
                 }
 
                 maintenanceGroup(
                     label: "Reset counters",
                     detail: "Zeros lifetime stats. Your dictation history is untouched."
                 ) {
-                    Button("Reset Lifetime Stats...", role: .destructive) {
-                        showResetLifetimeStatsAlert = true
+                    SettingsDestructiveButton(
+                        title: "Reset Lifetime Stats...",
+                        confirmationTitle: "Reset Lifetime Stats?",
+                        confirmationMessage: "This will zero your total words, total time, total dictation count, and longest dictation. Your dictation history is not affected. This cannot be undone.",
+                        confirmButtonLabel: "Reset"
+                    ) {
+                        viewModel.resetLifetimeStats()
                     }
-                    .buttonStyle(.bordered)
                 }
             }
             .padding(DesignSystem.Spacing.sm)
