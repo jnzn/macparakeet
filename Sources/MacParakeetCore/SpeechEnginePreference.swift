@@ -79,6 +79,36 @@ public enum SpeechEnginePreference: String, CaseIterable, Codable, Sendable {
         guard !trimmed.isEmpty else { return nil }
         return trimmed.hasPrefix("whisper-") ? String(trimmed.dropFirst("whisper-".count)) : trimmed
     }
+
+    /// Maps an internal Whisper variant id to a short, user-friendly label.
+    /// Falls back to the raw variant if the shape is unrecognized so unknown
+    /// future variants degrade to something readable rather than empty.
+    public static func friendlyVariantName(_ rawVariant: String) -> String {
+        let normalized = normalizeModelVariant(rawVariant) ?? rawVariant
+        let lowered = normalized.lowercased()
+
+        let sizeOrder: [(token: String, label: String)] = [
+            ("large-v3", "Large v3"),
+            ("large-v2", "Large v2"),
+            ("large", "Large"),
+            ("medium", "Medium"),
+            ("small", "Small"),
+            ("base", "Base"),
+            ("tiny", "Tiny")
+        ]
+        var size: String?
+        for entry in sizeOrder where lowered.hasPrefix(entry.token) {
+            size = entry.label
+            break
+        }
+
+        let isTurbo = lowered.contains("turbo")
+
+        if let size {
+            return isTurbo ? "\(size) Turbo" : size
+        }
+        return rawVariant
+    }
 }
 
 public struct SpeechEngineSelection: Codable, Equatable, Sendable {
