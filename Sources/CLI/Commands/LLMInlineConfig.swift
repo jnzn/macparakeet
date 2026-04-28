@@ -182,7 +182,11 @@ struct LLMInlineOptions: ParsableArguments {
     }
 
     private func optionalAPIKey(defaultEnvNames: [String], environment: [String: String]) throws -> String? {
-        if let key = apiKey?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+        if let apiKey {
+            let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !key.isEmpty else {
+                throw ValidationError("--api-key must not be empty")
+            }
             return key
         }
 

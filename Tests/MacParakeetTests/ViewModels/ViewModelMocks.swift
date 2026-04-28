@@ -640,7 +640,7 @@ final class MockPromptRepository: PromptRepositoryProtocol, @unchecked Sendable 
         if let fetchAutoRunPromptsError {
             throw fetchAutoRunPromptsError
         }
-        return prompts.filter(\.isAutoRun)
+        return try fetchAll().filter(\.isAutoRun)
     }
 
     func delete(id: UUID) throws -> Bool {

@@ -112,6 +112,7 @@ macparakeet-cli prompts list --json
 macparakeet-cli prompts run "Action items" \
   --transcription <id-or-prefix> \
   --provider anthropic \
+  --api-key-env ANTHROPIC_API_KEY \
   --model claude-sonnet-4-6 \
   --json
 ```

@@ -108,6 +108,19 @@ final class LLMConfigCommandTests: XCTestCase {
         }
     }
 
+    func testInlineOptionsRejectWhitespaceOnlyAPIKey() throws {
+        let options = try LLMInlineOptions.parse([
+            "--provider", "openai",
+            "--api-key", "   \n  ",
+            "--model", "gpt-4.1",
+        ])
+
+        XCTAssertThrowsError(try options.buildConfig(environment: ["OPENAI_API_KEY": "sk-env"])) { error in
+            XCTAssertTrue(error is ValidationError)
+            XCTAssertTrue(String(describing: error).contains("--api-key must not be empty"))
+        }
+    }
+
     func testInlineOptionsBuildOpenAICompatibleLocalConfig() throws {
         let options = try LLMInlineOptions.parse([
             "--provider", "openai-compatible",

@@ -320,7 +320,7 @@ public final class PromptResultsViewModel {
         do {
             autoPrompts = try promptRepo?.fetchAutoRunPrompts() ?? []
         } catch {
-            logger.warning("Skipping auto-run prompts because preferences could not be loaded: \(error.localizedDescription, privacy: .public)")
+            logger.warning("Skipping auto-run prompts because preferences could not be loaded: \(error.localizedDescription, privacy: .private)")
             return []
         }
         guard !autoPrompts.isEmpty else { return [] }

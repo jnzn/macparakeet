@@ -257,10 +257,28 @@ struct DeleteDictationSubcommand: ParsableCommand {
             throw CLILookupError.notFound("No dictation matching '\(id)'")
         }
         if let path = dictation.audioPath {
-            try? FileManager.default.removeItem(atPath: path)
+            removeOwnedDictationAudio(at: path)
         }
         let preview = String(dictation.rawTranscript.prefix(60))
         print("Deleted dictation: \"\(preview)\"")
+    }
+}
+
+private func removeOwnedDictationAudio(at path: String, fileManager: FileManager = .default) {
+    let rootURL = URL(fileURLWithPath: AppPaths.dictationsDir, isDirectory: true)
+        .standardizedFileURL
+    let targetURL = URL(fileURLWithPath: path).standardizedFileURL
+
+    guard targetURL.path.hasPrefix(rootURL.path + "/") else {
+        printErr("Refusing to remove dictation audio outside app-owned dictations directory: \(targetURL.path)")
+        return
+    }
+
+    guard fileManager.fileExists(atPath: targetURL.path) else { return }
+    do {
+        try fileManager.removeItem(at: targetURL)
+    } catch {
+        printErr("Failed to remove dictation audio at \(targetURL.path): \(error.localizedDescription)")
     }
 }
 

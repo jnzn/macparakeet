@@ -1,6 +1,8 @@
 import Darwin
 import Foundation
 
+/// Captures the small stdout payloads emitted by focused CLI unit tests.
+/// Do not use this for commands that can stream or print large output.
 func captureStandardOutput(_ body: () throws -> Void) throws -> String {
     let pipe = Pipe()
     let originalStdout = dup(STDOUT_FILENO)
@@ -22,7 +24,11 @@ func captureStandardOutput(_ body: () throws -> Void) throws -> String {
     }
 
     fflush(stdout)
-    dup2(originalStdout, STDOUT_FILENO)
+    guard dup2(originalStdout, STDOUT_FILENO) >= 0 else {
+        let restoreErrno = errno
+        close(originalStdout)
+        throw NSError(domain: NSPOSIXErrorDomain, code: Int(restoreErrno))
+    }
     close(originalStdout)
     pipe.fileHandleForWriting.closeFile()
 
