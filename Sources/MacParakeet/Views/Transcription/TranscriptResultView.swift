@@ -602,6 +602,23 @@ struct TranscriptResultView: View {
         activeTranscription.speakers?.count ?? activeTranscription.speakerCount ?? 0
     }
 
+    /// User-facing engine attribution string for the metadata chip, or `nil`
+    /// for legacy rows saved before the v0.8 engine-attribution migration —
+    /// in that case we omit the chip rather than mislabel.
+    private var engineAttributionLabel: String? {
+        guard let engineRaw = activeTranscription.engine,
+              let preference = SpeechEnginePreference(rawValue: engineRaw) else {
+            return nil
+        }
+        switch preference {
+        case .parakeet:
+            return "Parakeet TDT"
+        case .whisper:
+            let variant = activeTranscription.engineVariant ?? SpeechEnginePreference.defaultWhisperModelVariant
+            return "Whisper \(SpeechEnginePreference.friendlyVariantName(variant))"
+        }
+    }
+
     private var resultHeaderCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Always-visible compact row: back button + title + metadata + mandala + expand toggle
@@ -690,6 +707,10 @@ struct TranscriptResultView: View {
 
                         if speakerCountValue > 0 {
                             metadataChip(icon: "person.2.fill", text: "\(speakerCountValue) speaker\(speakerCountValue == 1 ? "" : "s")", tint: DesignSystem.Colors.textSecondary)
+                        }
+
+                        if let engineAttributionLabel {
+                            metadataChip(icon: "cpu", text: engineAttributionLabel, tint: DesignSystem.Colors.textSecondary)
                         }
                     }
 
