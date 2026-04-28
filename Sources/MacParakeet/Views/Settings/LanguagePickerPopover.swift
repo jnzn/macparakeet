@@ -30,6 +30,7 @@ struct LanguagePickerButton: View {
         }
         .buttonStyle(.bordered)
         .disabled(isDisabled)
+        .accessibilityLabel("Whisper language: \(WhisperLanguageCatalog.displayLabel(for: selection))")
         .popover(isPresented: $isShowing, arrowEdge: .bottom) {
             LanguagePickerPopover(selection: $selection) {
                 isShowing = false
@@ -82,7 +83,6 @@ struct LanguagePickerPopover: View {
                 .font(DesignSystem.Typography.bodySmall)
                 .textFieldStyle(.plain)
                 .focused($searchFocused)
-                .onSubmit { commitHighlighted() }
             if !query.isEmpty {
                 Button {
                     query = ""
@@ -116,7 +116,7 @@ struct LanguagePickerPopover: View {
     private var list: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 0) {
                     let rows = visibleRows
                     if rows.isEmpty {
                         emptyState
@@ -172,6 +172,7 @@ struct LanguagePickerPopover: View {
                     .imageScale(.small)
                     .foregroundStyle(isSelected ? DesignSystem.Colors.accent : .clear)
                     .frame(width: LanguagePickerLayout.checkmarkWidth)
+                    .accessibilityHidden(true)
                 Text(language.englishName)
                     .font(DesignSystem.Typography.bodySmall)
                     .foregroundStyle(DesignSystem.Colors.textPrimary)
@@ -197,6 +198,8 @@ struct LanguagePickerPopover: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel(for: language))
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .onHover { hovering in
             if hovering {
                 highlightedCode = language.code
@@ -227,6 +230,13 @@ struct LanguagePickerPopover: View {
     private func commit(_ code: String) {
         selection = code
         onCommit()
+    }
+
+    private func accessibilityLabel(for language: WhisperLanguage) -> String {
+        if language.nativeName.isEmpty || language.nativeName == language.englishName {
+            return language.englishName
+        }
+        return "\(language.englishName), \(language.nativeName)"
     }
 }
 
@@ -270,7 +280,9 @@ private struct KeyEventCatcher: NSViewRepresentable {
         var onDown: (() -> Void)?
         var onReturn: (() -> Void)?
 
-        private var monitor: Any?
+        // `deinit` is nonisolated; the AppKit monitor is installed and removed
+        // on the main thread during the view's lifetime.
+        nonisolated(unsafe) private var monitor: Any?
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
