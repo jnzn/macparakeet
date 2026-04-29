@@ -212,6 +212,8 @@ final class DictationOverlayViewModel {
     var recordingElapsedSeconds: Int = 0
     var isHovered: Bool = false
     var hoverTooltip: String?
+    var processingMessage: String?
+    var busyProcessingMessage: String?
     var commandPromptText: String = "Speak your command..."
     var commandSelectedText: String = ""
     /// Live partial transcript from the streaming dictation pipeline (fork-only
@@ -233,6 +235,11 @@ final class DictationOverlayViewModel {
     var cancelTimeRemaining: Double = 5.0
 
     private var timerTask: Task<Void, Never>?
+    private var busyMessageTask: Task<Void, Never>?
+
+    var visibleProcessingMessage: String? {
+        busyProcessingMessage ?? processingMessage
+    }
 
     func startTimer() {
         recordingElapsedSeconds = 0
@@ -250,6 +257,16 @@ final class DictationOverlayViewModel {
     func stopTimer() {
         timerTask?.cancel()
         timerTask = nil
+    }
+
+    func showBusyProcessingHint() {
+        busyProcessingMessage = "Still transcribing..."
+        busyMessageTask?.cancel()
+        busyMessageTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(1100))
+            guard !Task.isCancelled else { return }
+            self?.busyProcessingMessage = nil
+        }
     }
 
     /// Resume timer without resetting elapsed time (used after undo cancel)
@@ -293,7 +310,8 @@ final class DictationOverlayViewModel {
             return recordingMode == .holdToTalk ? "holdToTalk" : "recording"
         case .cancelled: return "cancelled"
         case .processing:
-            return sessionKind == .command ? "commandProcessing" : "processing"
+            let messageSuffix = visibleProcessingMessage == nil ? "" : "Message"
+            return sessionKind == .command ? "commandProcessing\(messageSuffix)" : "processing\(messageSuffix)"
         case .formatting:
             return sessionKind == .command ? "commandFormatting" : "formatting"
         case .success: return "success"

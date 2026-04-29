@@ -72,7 +72,7 @@ struct SystemAccessibilityBackend: AccessibilityBackend {
         guard CFGetTypeID(value) == AXUIElementGetTypeID() else {
             return nil
         }
-        return unsafeBitCast(value, to: AXUIElement.self)
+        return unsafeDowncast(value as AnyObject, to: AXUIElement.self)
     }
 
     func role(of element: AXUIElement) -> String? {
@@ -107,7 +107,7 @@ struct SystemAccessibilityBackend: AccessibilityBackend {
             return nil
         }
 
-        let axValue = unsafeBitCast(value, to: AXValue.self)
+        let axValue = unsafeDowncast(value as AnyObject, to: AXValue.self)
         guard AXValueGetType(axValue) == .cfRange else {
             return nil
         }

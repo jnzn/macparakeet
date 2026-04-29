@@ -14,6 +14,7 @@ public final class OnboardingViewModel {
         case microphone
         case accessibility
         case meetingRecording
+        case calendar
         case hotkey
         case aiAssistant
         case engine
@@ -27,6 +28,7 @@ public final class OnboardingViewModel {
             case .microphone: return "Microphone"
             case .accessibility: return "Accessibility"
             case .meetingRecording: return "Meeting Recording"
+            case .calendar: return "Calendar"
             case .hotkey: return "Hotkeys"
             case .aiAssistant: return "Ask AI Assistant"
             case .engine: return "Speech Model"
@@ -51,6 +53,8 @@ public final class OnboardingViewModel {
     public private(set) var accessibilityGranted: Bool = false
     public private(set) var screenRecordingGranted: Bool = false
     public private(set) var meetingRecordingSkipped: Bool
+    public private(set) var calendarPermissionGranted: Bool = false
+    public private(set) var calendarSkipped: Bool
     public private(set) var showRelaunchHint: Bool = false
     public private(set) var engineState: EngineState = .idle
 
@@ -73,6 +77,14 @@ public final class OnboardingViewModel {
     private var warmUpObserverTask: Task<Void, Never>?
     private var warmUpObserverId: UUID?
     private var warmUpObservationToken: UUID?
+    private var warmUpStallWatchdogTask: Task<Void, Never>?
+
+    /// How long to wait between warm-up progress events before declaring the
+    /// stream stalled. FluidAudio emits progress updates regularly during
+    /// download even when bytes-per-second is low, so silence longer than
+    /// this strongly suggests a stuck connection or a hung dependency.
+    /// Memory: v0.4.22 stranded ~23 users for ~24h with no escape hatch.
+    public static let warmUpStallTimeout: Duration = .seconds(180)
     private var screenRecordingGrantRequestedAt: Date?
     private var hasLoadedInitialScreenRecordingState = false
     private var hasEmittedScreenRecordingGranted = false
@@ -81,6 +93,7 @@ public final class OnboardingViewModel {
 
     public static let onboardingCompletedKey = "onboarding.completedAtISO"
     public static let meetingRecordingSkippedKey = "onboarding.meetingRecordingSkipped"
+    public static let calendarSkippedKey = "onboarding.calendarSkipped"
 
     public init(
         permissionService: PermissionServiceProtocol,
@@ -107,6 +120,8 @@ public final class OnboardingViewModel {
         self.permissionPollingInterval = permissionPollingInterval
         self.relaunchHintDelay = relaunchHintDelay
         self.meetingRecordingSkipped = defaults.bool(forKey: Self.meetingRecordingSkippedKey)
+        self.calendarSkipped = defaults.bool(forKey: Self.calendarSkippedKey)
+        self.calendarPermissionGranted = CalendarService.shared.permissionStatus == .granted
     }
 
     public var hasCompletedOnboarding: Bool {
@@ -124,9 +139,15 @@ public final class OnboardingViewModel {
     public func resetOnboarding() {
         defaults.removeObject(forKey: Self.onboardingCompletedKey)
         defaults.removeObject(forKey: Self.meetingRecordingSkippedKey)
+        defaults.removeObject(forKey: Self.calendarSkippedKey)
         step = .welcome
         engineState = .idle
         meetingRecordingSkipped = false
+        calendarSkipped = false
+        // Re-resolve from the live calendar permission so a previously-
+        // granted user re-entering onboarding sees the correct "completed"
+        // state, not the stale value carried over from VM init.
+        calendarPermissionGranted = CalendarService.shared.permissionStatus == .granted
         clearMeetingRecordingPendingState()
     }
 
@@ -156,8 +177,24 @@ public final class OnboardingViewModel {
         }
     }
 
+    /// Steps the user actually sees. Hidden steps (gated by `AppFeatures`) are
+    /// filtered out so next/back/jump all walk the visible list — no flicker or
+    /// silent no-ops when flags are off.
+    public static var visibleSteps: [Step] {
+        Step.allCases.filter { step in
+            switch step {
+            case .meetingRecording, .calendar:
+                return AppFeatures.meetingRecordingEnabled
+            default:
+                return true
+            }
+        }
+    }
+
     public func goNext() {
-        guard let next = Step(rawValue: step.rawValue + 1) else { return }
+        let visible = Self.visibleSteps
+        let currentRaw = step.rawValue
+        guard let next = visible.first(where: { $0.rawValue > currentRaw }) else { return }
         if step == .meetingRecording {
             clearMeetingRecordingPendingState()
         }
@@ -167,7 +204,9 @@ public final class OnboardingViewModel {
     }
 
     public func goBack() {
-        guard let prev = Step(rawValue: step.rawValue - 1) else { return }
+        let visible = Self.visibleSteps
+        let currentRaw = step.rawValue
+        guard let prev = visible.last(where: { $0.rawValue < currentRaw }) else { return }
         if step == .meetingRecording {
             clearMeetingRecordingPendingState()
         }
@@ -192,6 +231,8 @@ public final class OnboardingViewModel {
         case .accessibility:
             return accessibilityGranted
         case .meetingRecording:
+            return true
+        case .calendar:
             return true
         case .hotkey:
             return true
@@ -258,6 +299,49 @@ public final class OnboardingViewModel {
         goNext()
     }
 
+    /// Trigger the EventKit permission prompt. On grant, default the user
+    /// into `.notify` mode so the feature works out of the box and request
+    /// notification authorization in the same flow — without it, macOS
+    /// silently drops every reminder we post and the user concludes the
+    /// feature is broken. We write directly to UserDefaults + post the
+    /// shared notification so a running `MeetingAutoStartCoordinator`
+    /// re-evaluates immediately.
+    public func requestCalendarAccess() {
+        isBusy = true
+        Telemetry.send(.permissionPrompted(permission: .calendar))
+        Task {
+            let granted = await CalendarService.shared.requestPermission()
+            if granted {
+                await CalendarNotificationAuthorization.requestIfNeeded()
+            }
+            await MainActor.run {
+                self.isBusy = false
+                self.calendarPermissionGranted = granted
+                if granted {
+                    Telemetry.send(.permissionGranted(permission: .calendar))
+                    self.applyCalendarMode(.notify)
+                } else {
+                    Telemetry.send(.permissionDenied(permission: .calendar))
+                }
+            }
+        }
+    }
+
+    /// Skip the calendar onboarding step. Persists `.off` mode explicitly so
+    /// the SettingsViewModel default doesn't silently flip back to enabled
+    /// later. Symmetric to `skipMeetingRecordingStep()`.
+    public func skipCalendarStep() {
+        calendarSkipped = true
+        defaults.set(true, forKey: Self.calendarSkippedKey)
+        applyCalendarMode(.off)
+        goNext()
+    }
+
+    private func applyCalendarMode(_ mode: CalendarAutoStartMode) {
+        defaults.set(mode.rawValue, forKey: CalendarAutoStartPreferences.modeKey)
+        NotificationCenter.default.post(name: .macParakeetCalendarSettingsDidChange, object: nil)
+    }
+
     public func openScreenRecordingSystemSettings() {
         permissionService.openScreenRecordingSettings()
     }
@@ -298,6 +382,7 @@ public final class OnboardingViewModel {
         isBusy = true
         engineState = .working(message: "Checking setup requirements...", progress: nil)
         warmUpObservationToken = observationToken
+        resetWarmUpStallWatchdog(generation: generation, observationToken: observationToken)
 
         // Assign the outer Task immediately so re-entrant calls hit the
         // `warmUpObserverTask != nil` guard. Without this, the two `await`
@@ -309,6 +394,8 @@ public final class OnboardingViewModel {
                 self.warmUpObserverTask = nil
                 self.warmUpObserverId = nil
                 self.warmUpObservationToken = nil
+                self.warmUpStallWatchdogTask?.cancel()
+                self.warmUpStallWatchdogTask = nil
                 if let observerId {
                     Task { [sttClient] in await sttClient.removeWarmUpObserver(id: observerId) }
                 }
@@ -342,6 +429,10 @@ public final class OnboardingViewModel {
 
             observationLoop: for await state in stream {
                 guard self.engineGeneration == generation, self.warmUpObservationToken == observationToken else { break }
+                // Each event resets the stall-watchdog clock. If this loop
+                // doesn't iterate again within `warmUpStallTimeout`, the
+                // watchdog transitions to .failed and cancels observation.
+                self.resetWarmUpStallWatchdog(generation: generation, observationToken: observationToken)
                 switch state {
                 case .idle:
                     self.engineState = .working(message: "Preparing...", progress: nil)
@@ -433,12 +524,40 @@ public final class OnboardingViewModel {
 
     private func cancelWarmUpObservation() {
         warmUpObservationToken = nil
+        warmUpStallWatchdogTask?.cancel()
+        warmUpStallWatchdogTask = nil
         warmUpObserverTask?.cancel()
         warmUpObserverTask = nil
         if let id = warmUpObserverId {
             Task { [sttClient] in await sttClient.removeWarmUpObserver(id: id) }
         }
         warmUpObserverId = nil
+    }
+
+    /// Schedule (or reschedule) the warm-up stall watchdog. Cancels any
+    /// previously-running watchdog. If the new timer expires before another
+    /// stream event resets it, transitions `engineState` to `.failed` with a
+    /// retry-able message and cancels the warm-up observation.
+    /// Generation + observationToken guard so a stale watchdog from a previous
+    /// `startEngineWarmUp` call cannot overwrite a newer attempt.
+    private func resetWarmUpStallWatchdog(generation: Int, observationToken: UUID) {
+        warmUpStallWatchdogTask?.cancel()
+        warmUpStallWatchdogTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.warmUpStallTimeout)
+            guard !Task.isCancelled, let self else { return }
+            guard self.engineGeneration == generation,
+                  self.warmUpObservationToken == observationToken else { return }
+            // No progress event for `warmUpStallTimeout`. Declare stuck.
+            let stallSeconds = Int(Self.warmUpStallTimeout.components.seconds)
+            let detail = "no warm-up progress for \(stallSeconds)s"
+            self.logger.error("warm_up_stall_detected detail=\(detail, privacy: .public)")
+            Telemetry.send(.modelDownloadFailed(errorType: "WarmUpStalled", errorDetail: detail))
+            self.engineState = .failed(
+                message: "Setup is taking longer than expected. Check your network connection and tap Retry."
+            )
+            self.isBusy = false
+            self.cancelWarmUpObservation()
+        }
     }
 
     private func runEnginePreflight() async throws {

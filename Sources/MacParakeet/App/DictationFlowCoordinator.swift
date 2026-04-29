@@ -477,13 +477,20 @@ final class DictationFlowCoordinator {
             vm.recordingMode = mode
             cancelLiveCleanup()
             resetStableCleanupState()
+            vm.processingMessage = nil
+            vm.busyProcessingMessage = nil
             vm.state = .recording
             vm.startTimer()
 
         case .showProcessingState:
             overlayViewModel?.stopTimer()
             cancelLiveCleanup()
+            overlayViewModel?.processingMessage = nil
+            overlayViewModel?.busyProcessingMessage = nil
             overlayViewModel?.state = .processing
+
+        case .showBusyProcessingHint:
+            overlayViewModel?.showBusyProcessingHint()
 
         case .showCancelCountdown:
             overlayViewModel?.stopTimer()
