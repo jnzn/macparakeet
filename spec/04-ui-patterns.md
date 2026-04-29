@@ -4,13 +4,15 @@
 
 ## Overview
 
-MacParakeet has six UI surfaces:
+MacParakeet has these primary UI surfaces:
 1. **Main Window** -- Sidebar + content area for history and transcriptions
 2. **Idle Pill** -- Persistent floating indicator, always visible when not dictating or meeting-recording
 3. **Dictation Overlay** -- Compact pill for recording state
 4. **Meeting Recording Pill** -- Persistent floating pill during meeting recording (sacred geometry icon)
-5. **Meeting Recording Panel** -- Floating panel with live transcript preview, audio levels, and stop controls
+5. **Meeting Recording Panel** -- Floating Notes / Transcript / Ask panel with audio levels and stop controls
 6. **Menu Bar** -- Quick access and status
+7. **Countdown Toasts** -- Calendar auto-start/auto-stop affordances
+8. **Settings** -- Preferences, permissions, local speech models, calendar, and update controls
 
 Design philosophy: **Simple, native, stays out of the way.** No chrome, no clutter. The app should feel like part of macOS, not a web app in a wrapper.
 
@@ -415,25 +417,19 @@ Same `KeylessPanel` pattern as dictation overlay — never steals focus from the
 
 ## Meeting Recording Panel (v0.6)
 
-Floating panel opened from the meeting recording pill. Shows live transcript preview, audio levels, and recording controls.
+Floating panel opened from the meeting recording pill. Shows live notes, live transcript preview, live Ask chat, audio levels, and recording controls. Notes is the default tab.
 
 ### Layout
 
 ```
 ┌──────────────────────────────────────────┐
 │  Meeting Recording         01:23:45      │
+│  🎤 ██████████░░░░   🔊 ████████░░░░     │
 │  ──────────────────────────────────────  │
+│  [Notes · Nw] [Transcript · LIVE] [Ask]  │
 │                                          │
-│  🎤 ██████████░░░░  Mic                  │
-│  🔊 ████████░░░░░░  System               │
-│  ⚠ Live preview catching up...          │
-│                                          │
-│  Live Preview:                           │
-│  ──────────────────────────────────────  │
-│  [Me] So I think the approach should...  │
-│  [Them] Yeah, that makes sense for the   │
-│  deployment timeline we discussed...     │
-│  [Me] Exactly, and the migration can...  │
+│  **Decision:** ship Friday               │
+│  /action QA smoke test                   │
 │                                          │
 │  ──────────────────────────────────────  │
 │  [■ Stop Recording]                      │
@@ -444,10 +440,13 @@ Floating panel opened from the meeting recording pill. Shows live transcript pre
 
 - **Elapsed timer** — updates every second
 - **Dual audio level meters** — mic and system audio levels (visual feedback that both streams are capturing)
-- **Lag notice** — appears when the scheduler has started dropping or delaying live-preview chunks; recording continues and the final saved meeting remains authoritative
-- **Live transcript preview** — scrolling list of transcribed chunks labeled by source ([Me] = mic, [Them] = system audio)
+- **Tabs** — Notes / Transcript / Ask, with ⌘1 / ⌘2 / ⌘3 shortcuts and state-bearing labels that collapse at narrow width
+- **Notes pane** — plaintext editor with slash commands, debounced auto-save through `MeetingRecordingService.updateNotes(_:)`, soft-cap warning near 8,000 words, and lock-file crash recovery
+- **Transcript pane** — scrolling live preview with source labels ([Me] = mic, [Them] = system audio); lag notice appears when preview chunks fall behind or are dropped
+- **Ask pane** — live chat against the rolling transcript using the configured LLM provider; follow-up state is handed off after finalization
 - **Stop button** — stops recording, triggers batch transcription, navigates to result
 - **Meetings empty state copy** — one-line guidance: "For the cleanest separation between you and other participants, use headphones."
+- Notes and Ask own their own bottom UI; the shared footer is hidden on those tabs. The final saved meeting transcript remains authoritative even if live preview lagged.
 
 ### Concurrent Operation (ADR-015)
 
@@ -524,7 +523,7 @@ Drop zone components:
 - Outer thin solid border: 0.5pt, primary 6% (accent 30% on drag-over)
 - Inner dashed border: 1.5pt, dash [8, 4], primary 15% (accentColor on drag-over)
 - Accent glow fill: accentColor 4% (on drag-over only)
-- MeditativeMerkabaView(size: 48): 6s revolution idle, 2s revolution on drag-over, tintColor switches to .accentColor on drag
+- MeditativeMerkabaView(size: 80): 6s revolution (constant), tintColor switches to .accentColor on drag; opacity 0.7 idle → 0.9 on drag (eased over 0.3s)
 - "Browse Files" button: .borderedProminent style
 - Supported formats text: caption, tertiary
 - Drop zone height: 200pt (DesignSystem.Layout.dropZoneHeight)
@@ -798,24 +797,35 @@ Note: How It Works, Tips, Custom Words, and Text Snippets sections are only visi
 └───────────────────────────────────────────────────────────┘
 ```
 
-### Local Models (v0.2)
+### Speech Recognition (v0.7)
 
 ```
 ┌───────────────────────────────────────────────────────────┐
-│  LOCAL MODELS                                             │
+│  SPEECH RECOGNITION                                       │
 │  ─────────────────────────────────────────────────────    │
 │                                                           │
-│  Parakeet (Speech)   ╭─✓ Ready─╮              [Repair]   │
+│  Engine                                                   │
+│  [ Parakeet ] [ Whisper ]                                 │
+│                                                           │
+│  Whisper language                                         │
+│  [ Auto-detect                         ▾ ]                │
+│                                                           │
+│  Parakeet          ╭─✓ Ready─╮              [Repair]      │
 │  Loaded in memory and ready.                              │
 │                                                           │
-│  Updated 4:27 PM                            [Check Now]  │
+│  Whisper           ╭─↓ Not Downloaded─╮     [Download]    │
+│  Download before switching to Whisper.                    │
+│                                                           │
 │                                                           │
 └───────────────────────────────────────────────────────────┘
 ```
 
-- Status pill states: `Unknown`, `Checking`, `Ready`, `Not Loaded`, `Not Downloaded`, `Repairing`, `Failed`
-- `Repair` retries with bounded backoff (up to 3 attempts) and shows attempt-aware detail text
-- `Repair` retries the Parakeet model download/initialization with bounded backoff
+- Engine picker options: Parakeet (default) and Whisper.
+- Whisper language picker is shown for the Whisper path. `Auto-detect` stores no explicit language; specific languages are normalized before saving.
+- Status pill states: `Unknown`, `Checking`, `Ready`, `Not Loaded`, `Not Downloaded`, `Downloading`, `Repairing`, `Failed`.
+- `Repair` retries Parakeet model download/initialization with bounded backoff.
+- `Download` explicitly downloads the configured Whisper model into `~/Library/Application Support/MacParakeet/models/stt/whisper/`.
+- Switching engines is disabled while STT work is queued/running or an active meeting recording holds a speech-engine lease.
 
 ### Permissions (v0.1)
 
@@ -1038,15 +1048,16 @@ Shared components in `Views/Components/SacredGeometry.swift`:
 - `tintColor`: Default `.white` (overlay), `.accentColor` (main window), `.secondary` (decorative)
 
 **MeditativeMerkabaView parameters:**
-- `size`: Default 64pt, typically 48–56pt for empty states
-- `revolutionDuration`: Default 6.0s, 8.0s for background, 2.0s for drag-over acceleration
-- `tintColor`: Default nil (uses `.primary`), `.accentColor` on drag-over
+- `size`: Default 64pt, typically 40–80pt in app (drop zone 80, empty states 40–72)
+- `revolutionDuration`: Default 6.0s, 8.0s for background idle (DictationHistoryView), 12.0s for compact empty states (PromptLibraryView)
+- `tintColor`: Default nil (uses `.primary`), `.accentColor` when drawing user attention
+- `animate`: Default `true`. Respects `accessibilityReduceMotion` automatically
 
 | Animation | Duration | Curve | Usage |
 |-----------|----------|-------|-------|
-| Merkaba rotation | configurable | `.linear` (repeating) | Two counter-rotating triangles |
-| Merkaba vertex pulse | 1.0–1.6s | `.easeInOut` (repeating) | Vertex dot glow |
-| Merkaba center pulse | 1.4–2.0s | `.easeInOut` (repeating) | Center nexus glow |
+| Merkaba rotation | configurable | `.linear` (repeating) | Two counter-rotating triangles — the only animated property |
+
+Center and vertex glow are static (constants `centerGlow = 0.32`, `vertexGlow = 0.45`, set to the visual midpoint of the former pulse ranges). Removed in the idle CPU fix: pulsing those opacities alongside `.drawingGroup()` forced per-frame bitmap re-rasterization.
 
 ---
 

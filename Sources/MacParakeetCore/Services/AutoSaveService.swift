@@ -76,12 +76,20 @@ public final class AutoSaveService {
     /// Failures are logged but never surfaced to the user.
     public func saveIfEnabled(_ transcription: Transcription, scope: AutoSaveScope = .transcription) {
         guard defaults.bool(forKey: scope.enabledKey) else { return }
+        let format = AutoSaveFormat(rawValue: defaults.string(forKey: scope.formatKey) ?? "md") ?? .md
+        let operationContext = Observability.childOperationContext()
         guard let folderURL = resolveFolder(scope: scope) else {
             logger.warning("Auto-save enabled but no valid folder configured for \(scope.rawValue).")
+            sendAutoSaveOperation(
+                operationContext: operationContext,
+                scope: scope,
+                format: format,
+                outcome: .unavailable,
+                errorType: "folder_unavailable"
+            )
             return
         }
 
-        let format = AutoSaveFormat(rawValue: defaults.string(forKey: scope.formatKey) ?? "md") ?? .md
         let fileURL = buildFileURL(for: transcription, format: format, in: folderURL)
 
         do {
@@ -97,8 +105,21 @@ public final class AutoSaveService {
             }
 
             logger.info("Auto-saved \(scope.rawValue) transcript to \(fileURL.lastPathComponent)")
+            sendAutoSaveOperation(
+                operationContext: operationContext,
+                scope: scope,
+                format: format,
+                outcome: .success
+            )
         } catch {
             logger.error("Auto-save failed for \(scope.rawValue): \(error.localizedDescription)")
+            sendAutoSaveOperation(
+                operationContext: operationContext,
+                scope: scope,
+                format: format,
+                outcome: .failure,
+                errorType: Observability.errorType(for: error)
+            )
         }
     }
 
@@ -138,6 +159,24 @@ public final class AutoSaveService {
         defaults.set(value, forKey: destinationKey)
     }
 
+    private func sendAutoSaveOperation(
+        operationContext: ObservabilityOperationContext,
+        scope: AutoSaveScope,
+        format: AutoSaveFormat,
+        outcome: ObservabilityOutcome,
+        errorType: String? = nil
+    ) {
+        Telemetry.send(.autoSaveOperation(
+            operationID: operationContext.operationID,
+            operationContext: operationContext,
+            scope: scope,
+            format: format,
+            outcome: outcome,
+            durationSeconds: Observability.durationSeconds(since: operationContext.startedAt),
+            errorType: errorType
+        ))
+    }
+
     /// Store a folder URL as bookmark data. Returns the display path on success.
     @discardableResult
     public static func storeFolder(_ url: URL, scope: AutoSaveScope = .transcription, defaults: UserDefaults = .standard) -> String? {
@@ -155,15 +194,19 @@ public final class AutoSaveService {
 
     /// Build a deduplicated file URL for the given transcription.
     /// Format: `YYYY-MM-DD-HHmmss-<sanitized-name>.<ext>`
+    ///
+    /// Uses `transcription.fileName` for both transcriptions and meetings —
+    /// the auto-saved filename should match what the user sees in the
+    /// in-app library card. Calendar-driven meeting recordings (post-#135)
+    /// carry the calendar event title (e.g. "Roadmap Sync") rather than
+    /// the date-based default, so a hardcoded "Meeting" stem would diverge
+    /// from the library and confuse users hunting for a specific meeting.
+    /// For uncalendared meetings the displayName is "Meeting <date>" and
+    /// the filename ends up with the date twice (once from the date prefix,
+    /// once from the stem) — slightly redundant, but matches the library
+    /// label exactly, which is what users expect to grep for.
     func buildFileURL(for transcription: Transcription, format: AutoSaveFormat, in folder: URL) -> URL {
-        let stem: String
-        if transcription.sourceType == .meeting {
-            // Meeting display names already contain the date (e.g. "Meeting Apr 6, 2026 at 10:02 PM"),
-            // so use just the title prefix to avoid date duplication in the filename.
-            stem = "Meeting"
-        } else {
-            stem = TranscriptSegmenter.sanitizedExportStem(from: transcription.fileName)
-        }
+        let stem = TranscriptSegmenter.sanitizedExportStem(from: transcription.fileName)
         let dateStr = Self.dateFormatter.string(from: transcription.createdAt)
         let baseName = "\(dateStr)-\(stem)"
 
