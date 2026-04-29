@@ -9,6 +9,7 @@ struct CalendarSettingsView: View {
     @Bindable var viewModel: SettingsViewModel
     @State private var availableCalendars: [CalendarInfo] = []
     @State private var isRequestingPermission = false
+    @State private var calendarsExpanded = false
 
     var body: some View {
         VStack(spacing: DesignSystem.Spacing.md) {
@@ -202,36 +203,51 @@ struct CalendarSettingsView: View {
 
     @ViewBuilder
     private var includedCalendarsRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        DisclosureGroup(isExpanded: $calendarsExpanded) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Uncheck calendars to ignore (personal calendars, holidays, etc.).")
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(availableCalendars) { calendar in
+                        Toggle(isOn: bindingForCalendar(calendar)) {
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text(calendar.title)
+                                    .font(DesignSystem.Typography.body)
+                                if let source = calendar.sourceTitle {
+                                    Text(source)
+                                        .font(DesignSystem.Typography.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        .toggleStyle(.checkbox)
+                    }
+                }
+                .padding(.leading, DesignSystem.Spacing.sm)
+            }
+            .padding(.top, DesignSystem.Spacing.sm)
+        } label: {
             HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Calendars")
                         .font(DesignSystem.Typography.body)
-                    Text("Uncheck calendars to ignore (personal calendars, holidays, etc.).")
+                    Text(calendarSelectionSummary)
                         .font(DesignSystem.Typography.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: DesignSystem.Spacing.md)
             }
-
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(availableCalendars) { calendar in
-                    Toggle(isOn: bindingForCalendar(calendar)) {
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text(calendar.title)
-                                .font(DesignSystem.Typography.body)
-                            if let source = calendar.sourceTitle {
-                                Text(source)
-                                    .font(DesignSystem.Typography.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                    .toggleStyle(.checkbox)
-                }
-            }
-            .padding(.leading, DesignSystem.Spacing.sm)
         }
+    }
+
+    private var calendarSelectionSummary: String {
+        let total = availableCalendars.count
+        let included = availableCalendars.filter {
+            !viewModel.calendarExcludedIdentifiers.contains($0.id)
+        }.count
+        return "\(included) of \(total) selected"
     }
 
     private func bindingForCalendar(_ calendar: CalendarInfo) -> Binding<Bool> {
