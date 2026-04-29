@@ -885,9 +885,7 @@ struct SettingsView: View {
     }
 
     /// Open the system folder picker. Returns the chosen URL or `nil` if the
-    /// user cancelled. Used both by the "Choose…" button in the auto-save
-    /// options row and by the toggle-binding interceptor that gathers a
-    /// folder before letting the toggle flip ON for the first time.
+    /// user cancelled. Used by the "Choose…" button in the auto-save options row.
     static func presentAutoSaveFolderPicker(message: String) -> URL? {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true

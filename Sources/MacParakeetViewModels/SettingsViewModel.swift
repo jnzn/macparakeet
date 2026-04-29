@@ -595,8 +595,7 @@ public final class SettingsViewModel {
 
     /// Resolve the stored bookmark to a display path.
     private static func resolveAutoSaveFolderPath(defaults: UserDefaults, scope: AutoSaveScope = .transcription) -> String? {
-        let service = AutoSaveService(defaults: defaults)
-        return service.resolveFolder(scope: scope)?.path
+        AutoSaveService.resolveFolder(scope: scope, defaults: defaults)?.path
     }
 
     public func chooseAutoSaveFolder(url: URL) {
