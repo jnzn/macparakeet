@@ -249,9 +249,9 @@ struct SettingsView: View {
     }
 
     /// System tab — everything that isn't daily-ops, ordered by frequency of
-    /// use. Destructive controls are fenced off at the bottom inside
-    /// `resetCleanupCard`, separated by a visible divider so a user
-    /// scrolling through configuration can't fat-finger a wipe.
+    /// use. The destructive `resetCleanupCard` lives at the very bottom and
+    /// fences itself with a red trash icon, a red "Destructive" chip, and a
+    /// per-action confirmation alert — no extra pre-card divider needed.
     private var systemTabContent: some View {
         scrollableTabBody {
             startupCard.id("system.startup")
@@ -261,8 +261,6 @@ struct SettingsView: View {
             privacyCard.id("system.privacy")
             onboardingCard.id("system.onboarding")
             aboutCard.id("system.about")
-
-            resetCleanupSeparator
             resetCleanupCard.id("system.reset")
         }
     }
@@ -299,25 +297,6 @@ struct SettingsView: View {
                 }
                 pendingScrollTarget = nil
             }
-        }
-    }
-
-    /// Visual fence between configuration and destructive operations.
-    /// "Danger zone"-style cue without the heavy chrome — a faint divider
-    /// plus a small caption is enough signal at the cadence the user
-    /// actually scans this tab.
-    private var resetCleanupSeparator: some View {
-        VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
-            Rectangle()
-                .fill(DesignSystem.Colors.border.opacity(0.4))
-                .frame(height: 0.5)
-                .padding(.top, DesignSystem.Spacing.sm)
-
-            Text("Reset & Cleanup")
-                .font(DesignSystem.Typography.caption.weight(.medium))
-                .foregroundStyle(.tertiary)
-                .textCase(.uppercase)
-                .tracking(0.6)
         }
     }
 
@@ -1001,59 +980,123 @@ struct SettingsView: View {
     // MARK: - Reset & Cleanup
 
     /// Holds every destructive operation in the app. Lives at the bottom of
-    /// the System tab behind a visible divider; the card itself uses the
-    /// `.required` chip semantically (red dot) to telegraph severity even
-    /// when the user lands here scrolled past the divider.
+    /// the System tab; the red trash icon, red "Destructive" chip, and
+    /// per-action confirmation alert do all the fencing — no inner panel,
+    /// no pre-card divider, no double "Reset & Cleanup" labeling.
+    ///
+    /// Body is two semantically labeled subgroups (Delete data vs Reset
+    /// counters), each containing one or more rows. Every row follows the
+    /// standard Settings rhythm: title + per-action detail on the left,
+    /// destructive button on the right — the same shape as
+    /// `SettingsToggleRow` so the eye doesn't have to relearn this card.
     private var resetCleanupCard: some View {
         SettingsCard(
             title: "Reset & Cleanup",
             subtitle: "Permanent. These cannot be undone.",
             icon: "trash",
+            iconTint: DesignSystem.Colors.errorRed,
             status: SettingsCardStatus(.required, label: "Destructive")
         ) {
-            VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
-                maintenanceGroup(
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
+                resetSection(
                     label: "Delete data",
-                    detail: "Removes rows from your library. Lifetime stats are preserved."
+                    caption: "Removes saved rows. Your lifetime stats stay."
                 ) {
-                    SettingsDestructiveButton(
-                        title: "Clear All Dictations...",
+                    resetActionRow(
+                        title: "Dictation history",
+                        detail: "All dictations and their audio files.",
+                        buttonTitle: "Clear…",
+                        accessibilityLabel: "Clear all dictations",
                         confirmationTitle: "Clear All Dictations?",
-                        confirmationMessage: "This will permanently delete all \(viewModel.dictationCount) dictation\(viewModel.dictationCount == 1 ? "" : "s"), their audio files, and any private metric-only entries. Lifetime stats are not affected. This cannot be undone.",
-                        confirmButtonLabel: "Clear All"
-                    ) {
-                        viewModel.clearAllDictations()
-                    }
+                        confirmationMessage: "This will delete all \(viewModel.dictationCount) dictation\(viewModel.dictationCount == 1 ? "" : "s"), their audio files, and any private metric-only entries. Your lifetime stats are not affected. This cannot be undone.",
+                        confirmButtonLabel: "Clear All",
+                        action: viewModel.clearAllDictations
+                    )
 
-                    SettingsDestructiveButton(
-                        title: "Clear Downloaded YouTube Audio...",
+                    Divider()
+
+                    resetActionRow(
+                        title: "Downloaded YouTube audio",
+                        detail: "Saved audio files only. Transcriptions stay; audio detaches.",
+                        buttonTitle: "Clear…",
+                        accessibilityLabel: "Clear downloaded YouTube audio",
                         confirmationTitle: "Clear Downloaded YouTube Audio?",
-                        confirmationMessage: "This will permanently delete all downloaded YouTube audio files and detach them from existing transcriptions.",
-                        confirmButtonLabel: "Clear Audio"
-                    ) {
-                        viewModel.clearDownloadedYouTubeAudio()
-                    }
+                        confirmationMessage: "This will delete all downloaded YouTube audio files and detach them from existing transcriptions. This cannot be undone.",
+                        confirmButtonLabel: "Clear Audio",
+                        action: viewModel.clearDownloadedYouTubeAudio
+                    )
                 }
 
-                maintenanceGroup(
+                resetSection(
                     label: "Reset counters",
-                    detail: "Zeros lifetime stats. Your dictation history is untouched."
+                    caption: "Zeros your lifetime stats. Your dictation history stays."
                 ) {
-                    SettingsDestructiveButton(
-                        title: "Reset Lifetime Stats...",
+                    resetActionRow(
+                        title: "Lifetime voice stats",
+                        detail: "Total words, time, count, and longest dictation.",
+                        buttonTitle: "Reset…",
+                        accessibilityLabel: "Reset lifetime voice stats",
                         confirmationTitle: "Reset Lifetime Stats?",
-                        confirmationMessage: "This will zero your total words, total time, total dictation count, and longest dictation. Your dictation history is not affected. This cannot be undone.",
-                        confirmButtonLabel: "Reset"
-                    ) {
-                        viewModel.resetLifetimeStats()
-                    }
+                        confirmationMessage: "This will zero your total words, time, count, and longest dictation. Your dictation history is not affected. This cannot be undone.",
+                        confirmButtonLabel: "Reset",
+                        action: viewModel.resetLifetimeStats
+                    )
                 }
             }
-            .padding(DesignSystem.Spacing.sm)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
-                    .fill(DesignSystem.Colors.errorRed.opacity(0.06))
+        }
+    }
+
+    /// One destructive subgroup — small section header above a list of
+    /// action rows. The header uses uppercase tracked caption styling so
+    /// the eye reads it as "section label," not "title": same trick the
+    /// rest of the app uses for thin section dividers.
+    @ViewBuilder
+    private func resetSection<Content: View>(
+        label: String,
+        caption: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(label)
+                    .font(DesignSystem.Typography.caption.weight(.semibold))
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+                    .foregroundStyle(.secondary)
+                Text(caption)
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(.tertiary)
+            }
+
+            VStack(spacing: DesignSystem.Spacing.sm) {
+                content()
+            }
+        }
+    }
+
+    /// One destructive action — title + detail on the left, button on the
+    /// right. Mirrors `SettingsToggleRow` so the destructive card has the
+    /// same row rhythm as the rest of Settings.
+    private func resetActionRow(
+        title: String,
+        detail: String,
+        buttonTitle: String,
+        accessibilityLabel: String,
+        confirmationTitle: String,
+        confirmationMessage: String,
+        confirmButtonLabel: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        HStack(alignment: .center, spacing: DesignSystem.Spacing.md) {
+            rowText(title: title, detail: detail)
+            Spacer(minLength: DesignSystem.Spacing.md)
+            SettingsDestructiveButton(
+                title: buttonTitle,
+                accessibilityLabel: accessibilityLabel,
+                confirmationTitle: confirmationTitle,
+                confirmationMessage: confirmationMessage,
+                confirmButtonLabel: confirmButtonLabel,
+                action: action
             )
         }
     }
@@ -1467,28 +1510,6 @@ struct SettingsView: View {
             Text(detail)
                 .font(DesignSystem.Typography.caption)
                 .foregroundStyle(.secondary)
-        }
-    }
-
-    @ViewBuilder
-    private func maintenanceGroup<Buttons: View>(
-        label: String,
-        detail: String,
-        @ViewBuilder buttons: () -> Buttons
-    ) -> some View {
-        VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
-            HStack(alignment: .firstTextBaseline, spacing: DesignSystem.Spacing.sm) {
-                Text(label)
-                    .font(DesignSystem.Typography.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                Text(detail)
-                    .font(DesignSystem.Typography.micro)
-                    .foregroundStyle(.tertiary)
-                Spacer(minLength: 0)
-            }
-            FlowLayout(spacing: DesignSystem.Spacing.sm) {
-                buttons()
-            }
         }
     }
 
