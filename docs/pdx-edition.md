@@ -242,3 +242,100 @@ Touched / removed across the codebase:
 - `spec/adr/005-onboarding-first-run.md` — amendment 2026-04-18
 - `plans/active/2026-04-onboarding-ai-assistant-step.md` —
   the plan that drove the AI Assistant step
+
+---
+
+## Upstream Merge Workflow
+
+PDX Edition periodically absorbs upstream commits from
+`moona3k/macparakeet`. This section documents the process and
+the decisions made so the next merge is less painful.
+
+### General process
+
+1. **Create an isolated worktree** on a dedicated branch so
+   `feature/streaming-overlay` is never mid-merge:
+
+   ```bash
+   BRANCH="feature/upstream-merge-$(date +%Y-%m)"
+   git worktree add .worktrees/upstream-merge -b "$BRANCH"
+   ```
+
+2. **Fetch and merge upstream** inside the worktree:
+
+   ```bash
+   cd .worktrees/upstream-merge
+   git remote add upstream https://github.com/moona3k/macparakeet.git  # first time
+   git fetch upstream
+   git merge upstream/main
+   ```
+
+3. **Resolve conflicts** — see the conflict-prone files list below.
+   The invariant: PDX-specific content always wins over upstream
+   content in files where both sides made changes.
+
+4. **Fix post-merge build errors** with `swift build --target
+   MacParakeetCore` and `swift build --target MacParakeetViewModels`.
+   Skip `--target MacParakeet` in a headless terminal — `#Preview`
+   macro compilation requires Xcode.
+
+5. **Open in Xcode on the build machine** (`open Package.swift` from
+   the worktree), run the full test suite, verify the count is ≥
+   the pre-merge baseline.
+
+6. **Merge the worktree branch** into `feature/streaming-overlay`
+   once tests are green:
+
+   ```bash
+   git checkout feature/streaming-overlay
+   git merge feature/upstream-merge-YYYY-MM
+   git worktree remove .worktrees/upstream-merge
+   ```
+
+### Known conflict-prone files (2026-04 merge, 329 upstream commits)
+
+Every file listed here had conflicts in the Apr 2026 merge. Expect
+them again in future merges.
+
+| File | Conflict nature | Resolution rule |
+|------|----------------|-----------------|
+| `CLAUDE.md` | Fork note, ADR-002 wording, local-first + offline-first items | Keep PDX HEAD throughout |
+| `README.md` | Fork-specific content (badge, pricing, CLI section) | Keep PDX HEAD throughout |
+| `Sources/MacParakeet/Views/Settings/SettingsView.swift` | `systemTabContent` referenced `updatesCard` / `privacyCard` removed by PDX | Delete the upstream references; leave the body as-is |
+| `Sources/MacParakeetViewModels/LLMSettingsDraft.swift` | `isAllowedBaseURLOverride` signature (`providerID:` param added upstream) | Take upstream signature; keep PDX's Tailscale/local-network error message body |
+| `Sources/MacParakeet/Views/Onboarding/OnboardingFlowView.swift` | PDX's 7 hotkey state vars vs. upstream's `calendarStep` computed property | Keep both; reconcile step title strings manually |
+| `scripts/dev/run_app.sh` | Upstream added `NSCalendarsFullAccessUsageDescription` to plist injection | Keep both keys (NSAppTransportSecurity for PDX + NSCalendars for upstream) |
+| `scripts/dist/build_app_bundle.sh` | Same plist keys; also Sparkle embedding | Keep NSCalendars + NSAppTransportSecurity; drop Sparkle keys |
+| `Tests/MacParakeetTests/STT/MockSTTClient.swift` | Upstream added `SpeechEngineRoutedTranscribing` protocol + new transcribe overload | Add conformance + overload; keep existing PDX methods |
+| `Tests/MacParakeetTests/STT/STTSchedulerTests.swift` | `setSpeechEngine` / `currentSpeechEngineSelection` added upstream | Keep PDX `keepAlive()` stub + add upstream methods |
+| `Tests/MacParakeetTests/Services/DictationServiceTests.swift` | PDX added AI-context tests; upstream added `dictationOperationProps` helper | Keep both |
+| `Tests/MacParakeetTests/ViewModels/OnboardingViewModelTests.swift` | Step ordering | Use merged order: `[.welcome, .microphone, .accessibility, .meetingRecording, .calendar, .hotkey, .aiAssistant, .engine, .done]` |
+
+### Files deleted during the 2026-04 merge
+
+| File | Reason |
+|------|--------|
+| `Sources/MacParakeet/App/SparkleUpdateGuard.swift` | New upstream file importing Sparkle; PDX has no Sparkle dependency |
+
+### Post-merge build fixes (2026-04)
+
+- **`STTRuntime.swift`** — Removed duplicate `clearModelCache()` and
+  `isModelCached(version:)` methods left by conflict resolution.
+  Made `keepAlive()` a no-op: `FluidAudio.AsrManager` no longer
+  accepts raw `[Float]` buffers. The ANE manages its own model
+  residency; a silent no-op is safe. If cold-start dictation latency
+  is ever reported, revisit by creating a silent audio file and
+  passing its URL to the new FluidAudio URL-based API.
+- **`HotkeyManager.swift`** — Added `case .modifierCombo: return false`
+  to the `currentPhysicalTriggerIsPressed` switch (line ~603).
+  Upstream added `HotkeyTrigger.Kind.modifierCombo` for the AI
+  Assistant hotkey (handled by `GlobalShortcutManager`), not the
+  primary dictation hotkey; `false` is the correct value here.
+
+### `#Preview` macro errors (expected, not regressions)
+
+`swift build --target MacParakeet` in a headless terminal always
+fails with `#Preview` / `emit-module` errors. These require Xcode's
+`PreviewsMacros` plugin and are identical on both baseline
+`feature/streaming-overlay` and the merged branch. They are not
+merge regressions. Verify the full build in Xcode.
