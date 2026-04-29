@@ -1060,19 +1060,6 @@ struct SettingsView: View {
 
     // MARK: - Engine
 
-    /// Engine card: which speech recognition engine to use.
-    ///
-    /// The choice between Parakeet (fast, English + 24 European languages)
-    /// and Whisper (slower, multilingual including Korean/Japanese/Chinese)
-    /// is the most consequential decision on the entire Settings page. The
-    /// previous segmented picker under-sold it. We give it two large
-    /// selectable tiles with strengths and an inline Download CTA when the
-    /// model is missing — the long descriptions live under hover tooltips
-    /// so the surface stays calm at rest.
-    ///
-    /// Status chip surfaces only signal: silent in the steady state, `.info`
-    /// while switching, `.required` if the last switch failed (the inline
-    /// error preserves the full message).
     private var engineSelectorCard: some View {
         SettingsCard(
             title: "Speech Recognition",
@@ -1085,13 +1072,13 @@ struct SettingsView: View {
                     EngineOptionTile(
                         icon: "bolt.fill",
                         name: "Parakeet",
-                        tagline: "Fastest · 25 European languages",
+                        tagline: "Fastest local engine",
                         strengths: [
+                            "English + 24 European languages",
                             "155× realtime on Apple Silicon",
-                            "~2.5% word error rate",
-                            "Optimized for the Neural Engine"
+                            "Runs on the Neural Engine"
                         ],
-                        helpText: "Best for English and 24 other European languages including Spanish, French, German, and Italian. Runs on the Neural Engine for the lowest latency on Apple Silicon.",
+                        helpText: "Best for English and other European languages including Spanish, French, German, and Italian. Runs on the Neural Engine for the lowest latency on Apple Silicon.",
                         modelStatus: viewModel.parakeetStatus,
                         isSelected: viewModel.speechEnginePreference == .parakeet,
                         isBusy: viewModel.speechEngineSwitching,
@@ -1103,9 +1090,9 @@ struct SettingsView: View {
                     EngineOptionTile(
                         icon: "globe",
                         name: "Whisper",
-                        tagline: "Multilingual · 99 languages",
+                        tagline: "Multilingual coverage",
                         strengths: [
-                            "Covers Korean, Japanese, Chinese, Thai",
+                            "Korean, Japanese, Chinese, Thai +95 more",
                             "Auto language detection",
                             "Whisper Large v3 Turbo (632 MB)"
                         ],
@@ -1113,8 +1100,8 @@ struct SettingsView: View {
                         modelStatus: viewModel.whisperModelStatus,
                         isSelected: viewModel.speechEnginePreference == .whisper,
                         isBusy: viewModel.speechEngineSwitching,
-                        downloadActionLabel: viewModel.whisperDownloading ? "Downloading…" : "Download",
-                        onSelect: { selectEngine(.whisper) },
+                        downloadActionLabel: "Download",
+                        onSelect: { handleWhisperTileTap() },
                         onDownload: viewModel.whisperDownloading ? nil : { viewModel.downloadWhisperModel() }
                     )
                 }
@@ -1128,12 +1115,6 @@ struct SettingsView: View {
         }
     }
 
-    /// Hides itself entirely when Parakeet is active. The "Inactive"
-    /// disabled-picker dead state we used to render added zero signal — when
-    /// Parakeet is selected, the language picker has nothing to do, so
-    /// removing it removes a row of dead pixels rather than dressing them up.
-    /// Discoverability is preserved via the Whisper tile's tooltip and the
-    /// fact that selecting Whisper reveals this card with a smooth transition.
     @ViewBuilder
     private var engineLanguageCard: some View {
         if viewModel.speechEnginePreference == .whisper {
@@ -1161,18 +1142,10 @@ struct SettingsView: View {
         }
     }
 
-    /// Local-model dashboard. Status chip rolls up the worst severity across
-    /// both engines: any `.failed` → `.required`; missing model on the
-    /// active engine → `.recommended`; all `.ready` → `.ok`; transient
-    /// states → no chip (the per-row status pills already telegraph it).
-    ///
-    /// Action layout: a fixed-width right column carries the status pill +
-    /// optional action button. We only render an inline button for
-    /// genuinely actionable states (Download missing, Retry failed). For
-    /// healthy models, Repair / Re-download tuck into a `…` menu so the
-    /// row is calm by default — the previous design rendered a permanently
-    /// disabled "Ready" button when Whisper was loaded into memory while
-    /// Parakeet was the active engine, which was pure noise.
+    /// Status chip rolls up the worst severity across both engines via
+    /// `SettingsStatusRules.localModelsCardStatus`. Inline action button
+    /// only renders for actionable states; Repair / Re-download for healthy
+    /// models tucks into a `…` menu so calm rows stay calm.
     private var enginesModelsCard: some View {
         SettingsCard(
             title: "Local Models",
@@ -1222,16 +1195,28 @@ struct SettingsView: View {
         )
     }
 
-    /// Routes a tile click through `speechEnginePreference`, which the VM
-    /// validates (e.g. blocks switching to Whisper before the model is
-    /// downloaded and surfaces `speechEngineError`). Wrapped in `withAnimation`
-    /// so the language card slide and tile selection state animate together.
+    /// Routes a tile click through `speechEnginePreference`. The VM's setter
+    /// validates (e.g. would revert if Whisper isn't downloaded), but we
+    /// pre-empt that case in `handleWhisperTileTap` so the user never sees
+    /// the briefly-selected-then-reverted state.
     private func selectEngine(_ engine: SpeechEnginePreference) {
         guard viewModel.speechEnginePreference != engine,
               !viewModel.speechEngineSwitching else { return }
         withAnimation(DesignSystem.Animation.contentSwap) {
             viewModel.speechEnginePreference = engine
         }
+    }
+
+    /// Pre-empts the Whisper-not-downloaded case: instead of letting the VM
+    /// briefly accept the switch and revert, we set the inline error and
+    /// leave the user on Parakeet. The Download CTA in the tile footer is
+    /// the only path forward when the model is missing.
+    private func handleWhisperTileTap() {
+        if viewModel.whisperModelStatus == .notDownloaded {
+            viewModel.speechEngineError = "Download the Whisper model before switching engines."
+            return
+        }
+        selectEngine(.whisper)
     }
 
     private var parakeetPrimaryAction: ModelRowAction? {
@@ -1286,9 +1271,6 @@ struct SettingsView: View {
         }
     }
 
-    /// One actionable button on a Local Models row. `primaryAction` renders
-    /// inline with bordered or prominent style; `overflowAction` hides under
-    /// a `…` menu so calm states never carry a button on the row.
     fileprivate struct ModelRowAction {
         let label: String
         let isProminent: Bool
@@ -1594,10 +1576,6 @@ struct SettingsView: View {
         )
     }
 
-    /// One Local Models row. The right column is a fixed-width status +
-    /// action group so Parakeet and Whisper line up vertically regardless of
-    /// label length. Only `primaryAction` renders inline; `overflowAction`
-    /// hides under a `…` menu so healthy rows stay calm.
     private func modelStatusRow(
         title: String,
         detail: String,
@@ -1623,7 +1601,7 @@ struct SettingsView: View {
                 Group {
                     if let action = primaryAction {
                         modelRowPrimaryButton(action: action, isWorking: isWorking)
-                    } else if let overflow = overflowAction, !isWorking {
+                    } else if let overflow = overflowAction, !isWorking, status != .checking {
                         Menu {
                             Button(overflow.label, action: overflow.run)
                         } label: {
@@ -1635,7 +1613,7 @@ struct SettingsView: View {
                         .menuIndicator(.hidden)
                         .fixedSize()
                         .help("More actions")
-                    } else if isWorking {
+                    } else if isWorking || status == .checking {
                         ProgressView()
                             .controlSize(.small)
                             .frame(width: 22, height: 22)
@@ -1655,10 +1633,12 @@ struct SettingsView: View {
             Button(label, action: action.run)
                 .buttonStyle(.borderedProminent)
                 .tint(DesignSystem.Colors.accent)
+                .controlSize(.small)
                 .disabled(isWorking)
         } else {
             Button(label, action: action.run)
                 .buttonStyle(.bordered)
+                .controlSize(.small)
                 .disabled(isWorking)
         }
     }

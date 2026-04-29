@@ -4,15 +4,11 @@ import SwiftUI
 
 /// Large selectable tile representing one speech recognition engine.
 ///
-/// Replaces the previous segmented picker because engine choice is the single
-/// most consequential decision on this page — the segmented control under-sold
-/// it. A tile carries an icon, name, tagline, three strength bullets, an
-/// availability footer, and (when missing) an inline Download CTA so first-run
-/// setup happens in place.
-///
-/// Selection visuals: accent border + background tint + checkmark when active.
-/// Hover: subtle border lift on unselected tiles. The full description sits
-/// under `.help()` for cursor hover so the surface stays calm at rest.
+/// Implementation note: the root is a tappable `VStack`, not a `Button`. The
+/// status footer hosts a real `Button` for the Download CTA, and SwiftUI on
+/// macOS does not reliably hit-test a Button nested inside a Button. The tile
+/// uses `.accessibilityElement(children: .contain)` so the inner Download
+/// button stays a separately-actionable element for VoiceOver.
 struct EngineOptionTile: View {
     let icon: String
     let name: String
@@ -29,52 +25,54 @@ struct EngineOptionTile: View {
     @State private var isHovered = false
 
     var body: some View {
-        Button(action: onSelect) {
-            VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
-                header
-                Text(tagline)
-                    .font(DesignSystem.Typography.bodySmall.weight(.medium))
-                    .foregroundStyle(DesignSystem.Colors.accent)
-                    .padding(.top, 2)
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
+            header
+            Text(tagline)
+                .font(DesignSystem.Typography.bodySmall.weight(.medium))
+                .foregroundStyle(DesignSystem.Colors.accent)
+                .padding(.top, 2)
 
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(strengths, id: \.self) { strength in
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Circle()
-                                .fill(DesignSystem.Colors.accent.opacity(0.55))
-                                .frame(width: 4, height: 4)
-                                .offset(y: -2)
-                            Text(strength)
-                                .font(DesignSystem.Typography.caption)
-                                .foregroundStyle(DesignSystem.Colors.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(strengths, id: \.self) { strength in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Circle()
+                            .fill(DesignSystem.Colors.accent.opacity(0.55))
+                            .frame(width: 4, height: 4)
+                            .offset(y: -2)
+                        Text(strength)
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(DesignSystem.Colors.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .padding(.top, 4)
-
-                Spacer(minLength: 0)
-                statusFooter
             }
-            .frame(maxWidth: .infinity, minHeight: 196, alignment: .topLeading)
-            .padding(DesignSystem.Spacing.md)
-            .background(background)
-            .overlay(border)
-            .contentShape(RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius))
+            .padding(.top, 4)
+
+            Spacer(minLength: 0)
+            statusFooter
         }
-        .buttonStyle(.plain)
-        .disabled(isBusy)
+        .frame(maxWidth: .infinity, minHeight: 196, alignment: .topLeading)
+        .padding(DesignSystem.Spacing.md)
+        .background(background)
+        .overlay(border)
+        .contentShape(RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius))
+        .onTapGesture { handleTileTap() }
         .help(helpText)
         .onHover { hovering in
             withAnimation(DesignSystem.Animation.hoverTransition) {
                 isHovered = hovering
             }
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("\(name) engine. \(tagline).")
-        .accessibilityValue(isSelected ? "Selected" : "Not selected")
         .accessibilityHint(helpText)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { handleTileTap() }
+    }
+
+    private func handleTileTap() {
+        guard !isBusy, !isSelected else { return }
+        onSelect()
     }
 
     private var header: some View {
@@ -129,6 +127,7 @@ struct EngineOptionTile: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                     .tint(DesignSystem.Colors.accent)
+                    .accessibilityLabel("Download \(name) model")
             }
         }
         .padding(.top, DesignSystem.Spacing.xs)
@@ -138,19 +137,19 @@ struct EngineOptionTile: View {
     private var background: some View {
         RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
             .fill(isSelected
-                  ? DesignSystem.Colors.accent.opacity(0.08)
+                  ? DesignSystem.Colors.accent.opacity(0.13)
                   : DesignSystem.Colors.surfaceElevated.opacity(isHovered ? 0.7 : 0.4))
     }
 
     private var border: some View {
         let strokeColor: Color = if isSelected {
-            DesignSystem.Colors.accent.opacity(0.55)
+            DesignSystem.Colors.accent.opacity(0.8)
         } else if isHovered {
-            DesignSystem.Colors.accent.opacity(0.25)
+            DesignSystem.Colors.accent.opacity(0.3)
         } else {
             DesignSystem.Colors.border.opacity(0.7)
         }
-        let lineWidth: CGFloat = isSelected ? 1.5 : 0.5
+        let lineWidth: CGFloat = isSelected ? 2.0 : 0.5
         return RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
             .strokeBorder(strokeColor, lineWidth: lineWidth)
     }
@@ -184,7 +183,7 @@ struct EngineOptionTile: View {
                 return StatusInfo(
                     color: DesignSystem.Colors.warningAmber,
                     label: "Working",
-                    detail: "Downloading model…"
+                    detail: "Updating model…"
                 )
             case .checking:
                 return StatusInfo(
@@ -214,13 +213,13 @@ struct EngineOptionTile: View {
         EngineOptionTile(
             icon: "bolt.fill",
             name: "Parakeet",
-            tagline: "Fastest · 25 European languages",
+            tagline: "Fastest local engine",
             strengths: [
+                "English + 24 European languages",
                 "155× realtime on Apple Silicon",
-                "~2.5% word error rate",
-                "Optimized for Neural Engine"
+                "Runs on the Neural Engine"
             ],
-            helpText: "Best for English and other European languages. Runs on the Neural Engine for the lowest latency.",
+            helpText: "Best for English and other European languages including Spanish, French, German, and Italian. Runs on the Neural Engine for the lowest latency on Apple Silicon.",
             modelStatus: .ready,
             isSelected: true,
             isBusy: false,
@@ -232,13 +231,13 @@ struct EngineOptionTile: View {
         EngineOptionTile(
             icon: "globe",
             name: "Whisper",
-            tagline: "Multilingual · 99 languages",
+            tagline: "Multilingual coverage",
             strengths: [
-                "Covers Korean, Japanese, Chinese, Thai",
+                "Korean, Japanese, Chinese, Thai +95 more",
                 "Auto language detection",
                 "Whisper Large v3 Turbo (632 MB)"
             ],
-            helpText: "Best for languages outside Parakeet's coverage. Adds Korean, Japanese, Chinese, Thai, Hindi, Arabic, Vietnamese, and 80+ more.",
+            helpText: "Best for languages outside Parakeet's coverage. Adds Korean, Japanese, Chinese, Thai, Hindi, Arabic, Vietnamese, and 80+ more — any language Whisper supports.",
             modelStatus: .notDownloaded,
             isSelected: false,
             isBusy: false,
