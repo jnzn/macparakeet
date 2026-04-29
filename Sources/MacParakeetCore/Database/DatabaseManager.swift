@@ -546,6 +546,18 @@ public final class DatabaseManager: Sendable {
             }
         }
 
+        migrator.registerMigration("v0.9-derived-title-snippet") { db in
+            let columns = try db.columns(in: "transcriptions").map(\.name)
+            try db.alter(table: "transcriptions") { t in
+                if !columns.contains("derivedTitle") {
+                    t.add(column: "derivedTitle", .text)
+                }
+                if !columns.contains("derivedSnippet") {
+                    t.add(column: "derivedSnippet", .text)
+                }
+            }
+        }
+
         try migrator.migrate(dbQueue)
         try reconcileBuiltInPrompts()
     }

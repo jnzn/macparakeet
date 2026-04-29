@@ -21,6 +21,43 @@ public enum LibrarySortOrder: Sendable {
     case titleAscending
 }
 
+/// Date-based bucket used to group meeting/library rows under headers like
+/// "Today", "Yesterday", "Previous 7 Days". Computed against the user's
+/// current calendar — never against a fixed timezone.
+public enum TranscriptionDateGroup: Hashable, Sendable {
+    case today
+    case yesterday
+    case previous7Days
+    case previous30Days
+    case month(year: Int, month: Int)
+
+    /// Sort key — earlier groups (today, yesterday) sort first when
+    /// the list is in descending date order.
+    public var sortKey: Int {
+        switch self {
+        case .today: return 0
+        case .yesterday: return 1
+        case .previous7Days: return 2
+        case .previous30Days: return 3
+        case .month(let year, let month): return -(year * 100 + month)
+        }
+    }
+
+    public static func bucket(for date: Date, now: Date, calendar: Calendar) -> TranscriptionDateGroup {
+        let startOfNow = calendar.startOfDay(for: now)
+        let startOfDate = calendar.startOfDay(for: date)
+        let days = calendar.dateComponents([.day], from: startOfDate, to: startOfNow).day ?? 0
+
+        if days <= 0 { return .today }
+        if days == 1 { return .yesterday }
+        if days < 7 { return .previous7Days }
+        if days < 30 { return .previous30Days }
+
+        let comps = calendar.dateComponents([.year, .month], from: date)
+        return .month(year: comps.year ?? 0, month: comps.month ?? 0)
+    }
+}
+
 @MainActor @Observable
 public final class TranscriptionLibraryViewModel {
     private let logger = Logger(subsystem: "com.macparakeet.viewmodels", category: "TranscriptionLibrary")
@@ -29,7 +66,12 @@ public final class TranscriptionLibraryViewModel {
     public var searchText: String = "" { didSet { recomputeFiltered() } }
     public var sortOrder: LibrarySortOrder = .dateDescending { didSet { recomputeFiltered() } }
     public private(set) var filteredTranscriptions: [Transcription] = []
+    public private(set) var groupedTranscriptions: [(group: TranscriptionDateGroup, items: [Transcription])] = []
     public var errorMessage: String?
+
+    /// Override for tests; production code uses `Date()`.
+    public var nowProvider: @Sendable () -> Date = { Date() }
+    public var calendar: Calendar = .autoupdatingCurrent
 
     private var transcriptionRepo: TranscriptionRepositoryProtocol?
     public let scope: TranscriptionLibraryScope
@@ -70,6 +112,23 @@ public final class TranscriptionLibraryViewModel {
         }
 
         filteredTranscriptions = result
+        groupedTranscriptions = groupByDate(result)
+    }
+
+    private func groupByDate(_ items: [Transcription]) -> [(group: TranscriptionDateGroup, items: [Transcription])] {
+        guard !items.isEmpty else { return [] }
+        let now = nowProvider()
+        var buckets: [(TranscriptionDateGroup, [Transcription])] = []
+
+        for item in items {
+            let group = TranscriptionDateGroup.bucket(for: item.createdAt, now: now, calendar: calendar)
+            if let lastIdx = buckets.indices.last, buckets[lastIdx].0 == group {
+                buckets[lastIdx].1.append(item)
+            } else {
+                buckets.append((group, [item]))
+            }
+        }
+        return buckets.map { (group: $0.0, items: $0.1) }
     }
 
     private func matchesScope(_ transcription: Transcription) -> Bool {

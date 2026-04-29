@@ -185,5 +185,7 @@ final class AppEnvironment {
             transcriptionService: transcriptionService,
             transcriptionRepo: transcriptionRepo
         )
+
+        DerivedFieldsBackfillService(dbQueue: databaseManager.dbQueue).runInBackground()
     }
 }
