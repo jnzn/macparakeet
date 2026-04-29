@@ -321,6 +321,94 @@ final class VocabularyImportExportServiceTests: XCTestCase {
         }
     }
 
+    func testDecodePreviewNormalizesEntriesBeforeImport() throws {
+        try customWordRepo.save(CustomWord(word: "Kubernetes"))
+        try snippetRepo.save(TextSnippet(trigger: "my address", expansion: "Old"))
+
+        let bundle = VocabularyBundle(
+            exportedAt: fixedNow,
+            appVersion: nil,
+            customWords: [
+                .init(word: "  kubernetes\n", replacement: " Kubernetes  ", isEnabled: true, createdAt: nil),
+                .init(word: "\tMacParakeet ", replacement: " \n ", isEnabled: true, createdAt: nil)
+            ],
+            textSnippets: [
+                .init(trigger: " my address ", expansion: "  123 Main\\nSF  ", isEnabled: true, action: nil, createdAt: nil)
+            ]
+        )
+        let data = try JSONEncoder.iso8601().encode(bundle)
+        let preview = try service.decodePreview(from: data)
+
+        XCTAssertEqual(preview.bundle.customWords[0].word, "kubernetes")
+        XCTAssertEqual(preview.bundle.customWords[0].replacement, "Kubernetes")
+        XCTAssertEqual(preview.bundle.customWords[1].word, "MacParakeet")
+        XCTAssertNil(preview.bundle.customWords[1].replacement)
+        XCTAssertEqual(preview.bundle.textSnippets[0].trigger, "my address")
+        XCTAssertEqual(preview.bundle.textSnippets[0].expansion, "123 Main\nSF")
+        XCTAssertEqual(preview.wordConflicts, ["kubernetes"])
+        XCTAssertEqual(preview.snippetConflicts, ["my address"])
+    }
+
+    func testDecodeRejectsBlankCustomWord() throws {
+        let bundle = VocabularyBundle(
+            exportedAt: fixedNow,
+            appVersion: nil,
+            customWords: [
+                .init(word: " \n\t ", replacement: "Nope", isEnabled: true, createdAt: nil)
+            ],
+            textSnippets: []
+        )
+        let data = try JSONEncoder.iso8601().encode(bundle)
+
+        XCTAssertThrowsError(try service.decodePreview(from: data)) { error in
+            guard case let .invalidEntry(message) = error as? VocabularyImportExportService.ImportError else {
+                XCTFail("expected .invalidEntry, got \(error)")
+                return
+            }
+            XCTAssertTrue(message.contains("customWords[0].word"))
+        }
+    }
+
+    func testDecodeRejectsBlankSnippetTrigger() throws {
+        let bundle = VocabularyBundle(
+            exportedAt: fixedNow,
+            appVersion: nil,
+            customWords: [],
+            textSnippets: [
+                .init(trigger: " \n\t ", expansion: "Expansion", isEnabled: true, action: nil, createdAt: nil)
+            ]
+        )
+        let data = try JSONEncoder.iso8601().encode(bundle)
+
+        XCTAssertThrowsError(try service.decodePreview(from: data)) { error in
+            guard case let .invalidEntry(message) = error as? VocabularyImportExportService.ImportError else {
+                XCTFail("expected .invalidEntry, got \(error)")
+                return
+            }
+            XCTAssertTrue(message.contains("textSnippets[0].trigger"))
+        }
+    }
+
+    func testDecodeRejectsBlankSnippetExpansion() throws {
+        let bundle = VocabularyBundle(
+            exportedAt: fixedNow,
+            appVersion: nil,
+            customWords: [],
+            textSnippets: [
+                .init(trigger: "my phrase", expansion: " \t ", isEnabled: true, action: nil, createdAt: nil)
+            ]
+        )
+        let data = try JSONEncoder.iso8601().encode(bundle)
+
+        XCTAssertThrowsError(try service.decodePreview(from: data)) { error in
+            guard case let .invalidEntry(message) = error as? VocabularyImportExportService.ImportError else {
+                XCTFail("expected .invalidEntry, got \(error)")
+                return
+            }
+            XCTAssertTrue(message.contains("textSnippets[0].expansion"))
+        }
+    }
+
     func testEmptyBundleAppliesCleanly() throws {
         let bundle = VocabularyBundle(
             exportedAt: fixedNow,

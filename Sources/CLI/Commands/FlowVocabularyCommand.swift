@@ -326,9 +326,9 @@ struct VocabularyBundleSpec: Encodable {
                 .init(path: "customWords", type: "array of CustomWord", required: true,
                       description: "Word-correction rules applied during the Clean pipeline. Match is case-insensitive."),
                 .init(path: "customWords[].word", type: "string", required: true,
-                      description: "The raw token Parakeet emits (often misspelled or wrong-cased). Case is preserved as written."),
+                      description: "The raw token Parakeet emits (often misspelled or wrong-cased). Leading/trailing whitespace is trimmed; empty values are rejected."),
                 .init(path: "customWords[].replacement", type: "string or null", required: false,
-                      description: "What to substitute. Pass null to enforce exact spelling without replacement."),
+                      description: "What to substitute. Blank strings are treated as null."),
                 .init(path: "customWords[].isEnabled", type: "boolean", required: true,
                       description: "Whether the rule is active by default. Disabled entries import disabled."),
                 .init(path: "customWords[].createdAt", type: "ISO-8601 date-time or null", required: false,
@@ -336,9 +336,9 @@ struct VocabularyBundleSpec: Encodable {
                 .init(path: "textSnippets", type: "array of TextSnippet", required: true,
                       description: "Trigger → expansion shortcuts. The trigger is what you say; the expansion is what gets pasted."),
                 .init(path: "textSnippets[].trigger", type: "string", required: true,
-                      description: "Spoken trigger phrase (e.g. \"my address\"). Use natural phrases — abbreviations don't transcribe well."),
+                      description: "Spoken trigger phrase (e.g. \"my address\"). Leading/trailing whitespace is trimmed; empty values are rejected."),
                 .init(path: "textSnippets[].expansion", type: "string", required: true,
-                      description: "Replacement text. Real newline characters in JSON (\\n) become line breaks."),
+                      description: "Replacement text. Leading/trailing spaces are trimmed; empty values are rejected. Real newline characters in JSON (\\n) become line breaks."),
                 .init(path: "textSnippets[].isEnabled", type: "boolean", required: true,
                       description: "Whether the snippet is active."),
                 .init(path: "textSnippets[].action", type: "string or null", required: false,
@@ -397,14 +397,14 @@ struct VocabularyBundleSpec: Encodable {
           textSnippets  TextSnippet[]  required   trigger → expansion shortcuts
 
         CustomWord
-          word          string         required   what Parakeet emits (often miscased)
-          replacement   string|null    optional   what to substitute (null = enforce spelling only)
+          word          string         required   what Parakeet emits; trimmed, non-empty
+          replacement   string|null    optional   trimmed substitute (blank = null)
           isEnabled     boolean        required   active by default
           createdAt     ISO-8601|null  optional   original creation time
 
         TextSnippet
-          trigger       string         required   natural spoken phrase ("my address")
-          expansion     string         required   pasted text; real \\n becomes a newline
+          trigger       string         required   natural spoken phrase; trimmed, non-empty
+          expansion     string         required   pasted text; trimmed, non-empty; real \\n becomes a newline
           isEnabled     boolean        required   active by default
           action        "return"|null  optional   keystroke after paste (only "return" or null)
           createdAt     ISO-8601|null  optional   original creation time
@@ -415,6 +415,8 @@ struct VocabularyBundleSpec: Encodable {
           • Triggers are heard as natural speech. Use phrases like "my email",
             not "addr" or "sig".
           • For multi-line expansions, use real \\n in the JSON string.
+          • Do not include blank words, triggers, or expansions; import rejects
+            those the same way manual entry does.
           • UUIDs are NOT in this format — they're generated on import.
 
         Round-trip
