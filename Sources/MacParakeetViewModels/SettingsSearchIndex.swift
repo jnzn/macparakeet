@@ -191,9 +191,14 @@ public enum SettingsSearchIndex {
             id: "engine.language",
             tab: .engine,
             title: "Whisper Language",
-            subtitle: "Default language for Whisper.",
+            subtitle: "Available when Whisper is the active engine.",
             keywords: ["language", "locale", "korean", "japanese", "multilingual", "auto detect", "whisper"],
-            cardAnchor: "engine.language"
+            // Anchored to the engine selector rather than the language card
+            // because the language card only renders when Whisper is active.
+            // Searching "language" while on Parakeet would otherwise jump
+            // to a hidden anchor; landing on the selector lets the user
+            // switch to Whisper, which then reveals the language picker.
+            cardAnchor: "engine.selector"
         ),
         SettingsSearchEntry(
             id: "engine.models",

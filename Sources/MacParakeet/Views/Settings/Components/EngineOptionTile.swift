@@ -198,21 +198,27 @@ struct EngineOptionTile: View {
 }
 
 /// Inline call-to-action that appears below the engine tiles when the
-/// selected-but-unavailable engine needs a download. Lives outside the
-/// tiles so the tile root can stay a clean `Button` (no nested-button hit
-/// testing). Compact full-width row: model description on the left, download
-/// affordance on the right, with progress when in flight.
+/// selected-but-unavailable engine needs a download, is downloading, or
+/// failed. Lives outside the tiles so the tile root can stay a clean
+/// `Button` (no nested-button hit testing). Compact full-width row: model
+/// description on the left, mode-specific affordance on the right.
 struct EngineDownloadBanner: View {
+    enum Mode: Equatable {
+        case download           // first-run / not downloaded
+        case downloading        // download in flight (progress)
+        case retry              // last attempt failed
+    }
+
     let title: String
     let subtitle: String
-    let isDownloading: Bool
+    let mode: Mode
     let action: () -> Void
 
     var body: some View {
         HStack(alignment: .center, spacing: DesignSystem.Spacing.md) {
-            Image(systemName: "arrow.down.circle.fill")
+            Image(systemName: leadingIcon)
                 .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(DesignSystem.Colors.accent)
+                .foregroundStyle(accentColor)
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 1) {
@@ -221,36 +227,65 @@ struct EngineDownloadBanner: View {
                 Text(subtitle)
                     .font(DesignSystem.Typography.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(2)
             }
 
             Spacer(minLength: DesignSystem.Spacing.md)
 
-            if isDownloading {
-                HStack(spacing: DesignSystem.Spacing.xs) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Downloading…")
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundStyle(.secondary)
-                }
-            } else {
-                Button("Download", action: action)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.regular)
-                    .tint(DesignSystem.Colors.accent)
-                    .accessibilityLabel("Download \(title)")
-            }
+            trailingControl
         }
         .padding(.horizontal, DesignSystem.Spacing.md)
         .padding(.vertical, DesignSystem.Spacing.sm)
         .background(
             RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
-                .fill(DesignSystem.Colors.accent.opacity(0.08))
+                .fill(accentColor.opacity(0.08))
         )
         .overlay(
             RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
-                .strokeBorder(DesignSystem.Colors.accent.opacity(0.25), lineWidth: 0.5)
+                .strokeBorder(accentColor.opacity(0.25), lineWidth: 0.5)
         )
+    }
+
+    @ViewBuilder
+    private var trailingControl: some View {
+        switch mode {
+        case .download:
+            Button("Download", action: action)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+                .tint(DesignSystem.Colors.accent)
+                .accessibilityLabel("Download \(title)")
+        case .downloading:
+            HStack(spacing: DesignSystem.Spacing.xs) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Downloading…")
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityLabel("Downloading \(title)")
+        case .retry:
+            Button("Retry Download", action: action)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+                .tint(DesignSystem.Colors.errorRed)
+                .accessibilityLabel("Retry downloading \(title)")
+        }
+    }
+
+    private var leadingIcon: String {
+        switch mode {
+        case .download: return "arrow.down.circle.fill"
+        case .downloading: return "arrow.down.circle.fill"
+        case .retry: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var accentColor: Color {
+        switch mode {
+        case .download, .downloading: return DesignSystem.Colors.accent
+        case .retry: return DesignSystem.Colors.errorRed
+        }
     }
 }
 
@@ -293,7 +328,7 @@ struct EngineDownloadBanner: View {
         EngineDownloadBanner(
             title: "Whisper Large v3 Turbo",
             subtitle: "632 MB · downloads once, runs locally afterwards",
-            isDownloading: false,
+            mode: .download,
             action: {}
         )
     }

@@ -1102,11 +1102,11 @@ struct SettingsView: View {
                     )
                 }
 
-                if viewModel.whisperModelStatus == .notDownloaded {
+                if let banner = whisperDownloadBannerState {
                     EngineDownloadBanner(
                         title: "Whisper Large v3 Turbo",
-                        subtitle: "632 MB · downloads once, runs locally afterwards",
-                        isDownloading: viewModel.whisperDownloading,
+                        subtitle: banner.subtitle,
+                        mode: banner.mode,
                         action: { viewModel.downloadWhisperModel() }
                     )
                 }
@@ -1207,6 +1207,29 @@ struct SettingsView: View {
         }
     }
 
+    /// Drives `EngineDownloadBanner` visibility + content. Returns nil when
+    /// Whisper is usable (`.ready` / `.notLoaded`) or in a transient
+    /// inspection state (`.checking` / `.unknown`); returns a populated
+    /// state when the user needs to act (download, wait, or retry). The
+    /// download lifecycle keeps the banner mounted across `.notDownloaded`
+    /// → `.repairing` → terminal state so the action surface is stable
+    /// rather than blinking out the moment the user clicks Download.
+    private var whisperDownloadBannerState: (mode: EngineDownloadBanner.Mode, subtitle: String)? {
+        if viewModel.whisperDownloading {
+            return (.downloading, viewModel.whisperModelStatusDetail)
+        }
+        switch viewModel.whisperModelStatus {
+        case .notDownloaded:
+            return (.download, "632 MB · downloads once, runs locally afterwards")
+        case .repairing:
+            return (.downloading, viewModel.whisperModelStatusDetail)
+        case .failed:
+            return (.retry, viewModel.whisperModelStatusDetail)
+        case .ready, .notLoaded, .checking, .unknown:
+            return nil
+        }
+    }
+
     /// Pre-empts every "Whisper isn't ready" state so the user never sees
     /// a briefly-selected-then-reverted tile. Mirrors the VM's
     /// `isWhisperModelAvailable` (`ready` or `notLoaded`); for everything
@@ -1223,7 +1246,7 @@ struct SettingsView: View {
         case .repairing:
             viewModel.speechEngineError = "Whisper model is downloading — switch engines once it finishes."
         case .failed:
-            viewModel.speechEngineError = "Whisper model failed to load. Open Local Models below to retry."
+            viewModel.speechEngineError = "Whisper model failed to load — retry below."
         case .checking, .unknown:
             selectEngine(.whisper)
         }
