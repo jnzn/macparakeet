@@ -17,6 +17,9 @@ struct VocabularyImportPreviewSheet: View {
             if preview.hasConflicts {
                 conflictPolicyCard
             }
+            if let failureMessage {
+                failureRow(failureMessage)
+            }
             actionRow
         }
         .padding(DesignSystem.Spacing.lg)
@@ -147,9 +150,21 @@ struct VocabularyImportPreviewSheet: View {
                     items: preview.snippetConflicts
                 )
             }
+            if !preview.duplicateWords.isEmpty {
+                conflictList(
+                    title: "Duplicate words in backup",
+                    items: preview.duplicateWords
+                )
+            }
+            if !preview.duplicateSnippets.isEmpty {
+                conflictList(
+                    title: "Duplicate triggers in backup",
+                    items: preview.duplicateSnippets
+                )
+            }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("When an entry already exists:")
+                Text("When an entry already exists or appears more than once:")
                     .font(DesignSystem.Typography.caption)
                     .foregroundStyle(.secondary)
                 policyOption(
@@ -180,15 +195,26 @@ struct VocabularyImportPreviewSheet: View {
     private var conflictHeadline: String {
         let w = preview.wordConflicts.count
         let s = preview.snippetConflicts.count
-        switch (w, s) {
-        case (0, 0):
+        let duplicateCount = preview.duplicateWords.count + preview.duplicateSnippets.count
+        switch (w, s, duplicateCount) {
+        case (0, 0, 0):
             return "No conflicts."
-        case (let w, 0):
+        case (0, 0, let d):
+            return "\(d) duplicate entr\(d == 1 ? "y" : "ies") found in this backup."
+        case (let w, 0, 0):
             return "\(w) word\(w == 1 ? "" : "s") already exist\(w == 1 ? "s" : "")."
-        case (0, let s):
+        case (0, let s, 0):
             return "\(s) snippet\(s == 1 ? "" : "s") already exist\(s == 1 ? "s" : "")."
         default:
-            return "\(w) word\(w == 1 ? "" : "s") and \(s) snippet\(s == 1 ? "" : "s") already exist."
+            let existingCount = w + s
+            var parts: [String] = []
+            if existingCount > 0 {
+                parts.append("\(existingCount) existing entr\(existingCount == 1 ? "y" : "ies")")
+            }
+            if duplicateCount > 0 {
+                parts.append("\(duplicateCount) duplicate\(duplicateCount == 1 ? "" : "s") in the backup")
+            }
+            return parts.joined(separator: " and ") + "."
         }
     }
 
@@ -259,8 +285,9 @@ struct VocabularyImportPreviewSheet: View {
             .keyboardShortcut(.cancelAction)
 
             Button(importButtonTitle) {
-                viewModel.applyImport()
-                dismiss()
+                if viewModel.applyImport() {
+                    dismiss()
+                }
             }
             .buttonStyle(.borderedProminent)
             .tint(DesignSystem.Colors.accent)
@@ -275,6 +302,29 @@ struct VocabularyImportPreviewSheet: View {
     }
 
     // MARK: - Helpers
+
+    private var failureMessage: String? {
+        guard case let .failed(message) = viewModel.status else { return nil }
+        return message
+    }
+
+    private func failureRow(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: DesignSystem.Spacing.xs) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(DesignSystem.Colors.errorRed)
+                .padding(.top, 1)
+            Text(message)
+                .font(DesignSystem.Typography.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(DesignSystem.Spacing.sm)
+        .background(
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                .fill(DesignSystem.Colors.surfaceElevated)
+        )
+    }
 
     private func relativeDate(_ date: Date) -> String {
         let formatter = RelativeDateTimeFormatter()

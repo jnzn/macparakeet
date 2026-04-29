@@ -114,7 +114,8 @@ final class AppEnvironmentConfigurer {
         textSnippetsViewModel.configure(repo: env.snippetRepo)
         let vocabularyBackupService = VocabularyImportExportService(
             customWordRepo: env.customWordRepo,
-            snippetRepo: env.snippetRepo
+            snippetRepo: env.snippetRepo,
+            dbQueue: env.databaseManager.dbQueue
         )
         vocabularyBackupViewModel.configure(service: vocabularyBackupService) { [weak self] in
             self?.customWordsViewModel.loadWords()
