@@ -955,6 +955,12 @@ public final class SettingsViewModel {
 
     public func downloadWhisperModel() {
         guard !whisperDownloading else { return }
+        // The user has taken the action that resolves any pending
+        // "Whisper isn't ready" error, so clear it. Otherwise the red
+        // banner persists through a successful download (the engine
+        // preference setter — the only other place that clears it —
+        // never fires for the same-state assignment).
+        speechEngineError = nil
         whisperDownloading = true
         whisperModelStatus = .repairing
         let modelVariant = SpeechEnginePreference.whisperModelVariant(defaults: defaults)
@@ -1027,6 +1033,7 @@ public final class SettingsViewModel {
     public func repairParakeetModel() {
         guard let sttClient else { return }
         guard !parakeetRepairing else { return }
+        speechEngineError = nil
         parakeetRepairing = true
         parakeetStatus = .repairing
         parakeetStatusDetail = "Preparing speech model..."
