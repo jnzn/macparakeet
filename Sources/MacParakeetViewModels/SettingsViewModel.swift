@@ -498,14 +498,6 @@ public final class SettingsViewModel {
         speakerDiarization = defaults.object(forKey: UserDefaultsAppRuntimePreferences.speakerDiarizationKey) as? Bool ?? true
         speechEnginePreference = SpeechEnginePreference.current(defaults: defaults)
         whisperDefaultLanguage = SpeechEnginePreference.whisperDefaultLanguage(defaults: defaults) ?? "auto"
-        // Ensure auto-save folders are configured before reading paths.
-        // Idempotent: existing user-chosen folders are preserved; only
-        // unset bookmarks get the default. This guarantees the read
-        // below sees a non-nil path in the common case so the toggle
-        // can never sit in the bad "ON · no folder" combination.
-        AutoSaveService.ensureFolderConfigured(scope: .transcription, defaults: defaults)
-        AutoSaveService.ensureFolderConfigured(scope: .meeting, defaults: defaults)
-
         autoSaveTranscripts = defaults.bool(forKey: AutoSaveService.enabledKey)
         autoSaveFormat = AutoSaveFormat(rawValue: defaults.string(forKey: AutoSaveService.formatKey) ?? "md") ?? .md
         autoSaveFolderPath = Self.resolveAutoSaveFolderPath(defaults: defaults, scope: .transcription)
@@ -517,23 +509,6 @@ public final class SettingsViewModel {
         meetingTriggerFilter = Self.resolveMeetingTriggerFilter(defaults: defaults)
         calendarAutoStopEnabled = defaults.object(forKey: CalendarAutoStartPreferences.autoStopEnabledKey) as? Bool ?? true
         calendarExcludedIdentifiers = Self.resolveCalendarExcludedIdentifiers(defaults: defaults)
-
-        // Defense-in-depth self-heal: in the rare case that
-        // `ensureFolderConfigured` couldn't create the default folder
-        // (disk full, `~/Documents` not writable, stale bookmark
-        // unresolvable), folder may still be nil. Toggling ON in that
-        // state silently no-ops every save, so reset the toggle to
-        // match reality. Writes through to defaults because didSet
-        // doesn't fire during init.
-        if autoSaveTranscripts && autoSaveFolderPath == nil {
-            autoSaveTranscripts = false
-            defaults.set(false, forKey: AutoSaveService.enabledKey)
-        }
-        if meetingAutoSave && meetingAutoSaveFolderPath == nil {
-            meetingAutoSave = false
-            defaults.set(false, forKey: AutoSaveScope.meeting.enabledKey)
-        }
-
         refreshMicrophoneDevices()
         observeCalendarSettings()
     }
@@ -623,7 +598,8 @@ public final class SettingsViewModel {
 
     /// Resolve the stored bookmark to a display path.
     private static func resolveAutoSaveFolderPath(defaults: UserDefaults, scope: AutoSaveScope = .transcription) -> String? {
-        AutoSaveService.resolveFolder(scope: scope, defaults: defaults)?.path
+        let service = AutoSaveService(defaults: defaults)
+        return service.resolveFolder(scope: scope)?.path
     }
 
     public func chooseAutoSaveFolder(url: URL) {
@@ -632,16 +608,9 @@ public final class SettingsViewModel {
         }
     }
 
-    /// Reset the auto-save destination to the default location
-    /// (`~/Documents/MacParakeet/Transcriptions`). The toggle is left in
-    /// whatever state the user had it — folder is *always* set, so the
-    /// toggle is a pure on/off feature flag. This replaces the older
-    /// "Clear" semantic (which was a footgun: ON + no folder silently
-    /// no-op'd every save).
-    public func resetAutoSaveFolder() {
-        if let url = AutoSaveService.resetFolderToDefault(scope: .transcription, defaults: defaults) {
-            autoSaveFolderPath = url.path
-        }
+    public func clearAutoSaveFolder() {
+        AutoSaveService.clearFolder(scope: .transcription, defaults: defaults)
+        autoSaveFolderPath = nil
     }
 
     public func chooseMeetingAutoSaveFolder(url: URL) {
@@ -650,10 +619,9 @@ public final class SettingsViewModel {
         }
     }
 
-    public func resetMeetingAutoSaveFolder() {
-        if let url = AutoSaveService.resetFolderToDefault(scope: .meeting, defaults: defaults) {
-            meetingAutoSaveFolderPath = url.path
-        }
+    public func clearMeetingAutoSaveFolder() {
+        AutoSaveService.clearFolder(scope: .meeting, defaults: defaults)
+        meetingAutoSaveFolderPath = nil
     }
 
     private static func resolveMeetingHotkeyTrigger(defaults: UserDefaults) -> HotkeyTrigger {
