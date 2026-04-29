@@ -22,18 +22,17 @@ struct VocabularyView: View {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
                 policyHeaderCard
                 modeSelectionCard
-                capabilityCard
+                voiceReturnCard
                 if selectedMode == .raw {
                     rawModeCard
                 } else {
                     pipelineCard
+                    VocabularyBackupSection(
+                        viewModel: backupViewModel,
+                        wordCount: settingsViewModel.customWordCount,
+                        snippetCount: settingsViewModel.snippetCount
+                    )
                 }
-                voiceReturnCard
-                VocabularyBackupSection(
-                    viewModel: backupViewModel,
-                    wordCount: settingsViewModel.customWordCount,
-                    snippetCount: settingsViewModel.snippetCount
-                )
             }
             .padding(DesignSystem.Spacing.lg)
         }
@@ -60,7 +59,7 @@ struct VocabularyView: View {
     private var policyHeaderCard: some View {
         vocabularyCard(
             title: "Text Processing",
-            subtitle: "How your voice becomes text.",
+            subtitle: "How your voice becomes text — entirely on your Mac.",
             icon: "text.quote"
         ) {
             LazyVGrid(
@@ -115,21 +114,6 @@ struct VocabularyView: View {
                     settingsViewModel.processingMode = Dictation.ProcessingMode.clean.rawValue
                 }
 
-            }
-        }
-    }
-
-    private var capabilityCard: some View {
-        vocabularyCard(
-            title: "What Processing Does",
-            subtitle: "All processing happens locally. Nothing leaves your Mac.",
-            icon: "checkmark.shield"
-        ) {
-            VStack(spacing: DesignSystem.Spacing.sm) {
-                capabilityRow(icon: "wind", text: "Removes hesitation sounds like \"um\" and \"uh\"")
-                capabilityRow(icon: "character.book.closed", text: "Applies your custom word corrections and capitalization")
-                capabilityRow(icon: "text.insert", text: "Expands shortcuts into full phrases")
-                capabilityRow(icon: "textformat", text: "Cleans up spacing and punctuation")
             }
         }
     }
@@ -351,19 +335,6 @@ struct VocabularyView: View {
             Text(result)
                 .font(DesignSystem.Typography.micro)
                 .foregroundStyle(.secondary)
-        }
-    }
-
-    private func capabilityRow(icon: String, text: String) -> some View {
-        HStack(spacing: DesignSystem.Spacing.sm) {
-            Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(DesignSystem.Colors.accent)
-                .frame(width: 22)
-            Text(text)
-                .font(DesignSystem.Typography.bodySmall)
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 0)
         }
     }
 
