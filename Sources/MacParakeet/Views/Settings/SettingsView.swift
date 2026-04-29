@@ -1060,34 +1060,63 @@ struct SettingsView: View {
 
     // MARK: - Engine
 
-    /// Engine card: which speech recognition engine to use. Status chip
-    /// surfaces only signal — silent in the steady state, `.info` while
-    /// switching, `.required` if the last switch failed (the existing red
-    /// inline error is preserved underneath for the full message).
+    /// Engine card: which speech recognition engine to use.
+    ///
+    /// The choice between Parakeet (fast, English + 24 European languages)
+    /// and Whisper (slower, multilingual including Korean/Japanese/Chinese)
+    /// is the most consequential decision on the entire Settings page. The
+    /// previous segmented picker under-sold it. We give it two large
+    /// selectable tiles with strengths and an inline Download CTA when the
+    /// model is missing — the long descriptions live under hover tooltips
+    /// so the surface stays calm at rest.
+    ///
+    /// Status chip surfaces only signal: silent in the steady state, `.info`
+    /// while switching, `.required` if the last switch failed (the inline
+    /// error preserves the full message).
     private var engineSelectorCard: some View {
         SettingsCard(
             title: "Speech Recognition",
-            subtitle: "Parakeet is fastest. Whisper adds Korean and broader multilingual coverage.",
+            subtitle: "Choose the engine that powers dictation, file transcription, and meetings.",
             icon: "cpu",
             status: engineSelectorCardStatus
         ) {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
-                HStack(alignment: .center) {
-                    rowText(
-                        title: "Engine",
-                        detail: viewModel.speechEngineSwitching
-                            ? "Switching speech engine..."
-                            : "Used by dictation, file transcription, and meetings."
+                HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
+                    EngineOptionTile(
+                        icon: "bolt.fill",
+                        name: "Parakeet",
+                        tagline: "Fastest · 25 European languages",
+                        strengths: [
+                            "155× realtime on Apple Silicon",
+                            "~2.5% word error rate",
+                            "Optimized for the Neural Engine"
+                        ],
+                        helpText: "Best for English and 24 other European languages including Spanish, French, German, and Italian. Runs on the Neural Engine for the lowest latency on Apple Silicon.",
+                        modelStatus: viewModel.parakeetStatus,
+                        isSelected: viewModel.speechEnginePreference == .parakeet,
+                        isBusy: viewModel.speechEngineSwitching,
+                        downloadActionLabel: nil,
+                        onSelect: { selectEngine(.parakeet) },
+                        onDownload: nil
                     )
-                    Spacer(minLength: DesignSystem.Spacing.md)
-                    Picker("Speech Engine", selection: $viewModel.speechEnginePreference) {
-                        Text("Parakeet").tag(SpeechEnginePreference.parakeet)
-                        Text("Whisper").tag(SpeechEnginePreference.whisper)
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                    .frame(width: 220)
-                    .disabled(viewModel.speechEngineSwitching)
+
+                    EngineOptionTile(
+                        icon: "globe",
+                        name: "Whisper",
+                        tagline: "Multilingual · 99 languages",
+                        strengths: [
+                            "Covers Korean, Japanese, Chinese, Thai",
+                            "Auto language detection",
+                            "Whisper Large v3 Turbo (632 MB)"
+                        ],
+                        helpText: "Best for languages outside Parakeet's coverage. Adds Korean, Japanese, Chinese, Thai, Hindi, Arabic, Vietnamese, and 80+ more — any language Whisper supports.",
+                        modelStatus: viewModel.whisperModelStatus,
+                        isSelected: viewModel.speechEnginePreference == .whisper,
+                        isBusy: viewModel.speechEngineSwitching,
+                        downloadActionLabel: viewModel.whisperDownloading ? "Downloading…" : "Download",
+                        onSelect: { selectEngine(.whisper) },
+                        onDownload: viewModel.whisperDownloading ? nil : { viewModel.downloadWhisperModel() }
+                    )
                 }
 
                 if let error = viewModel.speechEngineError {
@@ -1099,28 +1128,36 @@ struct SettingsView: View {
         }
     }
 
-    /// Whisper-only language card. Stays visible when Parakeet is active so
-    /// the user knows the control exists; the picker mutes itself and the
-    /// header chip reads "Inactive" so the visual state matches reality.
-    /// The picker button itself surfaces the current selection — no need for
-    /// a redundant left-side label.
+    /// Hides itself entirely when Parakeet is active. The "Inactive"
+    /// disabled-picker dead state we used to render added zero signal — when
+    /// Parakeet is selected, the language picker has nothing to do, so
+    /// removing it removes a row of dead pixels rather than dressing them up.
+    /// Discoverability is preserved via the Whisper tile's tooltip and the
+    /// fact that selecting Whisper reveals this card with a smooth transition.
+    @ViewBuilder
     private var engineLanguageCard: some View {
-        let isWhisperActive = viewModel.speechEnginePreference == .whisper
-        return SettingsCard(
-            title: "Whisper Language",
-            subtitle: "Only used when Whisper is the active engine. Auto-detect works for most files.",
-            icon: "globe",
-            status: isWhisperActive ? nil : SettingsCardStatus(.info, label: "Inactive")
-        ) {
-            HStack(alignment: .center) {
-                Text("Default language")
-                    .font(DesignSystem.Typography.body)
-                Spacer(minLength: DesignSystem.Spacing.md)
-                LanguagePickerButton(
-                    selection: $viewModel.whisperDefaultLanguage,
-                    isDisabled: !isWhisperActive
-                )
+        if viewModel.speechEnginePreference == .whisper {
+            SettingsCard(
+                title: "Whisper Language",
+                subtitle: "Auto-detect works for most files. Pin a language for faster startup or mixed-language audio.",
+                icon: "character.bubble"
+            ) {
+                HStack(alignment: .center) {
+                    Text("Default language")
+                        .font(DesignSystem.Typography.body)
+                    Spacer(minLength: DesignSystem.Spacing.md)
+                    LanguagePickerButton(
+                        selection: $viewModel.whisperDefaultLanguage,
+                        isDisabled: false
+                    )
+                }
             }
+            .transition(
+                .asymmetric(
+                    insertion: .opacity.combined(with: .move(edge: .top)),
+                    removal: .opacity
+                )
+            )
         }
     }
 
@@ -1128,6 +1165,14 @@ struct SettingsView: View {
     /// both engines: any `.failed` → `.required`; missing model on the
     /// active engine → `.recommended`; all `.ready` → `.ok`; transient
     /// states → no chip (the per-row status pills already telegraph it).
+    ///
+    /// Action layout: a fixed-width right column carries the status pill +
+    /// optional action button. We only render an inline button for
+    /// genuinely actionable states (Download missing, Retry failed). For
+    /// healthy models, Repair / Re-download tuck into a `…` menu so the
+    /// row is calm by default — the previous design rendered a permanently
+    /// disabled "Ready" button when Whisper was loaded into memory while
+    /// Parakeet was the active engine, which was pure noise.
     private var enginesModelsCard: some View {
         SettingsCard(
             title: "Local Models",
@@ -1140,11 +1185,10 @@ struct SettingsView: View {
                     title: "Parakeet",
                     detail: viewModel.parakeetStatusDetail,
                     status: viewModel.parakeetStatus,
-                    isRepairing: viewModel.parakeetRepairing,
-                    actionLabel: "Repair"
-                ) {
-                    viewModel.repairParakeetModel()
-                }
+                    isWorking: viewModel.parakeetRepairing,
+                    primaryAction: parakeetPrimaryAction,
+                    overflowAction: parakeetOverflowAction
+                )
 
                 Divider()
 
@@ -1152,12 +1196,10 @@ struct SettingsView: View {
                     title: "Whisper",
                     detail: viewModel.whisperModelStatusDetail,
                     status: viewModel.whisperModelStatus,
-                    isRepairing: viewModel.whisperDownloading,
-                    actionLabel: whisperModelActionLabel,
-                    actionDisabled: !isWhisperModelActionEnabled
-                ) {
-                    viewModel.downloadWhisperModel()
-                }
+                    isWorking: viewModel.whisperDownloading,
+                    primaryAction: whisperPrimaryAction,
+                    overflowAction: whisperOverflowAction
+                )
             }
         }
     }
@@ -1180,36 +1222,77 @@ struct SettingsView: View {
         )
     }
 
-    private var whisperModelActionLabel: String {
-        switch viewModel.whisperModelStatus {
-        case .notDownloaded:
-            return "Download"
-        case .notLoaded:
-            // The badge already says "Downloaded ✓"; pairing it with "Repair"
-            // implied the model was broken. The button actually re-runs the
-            // download (fast no-op via HuggingFace cache when files are
-            // intact), so name it for what it does.
-            return "Re-download"
-        case .failed:
-            return "Retry"
-        case .ready:
-            return "Ready"
-        case .checking:
-            return "Checking"
-        case .repairing:
-            return "Working..."
-        case .unknown:
-            return "Check"
+    /// Routes a tile click through `speechEnginePreference`, which the VM
+    /// validates (e.g. blocks switching to Whisper before the model is
+    /// downloaded and surfaces `speechEngineError`). Wrapped in `withAnimation`
+    /// so the language card slide and tile selection state animate together.
+    private func selectEngine(_ engine: SpeechEnginePreference) {
+        guard viewModel.speechEnginePreference != engine,
+              !viewModel.speechEngineSwitching else { return }
+        withAnimation(DesignSystem.Animation.contentSwap) {
+            viewModel.speechEnginePreference = engine
         }
     }
 
-    private var isWhisperModelActionEnabled: Bool {
-        switch viewModel.whisperModelStatus {
-        case .notDownloaded, .notLoaded, .failed:
-            return !viewModel.whisperDownloading
-        case .unknown, .checking, .ready, .repairing:
-            return false
+    private var parakeetPrimaryAction: ModelRowAction? {
+        switch viewModel.parakeetStatus {
+        case .failed:
+            return ModelRowAction(label: "Retry", isProminent: true) {
+                viewModel.repairParakeetModel()
+            }
+        case .notDownloaded:
+            return ModelRowAction(label: "Download", isProminent: true) {
+                viewModel.repairParakeetModel()
+            }
+        default:
+            return nil
         }
+    }
+
+    private var parakeetOverflowAction: ModelRowAction? {
+        switch viewModel.parakeetStatus {
+        case .ready, .notLoaded:
+            return ModelRowAction(label: "Repair…", isProminent: false) {
+                viewModel.repairParakeetModel()
+            }
+        default:
+            return nil
+        }
+    }
+
+    private var whisperPrimaryAction: ModelRowAction? {
+        switch viewModel.whisperModelStatus {
+        case .notDownloaded:
+            return ModelRowAction(label: "Download", isProminent: true) {
+                viewModel.downloadWhisperModel()
+            }
+        case .failed:
+            return ModelRowAction(label: "Retry", isProminent: true) {
+                viewModel.downloadWhisperModel()
+            }
+        default:
+            return nil
+        }
+    }
+
+    private var whisperOverflowAction: ModelRowAction? {
+        switch viewModel.whisperModelStatus {
+        case .ready, .notLoaded:
+            return ModelRowAction(label: "Re-download…", isProminent: false) {
+                viewModel.downloadWhisperModel()
+            }
+        default:
+            return nil
+        }
+    }
+
+    /// One actionable button on a Local Models row. `primaryAction` renders
+    /// inline with bordered or prominent style; `overflowAction` hides under
+    /// a `…` menu so calm states never carry a button on the row.
+    fileprivate struct ModelRowAction {
+        let label: String
+        let isProminent: Bool
+        let run: () -> Void
     }
 
     /// Roll-up of the three permissions. `.required` if any feature gate is
@@ -1511,16 +1594,19 @@ struct SettingsView: View {
         )
     }
 
+    /// One Local Models row. The right column is a fixed-width status +
+    /// action group so Parakeet and Whisper line up vertically regardless of
+    /// label length. Only `primaryAction` renders inline; `overflowAction`
+    /// hides under a `…` menu so healthy rows stay calm.
     private func modelStatusRow(
         title: String,
         detail: String,
         status: SettingsViewModel.LocalModelStatus,
-        isRepairing: Bool,
-        actionLabel: String = "Repair",
-        actionDisabled: Bool = false,
-        onRepair: @escaping () -> Void
+        isWorking: Bool,
+        primaryAction: ModelRowAction?,
+        overflowAction: ModelRowAction?
     ) -> some View {
-        HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
+        HStack(alignment: .center, spacing: DesignSystem.Spacing.md) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(DesignSystem.Typography.body)
@@ -1531,13 +1617,49 @@ struct SettingsView: View {
 
             Spacer(minLength: DesignSystem.Spacing.sm)
 
-            modelStatusPill(status)
+            HStack(spacing: DesignSystem.Spacing.sm) {
+                modelStatusPill(status)
 
-            Button(isRepairing ? "Working..." : actionLabel) {
-                onRepair()
+                Group {
+                    if let action = primaryAction {
+                        modelRowPrimaryButton(action: action, isWorking: isWorking)
+                    } else if let overflow = overflowAction, !isWorking {
+                        Menu {
+                            Button(overflow.label, action: overflow.run)
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 13, weight: .semibold))
+                                .frame(width: 22, height: 22)
+                        }
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .fixedSize()
+                        .help("More actions")
+                    } else if isWorking {
+                        ProgressView()
+                            .controlSize(.small)
+                            .frame(width: 22, height: 22)
+                    } else {
+                        Color.clear.frame(width: 22, height: 22)
+                    }
+                }
+                .frame(minWidth: 22, alignment: .trailing)
             }
-            .buttonStyle(.bordered)
-            .disabled(isRepairing || actionDisabled)
+        }
+    }
+
+    @ViewBuilder
+    private func modelRowPrimaryButton(action: ModelRowAction, isWorking: Bool) -> some View {
+        let label = isWorking ? "Working…" : action.label
+        if action.isProminent {
+            Button(label, action: action.run)
+                .buttonStyle(.borderedProminent)
+                .tint(DesignSystem.Colors.accent)
+                .disabled(isWorking)
+        } else {
+            Button(label, action: action.run)
+                .buttonStyle(.bordered)
+                .disabled(isWorking)
         }
     }
 
