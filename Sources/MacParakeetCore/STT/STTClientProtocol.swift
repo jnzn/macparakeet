@@ -22,6 +22,15 @@ public protocol STTTranscribing: Sendable {
     ) async throws -> STTResult
 }
 
+public protocol SpeechEngineRoutedTranscribing: STTTranscribing {
+    func transcribe(
+        audioPath: String,
+        job: STTJobKind,
+        speechEngine: SpeechEngineSelection,
+        onProgress: (@Sendable (Int, Int) -> Void)?
+    ) async throws -> STTResult
+}
+
 public protocol STTRuntimeManaging: Sendable {
     func warmUp(onProgress: (@Sendable (String) -> Void)?) async throws
     func backgroundWarmUp() async
@@ -37,6 +46,15 @@ public protocol STTRuntimeManaging: Sendable {
 
 public typealias STTManaging = STTTranscribing & STTRuntimeManaging
 public typealias STTClientProtocol = STTManaging
+
+public protocol SpeechEngineSwitching: Sendable {
+    func setSpeechEngine(_ preference: SpeechEnginePreference) async throws
+}
+
+public protocol SpeechEngineSessionManaging: Sendable {
+    func beginSpeechEngineSession() async -> SpeechEngineLease
+    func endSpeechEngineSession(_ lease: SpeechEngineLease) async
+}
 
 extension STTTranscribing {
     public func transcribe(audioPath: String, job: STTJobKind) async throws -> STTResult {
@@ -59,6 +77,7 @@ public enum STTError: Error, LocalizedError {
     case modelDownloadFailed
     case outOfMemory
     case invalidResponse
+    case engineBusy
 
     public var errorDescription: String? {
         switch self {
@@ -70,6 +89,7 @@ public enum STTError: Error, LocalizedError {
         case .modelDownloadFailed: return "Speech model isn't downloaded yet — check your internet connection and try again."
         case .outOfMemory: return "Out of memory during transcription"
         case .invalidResponse: return "Invalid response from speech engine"
+        case .engineBusy: return "Speech engine is busy. Try again after the current transcription finishes."
         }
     }
 }

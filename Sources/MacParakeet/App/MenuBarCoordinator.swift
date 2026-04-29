@@ -10,6 +10,8 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
     private let environmentProvider: () -> AppEnvironment?
     private let hotkeyMenuTitleProvider: () -> String
     private let meetingHotkeyTriggerProvider: () -> HotkeyTrigger
+    private let fileTranscriptionHotkeyTriggerProvider: () -> HotkeyTrigger
+    private let youtubeTranscriptionHotkeyTriggerProvider: () -> HotkeyTrigger
     private let meetingRecordingActiveProvider: () -> Bool
     private let onOpenMainWindow: () -> Void
     private let onOpenSettings: () -> Void
@@ -21,6 +23,8 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
     private var pasteLastMenuItem: NSMenuItem?
     private var recentDictationsMenuItem: NSMenuItem?
     private var recordMeetingMenuItem: NSMenuItem?
+    private var transcribeFileMenuItem: NSMenuItem?
+    private var transcribeYouTubeMenuItem: NSMenuItem?
     private var hotkeyMenuItem: NSMenuItem?
 
     init(
@@ -29,6 +33,8 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
         environmentProvider: @escaping () -> AppEnvironment?,
         hotkeyMenuTitleProvider: @escaping () -> String,
         meetingHotkeyTriggerProvider: @escaping () -> HotkeyTrigger,
+        fileTranscriptionHotkeyTriggerProvider: @escaping () -> HotkeyTrigger,
+        youtubeTranscriptionHotkeyTriggerProvider: @escaping () -> HotkeyTrigger,
         meetingRecordingActiveProvider: @escaping () -> Bool,
         onOpenMainWindow: @escaping () -> Void,
         onOpenSettings: @escaping () -> Void,
@@ -41,6 +47,8 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
         self.environmentProvider = environmentProvider
         self.hotkeyMenuTitleProvider = hotkeyMenuTitleProvider
         self.meetingHotkeyTriggerProvider = meetingHotkeyTriggerProvider
+        self.fileTranscriptionHotkeyTriggerProvider = fileTranscriptionHotkeyTriggerProvider
+        self.youtubeTranscriptionHotkeyTriggerProvider = youtubeTranscriptionHotkeyTriggerProvider
         self.meetingRecordingActiveProvider = meetingRecordingActiveProvider
         self.onOpenMainWindow = onOpenMainWindow
         self.onOpenSettings = onOpenSettings
@@ -148,7 +156,9 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
             keyEquivalent: ""
         )
         transcribeFileItem.target = self
+        applyChordShortcut(fileTranscriptionHotkeyTriggerProvider(), to: transcribeFileItem)
         menu.addItem(transcribeFileItem)
+        transcribeFileMenuItem = transcribeFileItem
 
         let transcribeYouTubeItem = NSMenuItem(
             title: "Transcribe from YouTube...",
@@ -156,17 +166,21 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
             keyEquivalent: ""
         )
         transcribeYouTubeItem.target = self
+        applyChordShortcut(youtubeTranscriptionHotkeyTriggerProvider(), to: transcribeYouTubeItem)
         menu.addItem(transcribeYouTubeItem)
+        transcribeYouTubeMenuItem = transcribeYouTubeItem
 
-        let recordMeetingItem = NSMenuItem(
-            title: "Record Meeting",
-            action: #selector(toggleMeetingRecordingFromMenu),
-            keyEquivalent: ""
-        )
-        recordMeetingItem.target = self
-        applyMeetingHotkeyToMenuItem(recordMeetingItem)
-        menu.addItem(recordMeetingItem)
-        recordMeetingMenuItem = recordMeetingItem
+        if AppFeatures.meetingRecordingEnabled {
+            let recordMeetingItem = NSMenuItem(
+                title: "Record Meeting",
+                action: #selector(toggleMeetingRecordingFromMenu),
+                keyEquivalent: ""
+            )
+            recordMeetingItem.target = self
+            applyChordShortcut(meetingHotkeyTriggerProvider(), to: recordMeetingItem)
+            menu.addItem(recordMeetingItem)
+            recordMeetingMenuItem = recordMeetingItem
+        }
 
         menu.addItem(NSMenuItem.separator())
 
@@ -181,7 +195,7 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
 
         let settingsItem = NSMenuItem(
             title: "Settings...",
-            action: #selector(openSettings),
+            action: #selector(showSettingsWindow),
             keyEquivalent: ","
         )
         settingsItem.target = self
@@ -206,7 +220,28 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
 
     func refreshMeetingHotkeyShortcut() {
         guard let recordMeetingMenuItem else { return }
-        applyMeetingHotkeyToMenuItem(recordMeetingMenuItem)
+        applyChordShortcut(meetingHotkeyTriggerProvider(), to: recordMeetingMenuItem)
+    }
+
+    func refreshTranscriptionHotkeyShortcuts() {
+        if let transcribeFileMenuItem {
+            applyChordShortcut(fileTranscriptionHotkeyTriggerProvider(), to: transcribeFileMenuItem)
+        }
+        if let transcribeYouTubeMenuItem {
+            applyChordShortcut(youtubeTranscriptionHotkeyTriggerProvider(), to: transcribeYouTubeMenuItem)
+        }
+    }
+
+    /// Entry point for the file-transcription global hotkey. Shares its
+    /// implementation with the menu-bar item so both behave identically.
+    func invokeTranscribeFileFlow() {
+        transcribeFileFlow()
+    }
+
+    /// Entry point for the YouTube-transcription global hotkey. Shares its
+    /// implementation with the menu-bar item.
+    func invokeTranscribeYouTubeFlow() {
+        transcribeYouTubeFlow()
     }
 
     func updateIcon(state: BreathWaveIcon.MenuBarState) {
@@ -221,7 +256,9 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
         onOpenMainWindow()
     }
 
-    @objc private func openSettings() {
+    // Named to avoid matching the macOS 14+ `openSettings:` system action,
+    // which would trigger automatic gear SF Symbol decoration on the menu item.
+    @objc private func showSettingsWindow() {
         onOpenSettings()
     }
 
@@ -249,6 +286,14 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
     }
 
     @objc private func transcribeFileFromMenu() {
+        transcribeFileFlow()
+    }
+
+    @objc private func transcribeFromYouTubeMenu() {
+        transcribeYouTubeFlow()
+    }
+
+    private func transcribeFileFlow() {
         guard environmentProvider() != nil else { return }
 
         NSApp.activate(ignoringOtherApps: true)
@@ -266,7 +311,7 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
         }
     }
 
-    @objc private func transcribeFromYouTubeMenu() {
+    private func transcribeYouTubeFlow() {
         guard environmentProvider() != nil else { return }
         youtubeInputController.show()
     }
@@ -329,8 +374,13 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
         recentItem.submenu = submenu
     }
 
-    private func applyMeetingHotkeyToMenuItem(_ item: NSMenuItem) {
-        let trigger = meetingHotkeyTriggerProvider()
+    /// Apply a chord trigger's visual shortcut to a menu item. Non-chord or
+    /// disabled triggers clear the key equivalent.
+    ///
+    /// Note: this only paints the visual hint. The actual hotkey is handled by
+    /// `GlobalShortcutManager` in the app layer, so keyEquivalent matches
+    /// aren't required for the shortcut to fire while the menu is closed.
+    private func applyChordShortcut(_ trigger: HotkeyTrigger, to item: NSMenuItem) {
         guard trigger.kind == .chord, let code = trigger.keyCode else {
             item.keyEquivalent = ""
             item.keyEquivalentModifierMask = []

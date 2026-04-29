@@ -18,6 +18,7 @@ final class AppEnvironment {
     private var modelKeepAliveTask: Task<Void, Never>?
     let audioProcessor: AudioProcessor
     let meetingRecordingService: MeetingRecordingService
+    let meetingRecordingRecoveryService: MeetingRecordingRecoveryService
     let dictationService: DictationService
     let transcriptionService: TranscriptionService
     let youtubeDownloader: YouTubeDownloader
@@ -36,6 +37,7 @@ final class AppEnvironment {
     let runtimePreferences: AppRuntimePreferencesProtocol
     let aiAssistantConfigStore: AIAssistantConfigStore
     let aiAssistantService: AIAssistantService
+    let derivedFieldsBackfill: DerivedFieldsBackfillService
 
     init(databaseManager: DatabaseManager) throws {
         self.databaseManager = databaseManager
@@ -50,19 +52,39 @@ final class AppEnvironment {
         promptResultRepo = PromptResultRepository(dbQueue: databaseManager.dbQueue)
 
         // Services
-        sttRuntime = STTRuntime()
+        let runtimePreferences = UserDefaultsAppRuntimePreferences()
+        self.runtimePreferences = runtimePreferences
+        let selectedInputDeviceUIDProvider: @Sendable () -> String? = { [runtimePreferences] in
+            runtimePreferences.selectedMicrophoneDeviceUID
+        }
+        let meetingAudioSourceModeProvider: @Sendable () -> MeetingAudioSourceMode = { [runtimePreferences] in
+            runtimePreferences.meetingAudioSourceMode
+        }
+
+        sttRuntime = STTRuntime(
+            speechEngine: SpeechEnginePreference.current(),
+            whisperModelVariant: SpeechEnginePreference.whisperModelVariant()
+        )
         sttScheduler = STTScheduler(runtime: sttRuntime)
-        audioProcessor = AudioProcessor()
-        meetingRecordingService = MeetingRecordingService(sttTranscriber: sttScheduler)
+        audioProcessor = AudioProcessor(
+            selectedInputDeviceUIDProvider: selectedInputDeviceUIDProvider
+        )
+        meetingRecordingService = MeetingRecordingService(
+            audioCaptureService: MeetingAudioCaptureService(
+                selectedInputDeviceUIDProvider: selectedInputDeviceUIDProvider,
+                sourceModeProvider: meetingAudioSourceModeProvider
+            ),
+            sttTranscriber: sttScheduler
+        )
         clipboardService = ClipboardService()
         exportService = ExportService()
         permissionService = PermissionService()
         accessibilityService = AccessibilityService()
         launchAtLoginService = LaunchAtLoginService()
-        let runtimePreferences = UserDefaultsAppRuntimePreferences()
-        self.runtimePreferences = runtimePreferences
 
-        // Licensing / entitlements (basic guards: 7-day trial + license unlock).
+        // Retained purchase activation / entitlements. Current free/GPL builds
+        // always report unlocked, but the old activation plumbing is preserved
+        // as future-option support for official paid distribution/support.
         //
         // Production builds should embed these values in Info.plist via the dist script.
         // We still support env vars for local development.
@@ -205,10 +227,13 @@ final class AppEnvironment {
             }
         }
 
-        telemetryService = TelemetryService()
-        Telemetry.configure(telemetryService)
+        let telemetry = TelemetryService()
+        telemetryService = telemetry
+        Telemetry.configure(telemetry)
         Telemetry.send(.appLaunched)
-        CrashReporter.sendPendingReport(via: telemetryService)
+        Task {
+            await CrashReporter.sendPendingReport(via: telemetry)
+        }
 
         transcriptionService = TranscriptionService(
             audioProcessor: audioProcessor,
@@ -226,6 +251,14 @@ final class AppEnvironment {
             youtubeDownloader: youtubeDownloader,
             diarizationService: diarizationService
         )
+
+        meetingRecordingRecoveryService = MeetingRecordingRecoveryService(
+            transcriptionService: transcriptionService,
+            transcriptionRepo: transcriptionRepo
+        )
+
+        derivedFieldsBackfill = DerivedFieldsBackfillService(dbQueue: databaseManager.dbQueue)
+        derivedFieldsBackfill.runInBackground()
     }
 
     /// Send a trivial 1-token request to the configured Ollama endpoint with
