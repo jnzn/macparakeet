@@ -26,9 +26,9 @@ final class ConfigCommandTests: XCTestCase {
     // MARK: - read
 
     func testReadTelemetryDefaultsToOn() throws {
-        // Mirror AppPreferences.isTelemetryEnabled: missing key → on.
+        // PDX Edition: isTelemetryEnabled hard-returns false → always "off".
         let value = try ConfigCommand.read(key: "telemetry", defaults: defaults)
-        XCTAssertEqual(value, "on")
+        XCTAssertEqual(value, "off")
     }
 
     func testReadTelemetryReflectsExplicitFalse() throws {
@@ -37,8 +37,9 @@ final class ConfigCommandTests: XCTestCase {
     }
 
     func testReadTelemetryReflectsExplicitTrue() throws {
+        // PDX Edition: isTelemetryEnabled hard-returns false regardless of stored value.
         defaults.set(true, forKey: AppPreferences.telemetryEnabledKey)
-        XCTAssertEqual(try ConfigCommand.read(key: "telemetry", defaults: defaults), "on")
+        XCTAssertEqual(try ConfigCommand.read(key: "telemetry", defaults: defaults), "off")
     }
 
     func testReadUnknownKeyThrowsValidationError() {
