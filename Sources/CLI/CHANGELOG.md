@@ -79,7 +79,15 @@ by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
 
 ## [Unreleased]
 
-No changes yet.
+### Added
+
+- `flow vocabulary export`, `flow vocabulary import`, and `flow vocabulary
+  schema` commands for round-trip backup of the combined vocabulary (custom
+  words + text snippets). `import` supports `--policy skip|replace`,
+  `--dry-run`, `--json`, and stdin (omit `--input`); `export` writes to
+  stdout when `--output` is omitted. `schema` prints an LLM-friendly spec
+  (or `--json` structured form) so a local coding agent can generate valid
+  bundles. Bundle format is versioned (`macparakeet.vocabulary` v1).
 
 ## [1.4.0] -- 2026-04-28
 

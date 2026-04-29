@@ -49,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let settingsViewModel = SettingsViewModel()
     private let customWordsViewModel = CustomWordsViewModel()
     private let textSnippetsViewModel = TextSnippetsViewModel()
+    private let vocabularyBackupViewModel = VocabularyBackupViewModel()
     private let feedbackViewModel = FeedbackViewModel()
     private let discoverViewModel = DiscoverViewModel()
     private let libraryViewModel = TranscriptionLibraryViewModel()
@@ -74,6 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsViewModel: settingsViewModel,
         customWordsViewModel: customWordsViewModel,
         textSnippetsViewModel: textSnippetsViewModel,
+        vocabularyBackupViewModel: vocabularyBackupViewModel,
         libraryViewModel: libraryViewModel,
         meetingsViewModel: meetingsViewModel,
         llmSettingsViewModel: llmSettingsViewModel,
@@ -125,6 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         promptsViewModel: promptsViewModel,
         customWordsViewModel: customWordsViewModel,
         textSnippetsViewModel: textSnippetsViewModel,
+        vocabularyBackupViewModel: vocabularyBackupViewModel,
         feedbackViewModel: feedbackViewModel,
         discoverViewModel: discoverViewModel,
         libraryViewModel: libraryViewModel,

@@ -33,6 +33,7 @@ final class AppEnvironmentConfigurer {
     private let settingsViewModel: SettingsViewModel
     private let customWordsViewModel: CustomWordsViewModel
     private let textSnippetsViewModel: TextSnippetsViewModel
+    private let vocabularyBackupViewModel: VocabularyBackupViewModel
     private let libraryViewModel: TranscriptionLibraryViewModel
     private let meetingsViewModel: TranscriptionLibraryViewModel
     private let llmSettingsViewModel: LLMSettingsViewModel
@@ -48,6 +49,7 @@ final class AppEnvironmentConfigurer {
         settingsViewModel: SettingsViewModel,
         customWordsViewModel: CustomWordsViewModel,
         textSnippetsViewModel: TextSnippetsViewModel,
+        vocabularyBackupViewModel: VocabularyBackupViewModel,
         libraryViewModel: TranscriptionLibraryViewModel,
         meetingsViewModel: TranscriptionLibraryViewModel,
         llmSettingsViewModel: LLMSettingsViewModel,
@@ -61,6 +63,7 @@ final class AppEnvironmentConfigurer {
         self.settingsViewModel = settingsViewModel
         self.customWordsViewModel = customWordsViewModel
         self.textSnippetsViewModel = textSnippetsViewModel
+        self.vocabularyBackupViewModel = vocabularyBackupViewModel
         self.libraryViewModel = libraryViewModel
         self.meetingsViewModel = meetingsViewModel
         self.llmSettingsViewModel = llmSettingsViewModel
@@ -109,6 +112,15 @@ final class AppEnvironmentConfigurer {
         settingsViewModel.onRecoverPendingMeetingRecordings = callbacks.onRecoverPendingMeetingRecordings
         customWordsViewModel.configure(repo: env.customWordRepo)
         textSnippetsViewModel.configure(repo: env.snippetRepo)
+        let vocabularyBackupService = VocabularyImportExportService(
+            customWordRepo: env.customWordRepo,
+            snippetRepo: env.snippetRepo
+        )
+        vocabularyBackupViewModel.configure(service: vocabularyBackupService) { [weak self] in
+            self?.customWordsViewModel.loadWords()
+            self?.textSnippetsViewModel.loadSnippets()
+            self?.settingsViewModel.refreshStats()
+        }
         promptsViewModel.configure(repo: env.promptRepo)
         llmSettingsViewModel.configure(
             configStore: env.llmConfigStore,
