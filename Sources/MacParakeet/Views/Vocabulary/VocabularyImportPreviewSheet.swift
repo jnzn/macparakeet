@@ -285,8 +285,10 @@ struct VocabularyImportPreviewSheet: View {
             .keyboardShortcut(.cancelAction)
 
             Button(importButtonTitle) {
-                if viewModel.applyImport() {
-                    dismiss()
+                Task {
+                    if await viewModel.applyImport() {
+                        dismiss()
+                    }
                 }
             }
             .buttonStyle(.borderedProminent)

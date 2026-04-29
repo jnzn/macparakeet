@@ -67,9 +67,9 @@ final class VocabularyImportExportServiceTests: XCTestCase {
     }
 
     func testSuggestedFilenameUsesUTCDate() {
-        let date = Date(timeIntervalSince1970: 1_714_000_000) // 2024-04-25
+        let date = Date(timeIntervalSince1970: 1_714_003_200) // 2024-04-25 00:00:00 UTC
         let name = service.suggestedFilename(now: date)
-        XCTAssertEqual(name, "MacParakeet-Vocabulary-2024-04-24.json")
+        XCTAssertEqual(name, "MacParakeet-Vocabulary-2024-04-25.json")
     }
 
     // MARK: - Round-trip
