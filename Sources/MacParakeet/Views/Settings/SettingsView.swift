@@ -1296,7 +1296,12 @@ struct SettingsView: View {
     private var whisperOverflowAction: ModelRowAction? {
         switch viewModel.whisperModelStatus {
         case .ready, .notLoaded:
-            return ModelRowAction(label: "Re-download…", isProminent: false) {
+            // Symmetric with Parakeet's "Repair…" — both engines surface the
+            // same affordance to the user. Underneath, Parakeet re-runs warmup
+            // (which downloads if files are missing); Whisper re-runs the
+            // download (no-op via HuggingFace cache when files are intact).
+            // The user shouldn't have to reason about that asymmetry.
+            return ModelRowAction(label: "Repair…", isProminent: false) {
                 viewModel.downloadWhisperModel()
             }
         default:
