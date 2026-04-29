@@ -1005,12 +1005,14 @@ struct SettingsView: View {
                     resetActionRow(
                         title: "Dictation history",
                         detail: "All dictations and their audio files.",
-                        buttonTitle: "Clear…",
-                        accessibilityLabel: "Clear all dictations",
-                        confirmationTitle: "Clear All Dictations?",
-                        confirmationMessage: "This will delete all \(viewModel.dictationCount) dictation\(viewModel.dictationCount == 1 ? "" : "s"), their audio files, and any private metric-only entries. Your lifetime stats are not affected. This cannot be undone.",
-                        confirmButtonLabel: "Clear All",
-                        action: viewModel.clearAllDictations
+                        action: ResetDestructiveAction(
+                            buttonTitle: "Clear…",
+                            accessibilityLabel: "Clear all dictations",
+                            confirmationTitle: "Clear All Dictations?",
+                            confirmationMessage: "This will delete all \(viewModel.dictationCount) dictation\(viewModel.dictationCount == 1 ? "" : "s"), their audio files, and any private metric-only entries. Your lifetime stats are not affected. This cannot be undone.",
+                            confirmButtonLabel: "Clear All",
+                            perform: viewModel.clearAllDictations
+                        )
                     )
 
                     Divider()
@@ -1018,12 +1020,14 @@ struct SettingsView: View {
                     resetActionRow(
                         title: "Downloaded YouTube audio",
                         detail: "Saved audio files only. Transcriptions stay; audio detaches.",
-                        buttonTitle: "Clear…",
-                        accessibilityLabel: "Clear downloaded YouTube audio",
-                        confirmationTitle: "Clear Downloaded YouTube Audio?",
-                        confirmationMessage: "This will delete all downloaded YouTube audio files and detach them from existing transcriptions. This cannot be undone.",
-                        confirmButtonLabel: "Clear Audio",
-                        action: viewModel.clearDownloadedYouTubeAudio
+                        action: ResetDestructiveAction(
+                            buttonTitle: "Clear…",
+                            accessibilityLabel: "Clear downloaded YouTube audio",
+                            confirmationTitle: "Clear Downloaded YouTube Audio?",
+                            confirmationMessage: "This will delete all downloaded YouTube audio files and detach them from existing transcriptions. This cannot be undone.",
+                            confirmButtonLabel: "Clear Audio",
+                            perform: viewModel.clearDownloadedYouTubeAudio
+                        )
                     )
                 }
 
@@ -1034,12 +1038,14 @@ struct SettingsView: View {
                     resetActionRow(
                         title: "Lifetime voice stats",
                         detail: "Total words, time, count, and longest dictation.",
-                        buttonTitle: "Reset…",
-                        accessibilityLabel: "Reset lifetime voice stats",
-                        confirmationTitle: "Reset Lifetime Stats?",
-                        confirmationMessage: "This will zero your total words, time, count, and longest dictation. Your dictation history is not affected. This cannot be undone.",
-                        confirmButtonLabel: "Reset",
-                        action: viewModel.resetLifetimeStats
+                        action: ResetDestructiveAction(
+                            buttonTitle: "Reset…",
+                            accessibilityLabel: "Reset lifetime voice stats",
+                            confirmationTitle: "Reset Lifetime Stats?",
+                            confirmationMessage: "This will zero your total words, time, count, and longest dictation. Your dictation history is not affected. This cannot be undone.",
+                            confirmButtonLabel: "Reset",
+                            perform: viewModel.resetLifetimeStats
+                        )
                     )
                 }
             }
@@ -1080,25 +1086,29 @@ struct SettingsView: View {
     private func resetActionRow(
         title: String,
         detail: String,
-        buttonTitle: String,
-        accessibilityLabel: String,
-        confirmationTitle: String,
-        confirmationMessage: String,
-        confirmButtonLabel: String,
-        action: @escaping () -> Void
+        action: ResetDestructiveAction
     ) -> some View {
         HStack(alignment: .center, spacing: DesignSystem.Spacing.md) {
             rowText(title: title, detail: detail)
             Spacer(minLength: DesignSystem.Spacing.md)
             SettingsDestructiveButton(
-                title: buttonTitle,
-                accessibilityLabel: accessibilityLabel,
-                confirmationTitle: confirmationTitle,
-                confirmationMessage: confirmationMessage,
-                confirmButtonLabel: confirmButtonLabel,
-                action: action
+                title: action.buttonTitle,
+                accessibilityLabel: action.accessibilityLabel,
+                confirmationTitle: action.confirmationTitle,
+                confirmationMessage: action.confirmationMessage,
+                confirmButtonLabel: action.confirmButtonLabel,
+                action: action.perform
             )
         }
+    }
+
+    private struct ResetDestructiveAction {
+        let buttonTitle: String
+        let accessibilityLabel: String
+        let confirmationTitle: String
+        let confirmationMessage: String
+        let confirmButtonLabel: String
+        let perform: () -> Void
     }
 
     // MARK: - Engine
