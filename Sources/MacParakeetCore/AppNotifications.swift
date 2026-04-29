@@ -5,6 +5,8 @@ public extension Notification.Name {
     static let macParakeetOpenSettings = Notification.Name("macparakeet.openSettings")
     static let macParakeetHotkeyTriggerDidChange = Notification.Name("macparakeet.hotkeyTriggerDidChange")
     static let macParakeetMeetingHotkeyTriggerDidChange = Notification.Name("macparakeet.meetingHotkeyTriggerDidChange")
+    static let macParakeetFileTranscriptionHotkeyTriggerDidChange = Notification.Name("macparakeet.fileTranscriptionHotkeyTriggerDidChange")
+    static let macParakeetYouTubeTranscriptionHotkeyTriggerDidChange = Notification.Name("macparakeet.youtubeTranscriptionHotkeyTriggerDidChange")
     static let macParakeetMenuBarOnlyModeDidChange = Notification.Name("macparakeet.menuBarOnlyModeDidChange")
     static let macParakeetShowIdlePillDidChange = Notification.Name("macparakeet.showIdlePillDidChange")
     static let macParakeetAIFormatterWarning = Notification.Name("macparakeet.aiFormatterWarning")
@@ -27,4 +29,9 @@ public extension Notification.Name {
     ///
     /// `userInfo["text"]` is the full cumulative partial (String).
     static let macParakeetStreamingPartial = Notification.Name("macparakeet.streamingPartial")
+    /// Posted when any calendar auto-start setting (mode, reminder lead time,
+    /// trigger filter, included calendars, auto-stop toggle) changes. The
+    /// `MeetingAutoStartCoordinator` re-reads its config and re-evaluates on
+    /// the next poll tick instead of waiting for the timer.
+    static let macParakeetCalendarSettingsDidChange = Notification.Name("macparakeet.calendarSettingsDidChange")
 }
