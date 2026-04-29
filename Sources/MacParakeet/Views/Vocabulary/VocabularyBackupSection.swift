@@ -226,29 +226,33 @@ struct VocabularyBackupSection: View {
     // MARK: - Actions
 
     private func presentExportPanel() {
-        guard let export = viewModel.makeExportPayload() else { return }
-        let panel = NSSavePanel()
-        panel.title = "Export Vocabulary"
-        panel.message = "Save your custom words and text snippets to a JSON file."
-        panel.nameFieldStringValue = viewModel.suggestedFilename()
-        if let json = UTType(filenameExtension: "json") {
-            panel.allowedContentTypes = [json]
-        }
-        panel.canCreateDirectories = true
-        panel.isExtensionHidden = false
+        Task { @MainActor in
+            guard let export = await viewModel.makeExportPayload() else { return }
+            let panel = NSSavePanel()
+            panel.title = "Export Vocabulary"
+            panel.message = "Save your custom words and text snippets to a JSON file."
+            panel.nameFieldStringValue = viewModel.suggestedFilename()
+            if let json = UTType(filenameExtension: "json") {
+                panel.allowedContentTypes = [json]
+            }
+            panel.canCreateDirectories = true
+            panel.isExtensionHidden = false
 
-        let response = panel.runModal()
-        guard response == .OK, let url = panel.url else { return }
-        do {
-            try export.data.write(to: url, options: .atomic)
-            viewModel.confirmExportSucceeded(
-                filename: url.lastPathComponent,
-                wordsCount: export.wordsCount,
-                snippetsCount: export.snippetsCount
-            )
-        } catch {
-            // Reuse failed status for write errors.
-            viewModel.status = .failed("Couldn't write the file: \(error.localizedDescription)")
+            let response = panel.runModal()
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                try await Task.detached(priority: .userInitiated) {
+                    try export.data.write(to: url, options: .atomic)
+                }.value
+                viewModel.confirmExportSucceeded(
+                    filename: url.lastPathComponent,
+                    wordsCount: export.wordsCount,
+                    snippetsCount: export.snippetsCount
+                )
+            } catch {
+                // Reuse failed status for write errors.
+                viewModel.status = .failed("Couldn't write the file: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -264,7 +268,9 @@ struct VocabularyBackupSection: View {
 
         let response = panel.runModal()
         guard response == .OK, let url = panel.url else { return }
-        viewModel.loadPreview(from: url)
+        Task {
+            await viewModel.loadPreview(from: url)
+        }
     }
 
     private func pluralize(_ n: Int, _ singular: String, _ plural: String) -> String {

@@ -48,15 +48,17 @@ public final class VocabularyBackupViewModel {
         service?.suggestedFilename() ?? "MacParakeet-Vocabulary.json"
     }
 
-    /// Builds export bytes synchronously. Caller wires this to NSSavePanel.
-    public func makeExportPayload() -> ExportPayload? {
+    /// Builds export bytes. Caller wires the returned payload to NSSavePanel.
+    public func makeExportPayload() async -> ExportPayload? {
         guard let service else {
             failMissingService()
             return nil
         }
         status = .exporting
         do {
-            let export = try service.exportBundleData()
+            let export = try await Task.detached(priority: .userInitiated) {
+                try service.exportBundleData()
+            }.value
             status = .idle
             return ExportPayload(
                 data: export.data,
@@ -79,15 +81,17 @@ public final class VocabularyBackupViewModel {
 
     /// Loads + decodes a chosen file. On success, populates `pendingImport` so
     /// the UI shows the preview sheet. On failure, surfaces an error message.
-    public func loadPreview(from url: URL) {
+    public func loadPreview(from url: URL) async {
         guard let service else {
             failMissingService()
             return
         }
         status = .importing
         do {
-            let data = try Data(contentsOf: url)
-            let preview = try service.decodePreview(from: data)
+            let preview = try await Task.detached(priority: .userInitiated) {
+                let data = try Data(contentsOf: url)
+                return try service.decodePreview(from: data)
+            }.value
             pendingImport = preview
             conflictPolicy = .skip
             status = .idle
@@ -104,7 +108,7 @@ public final class VocabularyBackupViewModel {
     }
 
     @discardableResult
-    public func applyImport() -> Bool {
+    public func applyImport() async -> Bool {
         guard let service else {
             failMissingService()
             return false
@@ -114,7 +118,10 @@ public final class VocabularyBackupViewModel {
         }
         status = .importing
         do {
-            let result = try service.apply(preview: preview, policy: conflictPolicy)
+            let policy = conflictPolicy
+            let result = try await Task.detached(priority: .userInitiated) {
+                try service.apply(preview: preview, policy: policy)
+            }.value
             pendingImport = nil
             status = .imported(result)
             onImportFinished?()

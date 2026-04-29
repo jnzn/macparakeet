@@ -22,7 +22,7 @@ final class FlowVocabularyCommandTests: XCTestCase {
     // MARK: - Schema
 
     func testSchemaJSONIsParseable() async throws {
-        var cmd = try FlowVocabularyCommand.VocabularySchema.parse(["--json"])
+        let cmd = try FlowVocabularyCommand.VocabularySchema.parse(["--json"])
         let output = try await capturingStdout {
             try await cmd.run()
         }
@@ -35,7 +35,7 @@ final class FlowVocabularyCommandTests: XCTestCase {
     }
 
     func testSchemaHumanIncludesExampleAndFieldNames() async throws {
-        var cmd = try FlowVocabularyCommand.VocabularySchema.parse([])
+        let cmd = try FlowVocabularyCommand.VocabularySchema.parse([])
         let output = try await capturingStdout {
             try await cmd.run()
         }
@@ -51,7 +51,7 @@ final class FlowVocabularyCommandTests: XCTestCase {
         try seedDatabase(words: [("kubernetes", "Kubernetes")], snippets: [("addr", "123 Main St")])
 
         let outPath = tempDir.appendingPathComponent("out.json").path
-        var cmd = try FlowVocabularyCommand.ExportVocabulary.parse([
+        let cmd = try FlowVocabularyCommand.ExportVocabulary.parse([
             "--database", dbPath,
             "--output", outPath
         ])
@@ -79,7 +79,7 @@ final class FlowVocabularyCommandTests: XCTestCase {
             textSnippets: []
         )
 
-        var cmd = try FlowVocabularyCommand.ImportVocabulary.parse([
+        let cmd = try FlowVocabularyCommand.ImportVocabulary.parse([
             "--database", dbPath,
             "--input", bundlePath,
             "--dry-run",
@@ -112,7 +112,7 @@ final class FlowVocabularyCommandTests: XCTestCase {
             ]
         )
 
-        var cmd = try FlowVocabularyCommand.ImportVocabulary.parse([
+        let cmd = try FlowVocabularyCommand.ImportVocabulary.parse([
             "--database", dbPath,
             "--input", bundlePath,
             "--json"
@@ -133,7 +133,7 @@ final class FlowVocabularyCommandTests: XCTestCase {
         try Data(#"{"schema":"not.us","version":1,"exportedAt":"2026-04-28T12:00:00Z","customWords":[],"textSnippets":[]}"#.utf8)
             .write(to: URL(fileURLWithPath: bundlePath))
 
-        var cmd = try FlowVocabularyCommand.ImportVocabulary.parse([
+        let cmd = try FlowVocabularyCommand.ImportVocabulary.parse([
             "--database", dbPath,
             "--input", bundlePath,
         ])
@@ -200,6 +200,8 @@ final class FlowVocabularyCommandTests: XCTestCase {
         dup2(saved, STDOUT_FILENO)
         pipe.fileHandleForWriting.closeFile()
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        // CLI stdout is expected to be UTF-8; non-failable decoding keeps
+        // test output available if it is not.
         let captured = String(decoding: data, as: UTF8.self)
         if let thrown { throw thrown }
         return captured
