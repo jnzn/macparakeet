@@ -1,4 +1,3 @@
-import MacParakeetCore
 import MacParakeetViewModels
 import SwiftUI
 

@@ -1207,14 +1207,19 @@ struct SettingsView: View {
         }
     }
 
-    /// Drives `EngineDownloadBanner` visibility + content. Returns nil when
-    /// Whisper is usable (`.ready` / `.notLoaded`) or in a transient
-    /// inspection state (`.checking` / `.unknown`); returns a populated
-    /// state when the user needs to act (download, wait, or retry). The
-    /// download lifecycle keeps the banner mounted across `.notDownloaded`
-    /// → `.repairing` → terminal state so the action surface is stable
-    /// rather than blinking out the moment the user clicks Download.
+    /// Drives `EngineDownloadBanner` visibility + content. Returns nil
+    /// unless Whisper is the actively-selected engine — Parakeet users
+    /// shouldn't be nagged to download a model they may never use; for
+    /// them, Whisper's status sits in the tile footer + Local Models card
+    /// and is surfaced only if they explicitly switch.
+    ///
+    /// When Whisper IS selected: returns nil for usable (`.ready` /
+    /// `.notLoaded`) or transient (`.checking` / `.unknown`) states, and a
+    /// populated state when the user needs to act (download, wait, retry).
+    /// The banner stays mounted across `.notDownloaded` → `.repairing` →
+    /// terminal state so the action surface doesn't blink out on click.
     private var whisperDownloadBannerState: (mode: EngineDownloadBanner.Mode, subtitle: String)? {
+        guard viewModel.speechEnginePreference == .whisper else { return nil }
         if viewModel.whisperDownloading {
             return (.downloading, viewModel.whisperModelStatusDetail)
         }
@@ -1242,7 +1247,7 @@ struct SettingsView: View {
         case .ready, .notLoaded:
             selectEngine(.whisper)
         case .notDownloaded:
-            viewModel.speechEngineError = "Download the Whisper model before switching engines."
+            viewModel.speechEngineError = "Download the Whisper model from Local Models below before switching engines."
         case .repairing:
             viewModel.speechEngineError = "Whisper model is downloading — switch engines once it finishes."
         case .failed:
