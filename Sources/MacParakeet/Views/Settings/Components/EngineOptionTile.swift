@@ -4,11 +4,11 @@ import SwiftUI
 
 /// Large selectable tile representing one speech recognition engine.
 ///
-/// Implementation note: the root is a tappable `VStack`, not a `Button`. The
-/// status footer hosts a real `Button` for the Download CTA, and SwiftUI on
-/// macOS does not reliably hit-test a Button nested inside a Button. The tile
-/// uses `.accessibilityElement(children: .contain)` so the inner Download
-/// button stays a separately-actionable element for VoiceOver.
+/// The tile is a plain-styled `Button` so it picks up macOS keyboard focus,
+/// the system focus ring, and Button accessibility traits for free. It only
+/// renders display state (status pill + label) — actionable affordances like
+/// Download / Retry live outside the tile (see `EngineDownloadBanner`) so we
+/// never nest one Button inside another, which is unreliable on macOS SwiftUI.
 struct EngineOptionTile: View {
     let icon: String
     let name: String
@@ -18,60 +18,59 @@ struct EngineOptionTile: View {
     let modelStatus: SettingsViewModel.LocalModelStatus
     let isSelected: Bool
     let isBusy: Bool
-    let downloadActionLabel: String?
     let onSelect: () -> Void
-    let onDownload: (() -> Void)?
 
     @State private var isHovered = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
-            header
-            Text(tagline)
-                .font(DesignSystem.Typography.bodySmall.weight(.medium))
-                .foregroundStyle(DesignSystem.Colors.accent)
-                .padding(.top, 2)
+        Button(action: handleTileTap) {
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
+                header
+                Text(tagline)
+                    .font(DesignSystem.Typography.bodySmall.weight(.medium))
+                    .foregroundStyle(DesignSystem.Colors.accent)
+                    .padding(.top, 2)
 
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(strengths, id: \.self) { strength in
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Circle()
-                            .fill(DesignSystem.Colors.accent.opacity(0.55))
-                            .frame(width: 4, height: 4)
-                            .offset(y: -2)
-                        Text(strength)
-                            .font(DesignSystem.Typography.caption)
-                            .foregroundStyle(DesignSystem.Colors.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(strengths, id: \.self) { strength in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Circle()
+                                .fill(DesignSystem.Colors.accent.opacity(0.55))
+                                .frame(width: 4, height: 4)
+                                .offset(y: -2)
+                            Text(strength)
+                                .font(DesignSystem.Typography.caption)
+                                .foregroundStyle(DesignSystem.Colors.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
-            }
-            .padding(.top, 4)
+                .padding(.top, 4)
 
-            Spacer(minLength: 0)
-            statusFooter
+                Spacer(minLength: 0)
+                statusFooter
+            }
+            .frame(maxWidth: .infinity, minHeight: 196, alignment: .topLeading)
+            .padding(DesignSystem.Spacing.md)
+            .background(background)
+            .overlay(border)
+            .contentShape(RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius))
         }
-        .frame(maxWidth: .infinity, minHeight: 196, alignment: .topLeading)
-        .padding(DesignSystem.Spacing.md)
-        .background(background)
-        .overlay(border)
-        .contentShape(RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius))
-        .onTapGesture { handleTileTap() }
+        .buttonStyle(.plain)
+        .disabled(isBusy)
         .help(helpText)
         .onHover { hovering in
             withAnimation(DesignSystem.Animation.hoverTransition) {
                 isHovered = hovering
             }
         }
-        .accessibilityElement(children: .contain)
         .accessibilityLabel("\(name) engine. \(tagline).")
         .accessibilityHint(helpText)
-        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-        .accessibilityAction { handleTileTap() }
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private func handleTileTap() {
-        guard !isBusy, !isSelected else { return }
+        guard !isSelected else { return }
         onSelect()
     }
 
@@ -104,10 +103,9 @@ struct EngineOptionTile: View {
         }
     }
 
-    @ViewBuilder
     private var statusFooter: some View {
         let info = StatusInfo.from(modelStatus)
-        HStack(alignment: .center, spacing: DesignSystem.Spacing.xs) {
+        return HStack(alignment: .center, spacing: DesignSystem.Spacing.xs) {
             Circle()
                 .fill(info.color)
                 .frame(width: 6, height: 6)
@@ -120,15 +118,6 @@ struct EngineOptionTile: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: DesignSystem.Spacing.xs)
-            if modelStatus == .notDownloaded,
-               let label = downloadActionLabel,
-               let onDownload {
-                Button(label, action: onDownload)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .tint(DesignSystem.Colors.accent)
-                    .accessibilityLabel("Download \(name) model")
-            }
         }
         .padding(.top, DesignSystem.Spacing.xs)
         .padding(.horizontal, 2)
@@ -208,42 +197,104 @@ struct EngineOptionTile: View {
     }
 }
 
-#Preview("Engine tiles", traits: .fixedLayout(width: 760, height: 280)) {
-    HStack(spacing: DesignSystem.Spacing.md) {
-        EngineOptionTile(
-            icon: "bolt.fill",
-            name: "Parakeet",
-            tagline: "Fastest local engine",
-            strengths: [
-                "English + 24 European languages",
-                "155× realtime on Apple Silicon",
-                "Runs on the Neural Engine"
-            ],
-            helpText: "Best for English and other European languages including Spanish, French, German, and Italian. Runs on the Neural Engine for the lowest latency on Apple Silicon.",
-            modelStatus: .ready,
-            isSelected: true,
-            isBusy: false,
-            downloadActionLabel: nil,
-            onSelect: {},
-            onDownload: nil
-        )
+/// Inline call-to-action that appears below the engine tiles when the
+/// selected-but-unavailable engine needs a download. Lives outside the
+/// tiles so the tile root can stay a clean `Button` (no nested-button hit
+/// testing). Compact full-width row: model description on the left, download
+/// affordance on the right, with progress when in flight.
+struct EngineDownloadBanner: View {
+    let title: String
+    let subtitle: String
+    let isDownloading: Bool
+    let action: () -> Void
 
-        EngineOptionTile(
-            icon: "globe",
-            name: "Whisper",
-            tagline: "Multilingual coverage",
-            strengths: [
-                "Korean, Japanese, Chinese, Thai +95 more",
-                "Auto language detection",
-                "Whisper Large v3 Turbo (632 MB)"
-            ],
-            helpText: "Best for languages outside Parakeet's coverage. Adds Korean, Japanese, Chinese, Thai, Hindi, Arabic, Vietnamese, and 80+ more — any language Whisper supports.",
-            modelStatus: .notDownloaded,
-            isSelected: false,
-            isBusy: false,
-            downloadActionLabel: "Download",
-            onSelect: {},
-            onDownload: {}
+    var body: some View {
+        HStack(alignment: .center, spacing: DesignSystem.Spacing.md) {
+            Image(systemName: "arrow.down.circle.fill")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(DesignSystem.Colors.accent)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(DesignSystem.Typography.bodySmall.weight(.medium))
+                Text(subtitle)
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: DesignSystem.Spacing.md)
+
+            if isDownloading {
+                HStack(spacing: DesignSystem.Spacing.xs) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Downloading…")
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Button("Download", action: action)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
+                    .tint(DesignSystem.Colors.accent)
+                    .accessibilityLabel("Download \(title)")
+            }
+        }
+        .padding(.horizontal, DesignSystem.Spacing.md)
+        .padding(.vertical, DesignSystem.Spacing.sm)
+        .background(
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                .fill(DesignSystem.Colors.accent.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                .strokeBorder(DesignSystem.Colors.accent.opacity(0.25), lineWidth: 0.5)
+        )
+    }
+}
+
+#Preview("Engine tiles + banner", traits: .fixedLayout(width: 760, height: 380)) {
+    VStack(spacing: DesignSystem.Spacing.md) {
+        HStack(spacing: DesignSystem.Spacing.md) {
+            EngineOptionTile(
+                icon: "bolt.fill",
+                name: "Parakeet",
+                tagline: "Fastest local engine",
+                strengths: [
+                    "English + 24 European languages",
+                    "155× realtime on Apple Silicon",
+                    "Runs on the Neural Engine"
+                ],
+                helpText: "Best for English and other European languages including Spanish, French, German, and Italian. Runs on the Neural Engine for the lowest latency on Apple Silicon.",
+                modelStatus: .ready,
+                isSelected: true,
+                isBusy: false,
+                onSelect: {}
+            )
+
+            EngineOptionTile(
+                icon: "globe",
+                name: "Whisper",
+                tagline: "Multilingual coverage",
+                strengths: [
+                    "Korean, Japanese, Chinese, Thai +95 more",
+                    "Auto language detection",
+                    "Whisper Large v3 Turbo (632 MB)"
+                ],
+                helpText: "Best for languages outside Parakeet's coverage. Adds Korean, Japanese, Chinese, Thai, Hindi, Arabic, Vietnamese, and 80+ more — any language Whisper supports.",
+                modelStatus: .notDownloaded,
+                isSelected: false,
+                isBusy: false,
+                onSelect: {}
+            )
+        }
+
+        EngineDownloadBanner(
+            title: "Whisper Large v3 Turbo",
+            subtitle: "632 MB · downloads once, runs locally afterwards",
+            isDownloading: false,
+            action: {}
         )
     }
     .padding(DesignSystem.Spacing.lg)

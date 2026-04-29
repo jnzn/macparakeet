@@ -1082,9 +1082,7 @@ struct SettingsView: View {
                         modelStatus: viewModel.parakeetStatus,
                         isSelected: viewModel.speechEnginePreference == .parakeet,
                         isBusy: viewModel.speechEngineSwitching,
-                        downloadActionLabel: nil,
-                        onSelect: { selectEngine(.parakeet) },
-                        onDownload: nil
+                        onSelect: { selectEngine(.parakeet) }
                     )
 
                     EngineOptionTile(
@@ -1100,9 +1098,16 @@ struct SettingsView: View {
                         modelStatus: viewModel.whisperModelStatus,
                         isSelected: viewModel.speechEnginePreference == .whisper,
                         isBusy: viewModel.speechEngineSwitching,
-                        downloadActionLabel: "Download",
-                        onSelect: { handleWhisperTileTap() },
-                        onDownload: viewModel.whisperDownloading ? nil : { viewModel.downloadWhisperModel() }
+                        onSelect: { handleWhisperTileTap() }
+                    )
+                }
+
+                if viewModel.whisperModelStatus == .notDownloaded {
+                    EngineDownloadBanner(
+                        title: "Whisper Large v3 Turbo",
+                        subtitle: "632 MB · downloads once, runs locally afterwards",
+                        isDownloading: viewModel.whisperDownloading,
+                        action: { viewModel.downloadWhisperModel() }
                     )
                 }
 
@@ -1133,12 +1138,7 @@ struct SettingsView: View {
                     )
                 }
             }
-            .transition(
-                .asymmetric(
-                    insertion: .opacity.combined(with: .move(edge: .top)),
-                    removal: .opacity
-                )
-            )
+            .transition(.opacity)
         }
     }
 
@@ -1207,16 +1207,26 @@ struct SettingsView: View {
         }
     }
 
-    /// Pre-empts the Whisper-not-downloaded case: instead of letting the VM
-    /// briefly accept the switch and revert, we set the inline error and
-    /// leave the user on Parakeet. The Download CTA in the tile footer is
-    /// the only path forward when the model is missing.
+    /// Pre-empts every "Whisper isn't ready" state so the user never sees
+    /// a briefly-selected-then-reverted tile. Mirrors the VM's
+    /// `isWhisperModelAvailable` (`ready` or `notLoaded`); for everything
+    /// else we set a state-specific inline message and leave the user on
+    /// Parakeet. `.checking` and `.unknown` are transient inspections that
+    /// usually settle within a frame, so we let those fall through to the
+    /// VM's normal accept/revert path rather than rejecting prematurely.
     private func handleWhisperTileTap() {
-        if viewModel.whisperModelStatus == .notDownloaded {
+        switch viewModel.whisperModelStatus {
+        case .ready, .notLoaded:
+            selectEngine(.whisper)
+        case .notDownloaded:
             viewModel.speechEngineError = "Download the Whisper model before switching engines."
-            return
+        case .repairing:
+            viewModel.speechEngineError = "Whisper model is downloading — switch engines once it finishes."
+        case .failed:
+            viewModel.speechEngineError = "Whisper model failed to load. Open Local Models below to retry."
+        case .checking, .unknown:
+            selectEngine(.whisper)
         }
-        selectEngine(.whisper)
     }
 
     private var parakeetPrimaryAction: ModelRowAction? {
