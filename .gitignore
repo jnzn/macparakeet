@@ -4,6 +4,9 @@ MEMORY.md
 # Claude Code
 .claude/
 
+# Git worktrees
+.worktrees/
+
 # Xcode
 .build/
 DerivedData/
