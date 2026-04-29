@@ -7,6 +7,8 @@ final class AppSettingsObserverCoordinator {
     private let onOpenSettings: () -> Void
     private let onHotkeyTriggerChanged: () -> Void
     private let onMeetingHotkeyTriggerChanged: () -> Void
+    private let onFileTranscriptionHotkeyTriggerChanged: () -> Void
+    private let onYouTubeTranscriptionHotkeyTriggerChanged: () -> Void
     private let onMenuBarOnlyModeChanged: () -> Void
     private let onShowIdlePillChanged: () -> Void
 
@@ -14,6 +16,8 @@ final class AppSettingsObserverCoordinator {
     private var settingsObserver: Any?
     private var hotkeyTriggerObserver: Any?
     private var meetingHotkeyTriggerObserver: Any?
+    private var fileTranscriptionHotkeyTriggerObserver: Any?
+    private var youtubeTranscriptionHotkeyTriggerObserver: Any?
     private var menuBarOnlyModeObserver: Any?
     private var showIdlePillObserver: Any?
 
@@ -23,6 +27,8 @@ final class AppSettingsObserverCoordinator {
         onOpenSettings: @escaping () -> Void,
         onHotkeyTriggerChanged: @escaping () -> Void,
         onMeetingHotkeyTriggerChanged: @escaping () -> Void,
+        onFileTranscriptionHotkeyTriggerChanged: @escaping () -> Void,
+        onYouTubeTranscriptionHotkeyTriggerChanged: @escaping () -> Void,
         onMenuBarOnlyModeChanged: @escaping () -> Void,
         onShowIdlePillChanged: @escaping () -> Void
     ) {
@@ -31,6 +37,8 @@ final class AppSettingsObserverCoordinator {
         self.onOpenSettings = onOpenSettings
         self.onHotkeyTriggerChanged = onHotkeyTriggerChanged
         self.onMeetingHotkeyTriggerChanged = onMeetingHotkeyTriggerChanged
+        self.onFileTranscriptionHotkeyTriggerChanged = onFileTranscriptionHotkeyTriggerChanged
+        self.onYouTubeTranscriptionHotkeyTriggerChanged = onYouTubeTranscriptionHotkeyTriggerChanged
         self.onMenuBarOnlyModeChanged = onMenuBarOnlyModeChanged
         self.onShowIdlePillChanged = onShowIdlePillChanged
     }
@@ -78,6 +86,26 @@ final class AppSettingsObserverCoordinator {
             }
         }
 
+        fileTranscriptionHotkeyTriggerObserver = notificationCenter.addObserver(
+            forName: .macParakeetFileTranscriptionHotkeyTriggerDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.onFileTranscriptionHotkeyTriggerChanged()
+            }
+        }
+
+        youtubeTranscriptionHotkeyTriggerObserver = notificationCenter.addObserver(
+            forName: .macParakeetYouTubeTranscriptionHotkeyTriggerDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.onYouTubeTranscriptionHotkeyTriggerChanged()
+            }
+        }
+
         menuBarOnlyModeObserver = notificationCenter.addObserver(
             forName: .macParakeetMenuBarOnlyModeDidChange,
             object: nil,
@@ -115,6 +143,14 @@ final class AppSettingsObserverCoordinator {
         if let meetingHotkeyTriggerObserver {
             notificationCenter.removeObserver(meetingHotkeyTriggerObserver)
             self.meetingHotkeyTriggerObserver = nil
+        }
+        if let fileTranscriptionHotkeyTriggerObserver {
+            notificationCenter.removeObserver(fileTranscriptionHotkeyTriggerObserver)
+            self.fileTranscriptionHotkeyTriggerObserver = nil
+        }
+        if let youtubeTranscriptionHotkeyTriggerObserver {
+            notificationCenter.removeObserver(youtubeTranscriptionHotkeyTriggerObserver)
+            self.youtubeTranscriptionHotkeyTriggerObserver = nil
         }
         if let menuBarOnlyModeObserver {
             notificationCenter.removeObserver(menuBarOnlyModeObserver)

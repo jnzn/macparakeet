@@ -13,6 +13,8 @@ public struct RecordingDeviceInfo: Sendable, Equatable {
     public let sampleRate: Double
     public let channels: UInt32
     public let fallbackUsed: Bool
+    public let deviceUID: String?
+    public let requestedDeviceUID: String?
 }
 
 /// Manages microphone recording via AVAudioEngine.
@@ -22,6 +24,7 @@ public struct RecordingDeviceInfo: Sendable, Equatable {
 /// in HFP mode reporting 0 Hz sample rate), automatically falls back to the built-in microphone.
 public actor AudioRecorder {
     private let logger = Logger(subsystem: "com.macparakeet.core", category: "AudioRecorder")
+    private let selectedInputDeviceUIDProvider: @Sendable () -> String?
     private var audioEngine: AVAudioEngine?
     private var audioFile: AVAudioFile?
     /// Thread-safe sample counter updated synchronously from the audio tap callback.
@@ -51,7 +54,11 @@ public actor AudioRecorder {
     /// FluidAudio requires at least 1 second of 16kHz audio (16,000 samples).
     private static let minimumSamples = 16_000
 
-    public init() {}
+    public init(
+        selectedInputDeviceUIDProvider: @escaping @Sendable () -> String? = { nil }
+    ) {
+        self.selectedInputDeviceUIDProvider = selectedInputDeviceUIDProvider
+    }
 
     public var audioLevel: Float {
         // Read the latest value written by the audio tap thread
@@ -105,9 +112,35 @@ public actor AudioRecorder {
 
         logAvailableDevices()
 
-        // Try with the system default device first
+        let selectedDeviceUID = AudioDeviceManager.normalizedUID(selectedInputDeviceUIDProvider())
+        if let selectedDeviceUID {
+            if let selectedDeviceID = AudioDeviceManager.inputDeviceID(forUID: selectedDeviceUID) {
+                do {
+                    try configureAndStart(
+                        overrideDeviceID: selectedDeviceID,
+                        fallbackUsed: false,
+                        requestedDeviceUID: selectedDeviceUID
+                    )
+                    return
+                } catch {
+                    logger.warning(
+                        "selected_input_device_failed uid=\(selectedDeviceUID, privacy: .private) error=\(error.localizedDescription, privacy: .public) — retrying with system default"
+                    )
+                }
+            } else {
+                logger.warning(
+                    "selected_input_device_missing uid=\(selectedDeviceUID, privacy: .private) — retrying with system default"
+                )
+            }
+        }
+
+        // Try with the system default device next.
         do {
-            try configureAndStart(overrideDeviceID: nil)
+            try configureAndStart(
+                overrideDeviceID: nil,
+                fallbackUsed: selectedDeviceUID != nil,
+                requestedDeviceUID: selectedDeviceUID
+            )
         } catch {
             logger.warning(
                 "default_device_failed error=\(error.localizedDescription, privacy: .public) — retrying with built-in mic"
@@ -122,7 +155,11 @@ public actor AudioRecorder {
             logger.info(
                 "retrying_with_built_in_mic id=\(builtInID, privacy: .public) name=\(name, privacy: .public)"
             )
-            try configureAndStart(overrideDeviceID: builtInID)
+            try configureAndStart(
+                overrideDeviceID: builtInID,
+                fallbackUsed: true,
+                requestedDeviceUID: selectedDeviceUID
+            )
         }
     }
 
@@ -176,7 +213,11 @@ public actor AudioRecorder {
     ///
     /// If `overrideDeviceID` is provided, explicitly sets that device on the engine's
     /// input audio unit before reading the format. Otherwise uses the system default.
-    private func configureAndStart(overrideDeviceID: AudioDeviceID?) throws {
+    private func configureAndStart(
+        overrideDeviceID: AudioDeviceID?,
+        fallbackUsed: Bool,
+        requestedDeviceUID: String?
+    ) throws {
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
 
@@ -192,10 +233,11 @@ public actor AudioRecorder {
         // Log the resolved device
         if let resolvedID = AudioDeviceManager.currentInputDevice(of: engine) {
             let name = AudioDeviceManager.deviceName(resolvedID) ?? "unknown"
+            let uid = AudioDeviceManager.deviceUID(resolvedID) ?? "unknown"
             let transport = AudioDeviceManager.transportType(resolvedID)
             let transportLabel = AudioDeviceManager.InputDevice.label(for: transport)
             logger.info(
-                "input_device id=\(resolvedID, privacy: .public) name=\(name, privacy: .public) transport=\(transportLabel, privacy: .public)"
+                "input_device id=\(resolvedID, privacy: .public) uid=\(uid, privacy: .private) name=\(name, privacy: .public) transport=\(transportLabel, privacy: .public) requested_uid=\(requestedDeviceUID ?? "system-default", privacy: .private)"
             )
         }
 
@@ -212,7 +254,8 @@ public actor AudioRecorder {
 
         // Capture device info for telemetry (before validation — we want info even on failure)
         if let resolvedID = AudioDeviceManager.currentInputDevice(of: engine) {
-            let rawName = AudioDeviceManager.deviceName(resolvedID) ?? "unknown"
+            let name = AudioDeviceManager.deviceName(resolvedID) ?? "unknown"
+            let uid = AudioDeviceManager.deviceUID(resolvedID)
             let transport = AudioDeviceManager.transportType(resolvedID)
             let subTransport = AudioDeviceManager.subDeviceTransport(resolvedID)
             // Aggregate wrappers expose names like "CADefaultDeviceAggregate-<pid>-<n>"
@@ -223,7 +266,7 @@ public actor AudioRecorder {
                let sub = AudioDeviceManager.subDeviceName(resolvedID), !sub.isEmpty {
                 displayName = sub
             } else {
-                displayName = rawName
+                displayName = name
             }
             _deviceInfo = RecordingDeviceInfo(
                 deviceName: displayName,
@@ -231,7 +274,9 @@ public actor AudioRecorder {
                 subTransport: subTransport.map { AudioDeviceManager.InputDevice.label(for: $0) },
                 sampleRate: inputFormat.sampleRate,
                 channels: inputFormat.channelCount,
-                fallbackUsed: overrideDeviceID != nil
+                fallbackUsed: fallbackUsed,
+                deviceUID: uid,
+                requestedDeviceUID: requestedDeviceUID
             )
         }
 
@@ -299,8 +344,11 @@ public actor AudioRecorder {
         // IsFormatSampleRateAndChannelCountValid(hwFormat)"). Wrap the install
         // call so the caller sees a Swift error rather than a hard abort.
         do {
+            nonisolated(unsafe) let unsafeInputNode = inputNode
+            let outputFormatBox = UncheckedSendableAudioFormat(outputFormat)
+            let fileBox = UncheckedSendableAudioFile(file)
             try catchingObjCException {
-                inputNode.installTap(onBus: 0, bufferSize: 4096, format: nil) {
+                unsafeInputNode.installTap(onBus: 0, bufferSize: 4096, format: nil) {
                     [weak self] buffer, _ in
                     guard let self else { return }
 
@@ -345,7 +393,7 @@ public actor AudioRecorder {
                         cachedSourceFormat: converterCache.sourceFormat,
                         incomingBufferFormat: bufferFormat
                     ) {
-                        converterCache.converter = AVAudioConverter(from: bufferFormat, to: outputFormat)
+                        converterCache.converter = AVAudioConverter(from: bufferFormat, to: outputFormatBox.format)
                         converterCache.sourceFormat = bufferFormat
                     }
                     guard let converter = converterCache.converter else {
@@ -362,11 +410,11 @@ public actor AudioRecorder {
 
                     // Convert to output format
                     let outputFrameCapacity = AVAudioFrameCount(
-                        ceil(Double(buffer.frameLength) * outputFormat.sampleRate / bufferFormat.sampleRate)
+                        ceil(Double(buffer.frameLength) * outputFormatBox.format.sampleRate / bufferFormat.sampleRate)
                     )
                     guard outputFrameCapacity > 0,
                         let convertedBuffer = AVAudioPCMBuffer(
-                            pcmFormat: outputFormat,
+                            pcmFormat: outputFormatBox.format,
                             frameCapacity: outputFrameCapacity
                         )
                     else { return }
@@ -374,16 +422,21 @@ public actor AudioRecorder {
                     // One-shot input block: provide the buffer exactly once per convert() call.
                     // The converter may call the input block multiple times if it needs more data;
                     // returning the same buffer repeatedly would duplicate samples.
-                    var inputConsumed = false
+                    let inputBuffer = UncheckedSendableAudioPCMBuffer(buffer)
+                    let inputConsumed = OSAllocatedUnfairLock(initialState: false)
                     var error: NSError?
                     let status = converter.convert(to: convertedBuffer, error: &error) { _, outStatus in
-                        if inputConsumed {
+                        let shouldProvideInput = inputConsumed.withLock { consumed -> Bool in
+                            guard !consumed else { return false }
+                            consumed = true
+                            return true
+                        }
+                        if !shouldProvideInput {
                             outStatus.pointee = .noDataNow
                             return nil
                         }
-                        inputConsumed = true
                         outStatus.pointee = .haveData
-                        return buffer
+                        return inputBuffer.buffer
                     }
 
                     switch status {
@@ -392,8 +445,9 @@ public actor AudioRecorder {
                         // between the guard at the top and here.
                         guard self.sessionGeneration.withLock({ $0 }) == tapGeneration else { return }
                         do {
-                            try file.write(from: convertedBuffer)
-                            self.sampleCounter.withLock { $0 += Int(convertedBuffer.frameLength) }
+                            let convertedFrameLength = Int(convertedBuffer.frameLength)
+                            try fileBox.file.write(from: convertedBuffer)
+                            self.sampleCounter.withLock { $0 += convertedFrameLength }
                             // Broadcast the freshly-converted buffer to the optional streaming
                             // subscriber. yield() is non-blocking and safe from the audio thread.
                             self.broadcastContinuation.withLock { $0?.yield(convertedBuffer) }
@@ -460,8 +514,9 @@ public actor AudioRecorder {
         // reliably. Without this, the first dictation / AI-assistant invocation
         // after app launch silently errors and the user has to try again.
         func tryStart() throws {
+            nonisolated(unsafe) let unsafeEngine = engine
             try catchingObjCException {
-                try engine.start()
+                try unsafeEngine.start()
             }
         }
         do {
@@ -507,7 +562,7 @@ public actor AudioRecorder {
         for device in devices {
             let isDefault = device.id == defaultID ? " [DEFAULT]" : ""
             logger.info(
-                "  device id=\(device.id, privacy: .public) name=\(device.name, privacy: .public) transport=\(device.transportLabel, privacy: .public)\(isDefault, privacy: .public)"
+                "  device id=\(device.id, privacy: .public) uid=\(device.uid, privacy: .private) name=\(device.name, privacy: .public) transport=\(device.transportLabel, privacy: .public)\(isDefault, privacy: .public)"
             )
         }
     }

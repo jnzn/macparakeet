@@ -13,6 +13,7 @@
 </p>
 
 <p align="center">
+  <a href="https://deepwiki.com/moona3k/macparakeet"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="GPL-3.0 License"></a>
   <img src="https://img.shields.io/badge/macOS-14.2%2B-000000.svg" alt="macOS 14.2+">
   <img src="https://img.shields.io/badge/Swift-6.0-F05138.svg" alt="Swift 6">
@@ -120,6 +121,8 @@ All rebindable in Settings → Hotkeys.
 
 ```bash
 swift run macparakeet-cli transcribe /path/to/audio.mp3
+swift run macparakeet-cli models download whisper-large-v3-v20240930-turbo-632MB
+swift run macparakeet-cli transcribe /path/to/korean.mp3 --engine whisper --language ko --format json
 swift run macparakeet-cli models status
 swift run macparakeet-cli history
 ```

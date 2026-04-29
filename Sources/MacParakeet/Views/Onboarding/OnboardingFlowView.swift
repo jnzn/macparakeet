@@ -22,8 +22,11 @@ struct OnboardingFlowView: View {
     @State private var backButtonHovered = false
     @State private var aiAssistantViewModel = AIAssistantOnboardingViewModel()
 
-    private var totalSteps: Int { OnboardingViewModel.Step.allCases.count }
-    private var currentStepIndex: Int { viewModel.step.rawValue + 1 }
+    private var visibleSteps: [OnboardingViewModel.Step] { OnboardingViewModel.visibleSteps }
+    private var totalSteps: Int { visibleSteps.count }
+    private var currentStepIndex: Int {
+        (visibleSteps.firstIndex(of: viewModel.step) ?? 0) + 1
+    }
     private var onboardingProgress: Double {
         Double(currentStepIndex) / Double(max(totalSteps, 1))
     }
@@ -79,7 +82,7 @@ struct OnboardingFlowView: View {
             .padding(.horizontal, DesignSystem.Spacing.xl)
 
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(OnboardingViewModel.Step.allCases) { step in
+                ForEach(visibleSteps) { step in
                     stepRow(step)
                 }
             }
@@ -159,6 +162,7 @@ struct OnboardingFlowView: View {
         case .microphone: return "mic"
         case .accessibility: return "accessibility"
         case .meetingRecording: return "record.circle"
+        case .calendar: return "calendar"
         case .hotkey: return "keyboard"
         case .aiAssistant: return "sparkles"
         case .engine: return "cpu"
@@ -176,6 +180,8 @@ struct OnboardingFlowView: View {
             return viewModel.accessibilityGranted
         case .meetingRecording:
             return viewModel.screenRecordingGranted || viewModel.meetingRecordingSkipped
+        case .calendar:
+            return viewModel.calendarPermissionGranted || viewModel.calendarSkipped
         case .hotkey:
             return viewModel.step.rawValue > step.rawValue
         case .aiAssistant:
@@ -333,6 +339,8 @@ struct OnboardingFlowView: View {
             }
         case .meetingRecording:
             meetingRecordingStep
+        case .calendar:
+            calendarStep
         case .hotkey:
             hotkeyStep
         case .aiAssistant:
@@ -385,7 +393,7 @@ struct OnboardingFlowView: View {
                 featureRow(
                     icon: "lock.shield.fill",
                     title: "100% local",
-                    detail: "Audio never leaves your Mac. No cloud. No accounts. No tracking."
+                    detail: "Audio never leaves your Mac. No cloud STT. No accounts. Non-identifying diagnostics only."
                 )
             }
         }
@@ -475,6 +483,59 @@ struct OnboardingFlowView: View {
     @State private var hotkeyEventMonitor: Any?
     @State private var hotkeyHintTask: Task<Void, Never>?
     @State private var showHotkeyAccessibilityHint = false
+
+    private var calendarStep: some View {
+        onboardingCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Calendar Reminders (Optional)")
+                        .font(DesignSystem.Typography.sectionTitle)
+                    Spacer()
+                    Text(viewModel.calendarPermissionGranted ? "Granted" : "Not granted")
+                        .font(DesignSystem.Typography.caption)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule().fill(
+                                viewModel.calendarPermissionGranted
+                                ? DesignSystem.Colors.successGreen.opacity(0.15)
+                                : DesignSystem.Colors.warningAmber.opacity(0.15)
+                            )
+                        )
+                        .foregroundStyle(
+                            viewModel.calendarPermissionGranted
+                            ? DesignSystem.Colors.successGreen
+                            : DesignSystem.Colors.warningAmber
+                        )
+                }
+
+                Text("MacParakeet can read your macOS calendar to send a quiet notification before each scheduled meeting — so you're ready to start the recording.")
+                    .font(DesignSystem.Typography.bodySmall)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("Events are read on-device only and never uploaded. You can change the lead time, ignore specific calendars, or turn this off entirely from Settings.")
+                    .font(DesignSystem.Typography.bodySmall)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 10) {
+                    accentButton(
+                        viewModel.isBusy ? "Requesting..." : "Enable Calendar Reminders",
+                        disabled: viewModel.isBusy || viewModel.calendarPermissionGranted
+                    ) {
+                        viewModel.requestCalendarAccess()
+                    }
+
+                    Button("Skip — I'll set this up later") {
+                        viewModel.skipCalendarStep()
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+            .padding(DesignSystem.Spacing.lg)
+        }
+    }
 
     private var hotkeyStep: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -922,6 +983,7 @@ struct OnboardingFlowView: View {
         case .microphone: return "Enable Microphone Access"
         case .accessibility: return "Enable Accessibility"
         case .meetingRecording: return "Meeting Recording (Optional)"
+        case .calendar: return "Calendar Reminders (Optional)"
         case .hotkey: return "Learn the Hotkeys"
         case .aiAssistant: return "Ask AI Assistant (Optional)"
         case .engine: return "Prepare Speech Model"
@@ -939,6 +1001,8 @@ struct OnboardingFlowView: View {
             return "Accessibility is required for the global hotkey and reliable paste automation."
         case .meetingRecording:
             return "Optional. This is only needed to capture system audio during meeting recording."
+        case .calendar:
+            return "Optional. Lets MacParakeet remind you before scheduled meetings so you never miss the start of a recording."
         case .hotkey:
             return "Two hotkeys — dictate with Right Option, ask AI with Fn. Press each to confirm they're wired."
         case .aiAssistant:
@@ -956,6 +1020,7 @@ struct OnboardingFlowView: View {
         case .microphone: return "Continue"
         case .accessibility: return "Continue"
         case .meetingRecording: return "Continue"
+        case .calendar: return "Continue"
         case .hotkey: return "Continue"
         case .aiAssistant: return "Continue"
         case .engine: return "Continue"
@@ -1084,7 +1149,7 @@ struct OnboardingFlowView: View {
             return "Grant microphone access to continue."
         case .accessibility:
             return "Enable Accessibility to continue."
-        case .meetingRecording:
+        case .meetingRecording, .calendar:
             return nil
         case .engine:
             return "Downloading — this can take several minutes. Everything works offline after setup."
@@ -1094,9 +1159,6 @@ struct OnboardingFlowView: View {
     }
 
     private var continueButtonDisabled: Bool {
-        if viewModel.step == .meetingRecording {
-            return viewModel.isBusy || !(viewModel.screenRecordingGranted || viewModel.meetingRecordingSkipped)
-        }
         return !viewModel.canContinueFromCurrentStep() || viewModel.isBusy
     }
 }

@@ -69,6 +69,10 @@ public struct LLMSettingsDraft: Equatable, Sendable {
         providerID?.requiresAPIKey ?? false
     }
 
+    public var supportsAPIKey: Bool {
+        providerID?.supportsAPIKey ?? false
+    }
+
     public var trimmedAPIKey: String {
         apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -113,9 +117,12 @@ public struct LLMSettingsDraft: Equatable, Sendable {
                     && suggestedModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return .missingModelSelection
         }
+        if providerID.requiresCustomEndpoint && trimmedBaseURLOverride.isEmpty {
+            return .invalidBaseURL
+        }
         if !trimmedBaseURLOverride.isEmpty {
             guard let overrideURL = URL(string: trimmedBaseURLOverride),
-                  Self.isAllowedBaseURLOverride(overrideURL) else {
+                  Self.isAllowedBaseURLOverride(overrideURL, providerID: providerID) else {
                 return .invalidBaseURL
             }
         }
@@ -124,6 +131,15 @@ public struct LLMSettingsDraft: Equatable, Sendable {
 
     public var isValid: Bool {
         validationError == nil
+    }
+
+    public var isLocalConfiguration: Bool {
+        guard let providerID else { return false }
+        if providerID == .openaiCompatible,
+           let url = URL(string: trimmedBaseURLOverride) {
+            return LLMProviderConfig.isLoopbackEndpoint(url)
+        }
+        return providerID.isLocal
     }
 
     public func buildConfig(
@@ -144,7 +160,7 @@ public struct LLMSettingsDraft: Equatable, Sendable {
             guard let override = URL(string: trimmedBaseURLOverride) else {
                 throw ValidationError.invalidBaseURL
             }
-            guard Self.isAllowedBaseURLOverride(override) else {
+            guard Self.isAllowedBaseURLOverride(override, providerID: providerID) else {
                 throw ValidationError.invalidBaseURL
             }
             baseURL = override
@@ -152,6 +168,14 @@ public struct LLMSettingsDraft: Equatable, Sendable {
             baseURL = defaultURL
         } else {
             throw ValidationError.invalidBaseURL
+        }
+
+        if providerID == .openaiCompatible {
+            return .openaiCompatible(
+                apiKey: trimmedAPIKey.isEmpty ? nil : trimmedAPIKey,
+                model: effectiveModelName,
+                baseURL: baseURL
+            )
         }
 
         return LLMProviderConfig(
@@ -174,7 +198,7 @@ public struct LLMSettingsDraft: Equatable, Sendable {
         let selectedCLITemplate = cliConfig.map { LocalCLITemplate.inferredTemplate(for: $0.commandTemplate) } ?? nil
         return LLMSettingsDraft(
             providerID: providerID,
-            apiKeyInput: providerID?.requiresAPIKey == true ? apiKey : "",
+            apiKeyInput: providerID?.supportsAPIKey == true ? apiKey : "",
             suggestedModelName: defaultModelName,
             useCustomModel: false,
             customModelName: "",
@@ -213,7 +237,22 @@ public struct LLMSettingsDraft: Equatable, Sendable {
         )
     }
 
-    static func isAllowedBaseURLOverride(_ url: URL) -> Bool {
-        OllamaURLValidator.isAllowedBaseURL(url)
+    private static func isAllowedBaseURLOverride(_ url: URL, providerID: LLMProviderID) -> Bool {
+        guard let scheme = url.scheme?.lowercased(),
+              url.host != nil else {
+            return false
+        }
+        if scheme == "https" {
+            return true
+        }
+        guard scheme == "http" else {
+            return false
+        }
+        // Local providers (Ollama, LM Studio) may be reachable over any host the
+        // user configures — LAN IP, mDNS hostname, Tailscale, 0.0.0.0 bind, etc.
+        if providerID.isLocal {
+            return true
+        }
+        return LLMProviderConfig.isLoopbackEndpoint(url)
     }
 }
