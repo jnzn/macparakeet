@@ -771,6 +771,16 @@ Each snippet has a trigger phrase, expansion text, and use count for tracking.
 | Raw | STT output as-is, no processing | No |
 | Clean | Filler removal + custom words + snippets + whitespace | **Yes** |
 
+**Backup & Restore (issue #67):**
+
+Users can export the combined vocabulary (manual custom words + text snippets)
+to a versioned JSON file, and import on the same or another Mac. Import shows
+a preview sheet with counts and case-insensitive conflict detection;
+duplicates can be skipped (default) or replaced. Surfaced from the Vocabulary
+panel and via `macparakeet-cli flow vocabulary {export,import,schema}`. The
+`schema` subcommand prints an LLM-readable spec so a local coding agent can
+generate valid bundles from natural-language input.
+
 **Database tables:**
 
 ```sql
@@ -894,7 +904,8 @@ Important constraints:
 - Add, delete text snippets
 - Use count tracking for snippets (helps users know which are active)
 - Accessible from Settings view ("Manage Custom Words...", "Manage Text Snippets...")
-- Import/export word lists (future: share between Macs)
+- Import/export the combined vocabulary backup (custom words + snippets) from
+  the Vocabulary panel and CLI.
 
 **Settings integration (v0.2 additions):**
 
@@ -915,6 +926,7 @@ Important constraints:
 - [x] Changes take effect immediately for next dictation
 - [x] Settings link opens management views
 - [x] Default processing mode configurable
+- [x] Combined vocabulary import/export is available from the Vocabulary panel and CLI
 
 ---
 

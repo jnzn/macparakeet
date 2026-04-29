@@ -6,6 +6,7 @@ struct VocabularyView: View {
     @Bindable var settingsViewModel: SettingsViewModel
     @Bindable var customWordsViewModel: CustomWordsViewModel
     @Bindable var textSnippetsViewModel: TextSnippetsViewModel
+    @Bindable var backupViewModel: VocabularyBackupViewModel
 
     @State private var showCustomWords = false
     @State private var showTextSnippets = false
@@ -28,6 +29,11 @@ struct VocabularyView: View {
                     pipelineCard
                 }
                 voiceReturnCard
+                VocabularyBackupSection(
+                    viewModel: backupViewModel,
+                    wordCount: settingsViewModel.customWordCount,
+                    snippetCount: settingsViewModel.snippetCount
+                )
             }
             .padding(DesignSystem.Spacing.lg)
         }
