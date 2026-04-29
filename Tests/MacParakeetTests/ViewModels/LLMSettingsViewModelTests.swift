@@ -124,7 +124,7 @@ final class LLMSettingsViewModelTests: XCTestCase {
         viewModel.customModelName = "third-party-model"
 
         XCTAssertFalse(viewModel.canSave)
-        XCTAssertEqual(viewModel.validationMessage, "Enter a valid base URL. Remote endpoints must use https.")
+        XCTAssertEqual(viewModel.validationMessage, "Enter a valid HTTPS URL, or http:// for localhost, Tailscale (*.ts.net), .local, or private-network hosts.")
 
         viewModel.baseURLOverride = "https://api.example.com/v1"
 

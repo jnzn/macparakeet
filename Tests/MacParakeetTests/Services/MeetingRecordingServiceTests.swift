@@ -1600,6 +1600,8 @@ private actor LeasingMeetingSTTClient: STTClientProtocol, SpeechEngineRoutedTran
     func clearModelCache() async {}
 
     func shutdown() async {}
+
+    func keepAlive() async {}
 }
 
 private actor ChunkRangeRecordingMeetingSTTClient: STTClientProtocol {
