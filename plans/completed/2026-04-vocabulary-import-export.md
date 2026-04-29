@@ -1,6 +1,6 @@
 # Vocabulary Import / Export
 
-> Status: **ACTIVE**
+> Status: **HISTORICAL**
 > Origin: Issue #67 (Daniel, 2026-04-06) — "make it possible to import and export your vocabulary"
 > Branch: `feat/vocabulary-import-export`
 
@@ -21,13 +21,16 @@ In:
 - Import from JSON with a preview sheet showing counts + conflicts.
 - Two conflict policies: skip duplicates (default) or replace.
 - "Backup & Restore" card on the Vocabulary panel (main page).
+- CLI commands: `flow vocabulary export`, `flow vocabulary import`, and
+  `flow vocabulary schema`.
 
 Out:
 - Per-table exports (one file is what Daniel asked for).
 - iCloud / cloud sync.
-- CLI commands (CLI is its own surface; can follow later).
 - New telemetry events (avoid cross-repo allowlist change in this PR).
-- Encrypted exports (vocabulary is non-sensitive by definition).
+- Encrypted exports. Text snippets may contain private data such as addresses,
+  signatures, or phone numbers; encryption is out of scope for v1 and should be
+  handled as a follow-up or documented privacy caveat.
 
 ## File format
 

@@ -904,7 +904,8 @@ Important constraints:
 - Add, delete text snippets
 - Use count tracking for snippets (helps users know which are active)
 - Accessible from Settings view ("Manage Custom Words...", "Manage Text Snippets...")
-- Import/export word lists (future: share between Macs)
+- Import/export the combined vocabulary backup (custom words + snippets) from
+  the Vocabulary panel and CLI.
 
 **Settings integration (v0.2 additions):**
 
@@ -925,6 +926,7 @@ Important constraints:
 - [x] Changes take effect immediately for next dictation
 - [x] Settings link opens management views
 - [x] Default processing mode configurable
+- [x] Combined vocabulary import/export is available from the Vocabulary panel and CLI
 
 ---
 

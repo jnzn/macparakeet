@@ -64,7 +64,7 @@ struct VocabularyBackupSection: View {
         }
         .sheet(isPresented: Binding(
             get: { viewModel.isPresentingImportSheet },
-            set: { if !$0 { viewModel.cancelImport() } }
+            set: { if !$0, viewModel.pendingImport != nil { viewModel.cancelImport() } }
         )) {
             if let preview = viewModel.pendingImport {
                 VocabularyImportPreviewSheet(
@@ -226,7 +226,7 @@ struct VocabularyBackupSection: View {
     // MARK: - Actions
 
     private func presentExportPanel() {
-        guard let data = viewModel.makeExportData() else { return }
+        guard let export = viewModel.makeExportPayload() else { return }
         let panel = NSSavePanel()
         panel.title = "Export Vocabulary"
         panel.message = "Save your custom words and text snippets to a JSON file."
@@ -240,11 +240,11 @@ struct VocabularyBackupSection: View {
         let response = panel.runModal()
         guard response == .OK, let url = panel.url else { return }
         do {
-            try data.write(to: url, options: .atomic)
+            try export.data.write(to: url, options: .atomic)
             viewModel.confirmExportSucceeded(
                 filename: url.lastPathComponent,
-                wordsCount: wordCount,
-                snippetsCount: snippetCount
+                wordsCount: export.wordsCount,
+                snippetsCount: export.snippetsCount
             )
         } catch {
             // Reuse failed status for write errors.

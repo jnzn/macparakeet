@@ -61,9 +61,10 @@ struct FlowVocabularyCommand: AsyncParsableCommand {
             let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
             let service = VocabularyImportExportService(
                 customWordRepo: CustomWordRepository(dbQueue: dbManager.dbQueue),
-                snippetRepo: TextSnippetRepository(dbQueue: dbManager.dbQueue)
+                snippetRepo: TextSnippetRepository(dbQueue: dbManager.dbQueue),
+                dbQueue: dbManager.dbQueue
             )
-            let data = try service.exportData()
+            let export = try service.exportBundleData()
 
             if let output, !output.trimmingCharacters(in: .whitespaces).isEmpty {
                 let resolved = expandTilde(output)
@@ -72,11 +73,11 @@ struct FlowVocabularyCommand: AsyncParsableCommand {
                     at: url.deletingLastPathComponent(),
                     withIntermediateDirectories: true
                 )
-                try data.write(to: url, options: .atomic)
-                let bundle = try service.makeBundle()
+                try export.data.write(to: url, options: .atomic)
+                let bundle = export.bundle
                 printErr("Exported \(bundle.customWords.count) word(s) and \(bundle.textSnippets.count) snippet(s) to \(resolved)")
             } else {
-                FileHandle.standardOutput.write(data)
+                FileHandle.standardOutput.write(export.data)
                 FileHandle.standardOutput.write(Data("\n".utf8))
             }
         }
@@ -128,7 +129,8 @@ struct FlowVocabularyCommand: AsyncParsableCommand {
                 let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
                 let service = VocabularyImportExportService(
                     customWordRepo: CustomWordRepository(dbQueue: dbManager.dbQueue),
-                    snippetRepo: TextSnippetRepository(dbQueue: dbManager.dbQueue)
+                    snippetRepo: TextSnippetRepository(dbQueue: dbManager.dbQueue),
+                    dbQueue: dbManager.dbQueue
                 )
 
                 let data = try readInputData()
@@ -141,6 +143,8 @@ struct FlowVocabularyCommand: AsyncParsableCommand {
                         snippetsTotal: preview.snippetsTotal,
                         wordConflicts: preview.wordConflicts,
                         snippetConflicts: preview.snippetConflicts,
+                        duplicateWords: preview.duplicateWords,
+                        duplicateSnippets: preview.duplicateSnippets,
                         policy: policy.rawValue
                     )
                     if json {
@@ -203,6 +207,16 @@ struct FlowVocabularyCommand: AsyncParsableCommand {
                     let extra = preview.snippetConflicts.count - min(10, preview.snippetConflicts.count)
                     print("  Snippets (\(preview.snippetConflicts.count)): \(sample)\(extra > 0 ? ", and \(extra) more" : "")")
                 }
+                if !preview.duplicateWords.isEmpty {
+                    let sample = preview.duplicateWords.prefix(10).map { "\"\($0)\"" }.joined(separator: ", ")
+                    let extra = preview.duplicateWords.count - min(10, preview.duplicateWords.count)
+                    print("  Duplicate words in file (\(preview.duplicateWords.count)): \(sample)\(extra > 0 ? ", and \(extra) more" : "")")
+                }
+                if !preview.duplicateSnippets.isEmpty {
+                    let sample = preview.duplicateSnippets.prefix(10).map { "\"\($0)\"" }.joined(separator: ", ")
+                    let extra = preview.duplicateSnippets.count - min(10, preview.duplicateSnippets.count)
+                    print("  Duplicate snippets in file (\(preview.duplicateSnippets.count)): \(sample)\(extra > 0 ? ", and \(extra) more" : "")")
+                }
             } else {
                 print("\nNo conflicts. All entries are new.")
             }
@@ -226,6 +240,8 @@ struct FlowVocabularyCommand: AsyncParsableCommand {
             let snippetsTotal: Int
             let wordConflicts: [String]
             let snippetConflicts: [String]
+            let duplicateWords: [String]
+            let duplicateSnippets: [String]
             let policy: String
         }
 

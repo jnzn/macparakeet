@@ -4,6 +4,18 @@ import MacParakeetCore
 @MainActor
 @Observable
 public final class VocabularyBackupViewModel {
+    public struct ExportPayload: Sendable, Equatable {
+        public let data: Data
+        public let wordsCount: Int
+        public let snippetsCount: Int
+
+        public init(data: Data, wordsCount: Int, snippetsCount: Int) {
+            self.data = data
+            self.wordsCount = wordsCount
+            self.snippetsCount = snippetsCount
+        }
+    }
+
     public enum Status: Equatable {
         case idle
         case exporting
@@ -37,19 +49,20 @@ public final class VocabularyBackupViewModel {
     }
 
     /// Builds export bytes synchronously. Caller wires this to NSSavePanel.
-    public func makeExportData() -> Data? {
-        guard let service else { return nil }
+    public func makeExportPayload() -> ExportPayload? {
+        guard let service else {
+            failMissingService()
+            return nil
+        }
         status = .exporting
         do {
-            let bundle = try service.makeBundle()
-            let data = try service.exportData()
-            return tap(data) {
-                status = .exported(
-                    wordsCount: bundle.customWords.count,
-                    snippetsCount: bundle.textSnippets.count,
-                    filename: ""
-                )
-            }
+            let export = try service.exportBundleData()
+            status = .idle
+            return ExportPayload(
+                data: export.data,
+                wordsCount: export.bundle.customWords.count,
+                snippetsCount: export.bundle.textSnippets.count
+            )
         } catch {
             status = .failed("Couldn't create the backup: \(error.localizedDescription)")
             return nil
@@ -67,7 +80,10 @@ public final class VocabularyBackupViewModel {
     /// Loads + decodes a chosen file. On success, populates `pendingImport` so
     /// the UI shows the preview sheet. On failure, surfaces an error message.
     public func loadPreview(from url: URL) {
-        guard let service else { return }
+        guard let service else {
+            failMissingService()
+            return
+        }
         status = .importing
         do {
             let data = try Data(contentsOf: url)
@@ -87,16 +103,25 @@ public final class VocabularyBackupViewModel {
         status = .idle
     }
 
-    public func applyImport() {
-        guard let service, let preview = pendingImport else { return }
+    @discardableResult
+    public func applyImport() -> Bool {
+        guard let service else {
+            failMissingService()
+            return false
+        }
+        guard let preview = pendingImport else {
+            return false
+        }
         status = .importing
         do {
             let result = try service.apply(preview: preview, policy: conflictPolicy)
             pendingImport = nil
             status = .imported(result)
             onImportFinished?()
+            return true
         } catch {
             status = .failed("Couldn't apply the import: \(error.localizedDescription)")
+            return false
         }
     }
 
@@ -104,8 +129,10 @@ public final class VocabularyBackupViewModel {
         status = .idle
     }
 
-    private func tap<T>(_ value: T, _ block: () -> Void) -> T {
-        block()
-        return value
+    private func failMissingService() {
+        #if DEBUG
+        assertionFailure("Missing service in VocabularyBackupViewModel")
+        #endif
+        status = .failed("Vocabulary backup isn't ready yet. Try again in a moment.")
     }
 }

@@ -17,6 +17,7 @@ final class VocabularyImportExportServiceTests: XCTestCase {
         service = VocabularyImportExportService(
             customWordRepo: customWordRepo,
             snippetRepo: snippetRepo,
+            dbQueue: manager.dbQueue,
             appVersion: "0.6.0-test",
             clock: { now }
         )
@@ -123,6 +124,29 @@ final class VocabularyImportExportServiceTests: XCTestCase {
         XCTAssertEqual(preview.snippetsTotal, 1)
         XCTAssertEqual(preview.wordConflicts, ["kubernetes"])
         XCTAssertEqual(preview.snippetConflicts, ["addr"])
+        XCTAssertTrue(preview.duplicateWords.isEmpty)
+        XCTAssertTrue(preview.duplicateSnippets.isEmpty)
+        XCTAssertTrue(preview.hasConflicts)
+    }
+
+    func testDecodePreviewDetectsInBundleDuplicatesCaseInsensitive() throws {
+        let bundle = VocabularyBundle(
+            exportedAt: fixedNow,
+            appVersion: nil,
+            customWords: [
+                .init(word: "Kubernetes", replacement: "A", isEnabled: true, createdAt: nil),
+                .init(word: "kubernetes", replacement: "B", isEnabled: true, createdAt: nil)
+            ],
+            textSnippets: [
+                .init(trigger: "Addr", expansion: "A", isEnabled: true, action: nil, createdAt: nil),
+                .init(trigger: "addr", expansion: "B", isEnabled: true, action: nil, createdAt: nil)
+            ]
+        )
+        let data = try JSONEncoder.iso8601().encode(bundle)
+        let preview = try service.decodePreview(from: data)
+
+        XCTAssertEqual(preview.duplicateWords, ["kubernetes"])
+        XCTAssertEqual(preview.duplicateSnippets, ["addr"])
         XCTAssertTrue(preview.hasConflicts)
     }
 
@@ -200,6 +224,63 @@ final class VocabularyImportExportServiceTests: XCTestCase {
         XCTAssertEqual(result.wordsAdded, 1)
         XCTAssertEqual(result.wordsSkipped, 1)
         XCTAssertEqual(try customWordRepo.fetchAll().count, 2)
+    }
+
+    func testApplyWithSkipPolicySkipsDuplicateEntriesInsideBundle() throws {
+        let bundle = VocabularyBundle(
+            exportedAt: fixedNow,
+            appVersion: nil,
+            customWords: [
+                .init(word: "Kubernetes", replacement: "First", isEnabled: true, createdAt: nil),
+                .init(word: "kubernetes", replacement: "Second", isEnabled: true, createdAt: nil)
+            ],
+            textSnippets: []
+        )
+        let data = try JSONEncoder.iso8601().encode(bundle)
+        let preview = try service.decodePreview(from: data)
+        let result = try service.apply(preview: preview, policy: .skip)
+
+        XCTAssertEqual(result.wordsAdded, 1)
+        XCTAssertEqual(result.wordsSkipped, 1)
+        XCTAssertEqual(result.wordsReplaced, 0)
+
+        let stored = try XCTUnwrap(try customWordRepo.fetchAll().first)
+        XCTAssertEqual(stored.word, "Kubernetes")
+        XCTAssertEqual(stored.replacement, "First")
+    }
+
+    func testApplyWithReplacePolicyLetsLaterDuplicateEntryWinInsideBundle() throws {
+        let bundle = VocabularyBundle(
+            exportedAt: fixedNow,
+            appVersion: nil,
+            customWords: [
+                .init(word: "Kubernetes", replacement: "First", isEnabled: true, createdAt: nil),
+                .init(word: "kubernetes", replacement: "Second", isEnabled: false, createdAt: nil)
+            ],
+            textSnippets: [
+                .init(trigger: "Addr", expansion: "First", isEnabled: true, action: nil, createdAt: nil),
+                .init(trigger: "addr", expansion: "Second", isEnabled: false, action: .returnKey, createdAt: nil)
+            ]
+        )
+        let data = try JSONEncoder.iso8601().encode(bundle)
+        let preview = try service.decodePreview(from: data)
+        let result = try service.apply(preview: preview, policy: .replace)
+
+        XCTAssertEqual(result.wordsAdded, 1)
+        XCTAssertEqual(result.wordsReplaced, 1)
+        XCTAssertEqual(result.snippetsAdded, 1)
+        XCTAssertEqual(result.snippetsReplaced, 1)
+
+        let storedWord = try XCTUnwrap(try customWordRepo.fetchAll().first)
+        XCTAssertEqual(storedWord.word, "kubernetes")
+        XCTAssertEqual(storedWord.replacement, "Second")
+        XCTAssertFalse(storedWord.isEnabled)
+
+        let storedSnippet = try XCTUnwrap(try snippetRepo.fetchAll().first)
+        XCTAssertEqual(storedSnippet.trigger, "addr")
+        XCTAssertEqual(storedSnippet.expansion, "Second")
+        XCTAssertEqual(storedSnippet.action, .returnKey)
+        XCTAssertFalse(storedSnippet.isEnabled)
     }
 
     // MARK: - Validation

@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 
 /// Encodes and decodes vocabulary bundles, and applies imports against the live repositories.
 ///
@@ -6,17 +7,20 @@ import Foundation
 public final class VocabularyImportExportService: @unchecked Sendable {
     private let customWordRepo: CustomWordRepositoryProtocol
     private let snippetRepo: TextSnippetRepositoryProtocol
+    private let dbQueue: DatabaseQueue
     private let appVersion: String?
     private let clock: @Sendable () -> Date
 
     public init(
         customWordRepo: CustomWordRepositoryProtocol,
         snippetRepo: TextSnippetRepositoryProtocol,
+        dbQueue: DatabaseQueue,
         appVersion: String? = BuildIdentity.current.version,
         clock: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.customWordRepo = customWordRepo
         self.snippetRepo = snippetRepo
+        self.dbQueue = dbQueue
         self.appVersion = appVersion
         self.clock = clock
     }
@@ -54,9 +58,24 @@ public final class VocabularyImportExportService: @unchecked Sendable {
         public let snippetsTotal: Int
         public let wordConflicts: [String]
         public let snippetConflicts: [String]
+        public let duplicateWords: [String]
+        public let duplicateSnippets: [String]
 
         public var hasConflicts: Bool {
-            !wordConflicts.isEmpty || !snippetConflicts.isEmpty
+            !wordConflicts.isEmpty
+                || !snippetConflicts.isEmpty
+                || !duplicateWords.isEmpty
+                || !duplicateSnippets.isEmpty
+        }
+    }
+
+    public struct ExportResult: Sendable, Equatable {
+        public let bundle: VocabularyBundle
+        public let data: Data
+
+        public init(bundle: VocabularyBundle, data: Data) {
+            self.bundle = bundle
+            self.data = data
         }
     }
 
@@ -119,8 +138,13 @@ public final class VocabularyImportExportService: @unchecked Sendable {
     }
 
     public func exportData() throws -> Data {
+        try exportBundleData().data
+    }
+
+    public func exportBundleData() throws -> ExportResult {
         let bundle = try makeBundle()
-        return try Self.encoder.encode(bundle)
+        let data = try Self.encoder.encode(bundle)
+        return ExportResult(bundle: bundle, data: data)
     }
 
     /// Suggested filename in the form `MacParakeet-Vocabulary-YYYY-MM-DD.json`.
@@ -162,36 +186,55 @@ public final class VocabularyImportExportService: @unchecked Sendable {
         let snippetConflicts = bundle.textSnippets
             .map(\.trigger)
             .filter { existingTriggers.contains($0.lowercased()) }
+        let duplicateWords = Self.caseInsensitiveDuplicates(in: bundle.customWords.map(\.word))
+        let duplicateSnippets = Self.caseInsensitiveDuplicates(in: bundle.textSnippets.map(\.trigger))
 
         return ImportPreview(
             bundle: bundle,
             wordsTotal: bundle.customWords.count,
             snippetsTotal: bundle.textSnippets.count,
             wordConflicts: wordConflicts,
-            snippetConflicts: snippetConflicts
+            snippetConflicts: snippetConflicts,
+            duplicateWords: duplicateWords,
+            duplicateSnippets: duplicateSnippets
         )
     }
 
     public func apply(preview: ImportPreview, policy: ConflictPolicy) throws -> ImportResult {
         let now = clock()
 
-        // Custom words: build lookup of existing by lowercase word.
-        let existingWords = try customWordRepo.fetchAll()
-        var wordsByKey: [String: CustomWord] = [:]
-        for word in existingWords { wordsByKey[word.word.lowercased()] = word }
+        return try dbQueue.write { db in
+            var wordsByKey: [String: CustomWord] = [:]
+            for word in try CustomWord.fetchAll(db) {
+                wordsByKey[word.word.lowercased()] = word
+            }
 
-        var wordsAdded = 0
-        var wordsReplaced = 0
-        var wordsSkipped = 0
+            var wordsAdded = 0
+            var wordsReplaced = 0
+            var wordsSkipped = 0
 
-        for imported in preview.bundle.customWords {
-            let key = imported.word.lowercased()
-            if let match = wordsByKey[key] {
-                switch policy {
-                case .skip:
-                    wordsSkipped += 1
-                case .replace:
-                    _ = try customWordRepo.delete(id: match.id)
+            for imported in preview.bundle.customWords {
+                let key = imported.word.lowercased()
+                if let match = wordsByKey[key] {
+                    switch policy {
+                    case .skip:
+                        wordsSkipped += 1
+                    case .replace:
+                        _ = try CustomWord.deleteOne(db, key: match.id)
+                        let new = CustomWord(
+                            id: UUID(),
+                            word: imported.word,
+                            replacement: imported.replacement,
+                            source: .manual,
+                            isEnabled: imported.isEnabled,
+                            createdAt: imported.createdAt ?? now,
+                            updatedAt: now
+                        )
+                        try new.save(db)
+                        wordsByKey[key] = new
+                        wordsReplaced += 1
+                    }
+                } else {
                     let new = CustomWord(
                         id: UUID(),
                         word: imported.word,
@@ -201,41 +244,44 @@ public final class VocabularyImportExportService: @unchecked Sendable {
                         createdAt: imported.createdAt ?? now,
                         updatedAt: now
                     )
-                    try customWordRepo.save(new)
-                    wordsReplaced += 1
+                    try new.save(db)
+                    wordsByKey[key] = new
+                    wordsAdded += 1
                 }
-            } else {
-                let new = CustomWord(
-                    id: UUID(),
-                    word: imported.word,
-                    replacement: imported.replacement,
-                    source: .manual,
-                    isEnabled: imported.isEnabled,
-                    createdAt: imported.createdAt ?? now,
-                    updatedAt: now
-                )
-                try customWordRepo.save(new)
-                wordsAdded += 1
             }
-        }
 
-        // Snippets.
-        let existingSnippets = try snippetRepo.fetchAll()
-        var snippetsByKey: [String: TextSnippet] = [:]
-        for snippet in existingSnippets { snippetsByKey[snippet.trigger.lowercased()] = snippet }
+            var snippetsByKey: [String: TextSnippet] = [:]
+            for snippet in try TextSnippet.fetchAll(db) {
+                snippetsByKey[snippet.trigger.lowercased()] = snippet
+            }
 
-        var snippetsAdded = 0
-        var snippetsReplaced = 0
-        var snippetsSkipped = 0
+            var snippetsAdded = 0
+            var snippetsReplaced = 0
+            var snippetsSkipped = 0
 
-        for imported in preview.bundle.textSnippets {
-            let key = imported.trigger.lowercased()
-            if let match = snippetsByKey[key] {
-                switch policy {
-                case .skip:
-                    snippetsSkipped += 1
-                case .replace:
-                    _ = try snippetRepo.delete(id: match.id)
+            for imported in preview.bundle.textSnippets {
+                let key = imported.trigger.lowercased()
+                if let match = snippetsByKey[key] {
+                    switch policy {
+                    case .skip:
+                        snippetsSkipped += 1
+                    case .replace:
+                        _ = try TextSnippet.deleteOne(db, key: match.id)
+                        let new = TextSnippet(
+                            id: UUID(),
+                            trigger: imported.trigger,
+                            expansion: imported.expansion,
+                            isEnabled: imported.isEnabled,
+                            useCount: 0,
+                            action: imported.action,
+                            createdAt: imported.createdAt ?? now,
+                            updatedAt: now
+                        )
+                        try new.save(db)
+                        snippetsByKey[key] = new
+                        snippetsReplaced += 1
+                    }
+                } else {
                     let new = TextSnippet(
                         id: UUID(),
                         trigger: imported.trigger,
@@ -246,33 +292,21 @@ public final class VocabularyImportExportService: @unchecked Sendable {
                         createdAt: imported.createdAt ?? now,
                         updatedAt: now
                     )
-                    try snippetRepo.save(new)
-                    snippetsReplaced += 1
+                    try new.save(db)
+                    snippetsByKey[key] = new
+                    snippetsAdded += 1
                 }
-            } else {
-                let new = TextSnippet(
-                    id: UUID(),
-                    trigger: imported.trigger,
-                    expansion: imported.expansion,
-                    isEnabled: imported.isEnabled,
-                    useCount: 0,
-                    action: imported.action,
-                    createdAt: imported.createdAt ?? now,
-                    updatedAt: now
-                )
-                try snippetRepo.save(new)
-                snippetsAdded += 1
             }
-        }
 
-        return ImportResult(
-            wordsAdded: wordsAdded,
-            wordsReplaced: wordsReplaced,
-            wordsSkipped: wordsSkipped,
-            snippetsAdded: snippetsAdded,
-            snippetsReplaced: snippetsReplaced,
-            snippetsSkipped: snippetsSkipped
-        )
+            return ImportResult(
+                wordsAdded: wordsAdded,
+                wordsReplaced: wordsReplaced,
+                wordsSkipped: wordsSkipped,
+                snippetsAdded: snippetsAdded,
+                snippetsReplaced: snippetsReplaced,
+                snippetsSkipped: snippetsSkipped
+            )
+        }
     }
 
     // MARK: - Codec
@@ -289,4 +323,18 @@ public final class VocabularyImportExportService: @unchecked Sendable {
         decoder.dateDecodingStrategy = .iso8601
         return decoder
     }()
+
+    private static func caseInsensitiveDuplicates(in values: [String]) -> [String] {
+        var seen = Set<String>()
+        var duplicates: [String] = []
+        for value in values {
+            let key = value.lowercased()
+            if seen.contains(key) {
+                duplicates.append(value)
+            } else {
+                seen.insert(key)
+            }
+        }
+        return duplicates
+    }
 }
