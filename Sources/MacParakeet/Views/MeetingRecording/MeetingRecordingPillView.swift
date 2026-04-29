@@ -149,24 +149,13 @@ struct MeetingRecordingPillView: View {
     }
 
     private var sacredRecordingPill: some View {
-        HStack(spacing: 8) {
-            Button {
-                onTap?()
-            } label: {
-                MerkabaPillIcon(
-                    isAnimating: true,
-                    audioLevel: max(viewModel.micLevel, viewModel.systemLevel)
-                )
-            }
-            .buttonStyle(.plain)
-            .help("Open meeting panel")
-
-            StopRecordingButton {
-                viewModel.onStop?()
-            }
+        VStack(spacing: 0) {
+            MerkabaPillIcon(
+                isAnimating: true,
+                audioLevel: max(viewModel.micLevel, viewModel.systemLevel)
+            )
         }
-        .padding(.leading, 10)
-        .padding(.trailing, 6)
+        .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(
             Capsule()
@@ -183,6 +172,9 @@ struct MeetingRecordingPillView: View {
         .contentShape(Capsule())
         .onHover { hovering in
             isHovered = hovering
+        }
+        .onTapGesture {
+            onTap?()
         }
         .scaleEffect(isHovered ? 1.05 : 1.0)
         .animation(DesignSystem.Animation.meetingPillHover, value: isHovered)
