@@ -15,7 +15,7 @@ class MacparakeetCli < Formula
   desc "Local STT, transcription, and prompt automation for Apple Silicon"
   homepage "https://macparakeet.com"
   url "https://github.com/moona3k/macparakeet/releases/download/cli-v1.4.0/macparakeet-cli-1.4.0-darwin-arm64.tar.gz"
-  sha256 "REPLACE_WITH_TARBALL_SHA256_AT_RELEASE_TIME"
+  sha256 "276b979b6976fffd43870a8e2e1515d5ea1fee668ffb79c5ca22be67aac40677"
   license "GPL-3.0-or-later"
   version "1.4.0"
 
