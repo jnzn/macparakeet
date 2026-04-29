@@ -683,6 +683,7 @@ struct SettingsView: View {
             folderPath: viewModel.meetingAutoSaveFolderPath,
             formatDetail: "File format for saved meetings.",
             panelMessage: "Select a folder for auto-saved meeting recordings",
+            resetHelp: "Reset to the default folder (~/Documents/MacParakeet/Meetings)",
             onChooseFolder: { viewModel.chooseMeetingAutoSaveFolder(url: $0) },
             onResetFolder: { viewModel.resetMeetingAutoSaveFolder() }
         )
@@ -823,6 +824,7 @@ struct SettingsView: View {
             folderPath: viewModel.autoSaveFolderPath,
             formatDetail: "File format for saved transcripts.",
             panelMessage: "Select a folder for auto-saved transcripts",
+            resetHelp: "Reset to the default folder (~/Documents/MacParakeet/Transcriptions)",
             onChooseFolder: { viewModel.chooseAutoSaveFolder(url: $0) },
             onResetFolder: { viewModel.resetAutoSaveFolder() }
         )
@@ -833,6 +835,7 @@ struct SettingsView: View {
         folderPath: String?,
         formatDetail: String,
         panelMessage: String,
+        resetHelp: String,
         onChooseFolder: @escaping (URL) -> Void,
         onResetFolder: @escaping () -> Void
     ) -> some View {
@@ -868,7 +871,7 @@ struct SettingsView: View {
                 Spacer(minLength: DesignSystem.Spacing.md)
                 Button("Reset") { onResetFolder() }
                     .buttonStyle(.bordered)
-                    .help("Reset to the default folder (~/Documents/MacParakeet)")
+                    .help(resetHelp)
                 Button("Choose…") {
                     if let url = Self.presentAutoSaveFolderPicker(message: panelMessage) {
                         onChooseFolder(url)
