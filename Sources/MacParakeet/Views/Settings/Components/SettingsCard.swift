@@ -16,6 +16,7 @@ struct SettingsCard<Content: View>: View {
     let title: String
     let subtitle: String
     let icon: String
+    let iconTint: Color?
     let statusChip: SettingsCardStatus?
     @ViewBuilder let content: () -> Content
 
@@ -25,26 +26,29 @@ struct SettingsCard<Content: View>: View {
         title: String,
         subtitle: String,
         icon: String,
+        iconTint: Color? = nil,
         status: SettingsCardStatus? = nil,
         @ViewBuilder content: @escaping () -> Content
     ) {
         self.title = title
         self.subtitle = subtitle
         self.icon = icon
+        self.iconTint = iconTint
         self.statusChip = status
         self.content = content
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+        let resolvedIconTint = iconTint ?? DesignSystem.Colors.accent
+        return VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
             HStack(alignment: .top, spacing: DesignSystem.Spacing.sm) {
                 Image(systemName: icon)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(DesignSystem.Colors.accent)
+                    .foregroundStyle(resolvedIconTint)
                     .frame(width: 30, height: 30)
                     .background(
                         RoundedRectangle(cornerRadius: 8)
-                            .fill(DesignSystem.Colors.accent.opacity(0.12))
+                            .fill(resolvedIconTint.opacity(0.12))
                     )
                     .accessibilityHidden(true)
 
