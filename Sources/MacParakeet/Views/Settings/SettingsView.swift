@@ -1611,7 +1611,7 @@ struct SettingsView: View {
                 Group {
                     if let action = primaryAction {
                         modelRowPrimaryButton(action: action, isWorking: isWorking)
-                    } else if let overflow = overflowAction, !isWorking, status != .checking {
+                    } else if let overflow = overflowAction, !isWorking, status != .checking, status != .repairing {
                         Menu {
                             Button(overflow.label, action: overflow.run)
                         } label: {
@@ -1623,7 +1623,8 @@ struct SettingsView: View {
                         .menuIndicator(.hidden)
                         .fixedSize()
                         .help("More actions")
-                    } else if isWorking || status == .checking {
+                        .accessibilityLabel("More actions")
+                    } else if isWorking || status == .checking || status == .repairing {
                         ProgressView()
                             .controlSize(.small)
                             .frame(width: 22, height: 22)

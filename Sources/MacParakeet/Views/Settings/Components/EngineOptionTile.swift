@@ -32,7 +32,7 @@ struct EngineOptionTile: View {
                     .padding(.top, 2)
 
                 VStack(alignment: .leading, spacing: 6) {
-                    ForEach(strengths, id: \.self) { strength in
+                    ForEach(Array(strengths.enumerated()), id: \.offset) { _, strength in
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Circle()
                                 .fill(DesignSystem.Colors.accent.opacity(0.55))
