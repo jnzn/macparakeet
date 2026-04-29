@@ -618,6 +618,8 @@ public final class HotkeyManager {
             return currentFlags.rawValue & requiredChordFlags == requiredChordFlags
         case .disabled:
             return false
+        case .modifierCombo:
+            return false
         }
     }
 
