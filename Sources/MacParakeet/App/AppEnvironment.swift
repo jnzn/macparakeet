@@ -33,6 +33,7 @@ final class AppEnvironment {
     let llmConfigStore: LLMConfigStore
     let llmService: LLMService
     let runtimePreferences: AppRuntimePreferencesProtocol
+    let derivedFieldsBackfill: DerivedFieldsBackfillService
 
     init(databaseManager: DatabaseManager) throws {
         self.databaseManager = databaseManager
@@ -185,5 +186,8 @@ final class AppEnvironment {
             transcriptionService: transcriptionService,
             transcriptionRepo: transcriptionRepo
         )
+
+        derivedFieldsBackfill = DerivedFieldsBackfillService(dbQueue: databaseManager.dbQueue)
+        derivedFieldsBackfill.runInBackground()
     }
 }
