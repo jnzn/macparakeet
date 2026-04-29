@@ -751,11 +751,13 @@ public final class TranscriptionViewModel {
         guard !trimmed.isEmpty, trimmed != transcription.fileName else { return }
 
         transcription.fileName = trimmed
+        transcription.derivedTitle = trimmed
         currentTranscription = transcription
         do {
             try transcriptionRepo?.updateFileName(id: transcription.id, fileName: trimmed)
             if let index = transcriptions.firstIndex(where: { $0.id == transcription.id }) {
                 transcriptions[index].fileName = trimmed
+                transcriptions[index].derivedTitle = trimmed
             }
         } catch {
             logger.error("Failed to persist transcription rename error=\(error.localizedDescription, privacy: .public)")

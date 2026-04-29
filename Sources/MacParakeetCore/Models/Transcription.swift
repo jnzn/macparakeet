@@ -50,6 +50,14 @@ public struct Transcription: Codable, Identifiable, Sendable {
     /// Engine-specific model variant id (e.g. the Whisper model id).
     /// `nil` for engines without variants and for legacy rows.
     public var engineVariant: String?
+    /// Display-ready title derived from the transcript content at completion
+    /// (substantive first sentence, filler-stripped). `nil` when the transcript
+    /// is empty or when the row predates v0.9 backfill.
+    public var derivedTitle: String?
+    /// Display-ready preview snippet derived from the transcript content at
+    /// completion (substantive sentence in [40, 140] chars, filler-stripped).
+    /// `nil` when the transcript is empty or predates v0.9 backfill.
+    public var derivedSnippet: String?
     public var updatedAt: Date
 
     public enum TranscriptionStatus: String, Codable, Sendable {
@@ -88,6 +96,8 @@ public struct Transcription: Codable, Identifiable, Sendable {
         userNotes: String? = nil,
         engine: String? = nil,
         engineVariant: String? = nil,
+        derivedTitle: String? = nil,
+        derivedSnippet: String? = nil,
         updatedAt: Date = Date()
     ) {
         self.id = id
@@ -118,6 +128,8 @@ public struct Transcription: Codable, Identifiable, Sendable {
         self.userNotes = userNotes
         self.engine = engine
         self.engineVariant = engineVariant
+        self.derivedTitle = derivedTitle
+        self.derivedSnippet = derivedSnippet
         self.updatedAt = updatedAt
     }
 }
@@ -168,7 +180,7 @@ extension Transcription: FetchableRecord, PersistableRecord {
         case rawTranscript, cleanTranscript, wordTimestamps, language
         case speakerCount, speakers, diarizationSegments, chatMessages
         case status, errorMessage, exportPath, sourceURL
-        case thumbnailURL, channelName, videoDescription, isFavorite, sourceType, recoveredFromCrash, isTranscriptEdited, userNotes, engine, engineVariant, updatedAt
+        case thumbnailURL, channelName, videoDescription, isFavorite, sourceType, recoveredFromCrash, isTranscriptEdited, userNotes, engine, engineVariant, derivedTitle, derivedSnippet, updatedAt
     }
 
     /// Backward-compatible decoding: `speakers` column may contain old `[String]` JSON
@@ -231,6 +243,8 @@ extension Transcription: FetchableRecord, PersistableRecord {
         userNotes = try container.decodeIfPresent(String.self, forKey: .userNotes)
         engine = try container.decodeIfPresent(String.self, forKey: .engine)
         engineVariant = try container.decodeIfPresent(String.self, forKey: .engineVariant)
+        derivedTitle = try container.decodeIfPresent(String.self, forKey: .derivedTitle)
+        derivedSnippet = try container.decodeIfPresent(String.self, forKey: .derivedSnippet)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
     }
 }

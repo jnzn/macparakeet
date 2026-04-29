@@ -880,7 +880,12 @@ final class TranscriptionViewModelTests: XCTestCase {
     }
 
     func testRenameCurrentTranscriptionUpdatesStateAndRepo() {
-        let t = Transcription(fileName: "Meeting Apr 5", status: .completed, sourceType: .meeting)
+        let t = Transcription(
+            fileName: "Meeting Apr 5",
+            status: .completed,
+            sourceType: .meeting,
+            derivedTitle: "Auto Derived Title"
+        )
         mockRepo.transcriptions = [t]
 
         viewModel.configure(transcriptionService: mockService, transcriptionRepo: mockRepo)
@@ -889,6 +894,9 @@ final class TranscriptionViewModelTests: XCTestCase {
         viewModel.renameCurrentTranscription(to: "Design Review")
 
         XCTAssertEqual(viewModel.currentTranscription?.fileName, "Design Review")
+        XCTAssertEqual(viewModel.currentTranscription?.derivedTitle, "Design Review")
+        XCTAssertEqual(viewModel.transcriptions.first?.fileName, "Design Review")
+        XCTAssertEqual(viewModel.transcriptions.first?.derivedTitle, "Design Review")
         XCTAssertEqual(mockRepo.updateFileNameCalls.count, 1)
         XCTAssertEqual(mockRepo.updateFileNameCalls[0].fileName, "Design Review")
     }
