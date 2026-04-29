@@ -7,8 +7,16 @@ import SwiftUI
 /// destructive actions without each one re-implementing the confirmation
 /// dance. Uses the native `.alert` modifier — a custom modal would buy a
 /// different look but no actual behavior the platform doesn't already give us.
+///
+/// `accessibilityLabel` overrides the visible button text for VoiceOver. This
+/// matters in the Reset & Cleanup card where each row's title carries the
+/// "what" ("Dictation history") and the visible button is just the verb
+/// ("Clear…") — VoiceOver users hear the row title via the surrounding
+/// `rowText`, but their cursor still lands on the button alone, so the button
+/// needs to read as a complete instruction in isolation.
 struct SettingsDestructiveButton: View {
     let title: String
+    let accessibilityLabelOverride: String?
     let confirmationTitle: String
     let confirmationMessage: String
     let confirmButtonLabel: String
@@ -18,12 +26,14 @@ struct SettingsDestructiveButton: View {
 
     init(
         title: String,
+        accessibilityLabel: String? = nil,
         confirmationTitle: String,
         confirmationMessage: String,
         confirmButtonLabel: String,
         action: @escaping () -> Void
     ) {
         self.title = title
+        self.accessibilityLabelOverride = accessibilityLabel
         self.confirmationTitle = confirmationTitle
         self.confirmationMessage = confirmationMessage
         self.confirmButtonLabel = confirmButtonLabel
@@ -31,10 +41,14 @@ struct SettingsDestructiveButton: View {
     }
 
     var body: some View {
-        Button(title, role: .destructive) {
+        Button(role: .destructive) {
             isPresented = true
+        } label: {
+            Text(title)
+                .foregroundStyle(DesignSystem.Colors.errorRed)
         }
         .buttonStyle(.bordered)
+        .accessibilityLabel(accessibilityLabelOverride ?? title)
         .alert(confirmationTitle, isPresented: $isPresented) {
             Button("Cancel", role: .cancel) {}
             Button(confirmButtonLabel, role: .destructive, action: action)
