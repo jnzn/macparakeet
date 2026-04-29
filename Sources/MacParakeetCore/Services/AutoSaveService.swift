@@ -128,6 +128,12 @@ public final class AutoSaveService {
     /// Resolve the stored bookmark data back to a URL for the given scope.
     /// Re-creates the bookmark if it has gone stale.
     public func resolveFolder(scope: AutoSaveScope = .transcription) -> URL? {
+        Self.resolveFolder(scope: scope, defaults: defaults)
+    }
+
+    /// Resolve the stored bookmark data back to a URL for the given scope.
+    /// Re-creates the bookmark if it has gone stale.
+    public static func resolveFolder(scope: AutoSaveScope = .transcription, defaults: UserDefaults = .standard) -> URL? {
         guard let bookmarkData = defaults.data(forKey: scope.folderBookmarkKey) else { return nil }
         var isStale = false
         guard let url = try? URL(
@@ -215,7 +221,7 @@ public final class AutoSaveService {
     ///   its bookmark.
     ///
     /// Returns the resolved folder URL on success, or `nil` if no bookmark
-    /// was stored and the default folder couldn't be created (extremely
+    /// was stored and the default folder couldn't be created or bookmarked (extremely
     /// rare — disk full, `~/Documents` read-only, etc.).
     @discardableResult
     public static func ensureFolderConfigured(scope: AutoSaveScope, defaults: UserDefaults = .standard) -> URL? {
@@ -223,12 +229,14 @@ public final class AutoSaveService {
             // Bookmark exists — preserve it even if stale / currently
             // unresolvable. The user's previously-chosen destination is
             // sacred; don't stomp it with a default.
-            return AutoSaveService(defaults: defaults).resolveFolder(scope: scope)
+            return resolveFolder(scope: scope, defaults: defaults)
         }
         let defaultURL = defaultFolder(for: scope)
         do {
             try FileManager.default.createDirectory(at: defaultURL, withIntermediateDirectories: true)
-            _ = storeFolder(defaultURL, scope: scope, defaults: defaults)
+            guard storeFolder(defaultURL, scope: scope, defaults: defaults) != nil else {
+                return nil
+            }
             return defaultURL
         } catch {
             return nil
@@ -244,7 +252,9 @@ public final class AutoSaveService {
         let defaultURL = defaultFolder(for: scope)
         do {
             try FileManager.default.createDirectory(at: defaultURL, withIntermediateDirectories: true)
-            _ = storeFolder(defaultURL, scope: scope, defaults: defaults)
+            guard storeFolder(defaultURL, scope: scope, defaults: defaults) != nil else {
+                return nil
+            }
             return defaultURL
         } catch {
             return nil

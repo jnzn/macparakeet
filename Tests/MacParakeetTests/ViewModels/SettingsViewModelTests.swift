@@ -294,11 +294,15 @@ final class SettingsViewModelTests: XCTestCase {
     }
 
     func testEnsureFolderConfiguredIsIdempotent() {
-        // Running ensureFolderConfigured twice on a fresh defaults must
+        // Running ensureFolderConfigured twice on fresh defaults must
         // produce the same path — the second call should see the first
         // call's bookmark and not re-create or move the folder.
-        let first = AutoSaveService.ensureFolderConfigured(scope: .transcription, defaults: testDefaults)
-        let second = AutoSaveService.ensureFolderConfigured(scope: .transcription, defaults: testDefaults)
+        let suite = "com.macparakeet.tests.idempotent.\(UUID().uuidString)"
+        let fresh = UserDefaults(suiteName: suite)!
+        defer { fresh.removePersistentDomain(forName: suite) }
+
+        let first = AutoSaveService.ensureFolderConfigured(scope: .transcription, defaults: fresh)
+        let second = AutoSaveService.ensureFolderConfigured(scope: .transcription, defaults: fresh)
 
         XCTAssertNotNil(first)
         XCTAssertNotNil(second)
