@@ -20,8 +20,8 @@ struct MeetingRowCard<MenuContent: View>: View {
                 trailingColumn
             }
             .padding(.horizontal, DesignSystem.Spacing.lg)
-            .padding(.vertical, 10)
-            .frame(minHeight: 58, alignment: .top)
+            .padding(.vertical, 12)
+            .frame(minHeight: 64, alignment: .top)
             .contentShape(Rectangle())
             .background(rowBackground)
         }
@@ -37,10 +37,10 @@ struct MeetingRowCard<MenuContent: View>: View {
 
     @ViewBuilder
     private var rowBackground: some View {
-        let radius: CGFloat = 8
+        let radius: CGFloat = 6
         if isSelected {
             RoundedRectangle(cornerRadius: radius)
-                .fill(DesignSystem.Colors.accent.opacity(0.14))
+                .fill(DesignSystem.Colors.accent.opacity(0.10))
         } else if hovered {
             RoundedRectangle(cornerRadius: radius)
                 .fill(DesignSystem.Colors.rowHoverBackground)
@@ -71,10 +71,11 @@ struct MeetingRowCard<MenuContent: View>: View {
 
             highlightedTitle
                 .font(.system(size: 15, weight: .semibold))
-                .tracking(-0.1)
-                .foregroundStyle(titleColor)
+                .tracking(-0.15)
+                .foregroundStyle(DesignSystem.Colors.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
+                .contentTransition(.opacity)
 
             speakerInline
                 .layoutPriority(0)
@@ -119,12 +120,6 @@ struct MeetingRowCard<MenuContent: View>: View {
 
     private var trailingColumn: some View {
         VStack(alignment: .trailing, spacing: 3) {
-            Text(timeOfDayString)
-                .font(DesignSystem.Typography.bodySmall)
-                .foregroundStyle(DesignSystem.Colors.textTertiary)
-                .monospacedDigit()
-                .lineLimit(1)
-
             if let durationMs = transcription.durationMs {
                 Text(durationMs.formattedDurationCompact)
                     .font(DesignSystem.Typography.bodySmall)
@@ -132,6 +127,12 @@ struct MeetingRowCard<MenuContent: View>: View {
                     .monospacedDigit()
                     .lineLimit(1)
             }
+
+            Text(timeOfDayString)
+                .font(DesignSystem.Typography.bodySmall)
+                .foregroundStyle(DesignSystem.Colors.textTertiary)
+                .monospacedDigit()
+                .lineLimit(1)
         }
         .fixedSize()
     }
@@ -167,10 +168,6 @@ struct MeetingRowCard<MenuContent: View>: View {
     private var displayedSpeakerCount: Int? {
         let count = transcription.speakerCount ?? transcription.speakers?.count ?? 0
         return count >= 2 ? count : nil
-    }
-
-    private var titleColor: Color {
-        isSelected ? DesignSystem.Colors.accentDark : DesignSystem.Colors.textPrimary
     }
 
     private var timeOfDayString: String {

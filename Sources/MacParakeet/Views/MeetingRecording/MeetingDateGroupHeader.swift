@@ -17,7 +17,7 @@ struct MeetingDateGroupHeader: View {
             .foregroundStyle(DesignSystem.Colors.textTertiary)
             .padding(.horizontal, DesignSystem.Spacing.lg)
             .padding(.top, DesignSystem.Spacing.md)
-            .padding(.bottom, DesignSystem.Spacing.xs)
+            .padding(.bottom, DesignSystem.Spacing.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityAddTraits(.isHeader)
     }
@@ -49,7 +49,7 @@ struct MeetingDateGroupHeader: View {
 struct MeetingRowHairline: View {
     var body: some View {
         Rectangle()
-            .fill(DesignSystem.Colors.divider.opacity(0.6))
+            .fill(DesignSystem.Colors.divider.opacity(0.25))
             .frame(height: 0.5)
             .padding(.leading, DesignSystem.Spacing.lg)
     }
