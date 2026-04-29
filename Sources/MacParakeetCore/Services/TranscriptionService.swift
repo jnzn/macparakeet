@@ -1121,11 +1121,11 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
         }
 
         let derivationSource = transcription.cleanTranscript ?? transcription.rawTranscript
-        transcription.derivedTitle = TitleDeriver.derive(from: derivationSource)
+        transcription.derivedTitle = TitleDeriver.derive(from: derivationSource) ?? ""
         transcription.derivedSnippet = SnippetDeriver.derive(
             from: derivationSource,
             excluding: transcription.derivedTitle
-        )
+        ) ?? ""
 
         transcription.status = .completed
         transcription.updatedAt = Date()

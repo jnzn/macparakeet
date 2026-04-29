@@ -9,6 +9,20 @@ struct MeetingDateGroupHeader: View {
     let group: TranscriptionDateGroup
     var calendar: Calendar = .autoupdatingCurrent
 
+    private static let monthFormatterCurrentYear: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = .current
+        f.dateFormat = "LLLL"
+        return f
+    }()
+
+    private static let monthFormatterWithYear: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = .current
+        f.dateFormat = "LLLL yyyy"
+        return f
+    }()
+
     var body: some View {
         Text(label)
             .font(.system(size: 11, weight: .semibold))
@@ -34,11 +48,10 @@ struct MeetingDateGroupHeader: View {
             comps.month = month
             comps.day = 1
             guard let date = calendar.date(from: comps) else { return "" }
-            let formatter = DateFormatter()
-            formatter.calendar = calendar
-            formatter.locale = .current
             let nowYear = calendar.component(.year, from: Date())
-            formatter.dateFormat = year == nowYear ? "LLLL" : "LLLL yyyy"
+            let formatter = (year == nowYear)
+                ? Self.monthFormatterCurrentYear
+                : Self.monthFormatterWithYear
             return formatter.string(from: date)
         }
     }

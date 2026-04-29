@@ -7,8 +7,10 @@ import OSLog
 /// low-priority background task; each batch is one short write transaction so
 /// it doesn't interfere with foreground reads.
 ///
-/// Idempotent: rows that already have a non-nil `derivedTitle` are skipped, so
-/// a partial run finishes cleanly on the next launch.
+/// Idempotent: rows that already have a non-nil `derivedTitle` are skipped.
+/// Rows where the deriver legitimately returns nil (empty / whitespace-only
+/// transcripts) get an empty-string sentinel so they exit the eligible-set —
+/// without the sentinel the predicate would re-select them forever.
 public final class DerivedFieldsBackfillService: @unchecked Sendable {
     private let dbQueue: DatabaseQueue
     private let batchSize: Int
@@ -26,48 +28,48 @@ public final class DerivedFieldsBackfillService: @unchecked Sendable {
     public func runInBackground() {
         Task.detached(priority: .utility) { [self] in
             do {
-                let processed = try await runOnce()
+                let processed = try runOnce()
                 if processed > 0 {
                     logger.info("derived_fields_backfilled rows=\(processed, privacy: .public)")
                 }
+            } catch is CancellationError {
+                // expected on app shutdown
             } catch {
                 logger.error("derived_fields_backfill_failed error=\(error.localizedDescription, privacy: .public)")
             }
         }
     }
 
-    /// Synchronous-ish entry point used by tests. Returns the number of rows
-    /// that were updated.
+    /// Process every eligible row, batched. Returns the actual number of rows
+    /// updated. Synchronous so it composes naturally with `Task.detached` and
+    /// is straightforward to call from tests.
     @discardableResult
-    public func runOnce() async throws -> Int {
+    public func runOnce() throws -> Int {
         var totalProcessed = 0
-        while try await processNextBatch() > 0 {
-            totalProcessed += batchSize
-            try Task.checkCancellation()
+        while !Task.isCancelled {
+            let processed = try processBatch()
+            if processed == 0 { break }
+            totalProcessed += processed
         }
         return totalProcessed
     }
 
-    private func processNextBatch() async throws -> Int {
-        let queue = dbQueue
-        let limit = batchSize
-        return try await Task.detached(priority: .utility) {
-            try queue.write { db in
-                let rows = try Transcription
-                    .filter(Transcription.Columns.derivedTitle == nil)
-                    .filter(Transcription.Columns.status == Transcription.TranscriptionStatus.completed.rawValue)
-                    .limit(limit)
-                    .fetchAll(db)
-                guard !rows.isEmpty else { return 0 }
+    private func processBatch() throws -> Int {
+        try dbQueue.write { db in
+            let rows = try Transcription
+                .filter(Transcription.Columns.derivedTitle == nil)
+                .filter(Transcription.Columns.status == Transcription.TranscriptionStatus.completed.rawValue)
+                .limit(batchSize)
+                .fetchAll(db)
+            guard !rows.isEmpty else { return 0 }
 
-                for var row in rows {
-                    let source = row.cleanTranscript ?? row.rawTranscript
-                    row.derivedTitle = TitleDeriver.derive(from: source)
-                    row.derivedSnippet = SnippetDeriver.derive(from: source, excluding: row.derivedTitle)
-                    try row.update(db)
-                }
-                return rows.count
+            for var row in rows {
+                let source = row.cleanTranscript ?? row.rawTranscript
+                row.derivedTitle = TitleDeriver.derive(from: source) ?? ""
+                row.derivedSnippet = SnippetDeriver.derive(from: source, excluding: row.derivedTitle) ?? ""
+                try row.update(db)
             }
-        }.value
+            return rows.count
+        }
     }
 }

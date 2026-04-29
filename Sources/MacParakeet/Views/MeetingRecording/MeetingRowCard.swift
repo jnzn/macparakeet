@@ -7,7 +7,6 @@ import SwiftUI
 struct MeetingRowCard<MenuContent: View>: View {
     let transcription: Transcription
     var searchText: String = ""
-    var isSelected: Bool = false
     var onTap: () -> Void
     @ViewBuilder var menuContent: () -> MenuContent
 
@@ -29,7 +28,6 @@ struct MeetingRowCard<MenuContent: View>: View {
         .help(hoverTooltip)
         .onHover { hovered = $0 }
         .animation(DesignSystem.Animation.hoverTransition, value: hovered)
-        .animation(DesignSystem.Animation.selectionChange, value: isSelected)
         .contextMenu { menuContent() }
     }
 
@@ -37,12 +35,8 @@ struct MeetingRowCard<MenuContent: View>: View {
 
     @ViewBuilder
     private var rowBackground: some View {
-        let radius: CGFloat = 6
-        if isSelected {
-            RoundedRectangle(cornerRadius: radius)
-                .fill(DesignSystem.Colors.accent.opacity(0.10))
-        } else if hovered {
-            RoundedRectangle(cornerRadius: radius)
+        if hovered {
+            RoundedRectangle(cornerRadius: 6)
                 .fill(DesignSystem.Colors.rowHoverBackground)
         } else {
             Color.clear
@@ -176,26 +170,10 @@ struct MeetingRowCard<MenuContent: View>: View {
 
     private var hoverTooltip: String {
         let absolute = transcription.createdAt.formatted(date: .abbreviated, time: .shortened)
-        var parts: [String] = [absolute]
-        let words = wordCount
-        if words > 0 {
-            parts.append(words.formatted() + " words")
-        }
         if let engineLabel = engineLabel {
-            parts.append(engineLabel)
+            return "\(absolute) · \(engineLabel)"
         }
-        return parts.joined(separator: " · ")
-    }
-
-    private var wordCount: Int {
-        guard let text = transcription.cleanTranscript ?? transcription.rawTranscript, !text.isEmpty else {
-            return 0
-        }
-        var count = 0
-        text.enumerateSubstrings(in: text.startIndex..<text.endIndex, options: .byWords) { _, _, _, _ in
-            count += 1
-        }
-        return count
+        return absolute
     }
 
     private var engineLabel: String? {
