@@ -31,6 +31,7 @@ public final class VocabularyImportExportService: @unchecked Sendable {
         case invalidSchema
         case unsupportedVersion(found: Int, supported: Int)
         case decodingFailed(String)
+        case invalidEntry(String)
         case ioFailed(String)
 
         public var errorDescription: String? {
@@ -41,6 +42,8 @@ public final class VocabularyImportExportService: @unchecked Sendable {
                 return "This file was created by a newer MacParakeet (format v\(found); this build understands v\(supported)). Update MacParakeet to import it."
             case let .decodingFailed(detail):
                 return "Couldn't read the backup file: \(detail)"
+            case let .invalidEntry(detail):
+                return "The backup contains an invalid vocabulary entry: \(detail)"
             case let .ioFailed(detail):
                 return "Couldn't read the file: \(detail)"
             }
@@ -177,22 +180,24 @@ public final class VocabularyImportExportService: @unchecked Sendable {
             )
         }
 
+        let validatedBundle = try Self.validatedBundle(bundle)
+
         let existingWords = Set((try customWordRepo.fetchAll()).map { $0.word.lowercased() })
         let existingTriggers = Set((try snippetRepo.fetchAll()).map { $0.trigger.lowercased() })
 
-        let wordConflicts = bundle.customWords
+        let wordConflicts = validatedBundle.customWords
             .map(\.word)
             .filter { existingWords.contains($0.lowercased()) }
-        let snippetConflicts = bundle.textSnippets
+        let snippetConflicts = validatedBundle.textSnippets
             .map(\.trigger)
             .filter { existingTriggers.contains($0.lowercased()) }
-        let duplicateWords = Self.caseInsensitiveDuplicates(in: bundle.customWords.map(\.word))
-        let duplicateSnippets = Self.caseInsensitiveDuplicates(in: bundle.textSnippets.map(\.trigger))
+        let duplicateWords = Self.caseInsensitiveDuplicates(in: validatedBundle.customWords.map(\.word))
+        let duplicateSnippets = Self.caseInsensitiveDuplicates(in: validatedBundle.textSnippets.map(\.trigger))
 
         return ImportPreview(
-            bundle: bundle,
-            wordsTotal: bundle.customWords.count,
-            snippetsTotal: bundle.textSnippets.count,
+            bundle: validatedBundle,
+            wordsTotal: validatedBundle.customWords.count,
+            snippetsTotal: validatedBundle.textSnippets.count,
             wordConflicts: wordConflicts,
             snippetConflicts: snippetConflicts,
             duplicateWords: duplicateWords,
@@ -336,5 +341,60 @@ public final class VocabularyImportExportService: @unchecked Sendable {
             }
         }
         return duplicates
+    }
+
+    private static func validatedBundle(_ bundle: VocabularyBundle) throws -> VocabularyBundle {
+        let customWords = try bundle.customWords.enumerated().map { index, imported in
+            let word = imported.word.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !word.isEmpty else {
+                throw ImportError.invalidEntry("customWords[\(index)].word must not be empty.")
+            }
+
+            return VocabularyBundle.ExportedCustomWord(
+                word: word,
+                replacement: normalizedOptionalText(imported.replacement),
+                isEnabled: imported.isEnabled,
+                createdAt: imported.createdAt
+            )
+        }
+
+        let textSnippets = try bundle.textSnippets.enumerated().map { index, imported in
+            let trigger = imported.trigger.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trigger.isEmpty else {
+                throw ImportError.invalidEntry("textSnippets[\(index)].trigger must not be empty.")
+            }
+
+            let expansion = normalizedSnippetExpansion(imported.expansion)
+            guard !expansion.isEmpty else {
+                throw ImportError.invalidEntry("textSnippets[\(index)].expansion must not be empty.")
+            }
+
+            return VocabularyBundle.ExportedTextSnippet(
+                trigger: trigger,
+                expansion: expansion,
+                isEnabled: imported.isEnabled,
+                action: imported.action,
+                createdAt: imported.createdAt
+            )
+        }
+
+        return VocabularyBundle(
+            exportedAt: bundle.exportedAt,
+            appVersion: bundle.appVersion,
+            customWords: customWords,
+            textSnippets: textSnippets
+        )
+    }
+
+    private static func normalizedOptionalText(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func normalizedSnippetExpansion(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespaces)
+            .replacingOccurrences(of: "\\n", with: "\n")
     }
 }
