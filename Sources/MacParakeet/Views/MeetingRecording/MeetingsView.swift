@@ -71,7 +71,7 @@ struct MeetingsView: View {
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(viewModel.groupedTranscriptions.enumerated()), id: \.offset) { _, section in
+                    ForEach(viewModel.groupedTranscriptions, id: \.group) { section in
                         MeetingDateGroupHeader(group: section.group)
                         ForEach(Array(section.items.enumerated()), id: \.element.id) { idx, transcription in
                             MeetingRowCard(

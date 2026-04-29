@@ -84,6 +84,42 @@ final class TranscriptionDateGroupingTests: XCTestCase {
         XCTAssertEqual(vm.groupedTranscriptions.map { $0.items.count }, [1, 1, 1, 1, 1])
     }
 
+    func testGroupingDoesNotFragmentUnderTitleSort() throws {
+        let manager = try DatabaseManager()
+        let repo = TranscriptionRepository(dbQueue: manager.dbQueue)
+        let now = date(2026, 4, 28, 15)
+        let vm = TranscriptionLibraryViewModel()
+        vm.configure(transcriptionRepo: repo)
+        vm.calendar = calendar
+        vm.nowProvider = { now }
+
+        // Three meetings — two from "Previous 30 Days", one from a different
+        // month — with file names that interleave the groups under
+        // alphabetical sort.
+        try repo.save(Transcription(createdAt: date(2026, 4, 10, 10), fileName: "Apple", status: .completed))
+        try repo.save(Transcription(createdAt: date(2026, 1, 12, 10), fileName: "Banana", status: .completed))
+        try repo.save(Transcription(createdAt: date(2026, 4, 11, 10), fileName: "Cherry", status: .completed))
+
+        vm.sortOrder = .titleAscending
+        vm.loadTranscriptions()
+
+        let groups = vm.groupedTranscriptions.map(\.group)
+        XCTAssertEqual(groups, [.previous30Days, .month(year: 2026, month: 1)])
+        XCTAssertEqual(vm.groupedTranscriptions.first?.items.map(\.fileName), ["Apple", "Cherry"])
+    }
+
+    func testBoundaryDayLandsInPrevious7Days() {
+        let now = date(2026, 4, 28, 15)
+        let bucket = TranscriptionDateGroup.bucket(for: date(2026, 4, 21, 10), now: now, calendar: calendar)
+        XCTAssertEqual(bucket, .previous7Days)
+    }
+
+    func testBoundaryDayLandsInPrevious30Days() {
+        let now = date(2026, 4, 28, 15)
+        let bucket = TranscriptionDateGroup.bucket(for: date(2026, 3, 29, 10), now: now, calendar: calendar)
+        XCTAssertEqual(bucket, .previous30Days)
+    }
+
     func testEmptyGroupsAreOmitted() throws {
         let manager = try DatabaseManager()
         let repo = TranscriptionRepository(dbQueue: manager.dbQueue)

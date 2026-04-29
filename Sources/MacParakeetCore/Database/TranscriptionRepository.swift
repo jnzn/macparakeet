@@ -244,6 +244,12 @@ public final class TranscriptionRepository: TranscriptionRepositoryProtocol {
         try dbQueue.write { db in
             guard var transcription = try Transcription.fetchOne(db, key: id) else { return }
             transcription.fileName = fileName
+            // A user-driven rename is the source of truth for the display
+            // title. Mirror it into `derivedTitle` so the Meetings list
+            // doesn't keep showing the auto-derived title from the
+            // transcript content. Without this the rename is silently
+            // masked by the smart-title path.
+            transcription.derivedTitle = fileName
             transcription.updatedAt = Date()
             try transcription.update(db)
         }

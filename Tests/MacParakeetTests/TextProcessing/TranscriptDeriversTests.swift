@@ -43,7 +43,17 @@ final class TitleDeriverTests: XCTestCase {
     func testTrimsTrailingPunctuation() {
         let transcript = "Reviewing the new product launch strategy with the team."
         let title = TitleDeriver.derive(from: transcript)
-        XCTAssertEqual(title?.last != ".", true)
+        XCTAssertNotNil(title)
+        XCTAssertNotEqual(title?.last, ".")
+    }
+
+    func testPreservesEllipsisFromTruncation() {
+        let long = "The quarterly business review covers revenue growth across all five product lines, marketing investment ROI, customer acquisition costs by channel, and the new hiring plan for engineering."
+        let title = TitleDeriver.derive(from: long)
+        XCTAssertNotNil(title)
+        // Truncation marker should survive `clean()` even though `clean`
+        // strips other trailing punctuation.
+        XCTAssertEqual(title?.last, "…")
     }
 
     func testHandlesShortTranscriptWithFallback() {

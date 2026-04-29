@@ -31,15 +31,18 @@ public enum TranscriptionDateGroup: Hashable, Sendable {
     case previous30Days
     case month(year: Int, month: Int)
 
-    /// Sort key — earlier groups (today, yesterday) sort first when
-    /// the list is in descending date order.
-    public var sortKey: Int {
+    /// Sort key — relative buckets first (today, yesterday, …), then month
+    /// buckets in descending date order. Tuple-based so months always sort
+    /// after relative buckets regardless of year value.
+    public var sortKey: (Int, Int) {
         switch self {
-        case .today: return 0
-        case .yesterday: return 1
-        case .previous7Days: return 2
-        case .previous30Days: return 3
-        case .month(let year, let month): return -(year * 100 + month)
+        case .today: return (0, 0)
+        case .yesterday: return (1, 0)
+        case .previous7Days: return (2, 0)
+        case .previous30Days: return (3, 0)
+        case .month(let year, let month):
+            // Negate so newer months sort smaller within the month bucket.
+            return (4, -(year * 12 + month))
         }
     }
 
@@ -50,8 +53,8 @@ public enum TranscriptionDateGroup: Hashable, Sendable {
 
         if days <= 0 { return .today }
         if days == 1 { return .yesterday }
-        if days < 7 { return .previous7Days }
-        if days < 30 { return .previous30Days }
+        if days <= 7 { return .previous7Days }
+        if days <= 30 { return .previous30Days }
 
         let comps = calendar.dateComponents([.year, .month], from: date)
         return .month(year: comps.year ?? 0, month: comps.month ?? 0)
@@ -118,17 +121,26 @@ public final class TranscriptionLibraryViewModel {
     private func groupByDate(_ items: [Transcription]) -> [(group: TranscriptionDateGroup, items: [Transcription])] {
         guard !items.isEmpty else { return [] }
         let now = nowProvider()
-        var buckets: [(TranscriptionDateGroup, [Transcription])] = []
+
+        // Bucket by logical group, not by adjacency. Items within each bucket
+        // preserve the input order (so `titleAscending` sort produces a
+        // group's items in alphabetical order). Buckets themselves sort by
+        // `sortKey` so groups appear in the same order regardless of the
+        // input sort.
+        var bucketed: [TranscriptionDateGroup: [Transcription]] = [:]
+        var encounterOrder: [TranscriptionDateGroup] = []
 
         for item in items {
             let group = TranscriptionDateGroup.bucket(for: item.createdAt, now: now, calendar: calendar)
-            if let lastIdx = buckets.indices.last, buckets[lastIdx].0 == group {
-                buckets[lastIdx].1.append(item)
-            } else {
-                buckets.append((group, [item]))
+            if bucketed[group] == nil {
+                encounterOrder.append(group)
             }
+            bucketed[group, default: []].append(item)
         }
-        return buckets.map { (group: $0.0, items: $0.1) }
+
+        return encounterOrder
+            .sorted { $0.sortKey < $1.sortKey }
+            .map { group in (group: group, items: bucketed[group] ?? []) }
     }
 
     private func matchesScope(_ transcription: Transcription) -> Bool {

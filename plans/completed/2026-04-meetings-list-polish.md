@@ -1,9 +1,9 @@
 # Meetings list polish
 
-> **Status:** ACTIVE — pre-release polish for v0.6 meeting recording before public DMG ship.
+> **Status:** COMPLETED — implemented in PR #182.
 > **Branch:** `feat/meetings-list-polish`
-> **Worktree:** `/Users/dmoon/code/macparakeet-meetings-polish`
 > **Created:** 2026-04-28
+> **Completed:** 2026-04-28
 
 ## Overview
 

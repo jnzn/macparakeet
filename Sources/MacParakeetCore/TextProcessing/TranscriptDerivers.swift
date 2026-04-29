@@ -42,7 +42,9 @@ public enum TitleDeriver {
 
     private static func clean(_ raw: String) -> String {
         var result = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trailing = CharacterSet(charactersIn: ".,;:!?-—…")
+        // Strip trailing sentence punctuation, but preserve the ellipsis —
+        // it's our truncation marker, not author punctuation.
+        let trailing = CharacterSet(charactersIn: ".,;:!?-—")
         while let last = result.unicodeScalars.last, trailing.contains(last) {
             result = String(result.unicodeScalars.dropLast())
         }
@@ -108,8 +110,12 @@ enum TranscriptScanner {
     ]
 
     static func headSentences(_ text: String, scanFraction: Double, minScan: Int) -> [String] {
-        let scanLength = max(minScan, Int(Double(text.count) * scanFraction))
-        let head = String(text.prefix(min(scanLength, text.count)))
+        // `text.utf16.count` is O(1) on String; `text.count` walks grapheme
+        // clusters which is O(N). For a 12k-word transcript that's
+        // ~unnecessary. UTF-16 length is a fine proxy for "how big is this".
+        let approxLength = text.utf16.count
+        let scanLength = max(minScan, Int(Double(approxLength) * scanFraction))
+        let head = String(text.prefix(scanLength))
         return splitIntoSentences(head)
             .map(stripLeadingFillers)
             .filter { !$0.isEmpty }
@@ -128,13 +134,10 @@ enum TranscriptScanner {
 
     static func stripLeadingFillers(_ sentence: String) -> String {
         var words = sentence.split(whereSeparator: \.isWhitespace).map(String.init)
-        let punctuation = CharacterSet.punctuationCharacters
         while let first = words.first {
             let normalized = first
                 .lowercased()
-                .unicodeScalars
-                .filter { !punctuation.contains($0) }
-                .reduce(into: "") { $0.append(Character($1)) }
+                .trimmingCharacters(in: .punctuationCharacters)
             if leadingFillers.contains(normalized) {
                 words.removeFirst()
             } else {
@@ -145,9 +148,11 @@ enum TranscriptScanner {
     }
 
     static func truncate(_ s: String, max: Int) -> String {
-        guard s.count > max else { return s }
-        let endIdx = s.index(s.startIndex, offsetBy: max)
-        let prefix = s[..<endIdx]
+        // Bounded scan: take at most max+1 chars, check if we exceeded.
+        // Avoids O(n) `s.count` on potentially very long input.
+        let scanned = s.prefix(max + 1)
+        guard scanned.count > max else { return s }
+        let prefix = s.prefix(max)
         if let lastSpace = prefix.lastIndex(of: " ") {
             return String(prefix[..<lastSpace]) + "…"
         }

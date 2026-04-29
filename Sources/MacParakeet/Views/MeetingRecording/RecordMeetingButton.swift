@@ -36,7 +36,7 @@ struct RecordMeetingButton: View {
         .buttonStyle(.plain)
         .foregroundStyle(DesignSystem.Colors.errorRed)
         .onHover { hovered = $0 }
-        .pressEvents(onPress: { pressed = true }, onRelease: { pressed = false })
+        .modifier(PressFeedback(isPressed: $pressed))
         .animation(DesignSystem.Animation.hoverTransition, value: hovered)
         .animation(.easeOut(duration: 0.08), value: pressed)
     }
@@ -45,12 +45,21 @@ struct RecordMeetingButton: View {
     private var strokeOpacity: Double { hovered ? 0.36 : 0.25 }
 }
 
-private extension View {
-    func pressEvents(onPress: @escaping () -> Void, onRelease: @escaping () -> Void) -> some View {
-        simultaneousGesture(
+/// Drives a single press / release transition off `DragGesture(minimumDistance: 0)`,
+/// guarding against `onChanged` re-firing on each drag tick. Without this guard a
+/// slow press would invoke the press hook repeatedly.
+private struct PressFeedback: ViewModifier {
+    @Binding var isPressed: Bool
+
+    func body(content: Content) -> some View {
+        content.simultaneousGesture(
             DragGesture(minimumDistance: 0)
-                .onChanged { _ in onPress() }
-                .onEnded { _ in onRelease() }
+                .onChanged { _ in
+                    if !isPressed { isPressed = true }
+                }
+                .onEnded { _ in
+                    isPressed = false
+                }
         )
     }
 }
