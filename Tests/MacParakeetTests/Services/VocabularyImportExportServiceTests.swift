@@ -283,6 +283,42 @@ final class VocabularyImportExportServiceTests: XCTestCase {
         XCTAssertFalse(storedSnippet.isEnabled)
     }
 
+    func testApplyRollsBackWholeImportWhenLaterWriteFails() throws {
+        try customWordRepo.save(CustomWord(word: "Kubernetes", replacement: "Existing"))
+        try manager.dbQueue.write { db in
+            try db.execute(sql: """
+            CREATE TRIGGER fail_vocab_import_insert
+            BEFORE INSERT ON custom_words
+            WHEN NEW.word = 'explode'
+            BEGIN
+                SELECT RAISE(ABORT, 'forced import failure');
+            END
+            """)
+        }
+
+        let bundle = VocabularyBundle(
+            exportedAt: fixedNow,
+            appVersion: nil,
+            customWords: [
+                .init(word: "kubernetes", replacement: "Replacement", isEnabled: false, createdAt: nil),
+                .init(word: "safe-new", replacement: nil, isEnabled: true, createdAt: nil),
+                .init(word: "explode", replacement: nil, isEnabled: true, createdAt: nil),
+            ],
+            textSnippets: []
+        )
+        let data = try JSONEncoder.iso8601().encode(bundle)
+        let preview = try service.decodePreview(from: data)
+
+        XCTAssertThrowsError(try service.apply(preview: preview, policy: .replace))
+
+        let storedWords = try customWordRepo.fetchAll()
+        XCTAssertEqual(storedWords.count, 1)
+        let stored = try XCTUnwrap(storedWords.first)
+        XCTAssertEqual(stored.word, "Kubernetes")
+        XCTAssertEqual(stored.replacement, "Existing")
+        XCTAssertTrue(stored.isEnabled)
+    }
+
     // MARK: - Validation
 
     func testDecodeRejectsInvalidSchema() throws {
