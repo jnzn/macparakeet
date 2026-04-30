@@ -96,16 +96,21 @@ This plan addresses only the last case.
 ```
 VPIO state                                  Engine lifetime
 ────────────────────                        ────────────────────
-┌──────┐  any vpio sub joins  ┌──────┐      ┌──────┐  first sub joins   ┌──────┐
-│ raw  │ ───────────────────► │ vpio │      │ idle │ ─────────────────► │ live │
-└──────┘ ◄─────────────────── └──────┘      └──────┘ ◄───────────────── └──────┘
-         last vpio sub leaves                        last sub leaves
+┌──────┐  first vpio sub joins ┌──────┐     ┌──────┐  first sub joins   ┌──────┐
+│ raw  │ ────────────────────► │ vpio │     │ idle │ ─────────────────► │ live │
+└──────┘                       └──────┘     └──────┘ ◄───────────────── └──────┘
+                                                     last sub leaves
+                                                     (engine stops, vpio dies with it)
 ```
+
+VPIO is **sticky once engaged** for the engine's lifetime. There is no "last vpio sub leaves → raw" transition mid-session. Disengaging VPIO requires another stop → setVPIO(false) → start dance with its own buffer gap, for zero user-visible benefit (the meeting just ended; dictation already tolerates VPIO buffers via ch[0] extraction). VPIO state dies with the engine when the last subscriber leaves.
+
+Engaging VPIO mid-session is a multi-step Core Audio sequence: `removeTap → engine.stop → setVoiceProcessingEnabled(true) → engine.start → installTap`. Sub-second but non-zero gap; deferred until in-flight dictation completes (see Edge case below) so the gap doesn't fall inside an active dictation buffer stream.
 
 ### Public API sketch
 
 ```swift
-public actor SharedMicrophoneStream {
+public final class SharedMicrophoneStream: @unchecked Sendable {
     public typealias BufferHandler = @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void
     public struct SubscriberToken: Hashable, Sendable { ... }
 
@@ -122,6 +127,21 @@ public actor SharedMicrophoneStream {
     public var subscriberCount: Int { get async }
 }
 ```
+
+**Concurrency model:** not an actor. The tap callback runs on the AVAudioEngine render thread, which cannot `await`. Internal state (subscriber map, VPIO/engine flags) is protected by an `OSAllocatedUnfairLock`. The render-thread tap callback acquires the lock, snapshots the handler array into a local, releases, then iterates the snapshot calling handlers — standard real-time-safe Core Audio fan-out. Public `subscribe`/`unsubscribe` are `async` for API consistency with the rest of the codebase but their bodies are synchronous lock-takes; the engine start/stop work they trigger may dispatch off the caller.
+
+### Design decision: dictation consumer extracts ch[0] mono
+
+When VPIO is engaged anywhere in the process, the input node delivers a multi-channel duplex format (ch=9, channel 0 = post-AEC processed mono). With one shared engine and one tap, every subscriber sees that format regardless of the `wantsVPIO` flag they registered with — `wantsVPIO` controls whether VPIO is *enabled*, not which buffer they receive.
+
+The dictation subscriber therefore must always read channel 0 from the buffer:
+
+- buffer ch=1 → passthrough
+- buffer ch≥2 → extract ch[0] as mono
+
+This is ~5 lines in `AudioRecorder`'s subscriber callback and makes dictation correct under every state transition, including ones we don't currently anticipate. It also gives dictation free AEC during meetings as a side effect (clean voice, no speaker bleed).
+
+The deferred-VPIO-engagement design below (under "Edge case") is an audio-quality optimization on top of this rule, not a substitute for it.
 
 ### Consumer migration
 
@@ -151,6 +171,17 @@ Meeting startup is already slow (SCContent fetch, SCStream init, ~300-800ms), so
 - `MicrophoneCapture.audioEngine` ephemeral-engine pattern (the `var` + `audioEngine = AVAudioEngine()` in `stop()` and `resetAfterFailedStart()`) — engine lifetime is the shared stream's responsibility.
 - The defensive `setVoiceProcessingEnabled(false)` in `AudioRecorder` — dictation no longer owns an engine.
 - The aggregate-device race in `MicrophoneCapture.inputFormat` (fixed in PR #186 commit `853dc9aa`) — `inputFormat` becomes a property of the shared stream.
+
+### What moves into `SharedMicrophoneStream`
+
+`MicrophoneCapture` and `AudioRecorder` become pure subscribers and stop importing `CoreAudio` directly. Everything currently in those files that touches Core Audio device state migrates into the shared stream as the new (and only) owner:
+
+- VPAU aggregate-device detection (`CADefaultDeviceAggregate-<pid>-N` label inspection).
+- Default-input-device change listener and rebind logic.
+- `setInputDevice` rebind path and its diagnostic events.
+- Input format snapshot under lock (replaces the `lifecycleQueue.sync` snapshot pattern from PR #186).
+
+The non-goal here is "shared engine that delegates device work elsewhere." If two components touch CoreAudio after this lands, we've reproduced the original bug shape one layer down.
 
 ---
 
@@ -184,7 +215,7 @@ Estimated total: 2-3 days of focused work + the soak windows.
 
 - [ ] `SharedMicrophoneStream` exists with full unit-test coverage of subscribe/unsubscribe lifecycle, VPIO arbitration state machine, engine start/stop on first/last subscriber, fan-out correctness, and failure isolation between subscribers.
 - [ ] `AudioRecorder` and `MicrophoneCapture` no longer own `AVAudioEngine` instances; they're thin subscribers.
-- [ ] All existing tests pass (currently 2008+).
+- [ ] All existing tests pass (baseline 1722 XCTest + 13 Swift Testing on `main` as of 2026-04-26 — confirm fresh count when work begins, since the suite churns).
 - [ ] Concurrent test passes: start meeting → wait 5s → trigger dictation → confirm `dictation_capture_configured ch=1` (or `ch=9` post-VPIO if we choose not to defer) and `non_silent_buffers > 0` and a non-empty transcript.
 - [ ] Sequential cases unchanged: dictate-alone, meeting-alone, dictate→meeting, meeting→dictate all pass exactly as in v0.6.0.
 - [ ] No regression in dictation latency (engine pre-warmed by being live whenever any subscriber is active is actually a small improvement over today's per-session engine-create cost).
@@ -203,8 +234,14 @@ Estimated total: 2-3 days of focused work + the soak windows.
 
 ---
 
-## Open questions
+## Resolved decisions
 
-- Should we expose `SharedMicrophoneStream` via `AppEnvironment` (new singleton dependency) or instantiate per-flow inside the existing services and have them coordinate? AppEnvironment is cleaner but adds a top-level dependency.
-- Do we want a runtime telemetry counter for "VPIO engagement deferred because of in-flight dictation"? Useful for sizing how rare the edge case actually is, but adds coupling.
-- Should the feature flag survive past v0.6.1 ship, or is it dev-only? My instinct: dev-only, delete after one DMG release confirms no field issues.
+These were open questions in the first draft, resolved during plan review:
+
+- **Where it lives:** `AppEnvironment`, single instance per process. The "one mic engine per process" invariant is load-bearing — encoding it in the dependency graph is exactly the point. Instantiating per-flow would reproduce the original bug shape.
+- **VPIO-deferral telemetry:** ship a counter (event name TBD, e.g. `shared_mic_vpio_deferred`) that increments when meeting subscription waits on an in-flight dictation subscriber. Cheap to add, answers the rarity question definitively, expensive to retrofit if we regret not having it.
+- **Feature flag lifetime:** dev-only. Delete `AppFeatures.useSharedMicEngine` after one DMG release with the flag default-on confirms no field issues.
+
+## Out of plan, in scope for the eventual ADR
+
+- ADR-015 amendment text. Sketch alongside step 1 of the migration so the plan and the ADR don't drift; land the amendment when the flag flips to default-on.
