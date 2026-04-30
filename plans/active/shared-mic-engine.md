@@ -1,6 +1,6 @@
 # Plan: Shared microphone engine for concurrent dictation + meeting
 
-> Status: **IMPLEMENTATION COMPLETE, AWAITING FLAG FLIP** — steps 1-5 done, step 6 (flag flip + ship) is the remaining decision, step 7 (legacy cleanup) waits one DMG release after step 6.
+> Status: **READY TO SHIP** — steps 1-6 done in PR #189; step 7 (legacy cleanup) waits one DMG release after merge.
 > Author: agent (Claude) + Daniel
 > Date: 2026-04-29 (revised 2026-04-30: steps 2-5 complete, dev-soak in progress)
 > Related: PR #186 (VPIO + ScreenCaptureKit), ADR-015 (concurrent dictation — now amended), ADR-014 (meeting recording), `docs/research/vpio-process-tap-conflict.md` (option (d))
@@ -14,8 +14,8 @@
 | 3. Soak meeting recording with flag on (1 day) | ✅ Done | Real-hardware smoke verified 2026-04-30: `shared_mic_engine_input_device_started source=system_default vpio=true`, `microphone_capture_started shared_mic_engine=true sample_rate=48000 channels=9`, first buffer in 113ms, clean teardown. |
 | 4. Migrate `AudioRecorder` (with ch[0] mono extraction) | ✅ Done | Commit `0d9f8cad`. New `extractChannelZero(from:)` helper + actor-reentrancy guard. 2045 XCTest pass (+5 extraction unit tests). |
 | 5. Concurrent-flow soak (the actual bug fix verification) | ✅ Done | Real-hardware verification 2026-04-30: 4 dictations run during a single live meeting produced `rawChars=161, 135, 77, 319` — pre-fix this would have been silence. Engine transitions clean across meeting→standalone→meeting cycles. |
-| 6. Flip `AppFeatures.useSharedMicEngine = true` | ⬜ Next | Local soak ongoing. Flip in a follow-up commit (or merge this PR with flag still off and flip in a separate small PR) once 24h of varied real-world use surfaces nothing weird. |
-| 7. Delete old code paths + ADR-015 amendment finalization | ⬜ | After one DMG release with flag default-on confirms no field issues. The ADR-015 head-amendment from 2026-04-30 already declares the section-1 supersession; step 7 rewrites the body and removes the legacy code paths. |
+| 6. Flip `AppFeatures.useSharedMicEngine = true` | ✅ Done | Flipped in PR #189 alongside the rest of the work. Real-hardware sanity already verified (steps 3 + 5); legacy paths remain in source one DMG release as a rollback option. |
+| 7. Delete old code paths + ADR-015 amendment finalization | ⬜ Next | After one DMG release with flag default-on confirms no field issues. The ADR-015 head-amendment from 2026-04-30 already declares the section-1 supersession; step 7 rewrites the body and removes the legacy code paths. |
 
 ## Implementation summary
 
