@@ -107,6 +107,7 @@ public final class SharedMicrophoneStream: @unchecked Sendable {
     )
     private let lock = OSAllocatedUnfairLock(initialState: State())
     private let engineQueue = DispatchQueue(label: "com.macparakeet.shared-mic-stream.engine")
+    private let callbackQueue = DispatchQueue(label: "com.macparakeet.shared-mic-stream.callbacks")
     private let platform: any MicrophoneEnginePlatform
     private let bufferSize: AVAudioFrameCount
 
@@ -243,10 +244,14 @@ public final class SharedMicrophoneStream: @unchecked Sendable {
                         self.logger.error(
                             "shared_mic_engine_reconfigure_failed engine_dead=true reason=\(error.localizedDescription, privacy: .public)"
                         )
-                        // Fire callbacks off-lock so a slow handler doesn't
-                        // block subsequent subscribe/unsubscribe traffic.
-                        for callback in deathCallbacks {
-                            callback()
+                        // Fire callbacks off-lock and off the engine queue so
+                        // a slow handler cannot block future stream operations.
+                        if !deathCallbacks.isEmpty {
+                            self.callbackQueue.async {
+                                for callback in deathCallbacks {
+                                    callback()
+                                }
+                            }
                         }
                     case .stopEngine:
                         self.logger.error(

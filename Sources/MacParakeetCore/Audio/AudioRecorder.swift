@@ -60,6 +60,10 @@ public actor AudioRecorder {
         initialState: RecordingRuntimeMetrics()
     )
     nonisolated private let firstBufferLogged = OSAllocatedUnfairLock(initialState: false)
+    nonisolated private let sharedProcessingQueue = DispatchQueue(
+        label: "com.macparakeet.audio-recorder.shared-processing",
+        qos: .userInitiated
+    )
     /// Thread-safe generation counter incremented on each stop(). Tap callbacks capture
     /// the generation at install time and bail out if it has changed. This prevents both
     /// the stop() race (writes after audioFile is nilled) and the cross-session race
@@ -67,6 +71,7 @@ public actor AudioRecorder {
     nonisolated private let sessionGeneration = OSAllocatedUnfairLock(initialState: 0)
     private var outputURL: URL?
     private var recording = false
+    private var starting = false
     private var _deviceInfo: RecordingDeviceInfo?
 
     /// Minimum samples before sending to STT.
@@ -105,7 +110,9 @@ public actor AudioRecorder {
     /// audio format (sampleRate ≤ 0 or channelCount ≤ 0) or the engine fails to start,
     /// retries with the built-in microphone.
     public func start() async throws {
-        guard !recording else { return }
+        guard !recording, !starting else { return }
+        starting = true
+        defer { starting = false }
 
         if sharedStream != nil {
             try await startSharedMode()
@@ -191,13 +198,17 @@ public actor AudioRecorder {
     /// Stop recording and return the path to the recorded WAV file.
     /// Throws `insufficientSamples` if the recording is shorter than 1 second.
     public func stop() throws -> URL {
+        if starting, !recording {
+            // Shared-stream start awaits the stream subscription. A stop/cancel
+            // during that await must invalidate the pending tap generation so
+            // the in-flight start cannot claim a recording after cancellation.
+            sessionGeneration.withLock { $0 += 1 }
+            starting = false
+            throw AudioProcessorError.recordingFailed("Not recording")
+        }
         guard recording else {
             throw AudioProcessorError.recordingFailed("Not recording")
         }
-
-        // Bump generation so any in-flight tap callbacks from this session bail out.
-        // This prevents both the stop() race and the cross-session race.
-        sessionGeneration.withLock { $0 += 1 }
 
         if let token = sharedSubscriberToken, let stream = sharedStream {
             // Fire-and-forget so stop() stays synchronous (matches legacy
@@ -205,7 +216,17 @@ public actor AudioRecorder {
             // unsubscribe behind any pending operations.
             Task { await stream.unsubscribe(token) }
             sharedSubscriberToken = nil
+            // Shared-mode conversion and file writes run on this serial queue
+            // instead of the shared audio tap. Drain already-enqueued work so
+            // stop() reports a sample count that includes buffers accepted
+            // before the user stopped recording.
+            sharedProcessingQueue.sync {}
+            sessionGeneration.withLock { $0 += 1 }
         } else {
+            // Bump generation so any in-flight tap callbacks from this
+            // session bail out. This prevents both the stop() race and the
+            // cross-session race.
+            sessionGeneration.withLock { $0 += 1 }
             audioEngine?.inputNode.removeTap(onBus: 0)
             audioEngine?.stop()
             audioEngine = nil
@@ -683,10 +704,10 @@ public actor AudioRecorder {
         let outputFormatBox = UncheckedSendableAudioFormat(outputFormat)
         let fileBox = UncheckedSendableAudioFile(file)
 
-        let bufferHandler: SharedMicrophoneStream.BufferHandler = { [weak self] buffer, _ in
+        let processCopiedBuffer: @Sendable (UncheckedSendableAudioPCMBuffer, AVAudioChannelCount) -> Void = { [weak self] copiedBufferBox, originalChannelCount in
             guard let self else { return }
-            let currentGen = self.sessionGeneration.withLock { $0 }
-            guard currentGen == tapGeneration else { return }
+            guard self.sessionGeneration.withLock({ $0 }) == tapGeneration else { return }
+            let buffer = copiedBufferBox.buffer
 
             // ch[0] mono extraction — the design rule that makes dictation
             // correct under every VPIO state. See `extractChannelZero`.
@@ -735,14 +756,13 @@ public actor AudioRecorder {
             if shouldLogFirstBuffer {
                 let sr = bufferFormat.sampleRate
                 let ch = bufferFormat.channelCount
-                let originalCh = buffer.format.channelCount
                 let commonFormat = bufferFormat.commonFormat.rawValue
                 let interleaved = bufferFormat.isInterleaved
                 let frameLength = monoBuffer.frameLength
                 let hasFloatData = monoBuffer.floatChannelData != nil
                 Task {
                     AudioCaptureDiagnostics.append(
-                        "dictation_capture_first_buffer sr=\(sr) ch=\(ch) original_ch=\(originalCh) common_format=\(commonFormat) interleaved=\(interleaved) frames=\(frameLength) has_float_data=\(hasFloatData) shared_mic_engine=true"
+                        "dictation_capture_first_buffer sr=\(sr) ch=\(ch) original_ch=\(originalChannelCount) common_format=\(commonFormat) interleaved=\(interleaved) frames=\(frameLength) has_float_data=\(hasFloatData) shared_mic_engine=true"
                     )
                 }
             }
@@ -829,6 +849,19 @@ public actor AudioRecorder {
                 break
             }
         }
+        let bufferHandler: SharedMicrophoneStream.BufferHandler = { [weak self] buffer, _ in
+            guard let self else { return }
+            guard self.sessionGeneration.withLock({ $0 }) == tapGeneration else { return }
+            let originalChannelCount = buffer.format.channelCount
+            guard let copiedBuffer = copyPCMBufferForAsyncUse(buffer) else {
+                self.runtimeMetrics.withLock { $0.invalidFormatBufferCount += 1 }
+                return
+            }
+            let copiedBufferBox = UncheckedSendableAudioPCMBuffer(copiedBuffer)
+            self.sharedProcessingQueue.async {
+                processCopiedBuffer(copiedBufferBox, originalChannelCount)
+            }
+        }
 
         let deathHandler: SharedMicrophoneStream.EngineDeathHandler = { [weak self] in
             // Engine death = recording is dead. Bump the generation so any
@@ -862,7 +895,7 @@ public actor AudioRecorder {
         // orphan. Unsubscribe and clean up rather than claim a recording
         // session that nobody asked for.
         let postSubscribeGeneration = self.sessionGeneration.withLock { $0 }
-        let lostRace = preSubscribeGeneration != postSubscribeGeneration || self.recording
+        let lostRace = preSubscribeGeneration != postSubscribeGeneration || !self.starting || self.recording
         if lostRace {
             Task { await sharedStream.unsubscribe(token) }
             try? FileManager.default.removeItem(at: url)
@@ -978,6 +1011,57 @@ func extractChannelZero(from buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
         dst[0].update(from: src[0], count: frameCount)
         return extracted
     }
+    return nil
+}
+
+/// Copies a tap buffer so heavier processing can happen off the audio render
+/// thread while respecting `SharedMicrophoneStream`'s synchronous buffer
+/// lifetime contract.
+func copyPCMBufferForAsyncUse(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+    guard let copy = AVAudioPCMBuffer(
+        pcmFormat: buffer.format,
+        frameCapacity: max(buffer.frameLength, 1)
+    ) else {
+        return nil
+    }
+    copy.frameLength = buffer.frameLength
+
+    let frameCount = Int(buffer.frameLength)
+    guard frameCount > 0 else { return copy }
+
+    if buffer.format.isInterleaved {
+        let source = buffer.audioBufferList.pointee.mBuffers
+        let destination = copy.mutableAudioBufferList.pointee.mBuffers
+        let byteCount = min(Int(source.mDataByteSize), Int(destination.mDataByteSize))
+        guard byteCount > 0 else { return copy }
+        guard let sourceData = source.mData,
+              let destinationData = destination.mData else {
+            return nil
+        }
+        destinationData.copyMemory(from: sourceData, byteCount: byteCount)
+        return copy
+    }
+
+    let channelCount = Int(buffer.format.channelCount)
+    if let source = buffer.floatChannelData, let destination = copy.floatChannelData {
+        for channel in 0..<channelCount {
+            destination[channel].update(from: source[channel], count: frameCount)
+        }
+        return copy
+    }
+    if let source = buffer.int16ChannelData, let destination = copy.int16ChannelData {
+        for channel in 0..<channelCount {
+            destination[channel].update(from: source[channel], count: frameCount)
+        }
+        return copy
+    }
+    if let source = buffer.int32ChannelData, let destination = copy.int32ChannelData {
+        for channel in 0..<channelCount {
+            destination[channel].update(from: source[channel], count: frameCount)
+        }
+        return copy
+    }
+
     return nil
 }
 

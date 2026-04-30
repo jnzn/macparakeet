@@ -245,6 +245,7 @@ final class SharedMicrophoneStreamTests: XCTestCase {
 
         platform.configureAndStartError = MockError.simulatedFailure
         await stream.unsubscribe(t1)
+        try await Task.sleep(for: .milliseconds(50))
 
         XCTAssertEqual(leavingDeath.value, 0, "The unsubscribed subscriber must not get the death callback")
         XCTAssertEqual(stayingDeath.value, 1, "The remaining subscriber observes engine death once")

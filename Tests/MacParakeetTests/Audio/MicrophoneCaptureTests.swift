@@ -225,6 +225,7 @@ final class MicrophoneCaptureTests: XCTestCase {
         // Make the deferred promotion fail when the blocker leaves.
         platform.configureAndStartError = MicrophoneCaptureMockError.simulatedFailure
         await stream.unsubscribe(blockerToken)
+        try await Task.sleep(for: .milliseconds(50))
 
         XCTAssertNotNil(stallBox.recordedError, "Engine death must reach onStall")
     }

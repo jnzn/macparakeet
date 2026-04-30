@@ -79,12 +79,20 @@ public final class AVAudioEngineMicrophonePlatform: MicrophoneEnginePlatform, @u
 
     public var inputFormat: AVAudioFormat? {
         dispatchPrecondition(condition: .notOnQueue(queue))
-        let snapshot: AVAudioEngine? = queue.sync {
-            running ? audioEngine : nil
+        return queue.sync {
+            guard running else { return nil }
+            do {
+                let format = try catchingObjCException {
+                    audioEngine.inputNode.outputFormat(forBus: 0)
+                }
+                return format.sampleRate > 0 && format.channelCount > 0 ? format : nil
+            } catch {
+                logger.error(
+                    "shared_mic_engine_input_format_failed reason=\(error.localizedDescription, privacy: .public)"
+                )
+                return nil
+            }
         }
-        guard let snapshot else { return nil }
-        let format = snapshot.inputNode.outputFormat(forBus: 0)
-        return format.sampleRate > 0 ? format : nil
     }
 
     /// The device attempt that produced the most recent successful start, or
@@ -175,34 +183,80 @@ public final class AVAudioEngineMicrophonePlatform: MicrophoneEnginePlatform, @u
     ) throws {
         let inputNode = audioEngine.inputNode
         do {
-            try inputNode.setVoiceProcessingEnabled(vpioEnabled)
+            try catchingObjCException {
+                try inputNode.setVoiceProcessingEnabled(vpioEnabled)
+            }
         } catch {
             // VPIO toggle failed before tap install / engine start. Replace
             // the engine so the next attempt isn't on a half-configured one.
-            audioEngine = AVAudioEngine()
+            replaceEngineAfterFailureLocked()
             throw error
         }
         if vpioEnabled, #available(macOS 14.0, *) {
-            inputNode.voiceProcessingOtherAudioDuckingConfiguration = .init(
-                enableAdvancedDucking: false,
-                duckingLevel: .min
+            do {
+                try catchingObjCException {
+                    inputNode.voiceProcessingOtherAudioDuckingConfiguration = .init(
+                        enableAdvancedDucking: false,
+                        duckingLevel: .min
+                    )
+                }
+            } catch {
+                logger.debug(
+                    "shared_mic_engine_ducking_config_failed reason=\(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
+
+        let liveFormat: AVAudioFormat
+        do {
+            liveFormat = try catchingObjCException {
+                inputNode.outputFormat(forBus: 0)
+            }
+        } catch {
+            replaceEngineAfterFailureLocked()
+            throw error
+        }
+        guard liveFormat.sampleRate > 0, liveFormat.channelCount > 0 else {
+            replaceEngineAfterFailureLocked()
+            throw AVAudioEngineMicrophonePlatformError.invalidInputFormat(
+                sampleRate: liveFormat.sampleRate,
+                channels: liveFormat.channelCount
             )
         }
 
-        inputNode.installTap(
-            onBus: 0,
-            bufferSize: bufferSize,
-            format: nil
-        ) { buffer, time in
-            tapHandler(buffer, time)
+        do {
+            try catchingObjCException {
+                inputNode.installTap(
+                    onBus: 0,
+                    bufferSize: bufferSize,
+                    format: nil
+                ) { buffer, time in
+                    tapHandler(buffer, time)
+                }
+            }
+        } catch {
+            try? catchingObjCException {
+                inputNode.removeTap(onBus: 0)
+            }
+            try? catchingObjCException {
+                try inputNode.setVoiceProcessingEnabled(false)
+            }
+            replaceEngineAfterFailureLocked()
+            throw error
         }
 
         do {
-            try audioEngine.start()
+            try catchingObjCException {
+                try audioEngine.start()
+            }
         } catch {
-            inputNode.removeTap(onBus: 0)
-            try? inputNode.setVoiceProcessingEnabled(false)
-            audioEngine = AVAudioEngine()
+            try? catchingObjCException {
+                inputNode.removeTap(onBus: 0)
+            }
+            try? catchingObjCException {
+                try inputNode.setVoiceProcessingEnabled(false)
+            }
+            replaceEngineAfterFailureLocked()
             throw error
         }
         running = true
@@ -210,9 +264,15 @@ public final class AVAudioEngineMicrophonePlatform: MicrophoneEnginePlatform, @u
 
     private func tearDownLocked() {
         let inputNode = audioEngine.inputNode
-        inputNode.removeTap(onBus: 0)
-        try? inputNode.setVoiceProcessingEnabled(false)
-        audioEngine.stop()
+        try? catchingObjCException {
+            inputNode.removeTap(onBus: 0)
+        }
+        try? catchingObjCException {
+            try inputNode.setVoiceProcessingEnabled(false)
+        }
+        try? catchingObjCException {
+            audioEngine.stop()
+        }
         // Replace the engine. Releasing the old instance tears down the
         // VPAU aggregate device coreaudiod created for it, so a sibling
         // AVAudioEngine in the same process doesn't inherit duplex layout.
@@ -224,12 +284,37 @@ public final class AVAudioEngineMicrophonePlatform: MicrophoneEnginePlatform, @u
     /// Reset between failed device attempts (no tap installed yet, just
     /// hand back a fresh engine for the next try).
     private func resetEngineLocked() {
-        audioEngine.stop()
+        try? catchingObjCException {
+            audioEngine.stop()
+        }
         audioEngine = AVAudioEngine()
+        running = false
+        lastSucceededAttemptLocked = nil
+    }
+
+    private func replaceEngineAfterFailureLocked() {
+        try? catchingObjCException {
+            audioEngine.stop()
+        }
+        audioEngine = AVAudioEngine()
+        running = false
+        lastSucceededAttemptLocked = nil
     }
 }
 
-public enum AVAudioEngineMicrophonePlatformError: Error, Equatable {
+public enum AVAudioEngineMicrophonePlatformError: Error, Equatable, LocalizedError {
     case deviceSetFailed(MeetingInputDeviceAttempt)
+    case invalidInputFormat(sampleRate: Double, channels: AVAudioChannelCount)
     case noDeviceAvailable
+
+    public var errorDescription: String? {
+        switch self {
+        case .deviceSetFailed(let attempt):
+            return "Failed to set input device \(attempt.deviceID) from \(attempt.source.logValue)"
+        case .invalidInputFormat(let sampleRate, let channels):
+            return "Invalid input format: sampleRate=\(sampleRate) channels=\(channels)"
+        case .noDeviceAvailable:
+            return "No microphone input device available"
+        }
+    }
 }
