@@ -309,8 +309,6 @@ public final class MicrophoneCapture: @unchecked Sendable {
             ))
         }
 
-        scheduleSilentBufferWatchdog()
-
         let wantsVPIO: Bool
         switch processingMode {
         case .raw:
@@ -377,11 +375,30 @@ public final class MicrophoneCapture: @unchecked Sendable {
             }
         }
 
-        // Subscribe succeeded — record state for stop().
-        lifecycleQueue.sync {
+        // Subscribe succeeded — but `stop()` may have raced us during the
+        // `await` and already taken the lifecycle to `.idle`. Re-check state
+        // before claiming `.running`. If we lost the race, unsubscribe the
+        // orphan token so the shared stream's engine isn't left with a live
+        // subscriber that has no owner.
+        let didTakeOwnership: Bool = lifecycleQueue.sync {
+            guard state == .starting else { return false }
             sharedSubscriberToken = token
             state = .running
+            return true
         }
+        if !didTakeOwnership {
+            Task { await sharedStream.unsubscribe(token) }
+            AudioCaptureDiagnostics.append(
+                "meeting_mic_capture_start_aborted reason=\"stop_during_subscribe\" shared_mic_engine=true"
+            )
+            throw MeetingAudioError.audioEngineStartFailed("stop_during_subscribe")
+        }
+
+        // Watchdog must start AFTER the subscription is owned. Scheduling
+        // earlier risks firing while a slow device-fallback chain is still
+        // running through the platform — the legacy path schedules right
+        // before `engine.start()`, this is the equivalent moment.
+        scheduleSilentBufferWatchdog()
 
         AudioCaptureDiagnostics.append(
             "meeting_mic_processing mode=\(effectiveMode.rawValue) shared_mic_engine=true"

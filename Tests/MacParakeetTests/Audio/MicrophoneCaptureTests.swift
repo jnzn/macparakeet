@@ -149,6 +149,56 @@ final class MicrophoneCaptureTests: XCTestCase {
         XCTAssertEqual(platform.configureAndStartCalls.count, 0, "Permission gate must short-circuit before any platform call")
     }
 
+    func testSharedModeStopDuringSubscribeUnsubscribesOrphanToken() async throws {
+        // Race scenario: `stop()` is called while `start()` is awaiting
+        // `subscribe`. The post-subscribe state re-check must detect that
+        // the lifecycle was taken to .idle and unsubscribe the just-issued
+        // token so the shared stream isn't left with a live subscriber that
+        // nobody owns. Without the guard, the engine would stay running with
+        // an orphan handler attached.
+        let platform = SharedMicTestPlatform()
+        let arrived = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        platform.configureAndStartHook = {
+            arrived.signal()
+            release.wait()
+        }
+        let stream = SharedMicrophoneStream(platform: platform, bufferSize: 1024)
+        let capture = MicrophoneCapture(
+            sharedStream: stream,
+            permissionProvider: { true }
+        )
+
+        let startTask = Task {
+            try await capture.start(
+                processingMode: .raw,
+                handler: { _, _ in },
+                onStall: nil
+            )
+        }
+
+        XCTAssertEqual(arrived.wait(timeout: .now() + 5), .success, "Mock platform should have been entered")
+        // stop() runs while subscribe is paused inside the platform.
+        capture.stop()
+        // Let subscribe complete. start's post-subscribe re-check must now
+        // detect the missing .starting state and clean up.
+        release.signal()
+
+        do {
+            _ = try await startTask.value
+            XCTFail("start() should throw when stop ran during subscribe")
+        } catch MeetingAudioError.audioEngineStartFailed {
+            // expected
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        // Wait for the fire-and-forget orphan-unsubscribe Task to settle.
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(stream.diagnostics.subscriberCount, 0, "Orphan token must be unsubscribed")
+        XCTAssertFalse(stream.diagnostics.engineRunning, "Engine must be stopped after orphan cleanup")
+    }
+
     func testSharedModeEngineDeathSurfacesAsStall() async throws {
         // When a deferred-VPIO promotion fails, MicrophoneCapture must
         // forward the engine-death notification to its `onStall` observer.
@@ -297,6 +347,17 @@ private final class SharedMicTestPlatform: MicrophoneEnginePlatform, @unchecked 
     /// failure even if `configureAndStartError` is nil. Lets a test simulate
     /// "first attempt fails, second succeeds."
     var failNextStartCount: Int = 0
+    /// Optional hook invoked at the top of `configureAndStart` (before the
+    /// error injection check). Lets a test pause the platform mid-subscribe
+    /// so it can interleave a `stop()` and exercise the start-during-stop
+    /// race-guard. Read without holding `lock` so the hook can call back
+    /// into the platform without deadlocking.
+    private let hookLock = NSLock()
+    private var _configureAndStartHook: (@Sendable () -> Void)?
+    var configureAndStartHook: (@Sendable () -> Void)? {
+        get { hookLock.withLock { _configureAndStartHook } }
+        set { hookLock.withLock { _configureAndStartHook = newValue } }
+    }
 
     var isEngineRunning: Bool {
         lock.withLock { _isRunning }
@@ -319,6 +380,7 @@ private final class SharedMicTestPlatform: MicrophoneEnginePlatform, @unchecked 
         bufferSize: AVAudioFrameCount,
         tapHandler: @escaping @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void
     ) throws {
+        configureAndStartHook?()
         let shouldThrow: Error? = lock.withLock {
             _configureCalls.append(ConfigureCall(vpioEnabled: vpioEnabled, bufferSize: bufferSize))
             if let err = configureAndStartError { return err }
