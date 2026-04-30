@@ -64,7 +64,13 @@ public final class SystemAudioStream: NSObject, @unchecked Sendable {
             logger.info(
                 "system_audio_stream_started sample_rate=\(Self.sampleRate, privacy: .public) channels=\(Self.channelCount, privacy: .public)"
             )
+            AudioCaptureDiagnostics.append(
+                "system_audio_stream_started sr=\(Self.sampleRate) ch=\(Self.channelCount)"
+            )
         } catch {
+            AudioCaptureDiagnostics.append(
+                "system_audio_stream_start_failed reason=\"\(error.localizedDescription)\""
+            )
             await tearDownAfterFailedStart()
             throw MeetingAudioError.systemAudioCaptureFailed(error.localizedDescription)
         }
@@ -79,6 +85,7 @@ public final class SystemAudioStream: NSObject, @unchecked Sendable {
         }
         await stopCapture(stream)
         logger.info("system_audio_stream_stopped")
+        AudioCaptureDiagnostics.append("system_audio_stream_stopped")
     }
 
     private func beginStart(
@@ -222,6 +229,9 @@ public final class SystemAudioStream: NSObject, @unchecked Sendable {
         }
         guard let observer else { return }
         logger.warning("system_audio_stream_no_buffers_within_timeout")
+        AudioCaptureDiagnostics.append(
+            "system_audio_stream_no_buffers_within_timeout timeout_s=\(Self.firstBufferTimeoutSeconds)"
+        )
         observer(
             .captureRuntimeFailure(
                 "system audio stream delivered no buffers within \(Self.firstBufferTimeoutSeconds)s of start"
@@ -242,6 +252,9 @@ public final class SystemAudioStream: NSObject, @unchecked Sendable {
         }
         guard action == .firstBuffer else { return }
         logger.info("system_audio_stream_first_buffer_received")
+        AudioCaptureDiagnostics.append(
+            "system_audio_stream_first_buffer sr=\(Self.sampleRate) ch=\(Self.channelCount)"
+        )
         startHeartbeatTimer()
     }
 
@@ -269,6 +282,9 @@ public final class SystemAudioStream: NSObject, @unchecked Sendable {
         }
         guard let snapshot else { return }
         logger.warning("system_audio_stream_stalled gap_seconds=\(snapshot.gap, privacy: .public)")
+        AudioCaptureDiagnostics.append(
+            "system_audio_stream_stalled gap_s=\(String(format: "%.2f", snapshot.gap))"
+        )
         snapshot.observer?(
             .captureRuntimeFailure(
                 "system audio stream stopped delivering buffers (gap \(String(format: "%.1f", snapshot.gap))s)"
@@ -319,6 +335,9 @@ extension SystemAudioStream: SCStreamOutput, SCStreamDelegate {
 
     public func stream(_ stream: SCStream, didStopWithError error: Error) {
         logger.error("system_audio_stream_stopped_with_error reason=\(error.localizedDescription, privacy: .public)")
+        AudioCaptureDiagnostics.append(
+            "system_audio_stream_stopped_with_error reason=\"\(error.localizedDescription)\""
+        )
         let observer = watchdogLock.withLock { stallObserver }
         observer?(.captureRuntimeFailure("system audio stream stopped: \(error.localizedDescription)"))
     }

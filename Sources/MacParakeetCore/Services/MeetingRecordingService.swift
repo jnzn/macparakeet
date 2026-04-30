@@ -275,7 +275,13 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
                 }
             }
             logger.info("Meeting recording started: \(sessionID.uuidString, privacy: .public)")
+            AudioCaptureDiagnostics.append(
+                "meeting_recording_started session=\(sessionID.uuidString) source_mode=\(String(describing: sourceMode)) requested_mic_mode=\(String(describing: captureStartReport.microphone.requestedMode)) effective_mic_mode=\(captureStartReport.microphone.effectiveMode.rawValue)"
+            )
         } catch {
+            AudioCaptureDiagnostics.append(
+                "meeting_recording_start_failed session=\(sessionID.uuidString) reason=\"\(error.localizedDescription)\""
+            )
             await cleanupFailedStart(folderURL: folderURL)
             throw error
         }
@@ -337,6 +343,9 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             throw MeetingAudioError.notRunning
         }
 
+        AudioCaptureDiagnostics.append(
+            "meeting_recording_stopping session=\(session.id.uuidString)"
+        )
         await audioCaptureService.stop()
         // Defensive: `audioCaptureService.stop()` is supposed to finish the
         // events stream so the `for await` in `processingTask` exits, but if
@@ -428,6 +437,9 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         await releaseSpeechEngineLease()
         cleanupState()
         logger.info("Meeting recording finalized: \(session.id.uuidString, privacy: .public)")
+        AudioCaptureDiagnostics.append(
+            "meeting_recording_stopped session=\(session.id.uuidString) duration_s=\(String(format: "%.3f", durationSeconds))"
+        )
         return output
     }
 
@@ -493,6 +505,9 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         cleanupState()
         try? fileManager.removeItem(at: session.folderURL)
         logger.info("Meeting recording cancelled: \(session.id.uuidString, privacy: .public)")
+        AudioCaptureDiagnostics.append(
+            "meeting_recording_cancelled session=\(session.id.uuidString)"
+        )
     }
 
     private func releaseSpeechEngineLease() async {

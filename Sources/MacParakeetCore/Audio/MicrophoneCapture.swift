@@ -133,6 +133,10 @@ public final class MicrophoneCapture: @unchecked Sendable {
                 return
             }
 
+            AudioCaptureDiagnostics.append(
+                "meeting_mic_capture_starting requested_mode=\(String(describing: processingMode)) default_input_pre=\(AudioCaptureDiagnostics.defaultInputDeviceLabel())"
+            )
+
             let inputNode = audioEngine.inputNode
             let inputDeviceAttempts = makeInputDeviceAttempts()
             state = .starting
@@ -163,12 +167,18 @@ public final class MicrophoneCapture: @unchecked Sendable {
         }
 
         if let startError {
+            AudioCaptureDiagnostics.append(
+                "meeting_mic_capture_start_failed mode=\(String(describing: processingMode)) reason=\"\(startError.localizedDescription)\""
+            )
             throw startError
         }
         if didStart {
             let activeFormat = inputFormat
             logger.info(
                 "microphone_capture_started requested_mode=\(String(describing: processingMode), privacy: .public) effective_mode=\(startReport.effectiveMode.rawValue, privacy: .public) sample_rate=\(activeFormat?.sampleRate ?? 0, privacy: .public) channels=\(activeFormat?.channelCount ?? 0, privacy: .public) interleaved=\(activeFormat?.isInterleaved ?? false, privacy: .public)"
+            )
+            AudioCaptureDiagnostics.append(
+                "meeting_mic_capture_started requested_mode=\(String(describing: processingMode)) effective_mode=\(startReport.effectiveMode.rawValue) sr=\(activeFormat?.sampleRate ?? 0) ch=\(activeFormat?.channelCount ?? 0) default_input=\(AudioCaptureDiagnostics.defaultInputDeviceLabel())"
             )
         }
         return startReport
@@ -203,6 +213,9 @@ public final class MicrophoneCapture: @unchecked Sendable {
 
         if didStop {
             logger.info("microphone_capture_stopped engine_recreated=true")
+            AudioCaptureDiagnostics.append(
+                "meeting_mic_capture_stopped engine_recreated=true default_input_post=\(AudioCaptureDiagnostics.defaultInputDeviceLabel())"
+            )
         }
     }
 
@@ -277,16 +290,21 @@ public final class MicrophoneCapture: @unchecked Sendable {
                     "meeting_mic_processing_raw_disable_failed reason=\(error.localizedDescription, privacy: .public)"
                 )
             }
+            AudioCaptureDiagnostics.append("meeting_mic_processing mode=raw")
             return .raw
         case .vpioPreferred:
             do {
                 try setVoiceProcessing(enabled: true, on: inputNode)
                 disableVoiceProcessingDucking(on: inputNode)
                 logger.info("meeting_mic_processing mode=vpio requested=vpioPreferred effective=vpio")
+                AudioCaptureDiagnostics.append("meeting_mic_processing mode=vpio requested=vpioPreferred effective=vpio")
                 return .vpio
             } catch {
                 logger.warning(
                     "meeting_mic_processing_fallback requested=vpioPreferred effective=raw reason=\(error.localizedDescription, privacy: .public)"
+                )
+                AudioCaptureDiagnostics.append(
+                    "meeting_mic_processing_fallback requested=vpioPreferred effective=raw reason=\"\(error.localizedDescription)\""
                 )
                 do {
                     try setVoiceProcessing(enabled: false, on: inputNode)
@@ -302,8 +320,12 @@ public final class MicrophoneCapture: @unchecked Sendable {
                 try setVoiceProcessing(enabled: true, on: inputNode)
                 disableVoiceProcessingDucking(on: inputNode)
                 logger.info("meeting_mic_processing mode=vpio requested=vpioRequired effective=vpio")
+                AudioCaptureDiagnostics.append("meeting_mic_processing mode=vpio requested=vpioRequired effective=vpio")
                 return .vpio
             } catch {
+                AudioCaptureDiagnostics.append(
+                    "meeting_mic_processing_unavailable mode=vpioRequired reason=\"\(error.localizedDescription)\""
+                )
                 throw MeetingAudioError.microphoneProcessingUnavailable(
                     mode: .vpioRequired,
                     reason: error.localizedDescription
@@ -481,6 +503,10 @@ public final class MicrophoneCapture: @unchecked Sendable {
         }
         if shouldLog {
             logger.info("microphone_capture_first_buffer_received")
+            let format = inputFormat
+            AudioCaptureDiagnostics.append(
+                "meeting_mic_first_buffer sr=\(format?.sampleRate ?? 0) ch=\(format?.channelCount ?? 0) interleaved=\(format?.isInterleaved ?? false)"
+            )
         }
     }
 

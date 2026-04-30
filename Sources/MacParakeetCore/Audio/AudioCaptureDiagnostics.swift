@@ -1,9 +1,23 @@
+import CoreAudio
 import Foundation
 import os
 
 enum AudioCaptureDiagnostics {
     private static let lock = OSAllocatedUnfairLock(initialState: ())
     private static let maxLogBytes: UInt64 = 1_000_000
+
+    /// Format a device as `<id>:<name>` for log lines, or `none` if the
+    /// device couldn't be resolved. Single canonical shape so grep works
+    /// across mic/dictation events.
+    static func deviceLabel(_ deviceID: AudioDeviceID?) -> String {
+        guard let deviceID else { return "none" }
+        let name = AudioDeviceManager.deviceName(deviceID) ?? "unknown"
+        return "\(deviceID):\(name)"
+    }
+
+    static func defaultInputDeviceLabel() -> String {
+        deviceLabel(AudioDeviceManager.defaultInputDevice())
+    }
 
     static func append(_ message: @autoclosure () -> String) {
         let formatter = ISO8601DateFormatter()
