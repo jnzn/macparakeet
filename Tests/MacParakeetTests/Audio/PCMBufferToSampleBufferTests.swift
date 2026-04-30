@@ -16,6 +16,19 @@ final class PCMBufferToSampleBufferTests: XCTestCase {
         XCTAssertEqual(CMSampleBufferGetDuration(first), CMTime(value: 256, timescale: 48_000))
     }
 
+    func testSystemAudioStreamHostTimeUsesPresentationTimestamp() throws {
+        let converter = PCMBufferToSampleBuffer()
+        let buffer = try makeConstantBuffer(frameCount: 256, value: 0.25)
+        let sampleBuffer = try converter.makeSampleBuffer(
+            from: buffer,
+            presentationTimeSamples: 24_000
+        )
+
+        let hostTime = SystemAudioStream.hostTime(for: sampleBuffer)
+
+        XCTAssertEqual(AVAudioTime.seconds(forHostTime: hostTime), 0.5, accuracy: 0.000_001)
+    }
+
     func testSampleBufferDeepCopiesPCMData() throws {
         let converter = PCMBufferToSampleBuffer()
         let buffer = try makeConstantBuffer(frameCount: 4, value: 0.5)

@@ -57,9 +57,9 @@ public final class SystemAudioStream: NSObject, @unchecked Sendable {
             let stream = try await makeStream()
             try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: sampleQueue)
             try storeStreamIfStarting(stream)
-            scheduleSilentBufferWatchdog()
             try await startCapture(stream)
-            markRunning()
+            try markRunning()
+            scheduleSilentBufferWatchdog()
             logger.info(
                 "system_audio_stream_started sample_rate=\(Self.sampleRate, privacy: .public) channels=\(Self.channelCount, privacy: .public)"
             )
@@ -99,7 +99,16 @@ public final class SystemAudioStream: NSObject, @unchecked Sendable {
             }
             state = .starting
             bufferHandler = handler
-            watchdogLock.withLock { stallObserver = onStall }
+            watchdogLock.withLock {
+                firstBufferReceived = false
+                hasReportedStall = false
+                watchdogWorkItem?.cancel()
+                watchdogWorkItem = nil
+                heartbeatTimer?.cancel()
+                heartbeatTimer = nil
+                lastBufferAtNanos = 0
+                stallObserver = onStall
+            }
         }
         if let startError {
             throw startError
@@ -120,11 +129,17 @@ public final class SystemAudioStream: NSObject, @unchecked Sendable {
         }
     }
 
-    private func markRunning() {
+    private func markRunning() throws {
+        var shouldReject = false
         stateQueue.sync {
-            if state == .starting {
-                state = .running
+            guard state == .starting else {
+                shouldReject = true
+                return
             }
+            state = .running
+        }
+        if shouldReject {
+            throw MeetingAudioError.notRunning
         }
     }
 
@@ -204,19 +219,32 @@ public final class SystemAudioStream: NSObject, @unchecked Sendable {
         }
     }
 
+    // ScreenCaptureKit timestamps audio samples on the host-time clock; using
+    // callback time here makes system audio drift relative to the mic stream.
+    static func hostTime(for sampleBuffer: CMSampleBuffer) -> UInt64 {
+        let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        let seconds = presentationTime.seconds
+        guard presentationTime.isValid,
+              !presentationTime.isIndefinite,
+              seconds.isFinite,
+              seconds >= 0 else {
+            return mach_absolute_time()
+        }
+
+        return AVAudioTime.hostTime(forSeconds: seconds)
+    }
+
     private func scheduleSilentBufferWatchdog() {
-        let workItem = watchdogLock.withLock { () -> DispatchWorkItem in
-            firstBufferReceived = false
-            hasReportedStall = false
+        let workItem = watchdogLock.withLock { () -> DispatchWorkItem? in
+            guard !firstBufferReceived, !hasReportedStall else { return nil }
             watchdogWorkItem?.cancel()
-            heartbeatTimer?.cancel()
-            heartbeatTimer = nil
             let item = DispatchWorkItem { [weak self] in
                 self?.handleFirstBufferTimeout()
             }
             watchdogWorkItem = item
             return item
         }
+        guard let workItem else { return }
         watchdogQueue.asyncAfter(deadline: .now() + Self.firstBufferTimeout, execute: workItem)
     }
 
@@ -317,7 +345,7 @@ extension SystemAudioStream: SCStreamOutput, SCStreamDelegate {
         do {
             let buffer = try converter.makePCMBuffer(from: sampleBuffer)
             recordBufferDelivery()
-            let time = AVAudioTime(hostTime: mach_absolute_time())
+            let time = AVAudioTime(hostTime: Self.hostTime(for: sampleBuffer))
             let handler = stateQueue.sync { bufferHandler }
             handler?(buffer, time)
         } catch {
