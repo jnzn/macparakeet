@@ -33,6 +33,12 @@ Meeting mic hardening uses macOS Voice Processing I/O in `MicrophoneCapture`, wi
 
 macOS Core Audio's Hardware Abstraction Layer (HAL) natively multiplexes microphone access across multiple clients. Multiple `AVAudioEngine` instances tapping the same physical mic is a supported, documented pattern — it's how multiple apps can record simultaneously.
 
+#### Aggregate-device bypass for dictation during an active meeting
+
+Within a single process, AVAudioEngine routes the system-default input through a process-internal aggregate device named `CADefaultDeviceAggregate-<pid>-N`. When meeting recording engages VPIO on its mic engine, that aggregate enters a multi-channel duplex layout (channel 0 = post-AEC processed stream). Sibling AVAudioEngines that come up in that window inherit the same aggregate routing, even when they explicitly call `setVoiceProcessingEnabled(false)` — the VPIO call disables processing on that engine's tap but does not change the underlying device.
+
+`AudioRecorder.configureAndStart` defends against this by detecting when the engine resolved to a `CADefaultDeviceAggregate-*` device and rebinding to the actual hardware default input device via `AudioDeviceManager.setInputDevice(_:on:)`. This writes the hardware device ID directly to the engine's `kAudioOutputUnitProperty_CurrentDevice`, bypassing the process-shared aggregate so dictation reads raw mic samples instead of duplex-channel-0 silence. The rebind is gated on aggregate detection so dictations outside an active meeting take the unchanged path.
+
 **Why not a shared engine?** Dictation and meeting recording have fundamentally different lifecycles:
 
 - Dictation: burst (3-10 seconds), starts/stops rapidly, engine created and destroyed per session

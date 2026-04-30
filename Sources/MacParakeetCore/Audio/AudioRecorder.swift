@@ -266,6 +266,40 @@ public actor AudioRecorder {
             )
         }
 
+        // Force-bind to raw hardware mic when AVAudioEngine resolved to a
+        // process-internal aggregate (`CADefaultDeviceAggregate-<pid>-N`).
+        //
+        // While a meeting recording's mic engine has VPIO active, AVAudioEngine
+        // routes *every* engine in the process through that VPIO aggregate,
+        // even ones that explicitly opted out via `setVoiceProcessingEnabled(false)`.
+        // The aggregate exposes a multi-channel duplex layout where channel 0
+        // is the post-AEC processed stream — silent when no voice clears the
+        // cancellation threshold. Dictation reads channel 0, captures silence,
+        // and the user gets an empty transcript.
+        //
+        // Bypass: write the actual hardware default input device ID directly
+        // to this engine's input audio unit (`kAudioOutputUnitProperty_CurrentDevice`),
+        // breaking the engine's link to the process-shared aggregate so it
+        // reads raw mic samples instead of the duplex-channel-0 stream.
+        // Gated on aggregate detection so non-meeting dictations are unchanged.
+        if overrideDeviceID == nil {
+            let resolvedID = AudioDeviceManager.currentInputDevice(of: engine)
+            let resolvedName = resolvedID.flatMap { AudioDeviceManager.deviceName($0) } ?? ""
+            if resolvedName.hasPrefix("CADefaultDeviceAggregate"),
+               let rawDefaultID = AudioDeviceManager.defaultInputDevice() {
+                if AudioDeviceManager.setInputDevice(rawDefaultID, on: engine) {
+                    let rawName = AudioDeviceManager.deviceName(rawDefaultID) ?? "unknown"
+                    AudioCaptureDiagnostics.append(
+                        "dictation_capture_aggregate_rebind from=\"\(resolvedName)\" to=\"\(rawDefaultID):\(rawName)\""
+                    )
+                } else {
+                    AudioCaptureDiagnostics.append(
+                        "dictation_capture_aggregate_rebind_failed from=\"\(resolvedName)\" target=\(rawDefaultID)"
+                    )
+                }
+            }
+        }
+
         // AVFAudio raises an Objective-C NSException on aggregate / virtual
         // audio devices in bad states (issue #91). Swift can't catch it without
         // the ObjC trampoline — without the wrap this line will abort the
