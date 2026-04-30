@@ -384,19 +384,25 @@ public final class MicrophoneCapture: @unchecked Sendable {
             throw MeetingAudioError.noMicrophoneAvailable
         }
 
+        // The engine is recreated on every failed attempt, so the caller's
+        // `inputNode` reference goes stale after the first reset. Track the
+        // current engine's input node locally and refresh it after each
+        // reset.
+        var currentInputNode = inputNode
         var lastError: Error?
         for attempt in inputDeviceAttempts {
             guard applyInputDeviceAttempt(attempt, on: audioEngine) else {
                 if lastError == nil {
                     lastError = MeetingAudioError.noMicrophoneAvailable
                 }
-                resetAfterFailedStart(inputNode: inputNode)
+                resetAfterFailedStart(inputNode: currentInputNode)
+                currentInputNode = audioEngine.inputNode
                 continue
             }
 
             do {
                 let report = try installTapAndStartEngine(
-                    inputNode: inputNode,
+                    inputNode: currentInputNode,
                     processingMode: processingMode
                 )
                 logInputDeviceAttemptSucceeded(attempt)
@@ -406,7 +412,8 @@ public final class MicrophoneCapture: @unchecked Sendable {
                 logger.warning(
                     "meeting_input_device_start_failed source=\(attempt.source.logValue, privacy: .public) id=\(attempt.deviceID, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
                 )
-                resetAfterFailedStart(inputNode: inputNode)
+                resetAfterFailedStart(inputNode: currentInputNode)
+                currentInputNode = audioEngine.inputNode
             }
         }
 
@@ -482,6 +489,10 @@ public final class MicrophoneCapture: @unchecked Sendable {
         audioEngine.stop()
         audioEngine.reset()
         resetDiagnosticsState()
+        // Mirror `stop()`: replace the engine instance so we don't carry
+        // residual VPIO / aggregate-device state into the next attempt.
+        // Maintains the per-session engine-lifetime invariant.
+        audioEngine = AVAudioEngine()
     }
 
     private func scheduleSilentBufferWatchdog() {

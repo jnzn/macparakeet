@@ -5,7 +5,6 @@ import Foundation
 import OSLog
 @preconcurrency import ScreenCaptureKit
 
-@available(macOS 13.0, *)
 public final class SystemAudioStream: NSObject, @unchecked Sendable {
     public typealias AudioBufferHandler = @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void
     public typealias StallObserver = @Sendable (MeetingAudioError) -> Void
@@ -306,7 +305,6 @@ public final class SystemAudioStream: NSObject, @unchecked Sendable {
     }
 }
 
-@available(macOS 13.0, *)
 extension SystemAudioStream: SCStreamOutput, SCStreamDelegate {
     public func stream(
         _ stream: SCStream,

@@ -208,7 +208,7 @@ Relevant code:
 
 The shipped default is:
 
-- `PassthroughMicConditioner` for mic samples after upstream VPIO processing
+- `PassthroughMicConditioner` for mic samples after upstream VPIO processing when available, otherwise raw mic passthrough (logged as `meeting_mic_vpio_unavailable` when VPIO fails to engage)
 - plus transcript-layer suppression when system audio strongly dominates recent mic energy
 
 Relevant code:

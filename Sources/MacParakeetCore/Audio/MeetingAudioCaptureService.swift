@@ -46,7 +46,6 @@ extension MeetingSystemAudioCapturing {
     }
 }
 
-@available(macOS 13.0, *)
 extension SystemAudioStream: MeetingSystemAudioCapturing {}
 
 public actor MeetingAudioCaptureService {

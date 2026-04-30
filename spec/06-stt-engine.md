@@ -290,7 +290,7 @@ YouTube (v0.4+):
 
 Meeting live preview (v0.6):
   MicrophoneCapture (VPIO preferred)/SystemAudioStream
-    → CaptureOrchestrator (paired frames + bounded lag + timeline offsets + chunking)
+    → CaptureOrchestrator (paired frames + bounded lag + chunking)
     → MicConditioner (pass-through; mic AEC handled upstream by VPIO when available)
     → dominant-system live guard (skip clearly system-dominant mic chunks for live preview only)
     → LiveChunkTranscriber (queueing + ordering + cancellation)
