@@ -99,9 +99,20 @@ public final class MicrophoneCapture: @unchecked Sendable {
     }
 
     public var inputFormat: AVAudioFormat? {
+        // Snapshot the engine under the lifecycle lock and only resolve a
+        // format when actively running. The engine is recreated on `stop()`
+        // (ephemeral pattern for VPAU teardown), so an unsynchronized read
+        // would race the swap and could query a freshly-allocated engine
+        // that hasn't been configured yet — or in the worst case, a
+        // half-deallocated reference.
+        let snapshot: AVAudioEngine? = lifecycleQueue.sync {
+            guard state == .running else { return nil }
+            return audioEngine
+        }
+        guard let snapshot else { return nil }
         do {
             let format = try catchingObjCException {
-                audioEngine.inputNode.outputFormat(forBus: 0)
+                snapshot.inputNode.outputFormat(forBus: 0)
             }
             return format.sampleRate > 0 ? format : nil
         } catch {
