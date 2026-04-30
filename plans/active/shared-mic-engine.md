@@ -1,9 +1,29 @@
 # Plan: Shared microphone engine for concurrent dictation + meeting
 
-> Status: **PROPOSAL** — design ready, implementation deferred to v0.6.1
+> Status: **IN PROGRESS** — step 1 complete (foundation behind flag), steps 2-7 pending
 > Author: agent (Claude) + Daniel
-> Date: 2026-04-29
-> Related: PR #186 (VPIO + ScreenCaptureKit, ships v0.6.0 with concurrent-dictation gap), ADR-015 (concurrent dictation), ADR-014 (meeting recording), `docs/research/vpio-process-tap-conflict.md` (option (d))
+> Date: 2026-04-29 (revised 2026-04-30: scope pulled into v0.6.0)
+> Related: PR #186 (VPIO + ScreenCaptureKit), ADR-015 (concurrent dictation), ADR-014 (meeting recording), `docs/research/vpio-process-tap-conflict.md` (option (d))
+
+## Step status
+
+| Step | Status | Notes |
+|---|---|---|
+| 1. Build `SharedMicrophoneStream` + tests behind flag | ✅ Done | Commits `7f93935b` + `c7f690ea` on `feat/shared-mic-engine-plan`. 2030 XCTest pass. Flag `AppFeatures.useSharedMicEngine = false`. |
+| 2. Migrate `MicrophoneCapture` to subscribe behind flag | ⬜ Next | Adapter unverified against real hardware until this lands. |
+| 3. Soak meeting recording with flag on (1 day) | ⬜ | Step 2's dev-test cycle. |
+| 4. Migrate `AudioRecorder` (with ch[0] mono extraction) | ⬜ | |
+| 5. Concurrent-flow soak (the actual bug fix verification) | ⬜ | The test that motivated the whole plan. |
+| 6. Flip `AppFeatures.useSharedMicEngine = true` | ⬜ | After step 5 passes. |
+| 7. Delete old code paths + ADR-015 amendment | ⬜ | After one DMG release confirms no field issues. |
+
+## Step 1 review notes (carry forward into step 2)
+
+- **Adapter not yet exercised against real hardware.** `AVAudioEngineMicrophonePlatform.configureAndStart` is unit-tested via mock but never run with a real `AVAudioEngine`. Step 2's dev-test on meeting recording is the smoke test.
+- **Device-selection / fallback machinery still in `MicrophoneCapture`** — `selectedInputDeviceUIDProvider`, default-input change listener, `setInputDevice` rebind chain, diagnostic events. All needs to migrate to the platform / shared stream as part of step 2.
+- **Deferred-VPIO promotion failure marks engine dead** but there's no subscriber-side death notification yet. Consumers must poll `diagnostics.engineRunning`. Step 2 should add an explicit `onEngineDeath` callback.
+- **Buffer fanout is allocation-free** on the render thread (cached snapshot), but the lock-based read still does an atomic refcount-inc on the Array's COW buffer. Bounded, render-thread-safe, but worth profiling once consumers are wired.
+- **Deferral counter semantics:** increments per VPIO-request-deferred. Two VPIO subs joining during one non-VPIO blocker count as 2. Defensible but worth a comment when wiring telemetry.
 
 ---
 
