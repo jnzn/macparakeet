@@ -65,7 +65,16 @@ public final class MicrophoneCapture: @unchecked Sendable {
     private let watchdogQueue = DispatchQueue(label: "com.macparakeet.microphonecapture.watchdog", qos: .utility)
     private let handlerLock = NSLock()
     private let selectedInputDeviceUIDProvider: @Sendable () -> String?
-    private let audioEngine = AVAudioEngine()
+    /// Recreated on every `start()` so each meeting session gets a fresh
+    /// AVAudioEngine. Critical when VPIO is in use: coreaudiod ties the
+    /// `CADefaultDeviceAggregate-<pid>-N` VPAU aggregate to a specific engine
+    /// instance and won't release it until that engine is deallocated. A
+    /// long-lived engine keeps the VPAU alive indefinitely, which makes the
+    /// VPAU the system default input — every later AVAudioEngine in the
+    /// process (e.g. dictation's) inherits the 3-channel duplex layout and
+    /// reads silence on channel 0. Destroying and recreating per-session
+    /// forces coreaudiod to GC the VPAU between meetings.
+    private var audioEngine = AVAudioEngine()
     private let bufferSize: AVAudioFrameCount = 4096
     private let watchdogLock = NSLock()
 
@@ -175,18 +184,25 @@ public final class MicrophoneCapture: @unchecked Sendable {
             try? catchingObjCException {
                 audioEngine.inputNode.removeTap(onBus: 0)
             }
+            try? setVoiceProcessing(enabled: false, on: audioEngine.inputNode)
             audioEngine.stop()
             handlerLock.withLock {
                 bufferHandler = nil
                 stallObserver = nil
             }
             resetDiagnosticsState()
+            // Replace the engine with a fresh one. Releasing the old instance
+            // tears down the VPAU aggregate device coreaudiod created for it,
+            // which restores the system default input to the raw mic so a
+            // sibling AVAudioEngine (e.g. dictation) doesn't inherit the
+            // 3-channel duplex layout.
+            audioEngine = AVAudioEngine()
             state = .idle
             didStop = true
         }
 
         if didStop {
-            logger.info("microphone_capture_stopped")
+            logger.info("microphone_capture_stopped engine_recreated=true")
         }
     }
 
@@ -265,6 +281,7 @@ public final class MicrophoneCapture: @unchecked Sendable {
         case .vpioPreferred:
             do {
                 try setVoiceProcessing(enabled: true, on: inputNode)
+                disableVoiceProcessingDucking(on: inputNode)
                 logger.info("meeting_mic_processing mode=vpio requested=vpioPreferred effective=vpio")
                 return .vpio
             } catch {
@@ -283,6 +300,7 @@ public final class MicrophoneCapture: @unchecked Sendable {
         case .vpioRequired:
             do {
                 try setVoiceProcessing(enabled: true, on: inputNode)
+                disableVoiceProcessingDucking(on: inputNode)
                 logger.info("meeting_mic_processing mode=vpio requested=vpioRequired effective=vpio")
                 return .vpio
             } catch {
@@ -291,6 +309,27 @@ public final class MicrophoneCapture: @unchecked Sendable {
                     reason: error.localizedDescription
                 )
             }
+        }
+    }
+
+    /// VPIO defaults to ducking other apps' audio (~50% attenuation) so a voice
+    /// signal stays intelligible during VoIP calls. We're recording a meeting,
+    /// not joining one — the "other audio" is the meeting itself, and the user
+    /// wants to hear it at full volume. Override the default with the lowest
+    /// available ducking level and disable the smart-ducking heuristic.
+    private func disableVoiceProcessingDucking(on inputNode: AVAudioInputNode) {
+        do {
+            try catchingObjCException {
+                inputNode.voiceProcessingOtherAudioDuckingConfiguration = .init(
+                    enableAdvancedDucking: false,
+                    duckingLevel: .min
+                )
+            }
+            AudioCaptureDiagnostics.append("meeting_capture_vpio_ducking_min")
+        } catch {
+            logger.debug(
+                "meeting_mic_vpio_ducking_config_failed reason=\(error.localizedDescription, privacy: .public)"
+            )
         }
     }
 
@@ -406,6 +445,7 @@ public final class MicrophoneCapture: @unchecked Sendable {
         try? catchingObjCException {
             inputNode.removeTap(onBus: 0)
         }
+        try? setVoiceProcessing(enabled: false, on: inputNode)
         audioEngine.stop()
         audioEngine.reset()
         resetDiagnosticsState()

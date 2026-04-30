@@ -62,7 +62,7 @@ DMG release yet.
 | Language | Swift 6.0 | SwiftUI for UI |
 | Database | SQLite | GRDB (single file, dictation history + transcriptions + Labs meeting recordings) |
 | STT | Parakeet TDT 0.6B-v3 + optional WhisperKit | Parakeet via FluidAudio CoreML/ANE is default (~2.5% WER, 155x realtime, 25 European languages); WhisperKit adds broader local multilingual coverage in Labs on `main` |
-| Audio | AVAudioEngine + Core Audio + Core Audio Taps | Mic capture for dictation; Core Audio Taps for Labs meeting recording; FFmpeg (bundled) for video file conversion |
+| Audio | AVAudioEngine + ScreenCaptureKit | Mic capture for dictation; ScreenCaptureKit system audio + AVAudioEngine mic for Labs meeting recording; FFmpeg (bundled) for video file conversion |
 | YouTube | yt-dlp | Standalone macOS binary, weekly non-blocking auto-update via `--update` |
 | Auto-Update | Sparkle 2 | In-app updates via EdDSA-signed appcast (non-App Store) |
 
@@ -104,7 +104,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 | ADR-011 | LLM via cloud API keys + optional local providers | `spec/adr/011-llm-cloud-and-local-providers.md` |
 | ADR-012 | Self-hosted telemetry via Cloudflare (Worker + D1) | `spec/adr/012-telemetry-system.md` |
 | ADR-013 | Prompt Library + multi-summary architecture | `spec/adr/013-prompt-library-multi-summary.md` |
-| ADR-014 | Meeting recording via Core Audio Taps | `spec/adr/014-meeting-recording.md` |
+| ADR-014 | Meeting recording via ScreenCaptureKit system audio | `spec/adr/014-meeting-recording.md` |
 | ADR-015 | Concurrent dictation and meeting recording | `spec/adr/015-concurrent-dictation-meeting.md` |
 | ADR-016 | Centralized STT runtime and two-slot scheduler | `spec/adr/016-centralized-stt-runtime-scheduler.md` |
 | ADR-017 | Calendar-driven meeting auto-start (Phases 1 + 2 implemented; Phase 3 proposed) | `spec/adr/017-calendar-meeting-auto-start.md` |
@@ -124,7 +124,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 - **v0.3** YouTube & Export -- YouTube URL transcription, DOCX/PDF/JSON export, drag-and-drop enhancements
 - **v0.4** Polish + Launch -- Diarization, custom hotkeys, Sparkle updates, LLM providers, voice stats, distribution
 - **v0.5** Data, UI & Prompts -- Private dictation, multi-conversation chat, favorites, video player, split-pane detail, library grid, prompt library, multi-summary, open-source release
-- **v0.6** Meeting Recording (main branch, unreleased) -- System audio + raw mic capture via Core Audio Taps/AVAudioEngine, fragmented MP4 source files + crash recovery (ADR-019), software AEC + transcript-layer suppression, concurrent with dictation (ADR-015), centralized STT runtime + scheduler (ADR-016), sacred-geometry recording pill + Notes/Transcript/Ask meeting panel, library integration, prompt/result/chat support (ADR-014), live notepad + memo-steered summaries with `{{userNotes}}` template variable + slash commands (ADR-020)
+- **v0.6** Meeting Recording (main branch, unreleased) -- ScreenCaptureKit system audio + AVAudioEngine mic capture with VPIO preferred, fragmented MP4 source files + crash recovery (ADR-019), transcript-layer suppression, concurrent with dictation (ADR-015), centralized STT runtime + scheduler (ADR-016), sacred-geometry recording pill + Notes/Transcript/Ask meeting panel, library integration, prompt/result/chat support (ADR-014), live notepad + memo-steered summaries with `{{userNotes}}` template variable + slash commands (ADR-020)
 - **v0.7** Multilingual STT (main branch, unreleased) -- WhisperKit engine option for non-Parakeet languages, persisted speech-engine preference, Whisper language picker/default, CLI `transcribe --engine parakeet|whisper --language`, Whisper model download path, engine pinning for active meeting sessions and crash recovery (ADR-021)
 
 ## Key Patterns
@@ -191,7 +191,7 @@ CPU/GPU/CoreML as selected by WhisperKit: optional multilingual STT
 
 - **Dictation**: AVAudioEngine tap on input node (microphone)
 - **File transcription**: FluidAudio's `AudioConverter` resamples audio; FFmpeg (bundled) demuxes video files
-- **Meeting recording**: Core Audio Taps for system audio + AVAudioEngine for mic (dual-stream, ported from Oatmeal)
+- **Meeting recording**: ScreenCaptureKit for system audio + AVAudioEngine for mic (dual-stream)
 
 ### GUI Structure
 
@@ -468,7 +468,7 @@ open Package.swift  # Select MacParakeet scheme
 |------------|--------|----------------|
 | Microphone | Dictation + meeting recording | First dictation use |
 | Accessibility | Global hotkey, paste simulation | First dictation use |
-| Screen & System Audio Recording | System audio capture for meeting recording (Core Audio Taps) | First meeting recording use |
+| Screen & System Audio Recording | System audio capture for meeting recording (ScreenCaptureKit) | First meeting recording use |
 
 1. **Offline-first** -- Dictation and file transcription work fully offline. Network is limited to user-triggered downloads/providers, update checks, retained purchase activation endpoints if explicitly invoked, and opt-out anonymous telemetry.
 2. **Temp files deleted** -- Audio removed after transcription (unless user saves)

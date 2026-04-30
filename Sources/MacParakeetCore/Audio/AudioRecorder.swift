@@ -17,6 +17,17 @@ public struct RecordingDeviceInfo: Sendable, Equatable {
     public let requestedDeviceUID: String?
 }
 
+private struct RecordingRuntimeMetrics: Sendable {
+    var inputBufferCount: Int = 0
+    var outputBufferCount: Int = 0
+    var inputFrameCount: Int = 0
+    var maxRMS: Float = 0
+    var maxAudioLevel: Float = 0
+    var nonSilentBufferCount: Int = 0
+    var missingFloatChannelDataBufferCount: Int = 0
+    var invalidFormatBufferCount: Int = 0
+}
+
 /// Manages microphone recording via AVAudioEngine.
 /// Captures audio, converts to 16kHz mono, and writes to a temporary WAV file.
 ///
@@ -36,6 +47,10 @@ public actor AudioRecorder {
     /// Thread-safe audio level written from the real-time audio thread, read by the actor.
     /// Avoids Task allocation on the audio thread which causes priority inversion.
     nonisolated private let atomicAudioLevel = OSAllocatedUnfairLock<Float>(initialState: 0.0)
+    nonisolated private let runtimeMetrics = OSAllocatedUnfairLock(
+        initialState: RecordingRuntimeMetrics()
+    )
+    nonisolated private let firstBufferLogged = OSAllocatedUnfairLock(initialState: false)
     /// Thread-safe generation counter incremented on each stop(). Tap callbacks capture
     /// the generation at install time and bail out if it has changed. This prevents both
     /// the stop() race (writes after audioFile is nilled) and the cross-session race
@@ -84,9 +99,15 @@ public actor AudioRecorder {
         // first-run race or the user revoked access in System Settings.
         let authStatus = AVCaptureDevice.authorizationStatus(for: .audio)
         logger.debug("mic_permission_status=\(authStatus.rawValue, privacy: .public)")
+        AudioCaptureDiagnostics.append(
+            "dictation_capture_start permission_status=\(authStatus.rawValue)"
+        )
         guard authStatus == .authorized else {
             logger.error(
                 "mic_permission_not_granted status=\(authStatus.rawValue, privacy: .public)"
+            )
+            AudioCaptureDiagnostics.append(
+                "dictation_capture_start_denied permission_status=\(authStatus.rawValue)"
             )
             throw AudioProcessorError.microphonePermissionDenied
         }
@@ -94,6 +115,9 @@ public actor AudioRecorder {
         logAvailableDevices()
 
         let selectedDeviceUID = AudioDeviceManager.normalizedUID(selectedInputDeviceUIDProvider())
+        AudioCaptureDiagnostics.append(
+            "dictation_capture_input_selection requested=\(selectedDeviceUID == nil ? "system-default" : "custom")"
+        )
         if let selectedDeviceUID {
             if let selectedDeviceID = AudioDeviceManager.inputDeviceID(forUID: selectedDeviceUID) {
                 do {
@@ -170,10 +194,19 @@ public actor AudioRecorder {
         }
 
         let sampleCount = sampleCounter.withLock { $0 }
+        let metrics = runtimeMetrics.withLock { $0 }
+        let fileBytes = Self.fileSizeBytes(at: url)
+        let duration = Double(sampleCount) / 16_000.0
         logger.debug("stop sampleCount=\(sampleCount, privacy: .public)")
+        AudioCaptureDiagnostics.append(
+            "dictation_capture_stop sample_count=\(sampleCount) duration_s=\(String(format: "%.3f", duration)) file_bytes=\(fileBytes.map(String.init) ?? "unknown") input_buffers=\(metrics.inputBufferCount) output_buffers=\(metrics.outputBufferCount) input_frames=\(metrics.inputFrameCount) max_rms=\(String(format: "%.6f", metrics.maxRMS)) max_level=\(String(format: "%.3f", metrics.maxAudioLevel)) non_silent_buffers=\(metrics.nonSilentBufferCount) missing_float_buffers=\(metrics.missingFloatChannelDataBufferCount) invalid_format_buffers=\(metrics.invalidFormatBufferCount)"
+        )
         guard sampleCount >= Self.minimumSamples else {
             // Clean up the too-short file
             try? FileManager.default.removeItem(at: url)
+            AudioCaptureDiagnostics.append(
+                "dictation_capture_insufficient sample_count=\(sampleCount) required=\(Self.minimumSamples)"
+            )
             throw AudioProcessorError.insufficientSamples
         }
 
@@ -214,6 +247,25 @@ public actor AudioRecorder {
             )
         }
 
+        // Explicitly opt out of VPIO on this engine's inputNode. coreaudiod
+        // keeps the meeting recording's VPAU aggregate device alive after the
+        // meeting engine stops, and a fresh AVAudioEngine here will otherwise
+        // inherit that 3-channel duplex layout (channel 0 ≠ voice → silent
+        // dictation). Calling `setVoiceProcessingEnabled(false)` here forces
+        // this engine to detach from the duplex unit and bind to the raw mic.
+        // Wrapped in catch because on devices where VPIO never engaged the
+        // call may throw a benign "no-op" exception.
+        do {
+            try catchingObjCException {
+                try inputNode.setVoiceProcessingEnabled(false)
+            }
+            AudioCaptureDiagnostics.append("dictation_capture_vpio_disabled")
+        } catch {
+            logger.debug(
+                "dictation_vpio_disable_noop error=\(error.localizedDescription, privacy: .public)"
+            )
+        }
+
         // AVFAudio raises an Objective-C NSException on aggregate / virtual
         // audio devices in bad states (issue #91). Swift can't catch it without
         // the ObjC trampoline — without the wrap this line will abort the
@@ -242,9 +294,15 @@ public actor AudioRecorder {
                 requestedDeviceUID: requestedDeviceUID
             )
         }
+        AudioCaptureDiagnostics.append(
+            "dictation_capture_configured device=\"\(_deviceInfo?.deviceName ?? "unknown")\" transport=\(_deviceInfo?.transport ?? "unknown") fallback=\(fallbackUsed) sr=\(inputFormat.sampleRate) ch=\(inputFormat.channelCount) requested=\(requestedDeviceUID == nil ? "system-default" : "custom")"
+        )
 
         // Validate format — Bluetooth HFP can report 0 Hz or 0 channels
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+            AudioCaptureDiagnostics.append(
+                "dictation_capture_invalid_format sr=\(inputFormat.sampleRate) ch=\(inputFormat.channelCount)"
+            )
             throw AudioProcessorError.recordingFailed(
                 "Invalid input format: sampleRate=\(inputFormat.sampleRate) channels=\(inputFormat.channelCount)"
             )
@@ -283,6 +341,9 @@ public actor AudioRecorder {
         }
 
         self.tapErrorLogged.withLock { $0 = false }
+        self.firstBufferLogged.withLock { $0 = false }
+        self.runtimeMetrics.withLock { $0 = RecordingRuntimeMetrics() }
+        self.sampleCounter.withLock { $0 = 0 }
 
         // Capture the current generation so stale callbacks from previous sessions bail out.
         let tapGeneration = self.sessionGeneration.withLock { $0 }
@@ -322,6 +383,10 @@ public actor AudioRecorder {
                     // Calculate audio level (RMS) — written atomically, no Task allocation needed
                     let channelData = buffer.floatChannelData?[0]
                     let frameCount = Int(buffer.frameLength)
+                    self.runtimeMetrics.withLock { metrics in
+                        metrics.inputBufferCount += 1
+                        metrics.inputFrameCount += frameCount
+                    }
                     if let data = channelData, frameCount > 0 {
                         var rms: Float = 0
                         for i in 0..<frameCount {
@@ -332,6 +397,19 @@ public actor AudioRecorder {
                         self.atomicAudioLevel.withLock { level in
                             level = level * 0.3 + normalized * 0.7
                         }
+                        let rmsValue = rms
+                        let normalizedValue = normalized
+                        self.runtimeMetrics.withLock { metrics in
+                            metrics.maxRMS = max(metrics.maxRMS, rmsValue)
+                            metrics.maxAudioLevel = max(metrics.maxAudioLevel, normalizedValue)
+                            if normalizedValue >= 0.02 {
+                                metrics.nonSilentBufferCount += 1
+                            }
+                        }
+                    } else {
+                        self.runtimeMetrics.withLock {
+                            $0.missingFloatChannelDataBufferCount += 1
+                        }
                     }
 
                     // Lazily build the converter from the *actual* buffer format.
@@ -341,13 +419,34 @@ public actor AudioRecorder {
                     // buffer and rebuild the converter if the format drifts
                     // mid-stream (rare, but cheap to handle).
                     let bufferFormat = buffer.format
+                    let shouldLogFirstBuffer = self.firstBufferLogged.withLock { logged in
+                        guard !logged else { return false }
+                        logged = true
+                        return true
+                    }
+                    if shouldLogFirstBuffer {
+                        let sr = bufferFormat.sampleRate
+                        let ch = bufferFormat.channelCount
+                        let commonFormat = bufferFormat.commonFormat.rawValue
+                        let interleaved = bufferFormat.isInterleaved
+                        let frameLength = buffer.frameLength
+                        let hasFloatData = buffer.floatChannelData != nil
+                        Task {
+                            AudioCaptureDiagnostics.append(
+                                "dictation_capture_first_buffer sr=\(sr) ch=\(ch) common_format=\(commonFormat) interleaved=\(interleaved) frames=\(frameLength) has_float_data=\(hasFloatData)"
+                            )
+                        }
+                    }
                     // Aggregate/virtual devices can occasionally deliver a
                     // buffer whose format has sampleRate=0 or channelCount=0
                     // during a hardware transition (Bluetooth HFP↔A2DP, USB
                     // hot-plug, wake-from-sleep). Dividing by sampleRate below
                     // would crash. Bail out quietly — the next buffer is
                     // usually well-formed.
-                    guard bufferFormat.sampleRate > 0, bufferFormat.channelCount > 0 else { return }
+                    guard bufferFormat.sampleRate > 0, bufferFormat.channelCount > 0 else {
+                        self.runtimeMetrics.withLock { $0.invalidFormatBufferCount += 1 }
+                        return
+                    }
                     // Rebuild when the *full* AVAudioFormat identity changes
                     // (including interleaving/layout), not just SR/ch/common.
                     // Aggregate-device transitions can keep SR/ch/common stable
@@ -411,6 +510,7 @@ public actor AudioRecorder {
                             let convertedFrameLength = Int(convertedBuffer.frameLength)
                             try fileBox.file.write(from: convertedBuffer)
                             self.sampleCounter.withLock { $0 += convertedFrameLength }
+                            self.runtimeMetrics.withLock { $0.outputBufferCount += 1 }
                         } catch {
                             // Log but don't crash — we're on the audio thread.
                             // Throttled: only first error per session is logged.
@@ -476,6 +576,9 @@ public actor AudioRecorder {
             // Clean up before propagating
             inputNode.removeTap(onBus: 0)
             try? FileManager.default.removeItem(at: url)
+            AudioCaptureDiagnostics.append(
+                "dictation_capture_engine_start_failed error=\"\(error.localizedDescription)\""
+            )
             throw AudioProcessorError.recordingFailed(
                 "Audio engine failed to start: \(error.localizedDescription)"
             )
@@ -485,6 +588,9 @@ public actor AudioRecorder {
         self.audioFile = file
         self.outputURL = url
         self.recording = true
+        AudioCaptureDiagnostics.append(
+            "dictation_capture_engine_started file=\(url.lastPathComponent)"
+        )
     }
 
     /// Logs all available input devices (called once at start for diagnostics).
@@ -502,6 +608,15 @@ public actor AudioRecorder {
 
     private func logTapError(_ message: String) {
         logger.warning("audio_tap \(message, privacy: .public)")
+        AudioCaptureDiagnostics.append("dictation_capture_tap_error \(message)")
+    }
+
+    private static func fileSizeBytes(at url: URL) -> UInt64? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let size = attributes[.size] as? UInt64 else {
+            return nil
+        }
+        return size
     }
 }
 

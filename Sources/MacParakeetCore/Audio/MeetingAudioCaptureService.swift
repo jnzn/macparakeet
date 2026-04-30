@@ -33,21 +33,21 @@ protocol MeetingMicrophoneCapturing: Sendable {
 
 extension MicrophoneCapture: MeetingMicrophoneCapturing {}
 
-protocol MeetingSystemAudioTapping: Sendable {
+protocol MeetingSystemAudioCapturing: Sendable {
     typealias AudioBufferHandler = @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void
     typealias StallObserver = @Sendable (MeetingAudioError) -> Void
-    func start(handler: @escaping AudioBufferHandler, onStall: StallObserver?) throws
-    func stop()
+    func start(handler: @escaping AudioBufferHandler, onStall: StallObserver?) async throws
+    func stop() async
 }
 
-extension MeetingSystemAudioTapping {
-    func start(handler: @escaping AudioBufferHandler) throws {
-        try start(handler: handler, onStall: nil)
+extension MeetingSystemAudioCapturing {
+    func start(handler: @escaping AudioBufferHandler) async throws {
+        try await start(handler: handler, onStall: nil)
     }
 }
 
-@available(macOS 14.2, *)
-extension SystemAudioTap: MeetingSystemAudioTapping {}
+@available(macOS 13.0, *)
+extension SystemAudioStream: MeetingSystemAudioCapturing {}
 
 public actor MeetingAudioCaptureService {
     public typealias EventHandler = @Sendable (MeetingAudioCaptureEvent) -> Void
@@ -55,12 +55,12 @@ public actor MeetingAudioCaptureService {
 
     private let logger = Logger(subsystem: "com.macparakeet.core", category: "MeetingAudioCaptureService")
     private let microphoneCapture: any MeetingMicrophoneCapturing
-    private let systemAudioTapFactory: @Sendable () throws -> any MeetingSystemAudioTapping
+    private let systemAudioCaptureFactory: @Sendable () throws -> any MeetingSystemAudioCapturing
     private let micProcessingMode: MeetingMicProcessingMode
     private let sourceModeProvider: @Sendable () -> MeetingAudioSourceMode
     private let eventSink = EventSink()
 
-    private var systemAudioTap: (any MeetingSystemAudioTapping)?
+    private var systemAudioCapture: (any MeetingSystemAudioCapturing)?
     private var isCapturing = false
 
     private var eventContinuation: AsyncStream<MeetingAudioCaptureEvent>.Continuation?
@@ -76,34 +76,34 @@ public actor MeetingAudioCaptureService {
         )
         self.micProcessingMode = micProcessingMode
         self.sourceModeProvider = sourceModeProvider
-        self.systemAudioTapFactory = {
+        self.systemAudioCaptureFactory = {
             guard #available(macOS 14.2, *) else {
                 throw MeetingAudioError.unsupportedPlatform
             }
-            return SystemAudioTap()
+            return SystemAudioStream()
         }
     }
 
     init(
         microphoneCaptureFactory: @escaping MeetingMicrophoneCaptureFactory,
-        systemAudioTapFactory: @escaping @Sendable () throws -> any MeetingSystemAudioTapping,
+        systemAudioCaptureFactory: @escaping @Sendable () throws -> any MeetingSystemAudioCapturing,
         micProcessingMode: MeetingMicProcessingMode = .raw,
         sourceModeProvider: @escaping @Sendable () -> MeetingAudioSourceMode = { .microphoneAndSystem }
     ) {
         self.microphoneCapture = microphoneCaptureFactory()
-        self.systemAudioTapFactory = systemAudioTapFactory
+        self.systemAudioCaptureFactory = systemAudioCaptureFactory
         self.micProcessingMode = micProcessingMode
         self.sourceModeProvider = sourceModeProvider
     }
 
     init(
         microphoneCapture: any MeetingMicrophoneCapturing,
-        systemAudioTapFactory: @escaping @Sendable () throws -> any MeetingSystemAudioTapping,
+        systemAudioCaptureFactory: @escaping @Sendable () throws -> any MeetingSystemAudioCapturing,
         micProcessingMode: MeetingMicProcessingMode = .raw,
         sourceModeProvider: @escaping @Sendable () -> MeetingAudioSourceMode = { .microphoneAndSystem }
     ) {
         self.microphoneCapture = microphoneCapture
-        self.systemAudioTapFactory = systemAudioTapFactory
+        self.systemAudioCaptureFactory = systemAudioCaptureFactory
         self.micProcessingMode = micProcessingMode
         self.sourceModeProvider = sourceModeProvider
     }
@@ -138,7 +138,7 @@ public actor MeetingAudioCaptureService {
             throw MeetingAudioError.alreadyRunning
         }
 
-        let tap = try systemAudioTapFactory()
+        let systemCapture = try systemAudioCaptureFactory()
         let sourceMode = sourceModeOverride ?? sourceModeProvider()
         eventSink.setHandler(handler)
         var microphoneStartReport: MeetingMicrophoneCaptureStartReport?
@@ -170,11 +170,11 @@ public actor MeetingAudioCaptureService {
                 )
             }
 
-            try tap.start(
+            try await systemCapture.start(
                 handler: { [weak self] buffer, time in
                     guard let copy = Self.deepCopyBuffer(buffer) else {
                         Logger(subsystem: "com.macparakeet.core", category: "MeetingAudioCaptureService")
-                            .warning("deepCopyBuffer nil for system tap: format=\(buffer.format.commonFormat.rawValue) rate=\(buffer.format.sampleRate) ch=\(buffer.format.channelCount) interleaved=\(buffer.format.isInterleaved) frames=\(buffer.frameLength)")
+                            .warning("deepCopyBuffer nil for system capture: format=\(buffer.format.commonFormat.rawValue) rate=\(buffer.format.sampleRate) ch=\(buffer.format.channelCount) interleaved=\(buffer.format.isInterleaved) frames=\(buffer.frameLength)")
                         self?.eventSink.emit(
                             .error(
                                 .captureRuntimeFailure(
@@ -194,13 +194,13 @@ public actor MeetingAudioCaptureService {
             if attemptedMicrophoneStart {
                 microphoneCapture.stop()
             }
-            tap.stop()
+            await systemCapture.stop()
             finishEventStream()
             eventSink.setHandler(nil)
             throw error
         }
 
-        systemAudioTap = tap
+        systemAudioCapture = systemCapture
         isCapturing = true
         logger.info(
             "Meeting audio capture started source_mode=\(sourceMode.rawValue, privacy: .public) microphone_started=\(microphoneStartReport != nil, privacy: .public) requested_mic_mode=\(String(describing: microphoneStartReport?.requestedMode), privacy: .public) effective_mic_mode=\(microphoneStartReport?.effectiveMode.rawValue ?? "none", privacy: .public)"
@@ -211,12 +211,12 @@ public actor MeetingAudioCaptureService {
         )
     }
 
-    public func stop() {
+    public func stop() async {
         guard isCapturing else { return }
 
         microphoneCapture.stop()
-        systemAudioTap?.stop()
-        systemAudioTap = nil
+        await systemAudioCapture?.stop()
+        systemAudioCapture = nil
         isCapturing = false
 
         eventContinuation?.finish()

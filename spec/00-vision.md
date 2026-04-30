@@ -200,7 +200,7 @@ That does not mean monetization is permanently forbidden. GPL permits charging f
 +-----------------------------------------------------------------------+
 ```
 
-- Dual-stream capture: system audio (Core Audio Taps) + mic (AVAudioEngine)
+- Dual-stream capture: system audio (ScreenCaptureKit) + mic (AVAudioEngine)
 - Floating recording pill with elapsed timer and stop button
 - Results stored as `Transcription` with `sourceType = .meeting` — gets export, prompts, summaries, chat for free
 - Requires Screen Recording permission (macOS 14.2+)

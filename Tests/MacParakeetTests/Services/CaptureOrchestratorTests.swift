@@ -39,7 +39,7 @@ final class CaptureOrchestratorTests: XCTestCase {
     }
 
     /// When both sources deliver valid hostTimes with a small startup delta
-    /// (e.g. system tap arrived 200ms after mic), the chunk timestamps still
+    /// (e.g. system capture arrived 200ms after mic), the chunk timestamps still
     /// come from the lockstep chunker counters — not from the hostTime delta.
     /// Both first chunks should land at startMs=0 because both chunkers
     /// processed their first chunkSize worth of samples in parallel
@@ -72,7 +72,7 @@ final class CaptureOrchestratorTests: XCTestCase {
         )
     }
 
-    /// Long-recording drift bug: when the system tap goes quiet for an
+    /// Long-recording drift bug: when system capture goes quiet for an
     /// extended stretch, the pair joiner emits "solo mic" pairs (mic samples +
     /// silence-padded system samples). Pre-fix, only the mic chunker was fed —
     /// the system chunker's `totalSamplesProcessed` stayed frozen while mic's
@@ -244,4 +244,3 @@ final class CaptureOrchestratorTests: XCTestCase {
         return collected
     }
 }
-

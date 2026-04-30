@@ -32,6 +32,16 @@ public enum AppPaths {
         "\(appSupportDir)/meeting-recordings"
     }
 
+    /// Local diagnostic logs directory.
+    public static var logsDir: String {
+        let path = FileManager.default
+            .urls(for: .libraryDirectory, in: .userDomainMask)
+            .first?
+            .path
+            ?? (NSHomeDirectory() + "/Library")
+        return path + "/Logs/MacParakeet"
+    }
+
     /// Directory for managed helper binaries (e.g. yt-dlp).
     public static var binDir: String {
         "\(appSupportDir)/bin"
@@ -73,7 +83,7 @@ public enum AppPaths {
     /// Ensure all required directories exist
     public static func ensureDirectories() throws {
         let fm = FileManager.default
-        for dir in [appSupportDir, dictationsDir, youtubeDownloadsDir, meetingRecordingsDir, binDir, whisperModelsDir, thumbnailsDir, tempDir] {
+        for dir in [appSupportDir, dictationsDir, youtubeDownloadsDir, meetingRecordingsDir, binDir, whisperModelsDir, thumbnailsDir, logsDir, tempDir] {
             if !fm.fileExists(atPath: dir) {
                 try fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
             }

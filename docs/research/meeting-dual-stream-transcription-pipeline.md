@@ -63,9 +63,9 @@ Meeting starts
     │     └── Parakeet default or WhisperKit + optional language
     │
     ├── MicrophoneCapture
-    │     └── raw mic buffers
+    │     └── VPIO-preferred mic buffers
     │
-    ├── SystemAudioTap
+    ├── SystemAudioStream
     │     └── system audio buffers
     │
     └── MeetingAudioCaptureService
@@ -85,7 +85,8 @@ Meeting starts
                     │     └── CaptureOrchestrator
                     │
                     ├── mic cleanup
-                    │     ├── SoftwareAECConditioner (default)
+                    │     ├── PassthroughMicConditioner
+                    │     ├── VPIO applies upstream when available
                     │     └── live mic suppression when system dominates
                     │
                     └── LiveChunkTranscriber
@@ -117,7 +118,7 @@ Relevant code:
 
 - `MeetingAudioCaptureService`
 - `MicrophoneCapture`
-- `SystemAudioTap`
+- `SystemAudioStream`
 - `MeetingRecordingService.handleCaptureEvent(...)`
 
 The streams are not merged at capture time. They stay distinct long enough to support:
@@ -207,8 +208,8 @@ Relevant code:
 
 The shipped default is:
 
-- `SoftwareAECConditioner` for mic cleanup
-- plus transcript-layer suppression when system audio strongly dominates recent processed mic energy
+- `PassthroughMicConditioner` for mic samples after upstream VPIO processing
+- plus transcript-layer suppression when system audio strongly dominates recent mic energy
 
 Relevant code:
 

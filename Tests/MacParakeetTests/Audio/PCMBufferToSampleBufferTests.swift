@@ -34,6 +34,27 @@ final class PCMBufferToSampleBufferTests: XCTestCase {
         XCTAssertEqual(try floatSamples(from: sampleBuffer), [0.125, 0.25, 0.375, 0.5])
     }
 
+    func testSampleBufferToPCMBufferRoundTripsFloatPCM() throws {
+        let source = try makeConstantBuffer(frameCount: 4, value: 0)
+        let samples = source.floatChannelData![0]
+        samples[0] = -0.25
+        samples[1] = 0
+        samples[2] = 0.25
+        samples[3] = 0.5
+
+        let sampleBuffer = try PCMBufferToSampleBuffer().makeSampleBuffer(
+            from: source,
+            presentationTimeSamples: 0
+        )
+        let decoded = try CMSampleBufferToPCMBuffer().makePCMBuffer(from: sampleBuffer)
+
+        XCTAssertEqual(decoded.frameLength, 4)
+        XCTAssertEqual(decoded.format.sampleRate, 48_000)
+        XCTAssertEqual(decoded.format.channelCount, 1)
+        let decodedSamples = try XCTUnwrap(AudioChunker.extractSamples(from: decoded))
+        XCTAssertEqual(decodedSamples, [-0.25, 0, 0.25, 0.5])
+    }
+
     func testWriterReaderRoundTripWithLinearPCMFixture() async throws {
         let fileURL = temporaryFileURL(extension: "caf")
         defer { try? FileManager.default.removeItem(at: fileURL) }
