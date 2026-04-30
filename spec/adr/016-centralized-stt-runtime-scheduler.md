@@ -65,7 +65,7 @@ This ADR does **not** change the audio architecture from ADR-014 / ADR-015:
 
 - Dictation keeps its own `AVAudioEngine`
 - Meeting microphone capture keeps its own `AVAudioEngine`
-- Meeting system audio keeps its Core Audio Tap path
+- Meeting system audio uses ScreenCaptureKit audio as defined in ADR-014
 
 Concurrency at the audio layer remains independent. This ADR only centralizes ownership of the STT layer.
 

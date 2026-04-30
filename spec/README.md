@@ -54,7 +54,7 @@ All ADRs live in `spec/adr/`. These are locked -- they record decisions already 
 | [ADR-011](adr/011-llm-cloud-and-local-providers.md) | LLM via cloud API keys + optional local providers |
 | [ADR-012](adr/012-telemetry-system.md) | Self-hosted telemetry via Cloudflare (Worker + D1) |
 | [ADR-013](adr/013-prompt-library-multi-summary.md) | Prompt Library + multi-summary architecture |
-| [ADR-014](adr/014-meeting-recording.md) | Meeting recording via Core Audio Taps |
+| [ADR-014](adr/014-meeting-recording.md) | Meeting recording via ScreenCaptureKit system audio |
 | [ADR-015](adr/015-concurrent-dictation-meeting.md) | Concurrent dictation and meeting recording |
 | [ADR-016](adr/016-centralized-stt-runtime-scheduler.md) | Centralized STT runtime and two-slot scheduler |
 | [ADR-017](adr/017-calendar-meeting-auto-start.md) | Calendar-driven meeting auto-start (Phases 1 + 2 implemented; Phase 3 proposed) |
@@ -169,7 +169,7 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 
 ### v0.6 Meeting Recording (Implemented on main; unreleased)
 
-- [x] System audio capture via Core Audio Taps (macOS 14.2+), ported from Oatmeal
+- [x] System audio capture via ScreenCaptureKit audio (macOS 14.2+)
 - [x] Mic + system audio dual-stream recording (`MeetingAudioCaptureService`)
 - [x] `MeetingRecordingService` actor with protocol-based dependencies
 - [x] `MeetingRecordingFlowStateMachine` + coordinator (separate from dictation)
@@ -181,7 +181,7 @@ Dictation + transcription + history + settings. Get audio in, text out, pasted i
 - [x] Batch transcription after recording stops (Parakeet STT)
 - [x] Meeting recordings get prompt library, multi-summary, chat, and export automatically
 - [x] Live transcript preview via AudioChunker (chunked transcription during recording)
-- [x] Joined mic/system frame pairing with software AEC on meeting mic stream
+- [x] Joined mic/system frame pairing with VPIO-preferred meeting mic capture
 - [x] Dominant-system suppression gate for live mic chunk transcription while preserving recorded mic audio
 - [x] Joiner overflow diagnostics + sync-lag observability for long-running capture sessions
 - [x] Dual-source final meeting artifact keeps mic/system channel separation (stereo when both are present)

@@ -65,7 +65,16 @@ public final class MicrophoneCapture: @unchecked Sendable {
     private let watchdogQueue = DispatchQueue(label: "com.macparakeet.microphonecapture.watchdog", qos: .utility)
     private let handlerLock = NSLock()
     private let selectedInputDeviceUIDProvider: @Sendable () -> String?
-    private let audioEngine = AVAudioEngine()
+    /// Recreated on every `start()` so each meeting session gets a fresh
+    /// AVAudioEngine. Critical when VPIO is in use: coreaudiod ties the
+    /// `CADefaultDeviceAggregate-<pid>-N` VPAU aggregate to a specific engine
+    /// instance and won't release it until that engine is deallocated. A
+    /// long-lived engine keeps the VPAU alive indefinitely, which makes the
+    /// VPAU the system default input — every later AVAudioEngine in the
+    /// process (e.g. dictation's) inherits the 3-channel duplex layout and
+    /// reads silence on channel 0. Destroying and recreating per-session
+    /// forces coreaudiod to GC the VPAU between meetings.
+    private var audioEngine = AVAudioEngine()
     private let bufferSize: AVAudioFrameCount = 4096
     private let watchdogLock = NSLock()
 
@@ -90,9 +99,20 @@ public final class MicrophoneCapture: @unchecked Sendable {
     }
 
     public var inputFormat: AVAudioFormat? {
+        // Snapshot the engine under the lifecycle lock and only resolve a
+        // format when actively running. The engine is recreated on `stop()`
+        // (ephemeral pattern for VPAU teardown), so an unsynchronized read
+        // would race the swap and could query a freshly-allocated engine
+        // that hasn't been configured yet — or in the worst case, a
+        // half-deallocated reference.
+        let snapshot: AVAudioEngine? = lifecycleQueue.sync {
+            guard state == .running else { return nil }
+            return audioEngine
+        }
+        guard let snapshot else { return nil }
         do {
             let format = try catchingObjCException {
-                audioEngine.inputNode.outputFormat(forBus: 0)
+                snapshot.inputNode.outputFormat(forBus: 0)
             }
             return format.sampleRate > 0 ? format : nil
         } catch {
@@ -124,6 +144,10 @@ public final class MicrophoneCapture: @unchecked Sendable {
                 return
             }
 
+            AudioCaptureDiagnostics.append(
+                "meeting_mic_capture_starting requested_mode=\(String(describing: processingMode)) default_input_pre=\(AudioCaptureDiagnostics.defaultInputDeviceLabel())"
+            )
+
             let inputNode = audioEngine.inputNode
             let inputDeviceAttempts = makeInputDeviceAttempts()
             state = .starting
@@ -154,12 +178,23 @@ public final class MicrophoneCapture: @unchecked Sendable {
         }
 
         if let startError {
+            AudioCaptureDiagnostics.append(
+                "meeting_mic_capture_start_failed mode=\(String(describing: processingMode)) reason=\"\(startError.localizedDescription)\""
+            )
             throw startError
         }
         if didStart {
             let activeFormat = inputFormat
+            // Extract Sendable primitives so the diagnostics autoclosure
+            // doesn't capture the non-Sendable `AVAudioFormat`.
+            let activeSampleRate = activeFormat?.sampleRate ?? 0
+            let activeChannelCount = activeFormat?.channelCount ?? 0
+            let activeInterleaved = activeFormat?.isInterleaved ?? false
             logger.info(
-                "microphone_capture_started requested_mode=\(String(describing: processingMode), privacy: .public) effective_mode=\(startReport.effectiveMode.rawValue, privacy: .public) sample_rate=\(activeFormat?.sampleRate ?? 0, privacy: .public) channels=\(activeFormat?.channelCount ?? 0, privacy: .public) interleaved=\(activeFormat?.isInterleaved ?? false, privacy: .public)"
+                "microphone_capture_started requested_mode=\(String(describing: processingMode), privacy: .public) effective_mode=\(startReport.effectiveMode.rawValue, privacy: .public) sample_rate=\(activeSampleRate, privacy: .public) channels=\(activeChannelCount, privacy: .public) interleaved=\(activeInterleaved, privacy: .public)"
+            )
+            AudioCaptureDiagnostics.append(
+                "meeting_mic_capture_started requested_mode=\(String(describing: processingMode)) effective_mode=\(startReport.effectiveMode.rawValue) sr=\(activeSampleRate) ch=\(activeChannelCount) default_input=\(AudioCaptureDiagnostics.defaultInputDeviceLabel())"
             )
         }
         return startReport
@@ -175,18 +210,28 @@ public final class MicrophoneCapture: @unchecked Sendable {
             try? catchingObjCException {
                 audioEngine.inputNode.removeTap(onBus: 0)
             }
+            try? setVoiceProcessing(enabled: false, on: audioEngine.inputNode)
             audioEngine.stop()
             handlerLock.withLock {
                 bufferHandler = nil
                 stallObserver = nil
             }
             resetDiagnosticsState()
+            // Replace the engine with a fresh one. Releasing the old instance
+            // tears down the VPAU aggregate device coreaudiod created for it,
+            // which restores the system default input to the raw mic so a
+            // sibling AVAudioEngine (e.g. dictation) doesn't inherit the
+            // 3-channel duplex layout.
+            audioEngine = AVAudioEngine()
             state = .idle
             didStop = true
         }
 
         if didStop {
-            logger.info("microphone_capture_stopped")
+            logger.info("microphone_capture_stopped engine_recreated=true")
+            AudioCaptureDiagnostics.append(
+                "meeting_mic_capture_stopped engine_recreated=true default_input_post=\(AudioCaptureDiagnostics.defaultInputDeviceLabel())"
+            )
         }
     }
 
@@ -261,15 +306,21 @@ public final class MicrophoneCapture: @unchecked Sendable {
                     "meeting_mic_processing_raw_disable_failed reason=\(error.localizedDescription, privacy: .public)"
                 )
             }
+            AudioCaptureDiagnostics.append("meeting_mic_processing mode=raw")
             return .raw
         case .vpioPreferred:
             do {
                 try setVoiceProcessing(enabled: true, on: inputNode)
+                disableVoiceProcessingDucking(on: inputNode)
                 logger.info("meeting_mic_processing mode=vpio requested=vpioPreferred effective=vpio")
+                AudioCaptureDiagnostics.append("meeting_mic_processing mode=vpio requested=vpioPreferred effective=vpio")
                 return .vpio
             } catch {
                 logger.warning(
                     "meeting_mic_processing_fallback requested=vpioPreferred effective=raw reason=\(error.localizedDescription, privacy: .public)"
+                )
+                AudioCaptureDiagnostics.append(
+                    "meeting_mic_processing_fallback requested=vpioPreferred effective=raw reason=\"\(error.localizedDescription)\""
                 )
                 do {
                     try setVoiceProcessing(enabled: false, on: inputNode)
@@ -283,14 +334,40 @@ public final class MicrophoneCapture: @unchecked Sendable {
         case .vpioRequired:
             do {
                 try setVoiceProcessing(enabled: true, on: inputNode)
+                disableVoiceProcessingDucking(on: inputNode)
                 logger.info("meeting_mic_processing mode=vpio requested=vpioRequired effective=vpio")
+                AudioCaptureDiagnostics.append("meeting_mic_processing mode=vpio requested=vpioRequired effective=vpio")
                 return .vpio
             } catch {
+                AudioCaptureDiagnostics.append(
+                    "meeting_mic_processing_unavailable mode=vpioRequired reason=\"\(error.localizedDescription)\""
+                )
                 throw MeetingAudioError.microphoneProcessingUnavailable(
                     mode: .vpioRequired,
                     reason: error.localizedDescription
                 )
             }
+        }
+    }
+
+    /// VPIO defaults to ducking other apps' audio (~50% attenuation) so a voice
+    /// signal stays intelligible during VoIP calls. We're recording a meeting,
+    /// not joining one — the "other audio" is the meeting itself, and the user
+    /// wants to hear it at full volume. Override the default with the lowest
+    /// available ducking level and disable the smart-ducking heuristic.
+    private func disableVoiceProcessingDucking(on inputNode: AVAudioInputNode) {
+        do {
+            try catchingObjCException {
+                inputNode.voiceProcessingOtherAudioDuckingConfiguration = .init(
+                    enableAdvancedDucking: false,
+                    duckingLevel: .min
+                )
+            }
+            AudioCaptureDiagnostics.append("meeting_capture_vpio_ducking_min")
+        } catch {
+            logger.debug(
+                "meeting_mic_vpio_ducking_config_failed reason=\(error.localizedDescription, privacy: .public)"
+            )
         }
     }
 
@@ -312,19 +389,25 @@ public final class MicrophoneCapture: @unchecked Sendable {
             throw MeetingAudioError.noMicrophoneAvailable
         }
 
+        // The engine is recreated on every failed attempt, so the caller's
+        // `inputNode` reference goes stale after the first reset. Track the
+        // current engine's input node locally and refresh it after each
+        // reset.
+        var currentInputNode = inputNode
         var lastError: Error?
         for attempt in inputDeviceAttempts {
             guard applyInputDeviceAttempt(attempt, on: audioEngine) else {
                 if lastError == nil {
                     lastError = MeetingAudioError.noMicrophoneAvailable
                 }
-                resetAfterFailedStart(inputNode: inputNode)
+                resetAfterFailedStart(inputNode: currentInputNode)
+                currentInputNode = audioEngine.inputNode
                 continue
             }
 
             do {
                 let report = try installTapAndStartEngine(
-                    inputNode: inputNode,
+                    inputNode: currentInputNode,
                     processingMode: processingMode
                 )
                 logInputDeviceAttemptSucceeded(attempt)
@@ -334,7 +417,8 @@ public final class MicrophoneCapture: @unchecked Sendable {
                 logger.warning(
                     "meeting_input_device_start_failed source=\(attempt.source.logValue, privacy: .public) id=\(attempt.deviceID, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
                 )
-                resetAfterFailedStart(inputNode: inputNode)
+                resetAfterFailedStart(inputNode: currentInputNode)
+                currentInputNode = audioEngine.inputNode
             }
         }
 
@@ -406,9 +490,14 @@ public final class MicrophoneCapture: @unchecked Sendable {
         try? catchingObjCException {
             inputNode.removeTap(onBus: 0)
         }
+        try? setVoiceProcessing(enabled: false, on: inputNode)
         audioEngine.stop()
         audioEngine.reset()
         resetDiagnosticsState()
+        // Mirror `stop()`: replace the engine instance so we don't carry
+        // residual VPIO / aggregate-device state into the next attempt.
+        // Maintains the per-session engine-lifetime invariant.
+        audioEngine = AVAudioEngine()
     }
 
     private func scheduleSilentBufferWatchdog() {
@@ -441,6 +530,15 @@ public final class MicrophoneCapture: @unchecked Sendable {
         }
         if shouldLog {
             logger.info("microphone_capture_first_buffer_received")
+            // Extract Sendable primitives so the diagnostics autoclosure
+            // doesn't capture the non-Sendable `AVAudioFormat`.
+            let format = inputFormat
+            let firstBufferSampleRate = format?.sampleRate ?? 0
+            let firstBufferChannelCount = format?.channelCount ?? 0
+            let firstBufferInterleaved = format?.isInterleaved ?? false
+            AudioCaptureDiagnostics.append(
+                "meeting_mic_first_buffer sr=\(firstBufferSampleRate) ch=\(firstBufferChannelCount) interleaved=\(firstBufferInterleaved)"
+            )
         }
     }
 

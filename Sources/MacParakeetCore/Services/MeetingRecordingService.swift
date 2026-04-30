@@ -101,7 +101,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
     private var writer: MeetingAudioStorageWriter?
     private var processingTask: Task<Void, Never>?
     private var captureOrchestrator = CaptureOrchestrator()
-    private var micConditioner: any MicConditioning = SoftwareAECConditioner()
+    private var micConditioner: any MicConditioning = PassthroughMicConditioner()
     private var transcriptAssembler = MeetingTranscriptAssembler()
     private var isTranscriptionLagging = false
     private var captureFailed = false
@@ -241,7 +241,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             self.latestLevels = MeetingAudioLevels()
             await captureOrchestrator.reset()
             try await validateStartStillCurrent(session)
-            micConditioner = SoftwareAECConditioner()
+            micConditioner = PassthroughMicConditioner()
             transcriptAssembler.reset()
             isTranscriptionLagging = false
             captureFailed = false
@@ -275,7 +275,13 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
                 }
             }
             logger.info("Meeting recording started: \(sessionID.uuidString, privacy: .public)")
+            AudioCaptureDiagnostics.append(
+                "meeting_recording_started session=\(sessionID.uuidString) source_mode=\(String(describing: sourceMode)) requested_mic_mode=\(String(describing: captureStartReport.microphone.requestedMode)) effective_mic_mode=\(captureStartReport.microphone.effectiveMode.rawValue)"
+            )
         } catch {
+            AudioCaptureDiagnostics.append(
+                "meeting_recording_start_failed session=\(sessionID.uuidString) reason=\"\(error.localizedDescription)\""
+            )
             await cleanupFailedStart(folderURL: folderURL)
             throw error
         }
@@ -337,6 +343,9 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             throw MeetingAudioError.notRunning
         }
 
+        AudioCaptureDiagnostics.append(
+            "meeting_recording_stopping session=\(session.id.uuidString)"
+        )
         await audioCaptureService.stop()
         // Defensive: `audioCaptureService.stop()` is supposed to finish the
         // events stream so the `for await` in `processingTask` exits, but if
@@ -428,6 +437,9 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         await releaseSpeechEngineLease()
         cleanupState()
         logger.info("Meeting recording finalized: \(session.id.uuidString, privacy: .public)")
+        AudioCaptureDiagnostics.append(
+            "meeting_recording_stopped session=\(session.id.uuidString) duration_s=\(String(format: "%.3f", durationSeconds))"
+        )
         return output
     }
 
@@ -493,6 +505,9 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         cleanupState()
         try? fileManager.removeItem(at: session.folderURL)
         logger.info("Meeting recording cancelled: \(session.id.uuidString, privacy: .public)")
+        AudioCaptureDiagnostics.append(
+            "meeting_recording_cancelled session=\(session.id.uuidString)"
+        )
     }
 
     private func releaseSpeechEngineLease() async {
@@ -638,8 +653,14 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
     }
 
     private func configureMicConditioner(from report: MeetingAudioCaptureStartReport) {
+        // Mic processing is owned by macOS Voice Processing I/O upstream of
+        // this service; the conditioner is now always a no-op pass-through.
+        // The branching here is purely diagnostic — VPIO failing to engage
+        // means the user's mic stream is raw (speaker bleed possible) so we
+        // warn loudly to surface the case in telemetry.
+        micConditioner = PassthroughMicConditioner()
+
         guard report.microphoneStarted else {
-            micConditioner = SoftwareAECConditioner()
             logger.info(
                 "meeting_mic_conditioner_skipped source_mode=\(report.sourceMode.rawValue, privacy: .public)"
             )
@@ -647,20 +668,13 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         }
 
         let microphone = report.microphone
-        switch microphone.effectiveMode {
-        case .vpio:
-            micConditioner = VPIOConditioner()
-        case .raw:
-            micConditioner = SoftwareAECConditioner()
-        }
-
         if microphone.fellBackToRaw {
-            logger.notice(
-                "meeting_mic_conditioner_fallback requested=\(String(describing: microphone.requestedMode), privacy: .public) effective=raw requested_policy=\(String(describing: self.requestedMicProcessingMode), privacy: .public)"
+            logger.warning(
+                "meeting_mic_vpio_unavailable requested=\(String(describing: microphone.requestedMode), privacy: .public) effective=raw requested_policy=\(String(describing: self.requestedMicProcessingMode), privacy: .public) — mic stream is raw, speaker echo will not be cancelled"
             )
         } else {
             logger.info(
-                "meeting_mic_conditioner_selected requested=\(String(describing: microphone.requestedMode), privacy: .public) effective=\(microphone.effectiveMode.rawValue, privacy: .public)"
+                "meeting_mic_processing requested=\(String(describing: microphone.requestedMode), privacy: .public) effective=\(microphone.effectiveMode.rawValue, privacy: .public)"
             )
         }
     }
@@ -860,7 +874,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         currentSession = nil
         currentNotes = nil
         currentLockFile = nil
-        micConditioner = SoftwareAECConditioner()
+        micConditioner = PassthroughMicConditioner()
         latestLevels = MeetingAudioLevels()
         sourceCaptureMetrics = [:]
         recentSystemRms = 0

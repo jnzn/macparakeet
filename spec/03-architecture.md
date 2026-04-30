@@ -37,7 +37,7 @@
 │  │           │                     │                       │                │  │
 │  │  ┌────────▼─────────────────────▼──────┐  ┌────────────▼────────────┐   │  │
 │  │  │         AudioProcessor              │  │  MeetingAudioCapture    │   │  │
-│  │  │  (Format conversion, resampling)    │  │  (Core Audio Taps +    │   │  │
+│  │  │  (Format conversion, resampling)    │  │  (ScreenCaptureKit +   │   │  │
 │  │  │                                     │  │   AVAudioEngine)       │   │  │
 │  │  └──────────────────┬──────────────────┘  └────────────┬────────────┘   │  │
 │  │                               │                                           │  │
@@ -80,9 +80,9 @@
 │                          SYSTEM INTEGRATIONS                                     │
 │                                                                                  │
 │  ┌──────────┐  ┌──────────┐  ┌─────────────┐  ┌──────────────┐  ┌─────────┐│
-│  │AVAudio   │  │ CGEvent  │  │NSPasteboard │  │Accessibility │  │Core     ││
+│  │AVAudio   │  │ CGEvent  │  │NSPasteboard │  │Accessibility │  │Screen   ││
 │  │Engine    │  │(Global   │  │(Clipboard   │  │(Permission   │  │Audio    ││
-│  │(Mic)     │  │ Hotkey)  │  │ Paste)      │  │ Control)     │  │Taps     ││
+│  │(Mic)     │  │ Hotkey)  │  │ Paste)      │  │ Control)     │  │Capture  ││
 │  └──────────┘  └──────────┘  └─────────────┘  └──────────────┘  └─────────┘│
 │                                                                                  │
 │  Parakeet working RAM: ~66 MB per active inference slot on ANE                  │
@@ -105,7 +105,7 @@ The diagram below shows the ADR-016 architecture. Dictation and meeting recordin
 
 ┌─ Meeting Pipeline ────────────────────────┐
 │ MicrophoneCapture (own AVAudioEngine)     │
-│ + SystemAudioTap (Core Audio Taps)        │
+│ + SystemAudioStream (ScreenCaptureKit)    │
 │ → MeetingRecordingService                 │
 └───────────────────────────────────────────┘
 
@@ -125,7 +125,7 @@ The diagram below shows the ADR-016 architecture. Dictation and meeting recordin
 ```
 
 - **No shared audio engine** — dictation and meeting capture remain independent. macOS HAL multiplexes mic access.
-- **Meeting-only software AEC stage** — meeting mic capture remains raw, then `MeetingRecordingService` runs software AEC against paired system-reference frames; dictation capture remains raw on its own engine.
+- **Meeting mic processing** — meeting mic capture prefers macOS VPIO for hardware echo cancellation; dictation capture remains raw on its own engine.
 - **No mutual exclusion** — dictation and meeting recording can both be active.
 - **Centralized STT ownership** — one runtime owner manages lifecycle, warm-up, shutdown, and Parakeet/Whisper dispatch.
 - **Explicit scheduling** — the STT stack uses a reserved dictation slot plus a shared background slot; within the background slot, finalize beats live preview, and file transcription waits.
@@ -1106,7 +1106,7 @@ Dictation ready
 |------------|--------------|-----------|
 | Microphone | Dictation, onboarding mic test, meeting recording mic capture | Requested on first dictation/meeting use |
 | Accessibility | Global hotkey paste simulation | Requested on first dictation use |
-| Screen & System Audio Recording | Core Audio Taps system-audio capture for meeting recording | Requested on first meeting recording attempt; recording stays blocked until granted |
+| Screen & System Audio Recording | ScreenCaptureKit system-audio capture for meeting recording | Requested on first meeting recording attempt; recording stays blocked until granted |
 
 ### Sandboxing (App Store)
 

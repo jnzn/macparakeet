@@ -20,7 +20,7 @@ private final class FactoryInvocationBox: @unchecked Sendable {
 final class MeetingAudioCaptureServiceTests: XCTestCase {
     func testFactoryInitUsesInjectedMicrophoneFactory() {
         let microphone = MockMeetingMicrophoneCapture()
-        let systemTap = MockMeetingSystemAudioTap()
+        let systemCapture = MockMeetingSystemAudioCapture()
         let invocationCount = FactoryInvocationBox()
 
         _ = MeetingAudioCaptureService(
@@ -28,7 +28,7 @@ final class MeetingAudioCaptureServiceTests: XCTestCase {
                 invocationCount.increment()
                 return microphone
             },
-            systemAudioTapFactory: { systemTap }
+            systemAudioCaptureFactory: { systemCapture }
         )
 
         XCTAssertEqual(invocationCount.get(), 1)
@@ -36,10 +36,10 @@ final class MeetingAudioCaptureServiceTests: XCTestCase {
 
     func testStartHandlerCopiesInterleavedMicrophoneBuffersIntoUsablePCM() async throws {
         let microphone = MockMeetingMicrophoneCapture()
-        let systemTap = MockMeetingSystemAudioTap()
+        let systemCapture = MockMeetingSystemAudioCapture()
         let service = MeetingAudioCaptureService(
             microphoneCapture: microphone,
-            systemAudioTapFactory: { systemTap }
+            systemAudioCaptureFactory: { systemCapture }
         )
 
         let capturedBuffer = CapturedPCMBuffer()
@@ -82,10 +82,10 @@ final class MeetingAudioCaptureServiceTests: XCTestCase {
 
     func testEventsStreamRetainsBurstSystemAudioBuffersWithoutDropping() async throws {
         let microphone = MockMeetingMicrophoneCapture()
-        let systemTap = MockMeetingSystemAudioTap()
+        let systemCapture = MockMeetingSystemAudioCapture()
         let service = MeetingAudioCaptureService(
             microphoneCapture: microphone,
-            systemAudioTapFactory: { systemTap }
+            systemAudioCaptureFactory: { systemCapture }
         )
 
         let events = await service.events
@@ -97,7 +97,7 @@ final class MeetingAudioCaptureServiceTests: XCTestCase {
         ))
 
         for _ in 0..<2_100 {
-            systemTap.emit(buffer: burstBuffer, time: AVAudioTime(hostTime: 1))
+            systemCapture.emit(buffer: burstBuffer, time: AVAudioTime(hostTime: 1))
         }
 
         try await Task.sleep(for: .milliseconds(150))
@@ -113,12 +113,12 @@ final class MeetingAudioCaptureServiceTests: XCTestCase {
         XCTAssertEqual(systemBufferCount, 2_100)
     }
 
-    func testSystemOnlyModeStartsSystemTapWithoutMicrophone() async throws {
+    func testSystemOnlyModeStartsSystemCaptureWithoutMicrophone() async throws {
         let microphone = MockMeetingMicrophoneCapture()
-        let systemTap = MockMeetingSystemAudioTap()
+        let systemCapture = MockMeetingSystemAudioCapture()
         let service = MeetingAudioCaptureService(
             microphoneCapture: microphone,
-            systemAudioTapFactory: { systemTap },
+            systemAudioCaptureFactory: { systemCapture },
             sourceModeProvider: { .systemOnly }
         )
 
@@ -133,14 +133,14 @@ final class MeetingAudioCaptureServiceTests: XCTestCase {
         XCTAssertEqual(report.sourceMode, .systemOnly)
         XCTAssertFalse(report.microphoneStarted)
         XCTAssertTrue(microphone.requestedModes.isEmpty)
-        XCTAssertEqual(systemTap.startCallCount, 1)
+        XCTAssertEqual(systemCapture.startCallCount, 1)
 
         let buffer = try XCTUnwrap(makeInterleavedFloatStereoBuffer(
             sampleRate: 48_000,
             samples: [0.25, 0.25, 0.25, 0.25]
         ))
         microphone.emit(buffer: buffer, time: AVAudioTime(hostTime: 1))
-        systemTap.emit(buffer: buffer, time: AVAudioTime(hostTime: 1))
+        systemCapture.emit(buffer: buffer, time: AVAudioTime(hostTime: 1))
 
         for _ in 0..<20 {
             let events = await capturedEvents.values()
@@ -157,7 +157,7 @@ final class MeetingAudioCaptureServiceTests: XCTestCase {
         let microphone = MockMeetingMicrophoneCapture()
         let service = MeetingAudioCaptureService(
             microphoneCapture: microphone,
-            systemAudioTapFactory: { MockMeetingSystemAudioTap() }
+            systemAudioCaptureFactory: { MockMeetingSystemAudioCapture() }
         )
 
         let events = await service.events
@@ -191,7 +191,7 @@ final class MeetingAudioCaptureServiceTests: XCTestCase {
         )
         let service = MeetingAudioCaptureService(
             microphoneCapture: microphone,
-            systemAudioTapFactory: { MockMeetingSystemAudioTap() },
+            systemAudioCaptureFactory: { MockMeetingSystemAudioCapture() },
             micProcessingMode: .vpioPreferred
         )
 
@@ -215,7 +215,7 @@ final class MeetingAudioCaptureServiceTests: XCTestCase {
         )
         let service = MeetingAudioCaptureService(
             microphoneCapture: microphone,
-            systemAudioTapFactory: { MockMeetingSystemAudioTap() },
+            systemAudioCaptureFactory: { MockMeetingSystemAudioCapture() },
             micProcessingMode: .vpioPreferred
         )
 
@@ -238,7 +238,7 @@ final class MeetingAudioCaptureServiceTests: XCTestCase {
         )
         let service = MeetingAudioCaptureService(
             microphoneCapture: microphone,
-            systemAudioTapFactory: { MockMeetingSystemAudioTap() },
+            systemAudioCaptureFactory: { MockMeetingSystemAudioCapture() },
             micProcessingMode: .vpioRequired
         )
 
@@ -260,7 +260,7 @@ final class MeetingAudioCaptureServiceTests: XCTestCase {
         let microphone = MockMeetingMicrophoneCapture()
         let service = MeetingAudioCaptureService(
             microphoneCapture: microphone,
-            systemAudioTapFactory: { MockMeetingSystemAudioTap() }
+            systemAudioCaptureFactory: { MockMeetingSystemAudioCapture() }
         )
 
         let events = await service.events
@@ -283,19 +283,19 @@ final class MeetingAudioCaptureServiceTests: XCTestCase {
         }
     }
 
-    func testEmitsRuntimeErrorEventWhenSystemTapStallsMidSession() async throws {
+    func testEmitsRuntimeErrorEventWhenSystemCaptureStallsMidSession() async throws {
         let microphone = MockMeetingMicrophoneCapture()
-        let systemTap = MockMeetingSystemAudioTap()
+        let systemCapture = MockMeetingSystemAudioCapture()
         let service = MeetingAudioCaptureService(
             microphoneCapture: microphone,
-            systemAudioTapFactory: { systemTap }
+            systemAudioCaptureFactory: { systemCapture }
         )
 
         let events = await service.events
         _ = try await service.start()
         defer { Task { await service.stop() } }
 
-        systemTap.emitStall(.captureRuntimeFailure("system audio tap stopped delivering buffers (gap 6.0s)"))
+        systemCapture.emitStall(.captureRuntimeFailure("system audio stream stopped delivering buffers (gap 6.0s)"))
 
         var iterator = events.makeAsyncIterator()
         let emitted = await iterator.next()
@@ -404,18 +404,18 @@ private final class MockMeetingMicrophoneCapture: MeetingMicrophoneCapturing, @u
     }
 }
 
-private final class MockMeetingSystemAudioTap: MeetingSystemAudioTapping, @unchecked Sendable {
+private final class MockMeetingSystemAudioCapture: MeetingSystemAudioCapturing, @unchecked Sendable {
     private var handler: AudioBufferHandler?
     private var stallObserver: StallObserver?
     private(set) var startCallCount = 0
 
-    func start(handler: @escaping AudioBufferHandler, onStall: StallObserver?) throws {
+    func start(handler: @escaping AudioBufferHandler, onStall: StallObserver?) async throws {
         startCallCount += 1
         self.handler = handler
         self.stallObserver = onStall
     }
 
-    func stop() {
+    func stop() async {
         handler = nil
         stallObserver = nil
     }

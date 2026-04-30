@@ -2,7 +2,7 @@
 
 > Status: IMPLEMENTED
 > Date: 2026-04-24
-> Related: ADR-014 (meeting recording via Core Audio Taps), ADR-016 (centralized STT runtime + scheduler)
+> Related: ADR-014 (meeting recording via ScreenCaptureKit system audio), ADR-016 (centralized STT runtime + scheduler)
 
 ## Context
 
@@ -282,5 +282,5 @@ as the audio they pertain to.
 - [AVAssetWriter — Apple Developer Documentation](https://developer.apple.com/documentation/avfoundation/avassetwriter)
 - [AVAssetWriter.movieFragmentInterval — Apple Developer Documentation](https://developer.apple.com/documentation/avfoundation/avassetwriter/moviefragmentinterval)
 - [AVAssetWriter.initialMovieFragmentInterval — Apple Developer Documentation](https://developer.apple.com/documentation/avfoundation/avassetwriter/initialmoviefragmentinterval)
-- ADR-014 (meeting recording via Core Audio Taps) — defines the audio capture stack this ADR extends
+- ADR-014 (meeting recording via ScreenCaptureKit system audio) — defines the audio capture stack this ADR extends
 - ADR-016 (centralized STT runtime + scheduler) — recovery transcription enqueues as a normal `meetingFinalize` job

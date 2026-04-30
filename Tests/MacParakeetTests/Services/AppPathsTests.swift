@@ -37,6 +37,11 @@ final class AppPathsTests: XCTestCase {
         XCTAssertTrue(AppPaths.meetingRecordingsDir.hasSuffix("meeting-recordings"))
     }
 
+    func testLogsDirIsInsideUserLogs() {
+        XCTAssertTrue(AppPaths.logsDir.contains("Library/Logs"))
+        XCTAssertTrue(AppPaths.logsDir.hasSuffix("MacParakeet"))
+    }
+
     func testTempDirContainsMacParakeet() {
         XCTAssertTrue(AppPaths.tempDir.contains("macparakeet"))
     }

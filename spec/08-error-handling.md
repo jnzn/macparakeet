@@ -50,7 +50,7 @@
 | Error | Cause | User Action |
 |-------|-------|-------------|
 | Screen Recording denied | User denied Screen & System Audio Recording permission | Show error + "Open System Settings" button, block recording |
-| System audio tap failed | Core Audio Tap creation failed (aggregate device error) | "System audio capture failed. Try restarting the app." |
+| System audio capture failed | ScreenCaptureKit stream setup failed or stopped unexpectedly | "System audio capture failed. Try restarting the app." |
 | Mic capture failed during meeting | AVAudioEngine failed to start for meeting mic | "Microphone capture failed. Check your microphone connection." |
 | Mix failed | FFmpeg failed to mix mic + system M4A files | Log error, attempt transcription of individual streams |
 | Chunk transcription backpressure | Live transcription can't keep pace with recording | Silent degradation: final batch transcription still produces full result |

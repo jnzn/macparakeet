@@ -484,13 +484,20 @@ public actor DictationService: DictationServiceProtocol {
             }
         }
 
+        AudioCaptureDiagnostics.append(
+            "dictation_transcribe_begin file=\(audioURL.lastPathComponent) file_bytes=\(Self.fileSizeBytes(at: audioURL).map(String.init) ?? "unknown")"
+        )
         let result = try await sttTranscriber.transcribe(audioPath: audioURL.path, job: .dictation)
         logger.debug("processCapturedAudio transcription complete chars=\(result.text.count)")
+        AudioCaptureDiagnostics.append(
+            "dictation_transcribe_complete chars=\(result.text.count) words=\(result.words.count) engine=\(result.engine.rawValue) variant=\(result.engineVariant ?? "none")"
+        )
 
         let trimmed = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             // defer will clean up audioURL
             logger.warning("processCapturedAudio empty transcript")
+            AudioCaptureDiagnostics.append("dictation_transcribe_empty")
             throw DictationServiceError.emptyTranscript
         }
 
@@ -652,6 +659,14 @@ public actor DictationService: DictationServiceProtocol {
     private func currentRecordingDurationSeconds() -> Double? {
         guard let recordingStartedAt else { return nil }
         return max(0, Date().timeIntervalSince(recordingStartedAt))
+    }
+
+    private static func fileSizeBytes(at url: URL) -> UInt64? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let size = attributes[.size] as? UInt64 else {
+            return nil
+        }
+        return size
     }
 
     private func debugStateLabel(_ state: DictationState) -> String {

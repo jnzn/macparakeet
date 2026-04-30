@@ -65,8 +65,16 @@ final class AppEnvironment {
         audioProcessor = AudioProcessor(
             selectedInputDeviceUIDProvider: selectedInputDeviceUIDProvider
         )
+        // Mic capture is routed through Apple's Voice Processing I/O
+        // (built-in AEC + NS + AGC). If VPIO can't engage on a given device,
+        // capture falls back to raw mic with no AEC — `configureMicConditioner`
+        // logs a warning so the case shows up in telemetry. Flip to `.raw` here
+        // only as a last-resort kill switch.
+        let meetingMicProcessingMode: MeetingMicProcessingMode = .vpioPreferred
         meetingRecordingService = MeetingRecordingService(
+            micProcessingMode: meetingMicProcessingMode,
             audioCaptureService: MeetingAudioCaptureService(
+                micProcessingMode: meetingMicProcessingMode,
                 selectedInputDeviceUIDProvider: selectedInputDeviceUIDProvider,
                 sourceModeProvider: meetingAudioSourceModeProvider
             ),

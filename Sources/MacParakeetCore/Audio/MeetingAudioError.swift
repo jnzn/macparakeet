@@ -6,9 +6,7 @@ public enum MeetingAudioError: Error, LocalizedError, Sendable {
     case noMicrophoneAvailable
     case microphoneProcessingUnavailable(mode: MeetingMicProcessingMode, reason: String)
     case audioEngineStartFailed(String)
-    case tapCreationFailed(OSStatus)
-    case aggregateDeviceCreationFailed(OSStatus)
-    case invalidTapFormat
+    case systemAudioCaptureFailed(String)
     case unsupportedPlatform
     case alreadyRunning
     case notRunning
@@ -29,12 +27,8 @@ public enum MeetingAudioError: Error, LocalizedError, Sendable {
             return "Microphone processing unavailable (\(String(describing: mode))): \(reason)"
         case .audioEngineStartFailed(let message):
             return "Audio engine failed to start: \(message)"
-        case .tapCreationFailed(let status):
-            return "Failed to create system audio tap (error \(status))."
-        case .aggregateDeviceCreationFailed(let status):
-            return "Failed to create aggregate audio device (error \(status))."
-        case .invalidTapFormat:
-            return "Invalid audio tap format."
+        case .systemAudioCaptureFailed(let message):
+            return "System audio capture failed: \(message)"
         case .unsupportedPlatform:
             return "Meeting recording requires macOS 14.2 or later."
         case .alreadyRunning:
