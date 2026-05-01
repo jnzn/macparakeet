@@ -297,9 +297,11 @@ public final class MicrophoneCapture: @unchecked Sendable {
 
         let bufferDispatch: SharedMicrophoneStream.BufferHandler = { [weak self] buffer, time in
             guard let self else { return }
-            self.markFirstBufferReceived()
-            let cb = self.handlerLock.withLock { self.bufferHandler }
-            cb?(buffer, time)
+            self.dispatchBuffer(
+                buffer,
+                time: time,
+                extractVPIOChannelZero: sharedStream.diagnostics.vpioEngaged
+            )
         }
         let deathDispatch: SharedMicrophoneStream.EngineDeathHandler = { [weak self] in
             guard let self else { return }
@@ -503,6 +505,22 @@ public final class MicrophoneCapture: @unchecked Sendable {
         )
     }
 
+    private func dispatchBuffer(
+        _ buffer: AVAudioPCMBuffer,
+        time: AVAudioTime,
+        extractVPIOChannelZero: Bool
+    ) {
+        markFirstBufferReceived()
+        let deliveredBuffer: AVAudioPCMBuffer
+        if extractVPIOChannelZero {
+            deliveredBuffer = extractChannelZero(from: buffer) ?? buffer
+        } else {
+            deliveredBuffer = buffer
+        }
+        let callback = handlerLock.withLock { bufferHandler }
+        callback?(deliveredBuffer, time)
+    }
+
     private func installTapAndStartEngine(
         inputNode: AVAudioInputNode,
         processingMode: MeetingMicProcessingMode
@@ -532,10 +550,11 @@ public final class MicrophoneCapture: @unchecked Sendable {
             // This avoids aggregate-device format drift crashes.
             try catchingObjCException {
                 inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: nil) { [weak self] buffer, time in
-                    guard let self,
-                          let callback = self.handlerLock.withLock({ self.bufferHandler }) else { return }
-                    self.markFirstBufferReceived()
-                    callback(buffer, time)
+                    self?.dispatchBuffer(
+                        buffer,
+                        time: time,
+                        extractVPIOChannelZero: effectiveMode == .vpio
+                    )
                 }
             }
         } catch {

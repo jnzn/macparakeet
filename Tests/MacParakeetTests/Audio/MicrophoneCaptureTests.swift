@@ -76,6 +76,63 @@ final class MicrophoneCaptureTests: XCTestCase {
         XCTAssertEqual(counter.value, 2)
     }
 
+    func testSharedModeVPIOForwardsChannelZeroOnly() async throws {
+        let platform = SharedMicTestPlatform()
+        let stream = SharedMicrophoneStream(platform: platform, bufferSize: 1024)
+        let capture = MicrophoneCapture(
+            sharedStream: stream,
+            permissionProvider: { true }
+        )
+        let snapshotBox = MicrophoneCaptureTestBufferSnapshotBox()
+
+        _ = try await capture.start(
+            processingMode: .vpioPreferred,
+            handler: { buffer, _ in snapshotBox.record(buffer) },
+            onStall: nil
+        )
+        defer { capture.stop() }
+
+        let buffer = try makeSharedMultiChannelFloatBuffer(channels: 4, frames: 16) { channel, frame in
+            channel == 0 ? Float(frame) + 0.25 : Float((channel + 1) * 100 + frame)
+        }
+        platform.deliverBuffer(buffer, time: AVAudioTime(hostTime: 0))
+
+        let snapshot = try XCTUnwrap(snapshotBox.snapshot)
+        XCTAssertEqual(snapshot.channelCount, 1)
+        XCTAssertEqual(snapshot.samplesByChannel.count, 1)
+        for frame in 0..<16 {
+            XCTAssertEqual(snapshot.samplesByChannel[0][frame], Float(frame) + 0.25, accuracy: 0.0001)
+        }
+    }
+
+    func testSharedModeRawPreservesMultiChannelBuffers() async throws {
+        let platform = SharedMicTestPlatform()
+        let stream = SharedMicrophoneStream(platform: platform, bufferSize: 1024)
+        let capture = MicrophoneCapture(
+            sharedStream: stream,
+            permissionProvider: { true }
+        )
+        let snapshotBox = MicrophoneCaptureTestBufferSnapshotBox()
+
+        _ = try await capture.start(
+            processingMode: .raw,
+            handler: { buffer, _ in snapshotBox.record(buffer) },
+            onStall: nil
+        )
+        defer { capture.stop() }
+
+        let buffer = try makeSharedMultiChannelFloatBuffer(channels: 4, frames: 8) { channel, frame in
+            Float((channel + 1) * 100 + frame)
+        }
+        platform.deliverBuffer(buffer, time: AVAudioTime(hostTime: 0))
+
+        let snapshot = try XCTUnwrap(snapshotBox.snapshot)
+        XCTAssertEqual(snapshot.channelCount, 4)
+        XCTAssertEqual(snapshot.samplesByChannel.count, 4)
+        XCTAssertEqual(snapshot.samplesByChannel[0][3], 103, accuracy: 0.0001)
+        XCTAssertEqual(snapshot.samplesByChannel[3][3], 403, accuracy: 0.0001)
+    }
+
     func testSharedModeVPIOPreferredFallsBackToRawWhenSubscribeThrows() async throws {
         let platform = SharedMicTestPlatform()
         platform.configureAndStartError = MicrophoneCaptureMockError.simulatedFailure
@@ -303,6 +360,30 @@ final class MicrophoneCaptureTests: XCTestCase {
         buffer.frameLength = 256
         return buffer
     }
+
+    private func makeSharedMultiChannelFloatBuffer(
+        channels: AVAudioChannelCount,
+        frames: AVAudioFrameCount,
+        fill: (_ channel: Int, _ frame: Int) -> Float
+    ) throws -> AVAudioPCMBuffer {
+        let layoutTag = AudioChannelLayoutTag(kAudioChannelLayoutTag_DiscreteInOrder) | channels
+        let layout = try XCTUnwrap(AVAudioChannelLayout(layoutTag: layoutTag))
+        let format = try XCTUnwrap(AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 48_000,
+            interleaved: false,
+            channelLayout: layout
+        ))
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames))
+        buffer.frameLength = frames
+        let data = try XCTUnwrap(buffer.floatChannelData)
+        for channel in 0..<Int(channels) {
+            for frame in 0..<Int(frames) {
+                data[channel][frame] = fill(channel, frame)
+            }
+        }
+        return buffer
+    }
 }
 
 // MARK: - Test doubles for shared-stream path
@@ -316,6 +397,39 @@ private final class MicrophoneCaptureTestCounter: @unchecked Sendable {
     private var _value = 0
     func increment() { lock.withLock { _value += 1 } }
     var value: Int { lock.withLock { _value } }
+}
+
+private struct MicrophoneCaptureTestBufferSnapshot {
+    let channelCount: AVAudioChannelCount
+    let samplesByChannel: [[Float]]
+}
+
+private final class MicrophoneCaptureTestBufferSnapshotBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _snapshot: MicrophoneCaptureTestBufferSnapshot?
+
+    func record(_ buffer: AVAudioPCMBuffer) {
+        let channelCount = Int(buffer.format.channelCount)
+        let frameCount = Int(buffer.frameLength)
+        let samplesByChannel: [[Float]]
+        if let data = buffer.floatChannelData {
+            samplesByChannel = (0..<channelCount).map { channel in
+                Array(UnsafeBufferPointer(start: data[channel], count: frameCount))
+            }
+        } else {
+            samplesByChannel = []
+        }
+        lock.withLock {
+            _snapshot = MicrophoneCaptureTestBufferSnapshot(
+                channelCount: buffer.format.channelCount,
+                samplesByChannel: samplesByChannel
+            )
+        }
+    }
+
+    var snapshot: MicrophoneCaptureTestBufferSnapshot? {
+        lock.withLock { _snapshot }
+    }
 }
 
 private final class MicrophoneCaptureTestStallBox: @unchecked Sendable {
