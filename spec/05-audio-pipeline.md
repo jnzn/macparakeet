@@ -11,12 +11,14 @@ The audio pipeline handles all audio input for MacParakeet: microphone recording
 ### Capture Chain
 
 ```
-Mic Input → AVAudioEngine tap → temp WAV → selected local STT engine
+Mic Input → SharedMicrophoneStream tap → temp WAV → selected local STT engine
 ```
 
-- **AVAudioEngine** with tap on input node
+- **Shared mic engine**: `AudioRecorder` subscribes to the process-wide `SharedMicrophoneStream` with `wantsVPIO: false`
+- The stream owns the underlying `AVAudioEngine` input-node tap and handles device fallback centrally
 - **Output format**: temporary WAV, 16kHz mono Float32
 - **Minimum sample threshold**: 16,000 samples required before sending to STT. Header-only and near-empty recordings are rejected before they reach the speech engine.
+- Dictation always extracts channel 0 before conversion so VPIO duplex layouts produce the post-AEC mono stream instead of channel-mixed reference audio.
 - Dictation does not use the meeting crash-recovery lock-file pipeline. The current implementation writes a temp WAV and either moves it into retained storage or deletes it after processing.
 
 ### Storage
@@ -33,8 +35,8 @@ Mic Input → AVAudioEngine tap → temp WAV → selected local STT engine
 ```
 User triggers dictation
     → Check microphone permission
-    → Start AVAudioEngine
-    → Install tap on input node
+    → Subscribe to SharedMicrophoneStream
+    → Shared stream starts the mic engine if needed
     → Convert samples to 16kHz mono Float32
     → Write to temp WAV
     → User stops dictation (or release-to-stop)
@@ -126,9 +128,9 @@ User pastes YouTube URL
 ### Dual-Stream Capture
 
 ```
-System Audio → ScreenCaptureKit SCStream audio → PCM adapter ────────┐
-                                                                      ├→ MeetingAudioCaptureService
-Mic Input    → AVAudioEngine + Voice Processing I/O → Input Tap ─────┘   (AsyncStream<MeetingAudioCaptureEvent>)
+System Audio → ScreenCaptureKit SCStream audio → PCM adapter ─────────────┐
+                                                                          ├→ MeetingAudioCaptureService
+Mic Input    → SharedMicrophoneStream (+ Voice Processing I/O when active)┘   (AsyncStream<MeetingAudioCaptureEvent>)
                                                           │
                                                           ▼
                                               MeetingAudioStorageWriter
@@ -154,7 +156,7 @@ Mic Input    → AVAudioEngine + Voice Processing I/O → Input Tap ────
 ```
 
 - **System audio** is captured via ScreenCaptureKit `SCStream` audio (`SCStreamConfiguration.capturesAudio = true`), which avoids owning or clocking a HAL aggregate output device.
-- **Mic audio** is captured via `AVAudioEngine` input node tap with a typed policy (`MeetingMicProcessingMode`): `vpioPreferred` (default), `vpioRequired`, or `raw`.
+- **Mic audio** is captured by subscribing to `SharedMicrophoneStream` with a typed policy (`MeetingMicProcessingMode`): `vpioPreferred` (default), `vpioRequired`, or `raw`.
 - MacParakeet ships meeting capture with VPIO preferred for the mic path and ScreenCaptureKit for system audio. The older Core Audio process-tap path was removed from production because it does not reliably coexist with VPIO in-process. See `docs/research/vpio-process-tap-conflict.md`.
 - Both streams are captured within the same meeting session and aligned by host time. `CaptureOrchestrator` owns join + offset + chunk boundaries via `MeetingAudioPairJoiner` + `AudioChunker`.
 - Mic conditioning is pass-through. When VPIO engages, macOS has already applied AEC/noise suppression/AGC before buffers reach `MeetingRecordingService`; if VPIO falls back to raw, the service logs the degraded mode and keeps transcript-layer system-dominance suppression.
@@ -170,7 +172,8 @@ Mic Input    → AVAudioEngine + Voice Processing I/O → Input Tap ────
 | Component | Purpose |
 |-----------|---------|
 | `SystemAudioStream` | ScreenCaptureKit system-audio wrapper - creates an audio-only `SCStream`, adapts `CMSampleBuffer` to `AVAudioPCMBuffer`, and emits stall diagnostics |
-| `MicrophoneCapture` | AVAudioEngine mic wrapper with explicit mic-processing policy + effective-mode reporting |
+| `SharedMicrophoneStream` | Process-wide microphone engine owner, VPIO arbiter, and synchronous buffer fan-out |
+| `MicrophoneCapture` | Meeting mic subscriber with explicit mic-processing policy, effective-mode reporting, and stall diagnostics |
 | `MeetingAudioCaptureService` | Actor combining both streams into `AsyncStream<MeetingAudioCaptureEvent>` with `.bufferingNewest(2048)` and runtime error emission where available |
 | `CaptureOrchestrator` | Owns ingest/join/offset/chunk flow for live preview |
 | `MicConditioner` | Pass-through seam for mic samples after upstream VPIO processing |
@@ -221,16 +224,14 @@ Audio files are kept by default. Users can delete manually from the transcriptio
 
 ### Concurrent Operation with Dictation (ADR-015)
 
-> **Current (2026-04-30):** `plans/active/shared-mic-engine.md` supersedes the old "two independent `AVAudioEngine` instances" architecture. Steps 1-6 of the plan are implemented and verified on real hardware, and `AppFeatures.useSharedMicEngine` is default-on. Legacy private-engine paths remain behind the flag for one DMG release as a rollback option; step 7 deletes them after field soak.
-
-Meeting recording and dictation now share one process-wide microphone engine when `AppFeatures.useSharedMicEngine` is enabled:
+Meeting recording and dictation share one process-wide microphone engine. Both flows subscribe to the same `SharedMicrophoneStream`, and the stream fans every captured buffer out to all subscribers:
 
 | Flow | Shared mic role | Notes |
 |------|--------|-------|
 | Dictation | `AudioRecorder` subscribes with `wantsVPIO: false` | Copies tap buffers for async conversion/writes and extracts ch[0] so VPIO duplex layouts produce post-AEC mono |
 | Meeting mic | `MicrophoneCapture` subscribes with `wantsVPIO` derived from `MeetingMicProcessingMode` | VPIO preferred for hardware AEC, with raw fallback logged; meeting mic extracts ch[0] when VPIO is engaged |
 
-`SharedMicrophoneStream` owns the single `AVAudioEngine`, fans buffers out synchronously, and keeps VPIO sticky once engaged. Engagement is deferred while a non-VPIO dictation subscriber is already in flight, so dictation does not get a mid-session format flip. If deferred VPIO promotion fails, the engine is marked dead, remaining subscriptions are invalidated after their `onEngineDeath` callbacks are captured, and later subscribers start a fresh engine.
+`SharedMicrophoneStream` owns the single `AVAudioEngine`, fans buffers out synchronously, and keeps VPIO sticky once engaged. Engagement is deferred while a non-VPIO dictation subscriber is already in flight, so dictation does not get a mid-session format flip. If deferred VPIO promotion fails, the engine is marked dead, remaining subscriptions are invalidated after their `onEngineDeath` callbacks are captured, and later subscribers start a fresh engine. The shared-engine architecture is required (not a convenience) because VPIO is process-scoped — see ADR-015 §1 for the full rationale.
 
 All STT work routes through a process-wide scheduler and shared runtime owner (ADR-016, ADR-021). Parakeet is the default engine; WhisperKit can be selected explicitly. That keeps:
 

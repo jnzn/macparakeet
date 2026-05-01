@@ -401,6 +401,7 @@ public final class SettingsViewModel {
     private var sttClient: STTClientProtocol?
     private var speechEngineSwitcher: SpeechEngineSwitching?
     private var meetingRecoveryService: MeetingRecordingRecoveryServicing?
+    private var sharedMicStream: SharedMicrophoneStream?
     private let defaults: UserDefaults
     private let youtubeDownloadsDirPath: @Sendable () -> String
     private let isSpeechModelCached: @Sendable () -> Bool
@@ -659,7 +660,8 @@ public final class SettingsViewModel {
         snippetRepo: TextSnippetRepositoryProtocol? = nil,
         sttClient: STTClientProtocol? = nil,
         speechEngineSwitcher: SpeechEngineSwitching? = nil,
-        meetingRecoveryService: MeetingRecordingRecoveryServicing? = nil
+        meetingRecoveryService: MeetingRecordingRecoveryServicing? = nil,
+        sharedMicStream: SharedMicrophoneStream? = nil
     ) {
         self.permissionService = permissionService
         self.dictationRepo = dictationRepo
@@ -672,6 +674,7 @@ public final class SettingsViewModel {
         self.sttClient = sttClient
         self.speechEngineSwitcher = speechEngineSwitcher
         self.meetingRecoveryService = meetingRecoveryService
+        self.sharedMicStream = sharedMicStream
         refreshLaunchAtLoginStatus()
         refreshPermissions()
         refreshStats()
@@ -760,17 +763,20 @@ public final class SettingsViewModel {
 
     public func testSelectedMicrophone() {
         microphoneTestTask?.cancel()
+        microphoneTestTask = nil
         microphoneTestLevel = 0
         microphoneTestState = .testing
 
-        let selectedUID = selectedMicrophoneDeviceUID == Self.systemDefaultMicrophoneSelection
-            ? nil
-            : selectedMicrophoneDeviceUID
+        guard let sharedMicStream else {
+            microphoneTestState = .failed("Microphone test is unavailable until audio services are ready.")
+            return
+        }
+
         let levelBox = MicrophoneLevelBox()
 
         microphoneTestTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            let capture = MicrophoneCapture(selectedInputDeviceUIDProvider: { selectedUID })
+            let capture = MicrophoneCapture(sharedStream: sharedMicStream)
             do {
                 _ = try await capture.start(processingMode: .raw) { buffer, _ in
                     levelBox.record(buffer.rmsLevel)

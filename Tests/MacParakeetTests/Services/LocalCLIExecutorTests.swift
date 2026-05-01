@@ -13,6 +13,36 @@ final class LocalCLIExecutorTests: XCTestCase {
         return errno == EPERM
     }
 
+    private func waitForFiles(_ paths: [String], timeout: TimeInterval) async throws -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if paths.allSatisfy({ FileManager.default.fileExists(atPath: $0) }) {
+                return true
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        return paths.allSatisfy { FileManager.default.fileExists(atPath: $0) }
+    }
+
+    private func waitForTaskCompletionAfterCancel(
+        _ task: Task<String, Error>,
+        timeout: Duration = .seconds(2)
+    ) async -> Bool {
+        await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                _ = try? await task.value
+                return true
+            }
+            group.addTask {
+                try? await Task.sleep(for: timeout)
+                return false
+            }
+            let didFinish = await group.next() ?? false
+            group.cancelAll()
+            return didFinish
+        }
+    }
+
     // MARK: - Config Store
 
     func testConfigStoreRoundTrip() throws {
@@ -294,13 +324,21 @@ final class LocalCLIExecutorTests: XCTestCase {
             try await executor.execute(systemPrompt: "", userPrompt: "cancel me", config: config)
         }
 
-        let deadline = Date().addingTimeInterval(2)
-        while !FileManager.default.fileExists(atPath: startedPath) && Date() < deadline {
-            try await Task.sleep(nanoseconds: 50_000_000)
+        let didStart = try await waitForFiles(
+            [startedPath, shellPIDPath, childPIDPath],
+            timeout: 8
+        )
+        guard didStart else {
+            task.cancel()
+            guard await waitForTaskCompletionAfterCancel(task) else {
+                XCTFail("Executor task did not finish promptly after cancellation")
+                return
+            }
+            XCTFail(
+                "Timed out waiting for cancellation fixtures: \(startedPath), \(shellPIDPath), \(childPIDPath)"
+            )
+            return
         }
-        XCTAssertTrue(FileManager.default.fileExists(atPath: startedPath))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: shellPIDPath))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: childPIDPath))
 
         let shellPIDContents = try String(contentsOfFile: shellPIDPath, encoding: .utf8)
             .trimmingCharacters(in: .whitespacesAndNewlines)
