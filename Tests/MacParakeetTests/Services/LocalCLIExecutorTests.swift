@@ -24,6 +24,25 @@ final class LocalCLIExecutorTests: XCTestCase {
         return paths.allSatisfy { FileManager.default.fileExists(atPath: $0) }
     }
 
+    private func waitForTaskCompletionAfterCancel(
+        _ task: Task<String, Error>,
+        timeout: Duration = .seconds(2)
+    ) async -> Bool {
+        await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                _ = try? await task.value
+                return true
+            }
+            group.addTask {
+                try? await Task.sleep(for: timeout)
+                return false
+            }
+            let didFinish = await group.next() ?? false
+            group.cancelAll()
+            return didFinish
+        }
+    }
+
     // MARK: - Config Store
 
     func testConfigStoreRoundTrip() throws {
@@ -311,8 +330,13 @@ final class LocalCLIExecutorTests: XCTestCase {
         )
         guard didStart else {
             task.cancel()
-            _ = try? await task.value
-            XCTFail("Expected cancellation fixture to start")
+            guard await waitForTaskCompletionAfterCancel(task) else {
+                XCTFail("Executor task did not finish promptly after cancellation")
+                return
+            }
+            XCTFail(
+                "Timed out waiting for cancellation fixtures: \(startedPath), \(shellPIDPath), \(childPIDPath)"
+            )
             return
         }
 

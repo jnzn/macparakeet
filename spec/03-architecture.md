@@ -97,7 +97,7 @@
 
 The diagram below shows the ADR-015/ADR-016 architecture. Dictation and meeting recording run concurrently as independent feature pipelines, while microphone capture fans out from one shared engine and STT routes through one scheduler/runtime owner:
 
-```
+```text
 ┌─ Shared Microphone Capture ───────────────┐
 │ SharedMicrophoneStream (one AVAudioEngine)│
 │ → AudioRecorder + MicrophoneCapture       │
