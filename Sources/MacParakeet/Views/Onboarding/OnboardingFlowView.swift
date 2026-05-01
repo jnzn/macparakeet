@@ -399,9 +399,15 @@ struct OnboardingFlowView: View {
         onboardingCard {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("Meeting Recording (Optional)")
-                        .font(DesignSystem.Typography.sectionTitle)
+                    HStack(spacing: DesignSystem.Spacing.sm) {
+                        Text("Meeting Recording (Optional)")
+                            .font(DesignSystem.Typography.sectionTitle)
+
+                        LabsBadge()
+                    }
+
                     Spacer()
+
                     Text(viewModel.screenRecordingGranted ? "Granted" : "Not granted")
                         .font(DesignSystem.Typography.caption)
                         .padding(.horizontal, 10)
@@ -419,6 +425,11 @@ struct OnboardingFlowView: View {
                             : DesignSystem.Colors.warningAmber
                         )
                 }
+
+                Text(LabsBadge.message)
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(DesignSystem.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 Text("To capture audio from calls, MacParakeet needs macOS's \"Screen & System Audio Recording\" permission.")
                     .font(DesignSystem.Typography.bodySmall)

@@ -17,7 +17,7 @@ Parakeet does not cover.
 
 **Release status:** the public DMG is the stable channel and currently ships
 dictation + file/URL transcription. Meeting recording and WhisperKit
-multilingual STT are Labs/Beta features implemented on `main`, under active
+multilingual STT are Labs features implemented on `main`, under active
 testing, and not in the current public DMG yet.
 
 Free and open-source (GPL-3.0). Apple Silicon only. Requires macOS 14.2+.

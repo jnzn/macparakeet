@@ -4,7 +4,7 @@
 
 ## What is MacParakeet?
 
-A **fast, private, local-first voice app** for macOS. The stable DMG ships system-wide dictation and file/URL transcription. The `main` branch also contains Labs/Beta meeting recording and optional local WhisperKit multilingual STT for Korean, Japanese, Chinese, and other languages outside Parakeet's coverage.
+A **fast, private, local-first voice app** for macOS. The stable DMG ships system-wide dictation and file/URL transcription. The `main` branch also contains Labs meeting recording and optional local WhisperKit multilingual STT for Korean, Japanese, Chinese, and other languages outside Parakeet's coverage.
 
 **North Star:** Fast, local-first voice app for Mac.
 
@@ -117,7 +117,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 
 ## Current Phase
 
-**Current main branch** -- v0.6 meeting recording and v0.7 multilingual STT are implemented on `main` as Labs/Beta features but are not yet part of the public DMG release.
+**Current main branch** -- v0.6 meeting recording and v0.7 multilingual STT are implemented on `main` as Labs features but are not yet part of the public DMG release.
 
 - **v0.1** MVP -- System-wide dictation, file transcription, overlay, history, export, SQLite, CLI, STT engine
 - **v0.2** Clean Pipeline -- Text processing (filler removal, custom words, snippets), Vocabulary UI, feedback form
@@ -135,7 +135,7 @@ MacParakeet has three primary modes in the `main` branch product direction:
 
 1. **System-wide dictation** -- Press hotkey anywhere on macOS, speak, text is pasted (WisprFlow-style)
 2. **File transcription** -- Drag-drop audio/video files for full transcription (MacWhisper-style)
-3. **Meeting recording** -- Labs/Beta on `main`; capture system audio + mic simultaneously, transcribe locally (simple Granola-style)
+3. **Meeting recording** -- Labs on `main`; capture system audio + mic simultaneously, transcribe locally (simple Granola-style)
 
 All three modes share the same STT scheduler/runtime path on `main` but have different UI flows, audio sources, and data models. Parakeet is the default engine; Whisper can be selected globally or per CLI call for languages Parakeet does not cover. **Dictation and meeting recording run concurrently** (ADR-015) -- a user can dictate freely during a meeting recording. Dictation and meeting microphone capture fan out from one process-wide `SharedMicrophoneStream`/AVAudioEngine; meeting system audio remains a separate ScreenCaptureKit stream.
 

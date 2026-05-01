@@ -41,9 +41,13 @@ struct MeetingsView: View {
 
     private var header: some View {
         HStack(alignment: .center) {
-            Text("Meetings")
-                .font(DesignSystem.Typography.pageTitle)
-                .foregroundStyle(DesignSystem.Colors.textPrimary)
+            HStack(spacing: DesignSystem.Spacing.sm) {
+                Text("Meetings")
+                    .font(DesignSystem.Typography.pageTitle)
+                    .foregroundStyle(DesignSystem.Colors.textPrimary)
+
+                LabsBadge()
+            }
 
             Spacer()
 
@@ -59,7 +63,7 @@ struct MeetingsView: View {
     private var recordMeetingButton: some View {
         RecordMeetingButton(action: onStartMeeting)
             .keyboardShortcut("r", modifiers: .command)
-            .help("Record Meeting (⌘R)")
+            .help("Record Meeting (⌘R)\n\(LabsBadge.message)")
     }
 
     // MARK: - Meeting List

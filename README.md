@@ -43,7 +43,7 @@
 
 ---
 
-MacParakeet runs NVIDIA's Parakeet TDT on Apple's Neural Engine via [FluidAudio](https://github.com/FluidInference/FluidAudio) CoreML. The stable release handles system-wide dictation and file/URL transcription. The `main` branch also contains Labs/Beta meeting recording and optional local WhisperKit recognition for languages Parakeet does not cover. All speech recognition happens on your Mac.
+MacParakeet runs NVIDIA's Parakeet TDT on Apple's Neural Engine via [FluidAudio](https://github.com/FluidInference/FluidAudio) CoreML. The stable release handles system-wide dictation and file/URL transcription. The `main` branch also contains Labs meeting recording and optional local WhisperKit recognition for languages Parakeet does not cover. All speech recognition happens on your Mac.
 
 ## Release status
 
@@ -52,7 +52,7 @@ The [notarized DMG](https://downloads.macparakeet.com/MacParakeet.dmg) is the st
 | Channel | Status | Includes |
 |---------|--------|----------|
 | Stable DMG | Recommended for normal use | Dictation, file/video/YouTube transcription, exports, vocabulary, AI features |
-| `main` branch | Development | Stable features plus Labs/Beta meeting recording, live meeting notes/Ask, crash recovery, and optional local WhisperKit fallback |
+| `main` branch | Development | Stable features plus Labs meeting recording, live meeting notes/Ask, crash recovery, and optional local WhisperKit fallback |
 
 ## What it does
 
@@ -60,7 +60,7 @@ The [notarized DMG](https://downloads.macparakeet.com/MacParakeet.dmg) is the st
 
 **File transcription** — Drag audio or video files, or paste a YouTube URL. Full transcript with word-level timestamps, speaker labels, and export to 7 formats (TXT, Markdown, SRT, VTT, DOCX, PDF, JSON). Assign global hotkeys to trigger File or YouTube transcription from anywhere.
 
-**Meeting recording (Labs/Beta on `main`)** — Record system audio and microphone together, see a live local transcript preview, take notes during the call, then save the finalized transcript to the library with export, prompts, and chat.
+**Meeting recording (Labs on `main`)** — Record system audio and microphone together, see a live local transcript preview, take notes during the call, then save the finalized transcript to the library with export, prompts, and chat.
 
 **Text cleanup** — Filler word removal, custom word replacements, text snippets with triggers. Deterministic pipeline, no LLM needed.
 
@@ -72,7 +72,7 @@ The [notarized DMG](https://downloads.macparakeet.com/MacParakeet.dmg) is the st
 - ~2.5% word error rate (Parakeet TDT 0.6B-v3)
 - ~66 MB working memory per active Parakeet inference slot
 - 25 European languages with Parakeet auto-detection
-- Labs/Beta optional local WhisperKit engine on `main` for Korean, Japanese, Chinese, and many other languages
+- Labs optional local WhisperKit engine on `main` for Korean, Japanese, Chinese, and many other languages
 
 ### Limitations
 

@@ -566,9 +566,14 @@ struct SettingsView: View {
             title: "Meeting Recording",
             subtitle: "Dedicated controls for meeting audio capture.",
             icon: "record.circle",
+            isLabs: true,
             status: meetingRecordingCardStatus
         ) {
             VStack(spacing: DesignSystem.Spacing.md) {
+                LabsNotice()
+
+                Divider()
+
                 HStack(alignment: .center) {
                     rowText(
                         title: "Meeting hotkey",

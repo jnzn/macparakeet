@@ -4,6 +4,7 @@ import SwiftUI
 ///
 /// API surface (kept small on purpose):
 /// - `title` + `subtitle` + `icon` — required, drives the header
+/// - `isLabs` — optional Labs badge next to the title for experimental surfaces
 /// - `status` — optional `SettingsStatusChip.Status` + label, sits in the
 ///   header's trailing slot. Use this when the card has a single dominant
 ///   status the user cares about at a glance (e.g. "Permissions: 1 missing").
@@ -17,6 +18,7 @@ struct SettingsCard<Content: View>: View {
     let subtitle: String
     let icon: String
     let iconTint: Color?
+    let isLabs: Bool
     let statusChip: SettingsCardStatus?
     @ViewBuilder let content: () -> Content
 
@@ -27,6 +29,7 @@ struct SettingsCard<Content: View>: View {
         subtitle: String,
         icon: String,
         iconTint: Color? = nil,
+        isLabs: Bool = false,
         status: SettingsCardStatus? = nil,
         @ViewBuilder content: @escaping () -> Content
     ) {
@@ -34,6 +37,7 @@ struct SettingsCard<Content: View>: View {
         self.subtitle = subtitle
         self.icon = icon
         self.iconTint = iconTint
+        self.isLabs = isLabs
         self.statusChip = status
         self.content = content
     }
@@ -53,9 +57,15 @@ struct SettingsCard<Content: View>: View {
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(DesignSystem.Typography.sectionTitle)
-                        .accessibilityAddTraits(.isHeader)
+                    HStack(spacing: DesignSystem.Spacing.sm) {
+                        Text(title)
+                            .font(DesignSystem.Typography.sectionTitle)
+                            .accessibilityAddTraits(.isHeader)
+
+                        if isLabs {
+                            LabsBadge()
+                        }
+                    }
                     Text(subtitle)
                         .font(DesignSystem.Typography.caption)
                         .foregroundStyle(.secondary)

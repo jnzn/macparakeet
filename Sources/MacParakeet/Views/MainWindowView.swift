@@ -71,7 +71,7 @@ struct MainWindowView: View {
                 List(selection: $state.selectedItem) {
                     Section {
                         ForEach(SidebarItem.primaryItems) { item in
-                            Label(item.rawValue, systemImage: item.icon)
+                            SidebarItemLabel(item: item)
                                 .tag(item)
                         }
                     }
@@ -237,6 +237,21 @@ struct MainWindowView: View {
         .background(DesignSystem.Colors.cardBackground)
         .overlay(alignment: .top) {
             Divider()
+        }
+    }
+}
+
+private struct SidebarItemLabel: View {
+    let item: SidebarItem
+
+    var body: some View {
+        HStack(spacing: DesignSystem.Spacing.sm) {
+            Label(item.rawValue, systemImage: item.icon)
+
+            if item == .meetings {
+                LabsBadge()
+                    .scaleEffect(0.88)
+            }
         }
     }
 }
