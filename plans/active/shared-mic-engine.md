@@ -27,7 +27,7 @@ The committed work delivers the architecture described below, enabled by default
 - `Sources/MacParakeetCore/Audio/AudioRecorder.swift` — same shape: optional `sharedStream:`, `start()` becomes async, tap buffers are copied for async processing, `extractChannelZero(from:)` runs off the shared tap so dictation always reads the post-AEC mono regardless of VPIO state, and file writes stay off the render thread. Actor-reentrancy guard cleans up orphan tokens if `stop()` runs during the subscribe await.
 - `Sources/MacParakeet/App/AppEnvironment.swift` — constructs the singleton when the flag is on, threads it through to both `AudioProcessor` (dictation) and `MeetingAudioCaptureService` (meeting mic). The flag is now default-on; flag-off keeps the legacy private-engine paths available as a one-release rollback option.
 
-Test totals after merge-readiness review: 2050 XCTest pass, 0 failures, 16 Swift Testing pass.
+Test totals after merge-readiness review: 2052 XCTest pass, 0 failures, 16 Swift Testing pass.
 
 ## Post-merge carry-forward notes
 

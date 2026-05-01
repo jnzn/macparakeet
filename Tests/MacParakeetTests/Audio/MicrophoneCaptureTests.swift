@@ -183,6 +183,37 @@ final class MicrophoneCaptureTests: XCTestCase {
         XCTAssertEqual(stream.diagnostics.subscriberCount, 0)
     }
 
+    func testSharedModeVPIORequiredThrowsWhenEngagementIsDeferred() async throws {
+        let platform = SharedMicTestPlatform()
+        let stream = SharedMicrophoneStream(platform: platform, bufferSize: 1024)
+        let capture = MicrophoneCapture(
+            sharedStream: stream,
+            permissionProvider: { true }
+        )
+        let blocker = try await stream.subscribe(wantsVPIO: false) { _, _ in }
+
+        do {
+            _ = try await capture.start(
+                processingMode: .vpioRequired,
+                handler: { _, _ in },
+                onStall: nil
+            )
+            XCTFail("vpioRequired must throw when VPIO engagement is deferred by an active raw subscriber")
+        } catch MeetingAudioError.microphoneProcessingUnavailable(let mode, let reason) {
+            XCTAssertEqual(mode, .vpioRequired)
+            XCTAssertTrue(reason.contains("deferred"))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        let diag = stream.diagnostics
+        XCTAssertEqual(diag.subscriberCount, 1, "Only the raw blocker should remain subscribed")
+        XCTAssertFalse(diag.vpioEngaged)
+        XCTAssertFalse(diag.vpioDeferred)
+
+        await stream.unsubscribe(blocker)
+    }
+
     func testSharedModeThrowsPermissionDeniedWhenProviderFalse() async {
         let platform = SharedMicTestPlatform()
         let stream = SharedMicrophoneStream(platform: platform, bufferSize: 1024)

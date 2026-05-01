@@ -353,10 +353,15 @@ public final class SharedMicrophoneStream: @unchecked Sendable {
 
         // Engine stays up. If VPIO was deferred and the last non-VPIO
         // subscriber just left, engagement can proceed now.
+        let stillHasVPIOWanter = state.subscribers.values.contains { $0.wantsVPIO }
+        if !stillHasVPIOWanter {
+            state.vpioDeferred = false
+            return .none
+        }
+
         if state.vpioDeferred {
             let stillHasNonVPIO = state.subscribers.values.contains { !$0.wantsVPIO }
-            let stillHasVPIOWanter = state.subscribers.values.contains { $0.wantsVPIO }
-            if !stillHasNonVPIO && stillHasVPIOWanter {
+            if !stillHasNonVPIO {
                 state.vpioDeferred = false
                 state.vpioEngaged = true
                 return .reconfigureToVPIO

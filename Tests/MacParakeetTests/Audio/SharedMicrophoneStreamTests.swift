@@ -125,6 +125,23 @@ final class SharedMicrophoneStreamTests: XCTestCase {
         XCTAssertEqual(platform.stopEngineCallCount, 1)
     }
 
+    func testDeferredVPIOClearsWhenVPIOSubscriberLeavesBeforePromotion() async throws {
+        let t1 = try await stream.subscribe(wantsVPIO: false) { _, _ in }
+        let t2 = try await stream.subscribe(wantsVPIO: true) { _, _ in }
+        XCTAssertTrue(stream.diagnostics.vpioDeferred)
+
+        await stream.unsubscribe(t2)
+
+        let diag = stream.diagnostics
+        XCTAssertEqual(diag.subscriberCount, 1)
+        XCTAssertTrue(diag.engineRunning)
+        XCTAssertFalse(diag.vpioEngaged)
+        XCTAssertFalse(diag.vpioDeferred)
+        XCTAssertEqual(platform.configureAndStartCalls.count, 1)
+
+        await stream.unsubscribe(t1)
+    }
+
     func testVPIOSubscriberJoinsRunningRawEngineWithoutBlocker() async throws {
         // Edge case: there's no rule that says "non-VPIO + VPIO = always defer."
         // If a non-VPIO sub starts, then leaves, then a VPIO sub joins, the

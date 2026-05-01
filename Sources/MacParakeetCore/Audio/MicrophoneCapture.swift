@@ -377,6 +377,22 @@ public final class MicrophoneCapture: @unchecked Sendable {
             }
         }
 
+        if processingMode == .vpioRequired, effectiveMode != .vpio {
+            let reason = "VPIO engagement deferred by active non-VPIO subscriber"
+            await sharedStream.unsubscribe(token)
+            AudioCaptureDiagnostics.append(
+                "meeting_mic_processing_unavailable mode=vpioRequired shared_mic_engine=true reason=\"\(reason)\""
+            )
+            finalizeSharedFailure(
+                processingMode: processingMode,
+                reason: reason
+            )
+            throw MeetingAudioError.microphoneProcessingUnavailable(
+                mode: .vpioRequired,
+                reason: reason
+            )
+        }
+
         // Subscribe succeeded — but `stop()` may have raced us during the
         // `await` and already taken the lifecycle to `.idle`. Re-check state
         // before claiming `.running`. If we lost the race, unsubscribe the
