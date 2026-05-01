@@ -221,14 +221,16 @@ Audio files are kept by default. Users can delete manually from the transcriptio
 
 ### Concurrent Operation with Dictation (ADR-015)
 
-Meeting recording and dictation run concurrently as fully independent pipelines. Each owns its own `AVAudioEngine` instance:
+> **Current (2026-04-30):** `plans/active/shared-mic-engine.md` supersedes the old "two independent `AVAudioEngine` instances" architecture. Steps 1-6 of the plan are implemented and verified on real hardware, and `AppFeatures.useSharedMicEngine` is default-on. Legacy private-engine paths remain behind the flag for one DMG release as a rollback option; step 7 deletes them after field soak.
 
-| Flow | Engine | Notes |
+Meeting recording and dictation now share one process-wide microphone engine when `AppFeatures.useSharedMicEngine` is enabled:
+
+| Flow | Shared mic role | Notes |
 |------|--------|-------|
-| Dictation | `AudioRecorder.audioEngine` | Created/destroyed per dictation session |
-| Meeting mic | `MicrophoneCapture.audioEngine` | Long-lived, runs for entire meeting; VPIO preferred for hardware AEC, with raw fallback logged; `CaptureOrchestrator` still pairs mic/system frames and transcript-layer suppression handles residual speaker bleed |
+| Dictation | `AudioRecorder` subscribes with `wantsVPIO: false` | Copies tap buffers for async conversion/writes and extracts ch[0] so VPIO duplex layouts produce post-AEC mono |
+| Meeting mic | `MicrophoneCapture` subscribes with `wantsVPIO` derived from `MeetingMicProcessingMode` | VPIO preferred for hardware AEC, with raw fallback logged; meeting mic extracts ch[0] when VPIO is engaged |
 
-macOS Core Audio's HAL natively multiplexes microphone access — multiple engines tapping the same physical mic is a supported pattern. There is no shared audio engine or audio broker.
+`SharedMicrophoneStream` owns the single `AVAudioEngine`, fans buffers out synchronously, and keeps VPIO sticky once engaged. Engagement is deferred while a non-VPIO dictation subscriber is already in flight, so dictation does not get a mid-session format flip. If deferred VPIO promotion fails, the engine is marked dead, remaining subscriptions are invalidated after their `onEngineDeath` callbacks are captured, and later subscribers start a fresh engine.
 
 All STT work routes through a process-wide scheduler and shared runtime owner (ADR-016, ADR-021). Parakeet is the default engine; WhisperKit can be selected explicitly. That keeps:
 
