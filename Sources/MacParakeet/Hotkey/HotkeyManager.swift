@@ -492,7 +492,7 @@ public final class HotkeyManager {
             if keyCode == triggerCode {
                 // Check required modifiers are held
                 guard flags & requiredChordFlags == requiredChordFlags else {
-                    return ([], false)
+                    return (gestureController.interrupted(), false)
                 }
 
                 // Edge detection: ignore key-repeat

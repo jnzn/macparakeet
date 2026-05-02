@@ -249,6 +249,89 @@ final class HotkeyManagerTests: XCTestCase {
         XCTAssertTrue(keyUp.shouldSwallow)
     }
 
+    func testChordTriggerWithoutRequiredModifiersInterruptsPendingSecondTap() {
+        let trigger = HotkeyTrigger.chord(modifiers: ["control", "shift"], keyCode: 15)
+        let manager = HotkeyManager(trigger: trigger)
+
+        _ = manager.chordEventDecisionForTesting(
+            type: .keyDown,
+            keyCode: 15,
+            flags: trigger.chordEventFlags,
+            timestampMs: 1_000
+        )
+        _ = manager.chordEventDecisionForTesting(
+            type: .keyUp,
+            keyCode: 15,
+            flags: trigger.chordEventFlags,
+            timestampMs: 1_050
+        )
+
+        let bareKeyDown = manager.chordEventDecisionForTesting(
+            type: .keyDown,
+            keyCode: 15,
+            flags: 0,
+            timestampMs: 1_100
+        )
+        let bareKeyUp = manager.chordEventDecisionForTesting(
+            type: .keyUp,
+            keyCode: 15,
+            flags: 0,
+            timestampMs: 1_150
+        )
+        let nextChordKeyDown = manager.chordEventDecisionForTesting(
+            type: .keyDown,
+            keyCode: 15,
+            flags: trigger.chordEventFlags,
+            timestampMs: 1_200
+        )
+
+        XCTAssertEqual(bareKeyDown.outputs, [.cancelStartupDebounce, .cancelHoldWindow])
+        XCTAssertFalse(bareKeyDown.shouldSwallow)
+        XCTAssertEqual(bareKeyUp.outputs, [])
+        XCTAssertFalse(bareKeyUp.shouldSwallow)
+        XCTAssertEqual(
+            nextChordKeyDown.outputs,
+            [
+                .scheduleStartupDebounce(milliseconds: FnKeyStateMachine.defaultStartupDebounceMs),
+                .scheduleHoldWindow(milliseconds: FnKeyStateMachine.defaultTapThresholdMs),
+            ]
+        )
+        XCTAssertTrue(nextChordKeyDown.shouldSwallow)
+    }
+
+    func testChordTriggerKeyUpSwallowsAfterModifierReleasedFirst() {
+        let trigger = HotkeyTrigger.chord(modifiers: ["control", "shift"], keyCode: 15)
+        let manager = HotkeyManager(trigger: trigger)
+
+        let keyDown = manager.chordEventDecisionForTesting(
+            type: .keyDown,
+            keyCode: 15,
+            flags: trigger.chordEventFlags,
+            timestampMs: 1_000
+        )
+        let flagsChanged = manager.chordEventDecisionForTesting(
+            type: .flagsChanged,
+            keyCode: 0,
+            flags: 0,
+            timestampMs: 1_050
+        )
+        let keyUp = manager.chordEventDecisionForTesting(
+            type: .keyUp,
+            keyCode: 15,
+            flags: 0,
+            timestampMs: 1_100
+        )
+
+        XCTAssertTrue(keyDown.shouldSwallow)
+        XCTAssertEqual(
+            flagsChanged.outputs,
+            [.cancelStartupDebounce, .cancelHoldWindow, .showReadyForSecondTap]
+        )
+        XCTAssertFalse(flagsChanged.shouldSwallow)
+        XCTAssertEqual(keyUp.outputs, [])
+        XCTAssertTrue(keyUp.shouldSwallow)
+    }
+
     func testAdditionalModifierInterruptsBareFnBeforeStartup() {
         let manager = HotkeyManager(trigger: .fn)
 
