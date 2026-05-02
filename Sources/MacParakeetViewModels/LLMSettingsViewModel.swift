@@ -612,7 +612,7 @@ public final class LLMSettingsViewModel {
         return Self.defaultModelName(for: providerID)
     }
 
-    private static func usesDiscoveredModelList(_ providerID: LLMProviderID) -> Bool {
+    private nonisolated static func usesDiscoveredModelList(_ providerID: LLMProviderID) -> Bool {
         providerID == .lmstudio || providerID == .ollama
     }
 
