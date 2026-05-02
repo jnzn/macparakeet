@@ -229,7 +229,9 @@ struct TranscribeCommand: AsyncParsableCommand {
             exitCode: exitCode,
             errorType: errorType
         )
-        try runResult.get()
+        try emitJSONOrRethrow(json: format == .json) {
+            try runResult.get()
+        }
     }
 
     private func makeEntitlementsService() -> EntitlementsService {

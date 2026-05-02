@@ -43,24 +43,26 @@ struct ExportCommand: AsyncParsableCommand {
     var database: String?
 
     func run() async throws {
-        try AppPaths.ensureDirectories()
-        let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
-        let repo = TranscriptionRepository(dbQueue: dbManager.dbQueue)
+        try await emitJSONOrRethrow(json: stdout && format == .json) {
+            try AppPaths.ensureDirectories()
+            let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
+            let repo = TranscriptionRepository(dbQueue: dbManager.dbQueue)
 
-        let transcription = try findTranscription(id: id, repo: repo)
-        let exportService = await ExportService()
+            let transcription = try findTranscription(id: id, repo: repo)
+            let exportService = await ExportService()
 
-        if stdout {
-            let content = await formatContent(transcription: transcription, exportService: exportService)
-            print(content)
-        } else {
-            let outputURL = resolveOutputURL(transcription: transcription)
-            try FileManager.default.createDirectory(
-                at: outputURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            try await writeExport(transcription: transcription, exportService: exportService, url: outputURL)
-            print("Exported to \(outputURL.path)")
+            if stdout {
+                let content = await formatContent(transcription: transcription, exportService: exportService)
+                print(content)
+            } else {
+                let outputURL = resolveOutputURL(transcription: transcription)
+                try FileManager.default.createDirectory(
+                    at: outputURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
+                try await writeExport(transcription: transcription, exportService: exportService, url: outputURL)
+                print("Exported to \(outputURL.path)")
+            }
         }
     }
 

@@ -24,6 +24,11 @@ public protocol MeetingRecordingServiceProtocol: Sendable {
     func startRecording(title: String?, sourceMode: MeetingAudioSourceMode?) async throws
     func stopRecording() async throws -> MeetingRecordingOutput
     func completeTranscription(for recording: MeetingRecordingOutput) async
+    /// Release any retained speech-engine lease for a stopped recording after
+    /// the final transcription attempt has ended. Use `completeTranscription`
+    /// on success so the recovery lock is deleted; call this directly on failure
+    /// to leave the lock available for retry.
+    func finishTranscriptionAttempt(for recording: MeetingRecordingOutput) async
     func cancelRecording() async
     /// Persist the user's in-flight notepad text to the recording's lock file
     /// without changing the recording state. Called by the notes view model on
@@ -95,6 +100,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
     /// `cleanupState` / `cancelRecording`.
     private var currentLockFile: MeetingRecordingLockFile?
     private var currentSpeechEngineLease: SpeechEngineLease?
+    private var stoppedSpeechEngineLeases: [UUID: SpeechEngineLease] = [:]
     /// Keeps replacement starts out while `audioCaptureService.start()` is still
     /// unwinding after cancellation. `currentSession` may already be nil then.
     private var startingSessionID: UUID?
@@ -432,7 +438,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         )
 
         await liveChunkTranscriber.finishSession()
-        await releaseSpeechEngineLease()
+        retainSpeechEngineLeaseForTranscription(sessionID: session.id)
         cleanupState()
         logger.info("Meeting recording finalized: \(session.id.uuidString, privacy: .public)")
         AudioCaptureDiagnostics.append(
@@ -447,6 +453,11 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         } catch {
             logger.error("meeting_recording_lock_cleanup_failed session=\(recording.sessionID.uuidString, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
         }
+        await finishTranscriptionAttempt(for: recording)
+    }
+
+    public func finishTranscriptionAttempt(for recording: MeetingRecordingOutput) async {
+        await releaseStoppedSpeechEngineLease(sessionID: recording.sessionID)
     }
 
     public func updateNotes(_ notes: String) async {
@@ -511,6 +522,17 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
     private func releaseSpeechEngineLease() async {
         guard let lease = currentSpeechEngineLease else { return }
         currentSpeechEngineLease = nil
+        await speechEngineSessionManager?.endSpeechEngineSession(lease)
+    }
+
+    private func retainSpeechEngineLeaseForTranscription(sessionID: UUID) {
+        guard let lease = currentSpeechEngineLease else { return }
+        currentSpeechEngineLease = nil
+        stoppedSpeechEngineLeases[sessionID] = lease
+    }
+
+    private func releaseStoppedSpeechEngineLease(sessionID: UUID) async {
+        guard let lease = stoppedSpeechEngineLeases.removeValue(forKey: sessionID) else { return }
         await speechEngineSessionManager?.endSpeechEngineSession(lease)
     }
 

@@ -1,3 +1,4 @@
+import ArgumentParser
 import XCTest
 @testable import CLI
 @testable import MacParakeetCore
@@ -46,5 +47,40 @@ final class TranscribeCommandTests: XCTestCase {
             url.path,
             FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("sample.wav").path
         )
+    }
+
+    func testJSONFormatEmitsFailureEnvelopeForMissingFile() async throws {
+        let dbURL = temporaryDatabaseURL()
+        defer { try? FileManager.default.removeItem(at: dbURL) }
+        let missingURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("macparakeet-missing-\(UUID().uuidString).wav")
+        let command = try TranscribeCommand.parse([
+            missingURL.path,
+            "--format", "json",
+            "--database", dbURL.path,
+        ])
+
+        var thrownError: Error?
+        let output = try await captureStandardOutput {
+            do {
+                try await command.run()
+            } catch {
+                thrownError = error
+            }
+        }
+
+        let exit = try XCTUnwrap(thrownError as? ExitCode)
+        XCTAssertEqual(exit, .failure)
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any]
+        )
+        XCTAssertEqual(object["ok"] as? Bool, false)
+        XCTAssertEqual(object["errorType"] as? String, "input_missing")
+        XCTAssertTrue((object["error"] as? String)?.contains("File not found") == true)
+    }
+
+    private func temporaryDatabaseURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("macparakeet-cli-\(UUID().uuidString).db")
     }
 }

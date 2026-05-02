@@ -89,6 +89,11 @@ by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
   (or `--json` structured form) so a local coding agent can generate valid
   bundles. Bundle format is versioned (`macparakeet.vocabulary` v1).
 
+### Fixed
+
+- `transcribe --format json` and `export --format json --stdout` now emit the
+  documented JSON failure envelope for post-parse failures.
+
 ## [1.4.0] -- 2026-04-28
 
 ### Added

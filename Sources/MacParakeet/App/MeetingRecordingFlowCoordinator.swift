@@ -451,6 +451,9 @@ final class MeetingRecordingFlowCoordinator {
                     self.completedTranscription = transcription
                     self.sendEvent(.transcriptionCompleted(generation: gen, transcriptionID: transcription.id))
                 } catch {
+                    if let stoppedOutput {
+                        await meetingRecordingService.finishTranscriptionAttempt(for: stoppedOutput)
+                    }
                     Telemetry.send(.meetingRecordingFailed(
                         errorType: TelemetryErrorClassifier.classify(error),
                         errorDetail: TelemetryErrorClassifier.errorDetail(error)
