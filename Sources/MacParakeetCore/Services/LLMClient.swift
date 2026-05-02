@@ -595,7 +595,7 @@ public final class LLMClient: LLMClientProtocol, Sendable {
         do {
             (data, response) = try await session.data(for: request)
         } catch {
-            throw LLMError.connectionFailed("Failed to fetch models.")
+            throw LLMError.connectionFailed(error.localizedDescription)
         }
 
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
@@ -629,7 +629,7 @@ public final class LLMClient: LLMClientProtocol, Sendable {
         do {
             (data, response) = try await session.data(for: request)
         } catch {
-            throw LLMError.connectionFailed("Failed to fetch models.")
+            throw LLMError.connectionFailed(error.localizedDescription)
         }
 
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
@@ -641,18 +641,17 @@ public final class LLMClient: LLMClientProtocol, Sendable {
     }
 
     private static func ollamaTagsURL(from baseURL: URL) -> URL? {
-        var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
-        guard components != nil else { return nil }
-        var segments = (components?.path ?? "")
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else { return nil }
+        var segments = components.path
             .split(separator: "/")
             .map(String.init)
         if segments.last == "v1" {
             segments.removeLast()
         }
         segments.append(contentsOf: ["api", "tags"])
-        components?.path = "/" + segments.joined(separator: "/")
-        components?.query = nil
-        return components?.url
+        components.path = "/" + segments.joined(separator: "/")
+        components.query = nil
+        return components.url
     }
 
     private func buildRequest(

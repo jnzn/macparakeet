@@ -910,6 +910,26 @@ final class LLMClientTests: XCTestCase {
         XCTAssertEqual(models, ["gemma3:4b", "qwen3.5:4b"])
     }
 
+    func testOllamaListModelsPreservesBasePathWhenBuildingTagsEndpoint() async throws {
+        var capturedRequest: URLRequest?
+
+        MockURLProtocol.handler = { request in
+            capturedRequest = request
+            return (self.okResponse(for: request), Data("""
+            {"models":[{"name":"local-model"}]}
+            """.utf8))
+        }
+
+        let config = LLMProviderConfig.ollama(
+            model: "local-model",
+            baseURL: URL(string: "http://local-ai.example.test/custom/v1")!
+        )
+        let models = try await llmClient.listModels(config: config)
+
+        XCTAssertEqual(capturedRequest?.url?.absoluteString, "http://local-ai.example.test/custom/api/tags")
+        XCTAssertEqual(models, ["local-model"])
+    }
+
     func testOllamaListModelsFallsBackToOpenAICompatibleModelsEndpoint() async throws {
         var capturedURLs: [String] = []
 
@@ -940,6 +960,25 @@ final class LLMClientTests: XCTestCase {
             ]
         )
         XCTAssertEqual(models, ["qwen3.5:4b"])
+    }
+
+    func testListModelsConnectionFailureIncludesUnderlyingError() async {
+        let urlError = URLError(.cannotConnectToHost)
+        MockURLProtocol.handler = { _ in
+            throw urlError
+        }
+
+        do {
+            _ = try await llmClient.listModels(config: .lmstudio(model: "local-model"))
+            XCTFail("Expected LLMError.connectionFailed")
+        } catch let error as LLMError {
+            XCTAssertEqual(
+                error.localizedDescription,
+                "Connection failed: \(urlError.localizedDescription)"
+            )
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
     }
 
     // MARK: - Gemini Error Array Format
