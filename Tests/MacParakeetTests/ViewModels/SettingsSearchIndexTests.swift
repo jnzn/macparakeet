@@ -42,9 +42,22 @@ final class SettingsSearchIndexTests: XCTestCase {
     }
 
     func testSubtitleMatches() {
-        // "calendar auto-start" appears in the meeting card subtitle.
-        let results = SettingsSearchIndex.matches("auto-start")
+        let results = SettingsSearchIndex.matches("meeting audio")
         XCTAssertTrue(results.contains(where: { $0.id == "meeting" }))
+    }
+
+    func testCalendarQueriesHonorCalendarFeatureFlag() {
+        for query in ["calendar", "auto-start", "auto start", "reminders"] {
+            let results = SettingsSearchIndex.matches(query)
+            let ids = Set(results.map(\.id))
+
+            if AppFeatures.calendarEnabled {
+                XCTAssertTrue(ids.contains("meeting.calendar"), "Query \(query) should find the calendar row")
+            } else {
+                XCTAssertFalse(ids.contains("meeting"), "Query \(query) should not reveal the hidden meeting card")
+                XCTAssertFalse(ids.contains("meeting.calendar"), "Query \(query) should not reveal the hidden calendar row")
+            }
+        }
     }
 
     func testRowEntryHasBreadcrumbSubtitle() {

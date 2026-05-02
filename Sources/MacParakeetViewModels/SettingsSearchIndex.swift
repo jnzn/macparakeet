@@ -178,8 +178,8 @@ public enum SettingsSearchIndex {
             id: "meeting",
             tab: .modes,
             title: "Meeting Recording",
-            subtitle: "System audio + microphone capture, calendar auto-start.",
-            keywords: ["meeting", "system audio", "screen recording", "calendar", "auto start", "core audio taps"],
+            subtitle: "Dedicated controls for meeting audio capture.",
+            keywords: ["meeting", "system audio", "screen recording", "meeting capture", "core audio taps"],
             cardAnchor: "meeting"
         ),
         SettingsSearchEntry(
@@ -187,7 +187,7 @@ public enum SettingsSearchIndex {
             tab: .modes,
             title: "Calendar",
             subtitle: "in Meeting Recording",
-            keywords: ["calendar", "auto start", "reminders", "events", "ics"],
+            keywords: ["calendar", "auto start", "auto-start", "reminders", "events", "ics"],
             cardAnchor: "meeting"
         ),
 
