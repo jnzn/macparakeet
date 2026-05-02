@@ -176,15 +176,25 @@ public actor DictationService: DictationServiceProtocol {
         _state = .recording
         do {
             try await audioProcessor.startCapture()
-            // Guard against reentrancy: cancel may have run during the await above
-            guard case .recording = _state else {
-                if await audioProcessor.isRecording,
+            // Guard against reentrancy: cancel or replacement may have run during the await above.
+            let activeAtStartCompletion = activeSessionID
+            guard activeAtStartCompletion == requestedSessionID, case .recording = _state else {
+                let processorIsRecording: Bool
+                if activeAtStartCompletion == requestedSessionID {
+                    processorIsRecording = await audioProcessor.isRecording
+                } else {
+                    processorIsRecording = false
+                }
+                if activeSessionID == requestedSessionID,
+                   processorIsRecording,
                    let audioURL = try? await audioProcessor.stopCapture() {
                     try? FileManager.default.removeItem(at: audioURL)
                 }
-                recordingStartedAt = nil
+                if activeSessionID == requestedSessionID {
+                    recordingStartedAt = nil
+                }
                 logger.notice(
-                    "startRecording aborted session=\(requestedSessionID) state=\(self.debugStateLabel(self._state), privacy: .public)"
+                    "startRecording aborted session=\(requestedSessionID) active=\(activeAtStartCompletion) state=\(self.debugStateLabel(self._state), privacy: .public)"
                 )
                 return
             }
@@ -193,10 +203,23 @@ public actor DictationService: DictationServiceProtocol {
             Telemetry.send(.dictationStarted(trigger: context.trigger, mode: context.mode))
             logger.debug("startRecording capture started session=\(requestedSessionID)")
         } catch {
+            let activeAtFailure = activeSessionID
+            guard activeAtFailure == requestedSessionID else {
+                logger.notice(
+                    "startRecording stale failure ignored session=\(requestedSessionID) active=\(activeAtFailure) error=\(error.localizedDescription, privacy: .public)"
+                )
+                throw error
+            }
+            let device = await audioProcessor.recordingDeviceInfo
+            guard activeSessionID == requestedSessionID else {
+                logger.notice(
+                    "startRecording stale failure ignored session=\(requestedSessionID) active=\(self.activeSessionID) error=\(error.localizedDescription, privacy: .public)"
+                )
+                throw error
+            }
             let operationID = currentOperationID
             let telemetryContext = currentOperationTelemetryContext
             let observabilityOperationContext = currentObservabilityOperationContext
-            let device = await audioProcessor.recordingDeviceInfo
             _state = .idle
             recordingStartedAt = nil
             sendDictationOperation(
