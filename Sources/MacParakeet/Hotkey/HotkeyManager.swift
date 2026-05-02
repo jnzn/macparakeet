@@ -402,6 +402,22 @@ public final class HotkeyManager {
         return outputs
     }
 
+    func chordEventDecisionForTesting(
+        type: CGEventType,
+        keyCode: UInt16,
+        flags: UInt64,
+        timestampMs: UInt64
+    ) -> (outputs: [HotkeyGestureController.Output], shouldSwallow: Bool) {
+        let decision = chordEventDecision(
+            type: type,
+            keyCode: keyCode,
+            flags: flags & Self.relevantModifierBits,
+            timestampMs: timestampMs
+        )
+        rememberRecordingState(for: decision.outputs)
+        return decision
+    }
+
     // MARK: - KeyCode Trigger Path
 
     private func handleKeyCodeEvent(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
@@ -449,56 +465,70 @@ public final class HotkeyManager {
     // MARK: - Chord Trigger Path
 
     private func handleChordEvent(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
-        guard let triggerCode = trigger.keyCode else {
-            return Unmanaged.passUnretained(event)
-        }
-
         let timestampMs = UInt64(event.timestamp / 1_000_000)
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
+        let decision = chordEventDecision(
+            type: type,
+            keyCode: keyCode,
+            flags: event.flags.rawValue & Self.relevantModifierBits,
+            timestampMs: timestampMs
+        )
+        handleOutputs(decision.outputs)
+
+        return decision.shouldSwallow ? nil : Unmanaged.passUnretained(event)
+    }
+
+    private func chordEventDecision(
+        type: CGEventType,
+        keyCode: UInt16,
+        flags: UInt64,
+        timestampMs: UInt64
+    ) -> (outputs: [HotkeyGestureController.Output], shouldSwallow: Bool) {
+        guard let triggerCode = trigger.keyCode else {
+            return ([], false)
+        }
 
         if type == .keyDown {
             if keyCode == triggerCode {
                 // Check required modifiers are held
-                let flags = event.flags.rawValue & Self.relevantModifierBits
                 guard flags & requiredChordFlags == requiredChordFlags else {
-                    return Unmanaged.passUnretained(event)
+                    return ([], false)
                 }
 
                 // Edge detection: ignore key-repeat
                 guard !triggerKeyIsPressed else {
-                    return nil // Swallow repeated keyDown
+                    return ([], true) // Swallow repeated keyDown
                 }
                 triggerKeyIsPressed = true
                 chordModifierReleased = false
 
-                handleOutputs(gestureController.triggerPressed(timestampMs: timestampMs))
-
-                return nil // Swallow the trigger key
+                return (gestureController.triggerPressed(timestampMs: timestampMs), true)
             } else if keyCode == 53 { // Escape
-                handleOutputs(gestureController.escapePressed())
+                return (gestureController.escapePressed(), false)
             } else {
                 // Gesture interruption
-                handleOutputs(gestureController.interrupted())
+                return (gestureController.interrupted(), false)
             }
         } else if type == .keyUp {
             if keyCode == triggerCode {
-                handleOutputs(chordTriggerKeyUpOutputs(timestampMs: timestampMs))
-                // Always swallow the trigger key's keyUp
-                return nil
+                guard triggerKeyIsPressed else {
+                    return ([], false)
+                }
+                let outputs = chordTriggerKeyUpOutputs(timestampMs: timestampMs)
+                return (outputs, true)
             }
         } else if type == .flagsChanged {
             // Release-any-part: if a required modifier is released while trigger key is held,
             // end dictation and mark that we already sent fnUp.
             if triggerKeyIsPressed && !chordModifierReleased {
-                let flags = event.flags.rawValue & Self.relevantModifierBits
                 if flags & requiredChordFlags != requiredChordFlags {
                     chordModifierReleased = true
-                    handleOutputs(gestureController.triggerReleased(timestampMs: timestampMs))
+                    return (gestureController.triggerReleased(timestampMs: timestampMs), false)
                 }
             }
         }
 
-        return Unmanaged.passUnretained(event)
+        return ([], false)
     }
 
     /// Notify state machine that cancel was triggered via UI (not Esc).

@@ -197,6 +197,58 @@ final class HotkeyManagerTests: XCTestCase {
         )
     }
 
+    func testChordTriggerKeyUpPassesThroughWhenChordWasNotHandled() {
+        let trigger = HotkeyTrigger.chord(modifiers: ["control", "shift"], keyCode: 15)
+        let manager = HotkeyManager(trigger: trigger)
+
+        let keyDown = manager.chordEventDecisionForTesting(
+            type: .keyDown,
+            keyCode: 15,
+            flags: 0,
+            timestampMs: 1_000
+        )
+        let keyUp = manager.chordEventDecisionForTesting(
+            type: .keyUp,
+            keyCode: 15,
+            flags: 0,
+            timestampMs: 1_050
+        )
+
+        XCTAssertEqual(keyDown.outputs, [])
+        XCTAssertFalse(keyDown.shouldSwallow)
+        XCTAssertEqual(keyUp.outputs, [])
+        XCTAssertFalse(keyUp.shouldSwallow)
+    }
+
+    func testChordTriggerKeyUpSwallowsAfterHandledKeyDown() {
+        let trigger = HotkeyTrigger.chord(modifiers: ["control", "shift"], keyCode: 15)
+        let manager = HotkeyManager(trigger: trigger)
+
+        let keyDown = manager.chordEventDecisionForTesting(
+            type: .keyDown,
+            keyCode: 15,
+            flags: trigger.chordEventFlags,
+            timestampMs: 1_000
+        )
+        let keyUp = manager.chordEventDecisionForTesting(
+            type: .keyUp,
+            keyCode: 15,
+            flags: trigger.chordEventFlags,
+            timestampMs: 1_050
+        )
+
+        XCTAssertEqual(
+            keyDown.outputs,
+            [
+                .scheduleStartupDebounce(milliseconds: FnKeyStateMachine.defaultStartupDebounceMs),
+                .scheduleHoldWindow(milliseconds: FnKeyStateMachine.defaultTapThresholdMs),
+            ]
+        )
+        XCTAssertTrue(keyDown.shouldSwallow)
+        XCTAssertEqual(keyUp.outputs, [.cancelStartupDebounce, .cancelHoldWindow, .showReadyForSecondTap])
+        XCTAssertTrue(keyUp.shouldSwallow)
+    }
+
     func testAdditionalModifierInterruptsBareFnBeforeStartup() {
         let manager = HotkeyManager(trigger: .fn)
 
