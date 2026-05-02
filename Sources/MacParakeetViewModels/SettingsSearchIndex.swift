@@ -87,9 +87,22 @@ public enum SettingsSearchIndex {
         "system.permissions.screen"
     ]
 
+    /// Ids gated on `AppFeatures.calendarEnabled` independently of meeting
+    /// recording. Filtered when calendar is hidden so search doesn't land
+    /// on the (currently invisible) calendar subsection.
+    private static let calendarGatedIds: Set<String> = [
+        "meeting.calendar"
+    ]
+
     public static var entries: [SettingsSearchEntry] {
-        guard !AppFeatures.meetingRecordingEnabled else { return allEntries }
-        return allEntries.filter { !meetingGatedIds.contains($0.id) }
+        var result = allEntries
+        if !AppFeatures.meetingRecordingEnabled {
+            result = result.filter { !meetingGatedIds.contains($0.id) }
+        }
+        if !AppFeatures.calendarEnabled {
+            result = result.filter { !calendarGatedIds.contains($0.id) }
+        }
+        return result
     }
 
     /// Full unfiltered catalog. Order matters: result lists are produced

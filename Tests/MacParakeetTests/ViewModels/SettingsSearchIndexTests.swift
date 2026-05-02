@@ -81,19 +81,25 @@ final class SettingsSearchIndexTests: XCTestCase {
     }
 
     func testMeetingEntriesGatedOnFeatureFlag() {
-        // The flag is a compile-time constant, so only one arm runs in
+        // The flags are compile-time constants, so only one arm runs in
         // any given build. Asserting both directions documents the
         // contract and forces a deliberate update if the gate semantics
         // change. Ids: card + sub-card + cross-tab permission row.
         let meetingGatedIds: Set<String> = ["meeting", "meeting.calendar", "system.permissions.screen"]
+        let calendarGatedIds: Set<String> = ["meeting.calendar"]
         let presentIds = Set(SettingsSearchIndex.entries.map(\.id))
         let intersection = presentIds.intersection(meetingGatedIds)
 
         if AppFeatures.meetingRecordingEnabled {
+            // Calendar entry drops out independently when calendarEnabled
+            // is off, even though meeting recording is on.
+            let expected = AppFeatures.calendarEnabled
+                ? meetingGatedIds
+                : meetingGatedIds.subtracting(calendarGatedIds)
             XCTAssertEqual(
                 intersection,
-                meetingGatedIds,
-                "All meeting-gated entries should be present when the flag is on"
+                expected,
+                "Meeting-gated entries should match the active flag combination"
             )
         } else {
             XCTAssertTrue(
