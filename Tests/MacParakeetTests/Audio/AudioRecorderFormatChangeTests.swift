@@ -76,11 +76,13 @@ final class AudioRecorderFormatChangeTests: XCTestCase {
             XCTFail("Unexpected start error: \(error)")
         }
 
-        try await Task.sleep(for: .milliseconds(50))
         let isRecording = await recorder.isRecording
         XCTAssertFalse(isRecording)
-        XCTAssertEqual(stream.diagnostics.subscriberCount, 0)
-        XCTAssertFalse(stream.diagnostics.engineRunning)
+
+        let drained = await pollUntil(timeout: .seconds(2)) {
+            stream.diagnostics.subscriberCount == 0 && !stream.diagnostics.engineRunning
+        }
+        XCTAssertTrue(drained, "expected pending unsubscribe to drain after interrupted start")
     }
 
     /// Reproduces the double-tap dictation race. Sequence is:
