@@ -69,6 +69,14 @@ public actor AudioRecorder {
     private var outputURL: URL?
     private var recording = false
     private var starting = false
+    /// Bumped on every `start()` entry that passes the entry guard. Each call
+    /// captures its value as `myStartCallGeneration`; the `defer` only clears
+    /// `starting` if no newer call has claimed the slot. Without this, an
+    /// aborted sibling's defer would clobber a legitimate replacement start
+    /// AND mislead `stop()` into taking its no-op path (which doesn't bump
+    /// `sessionGeneration`), letting the replacement claim a recording the
+    /// caller of `stop()` just asked to end.
+    private var startCallGeneration: Int = 0
 
     /// Minimum samples before sending to STT.
     /// FluidAudio requires at least 1 second of 16kHz audio (16,000 samples).
@@ -108,7 +116,20 @@ public actor AudioRecorder {
     public func start() async throws {
         guard !recording, !starting else { return }
         starting = true
-        defer { starting = false }
+        startCallGeneration += 1
+        let myStartCallGeneration = startCallGeneration
+        defer {
+            // Only clear `starting` if this call still owns the slot. If
+            // `stop()` reset `starting=false` mid-await and a newer `start()`
+            // entered, the newer call bumped `startCallGeneration` and now
+            // owns `starting=true`. Clobbering it here would (a) trip the
+            // newer call's lostRace `!self.starting` check and (b) hide the
+            // newer call from a subsequent `stop()`, which would take its
+            // no-op path and skip bumping `sessionGeneration`.
+            if startCallGeneration == myStartCallGeneration {
+                starting = false
+            }
+        }
 
         AudioCaptureDiagnostics.append(
             "dictation_capture_start permission_status=\(AVCaptureDevice.authorizationStatus(for: .audio).rawValue)"
@@ -339,15 +360,14 @@ public actor AudioRecorder {
         // method (typically `stop()`) may have run on this actor — `stop()`
         // bumps the generation, so a generation mismatch means we're an
         // orphan. Unsubscribe and clean up rather than claim a recording
-        // session that nobody asked for.
-        //
-        // We deliberately do NOT consult `self.starting` here. The flag is
-        // shared across calls and an aborted sibling's `defer { starting =
-        // false }` would clobber a legitimate replacement start that entered
-        // after stop() reset `starting`. The generation bump is the canonical
-        // "lost the race" signal — sibling defers do not bump generation.
+        // session that nobody asked for. The `!self.starting` clause catches
+        // the rarer case where another `start()` entered after `stop()` reset
+        // `starting`, took the slot, and is now in flight; we should not
+        // claim a recording on its behalf. The per-call defer guard above
+        // makes this safe — a sibling's defer cannot clobber the active
+        // claim, so this check fires only when we genuinely lost the slot.
         let postSubscribeGeneration = self.sessionGeneration.withLock { $0 }
-        let lostRace = preSubscribeGeneration != postSubscribeGeneration || self.recording
+        let lostRace = preSubscribeGeneration != postSubscribeGeneration || !self.starting || self.recording
         if lostRace {
             let stream = sharedStream
             Task { await stream.unsubscribe(token) }
