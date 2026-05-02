@@ -170,6 +170,52 @@ final class STTSchedulerTests: XCTestCase {
         XCTAssertEqual(count, 1)
     }
 
+    func testSpeechEngineSessionWaitsForInFlightEngineSwitch() async throws {
+        let runtime = MockSTTRuntime()
+        await runtime.blockNextSpeechEngineSwitch()
+        let scheduler = STTScheduler(runtimeProvider: runtime)
+
+        let switchTask = Task {
+            try await scheduler.setSpeechEngine(.whisper)
+        }
+        try await waitForSpeechEngineSwitch(runtime: runtime, count: 1)
+
+        let leaseTask = Task {
+            await scheduler.beginSpeechEngineSession()
+        }
+        try await Task.sleep(for: .milliseconds(50))
+        await runtime.releaseSpeechEngineSwitch()
+
+        let lease = await leaseTask.value
+        XCTAssertEqual(lease.selection, SpeechEngineSelection(engine: .whisper))
+
+        await scheduler.endSpeechEngineSession(lease)
+        _ = try await switchTask.value
+    }
+
+    func testCancelledSpeechEngineSwitchRestoresSchedulerAvailability() async throws {
+        let runtime = MockSTTRuntime()
+        await runtime.blockNextSpeechEngineSwitch()
+        let scheduler = STTScheduler(runtimeProvider: runtime)
+
+        let switchTask = Task {
+            try await scheduler.setSpeechEngine(.whisper)
+        }
+        try await waitForSpeechEngineSwitch(runtime: runtime, count: 1)
+
+        switchTask.cancel()
+        do {
+            try await value(switchTask)
+            XCTFail("Expected cancelled engine switch to throw")
+        } catch is CancellationError {
+            // Expected.
+        }
+
+        try await scheduler.setSpeechEngine(.parakeet)
+        let count = await runtime.setSpeechEngineCallCount
+        XCTAssertEqual(count, 2)
+    }
+
     func testSpeechEngineSessionLeaseUsesRuntimeSelection() async {
         let runtime = MockSTTRuntime()
         await runtime.setCurrentSelection(SpeechEngineSelection(engine: .whisper, language: "KO"))
@@ -419,6 +465,42 @@ final class STTSchedulerTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(20))
         }
     }
+
+    private func waitForSpeechEngineSwitch(
+        runtime: MockSTTRuntime,
+        count: Int,
+        timeout: Duration = .seconds(2)
+    ) async throws {
+        let start = ContinuousClock.now
+        while await runtime.setSpeechEngineCallCount < count {
+            if start.duration(to: .now) > timeout {
+                XCTFail("Timed out waiting for \(count) speech engine switches")
+                return
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
+    private func value<T>(
+        _ task: Task<T, any Error>,
+        timeout: Duration = .seconds(1)
+    ) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            defer { group.cancelAll() }
+            group.addTask {
+                try await task.value
+            }
+            group.addTask {
+                try await Task.sleep(for: timeout)
+                throw STTSchedulerTestError.timeout
+            }
+            return try await group.next()!
+        }
+    }
+}
+
+private enum STTSchedulerTestError: Error {
+    case timeout
 }
 
 private actor MockSTTRuntime: STTRuntimeProtocol {
@@ -435,6 +517,8 @@ private actor MockSTTRuntime: STTRuntimeProtocol {
     private(set) var setSpeechEngineCallCount = 0
     private var selection = SpeechEngineSelection(engine: .parakeet)
     private var ready = false
+    private var shouldBlockNextSpeechEngineSwitch = false
+    private var speechEngineSwitchContinuation: CheckedContinuation<Void, Never>?
 
     func transcribe(
         audioPath: String,
@@ -507,6 +591,19 @@ private actor MockSTTRuntime: STTRuntimeProtocol {
 
     func setSpeechEngine(_ preference: SpeechEnginePreference) async throws {
         setSpeechEngineCallCount += 1
+        if shouldBlockNextSpeechEngineSwitch {
+            shouldBlockNextSpeechEngineSwitch = false
+            await withTaskCancellationHandler {
+                await withCheckedContinuation { continuation in
+                    speechEngineSwitchContinuation = continuation
+                }
+            } onCancel: {
+                Task {
+                    await self.releaseSpeechEngineSwitch()
+                }
+            }
+            try Task.checkCancellation()
+        }
         selection = SpeechEngineSelection(engine: preference)
         ready = false
     }
@@ -517,6 +614,15 @@ private actor MockSTTRuntime: STTRuntimeProtocol {
 
     func setCurrentSelection(_ selection: SpeechEngineSelection) {
         self.selection = selection
+    }
+
+    func blockNextSpeechEngineSwitch() {
+        shouldBlockNextSpeechEngineSwitch = true
+    }
+
+    func releaseSpeechEngineSwitch() {
+        speechEngineSwitchContinuation?.resume()
+        speechEngineSwitchContinuation = nil
     }
 
     func block(path: String) {

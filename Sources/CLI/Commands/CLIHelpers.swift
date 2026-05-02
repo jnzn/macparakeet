@@ -285,6 +285,14 @@ enum CLIErrorType {
         }
         if error is CLILookupError { return lookup }
         if error is CLIInputError { return inputEmpty }
+        if let cli = error as? CLIError {
+            switch cli {
+            case .fileNotFound:
+                return inputMissing
+            case .unsupportedFormat:
+                return validation
+            }
+        }
         // ArgumentParser surfaces `validate()` failures as `ValidationError`.
         // The taxonomy has carried the `validation` value since 1.2.0; map
         // ValidationError to it so downstream agents can branch on user

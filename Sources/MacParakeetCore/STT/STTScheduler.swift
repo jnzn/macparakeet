@@ -52,6 +52,7 @@ public actor STTScheduler: STTManaging, SpeechEngineRoutedTranscribing, SpeechEn
     private var cancelledJobIDs: Set<UUID> = []
     private var acceptsNewJobs = true
     private var activeSpeechEngineSessionIDs: Set<UUID> = []
+    private var speechEngineSwitchTask: Task<Void, Error>?
 
     /// - Parameter meetingLiveChunkBacklogLimit: Maximum pending live-preview chunks before the
     ///   oldest is dropped. 120 ≈ 4 minutes of dual-source 5-second chunks emitted every ~4
@@ -160,21 +161,36 @@ public actor STTScheduler: STTManaging, SpeechEngineRoutedTranscribing, SpeechEn
     }
 
     public func setSpeechEngine(_ preference: SpeechEnginePreference) async throws {
-        guard acceptsNewJobs, activeSpeechEngineSessionIDs.isEmpty, !hasQueuedOrRunningJobs else {
+        guard acceptsNewJobs,
+              activeSpeechEngineSessionIDs.isEmpty,
+              !hasQueuedOrRunningJobs,
+              speechEngineSwitchTask == nil else {
             throw STTError.engineBusy
         }
 
         acceptsNewJobs = false
-        do {
+        let switchTask = Task {
             try await runtime.setSpeechEngine(preference)
+        }
+        speechEngineSwitchTask = switchTask
+        defer {
+            speechEngineSwitchTask = nil
             acceptsNewJobs = true
-        } catch {
-            acceptsNewJobs = true
-            throw error
+        }
+        try await withTaskCancellationHandler {
+            try await switchTask.value
+        } onCancel: {
+            switchTask.cancel()
         }
     }
 
     public func beginSpeechEngineSession() async -> SpeechEngineLease {
+        if let speechEngineSwitchTask {
+            let result = await speechEngineSwitchTask.result
+            if case .failure(let error) = result {
+                logger.warning("Proceeding with speech engine session after failed engine switch: \(error.localizedDescription, privacy: .public)")
+            }
+        }
         let lease = SpeechEngineLease(selection: await runtime.currentSpeechEngineSelection())
         activeSpeechEngineSessionIDs.insert(lease.id)
         return lease

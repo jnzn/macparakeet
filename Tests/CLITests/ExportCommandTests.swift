@@ -1,3 +1,4 @@
+import ArgumentParser
 import XCTest
 @testable import CLI
 @testable import MacParakeetCore
@@ -50,6 +51,35 @@ final class ExportCommandTests: XCTestCase {
         let url = command.resolveOutputURL(transcription: transcription)
 
         XCTAssertEqual(url.lastPathComponent, "folder Meeting notes.md")
+    }
+
+    func testJSONStdoutEmitsFailureEnvelopeForLookupMiss() async throws {
+        let dbURL = temporaryDatabaseURL()
+        defer { try? FileManager.default.removeItem(at: dbURL) }
+        let command = try ExportCommand.parse([
+            "missing-id",
+            "--format", "json",
+            "--stdout",
+            "--database", dbURL.path,
+        ])
+
+        var thrownError: Error?
+        let output = try await captureStandardOutput {
+            do {
+                try await command.run()
+            } catch {
+                thrownError = error
+            }
+        }
+
+        let exit = try XCTUnwrap(thrownError as? ExitCode)
+        XCTAssertEqual(exit, .failure)
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any]
+        )
+        XCTAssertEqual(object["ok"] as? Bool, false)
+        XCTAssertEqual(object["errorType"] as? String, "lookup")
+        XCTAssertTrue((object["error"] as? String)?.contains("No transcription matching") == true)
     }
 
     @MainActor func testExportToTxtWritesFile() throws {
@@ -162,5 +192,10 @@ final class ExportCommandTests: XCTestCase {
         let decoded = try decoder.decode(Transcription.self, from: data)
         XCTAssertEqual(decoded.fileName, "json-test.mp3")
         XCTAssertEqual(decoded.rawTranscript, "JSON content")
+    }
+
+    private func temporaryDatabaseURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("macparakeet-cli-\(UUID().uuidString).db")
     }
 }

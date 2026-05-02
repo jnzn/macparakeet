@@ -262,7 +262,42 @@ final class MeetingRecordingServiceTests: XCTestCase {
         XCTAssertEqual(metadata.speechEngine, SpeechEngineSelection(engine: .whisper, language: "ko"))
         XCTAssertEqual(lockStore.writes.last?.file.speechEngine, SpeechEngineSelection(engine: .whisper, language: "ko"))
         let activeLeaseCountAfterStop = await sttClient.activeLeaseCount
-        XCTAssertEqual(activeLeaseCountAfterStop, 0)
+        XCTAssertEqual(activeLeaseCountAfterStop, 1)
+
+        await service.completeTranscription(for: output)
+        let activeLeaseCountAfterCompletion = await sttClient.activeLeaseCount
+        XCTAssertEqual(activeLeaseCountAfterCompletion, 0)
+    }
+
+    func testFailedTranscriptionAttemptReleasesRetainedSpeechEngineLeaseWithoutDeletingLock() async throws {
+        let captureService = MockMeetingAudioCaptureService()
+        let lockStore = RecordingLockFileStore()
+        let speechEngine = SpeechEngineSelection(engine: .whisper, language: "KO")
+        let sttClient = LeasingMeetingSTTClient(selection: speechEngine)
+        let service = MeetingRecordingService(
+            audioCaptureService: captureService,
+            audioConverter: MockMeetingAudioFileConverter(),
+            sttTranscriber: sttClient,
+            lockFileStore: lockStore
+        )
+
+        try await service.startRecording()
+        let microphoneBuffer = try XCTUnwrap(makeMonoFloatBuffer(frameCount: 80_000, sampleValue: 0.25))
+        await captureService.yield(.microphoneBuffer(
+            microphoneBuffer,
+            AVAudioTime(hostTime: AVAudioTime.hostTime(forSeconds: 100.0))
+        ))
+
+        let output = try await service.stopRecording()
+        defer { try? FileManager.default.removeItem(at: output.folderURL) }
+
+        let activeLeaseCountAfterStop = await sttClient.activeLeaseCount
+        XCTAssertEqual(activeLeaseCountAfterStop, 1)
+
+        await service.finishTranscriptionAttempt(for: output)
+        let activeLeaseCountAfterFailure = await sttClient.activeLeaseCount
+        XCTAssertEqual(activeLeaseCountAfterFailure, 0)
+        XCTAssertTrue(lockStore.deletes.isEmpty)
     }
 
     func testLivePreviewUsesCapturedSpeechEngineSelection() async throws {
