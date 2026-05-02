@@ -71,6 +71,7 @@ public final class SettingsViewModel {
         didSet {
             defaults.set(telemetryEnabled, forKey: AppPreferences.telemetryEnabledKey)
             if !telemetryEnabled {
+                Telemetry.clearQueue()
                 Telemetry.send(.telemetryOptedOut)
                 Task { await Telemetry.flush() }
             }
@@ -1003,7 +1004,9 @@ public final class SettingsViewModel {
         whisperModelStatus = .repairing
         let modelVariant = SpeechEnginePreference.whisperModelVariant(defaults: defaults)
         let friendly = SpeechEnginePreference.friendlyVariantName(modelVariant)
+        let operationContext = Observability.childOperationContext()
         whisperModelStatusDetail = "Downloading Whisper \(friendly)..."
+        Telemetry.send(.modelDownloadStarted)
 
         Task {
             do {
@@ -1016,11 +1019,61 @@ public final class SettingsViewModel {
                         self.whisperModelStatusDetail = "Downloading Whisper \(friendly)... \(min(max(percent, 0), 100))%"
                     }
                 }
+                let durationSeconds = Observability.durationSeconds(since: operationContext.startedAt)
+                Telemetry.send(.modelDownloadCompleted(durationSeconds: durationSeconds))
+                Telemetry.send(.modelOperation(
+                    operationID: operationContext.operationID,
+                    operationContext: operationContext,
+                    action: .download,
+                    outcome: .success,
+                    stage: .download,
+                    modelKind: .whisperSTT,
+                    speechEngine: .whisper,
+                    engineVariant: modelVariant,
+                    durationSeconds: durationSeconds,
+                    errorType: nil
+                ))
+                await MainActor.run {
+                    self.whisperDownloading = false
+                    self.refreshWhisperModelStatus()
+                }
+            } catch is CancellationError {
+                let durationSeconds = Observability.durationSeconds(since: operationContext.startedAt)
+                Telemetry.send(.modelOperation(
+                    operationID: operationContext.operationID,
+                    operationContext: operationContext,
+                    action: .download,
+                    outcome: .cancelled,
+                    stage: .download,
+                    modelKind: .whisperSTT,
+                    speechEngine: .whisper,
+                    engineVariant: modelVariant,
+                    durationSeconds: durationSeconds,
+                    errorType: "CancellationError"
+                ))
                 await MainActor.run {
                     self.whisperDownloading = false
                     self.refreshWhisperModelStatus()
                 }
             } catch {
+                let durationSeconds = Observability.durationSeconds(since: operationContext.startedAt)
+                let errorType = TelemetryErrorClassifier.classify(error)
+                Telemetry.send(.modelDownloadFailed(
+                    errorType: errorType,
+                    errorDetail: TelemetryErrorClassifier.errorDetail(error)
+                ))
+                Telemetry.send(.modelOperation(
+                    operationID: operationContext.operationID,
+                    operationContext: operationContext,
+                    action: .download,
+                    outcome: .failure,
+                    stage: .download,
+                    modelKind: .whisperSTT,
+                    speechEngine: .whisper,
+                    engineVariant: modelVariant,
+                    durationSeconds: durationSeconds,
+                    errorType: errorType
+                ))
                 await MainActor.run {
                     self.whisperDownloading = false
                     self.whisperModelStatus = .failed
@@ -1032,9 +1085,21 @@ public final class SettingsViewModel {
 
     private func applySpeechEngineChange(_ preference: SpeechEnginePreference) {
         speechEngineError = nil
+        let previousPreference = SpeechEnginePreference.current(defaults: defaults)
+        let operationContext = Observability.childOperationContext()
 
         if preference == .whisper && !isWhisperModelDownloaded {
             speechEngineError = "Download the Whisper model before switching engines."
+            Telemetry.send(.speechEngineSwitchOperation(
+                operationID: operationContext.operationID,
+                operationContext: operationContext,
+                fromEngine: previousPreference,
+                toEngine: preference,
+                outcome: .unavailable,
+                durationSeconds: Observability.durationSeconds(since: operationContext.startedAt),
+                blockedReason: .modelNotDownloaded,
+                errorType: "model_not_downloaded"
+            ))
             isApplyingSpeechEngineState = true
             speechEnginePreference = .parakeet
             isApplyingSpeechEngineState = false
@@ -1043,6 +1108,16 @@ public final class SettingsViewModel {
 
         guard let speechEngineSwitcher else {
             preference.save(to: defaults)
+            Telemetry.send(.speechEngineSwitchOperation(
+                operationID: operationContext.operationID,
+                operationContext: operationContext,
+                fromEngine: previousPreference,
+                toEngine: preference,
+                outcome: .success,
+                durationSeconds: Observability.durationSeconds(since: operationContext.startedAt),
+                blockedReason: nil,
+                errorType: nil
+            ))
             return
         }
 
@@ -1057,10 +1132,47 @@ public final class SettingsViewModel {
                 self.refreshModelStatus()
             }
             do {
-                try await speechEngineSwitcher.setSpeechEngine(preference)
+                try await Observability.withOperationContext(operationContext) {
+                    try await speechEngineSwitcher.setSpeechEngine(preference)
+                }
                 preference.save(to: self.defaults)
+                Telemetry.send(.speechEngineSwitchOperation(
+                    operationID: operationContext.operationID,
+                    operationContext: operationContext,
+                    fromEngine: previousPreference,
+                    toEngine: preference,
+                    outcome: .success,
+                    durationSeconds: Observability.durationSeconds(since: operationContext.startedAt),
+                    blockedReason: nil,
+                    errorType: nil
+                ))
+            } catch is CancellationError {
+                Telemetry.send(.speechEngineSwitchOperation(
+                    operationID: operationContext.operationID,
+                    operationContext: operationContext,
+                    fromEngine: previousPreference,
+                    toEngine: preference,
+                    outcome: .cancelled,
+                    durationSeconds: Observability.durationSeconds(since: operationContext.startedAt),
+                    blockedReason: nil,
+                    errorType: "CancellationError"
+                ))
+                self.isApplyingSpeechEngineState = true
+                self.speechEnginePreference = SpeechEnginePreference.current(defaults: self.defaults)
+                self.isApplyingSpeechEngineState = false
             } catch {
+                let errorType = TelemetryErrorClassifier.classify(error)
                 self.speechEngineError = error.localizedDescription
+                Telemetry.send(.speechEngineSwitchOperation(
+                    operationID: operationContext.operationID,
+                    operationContext: operationContext,
+                    fromEngine: previousPreference,
+                    toEngine: preference,
+                    outcome: .failure,
+                    durationSeconds: Observability.durationSeconds(since: operationContext.startedAt),
+                    blockedReason: Self.telemetrySpeechEngineSwitchBlockedReason(for: error),
+                    errorType: errorType
+                ))
                 self.isApplyingSpeechEngineState = true
                 self.speechEnginePreference = SpeechEnginePreference.current(defaults: self.defaults)
                 self.isApplyingSpeechEngineState = false
@@ -1075,32 +1187,93 @@ public final class SettingsViewModel {
         parakeetRepairing = true
         parakeetStatus = .repairing
         parakeetStatusDetail = "Preparing speech model..."
+        let operationContext = Observability.childOperationContext()
 
         Task {
             do {
-                try await runWithRetry(maxAttempts: 3, onRetry: { [weak self] attempt in
-                    guard let self else { return }
-                    self.parakeetStatusDetail = "Retrying speech model setup (attempt \(attempt)/3)..."
-                }) {
-                    try await sttClient.warmUp { [weak self] progressMessage in
-                        Task { @MainActor [weak self] in
-                            guard let self else { return }
-                            self.parakeetStatusDetail = progressMessage
+                try await Observability.withOperationContext(operationContext) {
+                    try await runWithRetry(maxAttempts: 3, onRetry: { [weak self] attempt in
+                        guard let self else { return }
+                        self.parakeetStatusDetail = "Retrying speech model setup (attempt \(attempt)/3)..."
+                    }) {
+                        try await sttClient.warmUp { [weak self] progressMessage in
+                            Task { @MainActor [weak self] in
+                                guard let self else { return }
+                                self.parakeetStatusDetail = progressMessage
+                            }
                         }
                     }
                 }
+                Telemetry.send(.modelOperation(
+                    operationID: operationContext.operationID,
+                    operationContext: operationContext,
+                    action: .repair,
+                    outcome: .success,
+                    stage: .warmUp,
+                    modelKind: .parakeetSTT,
+                    speechEngine: .parakeet,
+                    durationSeconds: Observability.durationSeconds(since: operationContext.startedAt),
+                    errorType: nil
+                ))
 
                 await MainActor.run {
                     self.parakeetRepairing = false
                     self.refreshModelStatus()
                 }
+            } catch is CancellationError {
+                Telemetry.send(.modelOperation(
+                    operationID: operationContext.operationID,
+                    operationContext: operationContext,
+                    action: .repair,
+                    outcome: .cancelled,
+                    stage: .warmUp,
+                    modelKind: .parakeetSTT,
+                    speechEngine: .parakeet,
+                    durationSeconds: Observability.durationSeconds(since: operationContext.startedAt),
+                    errorType: "CancellationError"
+                ))
+                await MainActor.run {
+                    self.parakeetRepairing = false
+                    self.refreshModelStatus()
+                }
             } catch {
+                let errorType = TelemetryErrorClassifier.classify(error)
+                Telemetry.send(.modelOperation(
+                    operationID: operationContext.operationID,
+                    operationContext: operationContext,
+                    action: .repair,
+                    outcome: .failure,
+                    stage: .warmUp,
+                    modelKind: .parakeetSTT,
+                    speechEngine: .parakeet,
+                    durationSeconds: Observability.durationSeconds(since: operationContext.startedAt),
+                    errorType: errorType
+                ))
                 await MainActor.run {
                     self.parakeetRepairing = false
                     self.parakeetStatus = .failed
                     self.parakeetStatusDetail = error.localizedDescription
                 }
             }
+        }
+    }
+
+    private static func telemetrySpeechEngineSwitchBlockedReason(
+        for error: Error
+    ) -> TelemetrySpeechEngineSwitchBlockedReason? {
+        guard let sttError = error as? STTError else { return nil }
+        switch sttError {
+        case .engineBusy:
+            return .engineBusy
+        case .modelDownloadFailed, .modelNotLoaded:
+            return .modelNotDownloaded
+        case .engineNotRunning,
+             .engineStartFailed,
+             .transcriptionFailed,
+             .timeout,
+             .outOfMemory,
+             .invalidResponse:
+            return nil
         }
     }
 
