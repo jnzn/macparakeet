@@ -892,6 +892,95 @@ final class LLMClientTests: XCTestCase {
         XCTAssertNil(capturedBody?["options"])
     }
 
+    func testOllamaListModelsUsesNativeTagsEndpoint() async throws {
+        var capturedRequest: URLRequest?
+
+        MockURLProtocol.handler = { request in
+            capturedRequest = request
+            return (self.okResponse(for: request), Data("""
+            {"models":[{"name":"qwen3.5:4b"},{"name":"gemma3:4b"}]}
+            """.utf8))
+        }
+
+        let config = LLMProviderConfig.ollama(model: "qwen3.5:4b")
+        let models = try await llmClient.listModels(config: config)
+
+        XCTAssertEqual(capturedRequest?.url?.absoluteString, "http://localhost:11434/api/tags")
+        XCTAssertEqual(capturedRequest?.httpMethod, "GET")
+        XCTAssertEqual(models, ["gemma3:4b", "qwen3.5:4b"])
+    }
+
+    func testOllamaListModelsPreservesBasePathWhenBuildingTagsEndpoint() async throws {
+        var capturedRequest: URLRequest?
+
+        MockURLProtocol.handler = { request in
+            capturedRequest = request
+            return (self.okResponse(for: request), Data("""
+            {"models":[{"name":"local-model"}]}
+            """.utf8))
+        }
+
+        let config = LLMProviderConfig.ollama(
+            model: "local-model",
+            baseURL: URL(string: "http://local-ai.example.test/custom/v1")!
+        )
+        let models = try await llmClient.listModels(config: config)
+
+        XCTAssertEqual(capturedRequest?.url?.absoluteString, "http://local-ai.example.test/custom/api/tags")
+        XCTAssertEqual(models, ["local-model"])
+    }
+
+    func testOllamaListModelsFallsBackToOpenAICompatibleModelsEndpoint() async throws {
+        var capturedURLs: [String] = []
+
+        MockURLProtocol.handler = { request in
+            capturedURLs.append(request.url!.absoluteString)
+            if request.url?.path == "/api/tags" {
+                let response = HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 404,
+                    httpVersion: nil,
+                    headerFields: nil
+                )!
+                return (response, Data())
+            }
+            return (self.okResponse(for: request), Data("""
+            {"data":[{"id":"qwen3.5:4b"}]}
+            """.utf8))
+        }
+
+        let config = LLMProviderConfig.ollama(model: "qwen3.5:4b")
+        let models = try await llmClient.listModels(config: config)
+
+        XCTAssertEqual(
+            capturedURLs,
+            [
+                "http://localhost:11434/api/tags",
+                "http://localhost:11434/v1/models",
+            ]
+        )
+        XCTAssertEqual(models, ["qwen3.5:4b"])
+    }
+
+    func testListModelsConnectionFailureIncludesUnderlyingError() async {
+        let urlError = URLError(.cannotConnectToHost)
+        MockURLProtocol.handler = { _ in
+            throw urlError
+        }
+
+        do {
+            _ = try await llmClient.listModels(config: .lmstudio(model: "local-model"))
+            XCTFail("Expected LLMError.connectionFailed")
+        } catch let error as LLMError {
+            XCTAssertEqual(
+                error.localizedDescription,
+                "Connection failed: \(urlError.localizedDescription)"
+            )
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
+    }
+
     // MARK: - Gemini Error Array Format
 
     func testGeminiErrorArrayParsedCorrectly() async {
