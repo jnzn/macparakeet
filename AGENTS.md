@@ -83,6 +83,14 @@ Tests/
 Full spec is in [`spec/`](./spec/). Architectural decisions (locked) are in
 [`spec/adr/`](./spec/adr/). Don't second-guess ADRs.
 
+**Subsystem READMEs.** Load-bearing folders inside
+[`Sources/MacParakeetCore/`](./Sources/MacParakeetCore/) carry their own
+`README.md` capturing non-obvious rules (threading, ordering,
+retention) that aren't visible from grep. **When you're about to edit
+inside one of these folders, read its README first.** Folders with
+READMEs today: `Audio/`, `STT/`, `TextProcessing/`, `Database/`,
+`Licensing/`.
+
 ## Security & Privacy
 
 - **Local-first speech.** STT runs on the Apple Neural Engine. Audio and

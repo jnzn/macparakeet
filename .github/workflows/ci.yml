@@ -36,6 +36,13 @@ jobs:
           xcodebuild -version
           swift --version
 
+      - name: Check Subsystem README References
+        timeout-minutes: 1
+        run: |
+          mkdir -p .ci-logs
+          set -o pipefail
+          ./scripts/check-readme-references.sh 2>&1 | tee .ci-logs/check-readme-references.log
+
       - name: Cache SwiftPM Dependencies
         uses: actions/cache@v4
         with:
