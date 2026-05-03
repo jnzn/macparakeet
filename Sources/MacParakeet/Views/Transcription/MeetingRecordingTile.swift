@@ -14,9 +14,8 @@ struct MeetingRecordingTile: View {
     var onTap: () -> Void
 
     // Press-driven bloom on the Start button's leading glyph. Pure visual
-    // flourish: the action fires immediately on press; the bloom plays
-    // alongside and is allowed to be cut by the .idle → .recording state
-    // transition (the cut blends into the tile's content swap).
+    // flourish: the action fires immediately; if the tile stays idle after
+    // a denied permission prompt or retryable race, the bloom resets below.
     @State private var startBloom: Double = 0
 
     var body: some View {

@@ -81,7 +81,14 @@ let package = Package(
             name: "MacParakeetCore",
             dependencies: coreDependencies,
             path: "Sources/MacParakeetCore",
-            exclude: ["Resources"]
+            exclude: [
+                "Audio/README.md",
+                "Database/README.md",
+                "Licensing/README.md",
+                "Resources",
+                "STT/README.md",
+                "TextProcessing/README.md",
+            ]
         ),
         // ViewModels library (testable, depends on Core + AppKit/SwiftUI)
         .target(
