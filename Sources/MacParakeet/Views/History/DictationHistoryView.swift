@@ -524,12 +524,7 @@ struct DictationCardRow: View {
 
         let nsText = text as NSString
         var searchRange = NSRange(location: 0, length: nsText.length)
-        let highlightColor = NSColor(name: nil) { appearance in
-            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            return isDark
-                ? NSColor(red: 1.0, green: 0.54, blue: 0.36, alpha: 0.2)
-                : NSColor(red: 0.91, green: 0.42, blue: 0.23, alpha: 0.2)
-        }
+        let highlightColor = NSColor(DesignSystem.Colors.accent.opacity(0.2))
 
         while searchRange.length > 0 {
             let found = nsText.range(of: query, options: .caseInsensitive, range: searchRange)
