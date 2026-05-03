@@ -7,7 +7,7 @@
 
 ## Overview
 
-Meeting recording is implemented on `main` as Labs/Beta but has not yet shipped to a public DMG. The Meetings list (`MeetingsView`) is the first surface a user lands on after recording — currently it shows generic "Meeting {date} at {time}" titles, an icon-strip metadata row (👥 speakers · 📃 words · 🔧 Recovered), a giant left-rail duration, and a mid-sentence transcript snippet. The list is functional but visually noisy, redundant (date appears twice), and not Apple-grade.
+Meeting recording ships in the v0.6 release scope. The Meetings list (`MeetingsView`) is the first surface a user lands on after recording -- before this completed polish pass it showed generic "Meeting {date} at {time}" titles, an icon-strip metadata row (speakers / words / recovered), a giant left-rail duration, and a mid-sentence transcript snippet. The list was functional but visually noisy, redundant (date appeared twice), and not Apple-grade.
 
 This plan brings the list to enterprise/Apple-minimal polish without removing any information — every existing data point remains reachable via hover, right-click, or detail view. The redesign:
 

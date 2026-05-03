@@ -4,7 +4,7 @@
 
 ## What is MacParakeet?
 
-A **fast, private, local-first voice app** for macOS. The public stable DMG currently ships system-wide dictation plus file/URL transcription. On `main`, the product direction adds Labs meeting recording and optional local WhisperKit multilingual STT for Korean, Japanese, Chinese, and other languages outside Parakeet's coverage.
+A **fast, private, local-first voice app** for macOS. The v0.6 release ships system-wide dictation, file/URL transcription, meeting recording, and optional local WhisperKit multilingual STT for Korean, Japanese, Chinese, and other languages outside Parakeet's coverage.
 
 **North Star:** Fast, local-first voice app for Mac.
 
@@ -16,14 +16,13 @@ A **fast, private, local-first voice app** for macOS. The public stable DMG curr
 
 | Channel | Agent Assumption | Features |
 |---------|------------------|----------|
-| Stable DMG | User-facing release, recommended for normal use | Dictation, file/video/YouTube transcription, exports, vocabulary, AI features |
-| `main` | Development | Stable features plus Labs meeting recording, optional WhisperKit, and hidden calendar auto-start/reminder code under `AppFeatures.calendarEnabled = false` |
+| Stable DMG | User-facing release, recommended for normal use | Dictation, file/video/YouTube transcription, meeting recording, optional WhisperKit, exports, vocabulary, AI features |
+| `main` | Development | v0.6 release scope plus hidden calendar auto-start/reminder code under `AppFeatures.calendarEnabled = false` |
 
-When editing public-facing docs, preserve this distinction: meeting recording
-and WhisperKit are implemented on `main` as Labs features, but they are not in
-the current public DMG yet. Calendar reminders, auto-start, and auto-stop are
-implemented in source but hidden behind `AppFeatures.calendarEnabled = false`
-pending hands-on end-to-end validation.
+When editing public-facing docs, preserve this release boundary: v0.6 includes
+meeting recording and WhisperKit. Calendar reminders, auto-start, and auto-stop
+are implemented in source but hidden behind `AppFeatures.calendarEnabled =
+false` pending hands-on end-to-end validation.
 
 ## Quick Navigation
 
@@ -120,7 +119,7 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 
 ## Current Phase
 
-**Current main branch** -- Labs scope includes meeting recording and optional WhisperKit multilingual STT. These are implemented on `main` but are not in the current public DMG yet. Calendar auto-start/reminders are implemented in source but hidden behind `AppFeatures.calendarEnabled = false`.
+**Current main branch** -- v0.6 release scope includes meeting recording and optional WhisperKit multilingual STT. Calendar auto-start/reminders are implemented in source but hidden behind `AppFeatures.calendarEnabled = false`.
 
 - **v0.1** MVP -- System-wide dictation, file transcription, overlay, history, export, SQLite, CLI, STT engine
 - **v0.2** Clean Pipeline -- Text processing (filler removal, custom words, snippets), Vocabulary UI, feedback form
