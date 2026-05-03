@@ -22,7 +22,7 @@ Replace the hardcoded starter and follow-up pill enums in the live meeting Ask t
 1. **Independent table.** New `quick_prompts` table; no changes to `prompts`.
 2. **Two kinds in one table** — `starter` and `followUp`. Discriminated by a `kind` column. Single sheet shows both as stacked sections.
 3. **Built-ins are editable, not read-only** — divergence from Prompt Library. Users can rename, retune, reorder, and hide built-ins. Cannot delete them. Each built-in row offers per-row "Restore default."
-4. **Reset semantics** — per-section "Reset built-ins" restores label/prompt/order/visibility for built-ins only; never deletes user-created customs.
+4. **Reset semantics** — per-section "Reset built-ins" restores label/prompt/group/order for built-ins only while preserving visibility; never deletes user-created customs.
 5. **No template variables** — pills are plain strings. `TranscriptChatViewModel` already injects transcript + notes via system prompt; adding `{{transcript}}` here would duplicate context and reintroduce the source-scoping hazard from ADR-020.
 6. **Manage entry point: sparkle popover footer only.** No Settings entry, no transcript-detail entry. Pills are met in the Ask tab; managed from the Ask tab.
 7. **Group label optional, on starter only.** Follow-ups are flat; starters keep optional `groupLabel` so users can preserve CATCH UP / CAPTURE / CHALLENGE clustering.
@@ -35,13 +35,13 @@ Replace the hardcoded starter and follow-up pill enums in the live meeting Ask t
 | File | Target | Purpose |
 |------|--------|---------|
 | `Sources/MacParakeetCore/Models/QuickPrompt.swift` | Core | `QuickPrompt` model, `Kind` enum, built-in seed values |
-| `Sources/MacParakeetCore/Models/QuickPromptExportDTO.swift` | Core | Versioned wire format (`schemaVersion: 1`), encode/decode + coercion rules |
+| `Sources/MacParakeetCore/Models/QuickPromptBundle.swift` | Core | Versioned wire format (`version: 1`), encode/decode + coercion rules |
 | `Sources/MacParakeetCore/Database/QuickPromptRepository.swift` | Core | Protocol + GRDB-backed CRUD + reconciler + import-merge logic |
 | `Sources/MacParakeetViewModels/QuickPromptsViewModel.swift` | ViewModels | Sheet state, edit/create/reorder/restore-defaults |
 | `Sources/MacParakeet/Views/MeetingRecording/AskPromptsSheet.swift` | GUI | The "Ask Prompts" management sheet |
 | `Sources/CLI/Commands/QuickPromptsCommand.swift` | CLI | `quick-prompts list/show/add/set/delete/restore-defaults/export/import` |
 | `Tests/MacParakeetTests/QuickPromptRepositoryTests.swift` | Tests | CRUD + seeding + reconciler idempotency + import-merge |
-| `Tests/MacParakeetTests/QuickPromptExportDTOTests.swift` | Tests | Round-trip encode/decode, schema version, builtIn coercion |
+| `Tests/MacParakeetTests/QuickPromptBundleTests.swift` | Tests | Round-trip encode/decode, schema version, builtIn coercion |
 | `Tests/MacParakeetTests/QuickPromptsViewModelTests.swift` | Tests | Edit, reorder, restore-default, visibility |
 | `Tests/CLITests/QuickPromptsCommandTests.swift` | Tests | CLI parsing, JSON envelope, exit codes |
 
@@ -85,7 +85,7 @@ Built-in seed values live as a `static let builtIns: [QuickPrompt]` in `QuickPro
 ```json
 {
   "schema": "macparakeet.quick_prompts",
-  "schemaVersion": 1,
+  "version": 1,
   "exportedAt": "2026-05-02T20:00:00Z",
   "appVersion": "0.7.0",
   "prompts": [
@@ -105,7 +105,7 @@ Built-in seed values live as a `static let builtIns: [QuickPrompt]` in `QuickPro
 
 **Schema rules (locked under CLI semver from v1):**
 - Single flat `prompts` array; `kind` discriminates (`"starter"` | `"follow_up"`). Future kinds added in minor bumps.
-- Top-level `schemaVersion: 1`. Bump only on breaking changes; new optional fields don't bump.
+- Top-level `version: 1`. Bump only on breaking changes; new optional fields don't bump.
 - `id` is required and round-trippable. Imports match by id (UPSERT) — enables "edit built-in via export-edit-import."
 - `isBuiltIn` advisory: import trusts it only when id matches a known seed UUID; otherwise coerced to `false` (prevents shipping fake "built-ins").
 - Unknown fields in input are ignored (forward-compat). Missing optional fields default per model.
@@ -166,9 +166,9 @@ No unique index on label — users can have duplicate labels across customs (e.g
 - Tests: idempotent seeding, delete-built-in error, reorder ordering, restore-defaults preserves customs, merge import upserts, replace import wipes customs but re-seeds built-ins.
 
 ### Step 2.5 — Export DTO
-- Create `QuickPromptExportDTO` with `schema`, `schemaVersion`, `exportedAt`, `appVersion`, `prompts: [QuickPromptExportEntry]`.
+- Create `QuickPromptBundle` with `schema`, `version`, `exportedAt`, `appVersion`, `prompts: [ExportedQuickPrompt]`.
 - `encode(from: [QuickPrompt])` and `decode(from: Data) throws`.
-- `decode` enforces `schema == "macparakeet.quick_prompts"` and `schemaVersion == 1`; unknown fields ignored (forward-compat); missing required fields throw with clear path (e.g. `prompts[3].label`).
+- `decode` enforces `schema == "macparakeet.quick_prompts"` and `version == 1`; unknown fields ignored (forward-compat); missing required fields throw with clear path (e.g. `prompts[3].label`).
 - `isBuiltIn` coerced to `false` on decode unless `id` matches a known seed UUID (defended against forged built-ins).
 - Tests: round-trip, schema-version mismatch error, unknown-field tolerance, builtIn coercion.
 
@@ -222,7 +222,7 @@ No unique index on label — users can have duplicate labels across customs (e.g
   - `quick-prompts` subcommand surface: `list`, `show`, `add`, `set`,
     `delete`, `restore-defaults`, `export`, `import`. Manages live-meeting
     Ask tab pills (starter + follow-up). Stable JSON wire format
-    (`schema: "macparakeet.quick_prompts"`, `schemaVersion: 1`).
+    (`schema: "macparakeet.quick_prompts"`, `version: 1`).
   - `errorType: "import_schema"` for malformed import files.
   ```
 - Confirm version line in CHANGELOG bumps minor (additive).
@@ -238,7 +238,7 @@ No unique index on label — users can have duplicate labels across customs (e.g
   - [ ] Delete a custom → gone after restart.
   - [ ] Hide a built-in → not in pill row, still in management sheet.
   - [ ] "Reset built-ins" preserves user-created customs.
-  - [ ] Drag-reorder persists across restart.
+  - [ ] Move up/down reorder persists across restart.
   - [ ] Create starter with brand-new group label → group renders in StarterPromptList.
 
 ## Acceptance Criteria

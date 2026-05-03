@@ -90,6 +90,10 @@ extension QuickPrompt {
         }
     }
 
+    public static func builtInPrompt(id: UUID, now: Date = Date()) -> QuickPrompt? {
+        builtInPrompts(now: now).first { $0.id == id }
+    }
+
     /// Set of canonical built-in UUIDs. Used by the export DTO to coerce a
     /// claimed `isBuiltIn: true` to `false` on import unless the id is genuinely
     /// one of ours — prevents a malicious or careless import file from forging

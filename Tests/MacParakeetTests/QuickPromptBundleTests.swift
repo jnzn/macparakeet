@@ -158,6 +158,40 @@ final class QuickPromptBundleTests: XCTestCase {
         XCTAssertTrue(materialized.isBuiltIn)
     }
 
+    func testMaterializeCanonicalizesBuiltInKind() {
+        let starter = QuickPrompt.builtInPrompts(kind: .starter).first!
+        let entry = QuickPromptBundle.ExportedQuickPrompt(
+            id: starter.id,
+            kind: .followUp,
+            label: "Moved",
+            prompt: "should stay a starter",
+            groupLabel: "CATCH UP",
+            sortOrder: 0,
+            isVisible: true,
+            isBuiltIn: true
+        )
+
+        let materialized = QuickPromptBundle.materialize(entry)
+        XCTAssertEqual(materialized.kind, .starter)
+        XCTAssertTrue(materialized.isBuiltIn)
+    }
+
+    func testMaterializeDropsGroupLabelForFollowUps() {
+        let entry = QuickPromptBundle.ExportedQuickPrompt(
+            id: UUID(),
+            kind: .followUp,
+            label: "Flat",
+            prompt: "Stay flat.",
+            groupLabel: "SHOULD NOT STICK",
+            sortOrder: 0,
+            isVisible: true,
+            isBuiltIn: false
+        )
+
+        let materialized = QuickPromptBundle.materialize(entry)
+        XCTAssertNil(materialized.groupLabel)
+    }
+
     func testKindWireFormatIsSnakeCase() throws {
         let prompts = [QuickPrompt(kind: .followUp, label: "x", prompt: "y")]
         let bundle = QuickPromptBundle(from: prompts, exportedAt: Date(), appVersion: nil)

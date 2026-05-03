@@ -122,13 +122,15 @@ extension QuickPromptBundle {
         _ entry: ExportedQuickPrompt,
         now: Date = Date()
     ) -> QuickPrompt {
-        let trustedBuiltIn = entry.isBuiltIn && QuickPrompt.builtInIDs.contains(entry.id)
+        let canonicalBuiltIn = QuickPrompt.builtInPrompt(id: entry.id, now: now)
+        let resolvedKind = canonicalBuiltIn?.kind ?? entry.kind
+        let trustedBuiltIn = entry.isBuiltIn && canonicalBuiltIn != nil
         return QuickPrompt(
             id: entry.id,
-            kind: entry.kind,
+            kind: resolvedKind,
             label: entry.label,
             prompt: entry.prompt,
-            groupLabel: entry.groupLabel,
+            groupLabel: resolvedKind == .starter ? entry.groupLabel : nil,
             sortOrder: entry.sortOrder,
             isVisible: entry.isVisible,
             isBuiltIn: trustedBuiltIn,

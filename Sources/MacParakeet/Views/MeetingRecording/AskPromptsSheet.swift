@@ -12,6 +12,7 @@ struct AskPromptsSheet: View {
 
     @State private var hoveredID: UUID?
     @State private var pendingDelete: QuickPrompt?
+    @State private var pendingResetKind: QuickPrompt.Kind?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -58,6 +59,23 @@ struct AskPromptsSheet: View {
             Button("Cancel", role: .cancel) { pendingDelete = nil }
         } message: {
             Text("This custom pill will be removed from the Ask tab.")
+        }
+        .alert(
+            "Reset built-ins?",
+            isPresented: Binding(
+                get: { pendingResetKind != nil },
+                set: { if !$0 { pendingResetKind = nil } }
+            )
+        ) {
+            Button("Reset", role: .destructive) {
+                if let kind = pendingResetKind {
+                    withAnimation { viewModel.restoreBuiltInDefaults(kind: kind) }
+                }
+                pendingResetKind = nil
+            }
+            Button("Cancel", role: .cancel) { pendingResetKind = nil }
+        } message: {
+            Text("Built-in labels, prompt text, and ordering for this section will return to defaults. Custom pills stay untouched.")
         }
         .sheet(
             isPresented: Binding(
@@ -134,7 +152,7 @@ struct AskPromptsSheet: View {
 
                 Menu {
                     Button("Reset built-ins") {
-                        withAnimation { viewModel.restoreBuiltInDefaults(kind: kind) }
+                        pendingResetKind = kind
                     }
                     Button("Add new \(kind == .starter ? "starter" : "follow-up")") {
                         viewModel.startCreating(kind: kind)
@@ -151,7 +169,7 @@ struct AskPromptsSheet: View {
 
             cardGroup {
                 ForEach(Array(rows.enumerated()), id: \.element.id) { index, prompt in
-                    promptRow(prompt, kind: kind)
+                    promptRow(prompt, kind: kind, rows: rows, index: index)
                     if index < rows.count - 1 { Divider().padding(.leading, 16) }
                 }
                 if rows.isEmpty {
@@ -193,7 +211,7 @@ struct AskPromptsSheet: View {
 
     // MARK: - Row
 
-    private func promptRow(_ prompt: QuickPrompt, kind: QuickPrompt.Kind) -> some View {
+    private func promptRow(_ prompt: QuickPrompt, kind: QuickPrompt.Kind, rows: [QuickPrompt], index: Int) -> some View {
         let isHovered = hoveredID == prompt.id
 
         return HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
@@ -253,6 +271,26 @@ struct AskPromptsSheet: View {
 
             HStack(spacing: 4) {
                 Button {
+                    movePrompt(prompt, by: -1, in: rows, kind: kind)
+                } label: {
+                    rowIcon("chevron.up", isHovered: isHovered)
+                }
+                .buttonStyle(.plain)
+                .disabled(index == 0)
+                .opacity(index == 0 ? 0.25 : 1)
+                .help("Move up")
+
+                Button {
+                    movePrompt(prompt, by: 1, in: rows, kind: kind)
+                } label: {
+                    rowIcon("chevron.down", isHovered: isHovered)
+                }
+                .buttonStyle(.plain)
+                .disabled(index >= rows.count - 1)
+                .opacity(index >= rows.count - 1 ? 0.25 : 1)
+                .help("Move down")
+
+                Button {
                     viewModel.editingPrompt = prompt
                 } label: {
                     rowIcon("pencil", isHovered: isHovered)
@@ -289,6 +327,15 @@ struct AskPromptsSheet: View {
                 hoveredID = hovering ? prompt.id : nil
             }
         }
+    }
+
+    private func movePrompt(_ prompt: QuickPrompt, by delta: Int, in rows: [QuickPrompt], kind: QuickPrompt.Kind) {
+        var ids = rows.map(\.id)
+        guard let currentIndex = ids.firstIndex(of: prompt.id) else { return }
+        let newIndex = currentIndex + delta
+        guard ids.indices.contains(newIndex) else { return }
+        ids.swapAt(currentIndex, newIndex)
+        withAnimation { viewModel.reorder(ids: ids, within: kind) }
     }
 
     private func rowIcon(_ system: String, isHovered: Bool, destructive: Bool = false) -> some View {
@@ -339,14 +386,14 @@ struct AskPromptsSheet: View {
 private struct EditPromptSheet: View {
     @Environment(\.dismiss) private var dismiss
     let initial: QuickPrompt
-    let onSave: (QuickPrompt) -> Void
+    let onSave: (QuickPrompt) -> Bool
     let onCancel: () -> Void
 
     @State private var label: String
     @State private var promptBody: String
     @State private var groupLabel: String
 
-    init(prompt: QuickPrompt, onSave: @escaping (QuickPrompt) -> Void, onCancel: @escaping () -> Void) {
+    init(prompt: QuickPrompt, onSave: @escaping (QuickPrompt) -> Bool, onCancel: @escaping () -> Void) {
         self.initial = prompt
         self.onSave = onSave
         self.onCancel = onCancel
@@ -442,8 +489,9 @@ private struct EditPromptSheet: View {
         updated.prompt = promptBody
         let trimmed = groupLabel.trimmingCharacters(in: .whitespacesAndNewlines)
         updated.groupLabel = trimmed.isEmpty ? nil : trimmed
-        onSave(updated)
-        dismiss()
+        if onSave(updated) {
+            dismiss()
+        }
     }
 }
 
@@ -462,8 +510,9 @@ private struct CreatePromptSheet: View {
                 Spacer()
                 Button("Cancel") { viewModel.cancelCreating(); dismiss() }
                 Button("Add") {
-                    viewModel.commitCreating()
-                    dismiss()
+                    if viewModel.commitCreating() {
+                        dismiss()
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)

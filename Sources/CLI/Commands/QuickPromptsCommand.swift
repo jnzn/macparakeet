@@ -362,6 +362,12 @@ extension QuickPromptsCommand {
             if visible && hidden {
                 throw ValidationError("--visible and --hidden are mutually exclusive")
             }
+            if let label, label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                throw ValidationError("--label must not be empty")
+            }
+            if let prompt, prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                throw ValidationError("--prompt must not be empty")
+            }
             if label == nil && prompt == nil && group == nil && sortOrder == nil && !visible && !hidden {
                 throw ValidationError("specify at least one field to change (--label / --prompt / --group / --sort-order / --visible / --hidden)")
             }
@@ -374,6 +380,9 @@ extension QuickPromptsCommand {
                 let repo = QuickPromptRepository(dbQueue: db.dbQueue)
 
                 var p = try findQuickPrompt(idOrLabel: idOrLabel, repo: repo)
+                if group != nil && p.kind == .followUp {
+                    throw ValidationError("--group is only valid for starter prompts")
+                }
 
                 if let label {
                     p.label = label.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -644,7 +653,12 @@ extension QuickPromptsCommand {
 
                 let db = try DatabaseManager(path: resolvedDatabasePath(database))
                 let repo = QuickPromptRepository(dbQueue: db.dbQueue)
-                let summary = try repo.applyImport(bundle, mode: mode.domain, dryRun: dryRun)
+                let summary: QuickPromptImport.Summary
+                do {
+                    summary = try repo.applyImport(bundle, mode: mode.domain, dryRun: dryRun)
+                } catch let importError as QuickPromptImportError {
+                    throw QuickPromptCLIError.importSchemaError(importError.localizedDescription)
+                }
 
                 if json {
                     struct ImportResult: Encodable {

@@ -272,6 +272,71 @@ final class QuickPromptRepositoryTests: XCTestCase {
         XCTAssertEqual(try repo.fetch(id: forgedID)?.isBuiltIn, false)
     }
 
+    func testImportRejectsDuplicateIDsWithoutTrapping() throws {
+        let duplicateID = UUID(uuidString: "11111111-2222-4333-8444-555555555555")!
+        let first = QuickPromptBundle.ExportedQuickPrompt(
+            id: duplicateID,
+            kind: .followUp,
+            label: "First",
+            prompt: "first",
+            groupLabel: nil,
+            sortOrder: 0,
+            isVisible: true,
+            isBuiltIn: false
+        )
+        let second = QuickPromptBundle.ExportedQuickPrompt(
+            id: duplicateID,
+            kind: .followUp,
+            label: "Second",
+            prompt: "second",
+            groupLabel: nil,
+            sortOrder: 1,
+            isVisible: true,
+            isBuiltIn: false
+        )
+        let bundle = QuickPromptBundle(exportedAt: Date(), appVersion: nil, prompts: [first, second])
+
+        XCTAssertThrowsError(try repo.applyImport(bundle, mode: .merge, dryRun: false)) { error in
+            XCTAssertEqual(error as? QuickPromptImportError, .duplicateID(duplicateID))
+        }
+    }
+
+    func testImportCanonicalizesBuiltInKind() throws {
+        let starter = QuickPrompt.builtInPrompts(kind: .starter).first!
+        let entry = QuickPromptBundle.ExportedQuickPrompt(
+            id: starter.id,
+            kind: .followUp,
+            label: "Still a starter",
+            prompt: "updated body",
+            groupLabel: "CATCH UP",
+            sortOrder: 99,
+            isVisible: true,
+            isBuiltIn: true
+        )
+        let bundle = QuickPromptBundle(exportedAt: Date(), appVersion: nil, prompts: [entry])
+
+        _ = try repo.applyImport(bundle, mode: .merge, dryRun: false)
+
+        let saved = try repo.fetch(id: starter.id)
+        XCTAssertEqual(saved?.kind, .starter)
+        XCTAssertTrue(saved?.isBuiltIn ?? false)
+        XCTAssertEqual(saved?.label, "Still a starter")
+    }
+
+    func testRestoreDefaultRestoresKind() throws {
+        let starter = try repo.fetchAll(kind: .starter).first!
+        try manager.dbQueue.write { db in
+            try db.execute(
+                sql: "UPDATE quick_prompts SET kind = ? WHERE id = ?",
+                arguments: [QuickPrompt.Kind.followUp.rawValue, starter.id]
+            )
+        }
+
+        try repo.restoreBuiltInDefault(id: starter.id)
+
+        XCTAssertEqual(try repo.fetch(id: starter.id)?.kind, .starter)
+    }
+
     // MARK: Import — replace
 
     func testImportReplaceWipesCustomsAndReseeds() throws {
@@ -284,5 +349,22 @@ final class QuickPromptRepositoryTests: XCTestCase {
         XCTAssertEqual(summary.deleted, 1)
         XCTAssertNil(try repo.fetch(id: custom.id))
         XCTAssertEqual(try repo.fetchAll().count, QuickPrompt.builtInPrompts().count)
+    }
+
+    func testImportReplaceDryRunCountsBuiltInResetsWithoutWriting() throws {
+        var starter = try repo.fetchAll(kind: .starter).first!
+        let canonicalLabel = starter.label
+        starter.label = "Edited"
+        starter.isVisible = false
+        try repo.save(starter)
+
+        let bundle = QuickPromptBundle(exportedAt: Date(), appVersion: nil, prompts: [])
+        let summary = try repo.applyImport(bundle, mode: .replace, dryRun: true)
+
+        XCTAssertEqual(summary.updated, 1)
+        let after = try repo.fetch(id: starter.id)
+        XCTAssertEqual(after?.label, "Edited")
+        XCTAssertEqual(after?.isVisible, false)
+        XCTAssertNotEqual(after?.label, canonicalLabel)
     }
 }

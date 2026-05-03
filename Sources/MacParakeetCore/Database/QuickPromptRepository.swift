@@ -28,6 +28,17 @@ public enum QuickPromptImport {
     }
 }
 
+public enum QuickPromptImportError: Error, LocalizedError, Equatable {
+    case duplicateID(UUID)
+
+    public var errorDescription: String? {
+        switch self {
+        case .duplicateID(let id):
+            return "Quick-prompts import contains duplicate id '\(id.uuidString)'."
+        }
+    }
+}
+
 /// CRUD + reconciliation + import/export for the live meeting Ask tab pills.
 ///
 /// Mirrors `PromptRepository` shape so the patterns are familiar, but with two
@@ -82,6 +93,7 @@ public final class QuickPromptRepository: QuickPromptRepositoryProtocol {
     public func save(_ prompt: QuickPrompt) throws {
         try dbQueue.write { db in
             var copy = prompt
+            copy = normalizedForWrite(copy)
             copy.updatedAt = Date()
             try copy.save(db)
         }
@@ -173,16 +185,20 @@ public final class QuickPromptRepository: QuickPromptRepositoryProtocol {
 
             // Retire built-ins removed from the canonical list. Customs are
             // never touched here — `isBuiltIn = 1` filter is load-bearing.
-            let placeholders = canonicalIDs.map { _ in "?" }.joined(separator: ",")
-            let arguments: [DatabaseValueConvertible] = canonicalIDs.map { $0 }
-            try db.execute(
-                sql: """
-                    DELETE FROM quick_prompts
-                    WHERE isBuiltIn = 1
-                      AND id NOT IN (\(placeholders))
-                    """,
-                arguments: StatementArguments(arguments)
-            )
+            if canonicalIDs.isEmpty {
+                try db.execute(sql: "DELETE FROM quick_prompts WHERE isBuiltIn = 1")
+            } else {
+                let placeholders = canonicalIDs.map { _ in "?" }.joined(separator: ",")
+                let arguments: [DatabaseValueConvertible] = canonicalIDs.map { $0 }
+                try db.execute(
+                    sql: """
+                        DELETE FROM quick_prompts
+                        WHERE isBuiltIn = 1
+                          AND id NOT IN (\(placeholders))
+                        """,
+                    arguments: StatementArguments(arguments)
+                )
+            }
         }
     }
 
@@ -217,10 +233,11 @@ public final class QuickPromptRepository: QuickPromptRepositoryProtocol {
         try db.execute(
             sql: """
                 UPDATE quick_prompts
-                SET label = ?, prompt = ?, groupLabel = ?, sortOrder = ?, isBuiltIn = 1, updatedAt = ?
+                SET kind = ?, label = ?, prompt = ?, groupLabel = ?, sortOrder = ?, isBuiltIn = 1, updatedAt = ?
                 WHERE id = ?
                 """,
             arguments: [
+                seed.kind.rawValue,
                 seed.label,
                 seed.prompt,
                 seed.groupLabel,
@@ -239,12 +256,21 @@ public final class QuickPromptRepository: QuickPromptRepositoryProtocol {
         dryRun: Bool
     ) throws -> QuickPromptImport.Summary {
         let now = Date()
-        let incoming = bundle.prompts.map { QuickPromptBundle.materialize($0, now: now) }
-        let incomingByID = Dictionary(uniqueKeysWithValues: incoming.map { ($0.id, $0) })
+        let incoming = bundle.prompts.map {
+            normalizedForWrite(QuickPromptBundle.materialize($0, now: now))
+        }
+        var incomingIDs = Set<UUID>()
+        for entry in incoming {
+            guard incomingIDs.insert(entry.id).inserted else {
+                throw QuickPromptImportError.duplicateID(entry.id)
+            }
+        }
 
         return try dbQueue.write { db in
             let existing = try QuickPrompt.fetchAll(db)
             let existingByID = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
+            let canonicalSeeds = QuickPrompt.builtInPrompts(now: now)
+            let canonicalByID = Dictionary(uniqueKeysWithValues: canonicalSeeds.map { ($0.id, $0) })
 
             var added = 0
             var updated = 0
@@ -267,12 +293,16 @@ public final class QuickPromptRepository: QuickPromptRepositoryProtocol {
                     }
                 }
                 // Rows in DB but not in file are preserved on merge.
-                unchanged += existing.filter { incomingByID[$0.id] == nil }.count
+                unchanged += existing.filter { !incomingIDs.contains($0.id) }.count
 
             case .replace:
                 // 1. Delete every custom row.
                 let customIDs = existing.filter { !$0.isBuiltIn }.map(\.id)
                 deleted = customIDs.count
+                updated += existing.reduce(0) { count, row in
+                    guard row.isBuiltIn, let canonical = canonicalByID[row.id] else { return count }
+                    return areEquivalent(row, canonical) ? count : count + 1
+                }
                 if !dryRun {
                     let placeholders = customIDs.map { _ in "?" }.joined(separator: ",")
                     if !customIDs.isEmpty {
@@ -282,13 +312,12 @@ public final class QuickPromptRepository: QuickPromptRepositoryProtocol {
                         )
                     }
                     // 2. Re-seed built-ins to canonical so the slate is truly clean.
-                    for seed in QuickPrompt.builtInPrompts(now: now) {
+                    for seed in canonicalSeeds {
                         try seed.save(db)
                     }
                 }
                 // 3. Now apply the file as a merge over the cleaned-up state.
-                let cleanExisting = QuickPrompt.builtInPrompts(now: now)
-                let cleanByID = Dictionary(uniqueKeysWithValues: cleanExisting.map { ($0.id, $0) })
+                let cleanByID = canonicalByID
                 for entry in incoming {
                     if let prior = cleanByID[entry.id] {
                         if !areEquivalent(prior, entry) {
@@ -321,24 +350,34 @@ public final class QuickPromptRepository: QuickPromptRepositoryProtocol {
             && lhs.isBuiltIn == rhs.isBuiltIn
     }
 
-    /// Write a merged row, preserving the existing row's `createdAt` (so import
-    /// doesn't reset history) and `isBuiltIn` flag if the existing row already
-    /// owns that ID — `materialize` may have flipped a forged claim to false,
-    /// but if the existing row genuinely is built-in we keep it.
+    /// Write a merged row, preserving the existing row's `createdAt` so import
+    /// does not reset history. Reserved built-in UUIDs keep their canonical kind
+    /// and built-in status; custom rows cannot forge that status.
     private func writeMerged(entry: QuickPrompt, existing: QuickPrompt, db: Database, now: Date) throws {
-        var merged = entry
+        var merged = normalizedForWrite(entry)
         merged.createdAt = existing.createdAt
         merged.updatedAt = now
-        // Preserve true builtIn-ness from the DB; never silently demote a
-        // built-in via import.
-        merged.isBuiltIn = existing.isBuiltIn || entry.isBuiltIn
         try merged.save(db)
     }
 
     private func writeNew(entry: QuickPrompt, db: Database, now: Date) throws {
-        var fresh = entry
+        var fresh = normalizedForWrite(entry)
         fresh.createdAt = now
         fresh.updatedAt = now
         try fresh.save(db)
+    }
+
+    private func normalizedForWrite(_ prompt: QuickPrompt) -> QuickPrompt {
+        var normalized = prompt
+        if let canonical = QuickPrompt.builtInPrompt(id: prompt.id) {
+            normalized.kind = canonical.kind
+            normalized.isBuiltIn = true
+        } else {
+            normalized.isBuiltIn = false
+        }
+        if normalized.kind == .followUp {
+            normalized.groupLabel = nil
+        }
+        return normalized
     }
 }

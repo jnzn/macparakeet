@@ -77,13 +77,14 @@ public final class QuickPromptsViewModel {
     // MARK: - Mutations
 
     /// Save in-progress edit. Validates label/prompt non-empty.
-    public func saveEdit(_ prompt: QuickPrompt) {
-        guard let repo else { return }
+    @discardableResult
+    public func saveEdit(_ prompt: QuickPrompt) -> Bool {
+        guard let repo else { return false }
         let trimmedLabel = prompt.label.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedPrompt = prompt.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedLabel.isEmpty, !trimmedPrompt.isEmpty else {
             errorMessage = "Label and prompt are required."
-            return
+            return false
         }
 
         var updated = prompt
@@ -99,22 +100,26 @@ public final class QuickPromptsViewModel {
             editingPrompt = nil
             errorMessage = nil
             refresh()
+            return true
         } catch {
             errorMessage = error.localizedDescription
+            return false
         }
     }
 
     public func startCreating(kind: QuickPrompt.Kind) {
         creating = Draft(kind: kind)
+        errorMessage = nil
     }
 
-    public func commitCreating() {
-        guard let repo, let draft = creating else { return }
+    @discardableResult
+    public func commitCreating() -> Bool {
+        guard let repo, let draft = creating else { return false }
         let trimmedLabel = draft.label.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedPrompt = draft.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedLabel.isEmpty, !trimmedPrompt.isEmpty else {
             errorMessage = "Label and prompt are required."
-            return
+            return false
         }
 
         let nextSortOrder: Int = {
@@ -145,8 +150,10 @@ public final class QuickPromptsViewModel {
             creating = nil
             errorMessage = nil
             refresh()
+            return true
         } catch {
             errorMessage = error.localizedDescription
+            return false
         }
     }
 

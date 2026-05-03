@@ -142,6 +142,27 @@ final class QuickPromptsCommandTests: XCTestCase {
         XCTAssertNoThrow(try QuickPromptsCommand.SetSubcommand.parse(["x", "--label", "New"]))
     }
 
+    func testSetRejectsEmptyLabel() {
+        XCTAssertThrowsError(try QuickPromptsCommand.SetSubcommand.parse(["x", "--label", "   "]))
+    }
+
+    func testSetRejectsEmptyPrompt() {
+        XCTAssertThrowsError(try QuickPromptsCommand.SetSubcommand.parse(["x", "--prompt", "   "]))
+    }
+
+    func testSetRejectsGroupOnFollowUpAfterLookup() throws {
+        let dbURL = temporaryDatabaseURL()
+        let command = try QuickPromptsCommand.SetSubcommand.parse([
+            "Tell me more",
+            "--group", "CATCH UP",
+            "--database", dbURL.path,
+        ])
+
+        XCTAssertThrowsError(try command.run()) { error in
+            XCTAssertTrue(String(describing: error).contains("--group is only valid for starter"))
+        }
+    }
+
     // MARK: - RestoreDefaults validation
 
     func testRestoreRejectsKindAndIDTogether() {
@@ -185,5 +206,10 @@ final class QuickPromptsCommandTests: XCTestCase {
     func testErrorTypeMapsReadFailedToInputMissing() {
         let err = QuickPromptCLIError.readFailed("/no/such/path", underlying: NSError(domain: "test", code: 1))
         XCTAssertEqual(CLIErrorType.key(for: err), "input_missing")
+    }
+
+    private func temporaryDatabaseURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("macparakeet-quick-prompts-\(UUID().uuidString).db")
     }
 }
