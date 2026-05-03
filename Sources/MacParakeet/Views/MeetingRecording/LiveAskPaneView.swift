@@ -451,12 +451,10 @@ private struct StarterPromptPill: View {
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 0) {
-                    Text(entry.label)
-                        .font(DesignSystem.Typography.bodySmall)
-                        .foregroundStyle(DesignSystem.Colors.textPrimary)
-                    Spacer(minLength: 0)
-                }
+                Text(entry.label)
+                    .font(DesignSystem.Typography.bodySmall)
+                    .foregroundStyle(DesignSystem.Colors.textPrimary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 if isRevealed {
                     Text(entry.prompt)
