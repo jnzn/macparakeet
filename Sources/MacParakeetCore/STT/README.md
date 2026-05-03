@@ -25,7 +25,9 @@ to one `STTRuntime`; callers do not own model lifecycles directly.
   scheduler, bypassing the process singleton. App code must use the
   shared scheduler from `AppEnvironment`.
 - `STTResult.swift` — value type returned by every transcribe call
-  (text + word-level timing + language).
+  (text, word-level timing, optional detected language, the engine
+  that produced the result, and an optional engine-specific model
+  variant).
 - `WhisperEngine.swift` — WhisperKit wrapper conforming to the same
   shape as the Parakeet path.
 
