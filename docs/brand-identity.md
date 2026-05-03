@@ -134,7 +134,8 @@ MacParakeet uses minimal, purposeful color:
 
 | Token | Value | Use |
 |-------|-------|-----|
-| Accent | `DesignSystem.Colors.accent` (warm coral-orange) | Interactive elements, active states, inline brand mark |
+| Accent | `DesignSystem.Colors.accent` (warm coral-orange) | Single primary CTA per surface, recording state, AssistantHead, idle/recording pills, sacred geometry, inline brand mark — **not** chrome |
+| Neutral chrome | `DesignSystem.Colors.tintNeutral` (system label) | Default `.secondary` button tint, mode pickers, focus rings, most interactive controls |
 | Success | `DesignSystem.Colors.successGreen` | Copy confirmation, completion |
 | Warning | `DesignSystem.Colors.warningAmber` | Cautions, "catching up" indicators |
 | Error | `DesignSystem.Colors.errorRed` | Destructive actions |
@@ -142,7 +143,11 @@ MacParakeet uses minimal, purposeful color:
 
 The app intentionally uses system colors for chrome to feel native. The
 accent coral-orange is reserved for moments of attention — it is the same
-color the brand mark wears when it appears inline.
+color the brand mark wears when it appears inline. **Coral on**: one CTA
+per surface, recording state, brand surfaces. **Coral off**: secondary
+buttons, mode pickers, focus rings, hover, selection. Buttons in the app
+express this discipline through the `parakeetAction(_:)` modifier (see
+`spec/04-ui-patterns.md` → Buttons).
 
 For **promotional and editorial work** (posters, social campaigns, launch
 art, anniversary tributes), an extended Pop palette anchored on the same

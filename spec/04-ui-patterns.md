@@ -969,63 +969,130 @@ App launch → DiscoverViewModel.loadCached() → DiscoverService reads disk cac
 
 ## Design System
 
-All design tokens are centralized in `DesignSystem.swift` (`Views/Components/DesignSystem.swift`).
+All design tokens are centralized in `DesignSystem.swift` (`Views/Components/DesignSystem.swift`). A debug-only `DesignSystemGalleryView` (`#if DEBUG`) renders every token in one preview canvas — open it from Xcode when auditing for drift.
+
+### Buttons
+
+Buttons use the `parakeetAction(_:)` modifier (in `Views/Components/ParakeetActionStyle.swift`) to express *intent* at the callsite, not styling primitives. This replaced ad-hoc `.buttonStyle(.bordered) + .tint(...)` composition.
+
+| Role | Treatment | Usage |
+|------|-----------|-------|
+| `.primary` | bordered, brand coral tint | Primary action, non-prominent placement |
+| `.primaryProminent` | borderedProminent, brand coral tint | The single highest-priority CTA on a sheet/surface |
+| `.secondary` | bordered, system label tint (neutral) | Default action weight; most chrome |
+| `.destructive` | bordered, system red tint | Irreversible action, non-prominent |
+| `.destructiveProminent` | borderedProminent, system red tint | Highest-priority irreversible action (e.g. "Delete account?") |
+| `.subtle` | borderless, secondary label color | Inline links, dense rows |
+
+Hard rules — coral is brand, not chrome:
+
+- One `.primary*` per surface. If you have two equally-weighted CTAs, both are `.secondary`.
+- Pair `.destructive*` with `Button(role: .destructive)` so VoiceOver carries the role too.
+- Never re-tint the SwiftUI environment with `.tint(coral)` at NSHostingView roots or sheet wrappers — `parakeetAction` is the only place coral cascades from. Cascading tint overrides destructive role styling and erases the hierarchy `parakeetAction` exists to provide.
 
 ### Colors
 
 | Token | Value | Usage |
 |-------|-------|-------|
-| `pillBackground` | `black 90%` | Dictation overlay / idle pill |
-| `pillBorder` | `white 10%` | Pill border stroke |
-| `recordingRed` | `.red` | Recording indicator |
-| `successGreen` | `.green` | Success states, completed status |
-| `warningYellow` | `.yellow` | Warning states |
-| `warningOrange` | `.orange` | Warning highlights |
-| `statusGranted` | `.green` | Permission granted badges |
-| `statusDenied` | `.red` | Permission denied badges |
-| `sidebarBackground` | `NSColor.controlBackgroundColor` | Sidebar pane |
-| `contentBackground` | `NSColor.textBackgroundColor` | Content pane |
-| `rowHoverBackground` | `primary 4%` | List row hover highlight |
-| `subtleBorder` | `primary 8%` | Card borders, dividers |
-| `playbackTrack` | `primary 8%` | Playback bar track |
-| `playbackFill` | `.accentColor` | Playback bar filled portion |
+| **Brand** | | |
+| `accent` | warm coral-orange (`#E86B3B` light / `#FF8A5C` dark) | The single primary CTA per surface, recording state, brand mark |
+| `accentLight` | coral 92% / coral 12% | Hover/selection backgrounds tied to accent |
+| `accentDark` | deeper coral | Pressed states, accent variants |
+| **Surfaces** | | |
+| `background` | warm off-white / near-black | App-level background |
+| `surface` | white / dark gray | Cards, sheet content |
+| `surfaceElevated` | warm cream / lighter dark | Elevated surfaces, hover targets |
+| `cardBackground` | white / dark gray | Card body fill |
+| `rowHoverBackground` | warm cream / primary 6% | List/row hover state |
+| **Text** | | |
+| `textPrimary` | near-black / white | Primary copy |
+| `textSecondary` | mid-gray | Subtitles, captions |
+| `textTertiary` | light-mid gray | Disabled, hints |
+| `tintNeutral` | system label color | `.secondary` button tint (coral-free chrome) |
+| **Semantic** | | |
+| `successGreen` | green | Confirmations, completion |
+| `warningAmber` | amber | Cautions, "catching up" |
+| `errorRed` | red | Destructive actions, errors |
+| **Lines** | | |
+| `border` | warm gray / mid-dark gray | Card borders, dividers |
+| `divider` | softer warm gray | Inline dividers |
+| **Pills & overlays** | | |
+| `pillBackground` | black 70% | Dictation/idle pill backing |
+| `pillBorder` | white 15% | Pill stroke |
+| `recordingRed` | `.red` | Recording indicator dot |
+| `meetingPillBackground` / `meetingPillBackgroundHover` / `meetingPillStroke` / `meetingPillStrokeHover` / `meetingPillText` / `meetingPillBadgeBackground` | dark-on-dark variants | Floating meeting recording pill |
+| **Sacred geometry** | | |
+| `sacredGlow` | green | Bloom highlight on completion animations |
+| `sacredStem` | deeper green | Stem/anchor in sacred geometry |
+| **Other** | | |
+| `playbackTrack` | primary 8% | Audio scrubber track |
+| `playbackFill` | `.accentColor` | Audio scrubber fill |
+| `youtubeRed` | `.red` | YouTube source badge |
+| `speakerColors` | 6-color palette (blue, purple, teal, amber, red, green) | Speaker diarization, accessed via `speakerColor(for:)` |
+| `contentBackground` | `NSColor.textBackgroundColor` | Sidebar / list content backing |
 
 ### Typography
 
+All families use `.system` with `.rounded` design on headlines for warmth.
+
 | Token | Style | Usage |
 |-------|-------|-------|
-| `caption` | `.caption` | Hints, small labels |
-| `body` | `.body` | Transcript text, descriptions |
-| `headline` | `.headline` | Section titles, filenames |
-| `title` | `.title2` | View-level titles |
-| `largeTitle` | `.largeTitle` | Onboarding headers |
-| `timestamp` | `.caption.monospacedDigit()` | Times, monospaced numbers |
-| `duration` | `.caption2.monospacedDigit()` | Duration pills, file sizes |
-| `sectionHeader` | `.subheadline.weight(.semibold)` | Section headers (Today, Transcript, etc.) |
+| `heroTitle` | 28 / bold rounded | Sheet/page hero titles |
+| `pageTitle` | 22 / semibold rounded | View-level titles, large summary values |
+| `sectionTitle` | 17 / semibold | Section headers |
+| `bodyLarge` | 15 | Form fields, prominent body |
+| `body` | 14 | Default body, transcript text |
+| `bodySmall` | 13 | Subtitles, secondary copy |
+| `caption` | 12 | Hints, labels |
+| `micro` | 11 | Metadata, fine print |
+| `timestamp` | 12 monodigit | Times |
+| `duration` | 11 monodigit | Duration pills, file sizes |
+| `meetingPillStatus` | 13 semibold | Meeting recording pill status text |
+| `meetingPillBadge` | 10 medium monospaced | Meeting pill badge text |
+| `meetingPillCheckmark` | 24 semibold | Meeting completion checkmark |
+| `dictationOverlayTerminalLabel` | 9.5 medium rounded | "More audio pls" label inside the no-speech terminal pill |
 
 ### Spacing
 
 | Token | Value | Usage |
 |-------|-------|-------|
-| `xs` | 4pt | Inline element gaps, row vertical padding |
+| `xs` | 4pt | Inline element gaps |
 | `sm` | 8pt | Related element spacing |
-| `md` | 12pt | Standard content padding |
-| `lg` | 16pt | Section gaps, content padding |
-| `xl` | 24pt | Major section separation, drop zone padding |
-| `xxl` | 40pt | Large visual spacing |
+| `md` | 16pt | Standard content padding |
+| `lg` | 24pt | Section gaps |
+| `xl` | 32pt | Major section separation |
+| `xxl` | 48pt | Large visual spacing |
+| `hero` | 64pt | Hero/onboarding margins |
 
 ### Layout
 
 | Token | Value | Usage |
 |-------|-------|-------|
-| `sidebarMinWidth` | 180pt | NavigationSplitView sidebar |
-| `contentMinWidth` | 400pt | Content pane minimum |
-| `windowMinHeight` | 500pt | Main window minimum height |
-| `cornerRadius` | 12pt | Standard card/drop zone corners |
+| `sidebarMinWidth` | 200pt | NavigationSplitView sidebar |
+| `contentMinWidth` | 500pt | Content pane minimum |
+| `windowMinHeight` | 560pt | Main window minimum height |
+| `cornerRadius` | 16pt | Standard rounded surfaces |
+| `cardCornerRadius` | 14pt | Cards, detail surfaces |
+| `rowCornerRadius` | 12pt | List row hover backgrounds |
+| `dropZoneCornerRadius` | 20pt | File drop zone |
+| `buttonCornerRadius` | 12pt | Custom-drawn buttons |
+| `minTouchTarget` | 44pt | HIG-compliant touch target |
 | `dropZoneHeight` | 200pt | File drop zone target height |
 | `playbackBarHeight` | 6pt | Audio playback progress bar |
-| `cardCornerRadius` | 10pt | Playback cards, detail cards |
-| `rowCornerRadius` | 8pt | List row hover backgrounds |
+| `audioScrubberHeight` | 44pt | Audio scrubber row |
+| `videoPlayerMinWidth` | 320pt | Video player split min |
+| `videoPlayerIdealRatio` | 0.4 | Video pane share of split |
+| `thumbnailCardMinWidth` | 200pt | Library thumbnail card |
+| `thumbnailAspectRatio` | 16:9 | Thumbnail card aspect |
+
+### Shadows
+
+| Token | Color · radius · y | Usage |
+|-------|-------|-------|
+| `cardRest` | black 6% · 4 · 2 | Cards at rest |
+| `cardHover` | black 10% · 12 · 6 | Cards on hover |
+| `portalLift` | black 12% · 16 · 8 | Floating panels, popovers |
+| `meetingPill` | black 28% · 12 · 6 | Meeting recording pill |
 
 ### Animation
 
@@ -1034,6 +1101,8 @@ All design tokens are centralized in `DesignSystem.swift` (`Views/Components/Des
 | `selectionChange` | 0.15s | `.easeInOut` | List row selection, accent bar |
 | `hoverTransition` | 0.12s | `.easeInOut` | Row hover, button hover effects |
 | `contentSwap` | 0.2s | `.easeInOut` | Tab transitions, detail pane changes |
+| `portalLift` | spring (0.3 / 0.7) | spring | Floating panel entry |
+| `meetingPillHover` | 0.15s | `.easeOut` | Meeting pill hover |
 
 **Overlay-specific animations** (in DictationOverlayView / IdlePillView):
 

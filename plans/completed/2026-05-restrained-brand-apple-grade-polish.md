@@ -1,6 +1,6 @@
 # Restrained Brand + Apple-Grade Polish
 
-> Status: **ACTIVE** - 2026-05-03
+> Status: **IMPLEMENTED** - 2026-05-03 (PR #208 merged as `a4a529ae`)
 > Ship target: **post-v0.7.0**
 > Branch: `refactor/restrained-tint-and-button-roles` (off `main` post-#205 merge)
 > Shape: **single PR**, commits split per phase for bisect/readability

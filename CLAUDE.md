@@ -497,6 +497,7 @@ open Package.swift  # Select MacParakeet scheme
 | KeylessPanel for non-activating overlays | NSPanel that never steals focus | Subclass with `canBecomeKey -> false` for dictation overlay |
 | Timer in .common run-loop mode | `.default` mode pauses during UI tracking (slider drag) | `RunLoop.main.add(timer, forMode: .common)` |
 | DesignSystem tokens | Consistent styling, easy to change globally | Centralize spacing, typography, colors in `DesignSystem.swift` |
+| `parakeetAction(_:)` button roles | Semantic intent at the callsite — abstracts `.buttonStyle + .tint` composition; one coral CTA per surface | `.parakeetAction(.primary / .primaryProminent / .secondary / .destructive / .destructiveProminent / .subtle)`. Never re-tint the SwiftUI environment with `.tint(coral)` at NSHostingView roots — coral cascades only from `parakeetAction`. |
 | TextProcessingPipeline as pure function | No side effects, easy to test | Input text -> output text, no state mutation |
 | Cache computed values with signature check | Avoid O(n) work every frame | Check record ID + word count + timestamps before rebuilding |
 

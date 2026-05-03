@@ -64,6 +64,7 @@ code-change work complete.
 - ViewModels live in their own SPM target (`Sources/MacParakeetViewModels/`)
   so they can be tested without the GUI.
 - Async/await for all I/O. No completion handlers, no Combine in new code.
+- Buttons use `.parakeetAction(.primary / .primaryProminent / .secondary / .destructive / .destructiveProminent / .subtle)` for semantic role + styling. Never apply `.tint(coral)` at NSHostingView roots or sheet wrappers — coral cascades only from `parakeetAction`. See `spec/04-ui-patterns.md` → Buttons.
 
 ## Architecture Orientation
 
