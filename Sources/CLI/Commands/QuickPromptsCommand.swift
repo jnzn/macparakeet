@@ -95,6 +95,11 @@ private func renderBadges(_ p: QuickPrompt) -> String {
     return "  [\(badges.joined(separator: ", "))]"
 }
 
+private struct QuickPromptWriteResult: Encodable {
+    let ok: Bool
+    let prompt: QuickPrompt
+}
+
 enum QuickPromptCLIError: Error, LocalizedError {
     case cannotDeleteBuiltIn(String)
     case deleteFailed(String)
@@ -313,7 +318,7 @@ extension QuickPromptsCommand {
                 try repo.save(p)
 
                 if json {
-                    try printJSON(p)
+                    try printJSON(QuickPromptWriteResult(ok: true, prompt: p))
                 } else {
                     print("Added quick prompt '\(p.label)' (\(p.id.uuidString.prefix(8)))")
                 }
@@ -404,7 +409,7 @@ extension QuickPromptsCommand {
                 try repo.save(p)
 
                 if json {
-                    try printJSON(p)
+                    try printJSON(QuickPromptWriteResult(ok: true, prompt: p))
                 } else {
                     print("Updated '\(p.label)':\(renderBadges(p))")
                 }

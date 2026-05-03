@@ -126,6 +126,27 @@ final class QuickPromptsCommandTests: XCTestCase {
         )
     }
 
+    func testAddJSONReturnsSuccessEnvelope() throws {
+        let dbURL = temporaryDatabaseURL()
+        let command = try QuickPromptsCommand.AddSubcommand.parse([
+            "--kind", "follow-up",
+            "--label", "ELI5",
+            "--prompt", "Explain simply.",
+            "--database", dbURL.path,
+            "--json",
+        ])
+
+        let output = try captureStandardOutput {
+            try command.run()
+        }
+        let envelope = try decodedJSONObject(output)
+
+        XCTAssertEqual(envelope["ok"] as? Bool, true)
+        let prompt = try XCTUnwrap(envelope["prompt"] as? [String: Any])
+        XCTAssertEqual(prompt["label"] as? String, "ELI5")
+        XCTAssertNil(envelope["label"], "write responses should be wrapped under prompt")
+    }
+
     // MARK: - Set validation
 
     func testSetRejectsVisibleAndHidden() {
@@ -161,6 +182,31 @@ final class QuickPromptsCommandTests: XCTestCase {
         XCTAssertThrowsError(try command.run()) { error in
             XCTAssertTrue(String(describing: error).contains("--group is only valid for starter"))
         }
+    }
+
+    func testSetJSONReturnsSuccessEnvelope() throws {
+        let dbURL = temporaryDatabaseURL()
+        let db = try DatabaseManager(path: dbURL.path)
+        let repo = QuickPromptRepository(dbQueue: db.dbQueue)
+        let prompt = QuickPrompt(kind: .starter, label: "Original", prompt: "body")
+        try repo.save(prompt)
+
+        let command = try QuickPromptsCommand.SetSubcommand.parse([
+            prompt.id.uuidString,
+            "--label", "Updated",
+            "--database", dbURL.path,
+            "--json",
+        ])
+
+        let output = try captureStandardOutput {
+            try command.run()
+        }
+        let envelope = try decodedJSONObject(output)
+
+        XCTAssertEqual(envelope["ok"] as? Bool, true)
+        let saved = try XCTUnwrap(envelope["prompt"] as? [String: Any])
+        XCTAssertEqual(saved["id"] as? String, prompt.id.uuidString)
+        XCTAssertEqual(saved["label"] as? String, "Updated")
     }
 
     // MARK: - RestoreDefaults validation
@@ -211,5 +257,11 @@ final class QuickPromptsCommandTests: XCTestCase {
     private func temporaryDatabaseURL() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("macparakeet-quick-prompts-\(UUID().uuidString).db")
+    }
+
+    private func decodedJSONObject(_ output: String) throws -> [String: Any] {
+        let data = Data(output.utf8)
+        let object = try JSONSerialization.jsonObject(with: data)
+        return try XCTUnwrap(object as? [String: Any])
     }
 }
