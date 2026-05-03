@@ -211,14 +211,14 @@ struct MeetingRecordingTile: View {
 
     private var startButton: some View {
         Button(action: triggerStart) {
-            HStack(spacing: 6) {
+            HStack(spacing: 7) {
                 BloomBudGlyph(progress: startBloom)
-                    .frame(width: 16, height: 16)
+                    .frame(width: 22, height: 22)
                 Text("Start")
                     .font(DesignSystem.Typography.caption.weight(.semibold))
             }
             .foregroundStyle(DesignSystem.Colors.recordingRed)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 14)
             .padding(.vertical, 7)
             .background(
                 Capsule()
@@ -252,15 +252,15 @@ struct MeetingRecordingTile: View {
 
     private var stopButton: some View {
         Button(action: onTap) {
-            HStack(spacing: 6) {
-                RoundedRectangle(cornerRadius: 2)
+            HStack(spacing: 7) {
+                RoundedRectangle(cornerRadius: 3)
                     .fill(.white)
-                    .frame(width: 8, height: 8)
+                    .frame(width: 12, height: 12)
                 Text("Stop")
                     .font(DesignSystem.Typography.caption.weight(.semibold))
                     .foregroundStyle(.white)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 14)
             .padding(.vertical, 7)
             .background(
                 Capsule().fill(DesignSystem.Colors.recordingRed)
@@ -464,15 +464,16 @@ private struct SacredFlowerTile: View {
 private struct BloomBudGlyph: View {
     var progress: Double
 
-    private let frameSize: CGFloat = 16
-    private let circleSize: CGFloat = 6
-    private let bloomedOffset: CGFloat = 3 // half of circleSize → petals sit on central rim
+    private let frameSize: CGFloat = 22
+    private let circleSize: CGFloat = 8
+    private let bloomedOffset: CGFloat = 4 // half of circleSize → petals sit on central rim
 
-    // Idle holds a "closed" silhouette: petals pulled inward (60% spread)
-    // and faded (35% opacity). Bloom interpolates to 100% spread + 90%.
-    private var spread: CGFloat { 0.6 + 0.4 * CGFloat(progress) }
-    private var petalOpacity: Double { 0.35 + 0.55 * progress }
-    private var ringOpacity: Double { 0.55 + 0.35 * progress }
+    // Idle holds a "closed but readable" silhouette: petals at 70% spread
+    // and 50% opacity — clearly a flower, just not fully open. Bloom
+    // interpolates to 100% spread and full opacity.
+    private var spread: CGFloat { 0.7 + 0.3 * CGFloat(progress) }
+    private var petalOpacity: Double { 0.5 + 0.5 * progress }
+    private var ringOpacity: Double { 0.7 + 0.3 * progress }
 
     var body: some View {
         ZStack {
@@ -494,7 +495,7 @@ private struct BloomBudGlyph: View {
 
             Circle()
                 .fill(DesignSystem.Colors.recordingRed)
-                .frame(width: 2.5, height: 2.5)
+                .frame(width: 3, height: 3)
         }
         .frame(width: frameSize, height: frameSize)
     }
