@@ -112,6 +112,9 @@ struct MeetingRecordingPanelView: View {
             }
         }
         .help(tabTooltip(title: tab.title, badge: badge, isStreaming: isStreaming, shortcut: shortcutDisplay))
+        .accessibilityLabel(tab.title)
+        .accessibilityAddTraits(isActive ? .isSelected : [])
+        .accessibilityHint(isStreaming ? "Responding" : "Switches to the \(tab.title) tab")
     }
 
     private func tabTooltip(title: String, badge: String?, isStreaming: Bool, shortcut: String) -> String {

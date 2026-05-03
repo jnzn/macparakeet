@@ -29,6 +29,8 @@ struct MeetingRowCard<MenuContent: View>: View {
         .onHover { hovered = $0 }
         .animation(DesignSystem.Animation.hoverTransition, value: hovered)
         .contextMenu { menuContent() }
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(hoverTooltip)
     }
 
     // MARK: - Backgrounds

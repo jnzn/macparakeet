@@ -196,6 +196,8 @@ struct CalendarSettingsView: View {
             Toggle("", isOn: $viewModel.calendarAutoStopEnabled)
                 .labelsHidden()
                 .toggleStyle(.switch)
+                .accessibilityLabel("Stop recording at meeting end")
+                .accessibilityHint("Shows a 30-second countdown when the meeting is scheduled to end")
         }
     }
 
