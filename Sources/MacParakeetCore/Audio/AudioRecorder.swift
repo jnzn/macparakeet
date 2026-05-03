@@ -32,6 +32,28 @@ private struct RecordingRuntimeMetrics: Sendable {
     var invalidFormatBufferCount: Int = 0
 }
 
+/// Holds the per-recording diagnostic timers. The first-buffer timeout fires
+/// once if no buffer has been delivered within `firstBufferTimeoutSeconds`
+/// after `dictation_capture_engine_started`; the heartbeat repeats every
+/// `heartbeatIntervalSeconds` while the recording is active. Both are
+/// log-only — they exist to characterize tap-silence stalls in the field
+/// without altering the user's experience. See
+/// `journal/2026-05-03-dictation-silent-stall.md`.
+///
+/// Not declared `Sendable`: `DispatchWorkItem` and `DispatchSourceTimer`
+/// aren't Sendable in strict-concurrency mode. The state is only ever
+/// touched while holding the enclosing `OSAllocatedUnfairLock`, which is
+/// the moral equivalent — the lock owner has exclusive access.
+private struct CaptureDiagnosticsTimers {
+    var firstBufferTimeout: DispatchWorkItem?
+    var firstBufferSeen: Bool = false
+    var heartbeatTimer: DispatchSourceTimer?
+    /// Session generation captured when the timers were armed. The fired
+    /// closures bail out if the current generation has moved past this,
+    /// which catches the race where `stop()` cancels in flight.
+    var armedGeneration: Int = -1
+}
+
 /// Records dictation audio by subscribing to the process-wide
 /// `SharedMicrophoneStream` and writing converted 16 kHz mono Float32 buffers
 /// to a temporary WAV file. The buffer handler always extracts channel 0 —
@@ -66,6 +88,16 @@ public actor AudioRecorder {
     /// the stop() race (writes after audioFile is nilled) and the cross-session race
     /// (stale callback from session A writing after session B has started).
     nonisolated private let sessionGeneration = OSAllocatedUnfairLock(initialState: 0)
+    /// Diagnostic timers (first-buffer timeout + recording heartbeat). See
+    /// `CaptureDiagnosticsTimers` for the field contract. Lives off-actor
+    /// because the timer event handlers run on `diagnosticsQueue`.
+    nonisolated private let captureDiagnosticsTimers = OSAllocatedUnfairLock(
+        initialState: CaptureDiagnosticsTimers()
+    )
+    nonisolated private let diagnosticsQueue = DispatchQueue(
+        label: "com.macparakeet.audio-recorder.diagnostics",
+        qos: .utility
+    )
     private var outputURL: URL?
     private var recording = false
     private var starting = false
@@ -81,6 +113,15 @@ public actor AudioRecorder {
     /// Minimum samples before sending to STT.
     /// FluidAudio requires at least 1 second of 16kHz audio (16,000 samples).
     private static let minimumSamples = 16_000
+
+    /// Time after `engine_started` to wait for the first buffer before
+    /// emitting `dictation_capture_no_buffers_within_timeout`. Mirrors the
+    /// 2 s value used by `MicrophoneCapture.scheduleSilentBufferWatchdog`.
+    private static let firstBufferTimeoutSeconds: TimeInterval = 2.0
+    /// Cadence for the recording heartbeat log. Long enough that short
+    /// dictations (< 5 s) don't add log noise; short enough that a stalled
+    /// 18 s recording produces ~3 heartbeats showing `input_buffers=0`.
+    private static let heartbeatIntervalSeconds: TimeInterval = 5.0
 
     public init(
         sharedStream: SharedMicrophoneStream,
@@ -221,6 +262,7 @@ public actor AudioRecorder {
                 return true
             }
             if shouldLogFirstBuffer {
+                self.markFirstBufferReceivedForDiagnostics()
                 let sr = bufferFormat.sampleRate
                 let ch = bufferFormat.channelCount
                 let commonFormat = bufferFormat.commonFormat.rawValue
@@ -383,12 +425,23 @@ public actor AudioRecorder {
         self.recording = true
         self.sharedSubscriberToken = token
 
+        let liveFormat = sharedStream.inputFormat
+        let liveSampleRate = liveFormat?.sampleRate ?? 0
+        let liveChannelCount = liveFormat?.channelCount ?? 0
+        let defaultInput = AudioCaptureDiagnostics.defaultInputDeviceLabel()
         AudioCaptureDiagnostics.append(
-            "dictation_capture_engine_started file=\(url.lastPathComponent)"
+            "dictation_capture_engine_started file=\(url.lastPathComponent) default_input=\(defaultInput) sr=\(liveSampleRate) ch=\(liveChannelCount)"
         )
         logger.info(
             "dictation_capture_started file=\(url.lastPathComponent, privacy: .public)"
         )
+
+        // Diagnostic instrumentation. Strictly log-only — these timers fire
+        // observability events and never abort the recording. Treating the
+        // tap-silence condition as "the user's recording is over" would mask
+        // a regression behind a friendlier error message; we want to surface
+        // the regression instead. See journal/2026-05-03-dictation-silent-stall.md.
+        armCaptureDiagnostics(generation: tapGeneration)
     }
 
     /// Stop recording and return the path to the recorded WAV file.
@@ -400,6 +453,9 @@ public actor AudioRecorder {
             // in-flight start cannot claim a recording after cancellation.
             sessionGeneration.withLock { $0 += 1 }
             starting = false
+            AudioCaptureDiagnostics.append(
+                "dictation_capture_start_cancelled_during_subscribe"
+            )
             throw AudioProcessorError.recordingFailed("Not recording")
         }
         guard recording else {
@@ -419,6 +475,7 @@ public actor AudioRecorder {
             // the user stopped recording.
             sharedProcessingQueue.sync {}
             sessionGeneration.withLock { $0 += 1 }
+            disarmCaptureDiagnostics()
         }
         audioFile = nil
         recording = false
@@ -462,6 +519,94 @@ public actor AudioRecorder {
             return nil
         }
         return size
+    }
+
+    // MARK: - Capture diagnostics (log-only)
+
+    /// Arm the first-buffer timeout and recording heartbeat. Both are
+    /// log-only; firing them does not affect the recording.
+    ///
+    /// `armedGeneration` (captured by both closures) is the value of
+    /// `sessionGeneration` at the moment `start()` succeeded. If the closure
+    /// later finds the live generation has moved past it, a `stop()` already
+    /// raced ahead — in that case the closure bails out without logging.
+    /// Without that guard, a heartbeat fired between `cancel()` and the
+    /// queued event handler running could log against a session that has
+    /// already ended.
+    private func armCaptureDiagnostics(generation: Int) {
+        let stream = sharedStream
+        let armedGeneration = generation
+        let firstBufferItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            let shouldFire = self.captureDiagnosticsTimers.withLock { state -> Bool in
+                guard state.armedGeneration == armedGeneration else { return false }
+                guard !state.firstBufferSeen else { return false }
+                state.firstBufferTimeout = nil
+                return true
+            }
+            guard shouldFire else { return }
+            guard self.sessionGeneration.withLock({ $0 }) == armedGeneration else { return }
+            let isRunning = stream.diagnostics.engineRunning
+            let defaultInput = AudioCaptureDiagnostics.defaultInputDeviceLabel()
+            AudioCaptureDiagnostics.append(
+                "dictation_capture_no_buffers_within_timeout isRunning=\(isRunning) default_input=\(defaultInput)"
+            )
+        }
+
+        let timer = DispatchSource.makeTimerSource(queue: diagnosticsQueue)
+        timer.schedule(
+            deadline: .now() + Self.heartbeatIntervalSeconds,
+            repeating: Self.heartbeatIntervalSeconds
+        )
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            guard self.sessionGeneration.withLock({ $0 }) == armedGeneration else { return }
+            let metrics = self.runtimeMetrics.withLock { $0 }
+            let isRunning = stream.diagnostics.engineRunning
+            let defaultInput = AudioCaptureDiagnostics.defaultInputDeviceLabel()
+            AudioCaptureDiagnostics.append(
+                "dictation_capture_heartbeat input_buffers=\(metrics.inputBufferCount) input_frames=\(metrics.inputFrameCount) isRunning=\(isRunning) default_input=\(defaultInput)"
+            )
+        }
+
+        captureDiagnosticsTimers.withLock { state in
+            state.firstBufferTimeout?.cancel()
+            state.heartbeatTimer?.cancel()
+            state.firstBufferSeen = false
+            state.firstBufferTimeout = firstBufferItem
+            state.heartbeatTimer = timer
+            state.armedGeneration = armedGeneration
+        }
+        diagnosticsQueue.asyncAfter(
+            deadline: .now() + Self.firstBufferTimeoutSeconds,
+            execute: firstBufferItem
+        )
+        timer.resume()
+    }
+
+    /// Cancel both timers. Called from `stop()` and from the no-op-arming
+    /// paths so the lock state is always clean for the next `start()`.
+    private func disarmCaptureDiagnostics() {
+        captureDiagnosticsTimers.withLock { state in
+            state.firstBufferTimeout?.cancel()
+            state.firstBufferTimeout = nil
+            state.heartbeatTimer?.cancel()
+            state.heartbeatTimer = nil
+            state.firstBufferSeen = false
+            state.armedGeneration = -1
+        }
+    }
+
+    /// Called from the audio tap path on the very first buffer of a
+    /// session. Cancels the first-buffer timeout so it doesn't fire
+    /// behind a healthy recording. The heartbeat continues — its job is
+    /// to detect mid-session stalls, not just startup ones.
+    nonisolated fileprivate func markFirstBufferReceivedForDiagnostics() {
+        captureDiagnosticsTimers.withLock { state in
+            state.firstBufferSeen = true
+            state.firstBufferTimeout?.cancel()
+            state.firstBufferTimeout = nil
+        }
     }
 }
 

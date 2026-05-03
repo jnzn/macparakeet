@@ -64,6 +64,15 @@ public final class AVAudioEngineMicrophonePlatform: MicrophoneEnginePlatform, @u
     private var audioEngine = AVAudioEngine()
     private var running: Bool = false
     private var lastSucceededAttemptLocked: MeetingInputDeviceAttempt?
+    /// Token for the `AVAudioEngine.configurationChangeNotification` observer
+    /// installed on the current `audioEngine` instance. Cleared on
+    /// `tearDown` / `resetEngine` / `replaceEngineAfterFailure` so the
+    /// next instance gets its own observer. Recorded here purely to
+    /// surface the signal in `dictation-audio.log` — Core Audio sends
+    /// this when the input chain reconfigures (default-input change,
+    /// format change, sample-rate change), which is the most likely
+    /// trigger for the silent tap-stall under investigation.
+    private var configurationChangeObserver: NSObjectProtocol?
 
     public init(deviceAttemptsBuilder: DeviceAttemptsBuilder? = nil) {
         self.deviceAttemptsBuilder = deviceAttemptsBuilder
@@ -89,6 +98,9 @@ public final class AVAudioEngineMicrophonePlatform: MicrophoneEnginePlatform, @u
             } catch {
                 logger.error(
                     "shared_mic_engine_input_format_failed reason=\(error.localizedDescription, privacy: .public)"
+                )
+                AudioCaptureDiagnostics.append(
+                    "shared_mic_engine_input_format_failed reason=\"\(error.localizedDescription)\""
                 )
                 return nil
             }
@@ -133,6 +145,9 @@ public final class AVAudioEngineMicrophonePlatform: MicrophoneEnginePlatform, @u
                     logger.warning(
                         "shared_mic_engine_input_device_set_failed source=\(attempt.source.logValue, privacy: .public) id=\(attempt.deviceID, privacy: .public)"
                     )
+                    AudioCaptureDiagnostics.append(
+                        "shared_mic_engine_input_device_set_failed source=\(attempt.source.logValue) id=\(attempt.deviceID)"
+                    )
                     if lastError == nil {
                         lastError = AVAudioEngineMicrophonePlatformError.deviceSetFailed(attempt)
                     }
@@ -151,11 +166,17 @@ public final class AVAudioEngineMicrophonePlatform: MicrophoneEnginePlatform, @u
                     logger.info(
                         "shared_mic_engine_input_device_started source=\(attempt.source.logValue, privacy: .public) id=\(attempt.deviceID, privacy: .public) name=\(name, privacy: .public) vpio=\(vpioEnabled, privacy: .public)"
                     )
+                    AudioCaptureDiagnostics.append(
+                        "shared_mic_engine_input_device_started source=\(attempt.source.logValue) id=\(attempt.deviceID) name=\(name) vpio=\(vpioEnabled)"
+                    )
                     return
                 } catch {
                     lastError = error
                     logger.warning(
                         "shared_mic_engine_input_device_start_failed source=\(attempt.source.logValue, privacy: .public) id=\(attempt.deviceID, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+                    )
+                    AudioCaptureDiagnostics.append(
+                        "shared_mic_engine_input_device_start_failed source=\(attempt.source.logValue) id=\(attempt.deviceID) error=\"\(error.localizedDescription)\""
                     )
                     // startEngineLocked already replaces the engine on
                     // failure, so nothing more to reset here.
@@ -171,6 +192,7 @@ public final class AVAudioEngineMicrophonePlatform: MicrophoneEnginePlatform, @u
             guard running else { return }
             tearDownLocked()
             logger.info("shared_mic_engine_stopped")
+            AudioCaptureDiagnostics.append("shared_mic_engine_stopped")
         }
     }
 
@@ -260,9 +282,11 @@ public final class AVAudioEngineMicrophonePlatform: MicrophoneEnginePlatform, @u
             throw error
         }
         running = true
+        installConfigurationChangeObserverLocked()
     }
 
     private func tearDownLocked() {
+        removeConfigurationChangeObserverLocked()
         let inputNode = audioEngine.inputNode
         try? catchingObjCException {
             inputNode.removeTap(onBus: 0)
@@ -284,6 +308,7 @@ public final class AVAudioEngineMicrophonePlatform: MicrophoneEnginePlatform, @u
     /// Reset between failed device attempts (no tap installed yet, just
     /// hand back a fresh engine for the next try).
     private func resetEngineLocked() {
+        removeConfigurationChangeObserverLocked()
         try? catchingObjCException {
             audioEngine.stop()
         }
@@ -293,12 +318,61 @@ public final class AVAudioEngineMicrophonePlatform: MicrophoneEnginePlatform, @u
     }
 
     private func replaceEngineAfterFailureLocked() {
+        removeConfigurationChangeObserverLocked()
         try? catchingObjCException {
             audioEngine.stop()
         }
         audioEngine = AVAudioEngine()
         running = false
         lastSucceededAttemptLocked = nil
+    }
+
+    /// Observe `AVAudioEngine.configurationChangeNotification` on the
+    /// current `audioEngine` and log every fire to `dictation-audio.log`.
+    /// Core Audio posts this when the engine's input chain is renegotiated
+    /// out from under us — default-input device change, sample-rate
+    /// change, exclusive-access takeover by another process. Without
+    /// observing it, those events are invisible in our logs and the
+    /// silent tap-stall they can leave behind has no signature beyond
+    /// "buffers stopped arriving."
+    private func installConfigurationChangeObserverLocked() {
+        // Notification name spelled out: `AVAudioEngine.configurationChangeNotification`
+        // is iOS-only; macOS exposes the same notification under its raw
+        // C name. Using the string literal is the portable form.
+        let token = NotificationCenter.default.addObserver(
+            forName: Notification.Name("AVAudioEngineConfigurationChangeNotification"),
+            object: audioEngine,
+            queue: nil
+        ) { [weak self] notification in
+            guard let self else { return }
+            // Read format off the platform queue to avoid racing the
+            // engine state. Use try? — we just want the snapshot, and
+            // failing reads are fine to log as zeros.
+            let snapshot: (sr: Double, ch: AVAudioChannelCount, isRunning: Bool) = self.queue.sync {
+                let format = (try? catchingObjCException {
+                    self.audioEngine.inputNode.outputFormat(forBus: 0)
+                })
+                return (
+                    sr: format?.sampleRate ?? 0,
+                    ch: format?.channelCount ?? 0,
+                    isRunning: self.running
+                )
+            }
+            AudioCaptureDiagnostics.append(
+                "shared_mic_engine_configuration_changed sr=\(snapshot.sr) ch=\(snapshot.ch) isRunning=\(snapshot.isRunning) default_input=\(AudioCaptureDiagnostics.defaultInputDeviceLabel())"
+            )
+            self.logger.info(
+                "shared_mic_engine_configuration_changed sr=\(snapshot.sr, privacy: .public) ch=\(snapshot.ch, privacy: .public) isRunning=\(snapshot.isRunning, privacy: .public)"
+            )
+        }
+        configurationChangeObserver = token
+    }
+
+    private func removeConfigurationChangeObserverLocked() {
+        if let token = configurationChangeObserver {
+            NotificationCenter.default.removeObserver(token)
+            configurationChangeObserver = nil
+        }
     }
 }
 

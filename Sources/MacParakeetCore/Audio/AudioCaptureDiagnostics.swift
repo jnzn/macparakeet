@@ -2,7 +2,7 @@ import CoreAudio
 import Foundation
 import os
 
-enum AudioCaptureDiagnostics {
+public enum AudioCaptureDiagnostics {
     private static let lock = OSAllocatedUnfairLock(initialState: ())
     private static let maxLogBytes: UInt64 = 1_000_000
 
@@ -19,7 +19,7 @@ enum AudioCaptureDiagnostics {
         deviceLabel(AudioDeviceManager.defaultInputDevice())
     }
 
-    static func append(_ message: @autoclosure () -> String) {
+    public static func append(_ message: @autoclosure () -> String) {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let line = "\(formatter.string(from: Date())) \(message())\n"

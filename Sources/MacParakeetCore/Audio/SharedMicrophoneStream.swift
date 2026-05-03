@@ -182,12 +182,14 @@ public final class SharedMicrophoneStream: @unchecked Sendable {
                 }
 
                 if action == .none {
+                    self.emitDiagnosticsLog(transition: "subscribe", wantsVPIO: wantsVPIO)
                     cont.resume(returning: token)
                     return
                 }
 
                 do {
                     try self.executeEngineAction(action)
+                    self.emitDiagnosticsLog(transition: "subscribe", wantsVPIO: wantsVPIO)
                     cont.resume(returning: token)
                 } catch {
                     self.lock.withLock { state in
@@ -199,6 +201,7 @@ public final class SharedMicrophoneStream: @unchecked Sendable {
                         }
                         Self.refreshHandlersSnapshot(&state)
                     }
+                    self.emitDiagnosticsLog(transition: "subscribe_failed", wantsVPIO: wantsVPIO)
                     cont.resume(throwing: SubscribeError.engineStartFailed(error.localizedDescription))
                 }
             }
@@ -230,12 +233,14 @@ public final class SharedMicrophoneStream: @unchecked Sendable {
                 }
 
                 if action == .none {
+                    self.emitDiagnosticsLog(transition: "unsubscribe", wantsVPIO: nil)
                     cont.resume()
                     return
                 }
 
                 do {
                     try self.executeEngineAction(action)
+                    self.emitDiagnosticsLog(transition: "unsubscribe", wantsVPIO: nil)
                 } catch {
                     switch action {
                     case .reconfigureToVPIO:
@@ -254,6 +259,10 @@ public final class SharedMicrophoneStream: @unchecked Sendable {
                         self.logger.error(
                             "shared_mic_engine_reconfigure_failed engine_dead=true reason=\(error.localizedDescription, privacy: .public)"
                         )
+                        AudioCaptureDiagnostics.append(
+                            "shared_mic_engine_reconfigure_failed engine_dead=true reason=\"\(error.localizedDescription)\""
+                        )
+                        self.emitDiagnosticsLog(transition: "unsubscribe_engine_dead", wantsVPIO: nil)
                         // Fire callbacks off-lock and off the engine queue so
                         // a slow handler cannot block future stream operations.
                         if !deathCallbacks.isEmpty {
@@ -267,6 +276,10 @@ public final class SharedMicrophoneStream: @unchecked Sendable {
                         self.logger.error(
                             "shared_mic_engine_stop_failed reason=\(error.localizedDescription, privacy: .public)"
                         )
+                        AudioCaptureDiagnostics.append(
+                            "shared_mic_engine_stop_failed reason=\"\(error.localizedDescription)\""
+                        )
+                        self.emitDiagnosticsLog(transition: "unsubscribe_stop_failed", wantsVPIO: nil)
                     case .startEngine, .none:
                         break
                     }
@@ -393,6 +406,22 @@ public final class SharedMicrophoneStream: @unchecked Sendable {
         case .none:
             break
         }
+    }
+
+    // MARK: - Diagnostics
+
+    /// Emit the current `Diagnostics` snapshot as a single line in
+    /// `dictation-audio.log`. Called from `engineQueue` after every
+    /// transition (subscribe / unsubscribe / failure path) so the
+    /// log captures the state-machine evolution alongside the
+    /// dictation- and meeting-side events. `wantsVPIO` is the request
+    /// flavour for subscribe transitions; nil for unsubscribe.
+    private func emitDiagnosticsLog(transition: String, wantsVPIO: Bool?) {
+        let snapshot = diagnostics
+        let wantsField = wantsVPIO.map { "wants_vpio=\($0)" } ?? "wants_vpio=n/a"
+        AudioCaptureDiagnostics.append(
+            "shared_mic_diagnostics transition=\(transition) \(wantsField) subscribers=\(snapshot.subscriberCount) vpio_subs=\(snapshot.vpioSubscriberCount) engine_running=\(snapshot.engineRunning) vpio_engaged=\(snapshot.vpioEngaged) vpio_deferred=\(snapshot.vpioDeferred) vpio_deferral_count=\(snapshot.vpioDeferralCount)"
+        )
     }
 
     // MARK: - Audio-thread fan-out

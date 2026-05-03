@@ -214,6 +214,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - App Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Process boot marker for the audio diagnostics log. The dev app and
+        // `swift test` write into the same on-disk file
+        // (`~/Library/Logs/MacParakeet/dictation-audio.log`); without this
+        // marker, splitting transitions across processes/relaunches has to be
+        // inferred. See journal/2026-05-03-dictation-silent-stall.md.
+        let identity = BuildIdentity.current
+        AudioCaptureDiagnostics.append(
+            "dictation_diagnostics_session_start pid=\(getpid()) version=\(identity.version) build=\(identity.buildNumber) source=\(identity.buildSource) commit=\(identity.gitCommit)"
+        )
+
         if isRunningFromDiskImage() {
             showMoveToApplicationsAlert()
             return
