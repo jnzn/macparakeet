@@ -336,34 +336,30 @@ public final class AVAudioEngineMicrophonePlatform: MicrophoneEnginePlatform, @u
     /// silent tap-stall they can leave behind has no signature beyond
     /// "buffers stopped arriving."
     private func installConfigurationChangeObserverLocked() {
-        // Notification name spelled out: `AVAudioEngine.configurationChangeNotification`
-        // is iOS-only; macOS exposes the same notification under its raw
-        // C name. Using the string literal is the portable form.
         let token = NotificationCenter.default.addObserver(
-            forName: Notification.Name("AVAudioEngineConfigurationChangeNotification"),
+            forName: .AVAudioEngineConfigurationChange,
             object: audioEngine,
             queue: nil
         ) { [weak self] notification in
-            guard let self else { return }
-            // Read format off the platform queue to avoid racing the
-            // engine state. Use try? — we just want the snapshot, and
-            // failing reads are fine to log as zeros.
-            let snapshot: (sr: Double, ch: AVAudioChannelCount, isRunning: Bool) = self.queue.sync {
+            guard let self, let engine = notification.object as? AVAudioEngine else { return }
+            self.queue.async { [weak self, engine] in
+                guard let self else { return }
                 let format = (try? catchingObjCException {
-                    self.audioEngine.inputNode.outputFormat(forBus: 0)
+                    engine.inputNode.outputFormat(forBus: 0)
                 })
-                return (
+                let snapshot = (
                     sr: format?.sampleRate ?? 0,
                     ch: format?.channelCount ?? 0,
                     isRunning: self.running
                 )
+                let defaultInput = AudioCaptureDiagnostics.defaultInputDeviceLabel()
+                AudioCaptureDiagnostics.append(
+                    "shared_mic_engine_configuration_changed sr=\(snapshot.sr) ch=\(snapshot.ch) isRunning=\(snapshot.isRunning) default_input=\(defaultInput)"
+                )
+                self.logger.info(
+                    "shared_mic_engine_configuration_changed sr=\(snapshot.sr, privacy: .public) ch=\(snapshot.ch, privacy: .public) isRunning=\(snapshot.isRunning, privacy: .public)"
+                )
             }
-            AudioCaptureDiagnostics.append(
-                "shared_mic_engine_configuration_changed sr=\(snapshot.sr) ch=\(snapshot.ch) isRunning=\(snapshot.isRunning) default_input=\(AudioCaptureDiagnostics.defaultInputDeviceLabel())"
-            )
-            self.logger.info(
-                "shared_mic_engine_configuration_changed sr=\(snapshot.sr, privacy: .public) ch=\(snapshot.ch, privacy: .public) isRunning=\(snapshot.isRunning, privacy: .public)"
-            )
         }
         configurationChangeObserver = token
     }

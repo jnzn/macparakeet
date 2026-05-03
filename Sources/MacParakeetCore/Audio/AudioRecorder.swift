@@ -46,7 +46,10 @@ private struct RecordingRuntimeMetrics: Sendable {
 /// the moral equivalent — the lock owner has exclusive access.
 private struct CaptureDiagnosticsTimers {
     var firstBufferTimeout: DispatchWorkItem?
-    var firstBufferSeen: Bool = false
+    /// Generation that delivered its first buffer. This may be set before
+    /// timers are armed because AVAudioEngine can deliver a tap buffer before
+    /// `SharedMicrophoneStream.subscribe` returns to `start()`.
+    var firstBufferSeenGeneration: Int?
     var heartbeatTimer: DispatchSourceTimer?
     /// Session generation captured when the timers were armed. The fired
     /// closures bail out if the current generation has moved past this,
@@ -262,7 +265,7 @@ public actor AudioRecorder {
                 return true
             }
             if shouldLogFirstBuffer {
-                self.markFirstBufferReceivedForDiagnostics()
+                self.markFirstBufferReceivedForDiagnostics(generation: tapGeneration)
                 let sr = bufferFormat.sampleRate
                 let ch = bufferFormat.channelCount
                 let commonFormat = bufferFormat.commonFormat.rawValue
@@ -540,7 +543,7 @@ public actor AudioRecorder {
             guard let self else { return }
             let shouldFire = self.captureDiagnosticsTimers.withLock { state -> Bool in
                 guard state.armedGeneration == armedGeneration else { return false }
-                guard !state.firstBufferSeen else { return false }
+                guard state.firstBufferSeenGeneration != armedGeneration else { return false }
                 state.firstBufferTimeout = nil
                 return true
             }
@@ -569,18 +572,24 @@ public actor AudioRecorder {
             )
         }
 
-        captureDiagnosticsTimers.withLock { state in
+        let shouldScheduleFirstBufferTimeout = captureDiagnosticsTimers.withLock { state -> Bool in
             state.firstBufferTimeout?.cancel()
             state.heartbeatTimer?.cancel()
-            state.firstBufferSeen = false
-            state.firstBufferTimeout = firstBufferItem
+            let alreadySawFirstBuffer = state.firstBufferSeenGeneration == armedGeneration
+            if !alreadySawFirstBuffer {
+                state.firstBufferSeenGeneration = nil
+            }
+            state.firstBufferTimeout = alreadySawFirstBuffer ? nil : firstBufferItem
             state.heartbeatTimer = timer
             state.armedGeneration = armedGeneration
+            return !alreadySawFirstBuffer
         }
-        diagnosticsQueue.asyncAfter(
-            deadline: .now() + Self.firstBufferTimeoutSeconds,
-            execute: firstBufferItem
-        )
+        if shouldScheduleFirstBufferTimeout {
+            diagnosticsQueue.asyncAfter(
+                deadline: .now() + Self.firstBufferTimeoutSeconds,
+                execute: firstBufferItem
+            )
+        }
         timer.resume()
     }
 
@@ -592,7 +601,7 @@ public actor AudioRecorder {
             state.firstBufferTimeout = nil
             state.heartbeatTimer?.cancel()
             state.heartbeatTimer = nil
-            state.firstBufferSeen = false
+            state.firstBufferSeenGeneration = nil
             state.armedGeneration = -1
         }
     }
@@ -601,9 +610,10 @@ public actor AudioRecorder {
     /// session. Cancels the first-buffer timeout so it doesn't fire
     /// behind a healthy recording. The heartbeat continues — its job is
     /// to detect mid-session stalls, not just startup ones.
-    nonisolated fileprivate func markFirstBufferReceivedForDiagnostics() {
+    nonisolated fileprivate func markFirstBufferReceivedForDiagnostics(generation: Int) {
         captureDiagnosticsTimers.withLock { state in
-            state.firstBufferSeen = true
+            state.firstBufferSeenGeneration = generation
+            guard state.armedGeneration == generation else { return }
             state.firstBufferTimeout?.cancel()
             state.firstBufferTimeout = nil
         }
