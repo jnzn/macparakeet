@@ -127,10 +127,10 @@ struct LiveNotesPaneView: View {
 
     private var placeholder: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Take notes during the meeting…")
+            Text("Take notes while you record…")
                 .font(DesignSystem.Typography.body)
                 .foregroundStyle(DesignSystem.Colors.textTertiary.opacity(0.7))
-            Text("Saved with the recording. Available in Ask. Headings, bullets, scratch — all welcome.")
+            Text("Auto-saved with the recording. Stays on this Mac.")
                 .font(DesignSystem.Typography.caption)
                 .foregroundStyle(DesignSystem.Colors.textTertiary.opacity(0.55))
                 .fixedSize(horizontal: false, vertical: true)
