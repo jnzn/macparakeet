@@ -81,9 +81,8 @@ Maintain the artifacts that currently provide value:
 
 ### Requirement Index
 
-`requirements.yaml` is a compact feature/status index. Each entry should include:
+`requirements.yaml` is a compact feature/status index. Each top-level key is the stable requirement ID. Each entry should include:
 
-- `id` (stable, e.g. `REQ-F11-001`)
 - `status`
 - `description`
 - `version` or release/train marker
