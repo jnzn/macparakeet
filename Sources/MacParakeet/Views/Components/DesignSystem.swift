@@ -30,6 +30,11 @@ enum DesignSystem {
         static let textTertiary = Color(light: .init(red: 0.61, green: 0.61, blue: 0.61),
                                         dark: .init(red: 0.39, green: 0.39, blue: 0.40))
 
+        /// Neutral label tint — for `.bordered` buttons that should NOT carry
+        /// brand color. Resolves to the system label color (white in dark mode,
+        /// near-black in light). Used via `.parakeetAction(.secondary)`.
+        static let tintNeutral = Color.primary
+
         // Semantic
         static let successGreen = Color(light: .init(red: 0.20, green: 0.66, blue: 0.33),
                                         dark: .init(red: 0.29, green: 0.87, blue: 0.50))
