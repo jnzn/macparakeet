@@ -28,12 +28,16 @@ ERRORS=0
 
 while IFS= read -r README; do
   README_DIR="$(dirname "$README")"
-  SWIFT_REFS=$(grep -oE '`[A-Za-z_][A-Za-z0-9_]*\.swift`' "$README" | tr -d '`' | sort -u)
+  # `|| true` so a README with no .swift backticks doesn't fail the
+  # whole script under `set -euo pipefail` (grep exits 1 on no match).
+  SWIFT_REFS=$(grep -oE '`[A-Za-z_][A-Za-z0-9_]*\.swift`' "$README" | tr -d '`' | sort -u || true)
   for ref in $SWIFT_REFS; do
     if [[ -f "$README_DIR/$ref" ]]; then
       continue
     fi
-    if find Sources -type f -name "$ref" -print -quit | grep -q .; then
+    # No `-quit`: BSD find (macOS) doesn't support it. Pipe scan is
+    # fine — Sources/ is small and the script runs in ~150 ms.
+    if find Sources -type f -name "$ref" | grep -q .; then
       continue
     fi
     echo "ERROR: $README references missing file: $ref"
