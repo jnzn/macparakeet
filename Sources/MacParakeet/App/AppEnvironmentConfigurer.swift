@@ -35,12 +35,12 @@ final class AppEnvironmentConfigurer {
     private let textSnippetsViewModel: TextSnippetsViewModel
     private let vocabularyBackupViewModel: VocabularyBackupViewModel
     private let libraryViewModel: TranscriptionLibraryViewModel
-    private let meetingsViewModel: TranscriptionLibraryViewModel
     private let llmSettingsViewModel: LLMSettingsViewModel
     private let chatViewModel: TranscriptChatViewModel
     private let promptResultsViewModel: PromptResultsViewModel
     private let promptsViewModel: PromptsViewModel
     private let mainWindowState: MainWindowState
+    private let meetingPillViewModel: MeetingRecordingPillViewModel
     private weak var liveMeetingCoordinator: MeetingRecordingFlowCoordinator?
 
     init(
@@ -51,12 +51,12 @@ final class AppEnvironmentConfigurer {
         textSnippetsViewModel: TextSnippetsViewModel,
         vocabularyBackupViewModel: VocabularyBackupViewModel,
         libraryViewModel: TranscriptionLibraryViewModel,
-        meetingsViewModel: TranscriptionLibraryViewModel,
         llmSettingsViewModel: LLMSettingsViewModel,
         chatViewModel: TranscriptChatViewModel,
         promptResultsViewModel: PromptResultsViewModel,
         promptsViewModel: PromptsViewModel,
-        mainWindowState: MainWindowState
+        mainWindowState: MainWindowState,
+        meetingPillViewModel: MeetingRecordingPillViewModel
     ) {
         self.transcriptionViewModel = transcriptionViewModel
         self.historyViewModel = historyViewModel
@@ -65,12 +65,12 @@ final class AppEnvironmentConfigurer {
         self.textSnippetsViewModel = textSnippetsViewModel
         self.vocabularyBackupViewModel = vocabularyBackupViewModel
         self.libraryViewModel = libraryViewModel
-        self.meetingsViewModel = meetingsViewModel
         self.llmSettingsViewModel = llmSettingsViewModel
         self.chatViewModel = chatViewModel
         self.promptResultsViewModel = promptResultsViewModel
         self.promptsViewModel = promptsViewModel
         self.mainWindowState = mainWindowState
+        self.meetingPillViewModel = meetingPillViewModel
     }
 
     func configure(environment env: AppEnvironment, callbacks: Callbacks) -> Runtime {
@@ -95,7 +95,6 @@ final class AppEnvironmentConfigurer {
         )
         historyViewModel.configure(dictationRepo: env.dictationRepo)
         libraryViewModel.configure(transcriptionRepo: env.transcriptionRepo)
-        meetingsViewModel.configure(transcriptionRepo: env.transcriptionRepo)
         settingsViewModel.configure(
             permissionService: env.permissionService,
             dictationRepo: env.dictationRepo,
@@ -225,13 +224,13 @@ final class AppEnvironmentConfigurer {
             configStore: env.llmConfigStore,
             meetingAudioSourceModeProvider: { env.runtimePreferences.meetingAudioSourceMode },
             llmService: hasLLMConfig ? env.llmService : nil,
+            pillViewModel: meetingPillViewModel,
             onMenuBarIconUpdate: { _ in callbacks.onMenuBarIconUpdate() },
             onTranscriptionReady: { [weak self] transcription in
                 guard let self else { return }
                 self.transcriptionViewModel.presentCompletedTranscription(transcription, autoSave: true)
                 self.libraryViewModel.loadTranscriptions()
-                self.meetingsViewModel.loadTranscriptions()
-                self.mainWindowState.navigateToTranscription(from: .meetings)
+                self.mainWindowState.navigateToTranscription(from: .library)
                 callbacks.onOpenMainWindow()
             },
             onRecordingBegan: {

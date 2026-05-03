@@ -5,14 +5,15 @@
 ## Overview
 
 MacParakeet has these primary UI surfaces:
-1. **Main Window** -- Sidebar + content area for history and transcriptions
+1. **Main Window** -- Sidebar + content area; **Transcribe** is the unified capture hub for all three modes
 2. **Idle Pill** -- Persistent floating indicator, always visible when not dictating or meeting-recording
 3. **Dictation Overlay** -- Compact pill for recording state
-4. **Meeting Recording Pill** -- Persistent floating pill during meeting recording (sacred geometry icon)
-5. **Meeting Recording Panel** -- Floating Notes / Transcript / Ask panel with audio levels and stop controls
-6. **Menu Bar** -- Quick access and status
-7. **Countdown Toasts** -- Calendar auto-start/auto-stop affordances
-8. **Settings** -- Preferences, permissions, local speech models, calendar, and update controls
+4. **Meeting Recording Tile** -- Capture tile on the Transcribe tab; reflects live recording state
+5. **Meeting Recording Pill** -- Persistent floating pill during meeting recording (sacred geometry icon); shares state with the Transcribe tile
+6. **Meeting Recording Panel** -- Floating Notes / Transcript / Ask panel with audio levels and stop controls
+7. **Menu Bar** -- Quick access and status
+8. **Countdown Toasts** -- Calendar auto-start/auto-stop affordances
+9. **Settings** -- Preferences, permissions, local speech models, calendar, and update controls
 
 Design philosophy: **Simple, native, stays out of the way.** No chrome, no clutter. The app should feel like part of macOS, not a web app in a wrapper.
 
@@ -45,9 +46,9 @@ Design philosophy: **Simple, native, stays out of the way.** No chrome, no clutt
 │  ────────────    │  ───────────────────────────────────────  │
 │                  │                                           │
 │  🎤 Transcribe   │  [Depends on sidebar selection]           │
-│  🎙 Meetings     │                                           │
-│  🕒 Dictations   │  - Transcribe: Drop zone + recent list   │
-│  📖 Vocabulary   │  - Meetings: Meeting recordings + record  │
+│  🗂 Library      │                                           │
+│  🕒 Dictations   │  - Transcribe: 3-mode capture hub        │
+│  📖 Vocabulary   │  - Library: Grid (or list for Meetings)  │
 │  💬 Feedback     │  - Dictations: History list               │
 │  ⚙ Settings      │  - Vocabulary: Processing mode + manage   │
 │                  │  - Feedback: Form + community link        │
@@ -62,16 +63,54 @@ Minimum window width: 800pt.
 
 The sidebar uses NavigationSplitView with flat items (icon + label):
 
-- **Transcribe** (`waveform`) -- Drop zone and recent transcriptions
-- **Meetings** (`record.circle`) -- Meeting recordings list + "Record Meeting" button
+- **Transcribe** (`waveform`) -- Capture hub: YouTube card + file drop card + Meeting Recording tile (Labs-gated)
+- **Library** (`square.grid.2x2`) -- All transcriptions; filter chips switch between thumbnail grid (All/YouTube/Local/Favorites) and date-grouped list (Meetings, Labs-badged)
 - **Dictations** (`clock.arrow.circlepath`) -- Flat history list with bottom bar player
 - **Vocabulary** (`book.fill`) -- Processing mode, pipeline guide, custom words & snippets management
 - **Feedback** (`bubble.left.and.text.bubble.right`) -- Bug reports, feature requests, community link
 - **Settings** (`gearshape`) -- Dictation prefs, meeting recording prefs, storage, permissions
 
+There is no dedicated Meetings tab. Meeting **capture** lives on the Transcribe tile (plus hotkey + menu bar); meeting **browse** lives under Library's Meetings filter. Reason: a separate sidebar entry was a third entry point for an action already covered by hotkey + menu bar, and meetings have no thumbnail-worthy visual asset, so the date-grouped list (preview text + speaker count) belongs in the unified Library rather than a dedicated tab.
+
 Column width: `min: 160, ideal: 180, max: 220`. Window minimum width: 800pt.
 
 Content transitions between tabs use `DesignSystem.Animation.contentSwap` (0.2s easeInOut).
+
+### Transcribe Tab (capture hub)
+
+```
++------------------------------------------------------------+
+|  +----------------------+  +--------------------------+    |
+|  |  > YouTube           |  |  Drop a file             |    |
+|  |  [Paste link]   [->] |  |  [Browse Files]          |    |
+|  |                      |  |  MP3, WAV, M4A, MP4...   |    |
+|  +----------------------+  +--------------------------+    |
+|  +------------------------------------------------------+  |
+|  |  o  Record Meeting                          * Start  |  |
+|  |     Capture system audio + mic, transcribed locally  |  |
+|  +------------------------------------------------------+  |
++------------------------------------------------------------+
+```
+
+Two big input cards on top (equal weight), one ~96pt strip below (lighter weight — meeting capture is a single-click action, doesn't need real estate for paste fields or drop areas). The Meeting Recording tile is gated behind `AppFeatures.meetingRecordingEnabled`; when disabled it's hidden and the layout collapses to two cards.
+
+### Meeting Recording Tile
+
+A horizontal strip on the Transcribe tab. Mirrors the floating recording pill's visual language (flower-of-life rosette + stem + leaves) at a larger scale on a light surface — green strokes on `surfaceElevated` instead of the pill's white-on-black.
+
+States, all bound to the long-lived `MeetingRecordingPillViewModel` shared with the floating pill:
+
+- **Idle**: green rosette + stem (subtle 4s glow breathing), "Record Meeting" + subtitle, red "Start" capsule on the right.
+- **Recording**: rosette rotates (12s/turn — matches the floating pill exactly), audio halo grows with mic level, breathing red dot + monospaced MM:SS timer, white-on-red Stop button. Border picks up `recordingRed` opacity.
+- **Completing / Transcribing**: spinner replaces rosette; "Wrapping up..." then "Transcribing..." labels.
+- **Completed**: green checkmark + "Saved to Library"; auto-reverts to idle.
+- **Error**: amber triangle + recovery message + dismiss button.
+
+Tapping the tile or the Stop button calls the same `toggleRecording` path the menu bar uses. The floating pill stays visible during recording so users who hide the main window keep an active control surface.
+
+### Library Meetings Filter
+
+When `Library.filter == .meeting`, the view renders a date-grouped list (`Today` / `Yesterday` / `Previous 7 Days` / `Previous 30 Days` / `{Month Year}`) using `MeetingDateGroupHeader` + `MeetingRowCard` instead of the thumbnail grid the other filters use. The Meetings filter chip carries the Labs badge.
 
 ---
 
@@ -400,7 +439,7 @@ panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
 ## Meeting Recording Pill (v0.6)
 
-Persistent floating pill that appears during meeting recording. Uses the sacred-geometry Merkaba icon as the anchor. Clicking the pill opens the meeting recording panel.
+Persistent floating pill that appears during meeting recording. Uses the sacred-geometry Merkaba icon as the anchor. Clicking the pill opens the meeting recording panel. Shares its state (`MeetingRecordingPillViewModel`) with the **Meeting Recording Tile** on the Transcribe tab — both surfaces stay in sync because they bind to the same long-lived view model owned by `AppDelegate`.
 
 ### Layout
 

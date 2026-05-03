@@ -49,7 +49,10 @@ final class MeetingRecordingFlowCoordinator {
 
     private var stateMachine = MeetingRecordingFlowStateMachine()
     private var pillController: MeetingRecordingPillController?
-    private var pillViewModel: MeetingRecordingPillViewModel?
+    /// Long-lived view model shared with the Transcribe-tab tile so the tile
+    /// can render live recording state. Owned by `AppEnvironmentConfigurer`,
+    /// passed in via init. Reset to `.idle` (not nilled) on flow teardown.
+    private let pillViewModel: MeetingRecordingPillViewModel
     private var panelController: MeetingRecordingPanelController?
     private var panelViewModel: MeetingRecordingPanelViewModel?
     private var actionTask: Task<Void, Never>?
@@ -73,6 +76,7 @@ final class MeetingRecordingFlowCoordinator {
         cliConfigStore: LocalCLIConfigStore = LocalCLIConfigStore(),
         meetingAudioSourceModeProvider: @escaping @MainActor @Sendable () -> MeetingAudioSourceMode = { .microphoneAndSystem },
         llmService: LLMServiceProtocol?,
+        pillViewModel: MeetingRecordingPillViewModel,
         onMenuBarIconUpdate: @escaping (BreathWaveIcon.MenuBarState) -> Void,
         onTranscriptionReady: @escaping (Transcription) -> Void,
         onRecordingBegan: @escaping () -> Void = {},
@@ -88,6 +92,7 @@ final class MeetingRecordingFlowCoordinator {
         self.cliConfigStore = cliConfigStore
         self.meetingAudioSourceModeProvider = meetingAudioSourceModeProvider
         self.llmService = llmService
+        self.pillViewModel = pillViewModel
         self.onMenuBarIconUpdate = onMenuBarIconUpdate
         self.onTranscriptionReady = onTranscriptionReady
         self.onRecordingBegan = onRecordingBegan
@@ -283,10 +288,12 @@ final class MeetingRecordingFlowCoordinator {
             }
 
         case .showRecordingPill:
-            let vm = pillViewModel ?? MeetingRecordingPillViewModel()
+            let vm = pillViewModel
             vm.onStop = { [weak self] in self?.toggleRecording() }
+            vm.elapsedSeconds = 0
+            vm.micLevel = 0
+            vm.systemLevel = 0
             vm.state = .recording
-            pillViewModel = vm
             let panelVM = panelViewModel ?? MeetingRecordingPanelViewModel()
             panelVM.state = .recording
             panelVM.elapsedSeconds = 0
@@ -393,14 +400,14 @@ final class MeetingRecordingFlowCoordinator {
         case .showTranscribingState:
             stopPillPolling()
             stopTranscriptObservation()
-            pillViewModel?.micLevel = 0
-            pillViewModel?.systemLevel = 0
-            pillViewModel?.state = .completing
-            pillViewModel?.onCompletionAnimationFinished = { [weak self] in
-                guard let self, self.pillViewModel?.state == .completing else { return }
+            pillViewModel.micLevel = 0
+            pillViewModel.systemLevel = 0
+            pillViewModel.state = .completing
+            pillViewModel.onCompletionAnimationFinished = { [weak self] in
+                guard let self, self.pillViewModel.state == .completing else { return }
                 // Flower collapsed — show merkaba spinner (or checkmark if already done)
                 if self.completedTranscription != nil {
-                    self.pillViewModel?.state = .completed
+                    self.pillViewModel.state = .completed
                     // Auto-dismiss was skipped during collapse — start it now
                     self.autoDismissTask?.cancel()
                     let gen = self.stateMachine.generation
@@ -410,7 +417,7 @@ final class MeetingRecordingFlowCoordinator {
                         self?.sendEvent(.autoDismissExpired(generation: gen))
                     }
                 } else {
-                    self.pillViewModel?.state = .transcribing
+                    self.pillViewModel.state = .transcribing
                 }
             }
             panelViewModel?.state = .transcribing
@@ -484,8 +491,8 @@ final class MeetingRecordingFlowCoordinator {
             stopTranscriptObservation()
             // If flower is still collapsing, the callback will check completedTranscription
             // If spinner is showing, transition to checkmark now
-            if pillViewModel?.state == .transcribing {
-                pillViewModel?.state = .completed
+            if pillViewModel.state == .transcribing {
+                pillViewModel.state = .completed
             }
             panelViewModel?.state = .hidden
 
@@ -520,7 +527,7 @@ final class MeetingRecordingFlowCoordinator {
             stopPillPolling()
             stopTranscriptObservation()
             panelViewModel?.state = .error(message)
-            pillViewModel?.state = .error(
+            pillViewModel.state = .error(
                 panelViewModel?.compactErrorRecoveryMessage
                     ?? "Meeting interrupted. Open Library to retry transcription or export captured audio."
             )
@@ -531,7 +538,16 @@ final class MeetingRecordingFlowCoordinator {
             stopTranscriptObservation()
             pillController?.hide()
             pillController = nil
-            pillViewModel = nil
+            // Pill view model is long-lived (also drives the Transcribe-tab
+            // tile), so we reset its state instead of nilling it. Callbacks
+            // on the VM are owned by the flow coordinator and re-bound on
+            // the next `.showRecordingPill` action.
+            pillViewModel.onStop = nil
+            pillViewModel.onCompletionAnimationFinished = nil
+            pillViewModel.elapsedSeconds = 0
+            pillViewModel.micLevel = 0
+            pillViewModel.systemLevel = 0
+            pillViewModel.state = .idle
             panelController?.close()
             panelController = nil
             panelViewModel = nil
@@ -571,11 +587,11 @@ final class MeetingRecordingFlowCoordinator {
 
         case .startAutoDismissTimer(let seconds):
             // Skip auto-dismiss when flower collapse animation is still playing
-            if pillViewModel?.state == .completing {
+            if pillViewModel.state == .completing {
                 break
             }
             // Give checkmark time to animate in and hold before dismissing
-            let adjustedSeconds = pillViewModel?.state == .completed ? 2.0 : seconds
+            let adjustedSeconds = pillViewModel.state == .completed ? 2.0 : seconds
             autoDismissTask?.cancel()
             let gen = stateMachine.generation
             autoDismissTask = Task { @MainActor in
@@ -639,15 +655,15 @@ final class MeetingRecordingFlowCoordinator {
                 let captureMode = await meetingRecordingService.captureMode
 
                 guard !Task.isCancelled else { break }
-                pillViewModel?.micLevel = micLevel
-                pillViewModel?.systemLevel = systemLevel
-                pillViewModel?.elapsedSeconds = elapsedSeconds
+                pillViewModel.micLevel = micLevel
+                pillViewModel.systemLevel = systemLevel
+                pillViewModel.elapsedSeconds = elapsedSeconds
                 panelViewModel?.elapsedSeconds = elapsedSeconds
                 panelViewModel?.micLevel = micLevel
                 panelViewModel?.systemLevel = systemLevel
                 if captureMode == .stopped,
                    stateMachine.state == .recording,
-                   pillViewModel?.state == .recording {
+                   pillViewModel.state == .recording {
                     // Audio capture stopped while the state machine still
                     // expects a live recording — typically because
                     // `MeetingRecordingService.failCapture` ran (mic unplug,
@@ -657,8 +673,8 @@ final class MeetingRecordingFlowCoordinator {
                     // captured. Surface it through the state machine so the
                     // existing stop+transcribe path saves whatever made it
                     // to disk.
-                    pillViewModel?.micLevel = 0
-                    pillViewModel?.systemLevel = 0
+                    pillViewModel.micLevel = 0
+                    pillViewModel.systemLevel = 0
                     panelViewModel?.micLevel = 0
                     panelViewModel?.systemLevel = 0
                     sendEvent(.captureFailed(generation: stateMachine.generation))

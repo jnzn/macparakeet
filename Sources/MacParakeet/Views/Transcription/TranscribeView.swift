@@ -8,8 +8,10 @@ struct TranscribeView: View {
     var chatViewModel: TranscriptChatViewModel
     @Bindable var promptResultsViewModel: PromptResultsViewModel
     @Bindable var promptsViewModel: PromptsViewModel
+    @Bindable var meetingPillViewModel: MeetingRecordingPillViewModel
     @Binding var showingProgressDetail: Bool
     var onNavigateBack: (() -> Void)?
+    var onRecordMeeting: () -> Void
     @State private var showCancelConfirmation = false
     @State private var aiFormatterWarningMessage: String?
     @State private var inspirationQuote: InspirationQuote = InspirationQuote.random()
@@ -165,6 +167,14 @@ struct TranscribeView: View {
                         )
                     }
                     .padding(.horizontal, DesignSystem.Spacing.xl)
+
+                    if AppFeatures.meetingRecordingEnabled {
+                        MeetingRecordingTile(
+                            viewModel: meetingPillViewModel,
+                            onTap: onRecordMeeting
+                        )
+                        .padding(.horizontal, DesignSystem.Spacing.xl)
+                    }
 
                     // Error banner
                     if let error = viewModel.errorMessage {

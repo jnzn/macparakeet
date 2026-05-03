@@ -135,10 +135,24 @@ All ADRs are in `spec/adr/`. These are locked decisions -- don't second-guess th
 MacParakeet has three primary modes in the `main` branch product direction:
 
 1. **System-wide dictation** -- Press hotkey anywhere on macOS, speak, text is pasted (WisprFlow-style)
-2. **File transcription** -- Drag-drop audio/video files for full transcription (MacWhisper-style)
+2. **File transcription** -- Drag-drop audio/video files or paste a YouTube link (MacWhisper-style)
 3. **Meeting recording** -- Labs on `main`; capture system audio + mic simultaneously, transcribe locally (simple Granola-style)
 
 All three modes share the same STT scheduler/runtime path on `main` but have different UI flows, audio sources, and data models. Parakeet is the default engine; Whisper can be selected globally or per CLI call for languages Parakeet does not cover. **Dictation and meeting recording run concurrently** (ADR-015) -- a user can dictate freely during a meeting recording. Dictation and meeting microphone capture fan out from one process-wide `SharedMicrophoneStream`/AVAudioEngine; meeting system audio remains a separate ScreenCaptureKit stream.
+
+The Transcribe tab is the unified capture surface — one place for all three modes (dictation can also start there via hotkey/menu bar, since dictation is global):
+
+```
++--------------------------------------------------+
+|  Transcribe a YouTube video |  Drop a file       |
+|  [link field] [Transcribe]  |  [Browse Files]    |
+|                             |                    |
++--------------------------------------------------+
+|  ✿ Record Meeting       Capture system + mic ●   |
++--------------------------------------------------+
+```
+
+The Meeting Recording tile (third row, ~96pt strip) reflects live recording state via a long-lived `MeetingRecordingPillViewModel` shared with the floating pill — both surfaces stay in sync. Meeting browse lives under `Library`'s Meetings filter chip (Labs-badged) as a date-grouped list rather than the thumbnail grid the other filters use.
 
 ADR-016 defines the STT architecture as one process-wide scheduler path with a reserved dictation slot and a shared background slot where meeting work outranks file transcription. ADR-021 extends that path with speech-engine routing, engine-switch guards, and meeting-session engine leases.
 
@@ -234,18 +248,21 @@ Menu Bar Icon (always visible)
     |   +-- Permissions
     |   +-- Auto-update preferences
     |
-    +-- Meetings Panel
-    |   +-- Start Meeting Recording button
-    |   +-- Past meeting recordings list
+    +-- Transcribe Tab (capture hub for all three modes)
+    |   +-- YouTube card (paste link)
+    |   +-- File drop card
+    |   +-- Meeting Recording tile (Labs-gated, reflects live state)
     |
     +-- Meeting Recording Pill (floating indicator)
-    |   +-- Red dot + elapsed timer
-    |   +-- Stop button
-    |   +-- Transcribing state
+    |   +-- Sacred-geometry rosette + stem
+    |   +-- Red dot + elapsed timer (on hover)
+    |   +-- Right-click: Stop / Open / Cancel
+    |   +-- Shares state with the Transcribe tile
     |
     +-- Library Panel
-    |   +-- Transcription thumbnail grid
-    |   +-- Filter bar (All/YouTube/Local/Meetings/Favorites)
+    |   +-- Filter bar: All/YouTube/Local/Meetings(Labs)/Favorites
+    |   +-- Thumbnail grid for All/YouTube/Local/Favorites
+    |   +-- Date-grouped list (Today/Yesterday/...) for Meetings filter
     |   +-- Search and sort
     |
     +-- History Panel
@@ -255,9 +272,9 @@ Menu Bar Icon (always visible)
 ```
 
 View files organized by feature in `Sources/MacParakeet/Views/`:
-- `Transcription/` -- Main window, drop zone, transcript display, export
+- `Transcription/` -- Transcribe tab, drop zone, YouTube card, **Meeting Recording tile**, transcript display, export, library grid + meetings list
 - `Dictation/` -- Overlay, waveform, recording state
-- `MeetingRecording/` -- Meeting recording pill, meetings view, dual audio levels
+- `MeetingRecording/` -- Floating pill, dual audio levels, live notes/transcript/Ask panel, row card + date headers (consumed by Library Meetings filter)
 - `Discover/` -- Discover sidebar, curated content cards
 - `Vocabulary/` -- Processing mode, custom words, text snippets
 - `Feedback/` -- Feedback form, category selection, community link
