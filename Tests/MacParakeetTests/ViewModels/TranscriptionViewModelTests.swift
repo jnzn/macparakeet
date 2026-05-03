@@ -1398,6 +1398,96 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertTrue(mockRepo.deleteCalledWith.isEmpty, "Should not delete anything")
     }
 
+    func testRetranscribeDoesNotFireAutoRunPrompts() async throws {
+        let tmpFile = FileManager.default.temporaryDirectory.appendingPathComponent("retranscribe-no-autorun-\(UUID().uuidString).mp3")
+        FileManager.default.createFile(atPath: tmpFile.path, contents: Data([0]))
+        defer { try? FileManager.default.removeItem(at: tmpFile) }
+
+        let original = Transcription(
+            fileName: "lecture.mp3",
+            filePath: tmpFile.path,
+            rawTranscript: "Old transcript",
+            status: .completed
+        )
+        mockRepo.transcriptions = [original]
+
+        let longTranscript = String(repeating: "Long transcript ", count: 50)
+        let newResult = Transcription(
+            fileName: tmpFile.lastPathComponent,
+            rawTranscript: longTranscript,
+            status: .completed
+        )
+        await mockService.configure(result: newResult)
+
+        let llm = MockLLMService()
+        let promptRepo = MockPromptRepository()
+        promptRepo.prompts = Prompt.builtInPrompts()
+        XCTAssertTrue(promptRepo.prompts.contains(where: { $0.isAutoRun }),
+                      "Test fixture must include at least one auto-run prompt for this regression to be meaningful")
+        let promptResultsVM = PromptResultsViewModel()
+        promptResultsVM.configure(
+            llmService: llm,
+            promptRepo: promptRepo,
+            promptResultRepo: mockPromptResultRepo
+        )
+
+        viewModel.configure(
+            transcriptionService: mockService,
+            transcriptionRepo: mockRepo,
+            llmService: llm,
+            promptResultRepo: mockPromptResultRepo,
+            promptResultsViewModel: promptResultsVM
+        )
+
+        viewModel.retranscribe(original)
+
+        try await waitUntil { !self.viewModel.isTranscribing }
+        // Drain any pending main-actor work that the retranscribe completion path posts.
+        try await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertTrue(promptResultsVM.pendingGenerations.isEmpty,
+                      "Retranscribe must not auto-queue prompt generations — that would duplicate existing tabs")
+        XCTAssertEqual(llm.summarizeCallCount, 0,
+                       "Retranscribe must not invoke the LLM service via auto-run")
+    }
+
+    func testFreshTranscribeStillFiresAutoRunPrompts() async throws {
+        let longTranscript = String(repeating: "Long transcript ", count: 50)
+        let result = Transcription(
+            fileName: "audio.mp3",
+            rawTranscript: longTranscript,
+            status: .completed
+        )
+        await mockService.configure(result: result)
+
+        let llm = MockLLMService()
+        llm.streamTokens = ["ok"]
+        let promptRepo = MockPromptRepository()
+        promptRepo.prompts = Prompt.builtInPrompts()
+        let promptResultsVM = PromptResultsViewModel()
+        promptResultsVM.configure(
+            llmService: llm,
+            promptRepo: promptRepo,
+            promptResultRepo: mockPromptResultRepo
+        )
+
+        viewModel.configure(
+            transcriptionService: mockService,
+            transcriptionRepo: mockRepo,
+            llmService: llm,
+            promptResultRepo: mockPromptResultRepo,
+            promptResultsViewModel: promptResultsVM
+        )
+
+        viewModel.transcribeFile(url: URL(fileURLWithPath: "/tmp/audio.mp3"))
+
+        try await waitUntil { !self.viewModel.isTranscribing }
+        try await waitUntil { llm.summarizeCallCount > 0 }
+
+        XCTAssertGreaterThan(llm.summarizeCallCount, 0,
+                             "Fresh transcribe must still fire auto-run prompts")
+    }
+
     func testRetranscribeFailureLeavesOriginalIntact() async throws {
         let tmpFile = FileManager.default.temporaryDirectory.appendingPathComponent("retranscribe-fail-test.mp3")
         FileManager.default.createFile(atPath: tmpFile.path, contents: Data([0]))

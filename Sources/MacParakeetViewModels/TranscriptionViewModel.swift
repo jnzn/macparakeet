@@ -382,7 +382,8 @@ public final class TranscriptionViewModel {
                 updatedResult.updatedAt = Date()
                 do {
                     try transcriptionRepo?.save(updatedResult)
-                    completeSuccessfulTranscription(taskID: taskID, result: updatedResult)
+                    // Skip auto-run prompts on retranscribe — they would duplicate the existing tabs.
+                    completeSuccessfulTranscription(taskID: taskID, result: updatedResult, runAutoPrompts: false)
                 } catch {
                     logger.error("Failed to save transcription result error=\(error.localizedDescription, privacy: .public)")
                     completeFailedTranscription(taskID: taskID, error: error)
@@ -484,12 +485,16 @@ public final class TranscriptionViewModel {
         }
     }
 
-    private func completeSuccessfulTranscription(taskID: UUID, result: Transcription) {
+    private func completeSuccessfulTranscription(
+        taskID: UUID,
+        result: Transcription,
+        runAutoPrompts: Bool = true
+    ) {
         guard activeTranscriptionTaskID == taskID else { return }
         transcriptionTask = nil
         activeTranscriptionTaskID = nil
         endTranscription()
-        presentCompletedTranscription(result)
+        presentCompletedTranscription(result, autoSave: false, runAutoPrompts: runAutoPrompts)
         autoSaveIfEnabled(result)
     }
 
@@ -500,15 +505,24 @@ public final class TranscriptionViewModel {
     }
 
     public func presentCompletedTranscription(_ transcription: Transcription) {
-        presentCompletedTranscription(transcription, autoSave: false)
+        presentCompletedTranscription(transcription, autoSave: false, runAutoPrompts: true)
     }
 
     public func presentCompletedTranscription(_ transcription: Transcription, autoSave: Bool) {
+        presentCompletedTranscription(transcription, autoSave: autoSave, runAutoPrompts: true)
+    }
+
+    public func presentCompletedTranscription(
+        _ transcription: Transcription,
+        autoSave: Bool,
+        runAutoPrompts: Bool
+    ) {
         currentTranscription = transcription
         loadTranscriptions()
         if autoSave {
             autoSaveIfEnabled(transcription)
         }
+        guard runAutoPrompts else { return }
         let text = transcription.cleanTranscript ?? transcription.rawTranscript ?? ""
         promptResultsViewModel?.autoGeneratePromptResults(transcript: text, transcriptionId: transcription.id)
     }
