@@ -108,80 +108,91 @@ enum BreathWaveIcon {
         return image
     }
 
-    /// Render the bare Cursive P brand mark as a transparent template NSImage,
-    /// suitable for inline tinting in SwiftUI views (assistant avatars, status
-    /// chips, etc.). No background, no padding — just the alpha-channel
-    /// silhouette — so callers control color via `.renderingMode(.template)` +
+    /// Load the canonical parakeet brand mark as a transparent template
+    /// NSImage, suitable for inline tinting in SwiftUI views (assistant
+    /// avatars, status chips, etc.). The asset (`parakeet-mark.png`) is the
+    /// same illustration used by `Assets/AppIcon-1024x1024.png`; this loader
+    /// converts the white-on-near-black source to alpha-only at load so
+    /// callers control color via `.renderingMode(.template)` +
     /// `.foregroundStyle()`.
     ///
-    /// Uses the canonical 128-viewBox geometry from `docs/brand-identity.md`
-    /// with the small-size stroke/dot spec (10 / radius 8) for legibility at
-    /// 16-32pt display sizes. Rendered at 4× the logical point size so SwiftUI
-    /// can downscale crisply at retina without anti-aliasing fuzz that runtime
-    /// vector strokes show at sub-2pt widths.
+    /// ## Why luminance → alpha
+    /// The shipped source is a high-resolution white parakeet on a near-black
+    /// background. We don't have a transparent-background variant in the
+    /// repo, so we synthesize one: pixel luminance becomes alpha. The white
+    /// silhouette goes fully opaque, the dark background fully transparent,
+    /// and anti-aliased edges keep their soft falloff intact.
     ///
-    /// The visual content (~96×116 inside the 128 viewBox) is centered into
-    /// the pixel canvas — the canonical glyph is biased upper-right within
-    /// 128, so a naïve `size/128` scale would push the mark off-center in
-    /// any tight inline frame.
+    /// The processed CGImage is cached in `templateMark` so the per-pixel
+    /// pass runs at most once per process.
     static func brandMark(pointSize: CGFloat = 18) -> NSImage {
-        let scaleFactor: CGFloat = 4
-        let pixel = pointSize * scaleFactor
-        let image = NSImage(size: NSSize(width: pixel, height: pixel), flipped: true) { _ in
-            let visualW: CGFloat = 96
-            let visualH: CGFloat = 116
-            let visualMinX: CGFloat = 3
-            let visualMinY: CGFloat = 3
-            let fit = min(pixel / visualW, pixel / visualH)
-            let offsetX = (pixel - visualW * fit) / 2 - visualMinX * fit
-            let offsetY = (pixel - visualH * fit) / 2 - visualMinY * fit
-
-            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
-            ctx.translateBy(x: offsetX, y: offsetY)
-            ctx.scaleBy(x: fit, y: fit)
-
-            // Template image — only the alpha channel matters; tint flows
-            // through SwiftUI's `.foregroundStyle` on the consuming view.
-            NSColor.black.setStroke()
-            NSColor.black.setFill()
-
-            // Bowl
-            let bowl = NSBezierPath(ovalIn: NSRect(x: 42, y: 8, width: 52, height: 52))
-            bowl.lineWidth = 10
-            bowl.stroke()
-
-            // Stem + cursive loop tail
-            let tail = NSBezierPath()
-            tail.move(to: NSPoint(x: 42, y: 34))
-            tail.line(to: NSPoint(x: 42, y: 82))
-            tail.curve(
-                to: NSPoint(x: 18, y: 112),
-                controlPoint1: NSPoint(x: 42, y: 100),
-                controlPoint2: NSPoint(x: 30, y: 110)
-            )
-            tail.curve(
-                to: NSPoint(x: 8, y: 98),
-                controlPoint1: NSPoint(x: 6, y: 114),
-                controlPoint2: NSPoint(x: 2, y: 106)
-            )
-            tail.curve(
-                to: NSPoint(x: 42, y: 92),
-                controlPoint1: NSPoint(x: 14, y: 90),
-                controlPoint2: NSPoint(x: 30, y: 88)
-            )
-            tail.lineWidth = 10
-            tail.lineCapStyle = .round
-            tail.lineJoinStyle = .round
-            tail.stroke()
-
-            // Dot
-            NSBezierPath(ovalIn: NSRect(x: 60, y: 26, width: 16, height: 16)).fill()
-
-            return true
+        let image: NSImage
+        if let cgTemplate = templateMark {
+            image = NSImage(cgImage: cgTemplate, size: NSSize(width: pointSize, height: pointSize))
+        } else {
+            image = NSImage(size: NSSize(width: pointSize, height: pointSize))
         }
-        image.size = NSSize(width: pointSize, height: pointSize)
         image.isTemplate = true
         return image
+    }
+
+    /// Lazy process-lifetime cache. Built on first `brandMark(...)` call,
+    /// then reused for every subsequent inline render.
+    private static let templateMark: CGImage? = {
+        guard let url = Bundle.module.url(forResource: "parakeet-mark", withExtension: "png"),
+              let nsImage = NSImage(contentsOf: url),
+              let source = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return nil
+        }
+        return makeLuminanceTemplate(from: source)
+    }()
+
+    /// One-pass per-pixel converter: read source RGB, write a premultiplied
+    /// pixel where every channel = luminance. The result reads as a white
+    /// silhouette with alpha proportional to brightness — exactly what
+    /// `isTemplate = true` + SwiftUI's template rendering mode want.
+    private static func makeLuminanceTemplate(from source: CGImage) -> CGImage? {
+        let width = source.width
+        let height = source.height
+        let bytesPerPixel = 4
+        let bytesPerRow = width * bytesPerPixel
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+            | CGBitmapInfo.byteOrder32Big.rawValue
+
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo
+        ) else { return nil }
+
+        context.draw(source, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        guard let data = context.data else { return nil }
+        let buffer = data.bindMemory(to: UInt8.self, capacity: width * height * bytesPerPixel)
+
+        // Rec. 709 luminance, integer-fixed-point so the inner loop stays
+        // FP-free. Coefficients sum to 1024 to keep the brightness range 0–255.
+        let total = width * height
+        for p in 0..<total {
+            let i = p * bytesPerPixel
+            let r = Int(buffer[i])
+            let g = Int(buffer[i + 1])
+            let b = Int(buffer[i + 2])
+            let lum = UInt8(min(255, (r * 218 + g * 732 + b * 74) >> 10))
+            // Premultiplied: storing (lum, lum, lum, lum) is equivalent to a
+            // pure-white pixel with alpha = lum.
+            buffer[i] = lum
+            buffer[i + 1] = lum
+            buffer[i + 2] = lum
+            buffer[i + 3] = lum
+        }
+
+        return context.makeImage()
     }
 
     /// Create the Cursive P logo as a filled NSImage for app icon / dock use.
