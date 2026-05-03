@@ -504,7 +504,13 @@ private struct FooterIconButton: View {
                         : .clear
                     )
             )
-            .animation(.easeInOut(duration: 0.3), value: isHovered)
+            // Hover expand/contract is ambient — gentler tempo. Toggle (icon /
+            // tooltip / color flip) is keyed on `tooltip` so the layout tween
+            // wraps the SF Symbol replace effect; without it the HStack snaps
+            // to the new text width while `.symbolEffect(.replace)` runs its
+            // own scale-bounce, which reads as the icon jittering off-capsule.
+            .animation(.easeInOut(duration: 0.45), value: isHovered)
+            .animation(.easeInOut(duration: 0.3), value: tooltip)
         }
         .buttonStyle(.plain)
         .onHover { hovering in
