@@ -451,10 +451,7 @@ private struct StarterPromptPill: View {
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: DesignSystem.Spacing.sm) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 11))
-                        .foregroundStyle(DesignSystem.Colors.accent.opacity(0.75))
+                HStack(spacing: 0) {
                     Text(entry.label)
                         .font(DesignSystem.Typography.bodySmall)
                         .foregroundStyle(DesignSystem.Colors.textPrimary)
@@ -467,7 +464,6 @@ private struct StarterPromptPill: View {
                         .foregroundStyle(DesignSystem.Colors.textSecondary)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.leading, 19)
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
