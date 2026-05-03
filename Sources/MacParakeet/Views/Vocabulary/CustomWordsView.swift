@@ -130,6 +130,7 @@ struct CustomWordsView: View {
 
     private func wordRow(_ word: CustomWord) -> some View {
         let isHovered = hoveredWordID == word.id
+        let toggleHint: String = word.replacement.map { "Replaces with \($0)" } ?? "Enforces exact spelling"
         return HStack(spacing: DesignSystem.Spacing.md) {
             Toggle("", isOn: Binding(
                 get: { word.isEnabled },
@@ -138,6 +139,8 @@ struct CustomWordsView: View {
             .labelsHidden()
             .toggleStyle(.switch)
             .controlSize(.small)
+            .accessibilityLabel("Enable \(word.word)")
+            .accessibilityHint(toggleHint)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(word.word)
@@ -165,6 +168,8 @@ struct CustomWordsView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
+            .help("Delete \(word.word)")
+            .accessibilityLabel("Delete \(word.word)")
         }
         .padding(DesignSystem.Spacing.sm)
         .background(

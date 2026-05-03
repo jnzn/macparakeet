@@ -159,6 +159,9 @@ struct TextSnippetsView: View {
 
     private func snippetRow(_ snippet: TextSnippet) -> some View {
         let isHovered = hoveredSnippetID == snippet.id
+        let usageHint: String = snippet.useCount > 0
+            ? "Used \(snippet.useCount) times"
+            : "Not yet used"
         return HStack(spacing: DesignSystem.Spacing.md) {
             Toggle("", isOn: Binding(
                 get: { snippet.isEnabled },
@@ -167,6 +170,8 @@ struct TextSnippetsView: View {
             .labelsHidden()
             .toggleStyle(.switch)
             .controlSize(.small)
+            .accessibilityLabel("Enable \(snippet.trigger)")
+            .accessibilityHint("Expands during dictation to a saved phrase")
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 4) {
@@ -193,6 +198,8 @@ struct TextSnippetsView: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
                     .background(Capsule().fill(DesignSystem.Colors.surfaceElevated))
+                    .help(usageHint)
+                    .accessibilityLabel(usageHint)
             }
 
             Button(role: .destructive) {
@@ -203,6 +210,8 @@ struct TextSnippetsView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
+            .help("Delete \(snippet.trigger)")
+            .accessibilityLabel("Delete \(snippet.trigger)")
         }
         .padding(DesignSystem.Spacing.sm)
         .background(

@@ -486,6 +486,8 @@ struct LLMSettingsView: View {
                         .labelsHidden()
                         .toggleStyle(.checkbox)
                         .disabled(!viewModel.canToggleAIFormatter)
+                        .accessibilityLabel("AI Formatter")
+                        .accessibilityHint("Run the final transcript through your selected AI option after the usual cleanup step")
 
                     Text(viewModel.aiFormatterStatusText)
                         .font(DesignSystem.Typography.caption)
