@@ -130,12 +130,6 @@ struct AskPromptsSheet: View {
                 CreatePromptSheet(viewModel: viewModel)
             }
         }
-        // Cascade our brand accent into every `.borderedProminent` /
-        // `.tint`-aware native control inside this sheet (Done, plus the Save
-        // and Add inside child edit / create sheets, which inherit the
-        // environment). System blue would otherwise leak through against the
-        // coral brand.
-        .tint(DesignSystem.Colors.accent)
     }
 
     // MARK: - Header
@@ -531,7 +525,6 @@ private struct EditPromptSheet: View {
         }
         .frame(minWidth: 560, minHeight: 480)
         .background(DesignSystem.Colors.background)
-        .tint(DesignSystem.Colors.accent)
         .alert("Discard changes?", isPresented: $showingDiscardConfirm) {
             Button("Discard", role: .destructive) {
                 onCancel()
@@ -705,7 +698,6 @@ private struct CreatePromptSheet: View {
         }
         .frame(minWidth: 560, minHeight: 480)
         .background(DesignSystem.Colors.background)
-        .tint(DesignSystem.Colors.accent)
         .alert("Discard new prompt?", isPresented: $showingDiscardConfirm) {
             Button("Discard", role: .destructive) {
                 viewModel.cancelCreating()

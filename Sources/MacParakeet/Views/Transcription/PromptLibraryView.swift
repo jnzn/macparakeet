@@ -143,7 +143,6 @@ struct PromptLibraryView: View {
         ) {
             if let prompt = viewModel.editingPrompt {
                 editSheet(prompt: prompt)
-                    .tint(DesignSystem.Colors.accent)
                     .alert("Discard changes?", isPresented: $showingDiscardConfirm) {
                         Button("Discard", role: .destructive) {
                             viewModel.editingPrompt = nil

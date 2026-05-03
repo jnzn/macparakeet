@@ -216,7 +216,6 @@ struct TranscriptResultView: View {
             promptResultsViewModel.loadVisiblePrompts()
         }) {
             PromptLibraryView(viewModel: promptsViewModel)
-                .tint(DesignSystem.Colors.accent)
         }
         .alert(
             "Delete Result?",
