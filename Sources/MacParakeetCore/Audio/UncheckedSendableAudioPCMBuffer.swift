@@ -29,3 +29,21 @@ final class UncheckedSendableAudioFile: @unchecked Sendable {
         self.file = file
     }
 }
+
+/// Captures the notification's concrete engine instance across the dispatch
+/// queue hop in `AVAudioEngineMicrophonePlatform`. Access still happens on the
+/// platform queue; this wrapper only makes that audited boundary explicit for
+/// Swift 6 strict concurrency.
+final class UncheckedSendableAudioEngine: @unchecked Sendable {
+    private let engine: AVAudioEngine
+
+    init(_ engine: AVAudioEngine) {
+        self.engine = engine
+    }
+
+    func inputFormat() -> AVAudioFormat? {
+        try? catchingObjCException {
+            engine.inputNode.outputFormat(forBus: 0)
+        }
+    }
+}

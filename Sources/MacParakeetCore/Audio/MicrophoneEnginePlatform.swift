@@ -342,11 +342,10 @@ public final class AVAudioEngineMicrophonePlatform: MicrophoneEnginePlatform, @u
             queue: nil
         ) { [weak self] notification in
             guard let self, let engine = notification.object as? AVAudioEngine else { return }
-            self.queue.async { [weak self, engine] in
+            let engineBox = UncheckedSendableAudioEngine(engine)
+            self.queue.async { [weak self, engineBox] in
                 guard let self else { return }
-                let format = (try? catchingObjCException {
-                    engine.inputNode.outputFormat(forBus: 0)
-                })
+                let format = engineBox.inputFormat()
                 let snapshot = (
                     sr: format?.sampleRate ?? 0,
                     ch: format?.channelCount ?? 0,

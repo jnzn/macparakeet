@@ -32,25 +32,18 @@ private struct RecordingRuntimeMetrics: Sendable {
     var invalidFormatBufferCount: Int = 0
 }
 
-/// Holds the per-recording diagnostic timers. The first-buffer timeout fires
-/// once if no buffer has been delivered within `firstBufferTimeoutSeconds`
-/// after `dictation_capture_engine_started`; the heartbeat repeats every
-/// `heartbeatIntervalSeconds` while the recording is active. Both are
-/// log-only — they exist to characterize tap-silence stalls in the field
-/// without altering the user's experience. See
+/// Holds the per-recording diagnostic generation. The first-buffer timeout
+/// fires once if no buffer has been delivered within
+/// `firstBufferTimeoutSeconds` after `dictation_capture_engine_started`; the
+/// heartbeat repeats every `heartbeatIntervalSeconds` while the recording is
+/// active. Both are log-only and generation-guarded, so stale delayed closures
+/// bail out after `stop()` or the next recording starts. See
 /// `journal/2026-05-03-dictation-silent-stall.md`.
-///
-/// Not declared `Sendable`: `DispatchWorkItem` and `DispatchSourceTimer`
-/// aren't Sendable in strict-concurrency mode. The state is only ever
-/// touched while holding the enclosing `OSAllocatedUnfairLock`, which is
-/// the moral equivalent — the lock owner has exclusive access.
 private struct CaptureDiagnosticsTimers {
-    var firstBufferTimeout: DispatchWorkItem?
     /// Generation that delivered its first buffer. This may be set before
     /// timers are armed because AVAudioEngine can deliver a tap buffer before
     /// `SharedMicrophoneStream.subscribe` returns to `start()`.
     var firstBufferSeenGeneration: Int?
-    var heartbeatTimer: DispatchSourceTimer?
     /// Session generation captured when the timers were armed. The fired
     /// closures bail out if the current generation has moved past this,
     /// which catches the race where `stop()` cancels in flight.
@@ -539,12 +532,29 @@ public actor AudioRecorder {
     private func armCaptureDiagnostics(generation: Int) {
         let stream = sharedStream
         let armedGeneration = generation
-        let firstBufferItem = DispatchWorkItem { [weak self] in
+        let shouldScheduleFirstBufferTimeout = captureDiagnosticsTimers.withLock { state -> Bool in
+            let alreadySawFirstBuffer = state.firstBufferSeenGeneration == armedGeneration
+            if !alreadySawFirstBuffer {
+                state.firstBufferSeenGeneration = nil
+            }
+            state.armedGeneration = armedGeneration
+            return !alreadySawFirstBuffer
+        }
+        if shouldScheduleFirstBufferTimeout {
+            scheduleFirstBufferTimeout(generation: armedGeneration, stream: stream)
+        }
+        scheduleCaptureHeartbeat(generation: armedGeneration, stream: stream)
+    }
+
+    nonisolated private func scheduleFirstBufferTimeout(
+        generation armedGeneration: Int,
+        stream: SharedMicrophoneStream
+    ) {
+        diagnosticsQueue.asyncAfter(deadline: .now() + Self.firstBufferTimeoutSeconds) { [weak self, stream] in
             guard let self else { return }
             let shouldFire = self.captureDiagnosticsTimers.withLock { state -> Bool in
                 guard state.armedGeneration == armedGeneration else { return false }
                 guard state.firstBufferSeenGeneration != armedGeneration else { return false }
-                state.firstBufferTimeout = nil
                 return true
             }
             guard shouldFire else { return }
@@ -555,14 +565,18 @@ public actor AudioRecorder {
                 "dictation_capture_no_buffers_within_timeout isRunning=\(isRunning) default_input=\(defaultInput)"
             )
         }
+    }
 
-        let timer = DispatchSource.makeTimerSource(queue: diagnosticsQueue)
-        timer.schedule(
-            deadline: .now() + Self.heartbeatIntervalSeconds,
-            repeating: Self.heartbeatIntervalSeconds
-        )
-        timer.setEventHandler { [weak self] in
+    nonisolated private func scheduleCaptureHeartbeat(
+        generation armedGeneration: Int,
+        stream: SharedMicrophoneStream
+    ) {
+        diagnosticsQueue.asyncAfter(deadline: .now() + Self.heartbeatIntervalSeconds) { [weak self, stream] in
             guard let self else { return }
+            let isArmed = self.captureDiagnosticsTimers.withLock { state in
+                state.armedGeneration == armedGeneration
+            }
+            guard isArmed else { return }
             guard self.sessionGeneration.withLock({ $0 }) == armedGeneration else { return }
             let metrics = self.runtimeMetrics.withLock { $0 }
             let isRunning = stream.diagnostics.engineRunning
@@ -570,37 +584,14 @@ public actor AudioRecorder {
             AudioCaptureDiagnostics.append(
                 "dictation_capture_heartbeat input_buffers=\(metrics.inputBufferCount) input_frames=\(metrics.inputFrameCount) isRunning=\(isRunning) default_input=\(defaultInput)"
             )
+            self.scheduleCaptureHeartbeat(generation: armedGeneration, stream: stream)
         }
-
-        let shouldScheduleFirstBufferTimeout = captureDiagnosticsTimers.withLock { state -> Bool in
-            state.firstBufferTimeout?.cancel()
-            state.heartbeatTimer?.cancel()
-            let alreadySawFirstBuffer = state.firstBufferSeenGeneration == armedGeneration
-            if !alreadySawFirstBuffer {
-                state.firstBufferSeenGeneration = nil
-            }
-            state.firstBufferTimeout = alreadySawFirstBuffer ? nil : firstBufferItem
-            state.heartbeatTimer = timer
-            state.armedGeneration = armedGeneration
-            return !alreadySawFirstBuffer
-        }
-        if shouldScheduleFirstBufferTimeout {
-            diagnosticsQueue.asyncAfter(
-                deadline: .now() + Self.firstBufferTimeoutSeconds,
-                execute: firstBufferItem
-            )
-        }
-        timer.resume()
     }
 
-    /// Cancel both timers. Called from `stop()` and from the no-op-arming
-    /// paths so the lock state is always clean for the next `start()`.
+    /// Disarm delayed diagnostics. Already-scheduled closures still run, but
+    /// their generation guards return before logging.
     private func disarmCaptureDiagnostics() {
         captureDiagnosticsTimers.withLock { state in
-            state.firstBufferTimeout?.cancel()
-            state.firstBufferTimeout = nil
-            state.heartbeatTimer?.cancel()
-            state.heartbeatTimer = nil
             state.firstBufferSeenGeneration = nil
             state.armedGeneration = -1
         }
@@ -613,9 +604,6 @@ public actor AudioRecorder {
     nonisolated fileprivate func markFirstBufferReceivedForDiagnostics(generation: Int) {
         captureDiagnosticsTimers.withLock { state in
             state.firstBufferSeenGeneration = generation
-            guard state.armedGeneration == generation else { return }
-            state.firstBufferTimeout?.cancel()
-            state.firstBufferTimeout = nil
         }
     }
 }
