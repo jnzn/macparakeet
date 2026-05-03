@@ -4,7 +4,13 @@ import os
 
 public enum AudioCaptureDiagnostics {
     private static let lock = OSAllocatedUnfairLock(initialState: ())
-    private static let maxLogBytes: UInt64 = 1_000_000
+    /// On-disk cap for `dictation-audio.log`. Crossing it deletes the file
+    /// (not append-rotate). Sized so a heavy user dictating 30–60 min/day
+    /// retains tens of days of context — enough that a stall reported via
+    /// the in-app feedback flow still has its surrounding window in the
+    /// log when the user shares it. Bumped from 1 MB after PR #210 added
+    /// the 5 s heartbeat, which roughly doubles per-recording log volume.
+    private static let maxLogBytes: UInt64 = 5_000_000
 
     /// Format a device as `<id>:<name>` for log lines, or `none` if the
     /// device couldn't be resolved. Single canonical shape so grep works
