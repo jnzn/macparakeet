@@ -10,7 +10,6 @@ struct TranscribeView: View {
     @Bindable var promptsViewModel: PromptsViewModel
     @Bindable var meetingPillViewModel: MeetingRecordingPillViewModel
     @Binding var showingProgressDetail: Bool
-    var onNavigateBack: (() -> Void)?
     var onRecordMeeting: () -> Void
     @State private var showCancelConfirmation = false
     @State private var aiFormatterWarningMessage: String?
@@ -91,25 +90,7 @@ struct TranscribeView: View {
     var body: some View {
         VStack(spacing: 0) {
             Group {
-                if let transcription = viewModel.currentTranscription {
-                    TranscriptResultView(
-                        transcription: transcription,
-                        viewModel: viewModel,
-                        chatViewModel: chatViewModel,
-                        promptResultsViewModel: promptResultsViewModel,
-                        promptsViewModel: promptsViewModel,
-                        onBack: {
-                            viewModel.showInputPortal()
-                            onNavigateBack?()
-                        },
-                        onStartNew: {
-                            viewModel.showInputPortal()
-                        },
-                        onRetranscribe: { original, speechEngineOverride in
-                            viewModel.retranscribe(original, speechEngineOverride: speechEngineOverride)
-                        }
-                    )
-                } else if viewModel.isTranscribing {
+                if viewModel.isTranscribing {
                     transcribingView
                 } else {
                     dropZoneView

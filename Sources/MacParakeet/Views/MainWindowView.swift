@@ -96,20 +96,38 @@ struct MainWindowView: View {
                             promptsViewModel: promptsViewModel,
                             meetingPillViewModel: meetingPillViewModel,
                             showingProgressDetail: $state.showingProgressDetail,
-                            onNavigateBack: { state.navigateBack() },
                             onRecordMeeting: onRecordMeeting
                         )
                     case .library:
-                        TranscriptionLibraryView(
-                            viewModel: libraryViewModel,
-                            primaryActionTitle: "New Transcription",
-                            onPrimaryAction: {
-                                transcriptionViewModel.showInputPortal()
-                                state.navigateToTranscription(from: .library)
+                        if let transcription = transcriptionViewModel.currentTranscription {
+                            TranscriptResultView(
+                                transcription: transcription,
+                                viewModel: transcriptionViewModel,
+                                chatViewModel: chatViewModel,
+                                promptResultsViewModel: promptResultsViewModel,
+                                promptsViewModel: promptsViewModel,
+                                onBack: {
+                                    transcriptionViewModel.showInputPortal()
+                                },
+                                onStartNew: {
+                                    transcriptionViewModel.showInputPortal()
+                                    state.selectedItem = .transcribe
+                                },
+                                onRetranscribe: { original, speechEngineOverride in
+                                    transcriptionViewModel.retranscribe(original, speechEngineOverride: speechEngineOverride)
+                                }
+                            )
+                        } else {
+                            TranscriptionLibraryView(
+                                viewModel: libraryViewModel,
+                                primaryActionTitle: "New Transcription",
+                                onPrimaryAction: {
+                                    transcriptionViewModel.showInputPortal()
+                                    state.selectedItem = .transcribe
+                                }
+                            ) { transcription in
+                                transcriptionViewModel.currentTranscription = transcription
                             }
-                        ) { transcription in
-                            transcriptionViewModel.currentTranscription = transcription
-                            state.navigateToTranscription(from: .library)
                         }
                     case .dictations:
                         DictationHistoryView(viewModel: historyViewModel)
@@ -141,6 +159,11 @@ struct MainWindowView: View {
         .onChange(of: transcriptionViewModel.isTranscribing) { _, isTranscribing in
             if !isTranscribing {
                 state.showingProgressDetail = false
+            }
+        }
+        .onChange(of: transcriptionViewModel.currentTranscription?.id) { _, newID in
+            if newID != nil {
+                state.selectedItem = .library
             }
         }
     }
