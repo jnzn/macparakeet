@@ -147,10 +147,18 @@ enum BreathWaveIcon {
         return makeLuminanceTemplate(from: source)
     }()
 
-    /// One-pass per-pixel converter: read source RGB, write a premultiplied
-    /// pixel where every channel = luminance. The result reads as a white
-    /// silhouette with alpha proportional to brightness — exactly what
-    /// `isTemplate = true` + SwiftUI's template rendering mode want.
+    /// Convert the white-on-near-black source to a tight, transparent template:
+    ///
+    /// 1. Per-pixel Rec. 709 luminance with black-point (25) and white-point
+    ///    (240) cutoffs. Below the black point the source's radial vignette
+    ///    gets clamped to fully transparent; above the white point the bird's
+    ///    interior saturates to fully opaque. The middle band ramps linearly
+    ///    so anti-aliased edges keep their soft falloff.
+    /// 2. Scan the resulting alpha buffer to find the parakeet's bounding box.
+    /// 3. Crop to a square centered on that bbox with breathing-room padding,
+    ///    so callers displaying at N points get ~N points of bird rather than
+    ///    bird-with-margin (the source canvas has ~25% empty padding around
+    ///    the illustration, which made 18pt displays read as ~13pt of bird).
     private static func makeLuminanceTemplate(from source: CGImage) -> CGImage? {
         let width = source.width
         let height = source.height
@@ -175,24 +183,75 @@ enum BreathWaveIcon {
         guard let data = context.data else { return nil }
         let buffer = data.bindMemory(to: UInt8.self, capacity: width * height * bytesPerPixel)
 
-        // Rec. 709 luminance, integer-fixed-point so the inner loop stays
-        // FP-free. Coefficients sum to 1024 to keep the brightness range 0–255.
+        // Pass 1 — luminance with black/white cutoffs. Coefficients sum to
+        // 1024 (Rec. 709, integer fixed-point) so the inner loop stays FP-free.
+        let blackPoint = 25
+        let whitePoint = 240
+        let range = whitePoint - blackPoint
         let total = width * height
         for p in 0..<total {
             let i = p * bytesPerPixel
             let r = Int(buffer[i])
             let g = Int(buffer[i + 1])
             let b = Int(buffer[i + 2])
-            let lum = UInt8(min(255, (r * 218 + g * 732 + b * 74) >> 10))
-            // Premultiplied: storing (lum, lum, lum, lum) is equivalent to a
-            // pure-white pixel with alpha = lum.
-            buffer[i] = lum
-            buffer[i + 1] = lum
-            buffer[i + 2] = lum
-            buffer[i + 3] = lum
+            let lum = (r * 218 + g * 732 + b * 74) >> 10
+            let alpha: UInt8
+            if lum <= blackPoint {
+                alpha = 0
+            } else if lum >= whitePoint {
+                alpha = 255
+            } else {
+                alpha = UInt8(((lum - blackPoint) * 255) / range)
+            }
+            // Premultiplied: storing (alpha, alpha, alpha, alpha) is equivalent
+            // to a pure-white pixel with alpha = alpha.
+            buffer[i] = alpha
+            buffer[i + 1] = alpha
+            buffer[i + 2] = alpha
+            buffer[i + 3] = alpha
         }
 
-        return context.makeImage()
+        guard let fullImage = context.makeImage() else { return nil }
+
+        // Pass 2 — bbox of meaningfully-opaque pixels. Threshold above the
+        // tiniest sub-pixel speckle so a single stray pixel can't blow the
+        // bbox out to a corner.
+        let opaqueThreshold: UInt8 = 16
+        var minX = width
+        var minY = height
+        var maxX = -1
+        var maxY = -1
+        for y in 0..<height {
+            let rowBase = y * width * bytesPerPixel
+            for x in 0..<width {
+                if buffer[rowBase + x * bytesPerPixel + 3] >= opaqueThreshold {
+                    if x < minX { minX = x }
+                    if x > maxX { maxX = x }
+                    if y < minY { minY = y }
+                    if y > maxY { maxY = y }
+                }
+            }
+        }
+        guard maxX >= 0 else { return fullImage }
+
+        // Square crop centered on the parakeet's bbox. 6% padding gives
+        // anti-aliased edges room and keeps the bird from kissing the frame
+        // edges at small display sizes.
+        let parakeetW = maxX - minX + 1
+        let parakeetH = maxY - minY + 1
+        let padding = max(width, height) / 16
+        let side = max(parakeetW, parakeetH) + padding * 2
+        let centerX = (minX + maxX) / 2
+        let centerY = (minY + maxY) / 2
+        var cropX = centerX - side / 2
+        var cropY = centerY - side / 2
+        // Clamp to source bounds while preserving square shape.
+        if cropX < 0 { cropX = 0 }
+        if cropY < 0 { cropY = 0 }
+        let cropSide = min(side, min(width - cropX, height - cropY))
+        let cropRect = CGRect(x: cropX, y: cropY, width: cropSide, height: cropSide)
+
+        return fullImage.cropping(to: cropRect)
     }
 
     /// Create the Cursive P logo as a filled NSImage for app icon / dock use.
