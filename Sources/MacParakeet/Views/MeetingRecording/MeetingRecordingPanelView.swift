@@ -103,7 +103,7 @@ struct MeetingRecordingPanelView: View {
         // `hoveredTab == tab` guard prevents the leaver from wiping the
         // entrant's claim if they arrive in either order.
         .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.12)) {
+            withAnimation(.easeOut(duration: 0.20)) {
                 if hovering {
                     hoveredTab = tab
                 } else if hoveredTab == tab {
@@ -164,7 +164,7 @@ struct MeetingRecordingPanelView: View {
                         Text(shortcutHint)
                             .font(.system(size: 10, weight: .regular).monospacedDigit())
                             .foregroundStyle(DesignSystem.Colors.textTertiary.opacity(0.7))
-                            .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                            .transition(.opacity.combined(with: .scale(scale: 0.92)))
                     }
 
                     if hasTrailing {
