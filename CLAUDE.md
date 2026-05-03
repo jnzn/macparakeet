@@ -55,6 +55,14 @@ false` pending hands-on end-to-end validation.
 | Cross-agent coding-agent guide | `AGENTS.md` -> slim, convention-following |
 | Downstream agent integration (calling the CLI) | `integrations/README.md` |
 | CLI semver + compatibility policy | `Sources/CLI/CHANGELOG.md` |
+| Subsystem rules (Audio, STT, Database, etc.) | `Sources/MacParakeetCore/<subsystem>/README.md` -> non-obvious threading, ordering, retention rules colocated with the code |
+
+**When working in `Sources/MacParakeetCore/<subsystem>/`, read the
+`README.md` in that folder before reading code.** The READMEs capture
+non-obvious rules — threading invariants, "do not delete this,"
+ordering constraints, ADR cross-references — that aren't visible
+from grep. Folders with READMEs today: `Audio/`, `STT/`,
+`TextProcessing/`, `Database/`, `Licensing/`.
 
 ## Tech Stack (Locked Decisions)
 

@@ -67,7 +67,7 @@ See [00-vision.md](./00-vision.md) for positioning and market context.
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  v0.6 - "Meeting Recording + Multilingual STT"                   │
+│  Labs on main - "Meeting Recording + Multilingual STT"           │
 │  "Record meetings locally, add optional WhisperKit coverage"     │
 ├─────────────────────────────────────────────────────────────────┤
 │  • Meeting recording (system audio + mic with echo mitigation)    │

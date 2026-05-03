@@ -13,6 +13,11 @@ struct MeetingRecordingTile: View {
     @Bindable var viewModel: MeetingRecordingPillViewModel
     var onTap: () -> Void
 
+    // Press-driven bloom on the Start button's leading glyph. Pure visual
+    // flourish: the action fires immediately; if the tile stays idle after
+    // a denied permission prompt or retryable race, the bloom resets below.
+    @State private var startBloom: Double = 0
+
     var body: some View {
         tileSurface
             .accessibilityElement(children: .contain)
@@ -204,11 +209,10 @@ struct MeetingRecordingTile: View {
     // MARK: - Action Buttons
 
     private var startButton: some View {
-        Button(action: onTap) {
+        Button(action: triggerStart) {
             HStack(spacing: 6) {
-                Circle()
-                    .fill(DesignSystem.Colors.recordingRed)
-                    .frame(width: 8, height: 8)
+                BloomBudGlyph(progress: startBloom)
+                    .frame(width: 14, height: 14)
                 Text("Start")
                     .font(DesignSystem.Typography.caption.weight(.semibold))
             }
@@ -227,6 +231,22 @@ struct MeetingRecordingTile: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Start recording")
         .accessibilityHint("Captures system audio and microphone, then transcribes locally.")
+    }
+
+    private func triggerStart() {
+        onTap()
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.55)) {
+            startBloom = 1.0
+        }
+        // If state stayed .idle (permission denied, race, etc.), reset so a
+        // retry press blooms again. The .recording transition tears down
+        // this view so this branch is benign in the happy path.
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(700))
+            withAnimation(.easeOut(duration: 0.25)) {
+                startBloom = 0.0
+            }
+        }
     }
 
     private var stopButton: some View {
@@ -420,6 +440,45 @@ private struct SacredFlowerTile: View {
         // Subtle 4s breathing on the glow when idle — present, not nagging.
         withAnimation(.easeInOut(duration: 4).repeatForever(autoreverses: true)) {
             idleBreath = 1
+        }
+    }
+}
+
+// MARK: - Start glyph (bud → bloom on press)
+
+/// Leading glyph on the Start button. At rest (`progress` 0) it's a small
+/// filled coral bud; at full bloom (`progress` 1) six stroked petals fan
+/// out around the bud in a flower-of-life pattern, echoing the larger
+/// `SacredFlowerTile` glyph at miniature scale. The press handler drives
+/// `progress` 0 → 1 with a spring; the tile's state transition usually
+/// tears the button down before the bloom completes, which is the
+/// intended choreography (the cut blends into the idle → recording swap).
+private struct BloomBudGlyph: View {
+    var progress: Double
+
+    private let centerSize: CGFloat = 5
+    private let petalSize: CGFloat = 4
+    private let petalRadius: CGFloat = 3.2
+
+    var body: some View {
+        ZStack {
+            ForEach(0..<6, id: \.self) { index in
+                let angle = Double(index) * 60.0
+                let radians = angle * .pi / 180
+                let x = CGFloat(cos(radians)) * petalRadius * CGFloat(progress)
+                let y = CGFloat(sin(radians)) * petalRadius * CGFloat(progress)
+
+                Circle()
+                    .stroke(DesignSystem.Colors.recordingRed.opacity(0.85), lineWidth: 1.0)
+                    .frame(width: petalSize, height: petalSize)
+                    .offset(x: x, y: y)
+                    .scaleEffect(CGFloat(progress))
+                    .opacity(progress)
+            }
+
+            Circle()
+                .fill(DesignSystem.Colors.recordingRed)
+                .frame(width: centerSize, height: centerSize)
         }
     }
 }

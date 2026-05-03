@@ -74,13 +74,13 @@ Calendar reminders, auto-start, and auto-stop are implemented in source but hidd
 - ~2.5% word error rate (Parakeet TDT 0.6B-v3)
 - ~66 MB working memory per active Parakeet inference slot
 - 25 European languages with Parakeet auto-detection
-- Optional Labs WhisperKit engine on `main` for Korean, Japanese, Chinese, and many other languages
+- Optional local WhisperKit engine for Korean, Japanese, Chinese, and many other languages
 
 ### Limitations
 
 - Apple Silicon only (M1/M2/M3/M4)
 - Parakeet is best for English and supported European languages
-- WhisperKit multilingual support is a Labs feature on `main` and requires a separate local model download before first use
+- WhisperKit multilingual support requires a separate local model download before first use
 
 ## Get it
 

@@ -91,6 +91,26 @@ current contents. After the CGEvent Cmd+V is dispatched and a short delay
 - Sources/MacParakeetCore/Services/Dictation/DictationService.swift (~18)
 ```
 
+## Subsystem READMEs
+
+Some folders under `Sources/MacParakeetCore/` carry a `README.md`
+that captures non-obvious rules (threading, ordering, retention)
+that aren't visible from grep. As of this writing: `Audio/`, `STT/`,
+`TextProcessing/`, `Database/`, `Licensing/`.
+
+**If your commit adds, removes, or renames files in one of those
+folders, update the folder's `README.md` in the same commit.** CI
+runs `scripts/check-readme-references.sh` and fails the build when
+a backticked `.swift` reference no longer resolves — so drift is
+caught at PR time, but only if the PR itself touches code.
+
+The READMEs are not exhaustive listings; they call out the files
+worth orienting around. If you add a new file that introduces a
+non-obvious rule (a threading invariant, a "do not delete this," an
+ordering constraint), document the rule in the README. If you add
+a file whose purpose is self-evident from its name and contents,
+no README change needed.
+
 ## Why This Matters
 
 1. **Git history becomes documentation** -- Rich context lives in version control, not lost chat logs
