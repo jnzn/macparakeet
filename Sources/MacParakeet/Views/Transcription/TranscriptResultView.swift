@@ -424,14 +424,14 @@ struct TranscriptResultView: View {
                 )
                 .foregroundStyle(copied ? DesignSystem.Colors.successGreen : .primary)
             }
-            .buttonStyle(.bordered)
+            .parakeetAction(.secondary)
 
             Button {
                 showingExportOptions.toggle()
             } label: {
                 Label("Export", systemImage: "arrow.down.doc")
             }
-            .buttonStyle(.bordered)
+            .parakeetAction(.secondary)
             .popover(isPresented: $showingExportOptions, arrowEdge: .top) {
                 exportOptionsPopover
             }
@@ -460,7 +460,7 @@ struct TranscriptResultView: View {
                         }
                     }
                 }
-                .buttonStyle(.bordered)
+                .parakeetAction(.secondary)
                 .help(engineOption != nil ? "Choose a speech engine for this rerun" : "Retranscribe this file")
                 .popover(isPresented: $showingRetranscribeOptions, arrowEdge: .top) {
                     if let engineOption {
@@ -477,8 +477,7 @@ struct TranscriptResultView: View {
                 } label: {
                     Label("New Transcription", systemImage: "plus")
                 }
-                .buttonStyle(.bordered)
-                .tint(DesignSystem.Colors.accent)
+                .parakeetAction(.primary)
             }
         }
         .padding(DesignSystem.Spacing.md)
@@ -1078,7 +1077,7 @@ struct TranscriptResultView: View {
                     } label: {
                         Label("Revert", systemImage: "arrow.uturn.backward")
                     }
-                    .buttonStyle(.bordered)
+                    .parakeetAction(.secondary)
                 }
 
                 Button {
@@ -1086,15 +1085,14 @@ struct TranscriptResultView: View {
                 } label: {
                     Label("Cancel", systemImage: "xmark")
                 }
-                .buttonStyle(.bordered)
+                .parakeetAction(.secondary)
 
                 Button {
                     commitTranscriptEdit()
                 } label: {
                     Label("Save", systemImage: "checkmark")
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(DesignSystem.Colors.accent)
+                .parakeetAction(.primary, prominent: true)
                 .disabled(transcriptDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             } else {
                 Button {
@@ -1102,7 +1100,7 @@ struct TranscriptResultView: View {
                 } label: {
                     Label("Edit", systemImage: "pencil")
                 }
-                .buttonStyle(.bordered)
+                .parakeetAction(.secondary)
             }
         }
     }
@@ -1393,7 +1391,7 @@ struct TranscriptResultView: View {
                             }
                             .font(DesignSystem.Typography.caption)
                         }
-                        .buttonStyle(.bordered)
+                        .parakeetAction(.secondary)
                         .controlSize(.small)
                         .disabled(!promptResultsViewModel.canGeneratePromptResult || transcriptText.isEmpty)
 
@@ -1414,7 +1412,7 @@ struct TranscriptResultView: View {
                             .font(DesignSystem.Typography.caption)
                             .foregroundStyle(isCopied ? DesignSystem.Colors.successGreen : .primary)
                         }
-                        .buttonStyle(.bordered)
+                        .parakeetAction(.secondary)
                         .controlSize(.small)
 
                         Menu {
@@ -1428,6 +1426,7 @@ struct TranscriptResultView: View {
                             .font(DesignSystem.Typography.caption)
                         }
                         .menuStyle(.borderedButton)
+                        .tint(DesignSystem.Colors.tintNeutral)
                         .controlSize(.small)
 
                         Button(role: .destructive) {
@@ -1439,7 +1438,7 @@ struct TranscriptResultView: View {
                             }
                             .font(DesignSystem.Typography.caption)
                         }
-                        .buttonStyle(.bordered)
+                        .parakeetAction(.destructive)
                         .controlSize(.small)
                     }
 
