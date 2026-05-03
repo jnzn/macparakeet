@@ -147,12 +147,6 @@ enum DesignSystem {
         /// naturally beside the 26pt Merkaba glyph inside a low-profile horizontal
         /// oval pill.
         static let dictationOverlayTerminalLabel = Font.system(size: 9.5, weight: .medium, design: .rounded)
-
-        // Legacy aliases (kept for existing references)
-        static let headline = Font.system(size: 17, weight: .semibold, design: .rounded)
-        static let title = Font.system(size: 22, weight: .semibold, design: .rounded)
-        static let largeTitle = Font.system(size: 28, weight: .bold, design: .rounded)
-        static let sectionHeader = Font.system(size: 13, weight: .semibold)
     }
 
     // MARK: - Layout

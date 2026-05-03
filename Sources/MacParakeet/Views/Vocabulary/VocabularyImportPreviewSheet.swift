@@ -41,7 +41,7 @@ struct VocabularyImportPreviewSheet: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Import Vocabulary")
-                    .font(DesignSystem.Typography.title)
+                    .font(DesignSystem.Typography.pageTitle)
                 Text("Review what's in this backup before importing.")
                     .font(DesignSystem.Typography.caption)
                     .foregroundStyle(.secondary)
@@ -98,7 +98,7 @@ struct VocabularyImportPreviewSheet: View {
                 )
             VStack(alignment: .leading, spacing: 1) {
                 Text(value)
-                    .font(DesignSystem.Typography.title.weight(.semibold))
+                    .font(DesignSystem.Typography.pageTitle.weight(.semibold))
                 Text(title)
                     .font(DesignSystem.Typography.micro)
                     .foregroundStyle(.secondary)

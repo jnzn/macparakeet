@@ -281,7 +281,7 @@ struct DictationHistoryView: View {
                 ForEach(viewModel.groupedDictations, id: \.0) { dateHeader, dictations in
                     HStack(alignment: .firstTextBaseline, spacing: DesignSystem.Spacing.sm) {
                         Text(dateHeader.uppercased())
-                            .font(DesignSystem.Typography.sectionHeader)
+                            .font(DesignSystem.Typography.bodySmall.weight(.semibold))
                             .foregroundStyle(DesignSystem.Colors.accent.opacity(0.8))
                         Text("\(dictations.count)")
                             .font(DesignSystem.Typography.duration)
