@@ -19,7 +19,6 @@ struct TranscriptTextView: NSViewRepresentable {
         textView.isEditable = false
         textView.isSelectable = true
         textView.isRichText = true
-        textView.usesAdaptiveColorMappingForDarkAppearance = true
         textView.backgroundColor = .clear
         textView.drawsBackground = false
         textView.textContainerInset = NSSize(width: 16, height: 8)
@@ -204,13 +203,7 @@ struct TranscriptTextView: NSViewRepresentable {
     }
 
     private static func nsColor(_ color: Color, alpha: CGFloat = 1.0) -> NSColor {
-        NSColor(name: nil) { appearance in
-            var resolved = NSColor(color)
-            appearance.performAsCurrentDrawingAppearance {
-                resolved = NSColor(color)
-            }
-            return resolved.withAlphaComponent(alpha)
-        }
+        NSColor(color).withAlphaComponent(alpha)
     }
 }
 
