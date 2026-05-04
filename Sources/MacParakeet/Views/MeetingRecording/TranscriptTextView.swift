@@ -19,6 +19,7 @@ struct TranscriptTextView: NSViewRepresentable {
         textView.isEditable = false
         textView.isSelectable = true
         textView.isRichText = true
+        textView.usesAdaptiveColorMappingForDarkAppearance = true
         textView.backgroundColor = .clear
         textView.drawsBackground = false
         textView.textContainerInset = NSSize(width: 16, height: 8)
@@ -124,8 +125,8 @@ struct TranscriptTextView: NSViewRepresentable {
         let speakerFont = NSFont.systemFont(ofSize: 11, weight: .medium)
         let dotFont = NSFont.systemFont(ofSize: 10, weight: .medium)
         let timestampFont = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
-        let textColor = NSColor.white.withAlphaComponent(0.9)
-        let timestampColor = NSColor.white.withAlphaComponent(0.3)
+        let textColor = Self.nsColor(DesignSystem.Colors.textPrimary)
+        let timestampColor = Self.nsColor(DesignSystem.Colors.textTertiary)
 
         for (offset, line) in lineSlice.enumerated() {
             let globalIndex = startingIndex + offset
@@ -150,7 +151,7 @@ struct TranscriptTextView: NSViewRepresentable {
 
                 let speaker = NSAttributedString(string: "\(line.speakerLabel)  ", attributes: [
                     .font: speakerFont,
-                    .foregroundColor: color.withAlphaComponent(0.85),
+                    .foregroundColor: nsColor(for: line.source, alpha: 0.85),
                 ])
                 result.append(speaker)
 
@@ -191,14 +192,42 @@ struct TranscriptTextView: NSViewRepresentable {
         return oldLines.count == newLines.count ? nil : sharedCount
     }
 
-    private func nsColor(for source: AudioSource?) -> NSColor {
+    private func nsColor(for source: AudioSource?, alpha: CGFloat = 1.0) -> NSColor {
         switch source {
         case .microphone:
-            return NSColor(DesignSystem.Colors.accent)
+            return Self.nsColor(DesignSystem.Colors.accent, alpha: alpha)
         case .system:
-            return NSColor(DesignSystem.Colors.speakerColor(for: 0))
+            return Self.nsColor(DesignSystem.Colors.speakerColor(for: 0), alpha: alpha)
         case .none:
-            return NSColor(DesignSystem.Colors.textSecondary)
+            return Self.nsColor(DesignSystem.Colors.textSecondary, alpha: alpha)
+        }
+    }
+
+    private static func nsColor(_ color: Color, alpha: CGFloat = 1.0) -> NSColor {
+        NSColor(name: nil) { appearance in
+            var resolved = NSColor(color)
+            appearance.performAsCurrentDrawingAppearance {
+                resolved = NSColor(color)
+            }
+            return resolved.withAlphaComponent(alpha)
         }
     }
 }
+
+#if DEBUG
+extension TranscriptTextView {
+    func renderedAttributedStringForTesting(
+        lines: ArraySlice<MeetingRecordingPreviewLine>,
+        startingIndex: Int = 0,
+        previousSource: AudioSource? = nil,
+        isFirstInDocument: Bool = true
+    ) -> NSAttributedString {
+        buildRenderedSlice(
+            for: lines,
+            startingIndex: startingIndex,
+            previousSource: previousSource,
+            isFirstInDocument: isFirstInDocument
+        ).attributedString
+    }
+}
+#endif
