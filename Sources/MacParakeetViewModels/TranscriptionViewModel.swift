@@ -277,19 +277,18 @@ public final class TranscriptionViewModel {
     }
 
     public func retranscriptionEngineOption(for original: Transcription) -> RetranscriptionEngineOption? {
-        guard original.sourceType == .meeting,
-              let filePath = original.filePath,
+        guard let filePath = original.filePath,
               FileManager.default.fileExists(atPath: filePath) else {
             return nil
         }
 
-        let mixedAudioURL = URL(fileURLWithPath: filePath)
         let primaryEngine: SpeechEngineSelection
-        if let archivedRecording = archivedMeetingRecording(
-            for: original,
-            mixedAudioURL: mixedAudioURL,
-            logFailure: false
-        ),
+        if original.sourceType == .meeting,
+           let archivedRecording = archivedMeetingRecording(
+               for: original,
+               mixedAudioURL: URL(fileURLWithPath: filePath),
+               logFailure: false
+           ),
            archivedRecording.speechEngineWasCaptured {
             primaryEngine = archivedRecording.speechEngine
         } else {

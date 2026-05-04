@@ -1304,6 +1304,80 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(option.unavailableReason, "Download the Whisper model in Settings before trying Whisper.")
     }
 
+    func testRetranscriptionEngineOptionAvailableForYouTubeSource() throws {
+        let suiteName = "TranscriptionViewModelTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        SpeechEnginePreference.parakeet.save(to: defaults)
+        viewModel = TranscriptionViewModel(defaults: defaults, isWhisperModelDownloaded: { true })
+
+        let tmpFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("retranscribe-engine-youtube-\(UUID().uuidString).mp3")
+        FileManager.default.createFile(atPath: tmpFile.path, contents: Data([0]))
+        defer { try? FileManager.default.removeItem(at: tmpFile) }
+
+        let original = Transcription(
+            id: UUID(),
+            fileName: "YouTube Talk",
+            filePath: tmpFile.path,
+            durationMs: 2_000,
+            rawTranscript: "Old transcript",
+            status: .completed,
+            sourceType: .youtube
+        )
+
+        let option = try XCTUnwrap(viewModel.retranscriptionEngineOption(for: original))
+
+        XCTAssertEqual(option.primaryEngine, SpeechEngineSelection(engine: .parakeet))
+        XCTAssertEqual(option.alternativeEngine.engine, .whisper)
+        XCTAssertTrue(option.isAlternativeAvailable)
+        XCTAssertNil(option.unavailableReason)
+    }
+
+    func testRetranscriptionEngineOptionAvailableForFileSource() throws {
+        let suiteName = "TranscriptionViewModelTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        SpeechEnginePreference.whisper.save(to: defaults)
+        SpeechEnginePreference.saveWhisperDefaultLanguage("ko", defaults: defaults)
+        viewModel = TranscriptionViewModel(defaults: defaults, isWhisperModelDownloaded: { true })
+
+        let tmpFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("retranscribe-engine-file-\(UUID().uuidString).mp3")
+        FileManager.default.createFile(atPath: tmpFile.path, contents: Data([0]))
+        defer { try? FileManager.default.removeItem(at: tmpFile) }
+
+        let original = Transcription(
+            id: UUID(),
+            fileName: "Audio File",
+            filePath: tmpFile.path,
+            durationMs: 2_000,
+            rawTranscript: "Old transcript",
+            status: .completed,
+            sourceType: .file
+        )
+
+        let option = try XCTUnwrap(viewModel.retranscriptionEngineOption(for: original))
+
+        XCTAssertEqual(option.primaryEngine, SpeechEngineSelection(engine: .whisper, language: "ko"))
+        XCTAssertEqual(option.alternativeEngine, SpeechEngineSelection(engine: .parakeet))
+        XCTAssertTrue(option.isAlternativeAvailable)
+    }
+
+    func testRetranscriptionEngineOptionNilWhenFileMissing() {
+        viewModel = TranscriptionViewModel(isWhisperModelDownloaded: { true })
+        let original = Transcription(
+            id: UUID(),
+            fileName: "Vanished",
+            filePath: "/tmp/does-not-exist-\(UUID().uuidString).mp3",
+            rawTranscript: "Old transcript",
+            status: .completed,
+            sourceType: .youtube
+        )
+
+        XCTAssertNil(viewModel.retranscriptionEngineOption(for: original))
+    }
+
     func testRetranscribeMeetingFallsBackToMixedAudioWhenArchivedMetadataIsMissing() async throws {
         let tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("retranscribe-meeting-fallback-\(UUID().uuidString)", isDirectory: true)
