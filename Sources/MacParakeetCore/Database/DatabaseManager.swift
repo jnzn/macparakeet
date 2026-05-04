@@ -1,6 +1,7 @@
 import Foundation
 import GRDB
 import OSLog
+import Darwin
 
 public final class DatabaseManager: Sendable {
     public let dbQueue: DatabaseQueue
@@ -13,7 +14,9 @@ public final class DatabaseManager: Sendable {
     public init(path: String) throws {
         let config = Self.makeConfiguration()
         dbQueue = try DatabaseQueue(path: path, configuration: config)
-        try migrate()
+        try Self.withMigrationLock(forDatabasePath: path) {
+            try migrate()
+        }
     }
 
     /// Create a DatabaseManager with an in-memory database (for tests)
@@ -26,6 +29,7 @@ public final class DatabaseManager: Sendable {
     private static func makeConfiguration() -> Configuration {
         var config = Configuration()
         config.foreignKeysEnabled = true
+        config.busyMode = .timeout(5)
         #if DEBUG
         if sqlTraceEnabled {
             config.prepareDatabase { db in
@@ -591,6 +595,22 @@ public final class DatabaseManager: Sendable {
         try migrator.migrate(dbQueue)
         try reconcileBuiltInPrompts()
         try reconcileBuiltInQuickPrompts()
+    }
+
+    private static func withMigrationLock<T>(forDatabasePath path: String, _ body: () throws -> T) throws -> T {
+        let lockPath = path + ".migration.lock"
+        let fd = open(lockPath, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
+        guard fd >= 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        defer { close(fd) }
+
+        guard flock(fd, LOCK_EX) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        defer { _ = flock(fd, LOCK_UN) }
+
+        return try body()
     }
 
     private func reconcileBuiltInQuickPrompts() throws {

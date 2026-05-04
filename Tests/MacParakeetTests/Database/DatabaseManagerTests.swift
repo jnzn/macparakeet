@@ -24,6 +24,107 @@ final class DatabaseManagerTests: XCTestCase {
         XCTAssertNotNil(manager.dbQueue)
     }
 
+    func testFileBackedConnectionsWaitForShortWriteLock() throws {
+        let dbPath = FileManager.default.temporaryDirectory
+            .appendingPathComponent("macparakeet-lock-wait-\(UUID().uuidString).db")
+            .path
+        defer { cleanupDatabaseFiles(atPath: dbPath) }
+
+        let first = try DatabaseManager(path: dbPath)
+        let second = try DatabaseManager(path: dbPath)
+        let lockAcquired = DispatchSemaphore(value: 0)
+        let releaseLock = DispatchSemaphore(value: 0)
+        let firstFinished = expectation(description: "first write finishes")
+        let secondFinished = expectation(description: "second write finishes")
+        let resultLock = NSLock()
+        var firstError: Error?
+        var secondError: Error?
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try first.dbQueue.write { db in
+                    try db.execute(sql: "SELECT 1")
+                    lockAcquired.signal()
+                    _ = releaseLock.wait(timeout: .now() + 2)
+                }
+            } catch {
+                resultLock.lock()
+                firstError = error
+                resultLock.unlock()
+            }
+            firstFinished.fulfill()
+        }
+
+        XCTAssertEqual(lockAcquired.wait(timeout: .now() + 1), .success)
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try second.dbQueue.write { db in
+                    try db.execute(sql: "SELECT 1")
+                }
+            } catch {
+                resultLock.lock()
+                secondError = error
+                resultLock.unlock()
+            }
+            secondFinished.fulfill()
+        }
+
+        Thread.sleep(forTimeInterval: 0.1)
+        releaseLock.signal()
+
+        wait(for: [firstFinished, secondFinished], timeout: 3)
+        resultLock.lock()
+        let capturedFirstError = firstError
+        let capturedSecondError = secondError
+        resultLock.unlock()
+
+        XCTAssertNil(capturedFirstError)
+        XCTAssertNil(capturedSecondError)
+    }
+
+    func testConcurrentFileBackedManagersSerializeInitialMigration() throws {
+        let dbPath = FileManager.default.temporaryDirectory
+            .appendingPathComponent("macparakeet-concurrent-migration-\(UUID().uuidString).db")
+            .path
+        defer { cleanupDatabaseFiles(atPath: dbPath) }
+
+        let start = DispatchSemaphore(value: 0)
+        let finished = DispatchGroup()
+        let resultLock = NSLock()
+        var errors: [Error] = []
+
+        for _ in 0..<4 {
+            finished.enter()
+            DispatchQueue.global(qos: .userInitiated).async {
+                start.wait()
+                do {
+                    let manager = try DatabaseManager(path: dbPath)
+                    try manager.dbQueue.read { db in
+                        XCTAssertTrue(try db.tableExists("dictations"))
+                        XCTAssertTrue(try db.tableExists("transcriptions"))
+                        XCTAssertTrue(try db.tableExists("quick_prompts"))
+                    }
+                } catch {
+                    resultLock.lock()
+                    errors.append(error)
+                    resultLock.unlock()
+                }
+                finished.leave()
+            }
+        }
+
+        for _ in 0..<4 {
+            start.signal()
+        }
+
+        XCTAssertEqual(finished.wait(timeout: .now() + 5), .success)
+        resultLock.lock()
+        let capturedErrors = errors
+        resultLock.unlock()
+        XCTAssertTrue(capturedErrors.isEmpty, "Unexpected migration errors: \(capturedErrors)")
+    }
+
     func testMigrationsCreateTables() throws {
         let manager = try DatabaseManager()
         try manager.dbQueue.read { db in
@@ -847,5 +948,11 @@ final class DatabaseManagerTests: XCTestCase {
                 wordCount INTEGER NOT NULL DEFAULT 0
             )
         """)
+    }
+
+    private func cleanupDatabaseFiles(atPath path: String) {
+        for suffix in ["", "-shm", "-wal", ".migration.lock"] {
+            try? FileManager.default.removeItem(atPath: path + suffix)
+        }
     }
 }

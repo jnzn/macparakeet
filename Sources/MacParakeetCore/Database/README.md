@@ -69,6 +69,16 @@ require cleanup.
 is set in `makeConfiguration`. Migrations and inserts must respect
 foreign-key constraints; cascading deletes are explicit on each FK.
 
+**Short concurrent writes wait.** `Configuration.busyMode = .timeout(5)`
+is set so separate GUI/CLI/agent processes wait through brief SQLite write
+locks instead of surfacing immediate `SQLITE_BUSY` failures. Long-held locks
+still fail visibly after the timeout.
+
+**File-backed migrations are process-serialized.** `DatabaseManager(path:)`
+uses a sibling `.migration.lock` file while running migrations and built-in
+seed reconciliation. This keeps parallel CLI/agent first-run processes from
+racing on an empty database.
+
 **SQL tracing in DEBUG.** Set the env var `MACPARAKEET_DEBUG_SQL=1`
 to print every executed statement. Useful for diagnosing slow
 queries or accidental N+1 patterns during development; off by

@@ -63,9 +63,10 @@ input, lookup miss, runtime exception, etc.:
 
 `errorType` is a low-cardinality stable string. Current values: `auth`,
 `config`, `connection`, `context`, `input_empty`, `input_missing`,
-`invalid_response`, `lookup`, `model`, `provider`, `rate_limit`, `runtime`,
-`streaming`, `truncated`, `validation`. New error classes get new values in
-minor releases; existing values are stable within a major.
+`import_schema`, `invalid_response`, `lookup`, `model`, `provider`,
+`rate_limit`, `runtime`, `streaming`, `truncated`, `validation`. New error
+classes get new values in minor releases; existing values are stable within a
+major.
 
 Stderr stays plain text for human-only progress / status (e.g. "Saved
 PromptResult abc12345"), so piping `--json` stdout through `jq` is safe.
@@ -78,6 +79,8 @@ agents that branch on `errorType` should also handle the parse-error case
 by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
 
 ## [Unreleased]
+
+## [2.0.0] -- 2026-05-03
 
 ### Added — `quick-prompts`
 
