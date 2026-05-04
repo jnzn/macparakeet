@@ -338,30 +338,45 @@ struct LLMSettingsView: View {
     @ViewBuilder
     private var aiFormatterSection: some View {
         VStack(spacing: DesignSystem.Spacing.md) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("AI Formatter")
-                        .font(DesignSystem.Typography.body)
-                    Text("Optionally run the final transcript through your selected AI option after the usual cleanup step.")
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
+                HStack(alignment: .center, spacing: DesignSystem.Spacing.md) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 7) {
+                            Text("AI Formatter")
+                                .font(DesignSystem.Typography.body.weight(.semibold))
+                            Text("Final step")
+                                .font(DesignSystem.Typography.micro.weight(.semibold))
+                                .foregroundStyle(DesignSystem.Colors.accentDark)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(
+                                    Capsule()
+                                        .fill(DesignSystem.Colors.accent.opacity(0.12))
+                                )
+                        }
+                        Text("Optionally run the final transcript through your selected AI option after the usual cleanup step.")
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: DesignSystem.Spacing.md)
+                    AIFormatterActivationToggle(
+                        isOn: $viewModel.aiFormatterEnabled,
+                        isAvailable: viewModel.canToggleAIFormatter,
+                        disabledReason: viewModel.aiFormatterDisabledReason
+                    )
                 }
-                Spacer(minLength: DesignSystem.Spacing.md)
-                HStack(spacing: 8) {
-                    Toggle("", isOn: $viewModel.aiFormatterEnabled)
-                        .labelsHidden()
-                        .toggleStyle(.checkbox)
-                        .disabled(!viewModel.canToggleAIFormatter)
-                        .accessibilityLabel("AI Formatter")
-                        .accessibilityHint("Run the final transcript through your selected AI option after the usual cleanup step")
 
-                    Text(viewModel.aiFormatterStatusText)
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundStyle(
-                            viewModel.aiFormatterEnabled
-                                ? DesignSystem.Colors.successGreen
-                                : DesignSystem.Colors.textSecondary
-                        )
+                if let disabledReason = viewModel.aiFormatterDisabledReason {
+                    HStack(spacing: 6) {
+                        Image(systemName: "info.circle.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(DesignSystem.Colors.textSecondary)
+                        Text(disabledReason)
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
 
@@ -399,13 +414,6 @@ struct LLMSettingsView: View {
                     .foregroundStyle(.secondary)
                     .disabled(!viewModel.canResetAIFormatterPrompt)
                 }
-            }
-
-            if let disabledReason = viewModel.aiFormatterDisabledReason {
-                Text(disabledReason)
-                    .font(DesignSystem.Typography.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
@@ -559,5 +567,133 @@ struct LLMSettingsView: View {
                     .lineLimit(2)
             }
         }
+    }
+}
+
+private struct AIFormatterActivationToggle: View {
+    @Binding var isOn: Bool
+    let isAvailable: Bool
+    let disabledReason: String?
+
+    var body: some View {
+        Toggle("AI Formatter", isOn: $isOn)
+            .labelsHidden()
+            .toggleStyle(AIFormatterActivationToggleStyle())
+            .disabled(!isAvailable)
+            .help(disabledReason ?? "Run AI formatting after the standard cleanup step.")
+            .accessibilityLabel("AI Formatter")
+            .accessibilityValue(isOn ? "Enabled" : "Disabled")
+            .accessibilityHint(disabledReason ?? "Runs after local transcription cleanup as the final output step.")
+    }
+}
+
+private struct AIFormatterActivationToggleStyle: ToggleStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        Button {
+            withAnimation(.spring(response: 0.22, dampingFraction: 0.82)) {
+                configuration.isOn.toggle()
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: configuration.isOn ? "sparkles" : "wand.and.stars")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(iconTint(isOn: configuration.isOn))
+                    .frame(width: 24, height: 24)
+                    .background(
+                        Circle()
+                            .fill(iconBackground(isOn: configuration.isOn))
+                    )
+                    .accessibilityHidden(true)
+
+                Text(labelText(isOn: configuration.isOn))
+                    .font(DesignSystem.Typography.caption.weight(.semibold))
+                    .foregroundStyle(labelTint(isOn: configuration.isOn))
+                    .lineLimit(1)
+
+                Spacer(minLength: 4)
+
+                switchTrack(isOn: configuration.isOn)
+            }
+            .padding(.leading, 8)
+            .padding(.trailing, 10)
+            .padding(.vertical, 6)
+            .frame(width: 164, height: 38)
+            .background(
+                RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                    .fill(controlBackground(isOn: configuration.isOn))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                    .strokeBorder(controlBorder(isOn: configuration.isOn), lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func switchTrack(isOn: Bool) -> some View {
+        ZStack(alignment: isOn ? .trailing : .leading) {
+            Capsule()
+                .fill(trackBackground(isOn: isOn))
+                .overlay(
+                    Capsule()
+                        .strokeBorder(trackBorder(isOn: isOn), lineWidth: 1)
+                )
+
+            Circle()
+                .fill(knobFill(isOn: isOn))
+                .frame(width: 14, height: 14)
+                .padding(2)
+                .shadow(color: .black.opacity(isOn && isEnabled ? 0.18 : 0), radius: 2, y: 1)
+        }
+        .frame(width: 34, height: 18)
+        .accessibilityHidden(true)
+    }
+
+    private func labelText(isOn: Bool) -> String {
+        guard isEnabled else { return "Unavailable" }
+        return isOn ? "Enabled" : "Enable"
+    }
+
+    private func iconTint(isOn: Bool) -> Color {
+        if !isEnabled { return DesignSystem.Colors.textTertiary }
+        return isOn ? DesignSystem.Colors.onAccent : DesignSystem.Colors.accent
+    }
+
+    private func iconBackground(isOn: Bool) -> Color {
+        if !isEnabled { return DesignSystem.Colors.surfaceElevated.opacity(0.75) }
+        return isOn ? DesignSystem.Colors.accent : DesignSystem.Colors.accent.opacity(0.12)
+    }
+
+    private func labelTint(isOn: Bool) -> Color {
+        if !isEnabled { return DesignSystem.Colors.textTertiary }
+        return isOn ? DesignSystem.Colors.accentDark : DesignSystem.Colors.textSecondary
+    }
+
+    private func controlBackground(isOn: Bool) -> Color {
+        if !isEnabled { return DesignSystem.Colors.surfaceElevated.opacity(0.45) }
+        return isOn ? DesignSystem.Colors.accentLight : DesignSystem.Colors.surfaceElevated
+    }
+
+    private func controlBorder(isOn: Bool) -> Color {
+        if !isEnabled { return DesignSystem.Colors.border.opacity(0.45) }
+        return isOn ? DesignSystem.Colors.accent.opacity(0.45) : DesignSystem.Colors.border.opacity(0.75)
+    }
+
+    private func trackBackground(isOn: Bool) -> Color {
+        if !isEnabled { return DesignSystem.Colors.border.opacity(0.35) }
+        return isOn ? DesignSystem.Colors.accent : DesignSystem.Colors.border.opacity(0.35)
+    }
+
+    private func trackBorder(isOn: Bool) -> Color {
+        if !isEnabled { return Color.clear }
+        return isOn ? DesignSystem.Colors.accent.opacity(0.35) : DesignSystem.Colors.border.opacity(0.75)
+    }
+
+    private func knobFill(isOn: Bool) -> Color {
+        if !isEnabled { return DesignSystem.Colors.textTertiary.opacity(0.55) }
+        return isOn ? DesignSystem.Colors.onAccent : DesignSystem.Colors.textSecondary
     }
 }
