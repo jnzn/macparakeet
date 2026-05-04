@@ -75,5 +75,8 @@ coverage/
 output/
 tmp/
 
+# Local media artifacts
+Assets/local-videos/
+
 # Data recovery
 recup_dir*/
