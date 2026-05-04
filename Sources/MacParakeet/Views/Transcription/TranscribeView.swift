@@ -9,8 +9,10 @@ struct TranscribeView: View {
     @Bindable var promptResultsViewModel: PromptResultsViewModel
     @Bindable var promptsViewModel: PromptsViewModel
     @Bindable var meetingPillViewModel: MeetingRecordingPillViewModel
+    var meetingPermissionState: MeetingRecordingTile.PermissionState = .ready(capturesMicrophone: true)
     @Binding var showingProgressDetail: Bool
     var onRecordMeeting: () -> Void
+    var onRefreshPermissions: () -> Void = {}
     @State private var showCancelConfirmation = false
     @State private var aiFormatterWarningMessage: String?
 
@@ -74,6 +76,9 @@ struct TranscribeView: View {
 
             // Bottom bar now rendered globally in MainWindowView
         }
+        .onAppear {
+            onRefreshPermissions()
+        }
         .onChange(of: viewModel.isTranscribing) { _, isTranscribing in
             if isTranscribing {
                 aiFormatterWarningMessage = nil
@@ -92,6 +97,9 @@ struct TranscribeView: View {
             if let message = notification.userInfo?["message"] as? String {
                 aiFormatterWarningMessage = message
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            onRefreshPermissions()
         }
     }
 
@@ -121,6 +129,7 @@ struct TranscribeView: View {
                     if AppFeatures.meetingRecordingEnabled {
                         MeetingRecordingTile(
                             viewModel: meetingPillViewModel,
+                            permissionState: meetingPermissionState,
                             onTap: onRecordMeeting
                         )
                         .padding(.horizontal, DesignSystem.Spacing.xl)

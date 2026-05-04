@@ -10,7 +10,63 @@ import SwiftUI
 /// card's "click the button, not the body" pattern, and gives Start and
 /// Stop symmetric tap targets so users learn one rule.
 struct MeetingRecordingTile: View {
+    enum PermissionState: Equatable {
+        case ready(capturesMicrophone: Bool)
+        case missing(microphone: Bool, screenRecording: Bool)
+
+        init(
+            microphoneGranted: Bool,
+            screenRecordingGranted: Bool,
+            sourceMode: MeetingAudioSourceMode
+        ) {
+            let needsMicrophone = sourceMode.capturesMicrophone && !microphoneGranted
+            let needsScreenRecording = !screenRecordingGranted
+            if needsMicrophone || needsScreenRecording {
+                self = .missing(microphone: needsMicrophone, screenRecording: needsScreenRecording)
+            } else {
+                self = .ready(capturesMicrophone: sourceMode.capturesMicrophone)
+            }
+        }
+
+        var isReady: Bool {
+            if case .ready = self {
+                return true
+            }
+            return false
+        }
+
+        var title: String {
+            switch self {
+            case .ready:
+                return "Record Meeting"
+            case .missing:
+                return "Enable meeting recording"
+            }
+        }
+
+        var detail: String {
+            switch self {
+            case .ready(let capturesMicrophone):
+                return capturesMicrophone
+                    ? "Capture system audio + mic, transcribed locally."
+                    : "Capture system audio, transcribed locally."
+            case .missing(let microphone, let screenRecording):
+                switch (microphone, screenRecording) {
+                case (true, true):
+                    return "Grant microphone and Screen & System Audio Recording access."
+                case (true, false):
+                    return "Grant microphone access to capture your voice."
+                case (false, true):
+                    return "Grant Screen & System Audio Recording access for meeting audio."
+                case (false, false):
+                    return "Ready to record meetings."
+                }
+            }
+        }
+    }
+
     @Bindable var viewModel: MeetingRecordingPillViewModel
+    var permissionState: PermissionState = .ready(capturesMicrophone: true)
     var onTap: () -> Void
 
     var body: some View {
@@ -74,16 +130,21 @@ struct MeetingRecordingTile: View {
 
     private var idleContent: some View {
         HStack(spacing: DesignSystem.Spacing.md) {
-            SacredFlowerTile(isAnimating: false, audioLevel: 0)
+            if permissionState.isReady {
+                SacredFlowerTile(isAnimating: false, audioLevel: 0)
+            } else {
+                permissionIcon
+                    .frame(width: 64)
+            }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Record Meeting")
+                Text(permissionState.title)
                     .font(DesignSystem.Typography.sectionTitle)
                     .foregroundStyle(DesignSystem.Colors.textPrimary)
-                Text("Capture system audio + mic, transcribed locally.")
+                Text(permissionState.detail)
                     .font(DesignSystem.Typography.caption)
                     .foregroundStyle(DesignSystem.Colors.textSecondary)
-                    .lineLimit(1)
+                    .lineLimit(2)
             }
 
             Spacer()
@@ -203,30 +264,45 @@ struct MeetingRecordingTile: View {
 
     // MARK: - Action Buttons
 
+    private var permissionIcon: some View {
+        ZStack {
+            Circle()
+                .fill(DesignSystem.Colors.warningAmber.opacity(0.14))
+                .frame(width: 56, height: 56)
+            Image(systemName: "lock.shield")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(DesignSystem.Colors.warningAmber)
+        }
+    }
+
     private var startButton: some View {
         Button(action: onTap) {
             HStack(spacing: 6) {
-                Circle()
-                    .fill(DesignSystem.Colors.recordingRed)
-                    .frame(width: 8, height: 8)
-                Text("Start")
+                Image(systemName: permissionState.isReady ? "record.circle.fill" : "lock.open")
+                    .font(.system(size: 11, weight: .semibold))
+                Text(permissionState.isReady ? "Start" : "Enable")
                     .font(DesignSystem.Typography.caption.weight(.semibold))
             }
-            .foregroundStyle(DesignSystem.Colors.recordingRed)
+            .foregroundStyle(permissionState.isReady ? DesignSystem.Colors.recordingRed : DesignSystem.Colors.warningAmber)
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .background(
                 Capsule()
-                    .fill(DesignSystem.Colors.recordingRed.opacity(0.10))
+                    .fill((permissionState.isReady ? DesignSystem.Colors.recordingRed : DesignSystem.Colors.warningAmber).opacity(0.10))
             )
             .overlay(
                 Capsule()
-                    .strokeBorder(DesignSystem.Colors.recordingRed.opacity(0.22), lineWidth: 0.8)
+                    .strokeBorder(
+                        (permissionState.isReady ? DesignSystem.Colors.recordingRed : DesignSystem.Colors.warningAmber).opacity(0.22),
+                        lineWidth: 0.8
+                    )
             )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Start recording")
-        .accessibilityHint("Captures system audio and microphone, then transcribes locally.")
+        .accessibilityLabel(permissionState.isReady ? "Start recording" : "Enable meeting recording")
+        .accessibilityHint(permissionState.isReady
+            ? "Captures system audio and microphone, then transcribes locally."
+            : "Opens the required macOS permission flow before recording.")
     }
 
     private var stopButton: some View {
@@ -238,7 +314,7 @@ struct MeetingRecordingTile: View {
     private var accessibilityLabel: String {
         switch viewModel.state {
         case .idle:
-            return "Record meeting"
+            return permissionState.isReady ? "Record meeting" : "\(permissionState.title): \(permissionState.detail)"
         case .recording:
             return "Recording meeting, \(viewModel.formattedElapsed) elapsed"
         case .completing, .transcribing:

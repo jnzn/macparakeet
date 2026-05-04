@@ -95,8 +95,10 @@ struct MainWindowView: View {
                             promptResultsViewModel: promptResultsViewModel,
                             promptsViewModel: promptsViewModel,
                             meetingPillViewModel: meetingPillViewModel,
+                            meetingPermissionState: meetingPermissionState,
                             showingProgressDetail: $state.showingProgressDetail,
-                            onRecordMeeting: onRecordMeeting
+                            onRecordMeeting: onRecordMeeting,
+                            onRefreshPermissions: settingsViewModel.refreshPermissions
                         )
                     case .library:
                         if let transcription = transcriptionViewModel.currentTranscription {
@@ -172,6 +174,14 @@ struct MainWindowView: View {
     private var showGlobalProgressBar: Bool {
         transcriptionViewModel.isTranscribing
             && state.selectedItem != .transcribe
+    }
+
+    private var meetingPermissionState: MeetingRecordingTile.PermissionState {
+        MeetingRecordingTile.PermissionState(
+            microphoneGranted: settingsViewModel.microphoneGranted,
+            screenRecordingGranted: settingsViewModel.screenRecordingGranted,
+            sourceMode: settingsViewModel.meetingAudioSourceMode
+        )
     }
 
     private var globalTranscriptionBottomBar: some View {
