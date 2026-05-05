@@ -40,6 +40,7 @@ final class MeetingRecordingFlowCoordinator {
     private let quickPromptRepo: QuickPromptRepositoryProtocol
     private let configStore: LLMConfigStoreProtocol
     private let cliConfigStore: LocalCLIConfigStore
+    private let sttManager: (any STTRuntimeManaging)?
     private let meetingAudioSourceModeProvider: @MainActor @Sendable () -> MeetingAudioSourceMode
     private var llmService: LLMServiceProtocol?
     private let onMenuBarIconUpdate: (BreathWaveIcon.MenuBarState) -> Void
@@ -59,6 +60,7 @@ final class MeetingRecordingFlowCoordinator {
     private var autoDismissTask: Task<Void, Never>?
     private var pillPollingTask: Task<Void, Never>?
     private var transcriptObservationTask: Task<Void, Never>?
+    private var speechWarmUpObservationTask: Task<Void, Never>?
     private var activeFlowSettlementWaiters: [CheckedContinuation<Void, Never>] = []
     private var completedTranscription: Transcription?
     private var currentMeetingOperationContext: ObservabilityOperationContext?
@@ -74,6 +76,7 @@ final class MeetingRecordingFlowCoordinator {
         quickPromptRepo: QuickPromptRepositoryProtocol,
         configStore: LLMConfigStoreProtocol,
         cliConfigStore: LocalCLIConfigStore = LocalCLIConfigStore(),
+        sttManager: (any STTRuntimeManaging)? = nil,
         meetingAudioSourceModeProvider: @escaping @MainActor @Sendable () -> MeetingAudioSourceMode = { .microphoneAndSystem },
         llmService: LLMServiceProtocol?,
         pillViewModel: MeetingRecordingPillViewModel,
@@ -90,6 +93,7 @@ final class MeetingRecordingFlowCoordinator {
         self.quickPromptRepo = quickPromptRepo
         self.configStore = configStore
         self.cliConfigStore = cliConfigStore
+        self.sttManager = sttManager
         self.meetingAudioSourceModeProvider = meetingAudioSourceModeProvider
         self.llmService = llmService
         self.pillViewModel = pillViewModel
@@ -299,6 +303,7 @@ final class MeetingRecordingFlowCoordinator {
             panelVM.elapsedSeconds = 0
             panelVM.micLevel = 0
             panelVM.systemLevel = 0
+            panelVM.updateLiveTranscriptStatus(.startingAudio)
             panelVM.updatePreviewLines([], isTranscriptionLagging: false)
             panelVM.onStop = { [weak self] in self?.toggleRecording() }
             panelVM.onClose = { [weak self] in self?.hideMeetingPanel() }
@@ -348,6 +353,7 @@ final class MeetingRecordingFlowCoordinator {
                 panelController = controller
             }
             pillController?.show()
+            startSpeechWarmUpObservation()
             startPillPolling()
             startTranscriptObservation()
 
@@ -367,6 +373,19 @@ final class MeetingRecordingFlowCoordinator {
             actionTask = Task { @MainActor in
                 do {
                     try await meetingRecordingService.startRecording(title: title, sourceMode: sourceMode)
+                    let isSpeechModelReady = await self.sttManager?.isReady() ?? true
+                    switch self.panelViewModel?.liveTranscriptStatus {
+                    case .some(.startingAudio) where isSpeechModelReady:
+                        self.panelViewModel?.updateLiveTranscriptStatus(.listening)
+                    case .some(.startingAudio):
+                        self.panelViewModel?.updateLiveTranscriptStatus(.preparingSpeechModel(message: nil))
+                    case .some(.preparingSpeechModel) where isSpeechModelReady:
+                        self.panelViewModel?.updateLiveTranscriptStatus(.listening)
+                    case .some(.listening), .some(.live), .some(.previewUnavailable), .none:
+                        break
+                    case .some(.preparingSpeechModel):
+                        break
+                    }
                     Telemetry.send(.meetingRecordingStarted(trigger: trigger))
                     self.onRecordingBegan()
                     self.sendEvent(.recordingStarted(generation: gen))
@@ -400,6 +419,7 @@ final class MeetingRecordingFlowCoordinator {
         case .showTranscribingState:
             stopPillPolling()
             stopTranscriptObservation()
+            stopSpeechWarmUpObservation()
             pillViewModel.micLevel = 0
             pillViewModel.systemLevel = 0
             pillViewModel.state = .completing
@@ -489,6 +509,7 @@ final class MeetingRecordingFlowCoordinator {
         case .showCompleted:
             stopPillPolling()
             stopTranscriptObservation()
+            stopSpeechWarmUpObservation()
             // If flower is still collapsing, the callback will check completedTranscription
             // If spinner is showing, transition to checkmark now
             if pillViewModel.state == .transcribing {
@@ -526,6 +547,7 @@ final class MeetingRecordingFlowCoordinator {
         case .showError(let message):
             stopPillPolling()
             stopTranscriptObservation()
+            stopSpeechWarmUpObservation()
             panelViewModel?.state = .error(message)
             pillViewModel.state = .error(
                 panelViewModel?.compactErrorRecoveryMessage
@@ -536,6 +558,7 @@ final class MeetingRecordingFlowCoordinator {
         case .hidePill:
             stopPillPolling()
             stopTranscriptObservation()
+            stopSpeechWarmUpObservation()
             pillController?.hide()
             pillController = nil
             // Pill view model is long-lived (also drives the Transcribe-tab
@@ -713,6 +736,49 @@ final class MeetingRecordingFlowCoordinator {
     private func stopTranscriptObservation() {
         transcriptObservationTask?.cancel()
         transcriptObservationTask = nil
+    }
+
+    private func startSpeechWarmUpObservation() {
+        guard let sttManager else { return }
+
+        speechWarmUpObservationTask?.cancel()
+        speechWarmUpObservationTask = Task { @MainActor [weak self, sttManager] in
+            let (observerId, stream) = await sttManager.observeWarmUpProgress()
+            defer {
+                Task {
+                    await sttManager.removeWarmUpObserver(id: observerId)
+                }
+            }
+
+            await sttManager.backgroundWarmUp()
+
+            for await state in stream {
+                guard !Task.isCancelled else { break }
+                self?.handleSpeechWarmUpState(state)
+            }
+        }
+    }
+
+    private func stopSpeechWarmUpObservation() {
+        speechWarmUpObservationTask?.cancel()
+        speechWarmUpObservationTask = nil
+    }
+
+    private func handleSpeechWarmUpState(_ state: STTWarmUpState) {
+        guard let panelViewModel, panelViewModel.previewLines.isEmpty else { return }
+
+        switch state {
+        case .idle:
+            break
+        case .working(let message, _):
+            panelViewModel.updateLiveTranscriptStatus(.preparingSpeechModel(message: message))
+        case .ready:
+            if stateMachine.state != .starting {
+                panelViewModel.updateLiveTranscriptStatus(.listening)
+            }
+        case .failed:
+            panelViewModel.updateLiveTranscriptStatus(.previewUnavailable)
+        }
     }
 
     nonisolated private static func makePreviewLines(from update: MeetingTranscriptUpdate) -> [MeetingRecordingPreviewLine] {

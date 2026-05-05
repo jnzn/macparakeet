@@ -11,6 +11,14 @@ public final class MeetingRecordingPanelViewModel {
         case error(String)
     }
 
+    public enum LiveTranscriptStatus: Equatable, Sendable {
+        case startingAudio
+        case preparingSpeechModel(message: String?)
+        case listening
+        case live
+        case previewUnavailable
+    }
+
     /// Tab order chosen so the user lands in Notes by default — note-taking is
     /// the primary "active" surface in a live meeting (ADR-020 §1, §2). Transcript
     /// is the rolling reference, Ask is the on-demand thinking-partner.
@@ -34,6 +42,7 @@ public final class MeetingRecordingPanelViewModel {
     public var systemLevel: Float = 0
     public var previewLines: [MeetingRecordingPreviewLine] = []
     public var isTranscriptionLagging: Bool = false
+    public private(set) var liveTranscriptStatus: LiveTranscriptStatus = .listening
     public var showCopiedConfirmation: Bool = false
     /// Default to `.notes` per ADR-020 §2 — opening the panel should put the
     /// cursor in the notepad, not stare the user down with raw transcript.
@@ -89,6 +98,9 @@ public final class MeetingRecordingPanelViewModel {
             wordCount += addedWordCounts.reduce(0, +) - removedWordCount
             previewLineWordCounts = Array(previewLineWordCounts.prefix(firstChangedIndex)) + addedWordCounts
             previewLines = lines
+            if !lines.isEmpty {
+                liveTranscriptStatus = .live
+            }
             // Keep the live Ask tab fed with the latest transcript without disturbing
             // chat history. Bracketed timestamps stripped — LLMs do better without them.
             chatViewModel.updateTranscriptText(chatTranscript)
@@ -120,6 +132,7 @@ public final class MeetingRecordingPanelViewModel {
         previewLineWordCounts = []
         wordCount = 0
         isTranscriptionLagging = false
+        liveTranscriptStatus = .listening
         copiedResetTask?.cancel()
         showCopiedConfirmation = false
         selectedTab = .notes
@@ -198,6 +211,45 @@ public final class MeetingRecordingPanelViewModel {
         state == .recording
     }
 
+    public func updateLiveTranscriptStatus(_ status: LiveTranscriptStatus) {
+        guard previewLines.isEmpty else { return }
+        liveTranscriptStatus = status
+    }
+
+    public var transcriptEmptyStateTitle: String {
+        if isTranscriptionLagging {
+            return "Catching up..."
+        }
+
+        switch liveTranscriptStatus {
+        case .startingAudio:
+            return "Starting audio..."
+        case .preparingSpeechModel:
+            return "Preparing speech model..."
+        case .listening, .live:
+            return canStop ? "Listening..." : "Transcription in progress..."
+        case .previewUnavailable:
+            return "Live preview unavailable"
+        }
+    }
+
+    public var transcriptEmptyStateDetail: String? {
+        if isTranscriptionLagging {
+            return "Final transcript will still include the full meeting."
+        }
+
+        switch liveTranscriptStatus {
+        case .startingAudio:
+            return nil
+        case .preparingSpeechModel(let message):
+            return Self.cleanWarmUpMessage(message) ?? "Recording continues while local transcription starts."
+        case .listening, .live:
+            return nil
+        case .previewUnavailable:
+            return "Audio keeps recording; retry transcription from Library if needed."
+        }
+    }
+
     private static func firstChangedLineIndex(
         oldLines: [MeetingRecordingPreviewLine],
         newLines: [MeetingRecordingPreviewLine]
@@ -211,6 +263,15 @@ public final class MeetingRecordingPanelViewModel {
 
     private static func wordCount(for text: String) -> Int {
         text.split(whereSeparator: \.isWhitespace).count
+    }
+
+    private static func cleanWarmUpMessage(_ message: String?) -> String? {
+        guard let message else { return nil }
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let prefix = "Speech model: "
+        guard trimmed.hasPrefix(prefix) else { return trimmed }
+        return String(trimmed.dropFirst(prefix.count))
     }
 
     // MARK: - Tab badges (ADR-020 §1)

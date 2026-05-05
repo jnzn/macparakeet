@@ -125,9 +125,57 @@ final class MeetingRecordingPanelViewModelTests: XCTestCase {
 
         XCTAssertTrue(viewModel.showsLaggingIndicator)
         XCTAssertTrue(viewModel.statusMessage.contains("catching up"))
+        XCTAssertEqual(viewModel.transcriptEmptyStateTitle, "Catching up...")
+        XCTAssertEqual(
+            viewModel.transcriptEmptyStateDetail,
+            "Final transcript will still include the full meeting."
+        )
 
         viewModel.state = .transcribing
         XCTAssertFalse(viewModel.showsLaggingIndicator)
+    }
+
+    func testLiveTranscriptStatusDrivesEmptyTranscriptCopy() {
+        let viewModel = MeetingRecordingPanelViewModel()
+        viewModel.state = .recording
+
+        viewModel.updateLiveTranscriptStatus(.startingAudio)
+        XCTAssertEqual(viewModel.transcriptEmptyStateTitle, "Starting audio...")
+        XCTAssertNil(viewModel.transcriptEmptyStateDetail)
+
+        viewModel.updateLiveTranscriptStatus(.preparingSpeechModel(message: "Speech model: Loading model into memory..."))
+        XCTAssertEqual(viewModel.transcriptEmptyStateTitle, "Preparing speech model...")
+        XCTAssertEqual(viewModel.transcriptEmptyStateDetail, "Loading model into memory...")
+
+        viewModel.updateLiveTranscriptStatus(.previewUnavailable)
+        XCTAssertEqual(viewModel.transcriptEmptyStateTitle, "Live preview unavailable")
+        XCTAssertEqual(
+            viewModel.transcriptEmptyStateDetail,
+            "Audio keeps recording; retry transcription from Library if needed."
+        )
+
+        viewModel.updateLiveTranscriptStatus(.listening)
+        XCTAssertEqual(viewModel.transcriptEmptyStateTitle, "Listening...")
+        XCTAssertNil(viewModel.transcriptEmptyStateDetail)
+    }
+
+    func testTranscriptContentLocksOutAdvisoryEmptyStatus() {
+        let viewModel = MeetingRecordingPanelViewModel()
+        let lines = [
+            MeetingRecordingPreviewLine(
+                id: "1",
+                timestamp: "0:05",
+                speakerLabel: "Me",
+                text: "Words arrived",
+                source: .microphone
+            )
+        ]
+
+        viewModel.updatePreviewLines(lines)
+        viewModel.updateLiveTranscriptStatus(.preparingSpeechModel(message: "Loading"))
+
+        XCTAssertEqual(viewModel.liveTranscriptStatus, .live)
+        XCTAssertEqual(viewModel.previewLines, lines)
     }
 
     func testResetClearsTranscriptPreview() {
@@ -156,6 +204,7 @@ final class MeetingRecordingPanelViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.systemLevel, 0)
         XCTAssertTrue(viewModel.previewLines.isEmpty)
         XCTAssertFalse(viewModel.isTranscriptionLagging)
+        XCTAssertEqual(viewModel.liveTranscriptStatus, .listening)
         XCTAssertEqual(viewModel.selectedTab, .notes, "reset() returns the panel to the default Notes tab (ADR-020 §2)")
     }
 
