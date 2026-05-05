@@ -356,7 +356,7 @@ public actor YouTubeDownloader {
             return audioCandidate
         }
 
-        return candidates.first
+        return nil
     }
 
     private nonisolated static func isYtDlpTemporaryArtifact(_ fileName: String) -> Bool {

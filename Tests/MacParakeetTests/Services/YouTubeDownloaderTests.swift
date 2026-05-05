@@ -78,6 +78,18 @@ final class YouTubeDownloaderTests: XCTestCase {
         ))
     }
 
+    func testSelectDownloadedAudioFileReturnsNilWhenOnlyNonAudioSidecarsExist() {
+        let uuid = UUID().uuidString
+
+        XCTAssertNil(YouTubeDownloader.selectDownloadedAudioFile(
+            from: [
+                "\(uuid).metadata",
+                "\(uuid).json",
+            ],
+            uuid: uuid
+        ))
+    }
+
     // MARK: - DownloadResult Metadata Fields
 
     func testDownloadResultWithVideoMetadata() {

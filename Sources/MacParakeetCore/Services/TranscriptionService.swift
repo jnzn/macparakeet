@@ -445,7 +445,7 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
                 )
                 throw error
             }
-            cacheEmbeddedArtworkIfPresent(embeddedMetadata, for: transcription.id)
+            await cacheEmbeddedArtworkIfPresent(embeddedMetadata, for: transcription.id)
             Telemetry.send(.transcriptionStarted(source: source, audioDurationSeconds: nil))
 
             // Extract a representative frame when no embedded artwork was available.
@@ -555,7 +555,7 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
                 downloadResult.title
             ) ?? "Untitled"
             let durationMs = downloadResult.durationSeconds
-                .map { max(0, $0) * 1000 }
+                .flatMap { $0 > 0 ? $0 * 1000 : nil }
                 ?? embeddedMetadata.durationMs
             let channelName = Self.firstNonEmpty(downloadResult.channelName, embeddedMetadata.author)
             let videoDescription = Self.firstNonEmpty(downloadResult.videoDescription, embeddedMetadata.description)
@@ -584,7 +584,7 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
                 throw error
             }
             if downloadResult.thumbnailURL == nil {
-                cacheEmbeddedArtworkIfPresent(embeddedMetadata, for: transcription.id)
+                await cacheEmbeddedArtworkIfPresent(embeddedMetadata, for: transcription.id)
             }
             Telemetry.send(.transcriptionStarted(
                 source: .youtube,
@@ -1123,10 +1123,13 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
         return transcription
     }
 
-    private func cacheEmbeddedArtworkIfPresent(_ metadata: MediaMetadata, for transcriptionID: UUID) {
+    private func cacheEmbeddedArtworkIfPresent(_ metadata: MediaMetadata, for transcriptionID: UUID) async {
         guard let artworkData = metadata.artworkData else { return }
+        let thumbnailCache = self.thumbnailCache
         do {
-            _ = try thumbnailCache.cacheThumbnailData(artworkData, for: transcriptionID)
+            _ = try await Task.detached(priority: .utility) {
+                try thumbnailCache.cacheThumbnailData(artworkData, for: transcriptionID)
+            }.value
         } catch {
             logger.error("transcription_embedded_thumbnail_cache_failed id=\(transcriptionID, privacy: .public) error_type=\(Self.errorType(for: error), privacy: .public) error_detail=\(error.localizedDescription, privacy: .private)")
         }

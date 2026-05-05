@@ -42,6 +42,15 @@ final class ThumbnailCacheServiceTests: XCTestCase {
         XCTAssertEqual(service.cachedThumbnail(for: id), url)
     }
 
+    func testCacheThumbnailDataThrowsOnEmptyData() {
+        let id = UUID()
+
+        XCTAssertThrowsError(try service.cacheThumbnailData(Data(), for: id)) { error in
+            XCTAssertEqual(error as? ThumbnailError, .emptyData)
+        }
+        XCTAssertNil(service.cachedThumbnail(for: id))
+    }
+
     func testDeleteThumbnail() throws {
         let id = UUID()
         let filePath = tempDir.appendingPathComponent("\(id.uuidString).jpg")

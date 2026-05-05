@@ -140,7 +140,7 @@ REQ-YT-002:
 
 REQ-TRANS-003:
   description: Local media imports preserve embedded title, author, artwork, and duration metadata for library display
-  version: v0.6
+  version: v0.5
   status: implemented
 
 REQ-DATA-004:

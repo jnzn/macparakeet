@@ -151,7 +151,10 @@ public actor AVMediaMetadataExtractor: MediaMetadataExtracting {
             if keys.contains(identifier) {
                 return true
             }
-            if keys.contains(where: { identifier.hasSuffix(".\($0)") || identifier.contains($0) }) {
+            let components = identifier.split { separator in
+                separator == "." || separator == "/" || separator == ":"
+            }
+            if components.contains(where: { keys.contains(String($0)) }) {
                 return true
             }
         }

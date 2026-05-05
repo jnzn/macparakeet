@@ -84,6 +84,7 @@ public actor BinaryBootstrap {
            fileManager.isExecutableFile(atPath: bundledPath)
         {
             try installExecutable(from: URL(fileURLWithPath: bundledPath), toPath: targetPath)
+            defaults.set(now(), forKey: Self.ytDlpLastUpdateCheckKey)
             return targetPath
         }
 
@@ -100,6 +101,7 @@ public actor BinaryBootstrap {
            fileManager.isExecutableFile(atPath: bundledPath)
         {
             try installExecutable(from: URL(fileURLWithPath: bundledPath), toPath: targetPath)
+            defaults.set(now(), forKey: Self.ytDlpLastUpdateCheckKey)
             return targetPath
         }
 

@@ -303,6 +303,31 @@ final class TranscriptionServiceTests: XCTestCase {
         XCTAssertNotNil(thumbnailCache.cachedThumbnail(for: result.id))
     }
 
+    func testTranscribeURLTreatsNonPositiveDownloadDurationAsMissing() async throws {
+        let downloadedURL = try makeTempDownloadedAudio()
+        defer { try? FileManager.default.removeItem(at: downloadedURL) }
+
+        let downloader = MockYouTubeDownloader(result: YouTubeDownloader.DownloadResult(
+            audioFileURL: downloadedURL,
+            title: "Downloaded Title",
+            durationSeconds: 0
+        ))
+        let service = TranscriptionService(
+            audioProcessor: mockAudio,
+            sttTranscriber: mockSTT,
+            transcriptionRepo: transcriptionRepo,
+            youtubeDownloader: downloader,
+            mediaMetadataExtractor: StubMediaMetadataExtractor(metadata: MediaMetadata(durationMs: 42_000))
+        )
+        await mockSTT.configure(result: STTResult(text: "Downloaded transcript"))
+
+        let result = try await service.transcribeURL(urlString: "https://youtu.be/dQw4w9WgXcQ")
+        let fetched = try XCTUnwrap(transcriptionRepo.fetch(id: result.id))
+
+        XCTAssertEqual(result.durationMs, 42_000)
+        XCTAssertEqual(fetched.durationMs, 42_000)
+    }
+
     func testTranscribeFileError() async throws {
         await mockSTT.configure(error: STTError.transcriptionFailed("Model error"))
 
