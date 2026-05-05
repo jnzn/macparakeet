@@ -71,6 +71,7 @@ public actor DictationService: DictationServiceProtocol {
     private var currentObservabilityOperationContext: ObservabilityOperationContext?
     private var activeSessionID: Int = 0
     private var cancellationRequestedDuringStartSessionID: Int?
+    private var pendingCancelReason: TelemetryDictationCancelReason?
 
     public var state: DictationState {
         _state
@@ -172,6 +173,7 @@ public actor DictationService: DictationServiceProtocol {
         let requestedSessionID = sessionID ?? activeSessionID + 1
         activeSessionID = requestedSessionID
         cancellationRequestedDuringStartSessionID = nil
+        pendingCancelReason = nil
         currentOperationID = operationContext.operationID
         currentOperationTelemetryContext = context
         currentObservabilityOperationContext = operationContext
@@ -377,6 +379,7 @@ public actor DictationService: DictationServiceProtocol {
         cancelGeneration += 1
         let generation = cancelGeneration
 
+        pendingCancelReason = reason
         cancellationRequestedDuringStartSessionID = activeSessionID
         let audioURL = try? await audioProcessor.stopCapture()
         let device = await audioProcessor.recordingDeviceInfo
@@ -422,6 +425,7 @@ public actor DictationService: DictationServiceProtocol {
         sendDictationOperation(
             outcome: .cancelled,
             durationSeconds: currentRecordingDurationSeconds(),
+            cancelReason: pendingCancelReason,
             device: device
         )
         recordingStartedAt = nil
@@ -702,7 +706,8 @@ public actor DictationService: DictationServiceProtocol {
         if case .cancelled = _state {
             sendDictationOperation(
                 outcome: .cancelled,
-                durationSeconds: currentRecordingDurationSeconds()
+                durationSeconds: currentRecordingDurationSeconds(),
+                cancelReason: pendingCancelReason
             )
             discardPendingCancelledAudio()
             recordingStartedAt = nil
@@ -750,6 +755,7 @@ public actor DictationService: DictationServiceProtocol {
         currentOperationID = nil
         currentOperationTelemetryContext = DictationTelemetryContext()
         currentObservabilityOperationContext = nil
+        pendingCancelReason = nil
     }
 
     private func sendDictationOperation(
@@ -760,6 +766,7 @@ public actor DictationService: DictationServiceProtocol {
         durationSeconds: Double? = nil,
         wordCount: Int? = nil,
         errorType: String? = nil,
+        cancelReason: TelemetryDictationCancelReason? = nil,
         speechEngine: String? = nil,
         engineVariant: String? = nil,
         device: RecordingDeviceInfo? = nil
@@ -776,6 +783,7 @@ public actor DictationService: DictationServiceProtocol {
             durationSeconds: durationSeconds,
             wordCount: wordCount,
             errorType: errorType,
+            cancelReason: cancelReason,
             speechEngine: speechEngine,
             engineVariant: engineVariant,
             device: device

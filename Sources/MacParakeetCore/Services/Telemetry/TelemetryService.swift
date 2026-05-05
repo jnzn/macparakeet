@@ -57,6 +57,7 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
     private let osVer: String
     private let locale: String?
     private let chip: String
+    private let surface: String
     private let isEnabled: () -> Bool
     private let requestTimeoutInterval: TimeInterval
 
@@ -95,6 +96,8 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
         baseURL: URL? = nil,
         session: URLSession = .shared,
         requestTimeoutInterval: TimeInterval = 10,
+        surface: String = "gui",
+        appVersionOverride: String? = nil,
         isEnabled: @escaping () -> Bool = {
             UserDefaults.standard.object(forKey: "telemetryEnabled") as? Bool ?? true
         }
@@ -114,11 +117,15 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
         self.sessionStartedAt = Date()
 
         let info = SystemInfo.current
-        self.appVer = info.appVersion
+        // CLI executables have no Info.plist, so Bundle.main returns synthesized
+        // values (e.g. an SDK marker like "16.0"). The CLI passes its own version
+        // explicitly so it doesn't pollute GUI version-adoption metrics.
+        self.appVer = appVersionOverride ?? info.appVersion
         let osVersion = ProcessInfo.processInfo.operatingSystemVersion
         self.osVer = "\(osVersion.majorVersion).\(osVersion.minorVersion)"
         self.locale = Locale.current.identifier
         self.chip = info.chipType
+        self.surface = surface
 
         startTimer()
         registerLifecycleObservers()
@@ -228,7 +235,8 @@ public final class TelemetryService: TelemetryServiceProtocol, @unchecked Sendab
             osVer: osVer,
             locale: locale,
             chip: chip,
-            session: sessionId
+            session: sessionId,
+            surface: surface
         )
     }
 

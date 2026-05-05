@@ -247,6 +247,7 @@ public enum TelemetryEventSpec: Sendable {
         durationSeconds: Double?,
         wordCount: Int?,
         errorType: String?,
+        cancelReason: TelemetryDictationCancelReason? = nil,
         speechEngine: String? = nil,
         engineVariant: String? = nil,
         device: RecordingDeviceInfo? = nil
@@ -650,6 +651,7 @@ extension TelemetryEventSpec {
             let durationSeconds,
             let wordCount,
             let errorType,
+            let cancelReason,
             let speechEngine,
             let engineVariant,
             let device
@@ -665,7 +667,8 @@ extension TelemetryEventSpec {
                 ("word_count", wordCount.map(String.init)),
                 ("speech_engine", speechEngine),
                 ("engine_variant", Self.safeEngineVariant(engineVariant)),
-                ("error_type", errorType)
+                ("error_type", errorType),
+                ("cancel_reason", cancelReason?.rawValue)
             ), device)
         case .transcriptionStarted(let source, let audioDurationSeconds):
             return Self.compactProps(
@@ -1269,6 +1272,7 @@ public struct TelemetryEvent: Sendable, Encodable {
     public let locale: String?
     public let chip: String
     public let session: String
+    public let surface: String
     public let ts: String
 
     public init(
@@ -1278,6 +1282,7 @@ public struct TelemetryEvent: Sendable, Encodable {
         locale: String?,
         chip: String,
         session: String,
+        surface: String = "gui",
         ts: Date = Date()
     ) {
         self.eventId = UUID().uuidString
@@ -1288,6 +1293,7 @@ public struct TelemetryEvent: Sendable, Encodable {
         self.locale = locale
         self.chip = chip
         self.session = session
+        self.surface = surface == "cli" ? "cli" : "gui"
         self.ts = ISO8601DateFormatter.string(
             from: ts,
             timeZone: .gmt,

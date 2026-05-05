@@ -149,6 +149,7 @@ final class DictationServiceTests: XCTestCase {
             operation["outcome"] == "cancelled"
                 && operation["trigger"] == "hotkey"
                 && operation["mode"] == "hold"
+                && operation["cancel_reason"] == "hotkey"
         })
     }
 

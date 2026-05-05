@@ -22,11 +22,15 @@ enum CLITelemetry {
         case .forceOn:
             Telemetry.configure(TelemetryService(
                 requestTimeoutInterval: 1.0,
+                surface: "cli",
+                appVersionOverride: CLI.cliVersion,
                 isEnabled: { true }
             ))
         case .none:
             Telemetry.configure(TelemetryService(
                 requestTimeoutInterval: 1.0,
+                surface: "cli",
+                appVersionOverride: CLI.cliVersion,
                 isEnabled: {
                     AppPreferences.isTelemetryEnabled(defaults: macParakeetAppDefaults())
                 }

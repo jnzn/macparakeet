@@ -277,11 +277,51 @@ final class TelemetryServiceTests: XCTestCase {
         XCTAssertEqual(json["locale"] as? String, "en-US")
         XCTAssertEqual(json["chip"] as? String, "Apple M1")
         XCTAssertEqual(json["session"] as? String, "test-session")
+        XCTAssertEqual(json["surface"] as? String, "gui")
         XCTAssertNotNil(json["event_id"])
         XCTAssertNotNil(json["ts"])
         XCTAssertEqual(props["duration_seconds"], "12.5")
         XCTAssertEqual(props["word_count"], "84")
         XCTAssertEqual(props["mode"], "persistent")
+    }
+
+    func testCLISurfaceSerializesAsCli() throws {
+        let event = TelemetryEvent(
+            spec: .appLaunched,
+            appVer: "2.0.0",
+            osVer: "26.4",
+            locale: "en_US",
+            chip: "Apple M4 Pro",
+            session: "cli-session",
+            surface: "cli"
+        )
+
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let data = try encoder.encode(event)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        XCTAssertEqual(json["surface"] as? String, "cli")
+        XCTAssertEqual(json["app_ver"] as? String, "2.0.0")
+    }
+
+    func testUnknownSurfaceDefaultsToGui() throws {
+        let event = TelemetryEvent(
+            spec: .appLaunched,
+            appVer: "2.0.0",
+            osVer: "26.4",
+            locale: "en_US",
+            chip: "Apple M4 Pro",
+            session: "bad-surface-session",
+            surface: "agent"
+        )
+
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let data = try encoder.encode(event)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        XCTAssertEqual(json["surface"] as? String, "gui")
     }
 
     func testEventWithoutPropsSerializes() throws {
@@ -535,6 +575,37 @@ final class TelemetryServiceTests: XCTestCase {
 
         XCTAssertEqual(props["speech_engine"], "whisper")
         XCTAssertEqual(props["engine_variant"], "custom")
+    }
+
+    func testDictationOperationSerializesCancelReason() throws {
+        let event = TelemetryEvent(
+            spec: .dictationOperation(
+                operationID: "op-dict-cancel",
+                outcome: .cancelled,
+                trigger: .hotkey,
+                mode: .hold,
+                durationSeconds: 0.4,
+                wordCount: nil,
+                errorType: nil,
+                cancelReason: .escape
+            ),
+            appVer: "0.6.2",
+            osVer: "15.5",
+            locale: "en-US",
+            chip: "Apple M4",
+            session: "test-session"
+        )
+
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let data = try encoder.encode(event)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let props = try XCTUnwrap(json["props"] as? [String: String])
+
+        XCTAssertEqual(json["event"] as? String, "dictation_operation")
+        XCTAssertEqual(props["outcome"], "cancelled")
+        XCTAssertEqual(props["cancel_reason"], "escape")
+        XCTAssertNil(props["error_type"])
     }
 
     func testModelOperationSerializesSafeLifecycleDimensions() throws {

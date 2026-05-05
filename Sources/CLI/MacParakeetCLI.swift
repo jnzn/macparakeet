@@ -3,10 +3,17 @@ import Darwin
 
 @main
 struct CLI: AsyncParsableCommand {
+    /// Single source of truth for the CLI's semver. Surfaced via ArgumentParser's
+    /// `--version` and reported as `app_ver` to telemetry so CLI sessions are
+    /// distinguishable from synthesized Bundle.main values (the bare executable
+    /// has no Info.plist and macOS otherwise reports an SDK marker like "16.0").
+    /// Bump in lockstep with `Sources/CLI/CHANGELOG.md`.
+    static let cliVersion = "2.0.0"
+
     static let configuration = CommandConfiguration(
         commandName: "macparakeet-cli",
         abstract: "Local STT, transcription, and prompt automation for Apple Silicon. Powered by Parakeet TDT, with optional Whisper multilingual recognition.",
-        version: "2.0.0",
+        version: cliVersion,
         subcommands: [
             TranscribeCommand.self,
             HistoryCommand.self,

@@ -4,6 +4,10 @@
 > Reviewed by: Codex (2026-03-13). See [Codex Review](#codex-review-2026-03-13) for accepted/rejected feedback.
 > Observability update: Codex (2026-04-26). Added canonical operation events for product health and CLI/agent usage while preserving the existing opt-out and privacy model.
 > Logging/wide-events review: Codex (2026-05-02). Compared the implementation against the "Logging Sucks" wide-event guidance. Conclusion: MacParakeet already uses the right operation-wide-event model for product telemetry; follow-up work is mainly coverage, schema hygiene, and local diagnostic export. See [`docs/audits/2026-05-02-logging-telemetry-review.md`](audits/2026-05-02-logging-telemetry-review.md) and [`docs/audits/2026-05-02-logging-telemetry-issues.md`](audits/2026-05-02-logging-telemetry-issues.md).
+> Field verification: Codex (2026-05-05). Verified the v0.6 telemetry error-count snapshot and CoreAudio `-10868` bucket after the v0.6.2 hotfix. See [`docs/audits/2026-05-05-telemetry-error-count-verification.md`](audits/2026-05-05-telemetry-error-count-verification.md).
+> Dashboard taxonomy update: Codex (2026-05-05). Deployed `surface` separation
+> for GUI vs CLI telemetry, split true operation failures from non-failure
+> terminal outcomes, and renamed the dashboard error panel to failure-event log.
 
 ## Philosophy
 
@@ -67,13 +71,22 @@ CREATE TABLE events (
     chip      TEXT,                  -- 'Apple M1', 'Apple M2 Pro'
     country   TEXT,                  -- from CF-IPCountry header (not stored by app)
     session   TEXT NOT NULL,         -- random UUID, resets every app launch
+    surface   TEXT CHECK(surface IN ('gui', 'cli') OR surface IS NULL),
     ts        TEXT NOT NULL          -- ISO 8601 timestamp
 );
 
 CREATE INDEX idx_events_event_ts ON events(event, ts);
 CREATE INDEX idx_events_ts ON events(ts);
 CREATE INDEX idx_events_session ON events(session);
+CREATE INDEX idx_events_surface_ts ON events(surface, ts);
 ```
+
+`surface` is `gui` for the menu-bar app and `cli` for macparakeet-cli
+invocations. Historical rows were backfilled on 2026-05-05 by
+`scripts/migrations/2026-05-04-add-surface.sql` in the website repo:
+`cli_operation` rows became `cli`; every other historical row became `gui`.
+The deployed ingestion Worker writes a non-null surface for every new event,
+deriving it from the event name when older clients do not send the field.
 
 ### Privacy Properties (sent with every event)
 
@@ -85,6 +98,7 @@ CREATE INDEX idx_events_session ON events(session);
 | `locale` | `en-US` | Safe | Language priority insights |
 | `chip` | `Apple M1` | Safe | Performance benchmarking across chip types |
 | `country` | `US` | From CF header | Cloudflare provides this; we don't store IP |
+| `surface` | `gui` / `cli` | Safe | Separates menu-bar app sessions from one-shot CLI invocations |
 
 ### What We Explicitly DON'T Collect
 
@@ -118,7 +132,8 @@ MacParakeet uses two event shapes together:
   `llm_formatter_used` preserve existing funnel and feature-adoption analysis.
 - **Operation events** such as `dictation_operation`,
   `transcription_operation`, `meeting_operation`, `llm_operation`,
-  `feedback_operation`, `auto_save_operation`, and `cli_operation` are wide,
+  `feedback_operation`, `auto_save_operation`, `model_operation`,
+  `speech_engine_switch_operation`, and `cli_operation` are wide,
   outcome-focused events emitted once per operation completion. They carry a
   short-lived `operation_id`, `workflow_id`, optional `parent_operation_id`,
   `outcome`, duration, safe dimensions, and `error_type` when relevant.
@@ -137,6 +152,16 @@ submission, or CLI invocation should have one wide outcome event with the safe
 dimensions needed to answer product-health questions. Breadcrumb events remain
 useful for funnels and feature adoption, but new non-trivial workflows should
 not be breadcrumb-only.
+
+Operation outcomes are intentionally not all errors. Dashboard and analytics
+queries should treat:
+
+- `success` as completed work.
+- `failure` as a true operation failure that should appear in failure-rate and
+  top-failure views.
+- `cancelled`, `empty`, and `unavailable` as non-failure terminal outcomes.
+  They are important product signals, but they should not be ranked as red
+  failure buckets.
 
 Local `os.Logger` lines are still useful for developer triage and user-supplied
 diagnostics, especially audio/runtime edge cases. They are not the canonical
@@ -158,10 +183,10 @@ when the question is "what happened to this operation?"
 |---|---|---|
 | `dictation_started` | `trigger` (hotkey, pill_click, menu_bar) | How do people start dictating? |
 | `dictation_completed` | `duration_seconds`, `word_count`, `mode` (hold, persistent), `device_*` | How long are dictations? Which mode is popular? |
-| `dictation_cancelled` | `duration_seconds`, `reason` (escape, hotkey, silence), `device_*` | Are people cancelling often? Why? |
+| `dictation_cancelled` | `duration_seconds`, `reason` (escape, hotkey, ui), `device_*` | Are people cancelling often? Why? |
 | `dictation_empty` | `duration_seconds`, `device_*` | Are people getting empty results? (quality signal) |
 | `dictation_failed` | `error_type`, `device_*` | Core feature failures — blind spot without this |
-| `dictation_operation` | `operation_id`, `workflow_id`, `parent_operation_id`, `outcome`, `trigger`, `mode`, `duration_seconds`, `word_count`, `speech_engine`, `engine_variant`, `error_type`, `device_*` | One wide outcome event per dictation attempt |
+| `dictation_operation` | `operation_id`, `workflow_id`, `parent_operation_id`, `outcome`, `trigger`, `mode`, `duration_seconds`, `word_count`, `speech_engine`, `engine_variant`, `error_type`, `cancel_reason`, `device_*` | One wide outcome event per dictation attempt |
 
 > **Device props** (optional, included when available): `device_transport`, `device_sub_transport`, `device_sample_rate`, `device_channels`, `device_fallback`, `device_selected`. Raw device names and UIDs are intentionally not serialized.
 
@@ -355,6 +380,11 @@ so a later GUI install picks the same preference up automatically.
 The CLI also honors `DO_NOT_TRACK=1` and `MACPARAKEET_TELEMETRY=off` for
 automation contexts.
 
+CLI events use `surface='cli'` and are shown in their own dashboard section.
+They should not be mixed into GUI app sessions, app version adoption,
+crash-free rates, or GUI operation failure lists because each CLI invocation is
+a one-shot process with a fresh session ID.
+
 > **Important:** `error_occurred` includes a bounded `description` field, but
 > callers should treat it as an allowlisted diagnostic string, not a place for
 > arbitrary provider or user-content error bodies. `TelemetryEventSpec.props`
@@ -518,14 +548,38 @@ Not technically needed for native HTTP clients, but included for consistency wit
 Aggregate product stats are exposed through the website stats endpoint/page; raw
 event inspection should remain internal. Key views:
 
-1. **Overview** — DAU/WAU/MAU, sessions, app version distribution
+1. **Overview** — GUI app DAU/WAU/MAU, sessions, app version distribution
 2. **Features** — Event counts by type, adoption trends
 3. **Dictation** — Duration distribution, trigger breakdown, cancel rate
 4. **Transcription** — Source breakdown, performance (processing time vs audio length)
-5. **Errors** — Top errors, trends, affected versions
+5. **Failures** — explicit failure events, operation failures, crash reports
 6. **Permissions** — Prompt/grant/deny funnel
+7. **CLI** — CLI invocations, CLI versions, and command outcomes, separated
+   from GUI app session counts
 
-Queries are simple SQL against D1. Dashboard is a Cloudflare Pages site (or a page within macparakeet-website behind auth).
+Main dashboard queries default to `surface='gui'`. CLI telemetry has a separate
+view because each command is a one-shot invocation with a fresh session ID and
+can otherwise inflate app sessions, version adoption, crash-free rates, and
+operation failures.
+
+Operation-health dashboard queries should keep true `failure` outcomes separate
+from non-failure terminal states such as `cancelled`, `empty`, and
+permission-gated `unavailable`; otherwise ordinary user cancellation can be
+mislabeled as an error bucket.
+
+The deployed stats endpoint returns both `operations.failures` and
+`operations.non_failure`. The dashboard's "Failure Event Log" is only for
+explicit failure breadcrumb events and crash reports; normal terminal outcomes
+are excluded from that panel.
+
+The dashboard's operation reliability panel currently covers GUI product
+operation events that map directly to user-visible work: dictation,
+transcription, meeting, LLM, feedback, and auto-save. `model_operation` and
+`speech_engine_switch_operation` remain accepted canonical events and are
+visible in the event breakdown until they have dedicated dashboard panels.
+
+Queries are simple SQL against D1. Dashboard is a Cloudflare Pages site at
+`https://macparakeet.com/stats/`.
 
 ---
 
@@ -543,14 +597,17 @@ At MacParakeet's scale:
 
 ---
 
-## Implementation Order
+## Implementation Status
 
-1. **Documentation** (this file) + ADR-012 — define events, architecture, and decision rationale
-2. **Cloudflare Worker + D1** — ingestion endpoint and storage
-3. **Swift TelemetryService** — client in MacParakeetCore
-4. **Settings toggle** — opt-out UI in Settings
-5. **Instrument events** — add `Telemetry.send()` calls throughout the app
-6. **Dashboard** — build when there's data to look at
+1. **Documentation** — active in this file plus ADR-012.
+2. **Cloudflare Worker + D1** — deployed ingestion endpoint and D1 storage.
+3. **Swift TelemetryService** — active in MacParakeetCore with opt-out support.
+4. **Settings toggle** — active; disabling telemetry clears queued unsent events.
+5. **Instrumented events** — core lifecycle, dictation, transcription, meeting,
+   LLM, feedback, auto-save, model, permission, crash, and CLI surfaces are
+   instrumented.
+6. **Dashboard** — deployed at `https://macparakeet.com/stats/` with GUI/CLI
+   surface separation and operation failure taxonomy.
 
 ---
 
