@@ -114,6 +114,12 @@ final class BinaryBootstrapTests: XCTestCase {
         XCTAssertTrue(FileManager.default.isExecutableFile(atPath: installedPath))
         XCTAssertEqual(try Data(contentsOf: ytDlpPath), bundledData)
         XCTAssertEqual(tempBinaryArtifactCount(), 0)
+
+        let defaults = UserDefaults(suiteName: suiteName)!
+        XCTAssertEqual(
+            defaults.object(forKey: "ytDlp.lastUpdateCheckAt") as? Date,
+            Date(timeIntervalSince1970: 1_700_000_000)
+        )
     }
 
     func testEnsureYtDlpAvailableExplicitNetworkUpdateReplacesExistingManagedCopy() async throws {
@@ -175,6 +181,12 @@ final class BinaryBootstrapTests: XCTestCase {
         XCTAssertEqual(installedPath, ytDlpPath.path)
         XCTAssertEqual(try Data(contentsOf: ytDlpPath), bundledData)
         XCTAssertTrue(FileManager.default.isExecutableFile(atPath: installedPath))
+
+        let defaults = UserDefaults(suiteName: suiteName)!
+        XCTAssertEqual(
+            defaults.object(forKey: "ytDlp.lastUpdateCheckAt") as? Date,
+            Date(timeIntervalSince1970: 1_700_000_000)
+        )
     }
 
     func testReinstallYtDlpFromBundledSeedOrDownloadDownloadsWhenNoBundledSeedExists() async throws {
