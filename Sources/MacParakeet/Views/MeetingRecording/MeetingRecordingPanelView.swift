@@ -266,10 +266,22 @@ struct MeetingRecordingPanelView: View {
                 }
 
                 if !hasContent {
-                    Text(viewModel.canStop ? "Listening…" : "Transcription in progress…")
-                        .font(.system(size: 13, weight: .light, design: .default))
-                        .foregroundStyle(DesignSystem.Colors.textTertiary.opacity(0.6))
-                        .transition(.opacity)
+                    VStack(spacing: 5) {
+                        Text(viewModel.transcriptEmptyStateTitle)
+                            .font(.system(size: 13, weight: .light, design: .default))
+                            .foregroundStyle(DesignSystem.Colors.textTertiary.opacity(0.65))
+
+                        if let detail = viewModel.transcriptEmptyStateDetail {
+                            Text(detail)
+                                .font(DesignSystem.Typography.caption)
+                                .foregroundStyle(DesignSystem.Colors.textTertiary.opacity(0.55))
+                                .multilineTextAlignment(.center)
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(.horizontal, DesignSystem.Spacing.lg)
+                    .transition(.opacity)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

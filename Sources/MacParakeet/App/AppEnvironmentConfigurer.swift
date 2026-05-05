@@ -222,6 +222,7 @@ final class AppEnvironmentConfigurer {
             conversationRepo: env.chatConversationRepo,
             quickPromptRepo: env.quickPromptRepo,
             configStore: env.llmConfigStore,
+            sttManager: env.sttScheduler,
             meetingAudioSourceModeProvider: { env.runtimePreferences.meetingAudioSourceMode },
             llmService: hasLLMConfig ? env.llmService : nil,
             pillViewModel: meetingPillViewModel,
