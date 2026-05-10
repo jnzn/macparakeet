@@ -20,7 +20,8 @@ public actor MockClipboardService: ClipboardServiceProtocol {
         return postPasteAction != nil
     }
 
-    public func copyToClipboard(_ text: String) async {
+    public func copyToClipboard(_ text: String) async -> Bool {
         lastCopiedText = text
+        return true
     }
 }
