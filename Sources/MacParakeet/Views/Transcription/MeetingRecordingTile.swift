@@ -393,7 +393,7 @@ private struct TilePauseResumeButton: View {
         // back once the user has paused — same rationale as the panel
         // PauseResumeButton.
         isPaused
-            ? DesignSystem.Colors.textPrimary.opacity(0.9)
+            ? DesignSystem.Colors.textPrimary.opacity(0.85)
             : DesignSystem.Colors.textSecondary
     }
 
