@@ -5,6 +5,9 @@ public final class MeetingRecordingPillViewModel {
     public enum PillState: Equatable {
         case idle
         case recording
+        /// Capture intentionally paused. The pill rosette dims and freezes;
+        /// stop / discard remain available.
+        case paused
         case completing
         case transcribing
         case completed
@@ -16,6 +19,7 @@ public final class MeetingRecordingPillViewModel {
     public var micLevel: Float = 0
     public var systemLevel: Float = 0
     public var onStop: (() -> Void)?
+    public var onPauseToggle: (() -> Void)?
     public var onCompletionAnimationFinished: (() -> Void)?
 
     public init() {}
@@ -24,5 +28,19 @@ public final class MeetingRecordingPillViewModel {
         let minutes = elapsedSeconds / 60
         let seconds = elapsedSeconds % 60
         return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    public var canTogglePause: Bool {
+        switch state {
+        case .recording, .paused:
+            return true
+        case .idle, .completing, .transcribing, .completed, .error:
+            return false
+        }
+    }
+
+    public var isPaused: Bool {
+        if case .paused = state { return true }
+        return false
     }
 }

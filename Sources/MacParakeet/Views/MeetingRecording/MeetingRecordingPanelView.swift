@@ -230,6 +230,12 @@ struct MeetingRecordingPanelView: View {
                         .foregroundStyle(DesignSystem.Colors.textTertiary.opacity(0.8))
                 }
 
+                if viewModel.canTogglePause {
+                    PauseResumeButton(isPaused: viewModel.isPaused) {
+                        viewModel.onPauseToggle?()
+                    }
+                }
+
                 if viewModel.canStop {
                     StopRecordingButton {
                         viewModel.onStop?()
@@ -338,8 +344,11 @@ struct MeetingRecordingPanelView: View {
     private var statusDot: some View {
         switch viewModel.state {
         case .hidden, .recording:
+            // Paused dot uses dimmed success-green rather than tertiary
+            // text so it reads "active but quiet" (matches pill dimming),
+            // not "disabled". Same hue as recording, lower opacity.
             Circle()
-                .fill(DesignSystem.Colors.successGreen)
+                .fill(DesignSystem.Colors.successGreen.opacity(viewModel.isPaused ? 0.35 : 1.0))
                 .frame(width: 8, height: 8)
         case .transcribing:
             ProgressView()

@@ -14,6 +14,11 @@ public struct MeetingAudioLevels: Sendable, Equatable {
 
 public enum CaptureMode: Sendable, Equatable {
     case full
+    /// Recording is active but capture is intentionally paused. Buffers
+    /// from the OS streams are discarded by the service; the storage
+    /// writer's PTS counter is preserved so resumed audio appends gap-free
+    /// in playback.
+    case paused
     case stopped
 }
 
@@ -30,6 +35,15 @@ public protocol MeetingRecordingServiceProtocol: Sendable {
     /// to leave the lock available for retry.
     func finishTranscriptionAttempt(for recording: MeetingRecordingOutput) async
     func cancelRecording() async
+    /// Pause an active recording. No-op when no session is active or when
+    /// already paused. The OS-level capture stays running (mic + ScreenCaptureKit
+    /// keep delivering buffers); the service simply discards incoming buffers
+    /// until `resumeRecording` is called. The audio file's PTS counter is
+    /// preserved so resumed audio appends gap-free in playback.
+    func pauseRecording() async
+    /// Resume a paused recording. No-op when no session is active or when
+    /// not currently paused.
+    func resumeRecording() async
     /// Persist the user's in-flight notepad text to the recording's lock file
     /// without changing the recording state. Called by the notes view model on
     /// every idle-debounce fire (ADR-020 §8). All `recording.lock` writes are
@@ -37,6 +51,7 @@ public protocol MeetingRecordingServiceProtocol: Sendable {
     /// so notes-saves cannot race with state-transition writes.
     func updateNotes(_ notes: String) async
     var isRecording: Bool { get async }
+    var isPaused: Bool { get async }
     var micLevel: Float { get async }
     var systemLevel: Float { get async }
     var elapsedSeconds: Int { get async }
@@ -85,6 +100,10 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
     private let speechEngineSessionManager: (any SpeechEngineSessionManaging)?
 
     private var currentSession: Session?
+    /// Buffer-discard flag for pause/resume. Reset in `cleanupState`.
+    private var paused = false
+    private var pausedAt: Date?
+    private var accumulatedPausedDuration: TimeInterval = 0
     /// In-flight notes text for the current session. Mutated by `updateNotes`
     /// on each VM debounce; read at finalize time and surfaced via
     /// `MeetingRecordingOutput.userNotes`. `nil` when no notes have been
@@ -155,6 +174,10 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         currentSession != nil
     }
 
+    public var isPaused: Bool {
+        paused
+    }
+
     public var micLevel: Float {
         latestLevels.microphone
     }
@@ -165,11 +188,23 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
 
     public var elapsedSeconds: Int {
         guard let startedAt = currentSession?.startedAt else { return 0 }
-        return max(0, Int(Date().timeIntervalSince(startedAt)))
+        return max(0, Int(activeRecordingSeconds(startedAt: startedAt, asOf: Date())))
     }
 
     public var captureMode: CaptureMode {
-        (currentSession == nil || captureFailed) ? .stopped : .full
+        if currentSession == nil || captureFailed {
+            return .stopped
+        }
+        return paused ? .paused : .full
+    }
+
+    /// Wallclock-since-start minus all pause time (completed + ongoing).
+    /// Used for both the live elapsed timer and the persisted
+    /// `MeetingRecordingOutput.durationSeconds`.
+    private func activeRecordingSeconds(startedAt: Date, asOf now: Date) -> TimeInterval {
+        let rawElapsed = now.timeIntervalSince(startedAt)
+        let ongoingPause = pausedAt.map { now.timeIntervalSince($0) } ?? 0
+        return max(0, rawElapsed - accumulatedPausedDuration - ongoingPause)
     }
 
     public var transcriptUpdates: AsyncStream<MeetingTranscriptUpdate> {
@@ -439,7 +474,16 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         try? lockFileStore.write(awaitingLock, folderURL: session.folderURL)
         currentLockFile = awaitingLock
 
-        let durationSeconds = max(0, Date().timeIntervalSince(session.startedAt))
+        // Stop while paused: settle the in-flight pause interval into the
+        // accumulated total so the persisted duration only reflects time
+        // actually recording.
+        let now = Date()
+        if let pausedAtSnapshot = pausedAt {
+            accumulatedPausedDuration += now.timeIntervalSince(pausedAtSnapshot)
+            pausedAt = nil
+        }
+        paused = false
+        let durationSeconds = max(0, activeRecordingSeconds(startedAt: session.startedAt, asOf: now))
         let output = MeetingRecordingOutput(
             sessionID: session.id,
             displayName: session.displayName,
@@ -513,6 +557,48 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         }
     }
 
+    public func pauseRecording() async {
+        guard currentSession != nil, !paused, !captureFailed else { return }
+        paused = true
+        pausedAt = Date()
+        // Zero levels so live UI reads "no signal" the moment the user
+        // pauses, instead of decaying from the EMA over the next few
+        // hundred ms. Same reasoning as the `failCapture` path.
+        latestLevels = MeetingAudioLevels()
+        recentSystemRms = 0
+        recentProcessedMicRms = 0
+        latestSystemSignalAt = nil
+        // NOTE: Do NOT reset `captureOrchestrator` here. AudioChunker uses a
+        // monotonic `totalSamplesProcessed` counter to derive chunk
+        // timestamps, and `MeetingTranscriptAssembler.apply` dedupes new
+        // words against `lastCommittedEndMs[source]`. Resetting the chunker
+        // would zero its counter; post-resume chunks would emit at startMs
+        // near 0; the assembler would silently drop every post-resume word
+        // because `endMs <= cutoff`. The audio file is independent of the
+        // chunker (the storage writer's PTS counter is preserved either
+        // way), so a gap-free playback timeline is guaranteed without the
+        // reset. The cost of leaving the chunker alone is that the first
+        // chunk straddling the pause boundary may concatenate pre-pause
+        // and post-resume samples (an at-most-5s artifact in the LIVE
+        // transcript only — the post-stop final transcription re-runs the
+        // audio file end-to-end and is unaffected).
+        AudioCaptureDiagnostics.append(
+            "meeting_recording_paused session=\(currentSession?.id.uuidString ?? "nil")"
+        )
+    }
+
+    public func resumeRecording() async {
+        guard currentSession != nil, paused, !captureFailed else { return }
+        if let pausedAt {
+            accumulatedPausedDuration += Date().timeIntervalSince(pausedAt)
+        }
+        pausedAt = nil
+        paused = false
+        AudioCaptureDiagnostics.append(
+            "meeting_recording_resumed session=\(currentSession?.id.uuidString ?? "nil") accumulated_paused_s=\(String(format: "%.3f", accumulatedPausedDuration))"
+        )
+    }
+
     public func cancelRecording() async {
         guard let session = currentSession else { return }
 
@@ -565,6 +651,11 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         switch event {
         case .microphoneBuffer(let buffer, let time):
             guard !captureFailed else { return }
+            // Drop buffers while paused — the OS streams stay subscribed
+            // (resume is instant) but the writer / chunker / level meters
+            // see nothing. `sourceInterrupted` and `.error` are NOT gated
+            // on `paused` so a mic unplug mid-pause still surfaces.
+            guard !paused else { return }
             do {
                 recordCaptureMetrics(for: .microphone, time: time)
                 try writer?.write(buffer, source: .microphone)
@@ -581,6 +672,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             }
         case .systemBuffer(let buffer, let time):
             guard !captureFailed, !interruptedSources.contains(.system) else { return }
+            guard !paused else { return }
             do {
                 recordCaptureMetrics(for: .system, time: time)
                 try writer?.write(buffer, source: .system)
@@ -931,6 +1023,9 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         currentSession = nil
         currentNotes = nil
         currentLockFile = nil
+        paused = false
+        pausedAt = nil
+        accumulatedPausedDuration = 0
         micConditioner = PassthroughMicConditioner()
         latestLevels = MeetingAudioLevels()
         sourceCaptureMetrics = [:]

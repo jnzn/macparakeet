@@ -57,6 +57,7 @@ final class MeetingRecordingFlowCoordinator {
     private var panelController: MeetingRecordingPanelController?
     private var panelViewModel: MeetingRecordingPanelViewModel?
     private var actionTask: Task<Void, Never>?
+    private var pauseToggleTask: Task<Void, Never>?
     private var autoDismissTask: Task<Void, Never>?
     private var pillPollingTask: Task<Void, Never>?
     private var transcriptObservationTask: Task<Void, Never>?
@@ -130,6 +131,35 @@ final class MeetingRecordingFlowCoordinator {
     /// uses this to clear its `autoStartedEventId` binding so a stale id
     /// doesn't suppress the *next* meeting's auto-stop.
     var onAutoStartFailed: (() -> Void)?
+
+    /// Pause / resume the in-flight recording. The state flip happens AFTER
+    /// the service confirms — an optimistic flip before the await would race
+    /// with the 150ms polling reconciler (which reads `captureMode` from the
+    /// actor and could see `.full` while the spawned pause Task is still
+    /// queued, then flip the pill back to `.recording`).
+    ///
+    /// Stale toggles are cancelled so a rapid pause/resume/pause sequence
+    /// settles in the latest user intent rather than the order Tasks happen
+    /// to be scheduled.
+    func togglePause() {
+        guard pillViewModel.canTogglePause else { return }
+        let wantPause = !pillViewModel.isPaused
+        pauseToggleTask?.cancel()
+        pauseToggleTask = Task { @MainActor [meetingRecordingService, weak self] in
+            if wantPause {
+                await meetingRecordingService.pauseRecording()
+            } else {
+                await meetingRecordingService.resumeRecording()
+            }
+            guard !Task.isCancelled, let self else { return }
+            // Only flip if the pill is still in a togglable state. A stop or
+            // capture-failure that landed during the await may have moved
+            // the pill to `.transcribing` / `.error`; we must not stomp it.
+            guard self.pillViewModel.canTogglePause else { return }
+            self.pillViewModel.state = wantPause ? .paused : .recording
+            self.panelViewModel?.isPaused = wantPause
+        }
+    }
 
     func toggleRecording(trigger: TelemetryMeetingRecordingTrigger = .manual) {
         switch stateMachine.state {
@@ -294,6 +324,7 @@ final class MeetingRecordingFlowCoordinator {
         case .showRecordingPill:
             let vm = pillViewModel
             vm.onStop = { [weak self] in self?.toggleRecording() }
+            vm.onPauseToggle = { [weak self] in self?.togglePause() }
             vm.elapsedSeconds = 0
             vm.micLevel = 0
             vm.systemLevel = 0
@@ -303,9 +334,11 @@ final class MeetingRecordingFlowCoordinator {
             panelVM.elapsedSeconds = 0
             panelVM.micLevel = 0
             panelVM.systemLevel = 0
+            panelVM.isPaused = false
             panelVM.updateLiveTranscriptStatus(.startingAudio)
             panelVM.updatePreviewLines([], isTranscriptionLagging: false)
             panelVM.onStop = { [weak self] in self?.toggleRecording() }
+            panelVM.onPauseToggle = { [weak self] in self?.togglePause() }
             panelVM.onClose = { [weak self] in self?.hideMeetingPanel() }
             // Configure live Ask: in-memory mode (no transcriptionId/conversationRepo).
             // Promotion to a persisted ChatConversation happens in .navigateToTranscription.
@@ -344,6 +377,9 @@ final class MeetingRecordingFlowCoordinator {
             }
             pillController?.onCancelRecording = { [weak self] in
                 self?.confirmAndCancelRecording()
+            }
+            pillController?.onPauseToggle = { [weak self] in
+                self?.togglePause()
             }
             if panelController == nil {
                 let controller = MeetingRecordingPanelController(viewModel: panelVM)
@@ -559,6 +595,8 @@ final class MeetingRecordingFlowCoordinator {
             stopPillPolling()
             stopTranscriptObservation()
             stopSpeechWarmUpObservation()
+            pauseToggleTask?.cancel()
+            pauseToggleTask = nil
             pillController?.hide()
             pillController = nil
             // Pill view model is long-lived (also drives the Transcribe-tab
@@ -566,6 +604,7 @@ final class MeetingRecordingFlowCoordinator {
             // on the VM are owned by the flow coordinator and re-bound on
             // the next `.showRecordingPill` action.
             pillViewModel.onStop = nil
+            pillViewModel.onPauseToggle = nil
             pillViewModel.onCompletionAnimationFinished = nil
             pillViewModel.elapsedSeconds = 0
             pillViewModel.micLevel = 0
@@ -684,18 +723,33 @@ final class MeetingRecordingFlowCoordinator {
                 panelViewModel?.elapsedSeconds = elapsedSeconds
                 panelViewModel?.micLevel = micLevel
                 panelViewModel?.systemLevel = systemLevel
+                // Pause/resume reconciliation (issue #235). The user-facing
+                // toggle does an optimistic flip; this poll is the
+                // authoritative source if the optimistic flip diverged from
+                // the service (e.g., capture failed before the service saw
+                // the pause call). Only flip pillViewModel.state between
+                // .recording and .paused — never override .completing /
+                // .transcribing / .completed / .error from here.
+                let serviceIsPaused = (captureMode == .paused)
+                if pillViewModel.state == .recording, serviceIsPaused {
+                    pillViewModel.state = .paused
+                } else if pillViewModel.state == .paused, !serviceIsPaused, captureMode == .full {
+                    pillViewModel.state = .recording
+                }
+                panelViewModel?.isPaused = serviceIsPaused
                 if captureMode == .stopped,
                    stateMachine.state == .recording,
-                   pillViewModel.state == .recording {
+                   pillViewModel.state == .recording || pillViewModel.state == .paused {
                     // Audio capture stopped while the state machine still
                     // expects a live recording — typically because
                     // `MeetingRecordingService.failCapture` ran (mic unplug,
-                    // writer error, OS audio routing change). Without this
-                    // signal the pill keeps animating "recording" with a
-                    // ticking timer while no audio is actually being
-                    // captured. Surface it through the state machine so the
-                    // existing stop+transcribe path saves whatever made it
-                    // to disk.
+                    // writer error, OS audio routing change). Could also
+                    // fire while paused if a USB mic is unplugged mid-pause.
+                    // Without this signal the pill keeps showing the paused
+                    // glyph or "recording" with a ticking timer while no
+                    // audio is actually being captured. Surface it through
+                    // the state machine so the existing stop+transcribe
+                    // path saves whatever made it to disk.
                     pillViewModel.micLevel = 0
                     pillViewModel.systemLevel = 0
                     panelViewModel?.micLevel = 0

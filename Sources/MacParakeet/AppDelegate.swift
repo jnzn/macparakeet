@@ -139,6 +139,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         onRecordMeeting: { [weak self] in
             self?.toggleMeetingRecording(originatesFromWindow: true)
         },
+        onPauseToggleMeeting: { [weak self] in
+            self?.meetingRecordingFlowCoordinator?.togglePause()
+        },
         onQuit: { [weak self] in
             self?.quitApp()
         },
