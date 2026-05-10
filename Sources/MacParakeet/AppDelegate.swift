@@ -39,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var meetingRecordingFlowCoordinator: MeetingRecordingFlowCoordinator?
     private var meetingAutoStartCoordinator: MeetingAutoStartCoordinator?
     private var hasPresentedHotkeyUnavailableAlert = false
+    private var hasPresentedHotkeyConflictAlert = false
     private var environmentSetupTask: Task<Void, Never>?
     private var meetingQuitTask: Task<Void, Never>?
 
@@ -334,9 +335,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 },
                 onHotkeyBecameAvailable: { [weak self] in
                     self?.hasPresentedHotkeyUnavailableAlert = false
+                    self?.hasPresentedHotkeyConflictAlert = false
                 },
                 onHotkeyUnavailable: { [weak self] in
                     self?.presentHotkeyUnavailableAlertIfNeeded()
+                },
+                onHotkeyConflict: { [weak self] trigger, conflicts in
+                    self?.presentHotkeyConflictAlertIfNeeded(trigger: trigger, conflicts: conflicts)
                 },
                 onRecoverPendingMeetingRecordings: { [weak self] in
                     self?.meetingRecoveryCoordinator.presentPendingMeetingRecoveryDialog()
@@ -613,6 +618,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.informativeText =
             "MacParakeet couldn’t enable the system-wide hotkey because Accessibility access is missing. " +
             "You can still open the app manually, but dictation shortcuts won’t work until this is enabled."
+        alert.addButton(withTitle: "Open Settings")
+        alert.addButton(withTitle: "Not Now")
+
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            windowCoordinator.openMainWindowToSettings()
+        }
+        #endif
+    }
+
+    private func presentHotkeyConflictAlertIfNeeded(trigger: HotkeyTrigger, conflicts: [HotkeyTrigger]) {
+        #if !DEBUG
+        guard !hasPresentedHotkeyConflictAlert else { return }
+        hasPresentedHotkeyConflictAlert = true
+        NSApp.activate(ignoringOtherApps: true)
+
+        let conflictNames = conflicts.map(\.displayName).joined(separator: ", ")
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Hotkey Conflict"
+        alert.informativeText =
+            "\(trigger.displayName) overlaps with \(conflictNames), so one of these shortcuts was not enabled. " +
+            "Open Settings to choose distinct shortcuts."
         alert.addButton(withTitle: "Open Settings")
         alert.addButton(withTitle: "Not Now")
 

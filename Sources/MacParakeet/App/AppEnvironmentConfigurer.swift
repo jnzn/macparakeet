@@ -25,6 +25,7 @@ final class AppEnvironmentConfigurer {
         let onTriggerYouTubeTranscriptionFromHotkey: () -> Void
         let onHotkeyBecameAvailable: () -> Void
         let onHotkeyUnavailable: () -> Void
+        let onHotkeyConflict: (HotkeyTrigger, [HotkeyTrigger]) -> Void
         let onRecoverPendingMeetingRecordings: () -> Void
     }
 
@@ -273,7 +274,8 @@ final class AppEnvironmentConfigurer {
                 coordinatorRefs.dictation?.hotkeyManager = manager
             },
             onAnyHotkeyEnabled: callbacks.onHotkeyBecameAvailable,
-            onHotkeyUnavailable: callbacks.onHotkeyUnavailable
+            onHotkeyUnavailable: callbacks.onHotkeyUnavailable,
+            onHotkeyConflict: callbacks.onHotkeyConflict
         )
 
         hotkeyCoordinator.setupPrimaryHotkey()

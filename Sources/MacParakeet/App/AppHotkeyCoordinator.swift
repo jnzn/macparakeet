@@ -17,6 +17,7 @@ final class AppHotkeyCoordinator {
     private let onPrimaryHotkeyManagerChanged: (HotkeyManager?) -> Void
     private let onAnyHotkeyEnabled: () -> Void
     private let onHotkeyUnavailable: () -> Void
+    private let onHotkeyConflict: (HotkeyTrigger, [HotkeyTrigger]) -> Void
 
     private var hotkeyManager: HotkeyManager?
     private var meetingHotkeyManager: GlobalShortcutManager?
@@ -36,7 +37,8 @@ final class AppHotkeyCoordinator {
         onTriggerYouTubeTranscription: @escaping () -> Void,
         onPrimaryHotkeyManagerChanged: @escaping (HotkeyManager?) -> Void,
         onAnyHotkeyEnabled: @escaping () -> Void,
-        onHotkeyUnavailable: @escaping () -> Void
+        onHotkeyUnavailable: @escaping () -> Void,
+        onHotkeyConflict: @escaping (HotkeyTrigger, [HotkeyTrigger]) -> Void
     ) {
         self.settingsViewModel = settingsViewModel
         self.onStartDictation = onStartDictation
@@ -51,6 +53,7 @@ final class AppHotkeyCoordinator {
         self.onPrimaryHotkeyManagerChanged = onPrimaryHotkeyManagerChanged
         self.onAnyHotkeyEnabled = onAnyHotkeyEnabled
         self.onHotkeyUnavailable = onHotkeyUnavailable
+        self.onHotkeyConflict = onHotkeyConflict
     }
 
     var hotkeyMenuTitle: String {
@@ -158,7 +161,9 @@ final class AppHotkeyCoordinator {
         onTrigger: @escaping @MainActor () -> Void
     ) -> GlobalShortcutManager? {
         guard !trigger.isDisabled else { return nil }
-        if conflicts.contains(where: { !$0.isDisabled && $0 == trigger }) {
+        let overlappingTriggers = conflicts.filter { !$0.isDisabled && $0.overlaps(with: trigger) }
+        if !overlappingTriggers.isEmpty {
+            onHotkeyConflict(trigger, overlappingTriggers)
             return nil
         }
 

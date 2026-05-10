@@ -134,7 +134,7 @@ See [00-vision.md](./00-vision.md) for positioning and market context.
 
 **Activation — Configurable Hotkey:**
 
-The hotkey (default: `Fn`, configurable via a "record a shortcut" UI in Settings) serves as the universal activation trigger with two coexisting modes. Supports three trigger kinds: bare modifiers (Fn, Control, etc.), standalone keys (F5, Tab, etc.), and chord combos (modifier+key like Cmd+9 or Ctrl+Shift+D). See ADR-009 for full details.
+The hotkey (default: `Fn`, configurable via a "record a shortcut" UI in Settings) serves as the universal activation trigger with two coexisting modes. Supports bare modifiers (Fn, Control, etc.), standalone keys (F5, Tab, etc.), modifier+key chords (Cmd+9 or Ctrl+Shift+D), and modifier-only chords (Command+Option, including side-specific variants like Right Command+Right Option). See ADR-009 for full details.
 
 | Mode | Gesture | Behavior |
 |------|---------|----------|
@@ -145,14 +145,15 @@ Both modes coexist with no configuration required. The 400ms threshold distingui
 
 **Implementation:**
 - `CGEvent` tap for system-wide key event interception
-- `HotkeyTrigger` struct with `.modifier` / `.keyCode` / `.chord` kind discriminator (see ADR-009)
+- `HotkeyTrigger` struct with `.modifier` / `.keyCode` / `.chord` / `.modifierChord` kind discriminator (see ADR-009)
 - Modifier triggers: `flagsChanged` events with `CGEventFlags` mask, bare-tap filtering
 - KeyCode triggers: `keyDown`/`keyUp` events with event swallowing, edge detection via `triggerKeyIsPressed` boolean
-- Chord triggers: require ALL modifier flags present on `keyDown` of the trigger key. Release-any-part behavior: releasing either the trigger key or any required modifier stops dictation. `chordModifierReleased` flag prevents double-fire when modifier is released while trigger key is still held.
+- Modifier+key chord triggers: require ALL modifier flags present on `keyDown` of the trigger key. Release-any-part behavior: releasing either the trigger key or any required modifier stops dictation. `chordModifierReleased` flag prevents double-fire when modifier is released while trigger key is still held.
+- Modifier-only chord triggers: require an exact set of 2+ chord-eligible modifiers before emitting the same key-agnostic gesture signals as single-key triggers. Generic and side-specific variants are persisted distinctly, and overlap checks block ambiguous assignments.
 - Edge detection: only fire on actual transitions of the target key state
 - Bare-tap filtering (modifiers only): if a regular key is pressed while the modifier is held (e.g., Ctrl+C), the release is not counted as a tap — prevents keyboard shortcuts from triggering dictation
 - Gesture interruption: if a non-Escape key is pressed during `waitingForSecondTap`, the state machine resets — prevents double-tap detection across typing
-- Chord validation: Escape blocked for all kinds. Chords containing Command warn about system shortcut conflicts (Cmd+Tab, Cmd+Space, Cmd+Q/W/H/M). Fn is bare-modifier-only — not allowed in chords.
+- Chord validation: Escape blocked for all kinds. Modifier+key chords containing Command warn about system shortcut conflicts (Cmd+Tab, Cmd+Space, Cmd+Q/W/H/M). Fn is bare-modifier-only — not allowed in chords.
 - On key-down: schedule a 400ms `DispatchWorkItem`. If a second tap arrives before it fires, enter double-tap (persistent mode). If the timer fires with the key still held, enter hold-mode and begin recording.
 - On key-up: if hold timer still pending, cancel it (was a quick tap). If recording in hold-mode, auto-stop and process.
 - Escape is permanently reserved for cancel-dictation and cannot be assigned as hotkey
@@ -313,7 +314,7 @@ Space is always reserved for the tooltip (opacity toggle, not conditional render
 **Acceptance criteria:**
 - [x] Double-tap hotkey activates persistent recording from any app
 - [x] Hold hotkey (> 400ms) activates hold-mode, release auto-stops and pastes
-- [x] Hotkey trigger configurable to any single key (modifiers, function keys, navigation keys, etc.) via record-a-shortcut UI
+- [x] Hotkey trigger configurable to bare modifiers, standalone keys, modifier+key chords, and modifier-only chords via record-a-shortcut UI; Fn remains bare-modifier-only and Escape remains reserved
 - [x] Overlay appears at bottom-center with waveform animation
 - [x] Hover tooltips display correctly on non-activating panel
 - [ ] Parakeet transcribes with <500ms end-to-end latency for short dictations
@@ -647,7 +648,7 @@ Audio path is computed from ID by default. Files stored as WAV (16kHz mono). Use
 | Setting | Options | Default |
 |---------|---------|---------|
 | Launch at login | On / Off | Off |
-| Dictation hotkey | Any single key (record-a-shortcut UI) | Fn (double-tap / hold) |
+| Dictation hotkey | Bare modifiers, standalone keys, modifier+key chords, and modifier-only chords with overlap checks | Fn (double-tap / hold) |
 | Stop mode | Auto-stop after silence / Manual | Manual |
 | Silence delay | 1s, 1.5s, 2s, 3s, 5s | 2s |
 | Save audio recordings | On / Off | On |
@@ -658,7 +659,7 @@ Audio path is computed from ID by default. Files stored as WAV (16kHz mono). Use
 
 **Acceptance criteria:**
 - [x] All settings persist across app restarts (UserDefaults or GRDB)
-- [x] Hotkey can be changed to any single key (modifiers, function keys, navigation keys, etc.) via record-a-shortcut UI
+- [x] Hotkey can be changed to bare modifiers, standalone keys, modifier+key chords, and modifier-only chords via record-a-shortcut UI; Command chords warn on common system conflicts
 - [x] Stop mode switch works correctly for both modes
 - [x] Storage toggle controls whether audio files are saved
 - [x] YouTube storage toggle controls whether downloaded URL audio is kept after transcription

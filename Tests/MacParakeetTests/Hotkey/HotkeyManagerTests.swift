@@ -7,6 +7,8 @@ final class HotkeyManagerTests: XCTestCase {
     private let leftOptionMask = UInt64(NX_DEVICELALTKEYMASK)
     private let rightOptionMask = UInt64(NX_DEVICERALTKEYMASK)
     private let leftShiftMask = UInt64(NX_DEVICELSHIFTKEYMASK)
+    private let leftCommandMask = UInt64(NX_DEVICELCMDKEYMASK)
+    private let rightCommandMask = UInt64(NX_DEVICERCMDKEYMASK)
 
     private func sideSpecificFlags(_ masks: UInt64...) -> CGEventFlags {
         CGEventFlags(rawValue: masks.reduce(0, |))
@@ -99,6 +101,83 @@ final class HotkeyManagerTests: XCTestCase {
                 .cancelStartupDebounce,
                 .cancelHoldWindow,
                 .stopRecording,
+            ]
+        )
+    }
+
+    func testTapRecoveryDuringActiveHoldWithAdditionalModifierCancelsOnRelease() {
+        let manager = HotkeyManager(trigger: .fn)
+
+        _ = manager.modifierFlagsChangedOutputsForTesting(
+            flags: [.maskSecondaryFn],
+            timestampMs: 1_000
+        )
+        XCTAssertEqual(
+            manager.startupDebounceElapsedForTesting(),
+            [.startRecording(mode: .holdToTalk)]
+        )
+        XCTAssertEqual(manager.holdWindowElapsedForTesting(), [])
+
+        XCTAssertEqual(
+            manager.recoverFromDisabledTapForTesting(
+                flags: [.maskSecondaryFn, .maskControl],
+                timestampMs: 1_200
+            ),
+            []
+        )
+        XCTAssertEqual(
+            manager.modifierFlagsChangedOutputsForTesting(
+                flags: [.maskControl],
+                timestampMs: 1_300
+            ),
+            [
+                .cancelStartupDebounce,
+                .cancelHoldWindow,
+                .cancelRecording,
+            ]
+        )
+    }
+
+    func testTapRecoveryDuringSideSpecificHoldWithOppositeSideCancelsOnRelease() {
+        let trigger = HotkeyTrigger(kind: .modifier, modifierName: "option", keyCode: nil, modifierKeyCode: 61)
+        let manager = HotkeyManager(trigger: trigger)
+
+        _ = manager.modifierFlagsChangedOutputsForTesting(
+            flags: sideSpecificFlags(
+                CGEventFlags.maskAlternate.rawValue,
+                rightOptionMask
+            ),
+            timestampMs: 1_000
+        )
+        XCTAssertEqual(
+            manager.startupDebounceElapsedForTesting(),
+            [.startRecording(mode: .holdToTalk)]
+        )
+        XCTAssertEqual(manager.holdWindowElapsedForTesting(), [])
+
+        XCTAssertEqual(
+            manager.recoverFromDisabledTapForTesting(
+                flags: sideSpecificFlags(
+                    CGEventFlags.maskAlternate.rawValue,
+                    leftOptionMask,
+                    rightOptionMask
+                ),
+                timestampMs: 1_200
+            ),
+            []
+        )
+        XCTAssertEqual(
+            manager.modifierFlagsChangedOutputsForTesting(
+                flags: sideSpecificFlags(
+                    CGEventFlags.maskAlternate.rawValue,
+                    leftOptionMask
+                ),
+                timestampMs: 1_300
+            ),
+            [
+                .cancelStartupDebounce,
+                .cancelHoldWindow,
+                .cancelRecording,
             ]
         )
     }
@@ -740,6 +819,302 @@ final class HotkeyManagerTests: XCTestCase {
             [
                 .scheduleStartupDebounce(milliseconds: FnKeyStateMachine.defaultStartupDebounceMs),
                 .scheduleHoldWindow(milliseconds: FnKeyStateMachine.defaultTapThresholdMs),
+            ]
+        )
+    }
+
+    // MARK: - Modifier-Only Chord Detection
+
+    func testModifierChordTapReleaseProducesReadyForSecondTap() {
+        let trigger = HotkeyTrigger.modifierChord(modifiers: ["command", "option"])
+        let manager = HotkeyManager(trigger: trigger)
+
+        XCTAssertEqual(
+            manager.modifierChordFlagsChangedOutputsForTesting(
+                flags: [.maskCommand, .maskAlternate],
+                timestampMs: 1_000
+            ),
+            [
+                .scheduleStartupDebounce(milliseconds: FnKeyStateMachine.defaultStartupDebounceMs),
+                .scheduleHoldWindow(milliseconds: FnKeyStateMachine.defaultTapThresholdMs),
+            ]
+        )
+
+        XCTAssertEqual(
+            manager.modifierChordFlagsChangedOutputsForTesting(
+                flags: [],
+                timestampMs: 1_050
+            ),
+            [.cancelStartupDebounce, .cancelHoldWindow, .showReadyForSecondTap]
+        )
+    }
+
+    func testModifierChordDoubleTapStartsPersistentRecording() {
+        let trigger = HotkeyTrigger.modifierChord(modifiers: ["command", "option"])
+        let manager = HotkeyManager(trigger: trigger)
+
+        _ = manager.modifierChordFlagsChangedOutputsForTesting(
+            flags: [.maskCommand, .maskAlternate],
+            timestampMs: 1_000
+        )
+        _ = manager.modifierChordFlagsChangedOutputsForTesting(flags: [], timestampMs: 1_050)
+
+        XCTAssertEqual(
+            manager.modifierChordFlagsChangedOutputsForTesting(
+                flags: [.maskCommand, .maskAlternate],
+                timestampMs: 1_100
+            ),
+            [.startRecording(mode: .persistent)]
+        )
+    }
+
+    func testModifierChordHoldToTalkStopsOnRelease() {
+        let trigger = HotkeyTrigger.modifierChord(modifiers: ["command", "option"])
+        let manager = HotkeyManager(trigger: trigger)
+
+        _ = manager.modifierChordFlagsChangedOutputsForTesting(
+            flags: [.maskCommand, .maskAlternate],
+            timestampMs: 1_000
+        )
+        XCTAssertEqual(
+            manager.startupDebounceElapsedForTesting(),
+            [.startRecording(mode: .holdToTalk)]
+        )
+
+        XCTAssertEqual(
+            manager.modifierChordFlagsChangedOutputsForTesting(
+                flags: [],
+                timestampMs: 1_450
+            ),
+            [
+                .cancelStartupDebounce,
+                .cancelHoldWindow,
+                .stopRecording,
+            ]
+        )
+    }
+
+    func testModifierChordRegularKeyInterruptsBareTap() {
+        let trigger = HotkeyTrigger.modifierChord(modifiers: ["command", "option"])
+        let manager = HotkeyManager(trigger: trigger)
+
+        _ = manager.modifierChordFlagsChangedOutputsForTesting(
+            flags: [.maskCommand, .maskAlternate],
+            timestampMs: 1_000
+        )
+
+        XCTAssertEqual(
+            manager.modifierChordKeyDownOutputsForTesting(
+                keyCode: 46,
+                timestampMs: 1_025
+            ),
+            [.cancelStartupDebounce, .cancelHoldWindow]
+        )
+
+        XCTAssertEqual(
+            manager.modifierChordFlagsChangedOutputsForTesting(
+                flags: [],
+                timestampMs: 1_050
+            ),
+            [.cancelStartupDebounce, .cancelHoldWindow]
+        )
+    }
+
+    func testModifierChordExtraModifierInterruptsBareTap() {
+        let trigger = HotkeyTrigger.modifierChord(modifiers: ["command", "option"])
+        let manager = HotkeyManager(trigger: trigger)
+
+        _ = manager.modifierChordFlagsChangedOutputsForTesting(
+            flags: [.maskCommand, .maskAlternate],
+            timestampMs: 1_000
+        )
+
+        XCTAssertEqual(
+            manager.modifierChordFlagsChangedOutputsForTesting(
+                flags: [.maskCommand, .maskAlternate, .maskShift],
+                timestampMs: 1_025
+            ),
+            [.cancelStartupDebounce, .cancelHoldWindow]
+        )
+
+        XCTAssertEqual(
+            manager.modifierChordFlagsChangedOutputsForTesting(
+                flags: [],
+                timestampMs: 1_050
+            ),
+            [.cancelStartupDebounce, .cancelHoldWindow]
+        )
+    }
+
+    func testModifierChordDoesNotStartAfterSupersetModifierIsReleased() {
+        let trigger = HotkeyTrigger.modifierChord(modifiers: ["command", "option"])
+        let manager = HotkeyManager(trigger: trigger)
+
+        XCTAssertEqual(
+            manager.modifierChordFlagsChangedOutputsForTesting(
+                flags: [.maskCommand, .maskAlternate, .maskShift],
+                timestampMs: 1_000
+            ),
+            []
+        )
+        XCTAssertEqual(
+            manager.modifierChordFlagsChangedOutputsForTesting(
+                flags: [.maskCommand, .maskAlternate],
+                timestampMs: 1_025
+            ),
+            []
+        )
+        XCTAssertEqual(
+            manager.modifierChordFlagsChangedOutputsForTesting(flags: [], timestampMs: 1_050),
+            []
+        )
+    }
+
+    func testSideSpecificModifierChordRequiresRecordedSides() {
+        let trigger = HotkeyTrigger.modifierChord(
+            components: [
+                .init(modifierName: "option", keyCode: 61),
+                .init(modifierName: "command", keyCode: 54),
+            ]
+        )
+        let manager = HotkeyManager(trigger: trigger)
+
+        XCTAssertEqual(
+            manager.modifierChordFlagsChangedOutputsForTesting(
+                flags: sideSpecificFlags(
+                    CGEventFlags.maskAlternate.rawValue,
+                    CGEventFlags.maskCommand.rawValue,
+                    rightOptionMask,
+                    rightCommandMask
+                ),
+                timestampMs: 1_000
+            ),
+            [
+                .scheduleStartupDebounce(milliseconds: FnKeyStateMachine.defaultStartupDebounceMs),
+                .scheduleHoldWindow(milliseconds: FnKeyStateMachine.defaultTapThresholdMs),
+            ]
+        )
+
+        XCTAssertEqual(
+            manager.modifierChordFlagsChangedOutputsForTesting(
+                flags: [],
+                timestampMs: 1_050
+            ),
+            [.cancelStartupDebounce, .cancelHoldWindow, .showReadyForSecondTap]
+        )
+    }
+
+    func testSideSpecificModifierChordIgnoresOppositeSides() {
+        let trigger = HotkeyTrigger.modifierChord(
+            components: [
+                .init(modifierName: "option", keyCode: 61),
+                .init(modifierName: "command", keyCode: 54),
+            ]
+        )
+        let manager = HotkeyManager(trigger: trigger)
+
+        XCTAssertEqual(
+            manager.modifierChordFlagsChangedOutputsForTesting(
+                flags: sideSpecificFlags(
+                    CGEventFlags.maskAlternate.rawValue,
+                    CGEventFlags.maskCommand.rawValue,
+                    leftOptionMask,
+                    leftCommandMask
+                ),
+                timestampMs: 1_000
+            ),
+            []
+        )
+    }
+
+    func testSideSpecificModifierChordDoesNotStartAfterOppositeSideIsReleased() {
+        let trigger = HotkeyTrigger.modifierChord(
+            components: [
+                .init(modifierName: "option", keyCode: 61),
+                .init(modifierName: "command", keyCode: 54),
+            ]
+        )
+        let manager = HotkeyManager(trigger: trigger)
+
+        XCTAssertEqual(
+            manager.modifierChordFlagsChangedOutputsForTesting(
+                flags: sideSpecificFlags(
+                    CGEventFlags.maskAlternate.rawValue,
+                    CGEventFlags.maskCommand.rawValue,
+                    leftOptionMask,
+                    rightOptionMask,
+                    rightCommandMask
+                ),
+                timestampMs: 1_000
+            ),
+            []
+        )
+
+        XCTAssertEqual(
+            manager.modifierChordFlagsChangedOutputsForTesting(
+                flags: sideSpecificFlags(
+                    CGEventFlags.maskAlternate.rawValue,
+                    CGEventFlags.maskCommand.rawValue,
+                    rightOptionMask,
+                    rightCommandMask
+                ),
+                timestampMs: 1_025
+            ),
+            []
+        )
+
+        XCTAssertEqual(
+            manager.modifierChordFlagsChangedOutputsForTesting(flags: [], timestampMs: 1_050),
+            []
+        )
+    }
+
+    func testTapRecoveryDuringSideSpecificModifierChordHoldWithOppositeSideCancelsOnRelease() {
+        let trigger = HotkeyTrigger.modifierChord(
+            components: [
+                .init(modifierName: "option", keyCode: 61),
+                .init(modifierName: "command", keyCode: 54),
+            ]
+        )
+        let manager = HotkeyManager(trigger: trigger)
+
+        _ = manager.modifierChordFlagsChangedOutputsForTesting(
+            flags: sideSpecificFlags(
+                CGEventFlags.maskAlternate.rawValue,
+                CGEventFlags.maskCommand.rawValue,
+                rightOptionMask,
+                rightCommandMask
+            ),
+            timestampMs: 1_000
+        )
+        XCTAssertEqual(
+            manager.startupDebounceElapsedForTesting(),
+            [.startRecording(mode: .holdToTalk)]
+        )
+        XCTAssertEqual(manager.holdWindowElapsedForTesting(), [])
+
+        XCTAssertEqual(
+            manager.recoverFromDisabledTapForTesting(
+                flags: sideSpecificFlags(
+                    CGEventFlags.maskAlternate.rawValue,
+                    CGEventFlags.maskCommand.rawValue,
+                    leftOptionMask,
+                    rightOptionMask,
+                    rightCommandMask
+                ),
+                timestampMs: 1_200
+            ),
+            []
+        )
+        XCTAssertEqual(
+            manager.modifierChordFlagsChangedOutputsForTesting(
+                flags: [],
+                timestampMs: 1_300
+            ),
+            [
+                .cancelStartupDebounce,
+                .cancelHoldWindow,
+                .cancelRecording,
             ]
         )
     }
