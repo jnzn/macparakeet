@@ -75,7 +75,7 @@ public enum LocalCLIError: Error, LocalizedError, Sendable {
         case .commandNotFound(let details):
             return "CLI command not found. Ensure it is installed and on your PATH. Details: \(details)"
         case .timeout(let seconds):
-            return "Timed out after \(Int(seconds))s with no output. Make sure the command runs from a terminal and is logged in if required."
+            return "Timed out after \(Int(seconds))s. Verify the command runs successfully in a terminal and is logged in if required."
         case .drainTimeout:
             return "CLI command exited, but its output pipes did not close in time."
         case .nonZeroExit(let code, let stderr):

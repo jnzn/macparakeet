@@ -836,30 +836,43 @@ final class DictationFlowCoordinator {
         return false
     }
 
-    /// Shows the macOS Privacy → Microphone recovery prompt at most once per app launch.
+    /// Shows the macOS Privacy -> Microphone recovery prompt at most once per app launch.
     /// The alert is dispatched asynchronously so the flow state machine processes
-    /// the `.startFailed` event before the modal blocks the run loop.
+    /// the `.startFailed` event before any no-window modal fallback is needed.
     private func maybePresentMicPermissionAlert() {
         guard !micPermissionAlertShown else { return }
         micPermissionAlertShown = true
         Task { @MainActor in
-            self.presentMicPermissionAlert()
+            await self.presentMicPermissionAlert()
         }
     }
 
-    private func presentMicPermissionAlert() {
+    private func presentMicPermissionAlert() async {
         let alert = NSAlert()
         alert.messageText = "Microphone access required"
         alert.informativeText = "MacParakeet needs microphone access to record dictation. Open System Settings → Privacy & Security → Microphone to enable it, then try again."
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Open System Settings")
         alert.addButton(withTitle: "Cancel")
-        NSApp.activate(ignoringOtherApps: true)
-        let response = alert.runModal()
+        let response = await presentMicPermissionAlert(alert)
         if response == .alertFirstButtonReturn,
            let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    private func presentMicPermissionAlert(_ alert: NSAlert) async -> NSApplication.ModalResponse {
+        NSApp.activate(ignoringOtherApps: true)
+
+        if let window = [NSApp.keyWindow, NSApp.mainWindow].compactMap({ $0 }).first(where: \.isVisible) {
+            return await withCheckedContinuation { continuation in
+                alert.beginSheetModal(for: window) { response in
+                    continuation.resume(returning: response)
+                }
+            }
+        }
+
+        return alert.runModal()
     }
 
     private func stopRecordingTask(generation: Int, sessionID: Int) {
