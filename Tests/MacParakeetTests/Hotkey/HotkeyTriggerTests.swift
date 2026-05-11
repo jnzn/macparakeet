@@ -119,6 +119,62 @@ final class HotkeyTriggerTests: XCTestCase {
         XCTAssertEqual(trigger.shortSymbol, "Key 200")
     }
 
+    // MARK: - formattedLabel
+
+    func testFormattedLabelDisabled() {
+        XCTAssertEqual(HotkeyTrigger.disabled.formattedLabel, "Disabled")
+    }
+
+    func testFormattedLabelFnUsesGlobeGlyph() {
+        // The Fn key's shortSymbol "fn" is visually redundant with its displayName "Fn".
+        // Modern Macs ship the globe glyph instead.
+        XCTAssertEqual(HotkeyTrigger.fn.formattedLabel, "🌐 Fn")
+    }
+
+    func testFormattedLabelGenericModifiersCombineGlyphAndName() {
+        XCTAssertEqual(HotkeyTrigger.control.formattedLabel, "⌃ Control")
+        XCTAssertEqual(HotkeyTrigger.option.formattedLabel, "⌥ Option")
+        XCTAssertEqual(HotkeyTrigger.shift.formattedLabel, "⇧ Shift")
+        XCTAssertEqual(HotkeyTrigger.command.formattedLabel, "⌘ Command")
+    }
+
+    func testFormattedLabelSideSpecificModifier() {
+        let trigger = HotkeyTrigger(
+            kind: .modifier,
+            modifierName: "option",
+            keyCode: nil,
+            modifierKeyCode: 61 // right option
+        )
+        XCTAssertEqual(trigger.formattedLabel, "R⌥ Right Option")
+    }
+
+    func testFormattedLabelKeyCodeDigitDoesNotDuplicate() {
+        // Regression: digit "1" used to render as "1 1".
+        XCTAssertEqual(HotkeyTrigger.fromKeyCode(18).formattedLabel, "1")
+    }
+
+    func testFormattedLabelKeyCodeFunctionKey() {
+        // Regression: "F13" used to render as "F13 F13".
+        XCTAssertEqual(HotkeyTrigger.fromKeyCode(105).formattedLabel, "F13")
+    }
+
+    func testFormattedLabelKeyCodeArrow() {
+        // Arrows have distinct displayName ("Up Arrow") vs shortSymbol ("↑").
+        // We pick the compact glyph to match macOS menu conventions.
+        XCTAssertEqual(HotkeyTrigger.fromKeyCode(126).formattedLabel, "↑")
+    }
+
+    func testFormattedLabelChordUsesGlyphForm() {
+        // Regression: Cmd+Shift+N used to render as "⇧⌘N Shift+Command+N".
+        let trigger = HotkeyTrigger.chord(modifiers: ["command", "shift"], keyCode: 45) // N
+        XCTAssertEqual(trigger.formattedLabel, "⇧⌘N")
+    }
+
+    func testFormattedLabelModifierChord() {
+        let trigger = HotkeyTrigger.modifierChord(modifiers: ["option", "shift"])
+        XCTAssertEqual(trigger.formattedLabel, "⌥⇧")
+    }
+
     // MARK: - Codable Roundtrip
 
     func testCodableRoundtripModifier() throws {

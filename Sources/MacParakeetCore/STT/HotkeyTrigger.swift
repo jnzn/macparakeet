@@ -82,6 +82,33 @@ public struct HotkeyTrigger: Sendable {
         }
     }
 
+    /// Presentation-ready label for Settings rows and reset menus.
+    ///
+    /// Combines `shortSymbol` and `displayName` only when they add information.
+    /// Avoids duplicate output for keyCodes (e.g. "1 1") and the Fn modifier
+    /// (whose short symbol "fn" and display name "Fn" are visually redundant —
+    /// modern Macs use the 🌐 globe glyph instead).
+    public var formattedLabel: String {
+        switch kind {
+        case .disabled:
+            return "Disabled"
+        case .modifier:
+            // The Fn key has no canonical glyph on legacy keyboards; modern
+            // Macs use the globe. Show it instead of duplicating "fn Fn".
+            if modifierName == "fn" {
+                return "🌐 Fn"
+            }
+            let glyph = shortSymbol
+            let name = displayName
+            if glyph == name { return name }
+            return "\(glyph) \(name)"
+        case .keyCode, .chord, .modifierChord:
+            // Glyph form matches macOS menu/keyboard conventions
+            // (e.g. "↑", "F13", "⇧⌘N").
+            return shortSymbol
+        }
+    }
+
     /// Short symbol for compact display (e.g., "fn", "⌃", "End", "F13", "⌘9", "R⌥").
     public var shortSymbol: String {
         switch kind {

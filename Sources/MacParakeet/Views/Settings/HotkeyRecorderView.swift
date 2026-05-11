@@ -57,7 +57,7 @@ struct HotkeyRecorderView: View {
                     .font(DesignSystem.Typography.body)
                     .foregroundStyle(.secondary)
             } else {
-                Text("\(trigger.shortSymbol) \(trigger.displayName)")
+                Text(trigger.formattedLabel)
                     .font(DesignSystem.Typography.body)
                     .foregroundStyle(.primary)
             }
@@ -412,9 +412,7 @@ struct HotkeyRecorderView: View {
     }
 
     static func resetLabel(for trigger: HotkeyTrigger) -> String {
-        if trigger == .fn { return "🌐 Fn" }
-        if trigger.kind == .modifier { return trigger.displayName }
-        return trigger.shortSymbol
+        trigger.formattedLabel
     }
 
     private func stopRecording() {
