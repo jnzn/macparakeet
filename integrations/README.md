@@ -27,11 +27,11 @@ testing.
 - **Persisted history** -- list, search, and inspect prior dictations and
   transcriptions via the shared SQLite database.
 - **Prompt and meeting inspection** -- list and run prompt library entries
-  against transcriptions; list, show, transcript-dump, notes-append, and
+  against transcriptions; list, show, transcript, notes append, and
   export meeting recordings.
 - **Headless verification hooks** -- agents can drive deterministic runs (pin
-  all flags) or smoke-test GUI-default behavior (`--engine app-default`,
-  `--speaker-detection app-default`, `--mode app-default`).
+  all flags) or smoke-test GUI-default behavior with the explicit
+  `app-default` flag group.
 
 ### Out of scope (by design)
 
@@ -147,6 +147,7 @@ macparakeet-cli transcribe /path/to/audio.mp3 \
   --speaker-detection app-default \
   --mode app-default \
   --downloaded-audio app-default \
+  --youtube-audio-quality app-default \
   --format json
 ```
 
@@ -316,7 +317,13 @@ user wants YouTube transcription, run
 macparakeet-cli transcribe "<path-or-youtube-url>" --format json
 macparakeet-cli models download whisper-large-v3-v20240930-turbo-632MB
 macparakeet-cli transcribe "<path-or-youtube-url>" --engine whisper --language ko --format json
-macparakeet-cli transcribe "<path-or-youtube-url>" --engine app-default --speaker-detection app-default --mode app-default --format json
+macparakeet-cli transcribe "<path-or-youtube-url>" \
+  --engine app-default \
+  --speaker-detection app-default \
+  --mode app-default \
+  --downloaded-audio app-default \
+  --youtube-audio-quality app-default \
+  --format json
 macparakeet-cli config list
 macparakeet-cli config set speech-engine parakeet
 macparakeet-cli config set speaker-detection off
@@ -353,7 +360,9 @@ macparakeet-cli prompts run "<prompt-name>" \
 - Never delete user database records unless the user explicitly requests it.
 - Prefer meeting ID or UUID prefix over title when mutating notes.
 - Keep API keys in environment variables; do not put literal keys in commands.
-- Use `--engine app-default --speaker-detection app-default --mode app-default`
+- Use the full app-default group (`--engine app-default`,
+  `--speaker-detection app-default`, `--mode app-default`,
+  `--downloaded-audio app-default`, and `--youtube-audio-quality app-default`)
   only when you are intentionally checking GUI-default behavior. Pin explicit
   flags for reproducible agent tests.
 - `config get speaker-detection` reports the saved app-default value. Bare
