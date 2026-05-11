@@ -5,6 +5,16 @@ import AppKit
 import MacParakeetCore
 import MacParakeetViewModels
 
+enum SettingsHotkeyConflictMessage {
+    static func disabled(conflictingWith rowName: String, trigger: HotkeyTrigger) -> String {
+        "Disabled — conflicts with \(rowName) (\(trigger.formattedLabel))."
+    }
+
+    static func blocked(conflictingWith rowName: String, trigger: HotkeyTrigger) -> String {
+        "Conflicts with \(rowName) (\(trigger.formattedLabel))."
+    }
+}
+
 struct SettingsView: View {
     @Bindable var viewModel: SettingsViewModel
     @Bindable var llmSettingsViewModel: LLMSettingsViewModel
@@ -816,15 +826,29 @@ struct SettingsView: View {
                     defaultTrigger: .disabled,
                     additionalValidation: { candidate in
                         guard !candidate.isDisabled else { return .allowed }
-                        if candidate.overlaps(with: viewModel.hotkeyTrigger)
-                            || candidate.overlaps(with: viewModel.pushToTalkHotkeyTrigger) {
-                            return .blocked("Already used by dictation.")
+                        if candidate.overlaps(with: viewModel.hotkeyTrigger) {
+                            return .blocked(SettingsHotkeyConflictMessage.blocked(
+                                conflictingWith: "hands-free mode",
+                                trigger: viewModel.hotkeyTrigger
+                            ))
+                        }
+                        if candidate.overlaps(with: viewModel.pushToTalkHotkeyTrigger) {
+                            return .blocked(SettingsHotkeyConflictMessage.blocked(
+                                conflictingWith: "push to talk",
+                                trigger: viewModel.pushToTalkHotkeyTrigger
+                            ))
                         }
                         if AppFeatures.meetingRecordingEnabled, candidate.overlaps(with: viewModel.meetingHotkeyTrigger) {
-                            return .blocked("Already used by meeting recording.")
+                            return .blocked(SettingsHotkeyConflictMessage.blocked(
+                                conflictingWith: "meeting recording",
+                                trigger: viewModel.meetingHotkeyTrigger
+                            ))
                         }
                         if candidate.overlaps(with: otherTranscriptionTrigger) {
-                            return .blocked("Already used by \(otherTranscriptionName).")
+                            return .blocked(SettingsHotkeyConflictMessage.blocked(
+                                conflictingWith: otherTranscriptionName,
+                                trigger: otherTranscriptionTrigger
+                            ))
                         }
                         return .allowed
                     },
@@ -849,16 +873,28 @@ struct SettingsView: View {
     ) -> String? {
         guard !trigger.isDisabled else { return nil }
         if trigger.overlaps(with: viewModel.hotkeyTrigger) {
-            return "Disabled — conflicts with hands-free dictation (\(viewModel.hotkeyTrigger.formattedLabel))."
+            return SettingsHotkeyConflictMessage.disabled(
+                conflictingWith: "hands-free mode",
+                trigger: viewModel.hotkeyTrigger
+            )
         }
         if trigger.overlaps(with: viewModel.pushToTalkHotkeyTrigger) {
-            return "Disabled — conflicts with push to talk (\(viewModel.pushToTalkHotkeyTrigger.formattedLabel))."
+            return SettingsHotkeyConflictMessage.disabled(
+                conflictingWith: "push to talk",
+                trigger: viewModel.pushToTalkHotkeyTrigger
+            )
         }
         if AppFeatures.meetingRecordingEnabled, trigger.overlaps(with: viewModel.meetingHotkeyTrigger) {
-            return "Disabled — conflicts with meeting recording (\(viewModel.meetingHotkeyTrigger.formattedLabel))."
+            return SettingsHotkeyConflictMessage.disabled(
+                conflictingWith: "meeting recording",
+                trigger: viewModel.meetingHotkeyTrigger
+            )
         }
         if trigger.overlaps(with: otherTranscription) {
-            return "Disabled — conflicts with \(otherTranscriptionName) (\(otherTranscription.formattedLabel))."
+            return SettingsHotkeyConflictMessage.disabled(
+                conflictingWith: otherTranscriptionName,
+                trigger: otherTranscription
+            )
         }
         return nil
     }
@@ -867,16 +903,28 @@ struct SettingsView: View {
         guard !candidate.isDisabled else { return .allowed }
         if candidate != viewModel.pushToTalkHotkeyTrigger,
            candidate.overlaps(with: viewModel.pushToTalkHotkeyTrigger) {
-            return .blocked("Overlaps with push to talk.")
+            return .blocked(SettingsHotkeyConflictMessage.blocked(
+                conflictingWith: "push to talk",
+                trigger: viewModel.pushToTalkHotkeyTrigger
+            ))
         }
         if AppFeatures.meetingRecordingEnabled, candidate.overlaps(with: viewModel.meetingHotkeyTrigger) {
-            return .blocked("Already used by meeting recording.")
+            return .blocked(SettingsHotkeyConflictMessage.blocked(
+                conflictingWith: "meeting recording",
+                trigger: viewModel.meetingHotkeyTrigger
+            ))
         }
         if candidate.overlaps(with: viewModel.fileTranscriptionHotkeyTrigger) {
-            return .blocked("Already used by file transcription.")
+            return .blocked(SettingsHotkeyConflictMessage.blocked(
+                conflictingWith: "file transcription",
+                trigger: viewModel.fileTranscriptionHotkeyTrigger
+            ))
         }
         if candidate.overlaps(with: viewModel.youtubeTranscriptionHotkeyTrigger) {
-            return .blocked("Already used by YouTube transcription.")
+            return .blocked(SettingsHotkeyConflictMessage.blocked(
+                conflictingWith: "YouTube transcription",
+                trigger: viewModel.youtubeTranscriptionHotkeyTrigger
+            ))
         }
         return .allowed
     }
@@ -885,31 +933,57 @@ struct SettingsView: View {
         guard !candidate.isDisabled else { return .allowed }
         if candidate != viewModel.hotkeyTrigger,
            candidate.overlaps(with: viewModel.hotkeyTrigger) {
-            return .blocked("Overlaps with hands-free mode.")
+            return .blocked(SettingsHotkeyConflictMessage.blocked(
+                conflictingWith: "hands-free mode",
+                trigger: viewModel.hotkeyTrigger
+            ))
         }
         if AppFeatures.meetingRecordingEnabled, candidate.overlaps(with: viewModel.meetingHotkeyTrigger) {
-            return .blocked("Already used by meeting recording.")
+            return .blocked(SettingsHotkeyConflictMessage.blocked(
+                conflictingWith: "meeting recording",
+                trigger: viewModel.meetingHotkeyTrigger
+            ))
         }
         if candidate.overlaps(with: viewModel.fileTranscriptionHotkeyTrigger) {
-            return .blocked("Already used by file transcription.")
+            return .blocked(SettingsHotkeyConflictMessage.blocked(
+                conflictingWith: "file transcription",
+                trigger: viewModel.fileTranscriptionHotkeyTrigger
+            ))
         }
         if candidate.overlaps(with: viewModel.youtubeTranscriptionHotkeyTrigger) {
-            return .blocked("Already used by YouTube transcription.")
+            return .blocked(SettingsHotkeyConflictMessage.blocked(
+                conflictingWith: "YouTube transcription",
+                trigger: viewModel.youtubeTranscriptionHotkeyTrigger
+            ))
         }
         return .allowed
     }
 
     private func meetingHotkeyValidation(for candidate: HotkeyTrigger) -> HotkeyTrigger.ValidationResult {
         guard !candidate.isDisabled else { return .allowed }
-        if candidate.overlaps(with: viewModel.hotkeyTrigger)
-            || candidate.overlaps(with: viewModel.pushToTalkHotkeyTrigger) {
-            return .blocked("Already used by dictation.")
+        if candidate.overlaps(with: viewModel.hotkeyTrigger) {
+            return .blocked(SettingsHotkeyConflictMessage.blocked(
+                conflictingWith: "hands-free mode",
+                trigger: viewModel.hotkeyTrigger
+            ))
+        }
+        if candidate.overlaps(with: viewModel.pushToTalkHotkeyTrigger) {
+            return .blocked(SettingsHotkeyConflictMessage.blocked(
+                conflictingWith: "push to talk",
+                trigger: viewModel.pushToTalkHotkeyTrigger
+            ))
         }
         if candidate.overlaps(with: viewModel.fileTranscriptionHotkeyTrigger) {
-            return .blocked("Already used by file transcription.")
+            return .blocked(SettingsHotkeyConflictMessage.blocked(
+                conflictingWith: "file transcription",
+                trigger: viewModel.fileTranscriptionHotkeyTrigger
+            ))
         }
         if candidate.overlaps(with: viewModel.youtubeTranscriptionHotkeyTrigger) {
-            return .blocked("Already used by YouTube transcription.")
+            return .blocked(SettingsHotkeyConflictMessage.blocked(
+                conflictingWith: "YouTube transcription",
+                trigger: viewModel.youtubeTranscriptionHotkeyTrigger
+            ))
         }
         return .allowed
     }
@@ -918,16 +992,28 @@ struct SettingsView: View {
         guard !trigger.isDisabled else { return nil }
         if trigger != viewModel.pushToTalkHotkeyTrigger,
            trigger.overlaps(with: viewModel.pushToTalkHotkeyTrigger) {
-            return "Disabled — overlaps with push to talk (\(viewModel.pushToTalkHotkeyTrigger.formattedLabel))."
+            return SettingsHotkeyConflictMessage.disabled(
+                conflictingWith: "push to talk",
+                trigger: viewModel.pushToTalkHotkeyTrigger
+            )
         }
         if AppFeatures.meetingRecordingEnabled, trigger.overlaps(with: viewModel.meetingHotkeyTrigger) {
-            return "Disabled — conflicts with meeting recording (\(viewModel.meetingHotkeyTrigger.formattedLabel))."
+            return SettingsHotkeyConflictMessage.disabled(
+                conflictingWith: "meeting recording",
+                trigger: viewModel.meetingHotkeyTrigger
+            )
         }
         if trigger.overlaps(with: viewModel.fileTranscriptionHotkeyTrigger) {
-            return "Disabled — conflicts with file transcription (\(viewModel.fileTranscriptionHotkeyTrigger.formattedLabel))."
+            return SettingsHotkeyConflictMessage.disabled(
+                conflictingWith: "file transcription",
+                trigger: viewModel.fileTranscriptionHotkeyTrigger
+            )
         }
         if trigger.overlaps(with: viewModel.youtubeTranscriptionHotkeyTrigger) {
-            return "Disabled — conflicts with YouTube transcription (\(viewModel.youtubeTranscriptionHotkeyTrigger.formattedLabel))."
+            return SettingsHotkeyConflictMessage.disabled(
+                conflictingWith: "YouTube transcription",
+                trigger: viewModel.youtubeTranscriptionHotkeyTrigger
+            )
         }
         return nil
     }
@@ -936,16 +1022,28 @@ struct SettingsView: View {
         guard !trigger.isDisabled else { return nil }
         if trigger != viewModel.hotkeyTrigger,
            trigger.overlaps(with: viewModel.hotkeyTrigger) {
-            return "Disabled — overlaps with hands-free mode (\(viewModel.hotkeyTrigger.formattedLabel))."
+            return SettingsHotkeyConflictMessage.disabled(
+                conflictingWith: "hands-free mode",
+                trigger: viewModel.hotkeyTrigger
+            )
         }
         if AppFeatures.meetingRecordingEnabled, trigger.overlaps(with: viewModel.meetingHotkeyTrigger) {
-            return "Disabled — conflicts with meeting recording (\(viewModel.meetingHotkeyTrigger.formattedLabel))."
+            return SettingsHotkeyConflictMessage.disabled(
+                conflictingWith: "meeting recording",
+                trigger: viewModel.meetingHotkeyTrigger
+            )
         }
         if trigger.overlaps(with: viewModel.fileTranscriptionHotkeyTrigger) {
-            return "Disabled — conflicts with file transcription (\(viewModel.fileTranscriptionHotkeyTrigger.formattedLabel))."
+            return SettingsHotkeyConflictMessage.disabled(
+                conflictingWith: "file transcription",
+                trigger: viewModel.fileTranscriptionHotkeyTrigger
+            )
         }
         if trigger.overlaps(with: viewModel.youtubeTranscriptionHotkeyTrigger) {
-            return "Disabled — conflicts with YouTube transcription (\(viewModel.youtubeTranscriptionHotkeyTrigger.formattedLabel))."
+            return SettingsHotkeyConflictMessage.disabled(
+                conflictingWith: "YouTube transcription",
+                trigger: viewModel.youtubeTranscriptionHotkeyTrigger
+            )
         }
         return nil
     }
@@ -953,16 +1051,28 @@ struct SettingsView: View {
     private func meetingHotkeyConflictMessage(for trigger: HotkeyTrigger) -> String? {
         guard !trigger.isDisabled else { return nil }
         if trigger.overlaps(with: viewModel.hotkeyTrigger) {
-            return "Disabled — conflicts with hands-free dictation (\(viewModel.hotkeyTrigger.formattedLabel))."
+            return SettingsHotkeyConflictMessage.disabled(
+                conflictingWith: "hands-free mode",
+                trigger: viewModel.hotkeyTrigger
+            )
         }
         if trigger.overlaps(with: viewModel.pushToTalkHotkeyTrigger) {
-            return "Disabled — conflicts with push to talk (\(viewModel.pushToTalkHotkeyTrigger.formattedLabel))."
+            return SettingsHotkeyConflictMessage.disabled(
+                conflictingWith: "push to talk",
+                trigger: viewModel.pushToTalkHotkeyTrigger
+            )
         }
         if trigger.overlaps(with: viewModel.fileTranscriptionHotkeyTrigger) {
-            return "Disabled — conflicts with file transcription (\(viewModel.fileTranscriptionHotkeyTrigger.formattedLabel))."
+            return SettingsHotkeyConflictMessage.disabled(
+                conflictingWith: "file transcription",
+                trigger: viewModel.fileTranscriptionHotkeyTrigger
+            )
         }
         if trigger.overlaps(with: viewModel.youtubeTranscriptionHotkeyTrigger) {
-            return "Disabled — conflicts with YouTube transcription (\(viewModel.youtubeTranscriptionHotkeyTrigger.formattedLabel))."
+            return SettingsHotkeyConflictMessage.disabled(
+                conflictingWith: "YouTube transcription",
+                trigger: viewModel.youtubeTranscriptionHotkeyTrigger
+            )
         }
         return nil
     }
