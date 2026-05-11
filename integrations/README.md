@@ -5,6 +5,49 @@
 > people running them) that want to *call* `macparakeet-cli` to add local STT
 > to their stack.
 
+## Scope of the CLI
+
+The CLI is a first-class automation surface, **not a GUI mirror.** It intentionally
+does not replicate every affordance the .app provides -- it exposes the parts
+that map cleanly to headless automation, agent invocation, and scriptable
+testing.
+
+### In scope
+
+- **Local transcription** -- audio, video, and YouTube to text, with engine
+  selection (Parakeet / Whisper) and per-invocation language hints.
+- **Scriptable shared defaults** -- `config get|set|list` over the same
+  preference suite the GUI reads (`com.macparakeet.MacParakeet`). CLI-only
+  installs work; a later GUI install picks up the same values.
+- **Stable JSON / read surfaces** -- every read-only command emits JSON with
+  schemas pinned to the major CLI version. Failure envelopes carry a stable
+  `errorType` so agents can branch deterministically.
+- **Model and binary health** -- `health` probes Parakeet / Whisper model
+  readiness, database accessibility, FFmpeg, and yt-dlp without mutating state.
+- **Persisted history** -- list, search, and inspect prior dictations and
+  transcriptions via the shared SQLite database.
+- **Prompt and meeting inspection** -- list and run prompt library entries
+  against transcriptions; list, show, transcript-dump, notes-append, and
+  export meeting recordings.
+- **Headless verification hooks** -- agents can drive deterministic runs (pin
+  all flags) or smoke-test GUI-default behavior (`--engine app-default`,
+  `--speaker-detection app-default`, `--mode app-default`).
+
+### Out of scope (by design)
+
+- **Interactive dictation** -- live mic capture, push-to-talk, the global
+  hotkey, and the dictation overlay are GUI surfaces. The CLI does not record
+  from the microphone.
+- **Live meeting UI** -- the Notes / Transcript / Ask three-tab live panel,
+  the floating meeting pill, and live recording controls are GUI-only. The CLI
+  inspects meeting artifacts after the fact.
+- **Onboarding, settings UI, library grids, sounds, overlays** -- none of these
+  have automation analogues; they remain in the .app.
+
+The principle: if a use case can be automated, scripted, or driven by an agent,
+the CLI should support it through a stable contract. If it requires a user
+sitting at a keyboard, it lives in the .app.
+
 ## What `macparakeet-cli` gives your agent
 
 - **Local Parakeet TDT speech-to-text** at ~155x realtime on Apple Silicon
@@ -16,6 +59,9 @@
   into MacParakeet's Application Support folder before first YouTube use.
 - **Persistent SQLite memory layer** -- everything transcribed is queryable
   later: dictation history, transcriptions, prompt outputs.
+- **Shared app/CLI preferences** -- agents can set speech engine, processing
+  mode, speaker detection, audio retention, YouTube audio quality, and
+  telemetry without driving the GUI.
 - **Prompt library + LLM-backed summarization** -- bring your own provider
   (OpenAI, Anthropic, Ollama, LM Studio, OpenAI-compatible local, or a
   configured CLI subprocess), or skip the LLM entirely and consume raw
@@ -78,8 +124,8 @@ the latest managed helper binary.
 macparakeet-cli transcribe /path/to/audio.mp3 --format json
 ```
 
-Parakeet is the default engine. Use Whisper per invocation for Korean or other
-non-Parakeet languages:
+Parakeet is the default engine for compatibility with existing scripts. Use
+Whisper per invocation for Korean or other non-Parakeet languages:
 
 Whisper requires a local model download before first use:
 
@@ -90,6 +136,36 @@ macparakeet-cli models download whisper-large-v3-v20240930-turbo-632MB
 ```bash
 macparakeet-cli transcribe /path/to/korean.mp3 --engine whisper --language ko --format json
 ```
+
+To test the same defaults a user selected in the GUI, opt into app-default
+resolution explicitly. This follows saved transcription defaults; it does not
+exercise GUI-only UI, playback, hotkey, export, or optional AI formatter output.
+
+```bash
+macparakeet-cli transcribe /path/to/audio.mp3 \
+  --engine app-default \
+  --speaker-detection app-default \
+  --mode app-default \
+  --downloaded-audio app-default \
+  --format json
+```
+
+Agents can also set those shared defaults without opening the GUI. Treat this
+as pre-run setup: a running GUI may cache some settings until relaunch or an
+in-app change.
+
+```bash
+macparakeet-cli config set speech-engine whisper
+macparakeet-cli config set whisper-language ko
+macparakeet-cli config set processing-mode raw
+macparakeet-cli config set speaker-detection off
+macparakeet-cli config set save-transcription-audio off
+macparakeet-cli config set youtube-audio-quality m4a
+```
+
+`--engine whisper` uses Whisper with auto-detected language unless `--language`
+is passed. The saved Whisper language is used when `--engine app-default`
+resolves to Whisper.
 
 ### Transcribe a YouTube video
 
@@ -240,6 +316,10 @@ user wants YouTube transcription, run
 macparakeet-cli transcribe "<path-or-youtube-url>" --format json
 macparakeet-cli models download whisper-large-v3-v20240930-turbo-632MB
 macparakeet-cli transcribe "<path-or-youtube-url>" --engine whisper --language ko --format json
+macparakeet-cli transcribe "<path-or-youtube-url>" --engine app-default --speaker-detection app-default --mode app-default --format json
+macparakeet-cli config list
+macparakeet-cli config set speech-engine parakeet
+macparakeet-cli config set speaker-detection off
 macparakeet-cli history transcriptions --json
 macparakeet-cli history search-transcriptions "<query>" --json
 macparakeet-cli history search "<query>" --json
@@ -273,6 +353,12 @@ macparakeet-cli prompts run "<prompt-name>" \
 - Never delete user database records unless the user explicitly requests it.
 - Prefer meeting ID or UUID prefix over title when mutating notes.
 - Keep API keys in environment variables; do not put literal keys in commands.
+- Use `--engine app-default --speaker-detection app-default --mode app-default`
+  only when you are intentionally checking GUI-default behavior. Pin explicit
+  flags for reproducible agent tests.
+- `config get speaker-detection` reports the saved app-default value. Bare
+  `transcribe` keeps speaker detection on for compatibility, so pass
+  `--speaker-detection app-default` when you want the saved GUI preference.
 ````
 
 ## Conventions

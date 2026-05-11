@@ -27,8 +27,15 @@ enum TranscribeOutputFormat: String, ExpressibleByArgument, CaseIterable, Sendab
 }
 
 enum TranscribeSpeechEngine: String, ExpressibleByArgument, CaseIterable, Sendable {
+    case appDefault = "app-default"
     case parakeet
     case whisper
+}
+
+enum SpeakerDetectionOption: String, ExpressibleByArgument, CaseIterable, Sendable {
+    case appDefault = "app-default"
+    case on
+    case off
 }
 
 struct TranscribeCommand: AsyncParsableCommand {
@@ -56,7 +63,7 @@ struct TranscribeCommand: AsyncParsableCommand {
     @Option(help: "Processing mode: raw, clean, app-default.")
     var mode: TranscribeMode = .appDefault
 
-    @Option(help: "Speech engine: parakeet, whisper.")
+    @Option(help: "Speech engine: app-default, parakeet, whisper. Default: parakeet; app-default follows the saved GUI preference.")
     var engine: TranscribeSpeechEngine = .parakeet
 
     @Option(help: "Language hint for Whisper, as a Whisper code such as ko or en. Parakeet ignores this flag.")
@@ -71,7 +78,10 @@ struct TranscribeCommand: AsyncParsableCommand {
     @Option(help: "Path to SQLite database file (defaults to the app database).")
     var database: String?
 
-    @Flag(help: "Disable speaker diarization.")
+    @Option(name: .long, help: "Speaker detection: app-default, on, off. Default: on; app-default follows the saved GUI preference.")
+    var speakerDetection: SpeakerDetectionOption = .on
+
+    @Flag(help: "Compatibility alias for --speaker-detection off.")
     var noDiarize: Bool = false
 
     @Flag(help: "Run retained entitlement checks before transcribing. Current free builds remain unlocked.")
@@ -106,6 +116,44 @@ struct TranscribeCommand: AsyncParsableCommand {
         }
     }
 
+    static func resolveSpeechEngine(
+        _ engine: TranscribeSpeechEngine,
+        storedEngine: String?,
+        storedLanguage: String?,
+        explicitLanguage: String?
+    ) -> SpeechEngineSelection {
+        let preference: SpeechEnginePreference
+        let language: String?
+        switch engine {
+        case .appDefault:
+            preference = SpeechEnginePreference(rawValue: storedEngine ?? "") ?? .parakeet
+            language = preference == .whisper ? explicitLanguage ?? storedLanguage : nil
+        case .parakeet:
+            preference = .parakeet
+            language = nil
+        case .whisper:
+            preference = .whisper
+            language = explicitLanguage
+        }
+        return SpeechEngineSelection(engine: preference, language: language)
+    }
+
+    static func resolveSpeakerDetection(
+        _ option: SpeakerDetectionOption,
+        storedEnabled: Bool?,
+        noDiarize: Bool
+    ) -> Bool {
+        if noDiarize { return false }
+        switch option {
+        case .appDefault:
+            return storedEnabled ?? false
+        case .on:
+            return true
+        case .off:
+            return false
+        }
+    }
+
     static func localFileURL(for input: String) -> URL {
         URL(fileURLWithPath: expandTilde(input))
     }
@@ -130,24 +178,48 @@ struct TranscribeCommand: AsyncParsableCommand {
                 let transcriptionRepo = TranscriptionRepository(dbQueue: dbManager.dbQueue)
                 let customWordRepo = CustomWordRepository(dbQueue: dbManager.dbQueue)
                 let snippetRepo = TextSnippetRepository(dbQueue: dbManager.dbQueue)
+                let defaults = macParakeetAppDefaults()
+                let speechEngine = Self.resolveSpeechEngine(
+                    self.engine,
+                    storedEngine: defaults.string(forKey: SpeechEnginePreference.defaultsKey),
+                    storedLanguage: SpeechEnginePreference.whisperDefaultLanguage(defaults: defaults),
+                    explicitLanguage: self.language
+                )
+                let speakerDetectionEnabled = Self.resolveSpeakerDetection(
+                    self.speakerDetection,
+                    storedEnabled: defaults.object(forKey: UserDefaultsAppRuntimePreferences.speakerDiarizationKey) as? Bool,
+                    noDiarize: self.noDiarize
+                )
+                let processingMode = Self.resolveProcessingMode(
+                    self.mode,
+                    storedMode: defaults.string(forKey: UserDefaultsAppRuntimePreferences.processingModeKey)
+                )
+                let resolvedYouTubeAudioQuality = Self.resolveYouTubeAudioQuality(
+                    self.youtubeAudioQuality,
+                    storedQuality: defaults.string(forKey: UserDefaultsAppRuntimePreferences.youtubeAudioQualityKey)
+                )
+                let shouldKeepDownloadedAudio: Bool = switch self.downloadedAudio {
+                case .keep:
+                    true
+                case .delete:
+                    false
+                case .appDefault:
+                    defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveTranscriptionAudioKey) as? Bool ?? true
+                }
                 let sttTranscriber: STTTranscribing
-                switch engine {
+                switch speechEngine.engine {
                 case .parakeet:
                     let createdSTTClient = STTClient()
                     sttClient = createdSTTClient
                     sttTranscriber = createdSTTClient
                 case .whisper:
-                    let createdWhisperEngine = WhisperEngine(language: language)
+                    let createdWhisperEngine = WhisperEngine(language: speechEngine.language)
                     whisperEngine = createdWhisperEngine
                     sttTranscriber = createdWhisperEngine
                 }
                 let audioProcessor = AudioProcessor()
                 let youtubeDownloader = YouTubeDownloader(audioQuality: {
-                    let defaults = macParakeetAppDefaults()
-                    return Self.resolveYouTubeAudioQuality(
-                        self.youtubeAudioQuality,
-                        storedQuality: defaults.string(forKey: UserDefaultsAppRuntimePreferences.youtubeAudioQualityKey)
-                    )
+                    resolvedYouTubeAudioQuality
                 })
                 let entitlementsService = enforceEntitlements ? makeEntitlementsService() : nil
 
@@ -156,7 +228,7 @@ struct TranscribeCommand: AsyncParsableCommand {
                     await entitlementsService.refreshValidationIfNeeded()
                 }
 
-                let diarizationService: DiarizationService? = noDiarize ? nil : DiarizationService()
+                let diarizationService: DiarizationService? = speakerDetectionEnabled ? DiarizationService() : nil
                 let service = TranscriptionService(
                     audioProcessor: audioProcessor,
                     sttTranscriber: sttTranscriber,
@@ -165,23 +237,12 @@ struct TranscribeCommand: AsyncParsableCommand {
                     customWordRepo: customWordRepo,
                     snippetRepo: snippetRepo,
                     processingMode: {
-                        let defaults = macParakeetAppDefaults()
-                        return Self.resolveProcessingMode(
-                            self.mode,
-                            storedMode: defaults.string(forKey: UserDefaultsAppRuntimePreferences.processingModeKey)
-                        )
+                        processingMode
                     },
                     shouldKeepDownloadedAudio: {
-                        switch self.downloadedAudio {
-                        case .keep:
-                            return true
-                        case .delete:
-                            return false
-                        case .appDefault:
-                            let defaults = macParakeetAppDefaults()
-                            return defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveTranscriptionAudioKey) as? Bool ?? true
-                        }
+                        shouldKeepDownloadedAudio
                     },
+                    shouldDiarize: { speakerDetectionEnabled },
                     youtubeDownloader: youtubeDownloader,
                     diarizationService: diarizationService
                 )
@@ -222,7 +283,7 @@ struct TranscribeCommand: AsyncParsableCommand {
                         throw CLIError.unsupportedFormat(ext)
                     }
 
-                    printErr("Transcribing \(url.lastPathComponent) with \(engine.rawValue)...")
+                    printErr("Transcribing \(url.lastPathComponent) with \(speechEngine.engine.rawValue)...")
                     result = try await service.transcribe(fileURL: url)
                 }
 

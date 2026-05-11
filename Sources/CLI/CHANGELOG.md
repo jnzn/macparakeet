@@ -80,6 +80,21 @@ by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
 
 ## [Unreleased]
 
+### Added
+
+- `transcribe --engine app-default` resolves the speech engine and Whisper
+  language from the same saved defaults used by the GUI, while preserving
+  Parakeet as the no-flag CLI default.
+- `transcribe --speaker-detection app-default|on|off` lets agents choose
+  GUI-default speaker detection or pin diarization explicitly. The no-flag
+  CLI default remains `on`; `--no-diarize` continues to work as a
+  compatibility alias for `--speaker-detection off`.
+- `config get|set|list` now covers the shared app/CLI transcription defaults
+  agents need for deterministic setup: `processing-mode`, `speech-engine`,
+  `whisper-language`, `speaker-detection`, `save-transcription-audio`, and
+  `youtube-audio-quality`. Config keys accept underscore aliases on input and
+  JSON output uses the canonical hyphenated key names.
+
 ## [2.1.0] -- 2026-05-10
 
 ### Added

@@ -25,6 +25,18 @@ final class ConfigCommandTests: XCTestCase {
 
     // MARK: - read
 
+    func testSupportedKeysIncludeAgentTranscriptionDefaults() {
+        XCTAssertEqual(ConfigCommand.supportedKeys, [
+            "telemetry",
+            "processing-mode",
+            "speech-engine",
+            "whisper-language",
+            "speaker-detection",
+            "save-transcription-audio",
+            "youtube-audio-quality",
+        ])
+    }
+
     func testReadTelemetryDefaultsToOn() throws {
         // Mirror AppPreferences.isTelemetryEnabled: missing key → on.
         let value = try ConfigCommand.read(key: "telemetry", defaults: defaults)
@@ -39,6 +51,25 @@ final class ConfigCommandTests: XCTestCase {
     func testReadTelemetryReflectsExplicitTrue() throws {
         defaults.set(true, forKey: AppPreferences.telemetryEnabledKey)
         XCTAssertEqual(try ConfigCommand.read(key: "telemetry", defaults: defaults), "on")
+    }
+
+    func testReadAgentDefaultsReflectGUIFallbacks() throws {
+        XCTAssertEqual(try ConfigCommand.read(key: "processing-mode", defaults: defaults), "raw")
+        XCTAssertEqual(try ConfigCommand.read(key: "speech-engine", defaults: defaults), "parakeet")
+        XCTAssertEqual(try ConfigCommand.read(key: "whisper-language", defaults: defaults), "auto")
+        XCTAssertEqual(try ConfigCommand.read(key: "speaker-detection", defaults: defaults), "off")
+        XCTAssertEqual(try ConfigCommand.read(key: "save-transcription-audio", defaults: defaults), "on")
+        XCTAssertEqual(try ConfigCommand.read(key: "youtube-audio-quality", defaults: defaults), "m4a")
+    }
+
+    func testReadCanonicalizesUnderscoreKeys() throws {
+        defaults.set(YouTubeAudioQuality.bestAvailable.rawValue, forKey: UserDefaultsAppRuntimePreferences.youtubeAudioQualityKey)
+        XCTAssertEqual(try ConfigCommand.read(key: "youtube_audio_quality", defaults: defaults), "best-available")
+    }
+
+    func testCanonicalKeyNormalizesUnderscoreAliases() throws {
+        XCTAssertEqual(try ConfigCommand.canonicalKey(" youtube_audio_quality "), "youtube-audio-quality")
+        XCTAssertEqual(try ConfigCommand.canonicalKey("SPEAKER_DETECTION"), "speaker-detection")
     }
 
     func testReadUnknownKeyThrowsValidationError() {
@@ -64,6 +95,44 @@ final class ConfigCommandTests: XCTestCase {
         XCTAssertEqual(defaults.object(forKey: AppPreferences.telemetryEnabledKey) as? Bool, true)
     }
 
+    func testWriteAgentTranscriptionDefaultsPersist() throws {
+        XCTAssertEqual(try ConfigCommand.write(key: "processing-mode", value: "clean", defaults: defaults), "clean")
+        XCTAssertEqual(
+            defaults.string(forKey: UserDefaultsAppRuntimePreferences.processingModeKey),
+            Dictation.ProcessingMode.clean.rawValue
+        )
+
+        XCTAssertEqual(try ConfigCommand.write(key: "speech-engine", value: "whisper", defaults: defaults), "whisper")
+        XCTAssertEqual(defaults.string(forKey: SpeechEnginePreference.defaultsKey), SpeechEnginePreference.whisper.rawValue)
+
+        XCTAssertEqual(try ConfigCommand.write(key: "whisper-language", value: "ko", defaults: defaults), "ko")
+        XCTAssertEqual(defaults.string(forKey: SpeechEnginePreference.whisperDefaultLanguageKey), "ko")
+
+        XCTAssertEqual(try ConfigCommand.write(key: "speaker-detection", value: "on", defaults: defaults), "on")
+        XCTAssertEqual(defaults.object(forKey: UserDefaultsAppRuntimePreferences.speakerDiarizationKey) as? Bool, true)
+
+        XCTAssertEqual(try ConfigCommand.write(key: "save-transcription-audio", value: "off", defaults: defaults), "off")
+        XCTAssertEqual(defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveTranscriptionAudioKey) as? Bool, false)
+
+        XCTAssertEqual(try ConfigCommand.write(key: "youtube-audio-quality", value: "best-available", defaults: defaults), "best-available")
+        XCTAssertEqual(
+            defaults.string(forKey: UserDefaultsAppRuntimePreferences.youtubeAudioQualityKey),
+            YouTubeAudioQuality.bestAvailable.rawValue
+        )
+    }
+
+    func testWriteCanonicalizesUnderscoreKeys() throws {
+        XCTAssertEqual(try ConfigCommand.write(key: "speaker_detection", value: "on", defaults: defaults), "on")
+        XCTAssertEqual(defaults.object(forKey: UserDefaultsAppRuntimePreferences.speakerDiarizationKey) as? Bool, true)
+    }
+
+    func testWriteWhisperLanguageAutoClearsStoredDefault() throws {
+        defaults.set("ko", forKey: SpeechEnginePreference.whisperDefaultLanguageKey)
+
+        XCTAssertEqual(try ConfigCommand.write(key: "whisper-language", value: "auto", defaults: defaults), "auto")
+        XCTAssertNil(defaults.string(forKey: SpeechEnginePreference.whisperDefaultLanguageKey))
+    }
+
     func testWriteAcceptsAllBoolSynonyms() throws {
         for (synonym, expectedBool) in [
             ("on", true), ("ON", true), ("true", true), ("yes", true),
@@ -75,6 +144,18 @@ final class ConfigCommandTests: XCTestCase {
             XCTAssertEqual(canonical, expectedBool ? "on" : "off",
                            "Synonym '\(synonym)' should canonicalize to \(expectedBool ? "on" : "off")")
             XCTAssertEqual(defaults.object(forKey: AppPreferences.telemetryEnabledKey) as? Bool, expectedBool)
+        }
+    }
+
+    func testWriteRejectsInvalidAgentDefaultValues() {
+        XCTAssertThrowsError(try ConfigCommand.write(key: "processing-mode", value: "fancy", defaults: defaults)) { error in
+            XCTAssertTrue(error is ValidationError)
+        }
+        XCTAssertThrowsError(try ConfigCommand.write(key: "speech-engine", value: "cloud", defaults: defaults)) { error in
+            XCTAssertTrue(error is ValidationError)
+        }
+        XCTAssertThrowsError(try ConfigCommand.write(key: "youtube-audio-quality", value: "wav", defaults: defaults)) { error in
+            XCTAssertTrue(error is ValidationError)
         }
     }
 
