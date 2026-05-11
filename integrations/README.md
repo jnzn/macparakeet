@@ -16,6 +16,9 @@
   into MacParakeet's Application Support folder before first YouTube use.
 - **Persistent SQLite memory layer** -- everything transcribed is queryable
   later: dictation history, transcriptions, prompt outputs.
+- **Shared app/CLI preferences** -- agents can set speech engine, processing
+  mode, speaker detection, audio retention, YouTube audio quality, and
+  telemetry without driving the GUI.
 - **Prompt library + LLM-backed summarization** -- bring your own provider
   (OpenAI, Anthropic, Ollama, LM Studio, OpenAI-compatible local, or a
   configured CLI subprocess), or skip the LLM entirely and consume raw
@@ -78,8 +81,8 @@ the latest managed helper binary.
 macparakeet-cli transcribe /path/to/audio.mp3 --format json
 ```
 
-Parakeet is the default engine. Use Whisper per invocation for Korean or other
-non-Parakeet languages:
+Parakeet is the default engine for compatibility with existing scripts. Use
+Whisper per invocation for Korean or other non-Parakeet languages:
 
 Whisper requires a local model download before first use:
 
@@ -89,6 +92,29 @@ macparakeet-cli models download whisper-large-v3-v20240930-turbo-632MB
 
 ```bash
 macparakeet-cli transcribe /path/to/korean.mp3 --engine whisper --language ko --format json
+```
+
+To test the same defaults a user selected in the GUI, opt into app-default
+resolution explicitly:
+
+```bash
+macparakeet-cli transcribe /path/to/audio.mp3 \
+  --engine app-default \
+  --speaker-detection app-default \
+  --mode app-default \
+  --downloaded-audio app-default \
+  --format json
+```
+
+Agents can also set those shared defaults without opening the GUI:
+
+```bash
+macparakeet-cli config set speech-engine whisper
+macparakeet-cli config set whisper-language ko
+macparakeet-cli config set processing-mode raw
+macparakeet-cli config set speaker-detection off
+macparakeet-cli config set save-transcription-audio off
+macparakeet-cli config set youtube-audio-quality m4a
 ```
 
 ### Transcribe a YouTube video
@@ -240,6 +266,10 @@ user wants YouTube transcription, run
 macparakeet-cli transcribe "<path-or-youtube-url>" --format json
 macparakeet-cli models download whisper-large-v3-v20240930-turbo-632MB
 macparakeet-cli transcribe "<path-or-youtube-url>" --engine whisper --language ko --format json
+macparakeet-cli transcribe "<path-or-youtube-url>" --engine app-default --speaker-detection app-default --mode app-default --format json
+macparakeet-cli config list
+macparakeet-cli config set speech-engine parakeet
+macparakeet-cli config set speaker-detection off
 macparakeet-cli history transcriptions --json
 macparakeet-cli history search-transcriptions "<query>" --json
 macparakeet-cli history search "<query>" --json
@@ -273,6 +303,9 @@ macparakeet-cli prompts run "<prompt-name>" \
 - Never delete user database records unless the user explicitly requests it.
 - Prefer meeting ID or UUID prefix over title when mutating notes.
 - Keep API keys in environment variables; do not put literal keys in commands.
+- Use `--engine app-default --speaker-detection app-default --mode app-default`
+  only when you are intentionally checking GUI-default behavior. Pin explicit
+  flags for reproducible agent tests.
 ````
 
 ## Conventions

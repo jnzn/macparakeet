@@ -50,6 +50,53 @@ final class TranscribeCommandTests: XCTestCase {
         XCTAssertEqual(quality, .bestAvailable)
     }
 
+    func testResolveSpeechEngineUsesStoredDefaultWhenRequested() {
+        let selection = TranscribeCommand.resolveSpeechEngine(
+            .appDefault,
+            storedEngine: SpeechEnginePreference.whisper.rawValue,
+            storedLanguage: "ko",
+            explicitLanguage: nil
+        )
+
+        XCTAssertEqual(selection.engine, .whisper)
+        XCTAssertEqual(selection.language, "ko")
+    }
+
+    func testResolveSpeechEngineExplicitLanguageOverridesStoredDefault() {
+        let selection = TranscribeCommand.resolveSpeechEngine(
+            .appDefault,
+            storedEngine: SpeechEnginePreference.whisper.rawValue,
+            storedLanguage: "ko",
+            explicitLanguage: "ja"
+        )
+
+        XCTAssertEqual(selection.engine, .whisper)
+        XCTAssertEqual(selection.language, "ja")
+    }
+
+    func testResolveSpeechEngineFallsBackToParakeetForInvalidStoredDefault() {
+        let selection = TranscribeCommand.resolveSpeechEngine(
+            .appDefault,
+            storedEngine: "bogus",
+            storedLanguage: "ko",
+            explicitLanguage: nil
+        )
+
+        XCTAssertEqual(selection.engine, .parakeet)
+        XCTAssertNil(selection.language)
+    }
+
+    func testResolveSpeakerDetectionUsesStoredDefaultWhenRequested() {
+        XCTAssertTrue(TranscribeCommand.resolveSpeakerDetection(.appDefault, storedEnabled: true, noDiarize: false))
+        XCTAssertFalse(TranscribeCommand.resolveSpeakerDetection(.appDefault, storedEnabled: nil, noDiarize: false))
+    }
+
+    func testResolveSpeakerDetectionRespectsExplicitAndLegacyDisableFlag() {
+        XCTAssertTrue(TranscribeCommand.resolveSpeakerDetection(.on, storedEnabled: false, noDiarize: false))
+        XCTAssertFalse(TranscribeCommand.resolveSpeakerDetection(.off, storedEnabled: true, noDiarize: false))
+        XCTAssertFalse(TranscribeCommand.resolveSpeakerDetection(.on, storedEnabled: true, noDiarize: true))
+    }
+
     func testParsesWhisperEngineAndLanguage() throws {
         let command = try TranscribeCommand.parse([
             "sample.wav",
@@ -59,6 +106,17 @@ final class TranscribeCommandTests: XCTestCase {
 
         XCTAssertEqual(command.engine, .whisper)
         XCTAssertEqual(command.language, "ko")
+    }
+
+    func testParsesAppDefaultEngineAndSpeakerDetection() throws {
+        let command = try TranscribeCommand.parse([
+            "sample.wav",
+            "--engine", "app-default",
+            "--speaker-detection", "app-default",
+        ])
+
+        XCTAssertEqual(command.engine, .appDefault)
+        XCTAssertEqual(command.speakerDetection, .appDefault)
     }
 
     func testParsesYouTubeAudioQuality() throws {
@@ -74,6 +132,7 @@ final class TranscribeCommandTests: XCTestCase {
         let command = try TranscribeCommand.parse(["sample.wav"])
         XCTAssertEqual(command.engine, .parakeet)
         XCTAssertNil(command.language)
+        XCTAssertEqual(command.speakerDetection, .on)
         XCTAssertEqual(command.youtubeAudioQuality, .appDefault)
     }
 

@@ -25,7 +25,9 @@ This script builds the latest debug binary, stops stale `/Applications`/`dist` a
 ```
 macparakeet-cli
 ├── transcribe <input> [options]         Transcribe a file or YouTube URL
-│   └── --engine parakeet|whisper [--language <code>] [--youtube-audio-quality app-default|m4a|best-available]
+│   └── --engine app-default|parakeet|whisper [--language <code>]
+│       --speaker-detection app-default|on|off
+│       --youtube-audio-quality app-default|m4a|best-available
 ├── history                              View and manage history
 │   ├── dictations [--limit] [--json]    List recent dictations (default)
 │   ├── transcriptions [--limit] [--json]  List recent transcriptions
@@ -38,6 +40,10 @@ macparakeet-cli
 │   └── unfavorite <id>                  Remove from favorites
 ├── export <id> [options]                Export a transcription to file
 ├── stats [--json]                       Show voice stats dashboard
+├── config                               Shared app/CLI preferences
+│   ├── list
+│   ├── get <key>
+│   └── set <key> <value>
 ├── health [--repair-models] [--repair-binaries] [--json]
 │                                         System health and model/helper status
 ├── models                               Speech model lifecycle
@@ -99,12 +105,18 @@ macparakeet-cli
 
 ## Core Modes
 
-### 1) GUI-Parity Mode (recommended for behavior checks)
+### 1) App-Default Mode (recommended for behavior checks)
 
-Uses app defaults for processing mode and YouTube audio retention.
+Uses app defaults for processing mode, speech engine, speaker detection, and
+YouTube audio retention. This is the best CLI mode for checking GUI behavior
+without controlling the GUI, but it is not full GUI parity: the CLI does not
+exercise GUI-only windowing, playback, hotkeys, PDF/DOCX export, or optional
+AI formatter output.
 
 ```bash
 swift run macparakeet-cli transcribe "<FILE_OR_YOUTUBE_URL>" \
+  --engine app-default \
+  --speaker-detection app-default \
   --mode app-default \
   --downloaded-audio app-default \
   --youtube-audio-quality app-default
@@ -116,6 +128,8 @@ Explicitly pins behavior.
 
 ```bash
 swift run macparakeet-cli transcribe "<FILE_OR_YOUTUBE_URL>" \
+  --engine parakeet \
+  --speaker-detection off \
   --mode raw \
   --downloaded-audio delete \
   --youtube-audio-quality m4a
@@ -125,6 +139,8 @@ Or clean mode with retained downloads:
 
 ```bash
 swift run macparakeet-cli transcribe "<FILE_OR_YOUTUBE_URL>" \
+  --engine parakeet \
+  --speaker-detection on \
   --mode clean \
   --downloaded-audio keep \
   --youtube-audio-quality best-available
@@ -137,7 +153,11 @@ the STT input.
 
 ### Speech Engine Selection
 
-Parakeet is the default and ignores `--language`. Use Whisper for languages outside Parakeet coverage after downloading the local Whisper model:
+Parakeet remains the no-flag default for semver stability and ignores
+`--language`. Use `--engine app-default` when you want the CLI to follow the
+GUI's saved speech engine and Whisper language defaults. Use Whisper explicitly
+for languages outside Parakeet coverage after downloading the local Whisper
+model:
 
 ```bash
 swift run macparakeet-cli models download whisper-large-v3-v20240930-turbo-632MB
@@ -148,14 +168,46 @@ swift run macparakeet-cli transcribe "<FILE_OR_YOUTUBE_URL>" \
 ```
 
 `--language auto` or omitting `--language` lets Whisper detect the language.
+When `--engine app-default` resolves to Whisper, an explicit `--language`
+overrides the saved Whisper language for that invocation. When `--engine
+whisper` is explicit, pass `--language` explicitly if you do not want
+auto-detect; the saved Whisper language is only used by `--engine app-default`.
 
 ### Speaker Diarization
 
-Diarization runs by default when transcribing. Disable with:
+Speaker detection runs by default for existing CLI compatibility. Disable with
+either the explicit option or the legacy alias:
 
 ```bash
+swift run macparakeet-cli transcribe "<FILE>" --speaker-detection off
 swift run macparakeet-cli transcribe "<FILE>" --no-diarize
 ```
+
+Use `--speaker-detection app-default` when validating the GUI's saved speaker
+detection preference. `config get speaker-detection` reports that saved
+app-default value, not the no-flag CLI default.
+
+### Shared Config
+
+`config` writes the same UserDefaults suite the GUI reads. This lets agents set
+up deterministic or app-default state before running a smoke test. Treat it as
+pre-run setup: a running GUI may cache some settings until relaunch or an
+in-app change.
+
+```bash
+swift run macparakeet-cli config list
+swift run macparakeet-cli config set processing-mode raw
+swift run macparakeet-cli config set speech-engine whisper
+swift run macparakeet-cli config set whisper-language ko
+swift run macparakeet-cli config set speaker-detection off
+swift run macparakeet-cli config set save-transcription-audio off
+swift run macparakeet-cli config set youtube-audio-quality m4a
+```
+
+Supported keys: `telemetry`, `processing-mode`, `speech-engine`,
+`whisper-language`, `speaker-detection`, `save-transcription-audio`,
+`youtube-audio-quality`. Underscore aliases such as `youtube_audio_quality`
+are accepted on input; JSON output uses canonical hyphenated keys.
 
 ### Output Formats
 
