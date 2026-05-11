@@ -155,7 +155,103 @@ final class MeetingAudioFileTests: XCTestCase {
         XCTAssertEqual(stem, "Eng Design sync roadmap - 2026-05-11")
     }
 
+    func testSuggestedExportStemStripsControlCharacters() {
+        let transcription = makeTranscription(
+            fileName: "Meeting",
+            sourceType: .meeting,
+            derivedTitle: "Hello\u{0007}World\nLine\tTab",
+            createdAt: makeDate(year: 2026, month: 5, day: 11)
+        )
+        let stem = MeetingAudioFile.suggestedExportStem(for: transcription)
+        XCTAssertEqual(stem, "Hello World Line Tab - 2026-05-11")
+    }
+
+    func testSuggestedExportStemCapsLongDerivedTitle() {
+        let veryLongTitle = String(repeating: "A", count: 500)
+        let transcription = makeTranscription(
+            fileName: "Meeting",
+            sourceType: .meeting,
+            derivedTitle: veryLongTitle,
+            createdAt: makeDate(year: 2026, month: 5, day: 11)
+        )
+        let stem = MeetingAudioFile.suggestedExportStem(for: transcription)
+        XCTAssertLessThanOrEqual(stem.count, MeetingAudioFile.maxStemLength)
+        XCTAssertTrue(stem.hasPrefix("AAAAA"), "stem should retain a recognizable prefix")
+    }
+
+    // MARK: - safeCopy
+
+    func testSafeCopyIsNoOpWhenSourceEqualsDestination() throws {
+        let directory = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("meeting.m4a")
+        try Data("hello".utf8).write(to: url)
+
+        try MeetingAudioFile.safeCopy(from: url, to: url)
+
+        // Source file must still exist with original contents.
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+        XCTAssertEqual(try String(contentsOf: url), "hello")
+    }
+
+    func testSafeCopyCreatesNewDestination() throws {
+        let directory = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appendingPathComponent("source.m4a")
+        let destination = directory.appendingPathComponent("dest.m4a")
+        try Data("audio bytes".utf8).write(to: source)
+
+        try MeetingAudioFile.safeCopy(from: source, to: destination)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
+        XCTAssertEqual(try String(contentsOf: destination), "audio bytes")
+    }
+
+    func testSafeCopyAtomicallyReplacesExistingDestination() throws {
+        let directory = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appendingPathComponent("source.m4a")
+        let destination = directory.appendingPathComponent("dest.m4a")
+        try Data("fresh".utf8).write(to: source)
+        try Data("stale".utf8).write(to: destination)
+
+        try MeetingAudioFile.safeCopy(from: source, to: destination)
+
+        XCTAssertEqual(try String(contentsOf: destination), "fresh")
+        XCTAssertEqual(try String(contentsOf: source), "fresh", "source must be untouched")
+    }
+
+    func testSafeCopyLeavesNoTempSiblingsOnSuccess() throws {
+        let directory = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appendingPathComponent("source.m4a")
+        let destination = directory.appendingPathComponent("dest.m4a")
+        try Data("data".utf8).write(to: source)
+
+        try MeetingAudioFile.safeCopy(from: source, to: destination)
+
+        let contents = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+        XCTAssertEqual(Set(contents), ["source.m4a", "dest.m4a"])
+    }
+
+    func testSafeCopyThrowsWhenSourceMissing() {
+        let directory = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appendingPathComponent("does-not-exist.m4a")
+        let destination = directory.appendingPathComponent("dest.m4a")
+
+        XCTAssertThrowsError(try MeetingAudioFile.safeCopy(from: source, to: destination))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path))
+    }
+
     // MARK: - Fixtures
+
+    private func makeTempDirectory() -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("macparakeet-audio-tests-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
 
     private func makeTranscription(
         fileName: String,
@@ -174,13 +270,22 @@ final class MeetingAudioFileTests: XCTestCase {
         )
     }
 
+    /// Construct a date pegged to noon in the test machine's local
+    /// timezone. `MeetingAudioFile.isoDateFormatter` intentionally uses
+    /// the system timezone so the date a user sees in a save filename
+    /// matches the day they remember the meeting happening (a meeting
+    /// recorded at 11:30 PM Friday locally should not show up as
+    /// "Saturday" because some renderer-side timezone diverged from the
+    /// recording-side timezone). The test follows the same rule so the
+    /// suite is robust across CI machines in any timezone — without
+    /// this, `TZ='Asia/Tokyo' swift test` flakes because noon LA
+    /// crosses the dateline into "tomorrow" Tokyo-local.
     private func makeDate(year: Int, month: Int, day: Int) -> Date {
         var components = DateComponents()
         components.year = year
         components.month = month
         components.day = day
         components.hour = 12
-        components.timeZone = TimeZone(identifier: "America/Los_Angeles")
-        return Calendar(identifier: .iso8601).date(from: components)!
+        return Calendar.current.date(from: components)!
     }
 }

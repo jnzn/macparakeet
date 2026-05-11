@@ -245,7 +245,19 @@ struct TranscriptionLibraryView: View {
     private func saveMeetingAudio(_ transcription: Transcription) {
         Task { @MainActor in
             do {
-                _ = try await MeetingAudioActions.runSaveAudioPanel(for: transcription)
+                let outcome = try await MeetingAudioActions.runSaveAudioPanel(for: transcription)
+                switch outcome {
+                case .saved:
+                    // The Save panel itself is the user-visible
+                    // confirmation (it dismisses on success); a sound
+                    // adds a non-blocking "your copy landed" signal
+                    // without an extra popover in the Library.
+                    SoundManager.shared.play(.transcriptionComplete)
+                case .cancelled:
+                    break
+                case .sourceUnavailable:
+                    audioSaveErrorMessage = "The meeting audio file is no longer available."
+                }
             } catch {
                 audioSaveErrorMessage = error.localizedDescription
             }

@@ -31,6 +31,13 @@ public enum MeetingAudioFile {
     /// Whether the mixed-track audio file is reachable on disk. Returns
     /// false for non-meeting transcriptions or when the recorded file is
     /// missing (deleted, moved, or recovery still in progress).
+    ///
+    /// **Status-agnostic by design.** Returns true for `.processing`,
+    /// `.error`, or `.cancelled` meetings as long as the file is on
+    /// disk. The audio is written incrementally as fragmented MP4 (see
+    /// ADR-019), so a user looking at a failed-transcription row can
+    /// still grab the captured audio. Don't add a status gate here
+    /// without an explicit product reason.
     public static func isAvailable(
         for transcription: Transcription,
         fileManager: FileManager = .default
@@ -39,6 +46,52 @@ public enum MeetingAudioFile {
         var isDirectory: ObjCBool = false
         let exists = fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory)
         return exists && !isDirectory.boolValue
+    }
+
+    // MARK: - Safe copy
+
+    /// Copy a meeting audio file from `source` to `destination`, with
+    /// two guarantees the naive `FileManager.copyItem` does not give:
+    ///
+    /// 1. **No source destruction on same-file save.** A user can pick
+    ///    the meeting's own folder in "Save Audio As…" and confirm an
+    ///    overwrite of `meeting.m4a`. A pre-delete-then-copy approach
+    ///    would erase the only source file and then fail the copy.
+    ///    Here we detect identical paths and no-op.
+    /// 2. **No mid-copy corruption.** Large meetings can be hundreds of
+    ///    MB. We copy to a sibling temp file first, then atomically
+    ///    swap via `FileManager.replaceItemAt`, so a disk-full or
+    ///    permissions failure halfway through leaves the prior
+    ///    destination (if any) intact.
+    public static func safeCopy(
+        from source: URL,
+        to destination: URL,
+        fileManager: FileManager = .default
+    ) throws {
+        let normalizedSource = source.standardizedFileURL
+        let normalizedDestination = destination.standardizedFileURL
+
+        if normalizedSource.path == normalizedDestination.path {
+            // Already at the destination — nothing to do.
+            return
+        }
+
+        let parent = normalizedDestination.deletingLastPathComponent()
+        let tempURL = parent.appendingPathComponent(
+            ".\(normalizedDestination.lastPathComponent).macparakeet-save-\(UUID().uuidString)"
+        )
+
+        try fileManager.copyItem(at: normalizedSource, to: tempURL)
+        do {
+            if fileManager.fileExists(atPath: normalizedDestination.path) {
+                _ = try fileManager.replaceItemAt(normalizedDestination, withItemAt: tempURL)
+            } else {
+                try fileManager.moveItem(at: tempURL, to: normalizedDestination)
+            }
+        } catch {
+            try? fileManager.removeItem(at: tempURL)
+            throw error
+        }
     }
 
     // MARK: - Filename derivation
@@ -75,17 +128,36 @@ public enum MeetingAudioFile {
         return formatter
     }()
 
+    /// Hard cap on the suggested filename stem. Well under any practical
+    /// filesystem path length (~1023 bytes on APFS) and avoids producing
+    /// a Save panel default that scrolls off-screen when an LLM-derived
+    /// title is unusually long. The cap is enforced on grapheme cluster
+    /// count via `String.prefix(_:)` so we never break a composite
+    /// emoji or combining-character sequence.
+    static let maxStemLength: Int = 100
+
     private static func sanitize(_ input: String) -> String {
-        // Strip characters that would either break filenames on macOS
-        // (`/`, NUL) or read poorly in a Save panel preview. We keep
-        // unicode, punctuation, and emoji — Finder handles those fine.
-        let disallowed = CharacterSet(charactersIn: "/:\\\0\"")
+        // Strip characters that would break filenames on macOS (`/`,
+        // NUL), confuse shell tools (control characters / newlines /
+        // tabs), or read poorly in a Save panel preview. Unicode letters,
+        // punctuation, and emoji pass through — Finder handles those
+        // fine — and we deliberately do NOT strip bidi formatters since
+        // they're legitimate inside Arabic/Hebrew titles.
+        var disallowed = CharacterSet(charactersIn: "/:\\\"")
+        disallowed.formUnion(.controlCharacters)
+
         let cleaned = input
             .components(separatedBy: disallowed)
             .joined(separator: " ")
             .components(separatedBy: .whitespacesAndNewlines)
             .filter { !$0.isEmpty }
             .joined(separator: " ")
-        return cleaned.isEmpty ? "Meeting" : cleaned
+
+        let capped = cleaned.count <= maxStemLength
+            ? cleaned
+            : String(cleaned.prefix(maxStemLength))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return capped.isEmpty ? "Meeting" : capped
     }
 }

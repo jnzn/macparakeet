@@ -77,16 +77,14 @@ enum MeetingAudioActions {
         }
 
         // Copy off the main actor so a large meeting (multi-hundred-MB
-        // m4a) doesn't stall the UI thread mid-save.
+        // m4a) doesn't stall the UI thread mid-save. Use
+        // `MeetingAudioFile.safeCopy`, which (a) survives the case
+        // where the user picks the source's own folder as destination
+        // (would otherwise delete the only source file) and (b) writes
+        // atomically via a temp sibling + replaceItemAt so a partial
+        // copy never overwrites a prior good file.
         try await Task.detached(priority: .userInitiated) {
-            let fileManager = FileManager.default
-            // NSSavePanel already prompts the user about overwrite, so
-            // a clobber here is intentional. Remove first so copyItem
-            // doesn't trip on "file exists".
-            if fileManager.fileExists(atPath: destinationURL.path) {
-                try fileManager.removeItem(at: destinationURL)
-            }
-            try fileManager.copyItem(at: sourceURL, to: destinationURL)
+            try MeetingAudioFile.safeCopy(from: sourceURL, to: destinationURL)
         }.value
 
         return .saved(destination: destinationURL)
