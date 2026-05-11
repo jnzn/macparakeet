@@ -774,6 +774,17 @@ final class TelemetryServiceTests: XCTestCase {
         XCTAssertNil(props["requested_device_uid"])
     }
 
+    func testFirstLoadCaptionTelemetryUsesSnakeCaseProps() {
+        let shown = TelemetryEventSpec.dictationFirstLoadCaptionShown(firstInstall: true)
+        XCTAssertEqual(shown.props?["first_install"], "true")
+        XCTAssertNil(shown.props?["firstInstall"])
+
+        let duration = TelemetryEventSpec.dictationFirstLoadCaptionDuration(durationMs: 8200, outcome: "success")
+        XCTAssertEqual(duration.props?["duration_ms"], "8200")
+        XCTAssertEqual(duration.props?["outcome"], "success")
+        XCTAssertNil(duration.props?["durationMs"])
+    }
+
     func testImplementedContractCoversEveryTypedEventName() {
         XCTAssertEqual(
             Set(TelemetryEventName.allCases),
@@ -930,6 +941,8 @@ final class TelemetryServiceTests: XCTestCase {
                 wordCount: 84,
                 errorType: nil
             ),
+            .dictationFirstLoadCaptionShown(firstInstall: true),
+            .dictationFirstLoadCaptionDuration(durationMs: 8200, outcome: "success"),
             .transcriptionStarted(source: .file, audioDurationSeconds: 30.0),
             .transcriptionCompleted(
                 source: .dragDrop,

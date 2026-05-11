@@ -42,6 +42,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hasPresentedHotkeyConflictAlert = false
     private var environmentSetupTask: Task<Void, Never>?
     private var meetingQuitTask: Task<Void, Never>?
+    private var speechPreWarmTask: Task<Void, Never>?
+    // Let first paint and onboarding routing settle before starting CoreML cache work.
+    private let preWarmDeferralMs: Int = 1500
 
     // MARK: - View Models
 
@@ -102,6 +105,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         },
         onOpenSettings: { [weak self] in
             self?.windowCoordinator.openMainWindowToSettings()
+        },
+        onCompleted: { [weak self] in
+            guard let self, let env = self.appEnvironment else { return }
+            self.scheduleDeferredSpeechPreWarm(environment: env)
         }
     )
 
@@ -255,6 +262,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         meetingAutoStartCoordinator?.stop()
         settingsObserverCoordinator.stopObserving()
         environmentSetupTask?.cancel()
+        speechPreWarmTask?.cancel()
 
         // Bound the wait so termination does not hang, while still giving shutdown
         // a brief window to release resources cleanly.
@@ -364,7 +372,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuBarCoordinator.refreshMeetingHotkeyShortcut()
         menuBarCoordinator.refreshTranscriptionHotkeyShortcuts()
         onboardingCoordinator.maybeShow(environment: env)
+        scheduleDeferredSpeechPreWarm(environment: env)
         meetingRecoveryCoordinator.scheduleLaunchRecoveryScanIfReady(environment: env)
+    }
+
+    private func scheduleDeferredSpeechPreWarm(environment env: AppEnvironment) {
+        guard speechPreWarmTask == nil else { return }
+        let sttRuntime = env.sttRuntime
+        let deferralMs = preWarmDeferralMs
+        let onboardingCompletedKey = OnboardingViewModel.onboardingCompletedKey
+
+        speechPreWarmTask = Task(priority: .utility) { @MainActor [weak self, sttRuntime] in
+            defer {
+                self?.speechPreWarmTask = nil
+            }
+
+            try? await Task.sleep(for: .milliseconds(deferralMs))
+            guard !Task.isCancelled else { return }
+            let onboardingDone = UserDefaults.standard.string(forKey: onboardingCompletedKey) != nil
+            guard onboardingDone else { return }
+            await sttRuntime.backgroundWarmUp()
+        }
     }
 
     private func presentEnvironmentSetupError(_ error: Error) {
