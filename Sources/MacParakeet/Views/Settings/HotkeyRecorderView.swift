@@ -412,7 +412,13 @@ struct HotkeyRecorderView: View {
     }
 
     static func resetLabel(for trigger: HotkeyTrigger) -> String {
-        trigger.formattedLabel
+        // The reset menu reads as "Reset to Default (X)" — keep X compact and
+        // English-y. The Settings row uses `HotkeyTrigger.formattedLabel` which
+        // prefixes modifiers with their glyph, but that's noisier in a menu
+        // parenthetical.
+        if trigger == .fn { return "🌐 Fn" }
+        if trigger.kind == .modifier { return trigger.displayName }
+        return trigger.shortSymbol
     }
 
     private func stopRecording() {
