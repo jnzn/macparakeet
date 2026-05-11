@@ -432,7 +432,13 @@ struct HotkeyRecorderView: View {
     }
 
     private func stopRecording() {
-        let wasActive = eventMonitor != nil
+        // Tracking against `isRecording` (the canonical UI state) keeps the
+        // (true)/(false) pair balanced even if `addLocalMonitorForEvents`
+        // returns nil — the start callback fired before the monitor was
+        // attached, so the stop callback must mirror that fact, not the
+        // monitor's presence. Also ensures spurious `onDisappear` calls
+        // don't unbalance the coordinator's suspend refcount.
+        let wasRecording = isRecording
         isRecording = false
         pendingModifierComponents = []
         candidateModifierComponents = []
@@ -441,10 +447,7 @@ struct HotkeyRecorderView: View {
             NSEvent.removeMonitor(monitor)
             eventMonitor = nil
         }
-        // Symmetric with startRecording — only fire `false` if we actually
-        // had an attached monitor, so spurious `onDisappear` calls don't
-        // unbalance the coordinator's suspend refcount.
-        if wasActive {
+        if wasRecording {
             onRecordingStateChanged?(false)
         }
     }
