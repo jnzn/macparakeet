@@ -149,6 +149,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         onPauseToggleMeeting: { [weak self] in
             self?.meetingRecordingFlowCoordinator?.togglePause()
         },
+        onHotkeyRecordingStateChanged: { [weak self] isRecording in
+            // While Settings is recording a new hotkey, stand the global
+            // CGEvent taps down so they can't swallow the user's keyDown
+            // and silently fire their own actions (e.g. start a meeting
+            // recording from inside Settings).
+            if isRecording {
+                self?.hotkeyCoordinator?.suspend()
+            } else {
+                self?.hotkeyCoordinator?.resume()
+            }
+        },
         onQuit: { [weak self] in
             self?.quitApp()
         },

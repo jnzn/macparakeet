@@ -9,6 +9,10 @@ struct SettingsView: View {
     @Bindable var viewModel: SettingsViewModel
     @Bindable var llmSettingsViewModel: LLMSettingsViewModel
     let updater: SPUUpdater
+    /// Fired by each `HotkeyRecorderView` when it starts/stops capturing
+    /// keystrokes. Wired up to `AppHotkeyCoordinator.suspend` / `resume` so
+    /// active global taps don't swallow the keyDown the user is recording.
+    let onHotkeyRecordingStateChanged: (Bool) -> Void
 
     @State private var rootViewModel = SettingsRootViewModel()
     @FocusState private var searchFieldFocused: Bool
@@ -24,10 +28,16 @@ struct SettingsView: View {
     @State private var automaticallyDownloadsUpdates: Bool
     @State private var copiedBuildIdentity = false
 
-    init(viewModel: SettingsViewModel, llmSettingsViewModel: LLMSettingsViewModel, updater: SPUUpdater) {
+    init(
+        viewModel: SettingsViewModel,
+        llmSettingsViewModel: LLMSettingsViewModel,
+        updater: SPUUpdater,
+        onHotkeyRecordingStateChanged: @escaping (Bool) -> Void
+    ) {
         self.viewModel = viewModel
         self.llmSettingsViewModel = llmSettingsViewModel
         self.updater = updater
+        self.onHotkeyRecordingStateChanged = onHotkeyRecordingStateChanged
         self._automaticallyChecksForUpdates = State(initialValue: updater.automaticallyChecksForUpdates)
         self._automaticallyDownloadsUpdates = State(initialValue: updater.automaticallyDownloadsUpdates)
     }
@@ -493,10 +503,12 @@ struct SettingsView: View {
                     VStack(alignment: .trailing, spacing: 4) {
                         HotkeyRecorderView(
                             trigger: $viewModel.pushToTalkHotkeyTrigger,
-                            defaultTrigger: .defaultPushToTalk
-                        ) { candidate in
-                            pushToTalkHotkeyValidation(for: candidate)
-                        }
+                            defaultTrigger: .defaultPushToTalk,
+                            additionalValidation: { candidate in
+                                pushToTalkHotkeyValidation(for: candidate)
+                            },
+                            onRecordingStateChanged: onHotkeyRecordingStateChanged
+                        )
 
                         if let conflict = pushToTalkHotkeyConflictMessage(for: viewModel.pushToTalkHotkeyTrigger) {
                             hotkeyConflictText(conflict)
@@ -515,10 +527,12 @@ struct SettingsView: View {
                     VStack(alignment: .trailing, spacing: 4) {
                         HotkeyRecorderView(
                             trigger: $viewModel.hotkeyTrigger,
-                            defaultTrigger: .defaultDictation
-                        ) { candidate in
-                            dictationHotkeyValidation(for: candidate)
-                        }
+                            defaultTrigger: .defaultDictation,
+                            additionalValidation: { candidate in
+                                dictationHotkeyValidation(for: candidate)
+                            },
+                            onRecordingStateChanged: onHotkeyRecordingStateChanged
+                        )
 
                         if let conflict = dictationHotkeyConflictMessage(for: viewModel.hotkeyTrigger) {
                             hotkeyConflictText(conflict)
@@ -600,10 +614,12 @@ struct SettingsView: View {
                     VStack(alignment: .trailing, spacing: 4) {
                         HotkeyRecorderView(
                             trigger: $viewModel.meetingHotkeyTrigger,
-                            defaultTrigger: .defaultMeetingRecording
-                        ) { candidate in
-                            meetingHotkeyValidation(for: candidate)
-                        }
+                            defaultTrigger: .defaultMeetingRecording,
+                            additionalValidation: { candidate in
+                                meetingHotkeyValidation(for: candidate)
+                            },
+                            onRecordingStateChanged: onHotkeyRecordingStateChanged
+                        )
 
                         if let conflict = meetingHotkeyConflictMessage(for: viewModel.meetingHotkeyTrigger) {
                             hotkeyConflictText(conflict)
@@ -797,21 +813,23 @@ struct SettingsView: View {
             VStack(alignment: .trailing, spacing: 4) {
                 HotkeyRecorderView(
                     trigger: trigger,
-                    defaultTrigger: .disabled
-                ) { candidate in
-                    guard !candidate.isDisabled else { return .allowed }
-                    if candidate.overlaps(with: viewModel.hotkeyTrigger)
-                        || candidate.overlaps(with: viewModel.pushToTalkHotkeyTrigger) {
-                        return .blocked("Already used by dictation.")
-                    }
-                    if AppFeatures.meetingRecordingEnabled, candidate.overlaps(with: viewModel.meetingHotkeyTrigger) {
-                        return .blocked("Already used by meeting recording.")
-                    }
-                    if candidate.overlaps(with: otherTranscriptionTrigger) {
-                        return .blocked("Already used by \(otherTranscriptionName).")
-                    }
-                    return .allowed
-                }
+                    defaultTrigger: .disabled,
+                    additionalValidation: { candidate in
+                        guard !candidate.isDisabled else { return .allowed }
+                        if candidate.overlaps(with: viewModel.hotkeyTrigger)
+                            || candidate.overlaps(with: viewModel.pushToTalkHotkeyTrigger) {
+                            return .blocked("Already used by dictation.")
+                        }
+                        if AppFeatures.meetingRecordingEnabled, candidate.overlaps(with: viewModel.meetingHotkeyTrigger) {
+                            return .blocked("Already used by meeting recording.")
+                        }
+                        if candidate.overlaps(with: otherTranscriptionTrigger) {
+                            return .blocked("Already used by \(otherTranscriptionName).")
+                        }
+                        return .allowed
+                    },
+                    onRecordingStateChanged: onHotkeyRecordingStateChanged
+                )
 
                 if let conflict = conflictMessage(
                     trigger: trigger.wrappedValue,
@@ -830,15 +848,17 @@ struct SettingsView: View {
         otherTranscriptionName: String
     ) -> String? {
         guard !trigger.isDisabled else { return nil }
-        if trigger.overlaps(with: viewModel.hotkeyTrigger)
-            || trigger.overlaps(with: viewModel.pushToTalkHotkeyTrigger) {
-            return "Disabled — conflicts with dictation hotkey."
+        if trigger.overlaps(with: viewModel.hotkeyTrigger) {
+            return "Disabled — conflicts with hands-free dictation (\(viewModel.hotkeyTrigger.formattedLabel))."
+        }
+        if trigger.overlaps(with: viewModel.pushToTalkHotkeyTrigger) {
+            return "Disabled — conflicts with push to talk (\(viewModel.pushToTalkHotkeyTrigger.formattedLabel))."
         }
         if AppFeatures.meetingRecordingEnabled, trigger.overlaps(with: viewModel.meetingHotkeyTrigger) {
-            return "Disabled — conflicts with meeting recording hotkey."
+            return "Disabled — conflicts with meeting recording (\(viewModel.meetingHotkeyTrigger.formattedLabel))."
         }
         if trigger.overlaps(with: otherTranscription) {
-            return "Disabled — conflicts with \(otherTranscriptionName) hotkey."
+            return "Disabled — conflicts with \(otherTranscriptionName) (\(otherTranscription.formattedLabel))."
         }
         return nil
     }
@@ -898,16 +918,16 @@ struct SettingsView: View {
         guard !trigger.isDisabled else { return nil }
         if trigger != viewModel.pushToTalkHotkeyTrigger,
            trigger.overlaps(with: viewModel.pushToTalkHotkeyTrigger) {
-            return "Disabled — overlaps with push to talk."
+            return "Disabled — overlaps with push to talk (\(viewModel.pushToTalkHotkeyTrigger.formattedLabel))."
         }
         if AppFeatures.meetingRecordingEnabled, trigger.overlaps(with: viewModel.meetingHotkeyTrigger) {
-            return "Disabled — conflicts with meeting recording hotkey."
+            return "Disabled — conflicts with meeting recording (\(viewModel.meetingHotkeyTrigger.formattedLabel))."
         }
         if trigger.overlaps(with: viewModel.fileTranscriptionHotkeyTrigger) {
-            return "Disabled — conflicts with file transcription hotkey."
+            return "Disabled — conflicts with file transcription (\(viewModel.fileTranscriptionHotkeyTrigger.formattedLabel))."
         }
         if trigger.overlaps(with: viewModel.youtubeTranscriptionHotkeyTrigger) {
-            return "Disabled — conflicts with YouTube transcription hotkey."
+            return "Disabled — conflicts with YouTube transcription (\(viewModel.youtubeTranscriptionHotkeyTrigger.formattedLabel))."
         }
         return nil
     }
@@ -916,31 +936,33 @@ struct SettingsView: View {
         guard !trigger.isDisabled else { return nil }
         if trigger != viewModel.hotkeyTrigger,
            trigger.overlaps(with: viewModel.hotkeyTrigger) {
-            return "Disabled — overlaps with hands-free mode."
+            return "Disabled — overlaps with hands-free mode (\(viewModel.hotkeyTrigger.formattedLabel))."
         }
         if AppFeatures.meetingRecordingEnabled, trigger.overlaps(with: viewModel.meetingHotkeyTrigger) {
-            return "Disabled — conflicts with meeting recording hotkey."
+            return "Disabled — conflicts with meeting recording (\(viewModel.meetingHotkeyTrigger.formattedLabel))."
         }
         if trigger.overlaps(with: viewModel.fileTranscriptionHotkeyTrigger) {
-            return "Disabled — conflicts with file transcription hotkey."
+            return "Disabled — conflicts with file transcription (\(viewModel.fileTranscriptionHotkeyTrigger.formattedLabel))."
         }
         if trigger.overlaps(with: viewModel.youtubeTranscriptionHotkeyTrigger) {
-            return "Disabled — conflicts with YouTube transcription hotkey."
+            return "Disabled — conflicts with YouTube transcription (\(viewModel.youtubeTranscriptionHotkeyTrigger.formattedLabel))."
         }
         return nil
     }
 
     private func meetingHotkeyConflictMessage(for trigger: HotkeyTrigger) -> String? {
         guard !trigger.isDisabled else { return nil }
-        if trigger.overlaps(with: viewModel.hotkeyTrigger)
-            || trigger.overlaps(with: viewModel.pushToTalkHotkeyTrigger) {
-            return "Disabled — conflicts with dictation hotkey."
+        if trigger.overlaps(with: viewModel.hotkeyTrigger) {
+            return "Disabled — conflicts with hands-free dictation (\(viewModel.hotkeyTrigger.formattedLabel))."
+        }
+        if trigger.overlaps(with: viewModel.pushToTalkHotkeyTrigger) {
+            return "Disabled — conflicts with push to talk (\(viewModel.pushToTalkHotkeyTrigger.formattedLabel))."
         }
         if trigger.overlaps(with: viewModel.fileTranscriptionHotkeyTrigger) {
-            return "Disabled — conflicts with file transcription hotkey."
+            return "Disabled — conflicts with file transcription (\(viewModel.fileTranscriptionHotkeyTrigger.formattedLabel))."
         }
         if trigger.overlaps(with: viewModel.youtubeTranscriptionHotkeyTrigger) {
-            return "Disabled — conflicts with YouTube transcription hotkey."
+            return "Disabled — conflicts with YouTube transcription (\(viewModel.youtubeTranscriptionHotkeyTrigger.formattedLabel))."
         }
         return nil
     }

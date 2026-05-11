@@ -154,4 +154,86 @@ final class AppHotkeyCoordinatorTests: XCTestCase {
             AppHotkeyCoordinator.DictationHotkeyPlan(specs: [], conflict: nil)
         )
     }
+
+    // MARK: - Suspend / Resume
+
+    func testSuspendAndResumeArePaired() {
+        let viewModel = makeViewModel()
+        let coordinator = makeCoordinator(
+            settingsViewModel: viewModel,
+            onHotkeyConflict: { _, _ in }
+        )
+
+        XCTAssertEqual(coordinator.suspendCountForTesting, 0)
+
+        coordinator.suspend()
+        XCTAssertEqual(coordinator.suspendCountForTesting, 1)
+
+        coordinator.resume()
+        XCTAssertEqual(coordinator.suspendCountForTesting, 0)
+    }
+
+    func testSuspendNestsAndResumeUnwinds() {
+        let viewModel = makeViewModel()
+        let coordinator = makeCoordinator(
+            settingsViewModel: viewModel,
+            onHotkeyConflict: { _, _ in }
+        )
+
+        coordinator.suspend()
+        coordinator.suspend()
+        XCTAssertEqual(coordinator.suspendCountForTesting, 2)
+
+        coordinator.resume()
+        XCTAssertEqual(coordinator.suspendCountForTesting, 1)
+
+        coordinator.resume()
+        XCTAssertEqual(coordinator.suspendCountForTesting, 0)
+    }
+
+    func testResumeWithoutSuspendIsNoop() {
+        let viewModel = makeViewModel()
+        let coordinator = makeCoordinator(
+            settingsViewModel: viewModel,
+            onHotkeyConflict: { _, _ in }
+        )
+
+        coordinator.resume()
+        coordinator.resume()
+        XCTAssertEqual(coordinator.suspendCountForTesting, 0)
+    }
+
+    func testRefreshAllHotkeysIsSkippedWhileSuspended() {
+        // The SettingsViewModel observer in AppDelegate calls
+        // refreshAllHotkeys / refreshMeetingHotkey when the user records a
+        // new trigger. That call would race resume() and double-restart the
+        // taps — guarded by `suspendCount == 0`. This test pins the guard.
+        let viewModel = makeViewModel()
+        var conflictReports = 0
+        let coordinator = makeCoordinator(
+            settingsViewModel: viewModel,
+            onHotkeyConflict: { _, _ in conflictReports += 1 }
+        )
+
+        viewModel.meetingHotkeyTrigger = .defaultMeetingRecording
+        viewModel.pushToTalkHotkeyTrigger = HotkeyTrigger(
+            kind: .modifier,
+            modifierName: "command",
+            keyCode: nil,
+            modifierKeyCode: 54
+        )
+
+        coordinator.suspend()
+        coordinator.refreshAllHotkeys()
+        coordinator.refreshMeetingHotkey()
+        coordinator.refreshFileTranscriptionHotkey()
+        coordinator.refreshYouTubeTranscriptionHotkey()
+
+        // None of the refreshers should have reported a conflict, because
+        // they should have short-circuited before reaching the conflict
+        // detection inside setupMeetingHotkey.
+        XCTAssertEqual(conflictReports, 0)
+
+        coordinator.resume()
+    }
 }

@@ -23,6 +23,12 @@ final class AppHotkeyCoordinator {
     private var meetingHotkeyManager: GlobalShortcutManager?
     private var fileTranscriptionHotkeyManager: GlobalShortcutManager?
     private var youtubeTranscriptionHotkeyManager: GlobalShortcutManager?
+    /// Count of active `HotkeyRecorderView` sessions that have asked for the
+    /// global CGEvent taps to stand down so the recorder can capture the
+    /// user's keyDown. Reaches > 1 only across pathological re-entry — the
+    /// counter exists so balanced suspend/resume calls never desync the
+    /// underlying taps.
+    private var suspendCount = 0
 
     init(
         settingsViewModel: SettingsViewModel,
@@ -320,36 +326,70 @@ final class AppHotkeyCoordinator {
     }
 
     func refreshAllHotkeys() {
-        stopDictationHotkeys()
-        meetingHotkeyManager?.stop()
-        fileTranscriptionHotkeyManager?.stop()
-        youtubeTranscriptionHotkeyManager?.stop()
-        meetingHotkeyManager = nil
-        fileTranscriptionHotkeyManager = nil
-        youtubeTranscriptionHotkeyManager = nil
-        setupDictationHotkeys()
-        setupMeetingHotkey()
-        setupFileTranscriptionHotkey()
-        setupYouTubeTranscriptionHotkey()
+        // While a recorder is active, the SettingsViewModel observer can race
+        // us — skip and rely on `resume()` to rebuild from current settings.
+        guard suspendCount == 0 else { return }
+        stopAll()
+        setupAllHotkeys()
     }
 
     func refreshMeetingHotkey() {
+        guard suspendCount == 0 else { return }
         meetingHotkeyManager?.stop()
         meetingHotkeyManager = nil
         setupMeetingHotkey()
     }
 
     func refreshFileTranscriptionHotkey() {
+        guard suspendCount == 0 else { return }
         fileTranscriptionHotkeyManager?.stop()
         fileTranscriptionHotkeyManager = nil
         setupFileTranscriptionHotkey()
     }
 
     func refreshYouTubeTranscriptionHotkey() {
+        guard suspendCount == 0 else { return }
         youtubeTranscriptionHotkeyManager?.stop()
         youtubeTranscriptionHotkeyManager = nil
         setupYouTubeTranscriptionHotkey()
     }
+
+    // MARK: - Suspend / Resume
+
+    /// Stand down every global hotkey CGEvent tap while a hotkey recorder UI
+    /// is capturing keystrokes. Without this, the head-of-tap chord and
+    /// key-code handlers swallow the keyDown the user is trying to record,
+    /// silently fire their own actions (e.g. start a meeting recording mid-
+    /// Settings), and leave the recorder to commit a wrong modifier-chord on
+    /// release. Pair every call with `resume()`.
+    func suspend() {
+        suspendCount += 1
+        if suspendCount == 1 {
+            stopAll()
+        }
+    }
+
+    /// Re-arm every global hotkey CGEvent tap after recording finishes,
+    /// reading current values from `settingsViewModel` so a freshly-recorded
+    /// trigger comes online immediately.
+    func resume() {
+        guard suspendCount > 0 else { return }
+        suspendCount -= 1
+        if suspendCount == 0 {
+            setupAllHotkeys()
+        }
+    }
+
+    private func setupAllHotkeys() {
+        setupDictationHotkeys()
+        setupMeetingHotkey()
+        setupFileTranscriptionHotkey()
+        setupYouTubeTranscriptionHotkey()
+    }
+
+    /// Test-only inspection. Exists so the suspend/resume refcount can be
+    /// asserted without exposing the storage to production callers.
+    var suspendCountForTesting: Int { suspendCount }
 
     func applyMeetingHotkey(to item: NSMenuItem) {
         let trigger = settingsViewModel.meetingHotkeyTrigger

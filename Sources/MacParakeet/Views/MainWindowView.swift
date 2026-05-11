@@ -58,6 +58,9 @@ struct MainWindowView: View {
     let updater: SPUUpdater
     let onRecordMeeting: () -> Void
     let onPauseToggleMeeting: (() -> Void)?
+    /// Routed to `AppHotkeyCoordinator.suspend` / `resume` while a hotkey
+    /// recorder is active. Passed through to `SettingsView`.
+    let onHotkeyRecordingStateChanged: (Bool) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -145,7 +148,12 @@ struct MainWindowView: View {
                     case .feedback:
                         FeedbackView(viewModel: feedbackViewModel)
                     case .settings:
-                        SettingsView(viewModel: settingsViewModel, llmSettingsViewModel: llmSettingsViewModel, updater: updater)
+                        SettingsView(
+                            viewModel: settingsViewModel,
+                            llmSettingsViewModel: llmSettingsViewModel,
+                            updater: updater,
+                            onHotkeyRecordingStateChanged: onHotkeyRecordingStateChanged
+                        )
                     case .discover:
                         DiscoverView(viewModel: discoverViewModel, thoughtsService: DiscoverThoughtsService())
                     }
