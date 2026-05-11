@@ -16,6 +16,12 @@ struct HotkeyRecorderView: View {
     @Binding var trigger: HotkeyTrigger
     var defaultTrigger: HotkeyTrigger = .fn
     var additionalValidation: ((HotkeyTrigger) -> HotkeyTrigger.ValidationResult)? = nil
+    /// Called with `true` when the user enters recording mode (just before
+    /// the local NSEvent monitor is attached) and `false` when the matching
+    /// recording session ends. Settings wires this to
+    /// `AppHotkeyCoordinator.suspend` / `resume` so global CGEvent taps
+    /// don't swallow the keyDown the user is trying to record.
+    var onRecordingStateChanged: ((Bool) -> Void)? = nil
     @State private var isRecording = false
     @State private var validationMessage: String?
     @State private var validationIsBlocked = false
@@ -152,6 +158,11 @@ struct HotkeyRecorderView: View {
         pendingModifierComponents = []
         candidateModifierComponents = []
         self.modifierCaptureMode = modifierCaptureMode
+
+        // Suspend global hotkey taps BEFORE attaching our local monitor so
+        // existing chord/key-code listeners can't swallow the very first
+        // keyDown we're trying to capture.
+        onRecordingStateChanged?(true)
 
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [self] event in
             if event.type == .keyDown {
@@ -422,6 +433,13 @@ struct HotkeyRecorderView: View {
     }
 
     private func stopRecording() {
+        // Tracking against `isRecording` (the canonical UI state) keeps the
+        // (true)/(false) pair balanced even if `addLocalMonitorForEvents`
+        // returns nil — the start callback fired before the monitor was
+        // attached, so the stop callback must mirror that fact, not the
+        // monitor's presence. Also ensures spurious `onDisappear` calls
+        // don't unbalance the coordinator's suspend refcount.
+        let wasRecording = isRecording
         isRecording = false
         pendingModifierComponents = []
         candidateModifierComponents = []
@@ -429,6 +447,9 @@ struct HotkeyRecorderView: View {
         if let monitor = eventMonitor {
             NSEvent.removeMonitor(monitor)
             eventMonitor = nil
+        }
+        if wasRecording {
+            onRecordingStateChanged?(false)
         }
     }
 

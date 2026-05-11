@@ -43,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var environmentSetupTask: Task<Void, Never>?
     private var meetingQuitTask: Task<Void, Never>?
     private var speechPreWarmTask: Task<Void, Never>?
+    private var isHotkeyRecorderActive = false
     // Let first paint and onboarding routing settle before starting CoreML cache work.
     private let preWarmDeferralMs: Int = 1500
 
@@ -148,6 +149,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         },
         onPauseToggleMeeting: { [weak self] in
             self?.meetingRecordingFlowCoordinator?.togglePause()
+        },
+        onHotkeyRecordingStateChanged: { [weak self] isRecording in
+            self?.isHotkeyRecorderActive = isRecording
+            // While Settings is recording a new hotkey, stand the global
+            // CGEvent taps down so they can't swallow the user's keyDown
+            // and silently fire their own actions (e.g. start a meeting
+            // recording from inside Settings).
+            if isRecording {
+                self?.hotkeyCoordinator?.suspend()
+            } else {
+                self?.hotkeyCoordinator?.resume()
+            }
         },
         onQuit: { [weak self] in
             self?.quitApp()
@@ -359,6 +372,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 },
                 onRecoverPendingMeetingRecordings: { [weak self] in
                     self?.meetingRecoveryCoordinator.presentPendingMeetingRecoveryDialog()
+                },
+                isHotkeyRecordingActive: { [weak self] in
+                    self?.isHotkeyRecorderActive == true
                 }
             )
         )

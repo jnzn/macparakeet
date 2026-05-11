@@ -18,11 +18,18 @@ final class AppHotkeyCoordinator {
     private let onAnyHotkeyEnabled: () -> Void
     private let onHotkeyUnavailable: () -> Void
     private let onHotkeyConflict: (HotkeyTrigger, [HotkeyTrigger]) -> Void
+    private let dictationRecordingModeProvider: () -> FnKeyStateMachine.RecordingMode?
 
     private var dictationHotkeyManagers: [HotkeyManager] = []
     private var meetingHotkeyManager: GlobalShortcutManager?
     private var fileTranscriptionHotkeyManager: GlobalShortcutManager?
     private var youtubeTranscriptionHotkeyManager: GlobalShortcutManager?
+    /// Count of active `HotkeyRecorderView` sessions that have asked for the
+    /// global CGEvent taps to stand down so the recorder can capture the
+    /// user's keyDown. Reaches > 1 only across pathological re-entry — the
+    /// counter exists so balanced suspend/resume calls never desync the
+    /// underlying taps.
+    private var suspendCount = 0
 
     init(
         settingsViewModel: SettingsViewModel,
@@ -38,7 +45,8 @@ final class AppHotkeyCoordinator {
         onDictationHotkeyManagersChanged: @escaping ([HotkeyManager]) -> Void,
         onAnyHotkeyEnabled: @escaping () -> Void,
         onHotkeyUnavailable: @escaping () -> Void,
-        onHotkeyConflict: @escaping (HotkeyTrigger, [HotkeyTrigger]) -> Void
+        onHotkeyConflict: @escaping (HotkeyTrigger, [HotkeyTrigger]) -> Void,
+        dictationRecordingModeProvider: @escaping () -> FnKeyStateMachine.RecordingMode? = { nil }
     ) {
         self.settingsViewModel = settingsViewModel
         self.onStartDictation = onStartDictation
@@ -54,6 +62,7 @@ final class AppHotkeyCoordinator {
         self.onAnyHotkeyEnabled = onAnyHotkeyEnabled
         self.onHotkeyUnavailable = onHotkeyUnavailable
         self.onHotkeyConflict = onHotkeyConflict
+        self.dictationRecordingModeProvider = dictationRecordingModeProvider
     }
 
     var hotkeyMenuTitle: String {
@@ -164,10 +173,13 @@ final class AppHotkeyCoordinator {
             onHotkeyConflict(conflict.trigger, conflict.conflicts)
         }
 
+        let activeRecordingMode = dictationRecordingModeProvider()
         let managers = plan.specs.compactMap { spec in
             startDictationHotkey(
                 trigger: spec.trigger,
-                gestureMode: spec.gestureMode
+                gestureMode: spec.gestureMode,
+                resumeMode: Self.resumeMode(activeRecordingMode, for: spec.gestureMode),
+                suppressUntilReset: Self.shouldSuppressPeer(activeRecordingMode, for: spec.gestureMode)
             )
         }
         dictationHotkeyManagers = managers
@@ -182,7 +194,9 @@ final class AppHotkeyCoordinator {
 
     private func startDictationHotkey(
         trigger: HotkeyTrigger,
-        gestureMode: HotkeyGestureController.Mode
+        gestureMode: HotkeyGestureController.Mode,
+        resumeMode: FnKeyStateMachine.RecordingMode? = nil,
+        suppressUntilReset: Bool = false
     ) -> HotkeyManager? {
         guard !trigger.isDisabled else { return nil }
 
@@ -209,8 +223,14 @@ final class AppHotkeyCoordinator {
         manager.onEscapeWhileIdle = { [weak self] in
             self?.onEscapeWhileIdle()
         }
+        if let resumeMode {
+            manager.resumeRecording(mode: resumeMode)
+        }
 
         if manager.start() {
+            if suppressUntilReset {
+                manager.suppressUntilReset()
+            }
             onAnyHotkeyEnabled()
             return manager
         } else {
@@ -319,37 +339,97 @@ final class AppHotkeyCoordinator {
         return unique
     }
 
+    static func resumeMode(
+        _ activeMode: FnKeyStateMachine.RecordingMode?,
+        for gestureMode: HotkeyGestureController.Mode
+    ) -> FnKeyStateMachine.RecordingMode? {
+        guard let activeMode else { return nil }
+        switch (activeMode, gestureMode) {
+        case (.persistent, .doubleTapOnly),
+             (.persistent, .doubleTapAndHold),
+             (.holdToTalk, .holdOnly),
+             (.holdToTalk, .doubleTapAndHold):
+            return activeMode
+        case (.persistent, .holdOnly),
+             (.holdToTalk, .doubleTapOnly):
+            return nil
+        }
+    }
+
+    static func shouldSuppressPeer(
+        _ activeMode: FnKeyStateMachine.RecordingMode?,
+        for gestureMode: HotkeyGestureController.Mode
+    ) -> Bool {
+        guard activeMode != nil else { return false }
+        return resumeMode(activeMode, for: gestureMode) == nil
+    }
+
     func refreshAllHotkeys() {
-        stopDictationHotkeys()
-        meetingHotkeyManager?.stop()
-        fileTranscriptionHotkeyManager?.stop()
-        youtubeTranscriptionHotkeyManager?.stop()
-        meetingHotkeyManager = nil
-        fileTranscriptionHotkeyManager = nil
-        youtubeTranscriptionHotkeyManager = nil
-        setupDictationHotkeys()
-        setupMeetingHotkey()
-        setupFileTranscriptionHotkey()
-        setupYouTubeTranscriptionHotkey()
+        // While a recorder is active, the SettingsViewModel observer can race
+        // us — skip and rely on `resume()` to rebuild from current settings.
+        guard suspendCount == 0 else { return }
+        stopAll()
+        setupAllHotkeys()
     }
 
     func refreshMeetingHotkey() {
+        guard suspendCount == 0 else { return }
         meetingHotkeyManager?.stop()
         meetingHotkeyManager = nil
         setupMeetingHotkey()
     }
 
     func refreshFileTranscriptionHotkey() {
+        guard suspendCount == 0 else { return }
         fileTranscriptionHotkeyManager?.stop()
         fileTranscriptionHotkeyManager = nil
         setupFileTranscriptionHotkey()
     }
 
     func refreshYouTubeTranscriptionHotkey() {
+        guard suspendCount == 0 else { return }
         youtubeTranscriptionHotkeyManager?.stop()
         youtubeTranscriptionHotkeyManager = nil
         setupYouTubeTranscriptionHotkey()
     }
+
+    // MARK: - Suspend / Resume
+
+    /// Stand down every global hotkey CGEvent tap while a hotkey recorder UI
+    /// is capturing keystrokes. Without this, the head-of-tap chord and
+    /// key-code handlers swallow the keyDown the user is trying to record,
+    /// silently fire their own actions (e.g. start a meeting recording mid-
+    /// Settings), and leave the recorder to commit a wrong modifier-chord on
+    /// release. Pair every call with `resume()`.
+    func suspend() {
+        suspendCount += 1
+        if suspendCount == 1 {
+            stopAll()
+        }
+    }
+
+    /// Re-arm every global hotkey CGEvent tap after recording finishes,
+    /// reading current values from `settingsViewModel` so a freshly-recorded
+    /// trigger comes online immediately.
+    func resume() {
+        guard suspendCount > 0 else { return }
+        suspendCount -= 1
+        if suspendCount == 0 {
+            setupAllHotkeys()
+        }
+    }
+
+    func setupAllHotkeys() {
+        guard suspendCount == 0 else { return }
+        setupDictationHotkeys()
+        setupMeetingHotkey()
+        setupFileTranscriptionHotkey()
+        setupYouTubeTranscriptionHotkey()
+    }
+
+    /// Test-only inspection. Exists so the suspend/resume refcount can be
+    /// asserted without exposing the storage to production callers.
+    var suspendCountForTesting: Int { suspendCount }
 
     func applyMeetingHotkey(to item: NSMenuItem) {
         let trigger = settingsViewModel.meetingHotkeyTrigger

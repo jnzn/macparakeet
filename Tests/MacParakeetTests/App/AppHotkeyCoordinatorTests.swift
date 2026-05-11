@@ -154,4 +154,138 @@ final class AppHotkeyCoordinatorTests: XCTestCase {
             AppHotkeyCoordinator.DictationHotkeyPlan(specs: [], conflict: nil)
         )
     }
+
+    // MARK: - Suspend / Resume
+
+    func testSuspendAndResumeArePaired() {
+        let viewModel = makeViewModel()
+        let coordinator = makeCoordinator(
+            settingsViewModel: viewModel,
+            onHotkeyConflict: { _, _ in }
+        )
+
+        XCTAssertEqual(coordinator.suspendCountForTesting, 0)
+
+        coordinator.suspend()
+        XCTAssertEqual(coordinator.suspendCountForTesting, 1)
+
+        coordinator.resume()
+        XCTAssertEqual(coordinator.suspendCountForTesting, 0)
+    }
+
+    func testSuspendNestsAndResumeUnwinds() {
+        let viewModel = makeViewModel()
+        let coordinator = makeCoordinator(
+            settingsViewModel: viewModel,
+            onHotkeyConflict: { _, _ in }
+        )
+
+        coordinator.suspend()
+        coordinator.suspend()
+        XCTAssertEqual(coordinator.suspendCountForTesting, 2)
+
+        coordinator.resume()
+        XCTAssertEqual(coordinator.suspendCountForTesting, 1)
+
+        coordinator.resume()
+        XCTAssertEqual(coordinator.suspendCountForTesting, 0)
+    }
+
+    func testResumeWithoutSuspendIsNoop() {
+        let viewModel = makeViewModel()
+        let coordinator = makeCoordinator(
+            settingsViewModel: viewModel,
+            onHotkeyConflict: { _, _ in }
+        )
+
+        coordinator.resume()
+        coordinator.resume()
+        XCTAssertEqual(coordinator.suspendCountForTesting, 0)
+    }
+
+    func testRefreshAllHotkeysIsSkippedWhileSuspended() {
+        // The SettingsViewModel observer in AppDelegate calls
+        // refreshAllHotkeys / refreshMeetingHotkey when the user records a
+        // new trigger. That call would race resume() and double-restart the
+        // taps — guarded by `suspendCount == 0`. This test pins both halves:
+        // refresh* short-circuits during suspension (no conflict reports
+        // appear), and resume() actually rebuilds from current settings
+        // (the same conflict is reported exactly once after resume).
+        let viewModel = makeViewModel()
+        var conflictReports = 0
+        let coordinator = makeCoordinator(
+            settingsViewModel: viewModel,
+            onHotkeyConflict: { _, _ in conflictReports += 1 }
+        )
+
+        viewModel.meetingHotkeyTrigger = .defaultMeetingRecording
+        viewModel.pushToTalkHotkeyTrigger = HotkeyTrigger(
+            kind: .modifier,
+            modifierName: "command",
+            keyCode: nil,
+            modifierKeyCode: 54
+        )
+
+        coordinator.suspend()
+        coordinator.refreshAllHotkeys()
+        coordinator.refreshMeetingHotkey()
+        coordinator.refreshFileTranscriptionHotkey()
+        coordinator.refreshYouTubeTranscriptionHotkey()
+        XCTAssertEqual(conflictReports, 0, "refresh* must short-circuit while suspended")
+
+        coordinator.resume()
+        XCTAssertEqual(conflictReports, 1, "resume() must rebuild taps from current settings")
+    }
+
+    func testSetupAllHotkeysIsDeferredWhileSuspended() {
+        let viewModel = makeViewModel()
+        let conflictingTrigger = HotkeyTrigger.modifierChord(modifiers: ["command", "option"])
+        viewModel.hotkeyTrigger = .disabled
+        viewModel.pushToTalkHotkeyTrigger = .disabled
+        viewModel.meetingHotkeyTrigger = .disabled
+        viewModel.fileTranscriptionHotkeyTrigger = conflictingTrigger
+        viewModel.youtubeTranscriptionHotkeyTrigger = conflictingTrigger
+        var conflictReports = 0
+        let coordinator = makeCoordinator(
+            settingsViewModel: viewModel,
+            onHotkeyConflict: { _, _ in conflictReports += 1 }
+        )
+
+        coordinator.suspend()
+        coordinator.setupAllHotkeys()
+        XCTAssertEqual(conflictReports, 0)
+
+        coordinator.resume()
+        XCTAssertEqual(conflictReports, 2)
+    }
+
+    func testResumeModeMatchesActiveDictationRole() {
+        XCTAssertEqual(
+            AppHotkeyCoordinator.resumeMode(.persistent, for: .doubleTapOnly),
+            .persistent
+        )
+        XCTAssertFalse(AppHotkeyCoordinator.shouldSuppressPeer(.persistent, for: .doubleTapOnly))
+        XCTAssertEqual(
+            AppHotkeyCoordinator.resumeMode(.persistent, for: .doubleTapAndHold),
+            .persistent
+        )
+        XCTAssertFalse(AppHotkeyCoordinator.shouldSuppressPeer(.persistent, for: .doubleTapAndHold))
+        XCTAssertNil(AppHotkeyCoordinator.resumeMode(.persistent, for: .holdOnly))
+        XCTAssertTrue(AppHotkeyCoordinator.shouldSuppressPeer(.persistent, for: .holdOnly))
+
+        XCTAssertEqual(
+            AppHotkeyCoordinator.resumeMode(.holdToTalk, for: .holdOnly),
+            .holdToTalk
+        )
+        XCTAssertFalse(AppHotkeyCoordinator.shouldSuppressPeer(.holdToTalk, for: .holdOnly))
+        XCTAssertEqual(
+            AppHotkeyCoordinator.resumeMode(.holdToTalk, for: .doubleTapAndHold),
+            .holdToTalk
+        )
+        XCTAssertFalse(AppHotkeyCoordinator.shouldSuppressPeer(.holdToTalk, for: .doubleTapAndHold))
+        XCTAssertNil(AppHotkeyCoordinator.resumeMode(.holdToTalk, for: .doubleTapOnly))
+        XCTAssertTrue(AppHotkeyCoordinator.shouldSuppressPeer(.holdToTalk, for: .doubleTapOnly))
+        XCTAssertNil(AppHotkeyCoordinator.resumeMode(nil, for: .doubleTapAndHold))
+        XCTAssertFalse(AppHotkeyCoordinator.shouldSuppressPeer(nil, for: .doubleTapAndHold))
+    }
 }
