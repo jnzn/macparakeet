@@ -38,6 +38,15 @@ public final class MediaPlayerViewModel {
     /// Whether YouTube stream extraction is still pending (local audio preloaded via prepare())
     public var needsVideoStreamLoad: Bool = false
 
+    /// Optional callback used by the lazy on-open migration of existing
+    /// webm/opus YouTube files to .m4a. The VM invokes this once the
+    /// transcode succeeds; the owner is expected to persist the new
+    /// `filePath` to the database so the next open hits the .m4a directly.
+    /// When `nil`, the lazy migration is suppressed (otherwise we'd delete
+    /// the source webm and orphan the resulting .m4a since the DB would
+    /// still point at the deleted file).
+    public var onPlaybackFilePathConverted: (@Sendable (UUID, String) -> Void)?
+
     private var subtitleCues: [ExportService.SubtitleCue] = []
     private var lastCueIndex: Int = -1
     private var timeObserver: Any?
@@ -45,11 +54,17 @@ public final class MediaPlayerViewModel {
     private var endOfTrackObserver: NSObjectProtocol?
     private var loadingTask: Task<Void, Never>?
     private var loadingTimerTask: Task<Void, Never>?
+    private var playbackConversionTask: Task<Void, Never>?
     private let videoStreamService: VideoStreamService
+    private let playbackConverter: YouTubeAudioPlaybackConverting
     private let logger = Logger(subsystem: "com.macparakeet", category: "MediaPlayer")
 
-    public init(videoStreamService: VideoStreamService = VideoStreamService()) {
+    public init(
+        videoStreamService: VideoStreamService = VideoStreamService(),
+        playbackConverter: YouTubeAudioPlaybackConverting = YouTubeAudioPlaybackConverter()
+    ) {
         self.videoStreamService = videoStreamService
+        self.playbackConverter = playbackConverter
     }
 
     // MARK: - Public API
@@ -86,12 +101,60 @@ public final class MediaPlayerViewModel {
 
         if let filePath = transcription.filePath,
            FileManager.default.fileExists(atPath: filePath) {
-            loadLocalFile(filePath)
-            playerState = .ready
-            logger.info("Prepared YouTube media: loaded local audio, deferring video stream")
+            if YouTubeAudioPlaybackConverter.needsConversion(forPath: filePath),
+               let persist = onPlaybackFilePathConverted {
+                // Existing webm-backed transcription (predates issue #237's
+                // playback fix). Transcode to .m4a in the background so
+                // the audio scrubber starts working. Until it lands, the
+                // player stays empty — Show Video still works via the
+                // stream re-extract path. Next open hits the .m4a directly
+                // (the persist callback writes the new path to the DB).
+                playerState = .ready
+                schedulePlaybackConversion(
+                    inputPath: filePath,
+                    transcriptionId: transcription.id,
+                    persist: persist
+                )
+                logger.info("Prepared YouTube media: queued lazy m4a conversion for unplayable saved audio")
+            } else {
+                loadLocalFile(filePath)
+                playerState = .ready
+                logger.info("Prepared YouTube media: loaded local audio, deferring video stream")
+            }
         } else {
             playerState = .ready
             logger.info("Prepared YouTube media: no local audio file, using transcription duration for scrubber")
+        }
+    }
+
+    /// Runs an off-main transcode of an existing webm-backed file to .m4a
+    /// and, on success, swaps the AVPlayer to the new file in place so the
+    /// audio scrubber starts working without making the user reload. If
+    /// the user navigated away (`cleanup()` cancelled this task) or the
+    /// transcode failed, we just leave the original file alone — next
+    /// open will retry, or the existing Show Video stream-extract path
+    /// remains a viable fallback.
+    private func schedulePlaybackConversion(
+        inputPath: String,
+        transcriptionId: UUID,
+        persist: @escaping @Sendable (UUID, String) -> Void
+    ) {
+        playbackConversionTask?.cancel()
+        let converter = playbackConverter
+        let logger = self.logger
+        playbackConversionTask = Task { @MainActor [weak self] in
+            do {
+                let newPath = try await converter.convertToPlayableM4AIfNeeded(
+                    inputPath: inputPath
+                )
+                guard !Task.isCancelled, let self else { return }
+                if newPath != inputPath {
+                    persist(transcriptionId, newPath)
+                    self.loadLocalFile(newPath)
+                }
+            } catch {
+                logger.error("playback_conversion_failed id=\(transcriptionId, privacy: .public) error_detail=\(error.localizedDescription, privacy: .private)")
+            }
         }
     }
 
@@ -160,6 +223,8 @@ public final class MediaPlayerViewModel {
     public func cleanup() {
         loadingTask?.cancel()
         loadingTask = nil
+        playbackConversionTask?.cancel()
+        playbackConversionTask = nil
         stopLoadingTimer()
         if let timeObserver, let player {
             player.removeTimeObserver(timeObserver)

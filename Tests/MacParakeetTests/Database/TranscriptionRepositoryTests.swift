@@ -553,6 +553,34 @@ final class TranscriptionRepositoryTests: XCTestCase {
         XCTAssertNil(fetched?.chatMessages)
     }
 
+    func testUpdateFilePathRewritesPath() throws {
+        let transcription = Transcription(
+            fileName: "Talk",
+            filePath: "/tmp/source.webm",
+            status: .completed
+        )
+        try repo.save(transcription)
+
+        try repo.updateFilePath(id: transcription.id, filePath: "/tmp/source.m4a")
+
+        let fetched = try repo.fetch(id: transcription.id)
+        XCTAssertEqual(fetched?.filePath, "/tmp/source.m4a")
+    }
+
+    func testUpdateFilePathToNilClearsPath() throws {
+        let transcription = Transcription(
+            fileName: "Talk",
+            filePath: "/tmp/source.webm",
+            status: .completed
+        )
+        try repo.save(transcription)
+
+        try repo.updateFilePath(id: transcription.id, filePath: nil)
+
+        let fetched = try repo.fetch(id: transcription.id)
+        XCTAssertNil(fetched?.filePath)
+    }
+
     func testChatMessagesRoundTrip() throws {
         let transcription = Transcription(fileName: "test.mp3", status: .completed)
         try repo.save(transcription)

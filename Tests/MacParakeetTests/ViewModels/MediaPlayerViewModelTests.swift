@@ -115,4 +115,96 @@ final class MediaPlayerViewModelTests: XCTestCase {
         XCTAssertEqual(vm.playbackMode, .none)
         XCTAssertEqual(vm.playerState, .idle)
     }
+
+    // MARK: - Lazy webm → m4a migration (issue #237 playback fix)
+
+    @MainActor
+    func testPrepareSchedulesPlaybackConversionForExistingWebMFile() async throws {
+        // Place a (zero-byte) webm next to where a converted m4a would land.
+        // We don't need ffmpeg to actually succeed — we only assert that the
+        // VM observed the unplayable extension and scheduled a conversion
+        // via the injected converter (the persist callback proves it).
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("macparakeet-playback-mig-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let webm = dir.appendingPathComponent("video.webm")
+        try Data([0x00]).write(to: webm)
+
+        let stubConverter = StubPlaybackConverter(
+            transformedPath: dir.appendingPathComponent("video.m4a").path
+        )
+
+        let vm = MediaPlayerViewModel(playbackConverter: stubConverter)
+        let persistExpectation = expectation(description: "persistConvertedFilePath called")
+        var persistedID: UUID?
+        var persistedPath: String?
+        vm.onPlaybackFilePathConverted = { id, path in
+            persistedID = id
+            persistedPath = path
+            persistExpectation.fulfill()
+        }
+
+        let transcription = Transcription(
+            fileName: "Talk",
+            filePath: webm.path,
+            sourceURL: "https://www.youtube.com/watch?v=abc"
+        )
+        await vm.prepare(for: transcription)
+
+        await fulfillment(of: [persistExpectation], timeout: 2.0)
+        XCTAssertEqual(persistedID, transcription.id)
+        XCTAssertEqual(persistedPath, dir.appendingPathComponent("video.m4a").path)
+    }
+
+    @MainActor
+    func testPrepareSkipsConversionWhenNoCallbackWired() async throws {
+        // Without `onPlaybackFilePathConverted`, the converter must NOT run
+        // (we'd orphan the resulting .m4a since the DB still points at the
+        // deleted .webm).
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("macparakeet-playback-mig-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let webm = dir.appendingPathComponent("video.webm")
+        try Data([0x00]).write(to: webm)
+
+        let stubConverter = StubPlaybackConverter(
+            transformedPath: dir.appendingPathComponent("video.m4a").path
+        )
+
+        let vm = MediaPlayerViewModel(playbackConverter: stubConverter)
+        // No callback wired.
+
+        let transcription = Transcription(
+            fileName: "Talk",
+            filePath: webm.path,
+            sourceURL: "https://www.youtube.com/watch?v=abc"
+        )
+        await vm.prepare(for: transcription)
+
+        // Give the @MainActor task a couple of runloop hops to settle.
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertEqual(stubConverter.invocationCount, 0, "Converter must not run when callback is absent")
+    }
+}
+
+private final class StubPlaybackConverter: YouTubeAudioPlaybackConverting, @unchecked Sendable {
+    private let transformedPath: String
+    private(set) var invocationCount: Int = 0
+    private let lock = NSLock()
+
+    init(transformedPath: String) {
+        self.transformedPath = transformedPath
+    }
+
+    func convertToPlayableM4AIfNeeded(inputPath: String) async throws -> String {
+        lock.lock()
+        invocationCount += 1
+        lock.unlock()
+        return transformedPath
+    }
 }

@@ -131,6 +131,15 @@ struct TranscriptResultView: View {
     var body: some View {
         adaptiveLayout
         .onAppear {
+            // Lazy migration for existing webm/opus YouTube audio files
+            // saved before issue #237's playback fix shipped. The VM
+            // transcodes in the background; this callback persists the new
+            // .m4a path so the next open hits it directly.
+            playerViewModel.onPlaybackFilePathConverted = { [viewModel] id, newPath in
+                Task { @MainActor in
+                    viewModel.applyConvertedPlaybackPath(transcriptionID: id, newFilePath: newPath)
+                }
+            }
             Task {
                 if showVideoPanel {
                     await playerViewModel.load(for: transcription)

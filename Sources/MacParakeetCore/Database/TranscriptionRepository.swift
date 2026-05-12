@@ -16,6 +16,7 @@ public protocol TranscriptionRepositoryProtocol: Sendable {
     func updateFileName(id: UUID, fileName: String) throws
     func updateChatMessages(id: UUID, chatMessages: [ChatMessage]?) throws
     func updateSpeakers(id: UUID, speakers: [SpeakerInfo]?) throws
+    func updateFilePath(id: UUID, filePath: String?) throws
     func clearStoredAudioPathsForURLTranscriptions() throws
     func updateFavorite(id: UUID, isFavorite: Bool) throws
     func fetchFavorites() throws -> [Transcription]
@@ -81,6 +82,7 @@ extension TranscriptionRepositoryProtocol {
     public func updateFileName(id: UUID, fileName: String) throws {}
     public func updateChatMessages(id: UUID, chatMessages: [ChatMessage]?) throws {}
     public func updateSpeakers(id: UUID, speakers: [SpeakerInfo]?) throws {}
+    public func updateFilePath(id: UUID, filePath: String?) throws {}
     public func updateFavorite(id: UUID, isFavorite: Bool) throws {}
     public func fetchFavorites() throws -> [Transcription] { [] }
 }
@@ -410,6 +412,15 @@ public final class TranscriptionRepository: TranscriptionRepositoryProtocol {
         try dbQueue.write { db in
             guard var transcription = try Transcription.fetchOne(db, key: id) else { return }
             transcription.userNotes = userNotes
+            transcription.updatedAt = Date()
+            try transcription.update(db)
+        }
+    }
+
+    public func updateFilePath(id: UUID, filePath: String?) throws {
+        try dbQueue.write { db in
+            guard var transcription = try Transcription.fetchOne(db, key: id) else { return }
+            transcription.filePath = filePath
             transcription.updatedAt = Date()
             try transcription.update(db)
         }

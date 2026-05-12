@@ -507,6 +507,24 @@ public final class TranscriptionViewModel {
         service.saveIfEnabled(transcription, scope: scope)
     }
 
+    /// Persist a new playback-friendly file path produced by the background
+    /// YouTube audio transcode (webm/opus → m4a). Used by MediaPlayerViewModel's
+    /// lazy on-open migration so the next open hits the .m4a directly.
+    public func applyConvertedPlaybackPath(transcriptionID: UUID, newFilePath: String) {
+        guard let repo = transcriptionRepo else { return }
+        do {
+            try repo.updateFilePath(id: transcriptionID, filePath: newFilePath)
+        } catch {
+            logger.error("transcription_file_path_update_failed id=\(transcriptionID, privacy: .public) error_detail=\(error.localizedDescription, privacy: .private)")
+            return
+        }
+        if let current = currentTranscription, current.id == transcriptionID {
+            var updated = current
+            updated.filePath = newFilePath
+            currentTranscription = updated
+        }
+    }
+
     public func presentCompletedTranscription(_ transcription: Transcription) {
         presentCompletedTranscription(transcription, autoSave: false, runAutoPrompts: true)
     }
