@@ -676,18 +676,18 @@ private struct TopAppRow: View {
                     lineWidth: 0.5
                 )
         )
-        // Instant detail popover anchored to the row's top-right edge so it
-        // floats above the percent column rather than the row's leading icon
-        // — that keeps it clear of the "Where you dictate" section title and
-        // lands closer to where the eye is reading numbers. Mirrors the
-        // heatmap's hover pattern (no system tooltip delay, no system arrow).
-        .overlay(alignment: .topTrailing) {
+        // Instant detail popover anchored to the row's top-center so it
+        // floats above the row's midpoint — visually balanced, clear of the
+        // "Where you dictate" section title and the percent column.
+        // Mirrors the heatmap's hover pattern (no system tooltip delay, no
+        // system arrow).
+        .overlay(alignment: .top) {
             if isHovered {
                 TopAppHoverDetail(entry: entry, resolved: resolved)
                     .fixedSize()
-                    .offset(x: -8, y: -54)
+                    .offset(x: 0, y: -54)
                     .allowsHitTesting(false)
-                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .bottomTrailing)))
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .bottom)))
             }
         }
         // CRITICAL: without this, SwiftUI's hit-walk only registers hover on
