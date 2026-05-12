@@ -518,7 +518,9 @@ public final class DictationRepository: DictationRepositoryProtocol {
     }
 
     func dailyStats(daysBack days: Int, now: Date, calendar: Calendar) throws -> [DailyDictationStat] {
-        try dbQueue.read { db in
+        guard days > 0 else { return [] }
+
+        return try dbQueue.read { db in
             let today = calendar.startOfDay(for: now)
             guard let start = calendar.date(byAdding: .day, value: -(days - 1), to: today) else { return [] }
             let startKey = Self.dayKey(for: start, calendar: calendar)
@@ -588,7 +590,10 @@ public final class DictationRepository: DictationRepositoryProtocol {
     /// after `Clear History`). Per-app rollup is intentionally not persisted;
     /// the heatmap is the privileged surface that survives deletion.
     public func topApps(limit: Int) throws -> [(app: String, count: Int, words: Int)] {
-        try dbQueue.read { db in
+        let safeLimit = min(max(limit, 0), 1_000)
+        guard safeLimit > 0 else { return [] }
+
+        return try dbQueue.read { db in
             let rows = try Row.fetchAll(db, sql: """
                 SELECT pastedToApp, COUNT(*) AS cnt, COALESCE(SUM(wordCount), 0) AS words
                 FROM dictations
@@ -598,7 +603,7 @@ public final class DictationRepository: DictationRepositoryProtocol {
                 GROUP BY pastedToApp
                 ORDER BY cnt DESC, pastedToApp ASC
                 LIMIT ?
-            """, arguments: [limit])
+            """, arguments: [safeLimit])
             return rows.map { row in
                 let app: String = row["pastedToApp"] ?? ""
                 let cnt: Int = row["cnt"] ?? 0

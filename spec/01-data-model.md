@@ -848,6 +848,7 @@ migrator.registerMigration("v0.7-prompts-and-summaries") { db in
 // v0.9 — transcriptions.derivedTitle and transcriptions.derivedSnippet
 // v0.10 — quick_prompts (v0.6 Live Ask product surface)
 // v0.10 — transcription library indexes (sourceType/favorite/status + createdAt)
+// v0.11 — daily_dictation_stats
 ```
 
 ### Migration Rules

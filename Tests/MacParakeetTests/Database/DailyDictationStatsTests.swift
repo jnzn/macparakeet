@@ -106,6 +106,13 @@ final class DailyDictationStatsTests: XCTestCase {
         XCTAssertTrue(Calendar.current.isDateInToday(stats.last!.day))
     }
 
+    func testDailyStatsRejectsNonPositiveWindow() throws {
+        try repo.save(Dictation(durationMs: 1000, rawTranscript: "today", wordCount: 1))
+
+        XCTAssertEqual(try repo.dailyStats(daysBack: 0), [])
+        XCTAssertEqual(try repo.dailyStats(daysBack: -7), [])
+    }
+
     // MARK: - Streak helpers (pure)
 
     func testCurrentStreakWithTodayActive() {
@@ -242,5 +249,14 @@ final class DailyDictationStatsTests: XCTestCase {
         d.pastedToApp = "   "
         try repo.save(d)
         XCTAssertEqual(try repo.topApps(limit: 5).count, 0)
+    }
+
+    func testTopAppsRejectsNonPositiveLimit() throws {
+        var d = Dictation(durationMs: 1000, rawTranscript: "safari", wordCount: 1)
+        d.pastedToApp = "com.apple.Safari"
+        try repo.save(d)
+
+        XCTAssertEqual(try repo.topApps(limit: 0).count, 0)
+        XCTAssertEqual(try repo.topApps(limit: -5).count, 0)
     }
 }
