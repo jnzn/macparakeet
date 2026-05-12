@@ -209,7 +209,10 @@ public final class DictationHistoryViewModel {
     }
 
     public func copyToClipboard(_ dictation: Dictation) {
-        let text = dictation.cleanTranscript ?? dictation.rawTranscript
+        // Use `displayText` so the "Undo AI edit" per-row override is honored
+        // — copying a row showing raw text should copy raw text, not the
+        // suppressed cleaned version.
+        let text = dictation.displayText
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
         Telemetry.send(.copyToClipboard(source: .history))
@@ -220,6 +223,49 @@ public final class DictationHistoryViewModel {
             try? await Task.sleep(for: .seconds(1.5))
             guard !Task.isCancelled else { return }
             self.copiedDictationId = nil
+        }
+    }
+
+    // MARK: - Undo AI edit
+
+    /// Toggle the per-row "Undo AI edit" override. Flipping to `true` shows
+    /// `rawTranscript` on history / copy / export surfaces; flipping back to
+    /// `false` re-applies the cleaned version. Persisted via the repository.
+    public func toggleDisplayRawTranscript(for dictation: Dictation) {
+        guard let repo = dictationRepo else { return }
+        guard dictation.hasAIEdit else { return }
+        let newValue = !dictation.displayRawTranscript
+        do {
+            _ = try repo.setDisplayRawTranscript(id: dictation.id, value: newValue)
+            // Intentionally no telemetry event: adding a `TelemetryEventName`
+            // case would require a companion update to the Cloudflare Worker
+            // allowlist (the Worker rejects the entire batch on unknown
+            // events). Keeping this PR scoped to Undo AI edit — telemetry can
+            // be added as a follow-up if usage signal is needed.
+        } catch {
+            logger.error("Failed to toggle displayRawTranscript for \(dictation.id): \(error.localizedDescription)")
+            return
+        }
+        // In-place update — the toggle only changes display state on one row.
+        // Re-fetching + re-grouping 200 dictations to flip a Bool would
+        // re-render the entire list (visible flicker on the active row's
+        // crossfade animation) and burn a database read. Sort order /
+        // grouping are driven by `createdAt`, which the toggle never
+        // touches, so a targeted mutation is safe.
+        updateDictationInPlace(id: dictation.id) { dictation in
+            dictation.displayRawTranscript = newValue
+        }
+    }
+
+    private func updateDictationInPlace(
+        id: UUID,
+        mutate: (inout Dictation) -> Void
+    ) {
+        for sectionIdx in groupedDictations.indices {
+            if let rowIdx = groupedDictations[sectionIdx].1.firstIndex(where: { $0.id == id }) {
+                mutate(&groupedDictations[sectionIdx].1[rowIdx])
+                return
+            }
         }
     }
 
