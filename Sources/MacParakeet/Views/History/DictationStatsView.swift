@@ -357,13 +357,22 @@ struct StreakHeatmap: View {
             HStack(alignment: .top, spacing: Self.cellSpacing) {
                 weekdayLabelColumn
 
-                ZStack(alignment: .topLeading) {
-                    gridBody(columns: columns)
-                    if let h = hoveredCell {
-                        floatingTooltip(for: h, columnCount: columns.count)
+                // The tooltip lives in an `.overlay` (which never propagates
+                // a sizing hint to the parent) and uses `.offset` (a render-
+                // only transform). Earlier this was a ZStack with a
+                // `.position`-modified tooltip — `.position` claims the
+                // ZStack's full bounds, which leaked a "fill" signal up the
+                // tree. When the outer card was wider than the heatmap, the
+                // surrounding `.frame(maxWidth: .infinity, alignment: .center)`
+                // would re-center on every tooltip mount/unmount, producing
+                // a rapid left/right jitter as the mouse moved cell-to-cell.
+                gridBody(columns: columns)
+                    .overlay(alignment: .topLeading) {
+                        if let h = hoveredCell {
+                            floatingTooltip(for: h, columnCount: columns.count)
+                        }
                     }
-                }
-                .animation(.easeOut(duration: 0.12), value: hoveredCell)
+                    .animation(.easeOut(duration: 0.12), value: hoveredCell)
             }
         }
         .onAppear {
@@ -445,10 +454,15 @@ struct StreakHeatmap: View {
     }
 
     private func floatingTooltip(for h: HoveredCell, columnCount: Int) -> some View {
-        // Tooltip is ~52pt tall, ~210pt wide. Show above cell when row >= 2;
+        // Tooltip is ~52pt tall, ~220pt wide. Show above cell when row >= 2;
         // otherwise below to avoid clipping the heatmap's top edge.
-        let tooltipHeight: CGFloat = 52
-        let tooltipHalfWidth: CGFloat = 110
+        //
+        // Anchor: top-leading of the grid (via the `.overlay(alignment:)`
+        // host). We compute the offset of the tooltip's TOP-LEFT corner,
+        // not its center — `.offset` shifts visually without affecting
+        // layout, which is the whole point of the jitter fix.
+        let tooltipApproxWidth: CGFloat = 220
+        let tooltipApproxHeight: CGFloat = 52
         let gap: CGFloat = 8
         let cellStride = Self.cellSize + Self.cellSpacing
 
@@ -457,17 +471,20 @@ struct StreakHeatmap: View {
         let cellBottom = cellTop + Self.cellSize
         let showAbove = h.row >= 2
 
-        // Clamp horizontally so the tooltip doesn't slide off the grid edge.
-        let gridWidth = CGFloat(columnCount) * cellStride - Self.cellSpacing
-        let clampedX = max(tooltipHalfWidth, min(gridWidth - tooltipHalfWidth, cellMidX))
+        // Tooltip top-left so its horizontal center sits on the cell.
+        let rawLeftX = cellMidX - tooltipApproxWidth / 2
 
-        let centerY = showAbove
-            ? cellTop - tooltipHeight / 2 - gap
-            : cellBottom + tooltipHeight / 2 + gap
+        // Keep the tooltip's bounding box inside the grid's horizontal extent.
+        let gridWidth = CGFloat(columnCount) * cellStride - Self.cellSpacing
+        let clampedLeftX = max(0, min(gridWidth - tooltipApproxWidth, rawLeftX))
+
+        let topY = showAbove
+            ? cellTop - tooltipApproxHeight - gap
+            : cellBottom + gap
 
         return HeatmapTooltipView(stat: h.stat)
             .fixedSize()
-            .position(x: clampedX, y: centerY)
+            .offset(x: clampedLeftX, y: topY)
             .allowsHitTesting(false)
             .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: showAbove ? .bottom : .top)))
     }
