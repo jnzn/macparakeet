@@ -143,6 +143,10 @@ final class TransformsCoordinator {
         guard let llmService = llmServiceProvider() else {
             panelController?.show(label: prompt.derivedRunningLabel)
             panelController?.fail(message: "Add an LLM provider in Settings")
+            Telemetry.send(.transformFailed(
+                transformName: TelemetryTransformName(builtInName: prompt.name, isBuiltIn: prompt.isBuiltIn),
+                reason: .noProvider
+            ))
             logger.notice("transforms: no LLM provider configured for \(prompt.name, privacy: .public)")
             return
         }
@@ -165,6 +169,11 @@ final class TransformsCoordinator {
         let promptBody = prompt.content
         let runningTransformName = prompt.name
 
+        let telemetryName = TelemetryTransformName(
+            builtInName: prompt.name,
+            isBuiltIn: prompt.isBuiltIn
+        )
+
         inFlightTask = Task { @MainActor [weak self] in
             guard let self else { return }
             defer {
@@ -173,7 +182,7 @@ final class TransformsCoordinator {
                 }
             }
             do {
-                _ = try await executor.run(
+                let result = try await executor.run(
                     prompt: promptBody,
                     onProgress: { [weak self] progress in
                         if case .failed = progress {
@@ -188,19 +197,38 @@ final class TransformsCoordinator {
                 )
                 guard self.activeRunID == runID else { return }
                 self.panelController?.done(message: "Done")
+                Telemetry.send(.transformExecuted(
+                    transformName: telemetryName,
+                    capturePath: result.captureTag == "ax" ? .ax : .clipboard,
+                    replacePath: result.path == .ax ? .ax : .clipboardPaste,
+                    llmMs: result.llmElapsedMs,
+                    totalMs: result.totalElapsedMs
+                ))
                 self.logger.notice("transforms: \(runningTransformName, privacy: .public) completed")
             } catch let error as TransformExecutorError {
                 guard self.activeRunID == runID else { return }
                 switch error {
                 case .cancelled:
                     self.panelController?.close()
-                default:
+                    Telemetry.send(.transformFailed(transformName: telemetryName, reason: .cancelled))
+                case .emptySelection:
                     self.panelController?.fail(message: error.localizedDescription)
+                    Telemetry.send(.transformFailed(transformName: telemetryName, reason: .emptySelection))
+                case .llmNotConfigured:
+                    self.panelController?.fail(message: error.localizedDescription)
+                    Telemetry.send(.transformFailed(transformName: telemetryName, reason: .noProvider))
+                case .llmFailed, .captureFailed:
+                    self.panelController?.fail(message: error.localizedDescription)
+                    Telemetry.send(.transformFailed(transformName: telemetryName, reason: .llmFailed))
+                case .replacementFailed:
+                    self.panelController?.fail(message: error.localizedDescription)
+                    Telemetry.send(.transformFailed(transformName: telemetryName, reason: .replacementFailed))
                 }
                 self.logger.notice("transforms: \(runningTransformName, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
             } catch {
                 guard self.activeRunID == runID else { return }
                 self.panelController?.fail(message: error.localizedDescription)
+                Telemetry.send(.transformFailed(transformName: telemetryName, reason: .llmFailed))
             }
         }
     }
