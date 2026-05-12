@@ -58,14 +58,7 @@ struct DictationHistoryView: View {
 
     private var subTabPicker: some View {
         HStack {
-            Picker("", selection: $viewModel.selectedSubTab) {
-                Text("History").tag(DictationHistoryViewModel.SubTab.history)
-                Text("Stats").tag(DictationHistoryViewModel.SubTab.stats)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(maxWidth: 220)
-
+            DictationSubTabPicker(selection: $viewModel.selectedSubTab)
             Spacer()
         }
         .padding(.horizontal, DesignSystem.Spacing.lg)

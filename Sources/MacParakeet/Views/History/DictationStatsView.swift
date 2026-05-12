@@ -60,55 +60,25 @@ struct DictationStatsView: View {
             ],
             spacing: DesignSystem.Spacing.md
         ) {
-            heroTile(
-                label: "TOTAL WORDS",
+            HeroStatTile(
+                label: "Total words",
                 value: stats.totalWords.compactFormatted,
                 subtitle: wordsSubtitle(stats),
-                icon: "text.word.spacing"
+                accent: true
             )
-            heroTile(
-                label: "VOICE SPEED",
+            HeroStatTile(
+                label: "Voice speed",
                 value: stats.averageWPM.formattedWPM,
                 subtitle: wpmDescriptor(stats.averageWPM),
-                icon: "gauge.with.dots.needle.33percent"
+                accent: false
             )
-            heroTile(
-                label: "TIME SPEAKING",
+            HeroStatTile(
+                label: "Time speaking",
                 value: stats.totalDurationMs.friendlyDuration,
                 subtitle: timeSpeakingSubtitle(stats),
-                icon: "clock"
+                accent: false
             )
         }
-    }
-
-    private func heroTile(label: String, value: String, subtitle: String, icon: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(DesignSystem.Colors.accent)
-                Text(label)
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            Text(value)
-                .font(.system(size: 28, weight: .bold, design: .rounded))
-                .contentTransition(.numericText())
-            Text(subtitle)
-                .font(DesignSystem.Typography.micro)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(DesignSystem.Spacing.md)
-        .background(
-            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
-                .fill(DesignSystem.Colors.cardBackground)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
-                .strokeBorder(DesignSystem.Colors.border.opacity(0.6), lineWidth: 0.5)
-        )
     }
 
     private func wordsSubtitle(_ stats: DictationStats) -> String {
@@ -139,35 +109,85 @@ struct DictationStatsView: View {
         return "\(stats.totalCount) dictation\(stats.totalCount == 1 ? "" : "s")"
     }
 
-    // MARK: - Streak Heatmap
+    // MARK: - Streak Heatmap Card
 
     private var streakHeatmapCard: some View {
-        VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
-            HStack(alignment: .firstTextBaseline) {
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
+            // Headline row with brand glyph anchoring the streak number.
+            // The glyph signals "this is the brand's hero stat surface"
+            // and gives the headline a visual lock-up without crowding.
+            HStack(alignment: .center, spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(DesignSystem.Colors.accent.opacity(0.12))
+                        .frame(width: 34, height: 34)
+                    BreathWaveLogo(size: 22, tint: DesignSystem.Colors.accent)
+                }
+
                 Text(streakHeadline)
-                    .font(DesignSystem.Typography.heroTitle)
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .contentTransition(.numericText())
+                    .monospacedDigit()
+
                 Spacer()
-                Text("LONGEST STREAK | \(viewModel.longestStreak) DAY\(viewModel.longestStreak == 1 ? "" : "S")")
-                    .font(.system(size: 10, weight: .semibold))
+
+                Text("Longest streak · \(viewModel.longestStreak) day\(viewModel.longestStreak == 1 ? "" : "s")")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundStyle(.tertiary)
+                    .monospacedDigit()
             }
 
             StreakHeatmap(days: viewModel.dailyStats)
+                .frame(maxWidth: .infinity, alignment: .center)
 
-            HStack(spacing: DesignSystem.Spacing.md) {
-                heatmapLegend
+            HStack(spacing: 8) {
+                Text("Less")
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .foregroundStyle(.tertiary)
+                ForEach(0..<5, id: \.self) { level in
+                    RoundedRectangle(cornerRadius: 2.5)
+                        .fill(StreakHeatmap.color(for: level))
+                        .frame(width: 11, height: 11)
+                }
+                Text("More")
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .foregroundStyle(.tertiary)
                 Spacer()
-                currentStreakBadge
             }
         }
         .padding(DesignSystem.Spacing.lg)
         .background(
+            // A barely-perceptible diagonal gradient gives the hero card a
+            // hint of depth without crossing into glossy. Both stops are
+            // close enough that it reads as a single surface, not a panel.
             RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
-                .fill(DesignSystem.Colors.cardBackground)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            DesignSystem.Colors.cardBackground,
+                            DesignSystem.Colors.surfaceElevated.opacity(0.45)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
         )
         .overlay(
+            // A whisper-thin coral highlight on the top edge — a single
+            // pixel of brand color that gives the card a "lit-from-above"
+            // feel. Invisible at a glance, felt subliminally.
             RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
-                .strokeBorder(DesignSystem.Colors.border.opacity(0.6), lineWidth: 0.5)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [
+                            DesignSystem.Colors.accent.opacity(0.18),
+                            Color.primary.opacity(0.04)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 0.5
+                )
         )
     }
 
@@ -177,49 +197,23 @@ struct DictationStatsView: View {
         return "\(n) day streak"
     }
 
-    private var heatmapLegend: some View {
-        HStack(spacing: 4) {
-            Text("Less")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.tertiary)
-            ForEach(0..<5, id: \.self) { level in
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(StreakHeatmap.color(for: level))
-                    .frame(width: 10, height: 10)
-            }
-            Text("More")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.tertiary)
-        }
-    }
-
-    private var currentStreakBadge: some View {
-        HStack(spacing: 4) {
-            RoundedRectangle(cornerRadius: 2)
-                .strokeBorder(DesignSystem.Colors.accent, lineWidth: 1.5)
-                .frame(width: 10, height: 10)
-            Text("Current streak")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.tertiary)
-        }
-    }
-
     // MARK: - Top Apps
 
     private var topAppsCard: some View {
-        let maxCount = viewModel.topApps.map(\.count).max() ?? 1
         let totalCount = viewModel.topApps.reduce(0) { $0 + $1.count }
+        let maxCount = viewModel.topApps.map(\.count).max() ?? 1
         return VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Where you dictate")
-                    .font(DesignSystem.Typography.sectionTitle)
+                    .font(.system(size: 18, weight: .semibold, design: .rounded))
                 Spacer()
-                Text("TOP \(viewModel.topApps.count) APP\(viewModel.topApps.count == 1 ? "" : "S")")
-                    .font(.system(size: 10, weight: .semibold))
+                Text("Top \(viewModel.topApps.count) app\(viewModel.topApps.count == 1 ? "" : "s")")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundStyle(.tertiary)
+                    .monospacedDigit()
             }
 
-            VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
+            VStack(alignment: .leading, spacing: 6) {
                 ForEach(viewModel.topApps) { entry in
                     TopAppRow(
                         entry: entry,
@@ -232,12 +226,90 @@ struct DictationStatsView: View {
         .padding(DesignSystem.Spacing.lg)
         .background(
             RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
-                .fill(DesignSystem.Colors.cardBackground)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            DesignSystem.Colors.cardBackground,
+                            DesignSystem.Colors.surfaceElevated.opacity(0.45)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
         )
         .overlay(
             RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
-                .strokeBorder(DesignSystem.Colors.border.opacity(0.6), lineWidth: 0.5)
+                .strokeBorder(Color.primary.opacity(0.05), lineWidth: 0.5)
         )
+    }
+}
+
+// MARK: - Hero Stat Tile
+
+private struct HeroStatTile: View {
+    let label: String
+    let value: String
+    let subtitle: String
+    /// When true, the hero value is rendered in the brand accent.
+    /// Reserved for the lead tile only — three accented values would
+    /// flatten the visual hierarchy.
+    let accent: Bool
+
+    @State private var isHovered = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(label)
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .foregroundStyle(accent ? DesignSystem.Colors.accent : Color.primary)
+                .contentTransition(.numericText())
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(subtitle)
+                .font(.system(size: 12, weight: .regular, design: .rounded))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, DesignSystem.Spacing.md)
+        .padding(.vertical, DesignSystem.Spacing.md + 2)
+        .background(
+            // Same diagonal-gradient depth treatment as the streak card,
+            // so the three tiles read as the same material family.
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            DesignSystem.Colors.cardBackground,
+                            DesignSystem.Colors.surfaceElevated.opacity(0.45)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
+                .strokeBorder(
+                    isHovered
+                        ? DesignSystem.Colors.accent.opacity(0.30)
+                        : Color.primary.opacity(0.05),
+                    lineWidth: 0.5
+                )
+        )
+        .scaleEffect(isHovered ? 1.012 : 1.0)
+        .shadow(
+            color: .black.opacity(isHovered ? 0.10 : 0.0),
+            radius: isHovered ? 10 : 0,
+            x: 0,
+            y: isHovered ? 4 : 0
+        )
+        .animation(.easeOut(duration: 0.18), value: isHovered)
+        .onHover { isHovered = $0 }
     }
 }
 
@@ -246,55 +318,89 @@ struct DictationStatsView: View {
 struct StreakHeatmap: View {
     let days: [DailyDictationStat]
 
-    private let cellSize: CGFloat = 12
-    private let cellSpacing: CGFloat = 3
-    private let weekdayLabels = ["Mon", "Wed", "Fri"] // sparse like GitHub
+    @State private var hoveredCell: HoveredCell?
+    @State private var todayPulse: Bool = false
+
+    struct HoveredCell: Equatable {
+        let col: Int
+        let row: Int
+        let stat: DailyDictationStat
+    }
+
+    fileprivate static let cellSize: CGFloat = 16
+    fileprivate static let cellSpacing: CGFloat = 4
+    private let weekdayLabelWidth: CGFloat = 28
+    private let monthLabelHeight: CGFloat = 14
 
     var body: some View {
-        // The dailyStats array is ordered oldest-first, length = 26 * 7 = 182.
-        // It's a dense window ending today (inclusive) at the LAST element.
-        // We pad the start of the first column with empty cells so the
-        // bottom-right cell is today and the grid reads left-to-right,
-        // top-to-bottom in calendar order.
-        VStack(alignment: .leading, spacing: cellSpacing) {
-            monthLabelRow
-            HStack(alignment: .top, spacing: cellSpacing) {
+        let columns = buildColumns()
+        let boundaries = monthBoundaries(columns: columns)
+        let cellStride = Self.cellSize + Self.cellSpacing
+
+        VStack(alignment: .leading, spacing: Self.cellSpacing) {
+            // Month-label row: free-floating Text positioned at each month-change column.
+            ZStack(alignment: .topLeading) {
+                Color.clear.frame(
+                    width: CGFloat(columns.count) * Self.cellSize + CGFloat(max(0, columns.count - 1)) * Self.cellSpacing,
+                    height: monthLabelHeight
+                )
+                ForEach(boundaries, id: \.col) { boundary in
+                    Text(boundary.label)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.tertiary)
+                        .fixedSize()
+                        .offset(x: CGFloat(boundary.col) * cellStride, y: 0)
+                }
+            }
+            .padding(.leading, weekdayLabelWidth + Self.cellSpacing)
+
+            HStack(alignment: .top, spacing: Self.cellSpacing) {
                 weekdayLabelColumn
-                gridBody
+
+                ZStack(alignment: .topLeading) {
+                    gridBody(columns: columns)
+                    if let h = hoveredCell {
+                        floatingTooltip(for: h, columnCount: columns.count)
+                    }
+                }
+                .animation(.easeOut(duration: 0.12), value: hoveredCell)
+            }
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true)) {
+                todayPulse = true
             }
         }
     }
 
+    // MARK: - Subviews
+
     private var weekdayLabelColumn: some View {
-        VStack(alignment: .trailing, spacing: cellSpacing) {
+        VStack(alignment: .trailing, spacing: Self.cellSpacing) {
             ForEach(0..<7, id: \.self) { row in
                 Group {
                     if let label = weekdayLabel(forRow: row) {
                         Text(label)
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(.tertiary)
                     } else {
                         Color.clear
                     }
                 }
-                .frame(width: 22, height: cellSize, alignment: .trailing)
+                .frame(width: weekdayLabelWidth, height: Self.cellSize, alignment: .trailing)
             }
         }
     }
 
-    private var gridBody: some View {
-        let columns = buildColumns()
-        return HStack(alignment: .top, spacing: cellSpacing) {
+    private func gridBody(columns: [[DailyDictationStat?]]) -> some View {
+        HStack(alignment: .top, spacing: Self.cellSpacing) {
             ForEach(columns.indices, id: \.self) { colIdx in
-                VStack(spacing: cellSpacing) {
+                VStack(spacing: Self.cellSpacing) {
                     ForEach(0..<7, id: \.self) { row in
                         if let stat = columns[colIdx][row] {
-                            cell(for: stat)
+                            cell(for: stat, col: colIdx, row: row)
                         } else {
-                            // Padding cell before the data window's first day,
-                            // or after today (won't happen since today is the
-                            // last element, but defensive).
-                            Color.clear.frame(width: cellSize, height: cellSize)
+                            Color.clear.frame(width: Self.cellSize, height: Self.cellSize)
                         }
                     }
                 }
@@ -302,74 +408,85 @@ struct StreakHeatmap: View {
         }
     }
 
-    private var monthLabelRow: some View {
-        // Spans columns; uses fixed approximate spacing tuned for 26 columns.
-        // We compute label positions by walking the grid and surfacing the
-        // first column of each month change.
-        let columns = buildColumns()
-        let labels = monthLabels(columns: columns)
-        return HStack(alignment: .center, spacing: cellSpacing) {
-            // Spacer for weekday-label column
-            Color.clear.frame(width: 22, height: 10)
-            ForEach(columns.indices, id: \.self) { colIdx in
-                Group {
-                    if let label = labels[colIdx] {
-                        Text(label)
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundStyle(.tertiary)
-                    } else {
-                        Color.clear
-                    }
-                }
-                .frame(width: cellSize, height: 10, alignment: .leading)
-            }
-        }
-    }
-
-    private func cell(for stat: DailyDictationStat) -> some View {
+    private func cell(for stat: DailyDictationStat, col: Int, row: Int) -> some View {
         let level = Self.level(forCount: stat.count)
-        let calendar = Calendar.current
-        let isToday = calendar.isDateInToday(stat.day)
-        return RoundedRectangle(cornerRadius: 2)
+        let isToday = Calendar.current.isDateInToday(stat.day)
+        let isHovered = hoveredCell?.stat.day == stat.day
+
+        return RoundedRectangle(cornerRadius: 3)
             .fill(Self.color(for: level))
-            .frame(width: cellSize, height: cellSize)
+            .frame(width: Self.cellSize, height: Self.cellSize)
             .overlay(
-                RoundedRectangle(cornerRadius: 2)
+                // Today: stronger ring + breathing animation so it reads as "you are here".
+                RoundedRectangle(cornerRadius: 3)
                     .strokeBorder(
                         isToday ? DesignSystem.Colors.accent : Color.clear,
-                        lineWidth: isToday ? 1.5 : 0
+                        lineWidth: isToday ? 1.75 : 0
+                    )
+                    .opacity(isToday && todayPulse ? 1.0 : (isToday ? 0.55 : 0))
+            )
+            .overlay(
+                // Hover: white-ish stroke for affordance.
+                RoundedRectangle(cornerRadius: 3)
+                    .strokeBorder(
+                        isHovered ? Color.primary.opacity(0.55) : Color.clear,
+                        lineWidth: 1.0
                     )
             )
-            .help(tooltip(for: stat))
+            .scaleEffect(isHovered ? 1.18 : 1.0)
+            .zIndex(isHovered ? 1 : 0)
+            .onHover { hovering in
+                if hovering {
+                    hoveredCell = HoveredCell(col: col, row: row, stat: stat)
+                } else if hoveredCell?.stat.day == stat.day {
+                    hoveredCell = nil
+                }
+            }
     }
 
-    private func tooltip(for stat: DailyDictationStat) -> String {
-        let df = DateFormatter()
-        df.dateStyle = .medium
-        let dateStr = df.string(from: stat.day)
-        if stat.count == 0 {
-            return "\(dateStr) — No dictations"
-        }
-        return "\(dateStr) — \(stat.count) dictation\(stat.count == 1 ? "" : "s"), \(stat.words) word\(stat.words == 1 ? "" : "s")"
+    private func floatingTooltip(for h: HoveredCell, columnCount: Int) -> some View {
+        // Tooltip is ~52pt tall, ~210pt wide. Show above cell when row >= 2;
+        // otherwise below to avoid clipping the heatmap's top edge.
+        let tooltipHeight: CGFloat = 52
+        let tooltipHalfWidth: CGFloat = 110
+        let gap: CGFloat = 8
+        let cellStride = Self.cellSize + Self.cellSpacing
+
+        let cellMidX = CGFloat(h.col) * cellStride + Self.cellSize / 2
+        let cellTop = CGFloat(h.row) * cellStride
+        let cellBottom = cellTop + Self.cellSize
+        let showAbove = h.row >= 2
+
+        // Clamp horizontally so the tooltip doesn't slide off the grid edge.
+        let gridWidth = CGFloat(columnCount) * cellStride - Self.cellSpacing
+        let clampedX = max(tooltipHalfWidth, min(gridWidth - tooltipHalfWidth, cellMidX))
+
+        let centerY = showAbove
+            ? cellTop - tooltipHeight / 2 - gap
+            : cellBottom + tooltipHeight / 2 + gap
+
+        return HeatmapTooltipView(stat: h.stat)
+            .fixedSize()
+            .position(x: clampedX, y: centerY)
+            .allowsHitTesting(false)
+            .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: showAbove ? .bottom : .top)))
     }
 
     // MARK: - Layout helpers
 
     /// Lays out `days` (oldest-first, 182 entries) into columns where each
-    /// column is one calendar week (7 rows, Sun-top by default since this is
-    /// macOS — uses Calendar.current.firstWeekday). Pads the leading column
-    /// with `nil`s for days that fall before the window's first entry.
+    /// column is one calendar week (7 rows). Pads leading column with `nil`s
+    /// for days before the window's first entry.
     private func buildColumns() -> [[DailyDictationStat?]] {
         guard !days.isEmpty else {
             return Array(repeating: Array(repeating: nil, count: 7), count: 26)
         }
         let calendar = Calendar.current
-        let firstWeekday = calendar.firstWeekday  // 1 = Sunday in en_US
+        let firstWeekday = calendar.firstWeekday
 
         var columns: [[DailyDictationStat?]] = []
         var current: [DailyDictationStat?] = []
 
-        // Row index for the first day: how far it sits from `firstWeekday`.
         let firstWeekdayOfData = calendar.component(.weekday, from: days[0].day)
         let leadingPad = (firstWeekdayOfData - firstWeekday + 7) % 7
         current.append(contentsOf: Array(repeating: nil as DailyDictationStat?, count: leadingPad))
@@ -382,7 +499,6 @@ struct StreakHeatmap: View {
             }
         }
         if !current.isEmpty {
-            // Pad trailing column with nils.
             current.append(contentsOf: Array(repeating: nil as DailyDictationStat?, count: 7 - current.count))
             columns.append(current)
         }
@@ -390,11 +506,8 @@ struct StreakHeatmap: View {
     }
 
     private func weekdayLabel(forRow row: Int) -> String? {
-        // Rows are 0..<7 where row 0 corresponds to firstWeekday.
-        // For en_US firstWeekday=1 (Sun): Mon=row 1, Wed=row 3, Fri=row 5.
         let calendar = Calendar.current
         let weekday = ((calendar.firstWeekday - 1 + row) % 7) + 1
-        // weekday 2=Mon, 4=Wed, 6=Fri
         switch weekday {
         case 2: return "Mon"
         case 4: return "Wed"
@@ -403,19 +516,18 @@ struct StreakHeatmap: View {
         }
     }
 
-    private func monthLabels(columns: [[DailyDictationStat?]]) -> [String?] {
-        // Surface month label on the first column that begins a new month.
+    private func monthBoundaries(columns: [[DailyDictationStat?]]) -> [(col: Int, label: String)] {
         let calendar = Calendar.current
-        var result: [String?] = Array(repeating: nil, count: columns.count)
+        var result: [(col: Int, label: String)] = []
         var lastMonth: Int? = nil
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM"
+
         for (idx, column) in columns.enumerated() {
-            // Use the first non-nil day in the column to detect month.
             guard let firstDay = column.compactMap({ $0 }).first else { continue }
             let month = calendar.component(.month, from: firstDay.day)
             if month != lastMonth {
-                let formatter = DateFormatter()
-                formatter.dateFormat = "MMM"
-                result[idx] = formatter.string(from: firstDay.day)
+                result.append((col: idx, label: formatter.string(from: firstDay.day)))
                 lastMonth = month
             }
         }
@@ -434,14 +546,62 @@ struct StreakHeatmap: View {
         }
     }
 
+    /// Empty cells use `Color.primary.opacity(0.07)` rather than
+    /// `surfaceElevated` because in dark mode the latter is nearly
+    /// indistinguishable from the card background, dissolving the grid's
+    /// visual structure. Primary-based opacity adapts to both schemes.
     static func color(for level: Int) -> Color {
         switch level {
-        case 0: return DesignSystem.Colors.surfaceElevated
-        case 1: return DesignSystem.Colors.accent.opacity(0.22)
-        case 2: return DesignSystem.Colors.accent.opacity(0.45)
-        case 3: return DesignSystem.Colors.accent.opacity(0.70)
+        case 0: return Color.primary.opacity(0.07)
+        case 1: return DesignSystem.Colors.accent.opacity(0.30)
+        case 2: return DesignSystem.Colors.accent.opacity(0.55)
+        case 3: return DesignSystem.Colors.accent.opacity(0.78)
         default: return DesignSystem.Colors.accent
         }
+    }
+}
+
+// MARK: - Heatmap Tooltip
+
+private struct HeatmapTooltipView: View {
+    let stat: DailyDictationStat
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(headline)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(.primary)
+            Text(detail)
+                .font(.system(size: 11, weight: .regular))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(.regularMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.18), radius: 8, x: 0, y: 4)
+    }
+
+    private var headline: String {
+        let cal = Calendar.current
+        if cal.isDateInToday(stat.day) { return "Today" }
+        if cal.isDateInYesterday(stat.day) { return "Yesterday" }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE, MMM d"
+        return formatter.string(from: stat.day)
+    }
+
+    private var detail: String {
+        guard stat.count > 0 else { return "No dictations" }
+        let words = "\(stat.words) word\(stat.words == 1 ? "" : "s")"
+        let duration = stat.durationMs.friendlyDuration
+        return "\(stat.count) dictation\(stat.count == 1 ? "" : "s") · \(words) · \(duration)"
     }
 }
 
@@ -452,50 +612,72 @@ private struct TopAppRow: View {
     let percentOfMax: Double
     let percentOfTotal: Double
 
+    @State private var isHovered = false
+
     var body: some View {
         let resolved = AppNameResolver.shared.resolve(bundleID: entry.bundleID)
         HStack(spacing: DesignSystem.Spacing.sm) {
-            appIcon(for: entry.bundleID)
-                .frame(width: 18, height: 18)
+            appIcon(for: entry.bundleID, fallbackInitial: resolved)
+                .frame(width: 20, height: 20)
 
             Text(resolved)
-                .font(DesignSystem.Typography.bodySmall.weight(.medium))
+                .font(.system(size: 13, weight: .medium, design: .rounded))
                 .lineLimit(1)
-                .frame(width: 120, alignment: .leading)
+                .frame(width: 140, alignment: .leading)
 
-            // Bar
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule()
-                        .fill(DesignSystem.Colors.surfaceElevated)
+                        .fill(Color.primary.opacity(0.06))
                     Capsule()
-                        .fill(DesignSystem.Colors.accent.opacity(0.85))
-                        .frame(width: max(8, geo.size.width * percentOfMax))
+                        .fill(DesignSystem.Colors.accent.opacity(0.4 + percentOfMax * 0.5))
+                        .frame(width: max(12, geo.size.width * percentOfMax))
                 }
             }
-            .frame(height: 16)
+            .frame(height: 14)
 
-            Text("\(Int((percentOfTotal * 100).rounded()))%")
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+            Text(formatPercent(percentOfTotal))
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
-                .frame(width: 36, alignment: .trailing)
-
-            Text("\(entry.count)")
-                .font(DesignSystem.Typography.duration)
-                .foregroundStyle(.tertiary)
-                .frame(width: 36, alignment: .trailing)
+                .frame(width: 44, alignment: .trailing)
+                .monospacedDigit()
         }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isHovered ? Color.primary.opacity(0.05) : Color.clear)
+        )
+        .animation(.easeOut(duration: 0.15), value: isHovered)
+        .onHover { isHovered = $0 }
+    }
+
+    private func formatPercent(_ value: Double) -> String {
+        let pct = value * 100
+        if pct >= 1 {
+            return "\(Int(pct.rounded()))%"
+        } else if pct > 0 {
+            return "<1%"
+        }
+        return "0%"
     }
 
     @ViewBuilder
-    private func appIcon(for bundleID: String) -> some View {
+    private func appIcon(for bundleID: String, fallbackInitial: String) -> some View {
         if let nsImage = AppNameResolver.shared.icon(forBundleID: bundleID) {
             Image(nsImage: nsImage)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
         } else {
-            Image(systemName: "app")
-                .foregroundStyle(.tertiary)
+            // Branded fallback — first letter of the resolved name on a tinted disc,
+            // never the system-grey generic-app icon.
+            ZStack {
+                Circle()
+                    .fill(DesignSystem.Colors.accent.opacity(0.18))
+                Text(String(fallbackInitial.prefix(1)).uppercased())
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(DesignSystem.Colors.accent)
+            }
         }
     }
 }
@@ -531,7 +713,6 @@ final class AppNameResolver {
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
             return bundleID
         }
-        // Prefer the localized display name (CFBundleDisplayName) → CFBundleName → URL last component.
         if let bundle = Bundle(url: url) {
             if let name = bundle.localizedInfoDictionary?["CFBundleDisplayName"] as? String { return name }
             if let name = bundle.infoDictionary?["CFBundleDisplayName"] as? String { return name }
