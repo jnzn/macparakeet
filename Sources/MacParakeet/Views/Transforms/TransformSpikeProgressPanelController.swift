@@ -17,20 +17,18 @@ private final class TransformsSpikePanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-/// Tiny state object the panel binds to. ObservableObject (not @Observable)
-/// because the spike supports macOS 14 and the older binding still works
-/// reliably for one-shot panels.
 @MainActor
-final class TransformSpikeProgressViewModel: ObservableObject {
-    @Published var label: String = "Still polishing…"
-    @Published var phase: Phase = .working
+@Observable
+final class TransformSpikeProgressViewModel {
+    var label: String = "Still polishing…"
+    var phase: Phase = .working
     /// Hidden during the working state's first few seconds — the rose loader
     /// is enough signal that work is in flight, and the user just pressed the
     /// hotkey so they already know what's happening. The controller flips
     /// this on after a patience threshold (`labelRevealDelay`) so longer-than-
     /// usual runs get an empathetic "still working" cue without forcing every
     /// short transform to render text.
-    @Published var showLabel: Bool = false
+    var showLabel: Bool = false
 
     enum Phase: Equatable {
         case working
@@ -168,7 +166,7 @@ final class TransformSpikeProgressPanelController {
         })
     }
 
-    /// Yield once so SwiftUI processes the @Published phase change, then
+    /// Yield once so SwiftUI processes the observed phase change, then
     /// re-measure the hosting view and animate the panel into the right
     /// frame. Resilient to copy length: longer error strings wrap at
     /// `maximumWidth` and the panel grows vertically to fit.
@@ -245,7 +243,7 @@ final class TransformSpikeProgressPanelController {
 // MARK: - View
 
 private struct TransformSpikeProgressView: View {
-    @ObservedObject var viewModel: TransformSpikeProgressViewModel
+    var viewModel: TransformSpikeProgressViewModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
