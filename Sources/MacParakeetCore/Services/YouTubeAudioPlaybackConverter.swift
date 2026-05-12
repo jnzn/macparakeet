@@ -15,7 +15,10 @@ public enum YouTubeAudioPlaybackConverterError: Error, Sendable {
 public protocol YouTubeAudioPlaybackConverting: Sendable {
     /// Convert `inputPath` to an AVPlayer-compatible `.m4a` if needed.
     /// Returns the path of the playable file. If the input is already
-    /// playable, returns the input path unchanged.
+    /// playable, returns the input path unchanged. The caller owns the
+    /// source file's lifetime — this method does **not** delete the
+    /// source after a successful conversion, since the safe deletion
+    /// point is after the caller has persisted the new path.
     func convertToPlayableM4AIfNeeded(inputPath: String) async throws -> String
 }
 
@@ -31,8 +34,9 @@ public final class YouTubeAudioPlaybackConverter: YouTubeAudioPlaybackConverting
     /// AVFoundation has no native WebM container demuxer and no native
     /// Opus/Vorbis decoder; the resulting `AVPlayer` is silent at play()
     /// with no surfaced error. See memory: reference_avplayer_codec_limits.
+    /// `weba` is yt-dlp's audio-only WebM extension.
     public static let unplayableExtensions: Set<String> = [
-        "webm", "opus", "ogg", "mkv"
+        "webm", "weba", "opus", "ogg", "mkv"
     ]
 
     /// Cheap pre-check so callers can avoid spinning up an ffmpeg process
@@ -50,9 +54,6 @@ public final class YouTubeAudioPlaybackConverter: YouTubeAudioPlaybackConverting
         }
 
         let inputURL = URL(fileURLWithPath: inputPath)
-        guard FileManager.default.fileExists(atPath: inputPath) else {
-            throw YouTubeAudioPlaybackConverterError.sourceMissing(inputPath)
-        }
 
         // Write next to the source so storage retention rules (clear cache,
         // Settings > Downloaded YouTube audio) keep applying without any
@@ -60,6 +61,19 @@ public final class YouTubeAudioPlaybackConverter: YouTubeAudioPlaybackConverting
         let outputURL = inputURL
             .deletingPathExtension()
             .appendingPathExtension("m4a")
+
+        // Early-out for the race window between the post-STT converter and
+        // the on-open lazy-migration converter: if a previous run already
+        // produced the m4a and the source webm is gone, just return the
+        // m4a path. Avoids a redundant ffmpeg invocation.
+        let outputExists = FileManager.default.fileExists(atPath: outputURL.path)
+        let inputExists = FileManager.default.fileExists(atPath: inputPath)
+        if outputExists, !inputExists {
+            return outputURL.path
+        }
+        guard inputExists else {
+            throw YouTubeAudioPlaybackConverterError.sourceMissing(inputPath)
+        }
 
         let ffmpegPath = try findFFmpeg()
 
@@ -70,22 +84,45 @@ public final class YouTubeAudioPlaybackConverter: YouTubeAudioPlaybackConverting
         // explicitly drop video tracks (`-vn`) because yt-dlp's webm may
         // still contain a thumbnail image stream that AAC encoders won't
         // accept.
+        //
+        // Concurrency: write to a UUID-tagged temp path, then atomically
+        // move into the final m4a slot. If the post-STT converter and the
+        // on-open lazy-migration race on the same source, both produce
+        // deterministic identical bytes; the last move wins. AVPlayer
+        // never observes a partial write because it isn't pointed at the
+        // m4a path until conversion completes.
+        let tempOutputURL = URL(fileURLWithPath: outputURL.path)
+            .deletingLastPathComponent()
+            .appendingPathComponent("\(outputURL.lastPathComponent).tmp-\(UUID().uuidString)")
+
         try await runFFmpeg(
             ffmpegPath: ffmpegPath,
             inputURL: inputURL,
-            outputURL: outputURL
+            outputURL: tempOutputURL
         )
 
-        // Source is no longer needed for playback; remove it so retention
-        // accounting matches reality. If the user disabled
-        // `saveTranscriptionAudio`, this is moot because the caller never
-        // invokes us; we run only when keepDownloadedAudio is true.
+        // Sanity check: ffmpeg can exit 0 yet write an empty file (rare,
+        // but the cost of "we already deleted the source webm" makes the
+        // check worth a stat call).
+        let outputSize = (try? FileManager.default
+            .attributesOfItem(atPath: tempOutputURL.path)[.size] as? Int) ?? 0
+        guard outputSize > 0 else {
+            try? FileManager.default.removeItem(at: tempOutputURL)
+            throw YouTubeAudioPlaybackConverterError.conversionFailed(
+                "FFmpeg produced an empty output file"
+            )
+        }
+
         do {
-            try FileManager.default.removeItem(at: inputURL)
+            if FileManager.default.fileExists(atPath: outputURL.path) {
+                try FileManager.default.removeItem(at: outputURL)
+            }
+            try FileManager.default.moveItem(at: tempOutputURL, to: outputURL)
         } catch {
-            // Log but don't fail — the m4a is already on disk and that's
-            // the contract the caller cares about.
-            logger.warning("Failed to remove source webm at \(inputPath, privacy: .private): \(error.localizedDescription, privacy: .public)")
+            try? FileManager.default.removeItem(at: tempOutputURL)
+            throw YouTubeAudioPlaybackConverterError.conversionFailed(
+                "Failed to commit transcoded audio: \(error.localizedDescription)"
+            )
         }
 
         return outputURL.path
@@ -148,7 +185,7 @@ public final class YouTubeAudioPlaybackConverter: YouTubeAudioPlaybackConverting
         defer { try? FileManager.default.removeItem(at: stderrURL) }
         FileManager.default.createFile(atPath: stderrURL.path, contents: Data())
         let stderrHandle = try FileHandle(forWritingTo: stderrURL)
-        defer { stderrHandle.closeFile() }
+        defer { try? stderrHandle.close() }
 
         process.standardOutput = FileHandle.nullDevice
         process.standardError = stderrHandle
@@ -163,7 +200,7 @@ public final class YouTubeAudioPlaybackConverter: YouTubeAudioPlaybackConverting
         )
 
         if process.terminationStatus != 0 {
-            stderrHandle.synchronizeFile()
+            try? stderrHandle.synchronize()
             let stderrStr = (try? String(contentsOf: stderrURL, encoding: .utf8)) ?? "Unknown error"
             throw YouTubeAudioPlaybackConverterError.conversionFailed(
                 Self.tailForError(stderrStr)

@@ -658,6 +658,11 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
     /// file into AVPlayer-compatible `.m4a`. Failures are non-fatal — the
     /// transcript is already saved, the worst case is the audio scrubber
     /// stays inert for that file (current behavior pre-fix).
+    ///
+    /// Source-file deletion happens only after the DB has been updated to
+    /// point at the new `.m4a`. The reverse order would orphan the m4a if
+    /// the DB write failed — the row would still reference a deleted webm
+    /// and the audio scrubber would be empty.
     private func schedulePlaybackConversion(
         transcriptionId: UUID,
         inputPath: String
@@ -672,6 +677,7 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
                 )
                 guard newPath != inputPath else { return }
                 try repo.updateFilePath(id: transcriptionId, filePath: newPath)
+                try? FileManager.default.removeItem(atPath: inputPath)
                 logger.info("youtube_audio_postprocessed id=\(transcriptionId, privacy: .public)")
             } catch {
                 logger.error("youtube_audio_postprocess_failed id=\(transcriptionId, privacy: .public) error_type=\(Self.errorType(for: error), privacy: .public) error_detail=\(error.localizedDescription, privacy: .private)")

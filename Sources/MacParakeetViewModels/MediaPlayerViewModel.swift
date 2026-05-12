@@ -74,6 +74,10 @@ public final class MediaPlayerViewModel {
     /// This avoids unnecessary yt-dlp calls that trigger YouTube rate limiting.
     public func prepare(for transcription: Transcription) async {
         loadingTask?.cancel()
+        // Cancel any in-flight transcode from a previous transcription so
+        // it doesn't complete after we've switched to a new row and clobber
+        // the active player with the old file's audio.
+        playbackConversionTask?.cancel()
 
         let mode = Self.detectPlaybackMode(for: transcription)
         playbackMode = mode
@@ -105,11 +109,11 @@ public final class MediaPlayerViewModel {
                let persist = onPlaybackFilePathConverted {
                 // Existing webm-backed transcription (predates issue #237's
                 // playback fix). Transcode to .m4a in the background so
-                // the audio scrubber starts working. Until it lands, the
-                // player stays empty — Show Video still works via the
-                // stream re-extract path. Next open hits the .m4a directly
-                // (the persist callback writes the new path to the DB).
-                playerState = .ready
+                // the audio scrubber starts working. Show `.loading` while
+                // the transcode runs so the play button isn't presented as
+                // ready before the player is actually loaded — the swap
+                // back to `.ready` happens inside the conversion task.
+                playerState = .loading
                 schedulePlaybackConversion(
                     inputPath: filePath,
                     transcriptionId: transcription.id,
@@ -148,12 +152,34 @@ public final class MediaPlayerViewModel {
                     inputPath: inputPath
                 )
                 guard !Task.isCancelled, let self else { return }
-                if newPath != inputPath {
-                    persist(transcriptionId, newPath)
+                guard newPath != inputPath else {
+                    // No-op conversion (already playable). Keep the player
+                    // empty — caller's `else` branch in `prepare(for:)`
+                    // would have handled this.
+                    return
+                }
+                persist(transcriptionId, newPath)
+                // Source webm no longer referenced by the DB; best-effort
+                // off-main cleanup. Off-main because removeItem can stall
+                // briefly on the main thread for large files.
+                Task.detached(priority: .background) {
+                    try? FileManager.default.removeItem(atPath: inputPath)
+                }
+                // Only swap the active player if we're still presenting
+                // the audio-scrubber state for this transcription. If the
+                // user clicked Show Video in the meantime, `needsVideoStreamLoad`
+                // is false and the video stream owns the player — clobbering
+                // it with the audio-only m4a would interrupt their playback.
+                if self.needsVideoStreamLoad {
                     self.loadLocalFile(newPath)
                 }
             } catch {
                 logger.error("playback_conversion_failed id=\(transcriptionId, privacy: .public) error_detail=\(error.localizedDescription, privacy: .private)")
+                // Leave the player empty; Show Video remains a viable
+                // fallback. A future open will retry the conversion.
+                if !Task.isCancelled, let self, self.playerState == .loading {
+                    self.playerState = .error("Audio scrubber unavailable for this file. Use Show Video to play.")
+                }
             }
         }
     }

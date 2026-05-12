@@ -523,6 +523,9 @@ public final class TranscriptionViewModel {
             updated.filePath = newFilePath
             currentTranscription = updated
         }
+        if let index = transcriptions.firstIndex(where: { $0.id == transcriptionID }) {
+            transcriptions[index].filePath = newFilePath
+        }
     }
 
     public func presentCompletedTranscription(_ transcription: Transcription) {

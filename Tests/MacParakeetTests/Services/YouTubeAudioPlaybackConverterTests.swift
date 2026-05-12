@@ -21,6 +21,11 @@ final class YouTubeAudioPlaybackConverterTests: XCTestCase {
         XCTAssertTrue(YouTubeAudioPlaybackConverter.needsConversion(forPath: "/tmp/a.mkv"))
     }
 
+    func testNeedsConversionFlagsWeba() {
+        // yt-dlp emits `.weba` for audio-only WebM/Opus streams.
+        XCTAssertTrue(YouTubeAudioPlaybackConverter.needsConversion(forPath: "/tmp/a.weba"))
+    }
+
     func testNeedsConversionIsCaseInsensitive() {
         XCTAssertTrue(YouTubeAudioPlaybackConverter.needsConversion(forPath: "/tmp/A.WEBM"))
     }
@@ -89,5 +94,25 @@ final class YouTubeAudioPlaybackConverterTests: XCTestCase {
         } catch {
             XCTFail("Expected sourceMissing, got \(error)")
         }
+    }
+
+    func testConvertReturnsExistingM4AWhenSourceAlreadyMigrated() async throws {
+        // Race-window scenario: a prior conversion (post-STT path) already
+        // produced the m4a and deleted the source webm. A subsequent call
+        // (lazy migration triggered before the DB had the new path) should
+        // not crash and should return the m4a path without re-invoking
+        // ffmpeg or throwing `sourceMissing`.
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("macparakeet-converter-migrated-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let webmPath = dir.appendingPathComponent("video.webm").path
+        let m4aURL = dir.appendingPathComponent("video.m4a")
+        try Data([0x00]).write(to: m4aURL)
+
+        let converter = YouTubeAudioPlaybackConverter()
+        let result = try await converter.convertToPlayableM4AIfNeeded(inputPath: webmPath)
+        XCTAssertEqual(result, m4aURL.path)
     }
 }
