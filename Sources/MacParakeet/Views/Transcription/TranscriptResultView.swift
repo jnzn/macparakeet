@@ -131,6 +131,17 @@ struct TranscriptResultView: View {
     var body: some View {
         adaptiveLayout
         .onAppear {
+            // Lazy migration for existing webm/opus YouTube audio files
+            // saved before issue #237's playback fix shipped. The VM
+            // transcodes in the background; this callback persists the new
+            // .m4a path so the next open hits it directly.
+            playerViewModel.onPlaybackFilePathConverted = { [viewModel] id, newPath, sourcePath in
+                try viewModel.applyConvertedPlaybackPath(
+                    transcriptionID: id,
+                    newFilePath: newPath,
+                    sourceFileToCleanup: sourcePath
+                )
+            }
             Task {
                 if showVideoPanel {
                     await playerViewModel.load(for: transcription)
@@ -308,7 +319,7 @@ struct TranscriptResultView: View {
                     tabBar
                 }
                 Spacer(minLength: DesignSystem.Spacing.md)
-                
+
                 HStack {
                     Button {
                         withAnimation(DesignSystem.Animation.contentSwap) {
@@ -355,7 +366,7 @@ struct TranscriptResultView: View {
                     tabBar
                 }
                 Spacer(minLength: DesignSystem.Spacing.md)
-                
+
                 HStack {
                     if playerViewModel.playbackMode == .video && !showVideoPanel {
                         Button {
@@ -1542,7 +1553,7 @@ struct TranscriptResultView: View {
                 viewModel.selectedTab = .transcript
             }
         } message: {
-            Text(generation.state == .queued 
+            Text(generation.state == .queued
                  ? "This will remove the prompt from the generation queue."
                  : "This will stop the AI from generating the result.")
         }

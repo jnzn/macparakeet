@@ -32,9 +32,9 @@ public enum YouTubeAudioQuality: String, CaseIterable, Hashable, Sendable, Equat
     public var detail: String {
         switch self {
         case .m4a:
-            return "Download an Apple-friendly m4a file for reliable playback and sharing. Falls back if m4a is unavailable."
+            return "Download an Apple-friendly m4a file. Smaller and slightly faster; transcripts are close to Best available for most videos."
         case .bestAvailable:
-            return "YouTube's highest-quality audio stream. Often saves WebM/Opus, which the in-app audio scrubber can't decode — use Show Video for playback. Transcription is unaffected."
+            return "YouTube's highest-quality audio stream — recommended when transcription accuracy matters most (issue #237 measured ~10% lower WER on a Stanford speech). WebM/Opus downloads are converted to m4a in the background so the in-app audio scrubber works."
         }
     }
 

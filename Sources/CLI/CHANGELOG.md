@@ -80,6 +80,25 @@ by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
 
 ## [Unreleased]
 
+### Fixed
+
+- YouTube transcriptions captured under `--youtube-audio-quality
+  best-available` (or the GUI's "Best available" mode) now play through
+  the in-app audio scrubber. AVFoundation on macOS has no native WebM or
+  Opus decoder, so the saved file used to fail silently on `AVPlayer.play()`
+  while the video panel still worked (it re-extracts a streamable URL via
+  yt-dlp). The transcription pipeline now transcodes the saved audio to
+  `.m4a` (AAC 192k, faststart) in a background task after STT completes,
+  writing through a unique temp path before the atomic commit so the
+  post-STT path and the lazy on-open migration can race safely on the
+  same source. The source webm is removed only after the database update
+  succeeds. Existing webm-backed transcriptions migrate lazily on next
+  open. Recognized unplayable extensions: `webm`, `weba`, `opus`, `ogg`,
+  `mkv`. No CLI flag change — `--youtube-audio-quality best-available`
+  keeps its measured WER advantage (issue #237). Skipped when
+  `--downloaded-audio delete` or the GUI's audio retention is off, since
+  the saved file is being discarded anyway.
+
 ### Added
 
 - `transcribe --engine app-default` resolves the speech engine and Whisper

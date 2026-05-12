@@ -175,6 +175,7 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
     private let diarizationService: DiarizationServiceProtocol?
     private let mediaMetadataExtractor: MediaMetadataExtracting
     private let thumbnailCache: ThumbnailCaching
+    private let playbackConverter: YouTubeAudioPlaybackConverting
 
     public init(
         audioProcessor: AudioProcessorProtocol,
@@ -192,7 +193,8 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
         youtubeDownloader: YouTubeDownloading? = nil,
         diarizationService: DiarizationServiceProtocol? = nil,
         mediaMetadataExtractor: MediaMetadataExtracting = AVMediaMetadataExtractor(),
-        thumbnailCache: ThumbnailCaching = ThumbnailCacheService.shared
+        thumbnailCache: ThumbnailCaching = ThumbnailCacheService.shared,
+        playbackConverter: YouTubeAudioPlaybackConverting = YouTubeAudioPlaybackConverter()
     ) {
         self.audioProcessor = audioProcessor
         self.sttTranscriber = sttTranscriber
@@ -211,6 +213,7 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
         self.diarizationService = diarizationService
         self.mediaMetadataExtractor = mediaMetadataExtractor
         self.thumbnailCache = thumbnailCache
+        self.playbackConverter = playbackConverter
     }
 
     public func transcribe(
@@ -620,7 +623,7 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
             if !keepDownloadedAudio {
                 unownedDownloadedAudioURL = nil
             }
-            return try await transcribeAudio(
+            let completed = try await transcribeAudio(
                 fileURL: downloadResult.audioFileURL,
                 source: .youtube,
                 sttJob: .fileTranscription,
@@ -630,6 +633,55 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
                 cleanUpDownloadedFiles: !keepDownloadedAudio,
                 onProgress: onProgress
             )
+
+            // Issue #237: "Best available" yt-dlp downloads (Opus-in-WebM)
+            // measurably improve Parakeet WER, but AVFoundation has no
+            // WebM/Opus decoder, so the saved file silently fails on the
+            // in-app audio scrubber. Transcode the retained file to .m4a
+            // off the main return so the scrubber can play it. Skip when
+            // audio retention is off — no point spending CPU to convert a
+            // file the user wants deleted.
+            if keepDownloadedAudio,
+               let storedPath = completed.filePath,
+               YouTubeAudioPlaybackConverter.needsConversion(forPath: storedPath) {
+                schedulePlaybackConversion(
+                    transcriptionId: completed.id,
+                    inputPath: storedPath
+                )
+            }
+
+            return completed
+        }
+    }
+
+    /// Fire-and-forget post-STT transcode of an unplayable YouTube audio
+    /// file into AVPlayer-compatible `.m4a`. Failures are non-fatal — the
+    /// transcript is already saved, the worst case is the audio scrubber
+    /// stays inert for that file (current behavior pre-fix).
+    ///
+    /// Source-file deletion happens only after the DB has been updated to
+    /// point at the new `.m4a`. The reverse order would orphan the m4a if
+    /// the DB write failed — the row would still reference a deleted webm
+    /// and the audio scrubber would be empty.
+    private func schedulePlaybackConversion(
+        transcriptionId: UUID,
+        inputPath: String
+    ) {
+        let converter = playbackConverter
+        let repo = transcriptionRepo
+        let logger = self.logger
+        Task.detached(priority: .utility) {
+            do {
+                let newPath = try await converter.convertToPlayableM4AIfNeeded(
+                    inputPath: inputPath
+                )
+                guard newPath != inputPath else { return }
+                try repo.updateFilePath(id: transcriptionId, filePath: newPath)
+                try? FileManager.default.removeItem(atPath: inputPath)
+                logger.info("youtube_audio_postprocessed id=\(transcriptionId, privacy: .public)")
+            } catch {
+                logger.error("youtube_audio_postprocess_failed id=\(transcriptionId, privacy: .public) error_type=\(Self.errorType(for: error), privacy: .public) error_detail=\(error.localizedDescription, privacy: .private)")
+            }
         }
     }
 

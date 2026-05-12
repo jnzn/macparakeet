@@ -120,6 +120,8 @@ final class MockTranscriptionRepository: TranscriptionRepositoryProtocol, @unche
     var updateFileNameCalls: [(id: UUID, fileName: String)] = []
     var updateChatMessagesCalls: [(id: UUID, chatMessages: [ChatMessage]?)] = []
     var updateSpeakersCalls: [(id: UUID, speakers: [SpeakerInfo]?)] = []
+    var updateFilePathCalls: [(id: UUID, filePath: String?)] = []
+    var updateFilePathError: Error?
     var saveError: Error?
 
     func save(_ transcription: Transcription) throws {
@@ -194,6 +196,17 @@ final class MockTranscriptionRepository: TranscriptionRepositoryProtocol, @unche
         updateSpeakersCalls.append((id: id, speakers: speakers))
         if let idx = transcriptions.firstIndex(where: { $0.id == id }) {
             transcriptions[idx].speakers = speakers
+            transcriptions[idx].updatedAt = Date()
+        }
+    }
+
+    func updateFilePath(id: UUID, filePath: String?) throws {
+        updateFilePathCalls.append((id: id, filePath: filePath))
+        if let updateFilePathError {
+            throw updateFilePathError
+        }
+        if let idx = transcriptions.firstIndex(where: { $0.id == id }) {
+            transcriptions[idx].filePath = filePath
             transcriptions[idx].updatedAt = Date()
         }
     }
