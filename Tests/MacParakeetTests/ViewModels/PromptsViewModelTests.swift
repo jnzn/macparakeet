@@ -20,11 +20,11 @@ final class PromptsViewModelTests: XCTestCase {
 
         viewModel.addPrompt()
 
-        // 6 built-ins after ADR-020's 2026-05-02 revert of Memo-Steered Notes
-        // + 1 custom = 7.
-        XCTAssertEqual(viewModel.prompts.count, 7)
-        XCTAssertEqual(viewModel.prompts.last?.name, "Standup Notes")
-        XCTAssertFalse(viewModel.prompts.last?.isBuiltIn ?? true)
+        // 6 `.result` built-ins (after ADR-020's 2026-05-02 Memo-Steered Notes
+        // revert) + 3 `.transform` built-ins (ADR-022 Phase 2: Polish, Distill,
+        // Decide) + 1 custom = 10.
+        XCTAssertEqual(viewModel.prompts.count, 10)
+        XCTAssertTrue(viewModel.prompts.contains(where: { $0.name == "Standup Notes" && !$0.isBuiltIn }))
     }
 
     func testAddPromptRejectsDuplicateNameCaseInsensitive() {
@@ -33,8 +33,8 @@ final class PromptsViewModelTests: XCTestCase {
 
         viewModel.addPrompt()
 
-        // Rejected; the 6 built-ins remain (no add).
-        XCTAssertEqual(viewModel.prompts.count, 6)
+        // Rejected; the 6 `.result` + 3 `.transform` built-ins remain (no add).
+        XCTAssertEqual(viewModel.prompts.count, 9)
         XCTAssertEqual(viewModel.errorMessage, "'summary' already exists")
     }
 
