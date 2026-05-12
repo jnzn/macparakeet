@@ -22,8 +22,15 @@ private final class TransformsSpikePanel: NSPanel {
 /// reliably for one-shot panels.
 @MainActor
 final class TransformSpikeProgressViewModel: ObservableObject {
-    @Published var label: String = "Polishing…"
+    @Published var label: String = "Still polishing…"
     @Published var phase: Phase = .working
+    /// Hidden during the working state's first few seconds — the rose loader
+    /// is enough signal that work is in flight, and the user just pressed the
+    /// hotkey so they already know what's happening. The controller flips
+    /// this on after a patience threshold (`labelRevealDelay`) so longer-than-
+    /// usual runs get an empathetic "still working" cue without forcing every
+    /// short transform to render text.
+    @Published var showLabel: Bool = false
 
     enum Phase: Equatable {
         case working
@@ -35,18 +42,45 @@ final class TransformSpikeProgressViewModel: ObservableObject {
 @MainActor
 final class TransformSpikeProgressPanelController {
     private var panel: NSPanel?
+    private var host: NSHostingView<TransformSpikeProgressView>?
     private var viewModel: TransformSpikeProgressViewModel?
     private var autoDismissTask: Task<Void, Never>?
+    private var labelRevealTask: Task<Void, Never>?
 
-    /// Open (or reuse) the panel showing the in-progress label. Idempotent —
-    /// calling `show` while a panel is visible just resets state.
-    func show(label: String = "Polishing…") {
+    /// Pill anchored at the same bottom-center slot the dictation overlay
+    /// uses. Visually unifies all "press hotkey → thing happens" surfaces
+    /// in one location so the user's eye knows where to look.
+    private static let bottomOffset: CGFloat = 12
+    /// Low floor so the done state can collapse to a perfect circle:
+    /// 22pt icon + 10pt inner padding * 2 + 10pt shadow padding * 2 = 62pt.
+    /// Working state starts here (icon-only) and grows once the patience
+    /// threshold reveals the "still polishing" label.
+    private static let minimumWidth: CGFloat = 62
+    private static let maximumWidth: CGFloat = 360
+    private static let baselineHeight: CGFloat = 64
+    /// How long the working state stays icon-only before revealing a label.
+    /// Chosen against observed LLM timings: short transforms (<2s) finish
+    /// before this fires and never show text; cold-start or large-text
+    /// transforms (>5s) get an empathetic "still working" cue. 10s felt too
+    /// late — by then users have already started wondering.
+    private static let labelRevealDelay: Duration = .seconds(5)
+
+    /// Open (or reuse) the panel showing the in-progress indicator. Idempotent
+    /// — calling `show` while a panel is visible just resets state. The pill
+    /// starts as an icon-only circle; if work runs past `labelRevealDelay` the
+    /// caller-supplied label is faded in.
+    func show(label: String = "Still polishing…") {
         autoDismissTask?.cancel()
         autoDismissTask = nil
+        labelRevealTask?.cancel()
+        labelRevealTask = nil
 
         if let viewModel {
             viewModel.label = label
             viewModel.phase = .working
+            viewModel.showLabel = false
+            scheduleRelayout()
+            scheduleLabelReveal()
             return
         }
 
@@ -55,8 +89,9 @@ final class TransformSpikeProgressPanelController {
         self.viewModel = vm
 
         let host = NSHostingView(rootView: TransformSpikeProgressView(viewModel: vm))
-        let initialSize = NSSize(width: 220, height: 64)
+        let initialSize = NSSize(width: Self.minimumWidth, height: Self.baselineHeight)
         host.frame = NSRect(origin: .zero, size: initialSize)
+        self.host = host
 
         let panel = TransformsSpikePanel(
             contentRect: host.frame,
@@ -72,13 +107,7 @@ final class TransformSpikeProgressPanelController {
         panel.contentView = host
         panel.alphaValue = 0
 
-        let panelSize = host.fittingSize.width > 0 ? host.fittingSize : initialSize
-        if let screen = Self.screenForPanel() {
-            let visible = screen.visibleFrame
-            let x = visible.midX - panelSize.width / 2
-            let y = visible.maxY - panelSize.height - 24
-            panel.setFrame(NSRect(origin: NSPoint(x: x, y: y), size: panelSize), display: true)
-        }
+        positionPanel(panel, size: initialSize, animated: false)
 
         panel.orderFrontRegardless()
         self.panel = panel
@@ -88,12 +117,20 @@ final class TransformSpikeProgressPanelController {
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().alphaValue = 1
         }
+
+        // Run a relayout on the next tick so SwiftUI has a chance to
+        // measure the working-state content (icon-only at start).
+        scheduleRelayout()
+        scheduleLabelReveal()
     }
 
     /// Swap the loader for a "Done" affordance, auto-dismiss after 1.2s.
     func done(message: String = "Done") {
         guard let viewModel else { return }
+        labelRevealTask?.cancel()
+        labelRevealTask = nil
         viewModel.phase = .done(message: message)
+        scheduleRelayout()
         scheduleAutoDismiss(after: .milliseconds(1200))
     }
 
@@ -103,7 +140,10 @@ final class TransformSpikeProgressPanelController {
             // Spike-grade: surface the error briefly even if show() never ran.
             show(label: "Transforms")
         }
+        labelRevealTask?.cancel()
+        labelRevealTask = nil
         viewModel?.phase = .failed(message: message)
+        scheduleRelayout()
         scheduleAutoDismiss(after: .milliseconds(4000))
     }
 
@@ -113,8 +153,11 @@ final class TransformSpikeProgressPanelController {
     func close() {
         autoDismissTask?.cancel()
         autoDismissTask = nil
+        labelRevealTask?.cancel()
+        labelRevealTask = nil
         guard let panelRef = panel else { return }
         panel = nil
+        host = nil
         viewModel = nil
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.22
@@ -123,6 +166,62 @@ final class TransformSpikeProgressPanelController {
         }, completionHandler: {
             panelRef.orderOut(nil)
         })
+    }
+
+    /// Yield once so SwiftUI processes the @Published phase change, then
+    /// re-measure the hosting view and animate the panel into the right
+    /// frame. Resilient to copy length: longer error strings wrap at
+    /// `maximumWidth` and the panel grows vertically to fit.
+    private func scheduleRelayout() {
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            self?.relayoutPanel()
+        }
+    }
+
+    private func relayoutPanel() {
+        guard let panel, let host else { return }
+        host.invalidateIntrinsicContentSize()
+        host.layoutSubtreeIfNeeded()
+        let measured = host.fittingSize
+        let width: CGFloat
+        let height: CGFloat
+        if measured.width > 0 && measured.height > 0 {
+            width = min(max(measured.width, Self.minimumWidth), Self.maximumWidth)
+            height = max(measured.height, Self.baselineHeight)
+        } else {
+            width = Self.minimumWidth
+            height = Self.baselineHeight
+        }
+        positionPanel(panel, size: NSSize(width: width, height: height), animated: true)
+    }
+
+    private func positionPanel(_ panel: NSPanel, size: NSSize, animated: Bool) {
+        guard let screen = Self.screenForPanel() else {
+            panel.setContentSize(size)
+            return
+        }
+        let visible = screen.visibleFrame
+        let x = visible.midX - size.width / 2
+        let y = visible.minY + Self.bottomOffset
+        let frame = NSRect(origin: NSPoint(x: x, y: y), size: size)
+        panel.setFrame(frame, display: true, animate: animated)
+    }
+
+    /// After the patience threshold, fade the label in (and trigger a panel
+    /// relayout so the capsule grows from circle → oblong). Cancelled by
+    /// done/fail/close — so transforms that finish quickly never show text.
+    private func scheduleLabelReveal() {
+        labelRevealTask?.cancel()
+        labelRevealTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.labelRevealDelay)
+            guard !Task.isCancelled, let self else { return }
+            guard let vm = self.viewModel, case .working = vm.phase else { return }
+            withAnimation(.easeInOut(duration: 0.28)) {
+                vm.showLabel = true
+            }
+            self.scheduleRelayout()
+        }
     }
 
     private func scheduleAutoDismiss(after delay: Duration) {
@@ -150,7 +249,14 @@ private struct TransformSpikeProgressView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 11) {
+        // Icon-only phases (.done) get equal padding so the Capsule renders
+        // as a perfect circle — matches the dictation overlay's success
+        // state. Phases with a label get the wider oblong-pill padding.
+        let isIconOnly = currentLabel == nil
+        let horizontalPadding: CGFloat = isIconOnly ? 10 : 14
+        let verticalPadding: CGFloat = isIconOnly ? 10 : 11
+
+        return HStack(spacing: 11) {
             indicator
                 .frame(width: 22, height: 22)
                 .id(indicatorIdentity)
@@ -159,24 +265,25 @@ private struct TransformSpikeProgressView: View {
                         .combined(with: .opacity)
                 )
 
-            Text(currentLabel)
-                .font(DesignSystem.Typography.meetingPillStatus)
-                .foregroundStyle(DesignSystem.Colors.meetingPillText)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-                .id(labelIdentity)
-                .transition(.opacity)
-
-            Spacer(minLength: 0)
+            if let label = currentLabel {
+                Text(label)
+                    .font(DesignSystem.Typography.meetingPillStatus)
+                    .foregroundStyle(DesignSystem.Colors.meetingPillText)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: 280, alignment: .leading)
+                    .id(labelIdentity)
+                    .transition(.opacity)
+            }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
+        .padding(.horizontal, horizontalPadding)
+        .padding(.vertical, verticalPadding)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            Capsule()
                 .fill(DesignSystem.Colors.meetingPillBackground)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            Capsule()
                 .strokeBorder(DesignSystem.Colors.meetingPillStroke, lineWidth: 0.5)
         )
         .cardShadow(DesignSystem.Shadows.meetingPill)
@@ -188,18 +295,22 @@ private struct TransformSpikeProgressView: View {
     private var indicator: some View {
         switch viewModel.phase {
         case .working:
-            BezierScribeLoader(tint: DesignSystem.Colors.accent, paused: reduceMotion)
+            RhodoneaScribeLoader(tint: DesignSystem.Colors.accent, paused: reduceMotion)
         case .done:
-            RingCheckmarkView(tint: DesignSystem.Colors.successGreen)
+            CheckmarkView(tint: DesignSystem.Colors.successGreen)
         case .failed:
             FailingTriangleView(tint: DesignSystem.Colors.warningAmber)
         }
     }
 
-    private var currentLabel: String {
+    /// Working starts icon-only and the label only fades in after the
+    /// patience threshold (`showLabel`). Done is always icon-only — premium
+    /// "the thing happened" cue. Failed always surfaces its message so the
+    /// user gets the recovery hint.
+    private var currentLabel: String? {
         switch viewModel.phase {
-        case .working: return viewModel.label
-        case .done(let message): return message
+        case .working: return viewModel.showLabel ? viewModel.label : nil
+        case .done: return nil
         case .failed(let message): return message
         }
     }
@@ -213,7 +324,7 @@ private struct TransformSpikeProgressView: View {
     }
 
     private var labelIdentity: String {
-        currentLabel
+        currentLabel ?? ""
     }
 
     private var phaseIdentity: Int {
@@ -225,39 +336,57 @@ private struct TransformSpikeProgressView: View {
     }
 }
 
-// MARK: - Bezier Scribe Loader
+// MARK: - Rhodonea Scribe Loader
 
-/// A continuous coral curve traces a closed lissajous, head leading a fading
-/// tail — reads as "writing itself" rather than "spinning." Picked over a stock
-/// `ProgressView()` per `docs/research/transforms-design-2026-05.md` —
-/// Transforms is a writing/refinement surface that earns its own motion
-/// vocabulary, distinct from the dictation overlay's Merkaba and the meeting
-/// pill's rosette.
+/// Sacred-geometry rose curve (rhodonea), squared form for smooth motion:
+/// `r(θ) = sin²(5θ/2)`. Five petals radiate from the center with five-fold
+/// pentagonal symmetry — the same symmetry family as the golden ratio and the
+/// pentagram. Picked over a stock `ProgressView()` and over the prior generic
+/// lissajous per `docs/research/transforms-design-2026-05.md` — Transforms is
+/// a writing/refinement surface and earns its own motion vocabulary, distinct
+/// from the dictation overlay's Merkaba (4-fold) and the meeting pill's
+/// rosette (6-fold). Three modes, three symmetries.
 ///
-/// Implementation: TimelineView drives a 60Hz Canvas that walks a parametric
-/// curve. Each frame draws short line segments behind a moving "head," with
-/// alpha + width tapering toward the tail. The closed lissajous has no hard
-/// loop seam — the user can watch for two seconds or eight without seeing a
-/// repeat point.
-private struct BezierScribeLoader: View {
+/// Implementation: a faint base curve is always drawn so the full sacred
+/// figure is legible, then a brighter "scribe head" traces it with a fading
+/// trail. The squared form keeps `r ≥ 0` everywhere — no jumps through the
+/// origin — so the head sweeps smoothly out to each petal tip and back.
+/// 60Hz TimelineView drives a Canvas that walks the curve over a 3-second
+/// period.
+private struct RhodoneaScribeLoader: View {
     var tint: Color
     var paused: Bool = false
-    var period: Double = 2.4
+    var period: Double = 3.0
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: paused)) { context in
             Canvas { ctx, size in
                 let now = context.date.timeIntervalSinceReferenceDate
                 let t = (now.truncatingRemainder(dividingBy: period)) / period
-                Self.drawScribe(in: ctx, size: size, t: t, tint: tint)
+                Self.draw(in: ctx, size: size, t: t, tint: tint)
             }
         }
     }
 
-    private static func drawScribe(in ctx: GraphicsContext, size: CGSize, t: Double, tint: Color) {
-        let segments = 28
-        let trailArc = 0.5  // fraction of full period rendered behind the head
-        let baseLineWidth: CGFloat = 1.6
+    private static func draw(in ctx: GraphicsContext, size: CGSize, t: Double, tint: Color) {
+        // Step 1 — Faint full curve so the sacred figure is always readable.
+        var basePath = Path()
+        let baseSamples = 240
+        for i in 0...baseSamples {
+            let phase = Double(i) / Double(baseSamples)
+            let p = point(phase: phase, size: size)
+            if i == 0 { basePath.move(to: p) } else { basePath.addLine(to: p) }
+        }
+        ctx.stroke(
+            basePath,
+            with: .color(tint.opacity(0.18)),
+            style: StrokeStyle(lineWidth: 1.1, lineCap: .round, lineJoin: .round)
+        )
+
+        // Step 2 — Bright scribe trail behind the head, fading toward the tail.
+        let segments = 42
+        let trailArc = 0.30  // fraction of full period rendered as bright trail
+        let baseLineWidth: CGFloat = 1.7
 
         for i in 0..<segments {
             let frac = Double(i) / Double(segments - 1)
@@ -268,53 +397,58 @@ private struct BezierScribeLoader: View {
             let pA = point(phase: phaseA, size: size)
             let pB = point(phase: phaseB, size: size)
 
-            var p = Path()
-            p.move(to: pA)
-            p.addLine(to: pB)
+            var seg = Path()
+            seg.move(to: pA)
+            seg.addLine(to: pB)
 
-            let alpha = pow(1.0 - frac, 1.35)
-            let width = baseLineWidth * (1.0 - frac * 0.4)
+            let alpha = pow(1.0 - frac, 1.6)
+            let width = baseLineWidth * (1.0 - frac * 0.35)
 
             ctx.stroke(
-                p,
+                seg,
                 with: .color(tint.opacity(alpha)),
                 style: StrokeStyle(lineWidth: width, lineCap: .round)
             )
         }
 
-        // Bright head dot — gives the curve a clear "now" point.
+        // Step 3 — Bright head dot for a clear "now" point.
         let head = point(phase: t, size: size)
-        let dotR: CGFloat = 1.6
+        let dotR: CGFloat = 1.7
         let dotRect = CGRect(x: head.x - dotR, y: head.y - dotR, width: dotR * 2, height: dotR * 2)
         ctx.fill(Path(ellipseIn: dotRect), with: .color(tint))
     }
 
-    /// Lissajous-derived parametric: x = sin(θ)·cos(θ/2), y = sin(2θ).
-    /// Asymmetric frequency ratio yields a soft figure-8 that feels like a
-    /// hand drawing through a glyph rather than tracing a circle.
+    /// Squared rhodonea `r(θ) = sin²(5θ/2)` — 5 petals in θ ∈ [0, 2π], with
+    /// `r ≥ 0` everywhere so the head returns smoothly to the origin between
+    /// petals instead of jumping through it (which standard `cos(kθ)` roses do
+    /// when `r` flips negative).
     private static func point(phase: Double, size: CGSize) -> CGPoint {
         let theta = phase * 2 * .pi
         let cx = size.width / 2
         let cy = size.height / 2
-        let rx = size.width * 0.40
-        let ry = size.height * 0.30
-        let x = cx + rx * sin(theta) * cos(theta * 0.5)
-        let y = cy + ry * sin(theta * 2)
+        let radius = min(size.width, size.height) * 0.44
+        let s = sin(2.5 * theta)
+        let r = radius * s * s
+        let x = cx + r * cos(theta)
+        let y = cy + r * sin(theta)
         return CGPoint(x: x, y: y)
     }
 }
 
-// MARK: - Ring Checkmark (Done state)
+// MARK: - Checkmark (Done state)
 
-/// Apple-Pay style: ring strokes around, then the check strokes in. Borrowed
-/// shape from `MeetingRecordingPillView.MeetingCompletionCheckmarkView` but
-/// sized for the Transforms 22pt indicator slot.
-private struct RingCheckmarkView: View {
+/// Apple-style success checkmark — same atom the dictation overlay uses for
+/// completion (`DictationOverlayView.AnimatedCheckmarkView`). Ring strokes
+/// around first, then the check strokes in. Re-implemented inline rather than
+/// promoted to a shared component during the spike; a follow-up should
+/// extract this into `Views/Components/` so dictation, meeting, and transforms
+/// share one brand atom for "the thing happened."
+private struct CheckmarkView: View {
     var tint: Color
     @State private var ringTrim: CGFloat = 0
     @State private var checkTrim: CGFloat = 0
 
-    private let lineWidth: CGFloat = 1.4
+    private let lineWidth: CGFloat = 1.5
 
     var body: some View {
         ZStack {
@@ -332,10 +466,10 @@ private struct RingCheckmarkView: View {
                 .padding(6)
         }
         .onAppear {
-            withAnimation(.easeOut(duration: 0.32)) {
+            withAnimation(.easeOut(duration: 0.35)) {
                 ringTrim = 1
             }
-            withAnimation(.easeOut(duration: 0.22).delay(0.24)) {
+            withAnimation(.easeOut(duration: 0.25).delay(0.25)) {
                 checkTrim = 1
             }
         }

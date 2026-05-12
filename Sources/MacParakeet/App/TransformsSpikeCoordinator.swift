@@ -76,7 +76,7 @@ final class TransformsSpikeCoordinator {
 
         guard let llmService = llmServiceProvider() else {
             panelController?.fail(
-                message: "Transforms need an LLM provider — configure in Settings."
+                message: "Add an LLM provider in Settings"
             )
             logger.notice("transforms-spike: no LLM provider configured, aborting")
             return
@@ -96,7 +96,10 @@ final class TransformsSpikeCoordinator {
         let runID = UUID()
         activeRunID = runID
 
-        panelController?.show(label: "Polishing…")
+        // Pill starts as an icon-only rose; if the run lasts past the panel
+        // controller's patience threshold the default "Still polishing…"
+        // label fades in.
+        panelController?.show()
 
         inFlightTask = Task { @MainActor [weak self] in
             guard let self else { return }
