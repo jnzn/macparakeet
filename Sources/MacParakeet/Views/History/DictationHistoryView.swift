@@ -301,8 +301,13 @@ struct DictationCardRow: View {
                             .padding(.vertical, 2)
                             .background(Capsule().fill(Color.primary.opacity(0.06)))
                             .accessibilityLabel("Showing raw transcript")
+                            .transition(
+                                .scale(scale: 0.6, anchor: .leading)
+                                    .combined(with: .opacity)
+                            )
                     }
                 }
+                .animation(DesignSystem.Animation.portalLift, value: dictation.displayRawTranscript)
 
                 Spacer()
 
@@ -338,6 +343,8 @@ struct DictationCardRow: View {
                 .foregroundStyle(.primary)
                 .lineLimit(3)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .contentTransition(.opacity)
+                .animation(.easeInOut(duration: 0.22), value: dictation.displayRawTranscript)
         }
         .padding(DesignSystem.Spacing.md)
         .scaleEffect(isPlayingThis ? 1.005 : 1.0)
