@@ -17,18 +17,14 @@ public protocol DictationRepositoryProtocol: Sendable {
     func resetLifetimeStats() throws
 
     // Daily rollup reads (Stats tab). The rollup is private write-side state —
-    // only the read surface needs to be on the protocol.
+    // only the read surface is exposed here. Conformers MUST implement these
+    // explicitly: no default no-op implementations, because a "silently returns
+    // empty" default would let a mock or alternate conformer ship a blank Stats
+    // tab with no compile-time signal.
     func dailyStats(daysBack days: Int) throws -> [DailyDictationStat]
     func currentDailyStreak() throws -> Int
     func longestDailyStreak() throws -> Int
     func topApps(limit: Int) throws -> [(app: String, count: Int, words: Int)]
-}
-
-public extension DictationRepositoryProtocol {
-    func dailyStats(daysBack days: Int) throws -> [DailyDictationStat] { [] }
-    func currentDailyStreak() throws -> Int { 0 }
-    func longestDailyStreak() throws -> Int { 0 }
-    func topApps(limit: Int) throws -> [(app: String, count: Int, words: Int)] { [] }
 }
 
 public struct DictationStats: Sendable, Equatable {
@@ -137,9 +133,13 @@ public final class DictationRepository: DictationRepositoryProtocol {
                     wordDelta: dictation.wordCount - prior.wordCount,
                     newDurationMs: dictation.durationMs
                 )
-                // Daily stats: apply the same delta to the row's original day.
-                // Use `prior.createdAt` defensively in case createdAt was mutated
-                // — the delta should land on the day that was previously counted.
+                // Daily stats: apply the delta to the row's original day. The
+                // app treats `Dictation.createdAt` as immutable once a row is
+                // .completed (no current code path mutates it). If a future
+                // feature ever changes createdAt across a day boundary, this
+                // path would leave the old day's count stale and never bump
+                // the new day — add a same-day move handler before shipping
+                // that feature.
                 try Self.applyDailyDelta(
                     db: db,
                     day: prior.createdAt,
@@ -473,7 +473,12 @@ public final class DictationRepository: DictationRepositoryProtocol {
     /// Migration helper: rebuild the daily rollup from existing completed
     /// dictations. Grouped in Swift (rather than SQL `date(..., 'localtime')`)
     /// so the bucketing matches `Calendar.current` exactly.
-    public static func backfillDailyStats(db: Database, now: Date = Date()) throws {
+    ///
+    /// Intentionally module-internal: the function opens with
+    /// `DELETE FROM daily_dictation_stats` and an external caller could wipe a
+    /// user's preserved streak history. Reachable from tests via
+    /// `@testable import MacParakeetCore`.
+    static func backfillDailyStats(db: Database, now: Date = Date()) throws {
         // Wipe any prior rows so re-running this is idempotent.
         try db.execute(sql: "DELETE FROM daily_dictation_stats")
 

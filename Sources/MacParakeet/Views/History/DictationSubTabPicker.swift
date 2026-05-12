@@ -25,6 +25,8 @@ struct DictationSubTabPicker: View {
             Capsule()
                 .strokeBorder(Color.primary.opacity(0.04), lineWidth: 0.5)
         )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Dictations sub-tab")
     }
 
     @ViewBuilder
@@ -53,6 +55,8 @@ struct DictationSubTabPicker: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(label(for: tab))
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .onHover { hovering in
             hoveredTab = hovering ? tab : (hoveredTab == tab ? nil : hoveredTab)
         }

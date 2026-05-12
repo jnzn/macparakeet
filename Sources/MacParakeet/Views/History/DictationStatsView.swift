@@ -214,11 +214,12 @@ struct DictationStatsView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                ForEach(viewModel.topApps) { entry in
+                ForEach(Array(viewModel.topApps.enumerated()), id: \.element.id) { index, entry in
                     TopAppRow(
                         entry: entry,
                         percentOfMax: Double(entry.count) / Double(max(maxCount, 1)),
-                        percentOfTotal: Double(entry.count) / Double(max(totalCount, 1))
+                        percentOfTotal: Double(entry.count) / Double(max(totalCount, 1)),
+                        rowIndex: index
                     )
                 }
             }
@@ -444,6 +445,8 @@ struct StreakHeatmap: View {
             )
             .scaleEffect(isHovered ? 1.18 : 1.0)
             .zIndex(isHovered ? 1 : 0)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Self.accessibilityLabel(for: stat, isToday: isToday))
             .onHover { hovering in
                 if hovering {
                     hoveredCell = HoveredCell(col: col, row: row, stat: stat)
@@ -451,6 +454,23 @@ struct StreakHeatmap: View {
                     hoveredCell = nil
                 }
             }
+    }
+
+    private static let accessibilityDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .none
+        return f
+    }()
+
+    /// VoiceOver-friendly label for a single heatmap cell. Reads like
+    /// "May 11, 2026, 3 dictations, 240 words" or "March 5, 2026, no dictations".
+    static func accessibilityLabel(for stat: DailyDictationStat, isToday: Bool) -> String {
+        let dateLabel = isToday ? "Today" : accessibilityDateFormatter.string(from: stat.day)
+        guard stat.count > 0 else { return "\(dateLabel), no dictations" }
+        let dictations = "\(stat.count) dictation\(stat.count == 1 ? "" : "s")"
+        let words = "\(stat.words) word\(stat.words == 1 ? "" : "s")"
+        return "\(dateLabel), \(dictations), \(words)"
     }
 
     private func floatingTooltip(for h: HoveredCell, columnCount: Int) -> some View {
@@ -628,6 +648,10 @@ private struct TopAppRow: View {
     let entry: DictationHistoryViewModel.TopAppEntry
     let percentOfMax: Double
     let percentOfTotal: Double
+    /// Row index within the top-apps list. Used to flip the hover popover
+    /// below the row when the row is near the top of the card, so the
+    /// popover doesn't clip against the card edge or the section title.
+    let rowIndex: Int
 
     @State private var isHovered = false
 
@@ -676,18 +700,17 @@ private struct TopAppRow: View {
                     lineWidth: 0.5
                 )
         )
-        // Instant detail popover anchored to the row's top-center so it
-        // floats above the row's midpoint — visually balanced, clear of the
-        // "Where you dictate" section title and the percent column.
-        // Mirrors the heatmap's hover pattern (no system tooltip delay, no
-        // system arrow).
-        .overlay(alignment: .top) {
+        // Instant detail popover, centered above the row by default and
+        // flipped below for the top row so it doesn't clip against the card
+        // edge or the "Where you dictate" section title. Mirrors the
+        // heatmap's hover pattern (no system tooltip delay, no system arrow).
+        .overlay(alignment: showAbove ? .top : .bottom) {
             if isHovered {
                 TopAppHoverDetail(entry: entry, resolved: resolved)
                     .fixedSize()
-                    .offset(x: 0, y: -54)
+                    .offset(x: 0, y: showAbove ? -54 : 54)
                     .allowsHitTesting(false)
-                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .bottom)))
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: showAbove ? .bottom : .top)))
             }
         }
         // CRITICAL: without this, SwiftUI's hit-walk only registers hover on
@@ -702,6 +725,10 @@ private struct TopAppRow: View {
         .animation(.easeOut(duration: 0.15), value: isHovered)
         .onHover { isHovered = $0 }
     }
+
+    /// Show the popover above the row except for the first row, where the
+    /// card's section title is directly above and the popover would clip.
+    private var showAbove: Bool { rowIndex > 0 }
 
     private func accessibilityLabel(resolved: String) -> String {
         let dictationsLabel = "\(entry.count) dictation\(entry.count == 1 ? "" : "s")"
