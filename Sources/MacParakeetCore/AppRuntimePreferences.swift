@@ -34,7 +34,7 @@ public enum YouTubeAudioQuality: String, CaseIterable, Hashable, Sendable, Equat
         case .m4a:
             return "Download an Apple-friendly m4a file for reliable playback and sharing. Falls back if m4a is unavailable."
         case .bestAvailable:
-            return "Use YouTube's highest-quality audio stream. May save WebM/Opus files; transcription still converts them to WAV."
+            return "YouTube's highest-quality audio stream. Often saves WebM/Opus, which the in-app audio scrubber can't decode — use Show Video for playback. Transcription is unaffected."
         }
     }
 
