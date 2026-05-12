@@ -138,11 +138,9 @@ final class MediaPlayerViewModelTests: XCTestCase {
 
         let vm = MediaPlayerViewModel(playbackConverter: stubConverter)
         let persistExpectation = expectation(description: "persistConvertedFilePath called")
-        var persistedID: UUID?
-        var persistedPath: String?
-        vm.onPlaybackFilePathConverted = { id, path in
-            persistedID = id
-            persistedPath = path
+        let captured = PersistCapture()
+        vm.onPlaybackFilePathConverted = { id, path, source in
+            captured.record(id: id, path: path, source: source)
             persistExpectation.fulfill()
         }
 
@@ -154,8 +152,10 @@ final class MediaPlayerViewModelTests: XCTestCase {
         await vm.prepare(for: transcription)
 
         await fulfillment(of: [persistExpectation], timeout: 2.0)
-        XCTAssertEqual(persistedID, transcription.id)
-        XCTAssertEqual(persistedPath, dir.appendingPathComponent("video.m4a").path)
+        XCTAssertEqual(captured.id, transcription.id)
+        XCTAssertEqual(captured.path, dir.appendingPathComponent("video.m4a").path)
+        XCTAssertEqual(captured.source, webm.path,
+                       "Persist callback must receive the source path for cleanup-after-DB-write")
     }
 
     @MainActor
@@ -209,7 +209,7 @@ final class MediaPlayerViewModelTests: XCTestCase {
         // observe the in-flight UI state without flakiness.
         let stubConverter = SuspendingStubPlaybackConverter()
         let vm = MediaPlayerViewModel(playbackConverter: stubConverter)
-        vm.onPlaybackFilePathConverted = { _, _ in }
+        vm.onPlaybackFilePathConverted = { _, _, _ in }
 
         let transcription = Transcription(
             fileName: "Talk",
@@ -242,9 +242,9 @@ final class MediaPlayerViewModelTests: XCTestCase {
 
         let stubConverter = SuspendingStubPlaybackConverter()
         let vm = MediaPlayerViewModel(playbackConverter: stubConverter)
-        var persistInvocations = 0
-        vm.onPlaybackFilePathConverted = { _, _ in
-            persistInvocations += 1
+        let invocationCounter = InvocationCounter()
+        vm.onPlaybackFilePathConverted = { _, _, _ in
+            invocationCounter.increment()
         }
 
         let webmTranscription = Transcription(
@@ -267,8 +267,34 @@ final class MediaPlayerViewModelTests: XCTestCase {
         // Give the cancelled task a runloop hop to settle.
         try? await Task.sleep(nanoseconds: 50_000_000)
 
-        XCTAssertEqual(persistInvocations, 0,
+        XCTAssertEqual(invocationCounter.value, 0,
                        "Cancelled conversion must not invoke the persist callback")
+    }
+}
+
+/// Reference-type capture wrapper. Closures that have to mutate state can
+/// hold onto an instance of this rather than capturing a `var`, which
+/// keeps the closure compatible with `@Sendable` semantics under strict
+/// concurrency. Single-threaded access is guaranteed by the VM design
+/// (the callback runs on MainActor and is read from the same test method
+/// after `fulfillment`).
+private final class PersistCapture: @unchecked Sendable {
+    private(set) var id: UUID?
+    private(set) var path: String?
+    private(set) var source: String?
+
+    func record(id: UUID, path: String, source: String) {
+        self.id = id
+        self.path = path
+        self.source = source
+    }
+}
+
+private final class InvocationCounter: @unchecked Sendable {
+    private(set) var value: Int = 0
+
+    func increment() {
+        value += 1
     }
 }
 

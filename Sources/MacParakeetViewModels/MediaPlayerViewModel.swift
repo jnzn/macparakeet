@@ -39,13 +39,14 @@ public final class MediaPlayerViewModel {
     public var needsVideoStreamLoad: Bool = false
 
     /// Optional callback used by the lazy on-open migration of existing
-    /// webm/opus YouTube files to .m4a. The VM invokes this once the
-    /// transcode succeeds; the owner is expected to persist the new
-    /// `filePath` to the database so the next open hits the .m4a directly.
-    /// When `nil`, the lazy migration is suppressed (otherwise we'd delete
-    /// the source webm and orphan the resulting .m4a since the DB would
-    /// still point at the deleted file).
-    public var onPlaybackFilePathConverted: (@Sendable (UUID, String) -> Void)?
+    /// webm/opus YouTube files to .m4a. Arguments: `(transcriptionID,
+    /// newFilePath, sourceFileToDeleteOnSuccess)`. The owner is expected
+    /// to persist the new `filePath` to the database in the same flow
+    /// and then delete the source file *only if* the DB write succeeded —
+    /// otherwise the row would still reference a now-deleted source. When
+    /// `nil`, the lazy migration is suppressed entirely (we'd otherwise
+    /// produce an orphan .m4a the DB couldn't point at).
+    public var onPlaybackFilePathConverted: (@Sendable (UUID, String, String) -> Void)?
 
     private var subtitleCues: [ExportService.SubtitleCue] = []
     private var lastCueIndex: Int = -1
@@ -141,7 +142,7 @@ public final class MediaPlayerViewModel {
     private func schedulePlaybackConversion(
         inputPath: String,
         transcriptionId: UUID,
-        persist: @escaping @Sendable (UUID, String) -> Void
+        persist: @escaping @Sendable (UUID, String, String) -> Void
     ) {
         playbackConversionTask?.cancel()
         let converter = playbackConverter
@@ -158,13 +159,14 @@ public final class MediaPlayerViewModel {
                     // would have handled this.
                     return
                 }
-                persist(transcriptionId, newPath)
-                // Source webm no longer referenced by the DB; best-effort
-                // off-main cleanup. Off-main because removeItem can stall
-                // briefly on the main thread for large files.
-                Task.detached(priority: .background) {
-                    try? FileManager.default.removeItem(atPath: inputPath)
-                }
+                // Hand off DB persist + source deletion atomically (in the
+                // sense that one cannot happen without the other). The
+                // owner deletes the source only after the row is updated;
+                // a DB failure leaves the source in place so the next open
+                // retries. Until 9a1fda2e the VM scheduled its own
+                // `removeItem` here in parallel with `persist`, which was a
+                // race with the persist's own internal task.
+                persist(transcriptionId, newPath, inputPath)
                 // Only swap the active player if we're still presenting
                 // the audio-scrubber state for this transcription. If the
                 // user clicked Show Video in the meantime, `needsVideoStreamLoad`

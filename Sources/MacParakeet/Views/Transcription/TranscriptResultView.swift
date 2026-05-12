@@ -135,9 +135,13 @@ struct TranscriptResultView: View {
             // saved before issue #237's playback fix shipped. The VM
             // transcodes in the background; this callback persists the new
             // .m4a path so the next open hits it directly.
-            playerViewModel.onPlaybackFilePathConverted = { [viewModel] id, newPath in
+            playerViewModel.onPlaybackFilePathConverted = { [viewModel] id, newPath, sourcePath in
                 Task { @MainActor in
-                    viewModel.applyConvertedPlaybackPath(transcriptionID: id, newFilePath: newPath)
+                    viewModel.applyConvertedPlaybackPath(
+                        transcriptionID: id,
+                        newFilePath: newPath,
+                        sourceFileToCleanup: sourcePath
+                    )
                 }
             }
             Task {

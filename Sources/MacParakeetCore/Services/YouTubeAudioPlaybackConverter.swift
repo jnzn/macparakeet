@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import os
 
@@ -113,15 +114,20 @@ public final class YouTubeAudioPlaybackConverter: YouTubeAudioPlaybackConverting
             )
         }
 
-        do {
-            if FileManager.default.fileExists(atPath: outputURL.path) {
-                try FileManager.default.removeItem(at: outputURL)
-            }
-            try FileManager.default.moveItem(at: tempOutputURL, to: outputURL)
-        } catch {
+        // Truly atomic commit via POSIX `rename(2)`: if the destination
+        // exists it is replaced in a single syscall, with no window in
+        // which the file is missing. The earlier
+        // "fileExists → removeItem → moveItem" sequence had a real (if
+        // tiny) gap where a crash between the two FileManager calls could
+        // leave no m4a at all, and a concurrent converter could delete
+        // a valid output we'd just produced. `rename(2)` is atomic on
+        // POSIX systems for paths on the same filesystem (which is the
+        // case here — both live in the YouTube downloads directory).
+        if rename(tempOutputURL.path, outputURL.path) != 0 {
+            let err = String(cString: strerror(errno))
             try? FileManager.default.removeItem(at: tempOutputURL)
             throw YouTubeAudioPlaybackConverterError.conversionFailed(
-                "Failed to commit transcoded audio: \(error.localizedDescription)"
+                "Failed to commit transcoded audio: \(err)"
             )
         }
 

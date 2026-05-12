@@ -510,13 +510,25 @@ public final class TranscriptionViewModel {
     /// Persist a new playback-friendly file path produced by the background
     /// YouTube audio transcode (webm/opus → m4a). Used by MediaPlayerViewModel's
     /// lazy on-open migration so the next open hits the .m4a directly.
-    public func applyConvertedPlaybackPath(transcriptionID: UUID, newFilePath: String) {
+    ///
+    /// `sourceFileToCleanup`, when non-nil, is the original (unplayable)
+    /// file the new path supersedes. It is deleted only after the DB
+    /// `updateFilePath` write succeeds — a DB failure leaves the source
+    /// in place so a future open can retry the migration.
+    public func applyConvertedPlaybackPath(
+        transcriptionID: UUID,
+        newFilePath: String,
+        sourceFileToCleanup: String? = nil
+    ) {
         guard let repo = transcriptionRepo else { return }
         do {
             try repo.updateFilePath(id: transcriptionID, filePath: newFilePath)
         } catch {
             logger.error("transcription_file_path_update_failed id=\(transcriptionID, privacy: .public) error_detail=\(error.localizedDescription, privacy: .private)")
             return
+        }
+        if let sourceFileToCleanup, sourceFileToCleanup != newFilePath {
+            try? FileManager.default.removeItem(atPath: sourceFileToCleanup)
         }
         if let current = currentTranscription, current.id == transcriptionID {
             var updated = current
