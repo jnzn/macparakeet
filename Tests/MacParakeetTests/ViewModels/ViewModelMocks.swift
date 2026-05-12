@@ -81,6 +81,11 @@ final class MockDictationRepository: DictationRepositoryProtocol, @unchecked Sen
     func setDisplayRawTranscript(id: UUID, value: Bool) throws -> Bool {
         setDisplayRawTranscriptCalls.append((id, value))
         guard let idx = dictations.firstIndex(where: { $0.id == id }) else { return false }
+        // Mirror production's no-op short-circuit: when the value is
+        // unchanged, return true without bumping `updatedAt` (the prod repo
+        // uses this to avoid touching the row on repeat clicks). Tests that
+        // assert on timestamps depend on the mock behaving identically.
+        guard dictations[idx].displayRawTranscript != value else { return true }
         dictations[idx].displayRawTranscript = value
         dictations[idx].updatedAt = Date()
         return true

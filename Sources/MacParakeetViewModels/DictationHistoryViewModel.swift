@@ -246,9 +246,27 @@ public final class DictationHistoryViewModel {
             logger.error("Failed to toggle displayRawTranscript for \(dictation.id): \(error.localizedDescription)")
             return
         }
-        // Reload without bouncing stats — the toggle leaves duration/wordCount
-        // untouched, so the lifetime/daily counters can't have shifted.
-        loadDictations(shouldRefreshStats: false)
+        // In-place update — the toggle only changes display state on one row.
+        // Re-fetching + re-grouping 200 dictations to flip a Bool would
+        // re-render the entire list (visible flicker on the active row's
+        // crossfade animation) and burn a database read. Sort order /
+        // grouping are driven by `createdAt`, which the toggle never
+        // touches, so a targeted mutation is safe.
+        updateDictationInPlace(id: dictation.id) { dictation in
+            dictation.displayRawTranscript = newValue
+        }
+    }
+
+    private func updateDictationInPlace(
+        id: UUID,
+        mutate: (inout Dictation) -> Void
+    ) {
+        for sectionIdx in groupedDictations.indices {
+            if let rowIdx = groupedDictations[sectionIdx].1.firstIndex(where: { $0.id == id }) {
+                mutate(&groupedDictations[sectionIdx].1[rowIdx])
+                return
+            }
+        }
     }
 
     // MARK: - Playback
