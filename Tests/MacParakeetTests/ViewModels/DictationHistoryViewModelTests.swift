@@ -360,7 +360,7 @@ final class DictationHistoryViewModelTests: XCTestCase {
         XCTAssertEqual(reloaded?.displayText, "um hello world", "displayText should now return raw")
     }
 
-    func testToggleDisplayRawTranscriptIsReversible() {
+    func testToggleDisplayRawTranscriptIsReversible() throws {
         let dictation = Dictation(
             durationMs: 1000,
             rawTranscript: "raw",
@@ -376,7 +376,8 @@ final class DictationHistoryViewModelTests: XCTestCase {
         XCTAssertEqual(current?.displayRawTranscript, true)
 
         // Re-apply
-        viewModel.toggleDisplayRawTranscript(for: current!)
+        let currentDictation = try XCTUnwrap(current)
+        viewModel.toggleDisplayRawTranscript(for: currentDictation)
         current = viewModel.groupedDictations.flatMap(\.1).first { $0.id == dictation.id }
         XCTAssertEqual(current?.displayRawTranscript, false)
         XCTAssertEqual(current?.displayText, "Cleaned.")

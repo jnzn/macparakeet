@@ -223,11 +223,17 @@ final class DictationRepositoryTests: XCTestCase {
         let updated = try repo.setDisplayRawTranscript(id: dictation.id, value: true)
         XCTAssertTrue(updated, "setDisplayRawTranscript returns true when the row exists")
 
-        let afterUndo = try repo.fetch(id: dictation.id)
-        XCTAssertEqual(afterUndo?.displayRawTranscript, true)
-        XCTAssertEqual(afterUndo?.displayText, "um hello world", "Once raw is forced, displayText returns rawTranscript")
-        XCTAssertEqual(afterUndo?.cleanTranscript, "Hello, world.", "Cleaned text is preserved so the undo is reversible")
-        XCTAssertEqual(afterUndo?.hasAIEdit, true, "hasAIEdit stays true so the affordance keeps reading 'Re-apply'")
+        let afterUndo = try XCTUnwrap(repo.fetch(id: dictation.id))
+        XCTAssertEqual(afterUndo.displayRawTranscript, true)
+        XCTAssertEqual(afterUndo.displayText, "um hello world", "Once raw is forced, displayText returns rawTranscript")
+        XCTAssertEqual(afterUndo.cleanTranscript, "Hello, world.", "Cleaned text is preserved so the undo is reversible")
+        XCTAssertEqual(afterUndo.hasAIEdit, true, "hasAIEdit stays true so the affordance keeps reading 'Re-apply'")
+
+        let noOpUpdated = try repo.setDisplayRawTranscript(id: dictation.id, value: true)
+        XCTAssertTrue(noOpUpdated, "Same-value writes still report that the row exists")
+
+        let afterNoOp = try XCTUnwrap(repo.fetch(id: dictation.id))
+        XCTAssertEqual(afterNoOp.updatedAt, afterUndo.updatedAt, "No-op toggle should not bump updatedAt")
     }
 
     func testSetDisplayRawTranscriptIsReversible() throws {
@@ -241,9 +247,15 @@ final class DictationRepositoryTests: XCTestCase {
         _ = try repo.setDisplayRawTranscript(id: dictation.id, value: true)
         _ = try repo.setDisplayRawTranscript(id: dictation.id, value: false)
 
-        let restored = try repo.fetch(id: dictation.id)
-        XCTAssertEqual(restored?.displayRawTranscript, false)
-        XCTAssertEqual(restored?.displayText, "Cleaned.", "Re-apply restores the AI-edited text")
+        let restored = try XCTUnwrap(repo.fetch(id: dictation.id))
+        XCTAssertEqual(restored.displayRawTranscript, false)
+        XCTAssertEqual(restored.displayText, "Cleaned.", "Re-apply restores the AI-edited text")
+
+        let noOpUpdated = try repo.setDisplayRawTranscript(id: dictation.id, value: false)
+        XCTAssertTrue(noOpUpdated, "Same-value writes still report that the row exists")
+
+        let afterNoOp = try XCTUnwrap(repo.fetch(id: dictation.id))
+        XCTAssertEqual(afterNoOp.updatedAt, restored.updatedAt, "No-op re-apply should not bump updatedAt")
     }
 
     func testSetDisplayRawTranscriptUnknownIdReturnsFalse() throws {

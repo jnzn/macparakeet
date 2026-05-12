@@ -329,11 +329,11 @@ struct DictationCardRow: View {
 
                     CardMenuButton(
                         hasAudio: dictation.audioPath != nil,
-                        hasAIEdit: dictation.hasAIEdit,
+                        hasAIEdit: dictation.hasAIEdit && onToggleAIEdit != nil,
                         isShowingRaw: dictation.displayRawTranscript,
                         onDownloadAudio: { onDownloadAudio?() },
                         onDelete: { onDelete() },
-                        onToggleAIEdit: { onToggleAIEdit?() }
+                        onToggleAIEdit: onToggleAIEdit
                     )
                 }
             }
@@ -450,7 +450,7 @@ private struct CardMenuButton: View {
     let isShowingRaw: Bool
     let onDownloadAudio: () -> Void
     let onDelete: () -> Void
-    let onToggleAIEdit: () -> Void
+    let onToggleAIEdit: (() -> Void)?
 
     var body: some View {
         CardActionButton(icon: "ellipsis", color: .secondary) {
@@ -469,7 +469,7 @@ private struct CardMenuButton: View {
         // Undo AI edit: only present rows whose cleaned text actually differs
         // from the raw STT output. Label flips so the menu item describes the
         // next action, not the current state.
-        if hasAIEdit {
+        if hasAIEdit, let onToggleAIEdit {
             let title = isShowingRaw ? "Re-apply AI edit" : "Undo AI edit"
             let icon = isShowingRaw ? "wand.and.stars" : "arrow.uturn.backward"
             menu.addItem(CallbackMenuItem(title: title, icon: icon, action: onToggleAIEdit))
