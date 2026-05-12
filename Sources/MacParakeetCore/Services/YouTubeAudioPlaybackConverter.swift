@@ -95,8 +95,8 @@ public final class YouTubeAudioPlaybackConverter: YouTubeAudioPlaybackConverting
             .deletingLastPathComponent()
             .appendingPathComponent("\(outputURL.lastPathComponent).tmp-\(UUID().uuidString)")
 
-        try await runFFmpeg(
-            ffmpegPath: ffmpegPath,
+        try await runFFmpegWithDyldFallback(
+            primaryPath: ffmpegPath,
             inputURL: inputURL,
             outputURL: tempOutputURL
         )
@@ -150,6 +150,41 @@ public final class YouTubeAudioPlaybackConverter: YouTubeAudioPlaybackConverting
         } catch {
             throw YouTubeAudioPlaybackConverterError.ffmpegUnavailable(
                 "FFmpeg is unavailable for this runtime."
+            )
+        }
+    }
+
+    /// Run ffmpeg, falling back to system ffmpeg on dyld / Team-ID-mismatch
+    /// failures. Mirrors `AudioFileConverter`'s retry so that a user whose
+    /// bundled ffmpeg can't load its dylibs (memory:
+    /// `feedback_duplicate_codesign_cert_tcc.md` and the PyInstaller note
+    /// in CLAUDE.md) doesn't end up with a successful transcript but a
+    /// silently broken playback file — both paths now have the same
+    /// fallback envelope.
+    private func runFFmpegWithDyldFallback(
+        primaryPath: String,
+        inputURL: URL,
+        outputURL: URL
+    ) async throws {
+        do {
+            try await runFFmpeg(
+                ffmpegPath: primaryPath,
+                inputURL: inputURL,
+                outputURL: outputURL
+            )
+        } catch let error as YouTubeAudioPlaybackConverterError {
+            guard case .conversionFailed(let reason) = error,
+                  reason.contains("dyld") || reason.contains("Library not loaded"),
+                  let fallbackPath = BinaryBootstrap.findSystemFFmpeg(),
+                  fallbackPath != primaryPath
+            else {
+                throw error
+            }
+            logger.info("Bundled ffmpeg failed with dyld error; retrying via system ffmpeg at \(fallbackPath, privacy: .public)")
+            try await runFFmpeg(
+                ffmpegPath: fallbackPath,
+                inputURL: inputURL,
+                outputURL: outputURL
             )
         }
     }

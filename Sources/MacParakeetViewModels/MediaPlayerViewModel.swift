@@ -188,6 +188,11 @@ public final class MediaPlayerViewModel {
     /// Cancels any in-flight load to prevent race conditions on rapid navigation.
     public func load(for transcription: Transcription) async {
         loadingTask?.cancel()
+        // Cancel any in-flight lazy m4a transcode too — switching modes
+        // (e.g., user clicked Show Video) makes its eventual `loadLocalFile`
+        // unwanted. The `needsVideoStreamLoad` guard inside the conversion
+        // task is a belt-and-suspenders second line of defense.
+        playbackConversionTask?.cancel()
 
         let mode = Self.detectPlaybackMode(for: transcription)
         playbackMode = mode
