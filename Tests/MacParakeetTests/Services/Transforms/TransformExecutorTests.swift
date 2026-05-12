@@ -88,6 +88,92 @@ final class TransformExecutorTests: XCTestCase {
         }
     }
 
+    func testRunRestoresClipboardCaptureWhenLLMFailsBeforeReplacement() async {
+        let captureBackend = FakeSelectionCaptureBackend(
+            isTrusted: true,
+            focusedElement: AXUIElementCreateSystemWide(),
+            selectedText: nil,
+            initialChangeCount: 10,
+            pasteboardAfterCmdC: "Hello",
+            changeCountAfterCmdC: 11
+        )
+        let captureService = SelectionCaptureService(
+            backend: captureBackend,
+            clipboardPollTimeout: .milliseconds(40),
+            pollIntervalNanos: 1_000_000
+        )
+        let replacementBackend = FakeSelectionReplacementBackend(isTrusted: true)
+        let replacementService = SelectionReplacementService(
+            backend: replacementBackend,
+            postPasteDelay: .milliseconds(1)
+        )
+        let llm = MockTransformLLMService()
+        llm.streamError = LLMError.rateLimited
+        let executor = TransformExecutor(
+            captureService: captureService,
+            replacementService: replacementService,
+            llmService: llm
+        )
+
+        do {
+            _ = try await executor.run(prompt: "polish", onProgress: { _ in })
+            XCTFail("Expected llmFailed")
+        } catch let error as TransformExecutorError {
+            switch error {
+            case .llmFailed: break
+            default: XCTFail("Unexpected error: \(error)")
+            }
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        XCTAssertEqual(captureBackend.restoreCount(), 1)
+        XCTAssertEqual(replacementBackend.cmdVPostCount(), 0)
+    }
+
+    func testRunRestoresClipboardCaptureWhenLLMReturnsEmptyOutput() async {
+        let captureBackend = FakeSelectionCaptureBackend(
+            isTrusted: true,
+            focusedElement: AXUIElementCreateSystemWide(),
+            selectedText: nil,
+            initialChangeCount: 20,
+            pasteboardAfterCmdC: "Hello",
+            changeCountAfterCmdC: 21
+        )
+        let captureService = SelectionCaptureService(
+            backend: captureBackend,
+            clipboardPollTimeout: .milliseconds(40),
+            pollIntervalNanos: 1_000_000
+        )
+        let replacementBackend = FakeSelectionReplacementBackend(isTrusted: true)
+        let replacementService = SelectionReplacementService(
+            backend: replacementBackend,
+            postPasteDelay: .milliseconds(1)
+        )
+        let llm = MockTransformLLMService()
+        llm.streamTokens = []
+        let executor = TransformExecutor(
+            captureService: captureService,
+            replacementService: replacementService,
+            llmService: llm
+        )
+
+        do {
+            _ = try await executor.run(prompt: "polish", onProgress: { _ in })
+            XCTFail("Expected llmFailed")
+        } catch let error as TransformExecutorError {
+            switch error {
+            case .llmFailed: break
+            default: XCTFail("Unexpected error: \(error)")
+            }
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        XCTAssertEqual(captureBackend.restoreCount(), 1)
+        XCTAssertEqual(replacementBackend.cmdVPostCount(), 0)
+    }
+
     func testRunEmitsProgressInOrderAndCallsReplacementOnSuccess() async throws {
         let captureBackend = FakeSelectionCaptureBackend(
             isTrusted: true,

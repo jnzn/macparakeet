@@ -26,7 +26,7 @@ struct PasteShortcutKeyResolver {
     }
 
     func virtualKeyCode(for character: Character, modifierKeyState: UInt32 = 0) -> CGKeyCode {
-        let fallbackKeyCode: CGKeyCode = 0x09
+        let fallbackKeyCode = Self.qwertyFallbackKeyCode(for: character)
         let layoutLookup = keyboardLayoutProvider()
 
         let layoutData: CFData
@@ -34,18 +34,18 @@ struct PasteShortcutKeyResolver {
         case .data(let data):
             layoutData = data
         case .missingInputSource:
-            logger.error("Failed to get current keyboard input source; falling back to QWERTY keycode 0x09")
+            logger.error("Failed to get current keyboard input source; falling back to QWERTY keycode \(fallbackKeyCode, privacy: .public)")
             return fallbackKeyCode
         case .missingLayoutData:
-            logger.error("Failed to resolve keyboard layout data for paste shortcut; falling back to QWERTY keycode 0x09")
+            logger.error("Failed to resolve keyboard layout data for paste shortcut; falling back to QWERTY keycode \(fallbackKeyCode, privacy: .public)")
             return fallbackKeyCode
         case .inaccessibleLayoutBytes:
-            logger.error("Failed to access keyboard layout bytes for paste shortcut; falling back to QWERTY keycode 0x09")
+            logger.error("Failed to access keyboard layout bytes for paste shortcut; falling back to QWERTY keycode \(fallbackKeyCode, privacy: .public)")
             return fallbackKeyCode
         }
 
         guard let target = String(character).utf16.first else {
-            logger.error("Failed to encode character for paste shortcut lookup; falling back to QWERTY keycode 0x09")
+            logger.error("Failed to encode character for paste shortcut lookup; falling back to QWERTY keycode \(fallbackKeyCode, privacy: .public)")
             return fallbackKeyCode
         }
 
@@ -60,8 +60,16 @@ struct PasteShortcutKeyResolver {
             }
         }
 
-        logger.error("Failed to resolve virtual keycode for character '\(String(character), privacy: .public)'; falling back to QWERTY keycode 0x09")
+        logger.error("Failed to resolve virtual keycode for character '\(String(character), privacy: .public)'; falling back to QWERTY keycode \(fallbackKeyCode, privacy: .public)")
         return fallbackKeyCode
+    }
+
+    private static func qwertyFallbackKeyCode(for character: Character) -> CGKeyCode {
+        switch String(character).lowercased() {
+        case "c": return 0x08
+        case "v": return 0x09
+        default: return 0x09
+        }
     }
 
     private static func liveKeyboardLayout() -> KeyboardLayoutLookupResult {

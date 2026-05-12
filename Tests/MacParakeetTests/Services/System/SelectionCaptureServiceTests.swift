@@ -57,6 +57,7 @@ final class SelectionCaptureServiceTests: XCTestCase {
         case .clipboard(let text, let snapshot):
             XCTAssertEqual(text, "Clipboard selection")
             XCTAssertEqual(snapshot.originalChangeCount, 1)
+            XCTAssertEqual(snapshot.temporaryChangeCount, 2)
         default:
             XCTFail("Expected .clipboard, got \(result.pathTag)")
         }
@@ -148,6 +149,28 @@ final class SelectionCaptureServiceTests: XCTestCase {
         }
         XCTAssertEqual(backend.restoreCount(), 1, "Snapshot must be restored — user's pre-hijack clipboard had non-text content we'd otherwise have lost")
     }
+
+    func testAbandonedClipboardCaptureSkipsRestoreWhenUserCopiedAfterCapture() async {
+        let backend = FakeSelectionCaptureBackend(
+            isTrusted: true,
+            focusedElement: AXUIElementCreateSystemWide(),
+            selectedText: nil,
+            initialChangeCount: 4,
+            pasteboardAfterCmdC: "captured-selection",
+            changeCountAfterCmdC: 5
+        )
+        let service = SelectionCaptureService(
+            backend: backend,
+            clipboardPollTimeout: .milliseconds(60),
+            pollIntervalNanos: 1_000_000
+        )
+
+        let result = await service.captureSelection()
+        backend.setChangeCountForTesting(6)
+        await service.restoreClipboardCaptureIfCurrent(result)
+
+        XCTAssertEqual(backend.restoreCount(), 0, "User clipboard writes after capture must not be clobbered by abandoned-transform cleanup")
+    }
 }
 
 // MARK: - Fake Backend
@@ -212,4 +235,5 @@ final class FakeSelectionCaptureBackend: SelectionCaptureBackend, @unchecked Sen
     }
 
     func restoreCount() -> Int { restoreCalls }
+    func setChangeCountForTesting(_ newValue: Int) { changeCount = newValue }
 }

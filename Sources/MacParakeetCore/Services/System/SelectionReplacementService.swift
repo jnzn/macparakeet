@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Carbon
 import Foundation
 import OSLog
 
@@ -64,6 +65,9 @@ protocol SelectionReplacementBackend: Sendable {
     func currentChangeCount() -> Int
 
     @MainActor
+    func snapshotPasteboard() -> PasteboardSnapshot
+
+    @MainActor
     func restoreSnapshot(_ snapshot: PasteboardSnapshot)
 }
 
@@ -122,8 +126,11 @@ public actor SelectionReplacementService {
 
         case .clipboard(_, let savedSnapshot):
             // Original capture already hijacked the clipboard. Paste then
-            // restore the snapshot we promised the user we'd put back.
-            try await pasteAndRestore(newText: newText, snapshot: savedSnapshot)
+            // restore the snapshot we promised the user we'd put back. If the
+            // user copied something else while the LLM was running, preserve
+            // that newer clipboard instead of the pre-transform snapshot.
+            let restoreSnapshot = await snapshotForClipboardContext(savedSnapshot)
+            try await pasteAndRestore(newText: newText, snapshot: restoreSnapshot)
             return .clipboardPaste
 
         case .empty, .failed:
@@ -133,17 +140,21 @@ public actor SelectionReplacementService {
 
     @MainActor
     private func snapshotPasteboardForFallback() -> PasteboardSnapshot {
-        let pb = NSPasteboard.general
-        let items = pb.pasteboardItems?.map { item -> NSPasteboardItem in
-            let copy = NSPasteboardItem()
-            for type in item.types {
-                if let data = item.data(forType: type) {
-                    copy.setData(data, forType: type)
-                }
-            }
-            return copy
+        backend.snapshotPasteboard()
+    }
+
+    private func snapshotForClipboardContext(_ savedSnapshot: PasteboardSnapshot) async -> PasteboardSnapshot {
+        guard let temporaryChangeCount = savedSnapshot.temporaryChangeCount else {
+            return savedSnapshot
         }
-        return PasteboardSnapshot(items: items, originalChangeCount: pb.changeCount)
+
+        let now = await currentChangeCountOnMain()
+        guard now != temporaryChangeCount else {
+            return savedSnapshot
+        }
+
+        logger.notice("transforms-spike: preserving clipboard content copied during LLM phase (capture=\(temporaryChangeCount, privacy: .public), now=\(now, privacy: .public))")
+        return await snapshotPasteboardForFallback()
     }
 
     private func pasteAndRestore(
@@ -222,9 +233,14 @@ public actor SelectionReplacementService {
 // from `@MainActor` methods. The AX write path is pure.
 struct SystemSelectionReplacementBackend: SelectionReplacementBackend, @unchecked Sendable {
     private let pasteboard: NSPasteboard
+    private let shortcutKeyResolver: PasteShortcutKeyResolver
 
-    init(pasteboard: NSPasteboard = .general) {
+    init(
+        pasteboard: NSPasteboard = .general,
+        shortcutKeyResolver: PasteShortcutKeyResolver = PasteShortcutKeyResolver()
+    ) {
         self.pasteboard = pasteboard
+        self.shortcutKeyResolver = shortcutKeyResolver
     }
 
     func isAccessibilityTrusted() -> Bool {
@@ -261,6 +277,20 @@ struct SystemSelectionReplacementBackend: SelectionReplacementBackend, @unchecke
     }
 
     @MainActor
+    func snapshotPasteboard() -> PasteboardSnapshot {
+        let items = pasteboard.pasteboardItems?.map { item -> NSPasteboardItem in
+            let copy = NSPasteboardItem()
+            for type in item.types {
+                if let data = item.data(forType: type) {
+                    copy.setData(data, forType: type)
+                }
+            }
+            return copy
+        }
+        return PasteboardSnapshot(items: items, originalChangeCount: pasteboard.changeCount)
+    }
+
+    @MainActor
     func postCmdV() throws {
         guard AXIsProcessTrusted() else {
             throw SelectionReplacementError.accessibilityNotAuthorized
@@ -268,7 +298,10 @@ struct SystemSelectionReplacementBackend: SelectionReplacementBackend, @unchecke
         guard let source = CGEventSource(stateID: .hidSystemState) else {
             throw SelectionReplacementError.eventSourceUnavailable
         }
-        let vKeyCode: CGKeyCode = 9  // ANSI 'V'
+        let vKeyCode = shortcutKeyResolver.virtualKeyCode(
+            for: "v",
+            modifierKeyState: UInt32(cmdKey >> 8)
+        )
         guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true),
               let keyUp = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false) else {
             throw SelectionReplacementError.eventPostingFailed

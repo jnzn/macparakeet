@@ -117,6 +117,30 @@ final class SelectionReplacementServiceTests: XCTestCase {
         XCTAssertEqual(backend.cmdVPostCount(), 1, "Paste should still happen — we only suppress restore")
         XCTAssertEqual(backend.restoreCount(), 0, "Restore must be skipped — user wrote to clipboard mid-transform")
     }
+
+    func testReplacePreservesClipboardUserCopiedBetweenCaptureAndPaste() async throws {
+        let backend = FakeSelectionReplacementBackend(
+            isTrusted: true,
+            axWriteSucceeds: false,
+            pasteboardWriteSucceeds: true,
+            initialChangeCount: 12
+        )
+        let service = SelectionReplacementService(backend: backend, postPasteDelay: .milliseconds(1))
+        let preTransformSnapshot = PasteboardSnapshot(
+            items: nil,
+            originalChangeCount: 10,
+            temporaryChangeCount: 11
+        )
+
+        _ = try await service.replace(
+            with: "polished",
+            in: .clipboard(text: "raw", savedClipboard: preTransformSnapshot)
+        )
+
+        XCTAssertEqual(backend.cmdVPostCount(), 1)
+        XCTAssertEqual(backend.restoreCount(), 1)
+        XCTAssertEqual(backend.lastRestoredChangeCount(), 12, "Restore should use the user's newer clipboard snapshot, not the pre-transform one")
+    }
 }
 
 // MARK: - Fake Backend
@@ -137,22 +161,25 @@ final class FakeSelectionReplacementBackend: SelectionReplacementBackend, @unche
         var restoreSnapshots: [PasteboardSnapshot] = []
         /// Simulated pasteboard changeCount. Bumped on `writePasteboardString`
         /// (mirroring `setString`'s behavior in production) and optionally
-        /// bumped a second time on the second `currentChangeCount` read to
+        /// bumped after our own write-count has been observed once to
         /// simulate a concurrent user copy mid-transform.
         var changeCount: Int = 0
-        var currentChangeCountCallNumber: Int = 0
+        var pastePayloadWritten = false
+        var returnedOurChangeCountAfterWrite = false
     }
 
     init(
         isTrusted: Bool,
         axWriteSucceeds: Bool = false,
         pasteboardWriteSucceeds: Bool = true,
-        simulateUserCopyAfterWrite: Bool = false
+        simulateUserCopyAfterWrite: Bool = false,
+        initialChangeCount: Int = 0
     ) {
         self.trusted = isTrusted
         self.axWriteSucceedsValue = axWriteSucceeds
         self.pasteboardWriteSucceedsValue = pasteboardWriteSucceeds
         self.simulateUserCopyAfterWrite = simulateUserCopyAfterWrite
+        lock.withLock { $0.changeCount = initialChangeCount }
     }
 
     func isAccessibilityTrusted() -> Bool { trusted }
@@ -168,6 +195,8 @@ final class FakeSelectionReplacementBackend: SelectionReplacementBackend, @unche
             state.clipboardTexts.append(text)
             if pasteboardWriteSucceedsValue {
                 state.changeCount += 1
+                state.pastePayloadWritten = true
+                state.returnedOurChangeCountAfterWrite = false
             }
         }
         return pasteboardWriteSucceedsValue
@@ -182,16 +211,22 @@ final class FakeSelectionReplacementBackend: SelectionReplacementBackend, @unche
     func currentChangeCount() -> Int {
         let simulateBump = simulateUserCopyAfterWrite
         return lock.withLock { state in
-            state.currentChangeCountCallNumber += 1
-            // Service reads currentChangeCount twice: once right after our
-            // own write (to capture ourChangeCount) and once during the
-            // restore check. The simulated "user copied mid-transform"
-            // scenario bumps on the second call.
-            if simulateBump && state.currentChangeCountCallNumber >= 2 {
+            if simulateBump,
+               state.pastePayloadWritten,
+               state.returnedOurChangeCountAfterWrite {
                 return state.changeCount + 1
+            }
+            if state.pastePayloadWritten {
+                state.returnedOurChangeCountAfterWrite = true
             }
             return state.changeCount
         }
+    }
+
+    @MainActor
+    func snapshotPasteboard() -> PasteboardSnapshot {
+        let changeCount = lock.withLock { $0.changeCount }
+        return PasteboardSnapshot(items: nil, originalChangeCount: changeCount)
     }
 
     @MainActor

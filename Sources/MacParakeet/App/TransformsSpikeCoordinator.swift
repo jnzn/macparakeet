@@ -123,7 +123,8 @@ final class TransformsSpikeCoordinator {
                         // would be wasteful (and the bot reviewers flagged
                         // it).
                         if case .failed = progress {
-                            Task { @MainActor [weak self] in
+                            Task { @MainActor [weak self, runID] in
+                                guard self?.activeRunID == runID else { return }
                                 self?.handleProgress(progress)
                             }
                         }

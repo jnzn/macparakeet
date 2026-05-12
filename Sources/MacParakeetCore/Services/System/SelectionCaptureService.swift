@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Carbon
 import Foundation
 import OSLog
 
@@ -83,14 +84,28 @@ public struct AXFocusedElement: @unchecked Sendable {
 public struct PasteboardSnapshot: @unchecked Sendable {
     public let items: [NSPasteboardItem]?
     public let originalChangeCount: Int
+    public let temporaryChangeCount: Int?
 
-    public init(items: [NSPasteboardItem]?, originalChangeCount: Int) {
+    public init(
+        items: [NSPasteboardItem]?,
+        originalChangeCount: Int,
+        temporaryChangeCount: Int? = nil
+    ) {
         self.items = items
         self.originalChangeCount = originalChangeCount
+        self.temporaryChangeCount = temporaryChangeCount
     }
 
     /// Empty placeholder — useful for tests and the `.empty` no-op path.
     public static let none = PasteboardSnapshot(items: nil, originalChangeCount: 0)
+
+    public func withTemporaryChangeCount(_ changeCount: Int) -> PasteboardSnapshot {
+        PasteboardSnapshot(
+            items: items,
+            originalChangeCount: originalChangeCount,
+            temporaryChangeCount: changeCount
+        )
+    }
 }
 
 // MARK: - Backend Protocol (for testability)
@@ -186,6 +201,26 @@ public actor SelectionCaptureService {
         return await clipboardHijack()
     }
 
+    /// Restore a clipboard capture that is being abandoned before replacement.
+    /// The guard preserves user clipboard writes made while the LLM was running:
+    /// we only restore if the pasteboard is still at the Cmd+C change count
+    /// created by `clipboardHijack()`.
+    func restoreClipboardCaptureIfCurrent(_ result: SelectionCaptureResult) async {
+        guard case .clipboard(_, let snapshot) = result else { return }
+
+        guard let temporaryChangeCount = snapshot.temporaryChangeCount else {
+            await restoreSnapshotOnMain(snapshot)
+            return
+        }
+
+        let now = await currentChangeCountOnMain()
+        if now == temporaryChangeCount {
+            await restoreSnapshotOnMain(snapshot)
+        } else {
+            logger.notice("transforms-spike: skipping abandoned-capture clipboard restore — user copied content mid-transform (capture=\(temporaryChangeCount, privacy: .public), now=\(now, privacy: .public))")
+        }
+    }
+
     // MARK: - Clipboard Hijack
 
     private func clipboardHijack() async -> SelectionCaptureResult {
@@ -210,7 +245,7 @@ public actor SelectionCaptureService {
             let now = await currentChangeCountOnMain()
             if now != snapshot.originalChangeCount {
                 if let text = await currentStringOnMain(), !text.isEmpty {
-                    return .clipboard(text: text, savedClipboard: snapshot)
+                    return .clipboard(text: text, savedClipboard: snapshot.withTemporaryChangeCount(now))
                 }
                 // Change count moved but no string available (image, file, etc.).
                 // Cmd+C *did* write — the user's pre-hijack clipboard is now
@@ -259,9 +294,14 @@ public actor SelectionCaptureService {
 // mutable state).
 struct SystemSelectionCaptureBackend: SelectionCaptureBackend, @unchecked Sendable {
     private let pasteboard: NSPasteboard
+    private let shortcutKeyResolver: PasteShortcutKeyResolver
 
-    init(pasteboard: NSPasteboard = .general) {
+    init(
+        pasteboard: NSPasteboard = .general,
+        shortcutKeyResolver: PasteShortcutKeyResolver = PasteShortcutKeyResolver()
+    ) {
         self.pasteboard = pasteboard
+        self.shortcutKeyResolver = shortcutKeyResolver
     }
 
     func isAccessibilityTrusted() -> Bool {
@@ -326,7 +366,10 @@ struct SystemSelectionCaptureBackend: SelectionCaptureBackend, @unchecked Sendab
         guard let source = CGEventSource(stateID: .hidSystemState) else {
             throw SelectionCaptureError.eventSourceUnavailable
         }
-        let cKeyCode: CGKeyCode = 8  // ANSI 'C'
+        let cKeyCode = shortcutKeyResolver.virtualKeyCode(
+            for: "c",
+            modifierKeyState: UInt32(cmdKey >> 8)
+        )
         guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: cKeyCode, keyDown: true),
               let keyUp = CGEvent(keyboardEventSource: source, virtualKey: cKeyCode, keyDown: false) else {
             throw SelectionCaptureError.eventPostingFailed

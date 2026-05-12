@@ -120,7 +120,13 @@ public actor TransformExecutor {
         // 1. Capture.
         onProgress(.capturing)
         let captured = await captureService.captureSelection()
-        try Task.checkCancellation()
+        do {
+            try Task.checkCancellation()
+        } catch {
+            await restoreIfAbandoning(captured)
+            onProgress(.failed(TransformExecutorError.cancelled.localizedDescription))
+            throw TransformExecutorError.cancelled
+        }
 
         switch captured {
         case .empty:
@@ -134,6 +140,7 @@ public actor TransformExecutor {
         }
 
         guard let inputText = captured.capturedText, !inputText.isEmpty else {
+            await restoreIfAbandoning(captured)
             onProgress(.failed(TransformExecutorError.emptySelection.localizedDescription))
             throw TransformExecutorError.emptySelection
         }
@@ -150,25 +157,36 @@ public actor TransformExecutor {
                 onProgress(.llmStreaming(accumulated))
             }
         } catch is CancellationError {
+            await restoreIfAbandoning(captured)
             onProgress(.failed(TransformExecutorError.cancelled.localizedDescription))
             throw TransformExecutorError.cancelled
         } catch let error as LLMError {
             if case .notConfigured = error {
+                await restoreIfAbandoning(captured)
                 onProgress(.failed(TransformExecutorError.llmNotConfigured.localizedDescription))
                 throw TransformExecutorError.llmNotConfigured
             }
             let detail = error.localizedDescription
+            await restoreIfAbandoning(captured)
             onProgress(.failed(TransformExecutorError.llmFailed(detail).localizedDescription))
             throw TransformExecutorError.llmFailed(detail)
         } catch {
             let detail = error.localizedDescription
+            await restoreIfAbandoning(captured)
             onProgress(.failed(TransformExecutorError.llmFailed(detail).localizedDescription))
             throw TransformExecutorError.llmFailed(detail)
         }
         let llmElapsedMs = Self.elapsedMs(from: llmStart)
-        try Task.checkCancellation()
+        do {
+            try Task.checkCancellation()
+        } catch {
+            await restoreIfAbandoning(captured)
+            onProgress(.failed(TransformExecutorError.cancelled.localizedDescription))
+            throw TransformExecutorError.cancelled
+        }
 
         guard !accumulated.isEmpty else {
+            await restoreIfAbandoning(captured)
             onProgress(.failed(TransformExecutorError.llmFailed("LLM returned empty output.").localizedDescription))
             throw TransformExecutorError.llmFailed("LLM returned empty output.")
         }
@@ -184,6 +202,7 @@ public actor TransformExecutor {
         do {
             try Task.checkCancellation()
         } catch {
+            await restoreIfAbandoning(captured)
             onProgress(.failed(TransformExecutorError.cancelled.localizedDescription))
             throw TransformExecutorError.cancelled
         }
@@ -222,5 +241,8 @@ public actor TransformExecutor {
         let components = elapsed.components
         return Int(components.seconds) * 1000 + Int(components.attoseconds / 1_000_000_000_000_000)
     }
-}
 
+    private func restoreIfAbandoning(_ captured: SelectionCaptureResult) async {
+        await captureService.restoreClipboardCaptureIfCurrent(captured)
+    }
+}

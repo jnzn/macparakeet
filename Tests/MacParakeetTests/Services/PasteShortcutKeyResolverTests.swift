@@ -37,6 +37,26 @@ final class PasteShortcutKeyResolverTests: XCTestCase {
         XCTAssertEqual(resolver.virtualKeyCode(for: "v", modifierKeyState: commandModifierState), 9)
     }
 
+    func testUsesCommandModifiedMappingWhenResolvingCopyShortcut() {
+        let commandModifierState = UInt32(cmdKey >> 8)
+        let resolver = PasteShortcutKeyResolver(
+            keyboardLayoutProvider: { .data(Self.dummyLayoutData) },
+            translatedCharacterProvider: { _, keyCode, modifierKeyState, _ in
+                switch (keyCode, modifierKeyState) {
+                case (8, commandModifierState):
+                    return Self.cCharacter
+                case (17, 0):
+                    return Self.cCharacter
+                default:
+                    return nil
+                }
+            }
+        )
+
+        XCTAssertEqual(resolver.virtualKeyCode(for: "c", modifierKeyState: 0), 17)
+        XCTAssertEqual(resolver.virtualKeyCode(for: "c", modifierKeyState: commandModifierState), 8)
+    }
+
     func testFallsBackToQwertyWhenLayoutSourceIsMissing() {
         let resolver = PasteShortcutKeyResolver(
             keyboardLayoutProvider: { .missingInputSource },
@@ -47,6 +67,18 @@ final class PasteShortcutKeyResolverTests: XCTestCase {
         )
 
         XCTAssertEqual(resolver.virtualKeyCode(for: "v"), 0x09)
+    }
+
+    func testFallsBackToQwertyCopyKeyWhenResolvingCopyShortcut() {
+        let resolver = PasteShortcutKeyResolver(
+            keyboardLayoutProvider: { .missingInputSource },
+            translatedCharacterProvider: { _, _, _, _ in
+                XCTFail("Translator should not be called when input source is missing")
+                return nil
+            }
+        )
+
+        XCTAssertEqual(resolver.virtualKeyCode(for: "c"), 0x08)
     }
 
     func testFallsBackToQwertyWhenLayoutDataIsMissing() {
@@ -72,4 +104,5 @@ final class PasteShortcutKeyResolverTests: XCTestCase {
 
     private static let dummyLayoutData = Data([0x00]) as CFData
     private static let vCharacter = UniChar(("v" as UnicodeScalar).value)
+    private static let cCharacter = UniChar(("c" as UnicodeScalar).value)
 }
