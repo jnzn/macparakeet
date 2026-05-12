@@ -37,13 +37,86 @@ final class PromptRepositoryTests: XCTestCase {
             .appendingPathComponent("Sources/MacParakeetCore/Resources/community-prompts.json")
         let data = try Data(contentsOf: artifactURL)
         let artifactPrompts = try JSONDecoder().decode([PromptArtifact].self, from: data)
-        let builtIns = Prompt.builtInPrompts()
+        // The community-prompts artifact is the curated set of `.result`
+        // (transcript-summary) prompts. `.transform` built-ins (ADR-022) are
+        // shipped UX, not community content, and are intentionally not
+        // included.
+        let builtIns = Prompt.builtInPrompts().filter { $0.category == .result }
 
         XCTAssertEqual(artifactPrompts.count, builtIns.count)
         XCTAssertEqual(artifactPrompts.map(\.name), builtIns.map(\.name))
         XCTAssertEqual(artifactPrompts.map(\.content), builtIns.map(\.content))
         XCTAssertEqual(artifactPrompts.map(\.category), builtIns.map { $0.category.rawValue })
         XCTAssertEqual(artifactPrompts.map(\.sortOrder), builtIns.map(\.sortOrder))
+    }
+
+    func testBuiltInTransformsSeededWithDefaultShortcuts() throws {
+        let transforms = try repo.fetchVisible(category: .transform)
+            .sorted(by: { $0.sortOrder < $1.sortOrder })
+
+        XCTAssertEqual(transforms.count, 3, "Phase 2 ships exactly three built-in Transforms: Polish, Distill, Decide.")
+        XCTAssertEqual(transforms.map(\.name), ["Polish", "Distill", "Decide"])
+
+        let polish = transforms[0]
+        XCTAssertTrue(polish.isBuiltIn)
+        XCTAssertEqual(polish.category, .transform)
+        XCTAssertEqual(polish.runningLabel, "Polishing…")
+        let polishShortcut = try XCTUnwrap(polish.shortcut)
+        XCTAssertEqual(polishShortcut.keyLabel, "1")
+        XCTAssertEqual(polishShortcut.modifierFlags, [.option])
+
+        let distill = transforms[1]
+        XCTAssertEqual(distill.runningLabel, "Distilling…")
+        let distillShortcut = try XCTUnwrap(distill.shortcut)
+        XCTAssertEqual(distillShortcut.keyLabel, "2")
+
+        let decide = transforms[2]
+        XCTAssertEqual(decide.runningLabel, "Deciding…")
+        let decideShortcut = try XCTUnwrap(decide.shortcut)
+        XCTAssertEqual(decideShortcut.keyLabel, "3")
+    }
+
+    func testReconcilerPreservesUserCustomizedShortcutOnBuiltInTransform() throws {
+        // User customizes Polish's hotkey to Opt+Shift+P. A subsequent app
+        // launch (simulated by re-running the reconciler via a fresh
+        // DatabaseManager on the same file-backed DB) must NOT overwrite
+        // the user's binding back to the default Opt+1.
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("reconciler-shortcut-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let dbPath = tmpDir.appendingPathComponent("macparakeet.db").path
+
+        let first = try DatabaseManager(path: dbPath)
+        let firstRepo = PromptRepository(dbQueue: first.dbQueue)
+        var polish = try XCTUnwrap(
+            (try firstRepo.fetchVisible(category: .transform))
+                .first(where: { $0.name == "Polish" })
+        )
+
+        let customShortcut = KeyboardShortcut(
+            modifiers: KeyboardShortcut.ModifierFlag.option.rawValue
+                | KeyboardShortcut.ModifierFlag.shift.rawValue,
+            keyCode: 0x23, // kVK_ANSI_P
+            keyLabel: "P"
+        )
+        polish.keyboardShortcut = customShortcut.encodedString()
+        polish.runningLabel = "Refining…"
+        polish.updatedAt = Date()
+        try firstRepo.save(polish)
+
+        // Simulate a fresh boot — reconciler runs again. The user's
+        // customizations must survive.
+        let second = try DatabaseManager(path: dbPath)
+        let secondRepo = PromptRepository(dbQueue: second.dbQueue)
+        let reloaded = try XCTUnwrap(
+            (try secondRepo.fetchVisible(category: .transform))
+                .first(where: { $0.name == "Polish" })
+        )
+
+        XCTAssertEqual(reloaded.shortcut?.keyLabel, "P", "Reconciler must not overwrite user-set Transform shortcuts.")
+        XCTAssertEqual(reloaded.shortcut?.modifierFlags, [.option, .shift])
+        XCTAssertEqual(reloaded.runningLabel, "Refining…", "Reconciler must not overwrite user-set running labels.")
     }
 
     func testSaveAndFetchCustomPrompt() throws {
