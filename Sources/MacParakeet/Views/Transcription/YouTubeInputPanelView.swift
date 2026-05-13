@@ -79,6 +79,8 @@ struct YouTubeInputPanelView: View {
                     Text("Paste")
                         .font(DesignSystem.Typography.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .layoutPriority(1)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(
@@ -114,6 +116,7 @@ struct YouTubeInputPanelView: View {
                         ? DesignSystem.Colors.onAccent
                         : DesignSystem.Colors.textTertiary
                 )
+                .lineLimit(1)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
                 .background(
