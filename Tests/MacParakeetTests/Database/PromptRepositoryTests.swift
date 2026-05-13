@@ -69,11 +69,13 @@ final class PromptRepositoryTests: XCTestCase {
         XCTAssertEqual(distill.runningLabel, "Distilling…")
         let distillShortcut = try XCTUnwrap(distill.shortcut)
         XCTAssertEqual(distillShortcut.keyLabel, "2")
+        XCTAssertEqual(distillShortcut.modifierFlags, [.option])
 
         let decide = transforms[2]
         XCTAssertEqual(decide.runningLabel, "Deciding…")
         let decideShortcut = try XCTUnwrap(decide.shortcut)
         XCTAssertEqual(decideShortcut.keyLabel, "3")
+        XCTAssertEqual(decideShortcut.modifierFlags, [.option])
     }
 
     func testFetchAutoRunPromptsIgnoresTransformPrompts() throws {
