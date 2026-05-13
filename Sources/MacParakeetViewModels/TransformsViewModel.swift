@@ -28,24 +28,30 @@ public final class TransformsViewModel {
     public func configure(repo: PromptRepositoryProtocol, hasLLMProvider: Bool) {
         self.repo = repo
         self.hasLLMProvider = hasLLMProvider
-        load()
+        Task { await load() }
     }
 
     /// Refresh the list from the repository. Built-ins are seeded by the
     /// reconciler at launch — this view never sees an empty list under
     /// normal operation.
-    public func load() {
-        guard let repo else { return }
+    @discardableResult
+    public func load() async -> Bool {
+        guard let repo else { return false }
         do {
-            transforms = try repo
-                .fetchVisible(category: .transform)
-                .sorted(by: { lhs, rhs in
-                    if lhs.sortOrder != rhs.sortOrder { return lhs.sortOrder < rhs.sortOrder }
-                    return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-                })
+            let loaded = try await Task.detached(priority: .utility) { [repo] in
+                try repo
+                    .fetchVisible(category: .transform)
+                    .sorted(by: { lhs, rhs in
+                        if lhs.sortOrder != rhs.sortOrder { return lhs.sortOrder < rhs.sortOrder }
+                        return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+                    })
+            }.value
+            transforms = loaded
             errorMessage = nil
+            return true
         } catch {
             errorMessage = error.localizedDescription
+            return false
         }
     }
 
@@ -60,12 +66,14 @@ public final class TransformsViewModel {
     /// the hotkey — the coordinator's `reloadBindings()` is invoked by the
     /// view layer after this returns successfully.
     @discardableResult
-    public func save(_ prompt: Prompt) -> Bool {
+    public func save(_ prompt: Prompt) async -> Bool {
         guard let repo else { return false }
         do {
-            try repo.save(prompt)
+            try await Task.detached(priority: .utility) { [repo, prompt] in
+                try repo.save(prompt)
+            }.value
             errorMessage = nil
-            load()
+            await load()
             return true
         } catch {
             errorMessage = error.localizedDescription
@@ -77,13 +85,15 @@ public final class TransformsViewModel {
     /// underlying repository refuses them; this helper short-circuits so
     /// the UI can hide the action entirely.
     @discardableResult
-    public func delete(_ prompt: Prompt) -> Bool {
+    public func delete(_ prompt: Prompt) async -> Bool {
         guard let repo, !prompt.isBuiltIn else { return false }
         do {
-            let deleted = try repo.delete(id: prompt.id)
+            let deleted = try await Task.detached(priority: .utility) { [repo, id = prompt.id] in
+                try repo.delete(id: id)
+            }.value
             if deleted {
                 errorMessage = nil
-                load()
+                await load()
             }
             return deleted
         } catch {
@@ -93,17 +103,18 @@ public final class TransformsViewModel {
     }
 
     /// Confirm a pending delete that was queued via `pendingDeleteTransform`.
-    public func confirmPendingDelete() {
-        guard let pending = pendingDeleteTransform else { return }
+    @discardableResult
+    public func confirmPendingDelete() async -> Bool {
+        guard let pending = pendingDeleteTransform else { return false }
         pendingDeleteTransform = nil
-        delete(pending)
+        return await delete(pending)
     }
 
     /// Reset a built-in Transform's content / shortcut / runningLabel back
     /// to its canonical defaults from `Prompt.builtInPrompts()`. No-op for
     /// custom Transforms (they don't have a default to revert to).
     @discardableResult
-    public func resetBuiltIn(_ prompt: Prompt) -> Bool {
+    public func resetBuiltIn(_ prompt: Prompt) async -> Bool {
         guard prompt.isBuiltIn, repo != nil else { return false }
         guard let canonical = Prompt.builtInPrompts().first(where: { $0.id == prompt.id }) else {
             return false
@@ -115,25 +126,29 @@ public final class TransformsViewModel {
         restored.runningLabel = canonical.runningLabel
         restored.sortOrder = canonical.sortOrder
         restored.updatedAt = Date()
-        return save(restored)
+        return await save(restored)
     }
 
     /// Re-seed missing built-in Transforms only (does NOT overwrite user
     /// edits to existing built-ins). The header's *Reset to defaults*
     /// affordance maps to this.
-    public func reseedMissingBuiltIns() {
-        guard let repo else { return }
+    @discardableResult
+    public func reseedMissingBuiltIns() async -> Bool {
+        guard let repo else { return false }
         let existingIDs = Set(transforms.map(\.id))
         let canonical = Prompt.builtInPrompts().filter { $0.category == .transform }
-        for prompt in canonical where !existingIDs.contains(prompt.id) {
-            do {
-                try repo.save(prompt)
-            } catch {
-                errorMessage = error.localizedDescription
-                return
-            }
+        do {
+            try await Task.detached(priority: .utility) { [repo, existingIDs, canonical] in
+                for prompt in canonical where !existingIDs.contains(prompt.id) {
+                    try repo.save(prompt)
+                }
+            }.value
+            await load()
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
         }
-        load()
     }
 
     // MARK: - Convenience accessors

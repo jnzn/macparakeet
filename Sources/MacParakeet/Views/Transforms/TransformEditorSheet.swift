@@ -15,8 +15,7 @@ import MacParakeetViewModels
 struct TransformEditorSheet: View {
     @Bindable var viewModel: TransformEditorViewModel
     let existingTransforms: [Prompt]
-    let dictationHotkeys: [HotkeyTrigger]
-    let meetingHotkey: HotkeyTrigger?
+    let reservedHotkeys: [TransformShortcutReservedHotkey]
     let onShortcutRecordingStateChanged: (Bool) -> Void
     let onSave: (Prompt) -> Void
     let onCancel: () -> Void
@@ -206,8 +205,7 @@ struct TransformEditorSheet: View {
     private func revalidate() {
         viewModel.validate(
             existingTransforms: existingTransforms,
-            dictationHotkeys: dictationHotkeys,
-            meetingHotkey: meetingHotkey,
+            reservedHotkeys: reservedHotkeys,
             collisionChecker: collisionChecker
         )
     }
@@ -289,6 +287,7 @@ struct ShortcutRecorderField: View {
                     .foregroundStyle(DesignSystem.Colors.textSecondary)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(isRecording ? "Stop recording" : "Start recording")
             if shortcut != nil {
                 Button(action: { shortcut = nil }) {
                     Image(systemName: "xmark.circle.fill")
@@ -296,6 +295,7 @@ struct ShortcutRecorderField: View {
                 }
                 .buttonStyle(.plain)
                 .help("Clear shortcut")
+                .accessibilityLabel("Clear shortcut")
             }
         }
         .padding(.horizontal, DesignSystem.Spacing.md)
@@ -328,6 +328,10 @@ struct ShortcutRecorderField: View {
     private func installMonitor() {
         removeMonitor()
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
+            if event.keyCode == 0x35 {
+                isRecording = false
+                return nil
+            }
             let modifierBits = UInt(event.modifierFlags.intersection([.command, .option, .control, .shift]).rawValue)
             let keyCode = event.keyCode
             let label = labelForKey(event: event)

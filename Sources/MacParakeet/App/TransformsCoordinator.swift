@@ -23,6 +23,7 @@ import OSLog
 final class TransformsCoordinator {
     private let llmServiceProvider: () -> LLMServiceProtocol?
     private let promptRepository: PromptRepositoryProtocol
+    private let reservedHotkeysProvider: () -> [TransformShortcutReservedHotkey]
     private let logger = Logger(subsystem: "com.macparakeet", category: "TransformsCoordinator")
 
     private var registry: TransformsHotkeyRegistry?
@@ -42,13 +43,16 @@ final class TransformsCoordinator {
     /// resolve a `KeyboardShortcut`-triggered ID back to its prompt body
     /// and running label without re-hitting the DB on every keystroke.
     private var promptIndex: [UUID: Prompt] = [:]
+    private var activeBindingIDs: Set<UUID> = []
 
     init(
         llmServiceProvider: @escaping () -> LLMServiceProtocol?,
-        promptRepository: PromptRepositoryProtocol
+        promptRepository: PromptRepositoryProtocol,
+        reservedHotkeysProvider: @escaping () -> [TransformShortcutReservedHotkey] = { [] }
     ) {
         self.llmServiceProvider = llmServiceProvider
         self.promptRepository = promptRepository
+        self.reservedHotkeysProvider = reservedHotkeysProvider
     }
 
     // MARK: - Lifecycle
@@ -81,7 +85,7 @@ final class TransformsCoordinator {
                     self?.reloadBindings()
                 }
             }
-            logger.notice("transforms: registry started with \(self.promptIndex.count, privacy: .public) bindings")
+            logger.notice("transforms: registry started with \(self.activeBindingIDs.count, privacy: .public) bindings")
         } else {
             logger.error("transforms: failed to install registry event tap")
         }
@@ -130,19 +134,27 @@ final class TransformsCoordinator {
 
         promptIndex = Dictionary(uniqueKeysWithValues: prompts.map { ($0.id, $0) })
 
+        let reservedHotkeys = reservedHotkeysProvider().filter { !$0.trigger.isDisabled }
         var bindings: [UUID: KeyboardShortcut] = [:]
         for prompt in prompts {
             if let shortcut = prompt.shortcut {
+                if let conflict = reservedHotkeys.first(where: { shortcut.hotkeyTrigger.overlaps(with: $0.trigger) }) {
+                    logger.notice(
+                        "transforms: skipping binding for \(prompt.name, privacy: .public); conflicts with \(conflict.name, privacy: .public) \(conflict.trigger.formattedLabel, privacy: .public)"
+                    )
+                    continue
+                }
                 bindings[prompt.id] = shortcut
             }
         }
+        activeBindingIDs = Set(bindings.keys)
         registry.replaceBindings(bindings)
     }
 
     /// True when at least one Transform has a hotkey bound. Used by the
     /// Transforms tab to surface a calmer "no bindings yet" hint state.
     var hasActiveBindings: Bool {
-        promptIndex.values.contains(where: { $0.shortcut != nil })
+        !activeBindingIDs.isEmpty
     }
 
     // MARK: - Trigger handling

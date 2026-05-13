@@ -172,6 +172,71 @@ final class TransformsCommandTests: XCTestCase {
         XCTAssertFalse(after.contains(where: { $0.name == "Sharpen" }))
     }
 
+    func testLookupRequiresAtLeastFourHexCharactersForIDPrefix() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("transforms-cli-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let dbPath = tmp.appendingPathComponent("test.db").path
+        _ = try DatabaseManager(path: dbPath)
+
+        let show = try TransformsCommand.ShowSubcommand.parse([
+            "0fc",
+            "--database", dbPath,
+        ])
+
+        XCTAssertThrowsError(try show.run()) { error in
+            let message = String(describing: error)
+            XCTAssertTrue(message.contains("No Transform found"), "Expected short-prefix lookup to fail, got: \(message)")
+        }
+    }
+
+    func testLookupAcceptsHyphenlessUUIDPrefix() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("transforms-cli-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let dbPath = tmp.appendingPathComponent("test.db").path
+        _ = try DatabaseManager(path: dbPath)
+
+        let show = try TransformsCommand.ShowSubcommand.parse([
+            "0fce9ddb7e2d",
+            "--database", dbPath,
+        ])
+
+        XCTAssertNoThrow(try show.run())
+    }
+
+    func testLookupExactNameWinsOverUUIDPrefix() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("transforms-cli-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let dbPath = tmp.appendingPathComponent("test.db").path
+
+        let db = try DatabaseManager(path: dbPath)
+        let repo = PromptRepository(dbQueue: db.dbQueue)
+        let custom = Prompt(
+            id: UUID(),
+            name: "0fce",
+            content: "Custom body.",
+            category: .transform,
+            isBuiltIn: false,
+            sortOrder: 200
+        )
+        try repo.save(custom)
+
+        let del = try TransformsCommand.DeleteSubcommand.parse([
+            "0fce",
+            "--database", dbPath,
+        ])
+        try del.run()
+
+        let after = try repo.fetchVisible(category: .transform)
+        XCTAssertFalse(after.contains(where: { $0.id == custom.id }))
+        XCTAssertTrue(after.contains(where: { $0.id.uuidString == "0FCE9DDB-7E2D-4B1A-AE3E-6F7C9B2A4D11" }))
+    }
+
     func testCreateRejectsBareKeyShortcut() throws {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("transforms-cli-\(UUID().uuidString)")

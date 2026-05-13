@@ -73,7 +73,7 @@ final class DictationFlowCoordinatorLoadCaptionTests: XCTestCase {
         let harness = try makeHarness(isReady: false, transcribeDelayMs: 90, hasCompletedFirstDictation: false)
 
         try await harness.startAndStop()
-        let shown = await waitUntil { harness.coordinator.processingLoadCaptionForTesting == .preparing }
+        let shown = await waitUntil { self.isPreparingCaption(harness.coordinator.processingLoadCaptionForTesting) }
         XCTAssertTrue(shown)
         let cleared = await waitUntil { harness.coordinator.processingLoadCaptionForTesting == nil }
         XCTAssertTrue(cleared)
@@ -96,7 +96,7 @@ final class DictationFlowCoordinatorLoadCaptionTests: XCTestCase {
         let harness = try makeHarness(isReady: false, transcribeDelayMs: 140, hasCompletedFirstDictation: true)
 
         try await harness.startAndStop()
-        let shown = await waitUntil { harness.coordinator.processingLoadCaptionForTesting == .preparing }
+        let shown = await waitUntil { self.isPreparingCaption(harness.coordinator.processingLoadCaptionForTesting) }
         XCTAssertTrue(shown)
         try await Task.sleep(for: .milliseconds(70))
 
@@ -130,7 +130,7 @@ final class DictationFlowCoordinatorLoadCaptionTests: XCTestCase {
         )
 
         try await harness.startAndStop()
-        let shown = await waitUntil { harness.coordinator.processingLoadCaptionForTesting == .preparing }
+        let shown = await waitUntil { self.isPreparingCaption(harness.coordinator.processingLoadCaptionForTesting) }
         XCTAssertTrue(shown)
         let cleared = await waitUntil { harness.coordinator.processingLoadCaptionForTesting == nil }
         XCTAssertTrue(cleared)
@@ -143,7 +143,7 @@ final class DictationFlowCoordinatorLoadCaptionTests: XCTestCase {
 
         try await harness.startAndStop()
         let shown = await waitUntil(timeoutMs: 3_000) {
-            harness.coordinator.processingLoadCaptionForTesting == .preparing
+            self.isPreparingCaption(harness.coordinator.processingLoadCaptionForTesting)
         }
         XCTAssertTrue(shown)
 
@@ -159,7 +159,7 @@ final class DictationFlowCoordinatorLoadCaptionTests: XCTestCase {
         let harness = try makeHarness(isReady: false, transcribeDelayMs: 80)
 
         try await harness.startAndStop()
-        let firstShown = await waitUntil { harness.coordinator.processingLoadCaptionForTesting == .preparing }
+        let firstShown = await waitUntil { self.isPreparingCaption(harness.coordinator.processingLoadCaptionForTesting) }
         XCTAssertTrue(firstShown)
         let firstCleared = await waitUntil { harness.coordinator.processingLoadCaptionForTesting == nil }
         XCTAssertTrue(firstCleared)
@@ -248,6 +248,10 @@ final class DictationFlowCoordinatorLoadCaptionTests: XCTestCase {
             try? await Task.sleep(for: .milliseconds(5))
         }
         return condition()
+    }
+
+    private func isPreparingCaption(_ caption: DictationOverlayViewModel.ProcessingLoadCaption?) -> Bool {
+        caption == .preparing || caption == .preparingExtended
     }
 
     private struct Harness {

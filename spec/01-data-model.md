@@ -246,7 +246,9 @@ CREATE TABLE prompts (
     isAutoRun INTEGER NOT NULL DEFAULT 0,                 -- true = auto-generate for new transcriptions
     sortOrder INTEGER NOT NULL DEFAULT 0,                 -- Display ordering
     createdAt TEXT NOT NULL,                              -- ISO 8601 timestamp
-    updatedAt TEXT NOT NULL                               -- ISO 8601 timestamp
+    updatedAt TEXT NOT NULL,                              -- ISO 8601 timestamp
+    keyboardShortcut TEXT,                                -- v0.13 Transform shortcut (encoded KeyboardShortcut)
+    runningLabel TEXT                                     -- v0.13 Transform progress label override
 );
 
 CREATE UNIQUE INDEX idx_prompts_name ON prompts(name COLLATE NOCASE);
@@ -258,6 +260,7 @@ CREATE UNIQUE INDEX idx_prompts_name ON prompts(name COLLATE NOCASE);
 - `isAutoRun` is independent of `isVisible`, but repository/UI behavior forces auto-run prompts visible while auto-run is enabled.
 - `category` currently stores the raw value `"summary"` for compatibility, while the Swift enum case is `Prompt.Category.result`.
 - Built-ins currently come from `Prompt.builtInPrompts()` in Swift. "Summary" is the lone auto-run built-in for users who have not disabled every auto-run prompt. ("Memo-Steered Notes" was a second auto-run built-in introduced in ADR-020 and reverted on 2026-05-02 — see ADR-020 amendment.)
+- `category = "transform"` rows use `keyboardShortcut` for global Transform bindings and `runningLabel` for the floating progress label. Summary/result prompts leave both fields `NULL`.
 
 ---
 

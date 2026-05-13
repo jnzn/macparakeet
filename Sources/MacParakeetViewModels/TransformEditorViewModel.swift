@@ -91,21 +91,18 @@ public final class TransformEditorViewModel {
 
     /// Run all validation rules against the current draft + the surrounding
     /// state passed in by the view layer. The view layer is responsible
-    /// for providing the *other* transforms' bindings, the user's dictation
-    /// hotkey, and the meeting-toggle hotkey — they live outside the
-    /// editor's awareness.
+    /// for providing the *other* transforms' bindings and app-level reserved
+    /// hotkeys — they live outside the editor's awareness.
     public func validate(
         existingTransforms: [Prompt],
-        dictationHotkeys: [HotkeyTrigger],
-        meetingHotkey: HotkeyTrigger?,
+        reservedHotkeys: [TransformShortcutReservedHotkey],
         collisionChecker: TransformShortcutCollisionChecking
     ) {
         validateName(against: existingTransforms)
         validateContent()
         validateShortcut(
             existingTransforms: existingTransforms,
-            dictationHotkeys: dictationHotkeys,
-            meetingHotkey: meetingHotkey,
+            reservedHotkeys: reservedHotkeys,
             collisionChecker: collisionChecker
         )
     }
@@ -131,8 +128,7 @@ public final class TransformEditorViewModel {
 
     private func validateShortcut(
         existingTransforms: [Prompt],
-        dictationHotkeys: [HotkeyTrigger],
-        meetingHotkey: HotkeyTrigger?,
+        reservedHotkeys: [TransformShortcutReservedHotkey],
         collisionChecker: TransformShortcutCollisionChecking
     ) {
         guard let candidate = shortcut else {
@@ -153,8 +149,7 @@ public final class TransformEditorViewModel {
             candidate: candidate,
             existing: bindings,
             excludingPromptID: editingID,
-            dictationHotkeys: dictationHotkeys,
-            meetingHotkey: meetingHotkey
+            reservedHotkeys: reservedHotkeys
         )
         shortcutError = collision?.message
     }
@@ -221,8 +216,7 @@ public protocol TransformShortcutCollisionChecking {
         candidate: KeyboardShortcut,
         existing: [UUID: KeyboardShortcut],
         excludingPromptID: UUID?,
-        dictationHotkeys: [HotkeyTrigger],
-        meetingHotkey: HotkeyTrigger?
+        reservedHotkeys: [TransformShortcutReservedHotkey]
     ) -> TransformShortcutCollision?
 }
 
@@ -232,8 +226,7 @@ public enum TransformShortcutCollision: Equatable, Sendable {
     case missingModifier
     case macOSDeadKey
     case duplicateTransform(otherPromptID: UUID)
-    case dictationHotkey
-    case meetingHotkey
+    case reservedHotkey(name: String)
 
     public var message: String {
         switch self {
@@ -243,10 +236,8 @@ public enum TransformShortcutCollision: Equatable, Sendable {
             return "This shortcut produces a special character on Mac. Pick another combo."
         case .duplicateTransform:
             return "Another Transform already uses this shortcut."
-        case .dictationHotkey:
-            return "This shortcut conflicts with your dictation hotkey."
-        case .meetingHotkey:
-            return "This shortcut conflicts with your meeting recording hotkey."
+        case .reservedHotkey(let name):
+            return "This shortcut conflicts with \(name)."
         }
     }
 }

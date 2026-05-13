@@ -354,26 +354,44 @@ extension TransformsCommand {
 
 // MARK: - Lookup helper
 
+private let transformIDPrefixMinimumLength = 4
+
 private func findTransform(idOrName: String, repo: PromptRepository) throws -> Prompt {
+    let query = idOrName.trimmingCharacters(in: .whitespacesAndNewlines)
     let all = try repo.fetchVisible(category: .transform)
     // Exact UUID match
-    if let uuid = UUID(uuidString: idOrName), let match = all.first(where: { $0.id == uuid }) {
+    if let uuid = UUID(uuidString: query), let match = all.first(where: { $0.id == uuid }) {
         return match
     }
-    // ID prefix
-    let prefix = idOrName.lowercased()
-    let prefixMatches = all.filter { $0.id.uuidString.lowercased().hasPrefix(prefix) }
-    if prefixMatches.count == 1 {
-        return prefixMatches[0]
-    }
-    if prefixMatches.count > 1 {
-        throw CLITransformsError.ambiguous(idOrName, prefixMatches.map(\.name))
-    }
     // Case-insensitive name match
-    if let nameMatch = all.first(where: { $0.name.caseInsensitiveCompare(idOrName) == .orderedSame }) {
+    if let nameMatch = all.first(where: { $0.name.caseInsensitiveCompare(query) == .orderedSame }) {
         return nameMatch
     }
-    throw CLITransformsError.notFound(idOrName)
+    // ID prefix. Dashes are optional, but very short prefixes are treated as
+    // names so a one-character custom Transform does not get shadowed.
+    if let prefix = normalizedUUIDPrefix(query) {
+        let prefixMatches = all.filter {
+            $0.id.uuidString
+                .lowercased()
+                .filter { $0 != "-" }
+                .hasPrefix(prefix)
+        }
+        if prefixMatches.count == 1 {
+            return prefixMatches[0]
+        }
+        if prefixMatches.count > 1 {
+            throw CLITransformsError.ambiguous(query, prefixMatches.map(\.name))
+        }
+    }
+    throw CLITransformsError.notFound(query)
+}
+
+private func normalizedUUIDPrefix(_ raw: String) -> String? {
+    let lowercased = raw.lowercased()
+    guard lowercased.allSatisfy({ $0.isHexDigit || $0 == "-" }) else { return nil }
+    let normalized = lowercased.filter { $0 != "-" }
+    guard normalized.count >= transformIDPrefixMinimumLength else { return nil }
+    return normalized
 }
 
 // MARK: - DTO + errors
@@ -422,8 +440,7 @@ enum CLITransformsError: Error, CustomStringConvertible {
     case shortcutMissingModifier
     case shortcutMacOSDeadKey
     case duplicateShortcut(String, String)
-    case shortcutConflictsWithDictation(String)
-    case shortcutConflictsWithMeeting(String)
+    case shortcutConflictsWithAppHotkey(String, String)
     case deleteBuiltIn(String)
 
     var description: String {
@@ -442,12 +459,10 @@ enum CLITransformsError: Error, CustomStringConvertible {
             return "This shortcut produces a special character on Mac. Pick another combo."
         case .duplicateShortcut(let shortcut, let name):
             return "Shortcut “\(shortcut)” is already used by Transform “\(name)”."
-        case .shortcutConflictsWithDictation(let shortcut):
-            return "Shortcut “\(shortcut)” conflicts with your dictation hotkey."
-        case .shortcutConflictsWithMeeting(let shortcut):
-            return "Shortcut “\(shortcut)” conflicts with your meeting recording hotkey."
+        case .shortcutConflictsWithAppHotkey(let shortcut, let name):
+            return "Shortcut “\(shortcut)” conflicts with your \(name) hotkey."
         case .deleteBuiltIn(let n):
-            return "Cannot delete the built-in Transform “\(n)”. Reset it via the GUI or override its prompt body with `transforms create --name ...`."
+            return "Cannot delete the built-in Transform “\(n)”. Reset or edit it in the Transforms tab."
         }
     }
 }
@@ -459,25 +474,48 @@ private func shortcutsMatch(_ lhs: KeyboardShortcut, _ rhs: KeyboardShortcut) ->
 private func appHotkeyCollision(for shortcut: KeyboardShortcut) -> CLITransformsError? {
     let defaults = macParakeetAppDefaults()
     let candidate = shortcut.hotkeyTrigger
-    let dictationHotkeys = [
-        HotkeyTrigger.current(defaults: defaults),
-        HotkeyTrigger.current(
-            defaults: defaults,
-            defaultsKey: HotkeyTrigger.pushToTalkDefaultsKey,
-            fallback: .defaultPushToTalk
+    let reservedHotkeys: [(name: String, trigger: HotkeyTrigger)] = [
+        (
+            "hands-free dictation",
+            HotkeyTrigger.current(defaults: defaults)
+        ),
+        (
+            "push-to-talk",
+            HotkeyTrigger.current(
+                defaults: defaults,
+                defaultsKey: HotkeyTrigger.pushToTalkDefaultsKey,
+                fallback: .defaultPushToTalk
+            )
+        ),
+        (
+            "meeting recording",
+            HotkeyTrigger.current(
+                defaults: defaults,
+                defaultsKey: HotkeyTrigger.meetingDefaultsKey,
+                fallback: .defaultMeetingRecording
+            )
+        ),
+        (
+            "file transcription",
+            HotkeyTrigger.current(
+                defaults: defaults,
+                defaultsKey: HotkeyTrigger.fileTranscriptionDefaultsKey,
+                fallback: .disabled
+            )
+        ),
+        (
+            "YouTube transcription",
+            HotkeyTrigger.current(
+                defaults: defaults,
+                defaultsKey: HotkeyTrigger.youtubeTranscriptionDefaultsKey,
+                fallback: .disabled
+            )
         ),
     ]
-    if dictationHotkeys.contains(where: { candidate.overlaps(with: $0) }) {
-        return .shortcutConflictsWithDictation(shortcut.displayString)
-    }
-
-    let meetingHotkey = HotkeyTrigger.current(
-        defaults: defaults,
-        defaultsKey: HotkeyTrigger.meetingDefaultsKey,
-        fallback: .defaultMeetingRecording
-    )
-    if candidate.overlaps(with: meetingHotkey) {
-        return .shortcutConflictsWithMeeting(shortcut.displayString)
+    for reserved in reservedHotkeys where !reserved.trigger.isDisabled {
+        if candidate.overlaps(with: reserved.trigger) {
+            return .shortcutConflictsWithAppHotkey(shortcut.displayString, reserved.name)
+        }
     }
 
     return nil

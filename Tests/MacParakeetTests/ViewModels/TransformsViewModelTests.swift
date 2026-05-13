@@ -13,6 +13,7 @@ final class TransformsViewModelTests: XCTestCase {
         repo = PromptRepository(dbQueue: manager.dbQueue)
         viewModel = TransformsViewModel()
         viewModel.configure(repo: repo, hasLLMProvider: true)
+        await viewModel.load()
     }
 
     func testLoadPullsOnlyTransformCategoryPrompts() {
@@ -35,7 +36,7 @@ final class TransformsViewModelTests: XCTestCase {
         XCTAssertEqual(labels, ["1", "2", "3"])
     }
 
-    func testSaveNewCustomTransformAppendsToList() {
+    func testSaveNewCustomTransformAppendsToList() async {
         let prompt = Prompt(
             id: UUID(),
             name: "Soften",
@@ -46,12 +47,13 @@ final class TransformsViewModelTests: XCTestCase {
             keyboardShortcut: nil,
             runningLabel: nil
         )
-        XCTAssertTrue(viewModel.save(prompt))
+        let saved = await viewModel.save(prompt)
+        XCTAssertTrue(saved)
         XCTAssertEqual(viewModel.transforms.count, 4)
         XCTAssertTrue(viewModel.customTransforms.contains(where: { $0.name == "Soften" }))
     }
 
-    func testDeleteCustomTransformRemovesRow() {
+    func testDeleteCustomTransformRemovesRow() async {
         let prompt = Prompt(
             id: UUID(),
             name: "Sharpen",
@@ -60,21 +62,23 @@ final class TransformsViewModelTests: XCTestCase {
             isBuiltIn: false,
             sortOrder: 201
         )
-        viewModel.save(prompt)
+        await viewModel.save(prompt)
         XCTAssertEqual(viewModel.transforms.count, 4)
 
-        XCTAssertTrue(viewModel.delete(prompt))
+        let deleted = await viewModel.delete(prompt)
+        XCTAssertTrue(deleted)
         XCTAssertEqual(viewModel.transforms.count, 3)
         XCTAssertFalse(viewModel.transforms.contains(where: { $0.id == prompt.id }))
     }
 
-    func testDeleteBuiltInIsRejected() {
+    func testDeleteBuiltInIsRejected() async {
         let polish = viewModel.transforms.first(where: { $0.name == "Polish" })!
-        XCTAssertFalse(viewModel.delete(polish), "Built-ins must be protected from deletion.")
+        let deleted = await viewModel.delete(polish)
+        XCTAssertFalse(deleted, "Built-ins must be protected from deletion.")
         XCTAssertEqual(viewModel.transforms.count, 3)
     }
 
-    func testConfirmPendingDeleteClearsAndDeletes() {
+    func testConfirmPendingDeleteClearsAndDeletes() async {
         let prompt = Prompt(
             id: UUID(),
             name: "Temp",
@@ -82,16 +86,16 @@ final class TransformsViewModelTests: XCTestCase {
             category: .transform,
             isBuiltIn: false
         )
-        viewModel.save(prompt)
+        await viewModel.save(prompt)
         viewModel.pendingDeleteTransform = prompt
 
-        viewModel.confirmPendingDelete()
+        await viewModel.confirmPendingDelete()
 
         XCTAssertNil(viewModel.pendingDeleteTransform)
         XCTAssertFalse(viewModel.transforms.contains(where: { $0.id == prompt.id }))
     }
 
-    func testResetBuiltInRestoresDefaultContent() {
+    func testResetBuiltInRestoresDefaultContent() async {
         // User customizes Polish: prompt body + shortcut + label.
         var polish = viewModel.transforms.first(where: { $0.name == "Polish" })!
         let customized = polish
@@ -103,9 +107,10 @@ final class TransformsViewModelTests: XCTestCase {
             keyLabel: "P"
         ).encodedString()
         polish.runningLabel = "Refining…"
-        viewModel.save(polish)
+        await viewModel.save(polish)
 
-        XCTAssertTrue(viewModel.resetBuiltIn(polish))
+        let reset = await viewModel.resetBuiltIn(polish)
+        XCTAssertTrue(reset)
 
         let restored = viewModel.transforms.first(where: { $0.id == customized.id })!
         XCTAssertNotEqual(restored.content, "Custom polish prompt body.")
@@ -113,30 +118,30 @@ final class TransformsViewModelTests: XCTestCase {
         XCTAssertEqual(restored.runningLabel, "Polishing…", "Default running label should be restored.")
     }
 
-    func testReseedMissingBuiltInsRecreatesDeletedDefault() throws {
+    func testReseedMissingBuiltInsRecreatesDeletedDefault() async throws {
         // Force-delete Polish via raw SQL (bypassing the built-in protection)
         // to simulate a corrupted state where a built-in is missing.
         let polish = viewModel.transforms.first(where: { $0.name == "Polish" })!
-        try manager.dbQueue.write { db in
+        try await manager.dbQueue.write { db in
             try db.execute(sql: "DELETE FROM prompts WHERE id = ?", arguments: [polish.id])
         }
-        viewModel.load()
+        await viewModel.load()
         XCTAssertEqual(viewModel.transforms.count, 2, "Polish should be gone before reseed.")
 
-        viewModel.reseedMissingBuiltIns()
+        await viewModel.reseedMissingBuiltIns()
 
         XCTAssertEqual(viewModel.transforms.count, 3)
         XCTAssertTrue(viewModel.transforms.contains(where: { $0.name == "Polish" }))
     }
 
-    func testReseedDoesNotOverwriteExistingBuiltIn() {
+    func testReseedDoesNotOverwriteExistingBuiltIn() async {
         // Customize Polish, then reseed — the custom values must survive.
         var polish = viewModel.transforms.first(where: { $0.name == "Polish" })!
         let customContent = "User-customized Polish body."
         polish.content = customContent
-        viewModel.save(polish)
+        await viewModel.save(polish)
 
-        viewModel.reseedMissingBuiltIns()
+        await viewModel.reseedMissingBuiltIns()
 
         let reloaded = viewModel.transforms.first(where: { $0.name == "Polish" })!
         XCTAssertEqual(reloaded.content, customContent, "Reseed must not overwrite existing built-in customizations.")

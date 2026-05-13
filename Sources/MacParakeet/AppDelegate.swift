@@ -110,6 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.menuBarCoordinator.refreshHotkeyTitle()
             self?.menuBarCoordinator.refreshMeetingHotkeyShortcut()
             self?.menuBarCoordinator.refreshTranscriptionHotkeyShortcuts()
+            self?.transformsCoordinator?.reloadBindings()
         },
         onOpenMainWindow: { [weak self] in
             self?.windowCoordinator.openMainWindow()
@@ -419,7 +420,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // feature flag is off.
         let transforms = TransformsCoordinator(
             llmServiceProvider: llmServiceProvider,
-            promptRepository: env.promptRepo
+            promptRepository: env.promptRepo,
+            reservedHotkeysProvider: { [weak self] in
+                self?.transformReservedHotkeysForTransforms() ?? []
+            }
         )
         transforms.start()
         transformsCoordinator = transforms
@@ -501,6 +505,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeyCoordinator?.refreshAllHotkeys()
         menuBarCoordinator.refreshHotkeyTitle()
         menuBarCoordinator.refreshMeetingHotkeyShortcut()
+        transformsCoordinator?.reloadBindings()
     }
 
     /// Any auxiliary hotkey change refreshes all three auxiliary hotkeys so a
@@ -524,6 +529,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeyCoordinator?.refreshYouTubeTranscriptionHotkey()
         menuBarCoordinator.refreshMeetingHotkeyShortcut()
         menuBarCoordinator.refreshTranscriptionHotkeyShortcuts()
+        transformsCoordinator?.reloadBindings()
+    }
+
+    private func transformReservedHotkeysForTransforms() -> [TransformShortcutReservedHotkey] {
+        var reserved: [TransformShortcutReservedHotkey] = [
+            TransformShortcutReservedHotkey(name: "hands-free dictation", trigger: settingsViewModel.hotkeyTrigger),
+            TransformShortcutReservedHotkey(name: "push to talk", trigger: settingsViewModel.pushToTalkHotkeyTrigger),
+            TransformShortcutReservedHotkey(name: "file transcription", trigger: settingsViewModel.fileTranscriptionHotkeyTrigger),
+            TransformShortcutReservedHotkey(name: "YouTube transcription", trigger: settingsViewModel.youtubeTranscriptionHotkeyTrigger),
+        ]
+        if AppFeatures.meetingRecordingEnabled {
+            reserved.append(TransformShortcutReservedHotkey(name: "meeting recording", trigger: settingsViewModel.meetingHotkeyTrigger))
+        }
+        return reserved.filter { !$0.trigger.isDisabled }
     }
 
     private func triggerFileTranscriptionFromHotkey() {

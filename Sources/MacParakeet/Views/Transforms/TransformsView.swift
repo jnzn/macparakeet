@@ -50,8 +50,11 @@ struct TransformsView: View {
             presenting: viewModel.pendingDeleteTransform
         ) { transform in
             Button("Delete", role: .destructive) {
-                viewModel.confirmPendingDelete()
-                onBindingsChanged()
+                Task {
+                    if await viewModel.confirmPendingDelete() {
+                        onBindingsChanged()
+                    }
+                }
             }
             Button("Cancel", role: .cancel) {
                 viewModel.pendingDeleteTransform = nil
@@ -162,8 +165,11 @@ struct TransformsView: View {
                         viewModel.pendingDeleteTransform = transform
                     },
                     onReset: {
-                        viewModel.resetBuiltIn(transform)
-                        onBindingsChanged()
+                        Task {
+                            if await viewModel.resetBuiltIn(transform) {
+                                onBindingsChanged()
+                            }
+                        }
                     }
                 )
             }
@@ -176,8 +182,11 @@ struct TransformsView: View {
     private var footerActions: some View {
         HStack(spacing: DesignSystem.Spacing.md) {
             Button(action: {
-                viewModel.reseedMissingBuiltIns()
-                onBindingsChanged()
+                Task {
+                    if await viewModel.reseedMissingBuiltIns() {
+                        onBindingsChanged()
+                    }
+                }
             }) {
                 Label("Restore missing defaults", systemImage: "arrow.counterclockwise")
             }
@@ -199,49 +208,60 @@ private struct TransformCard: View {
     @State private var isHovered = false
 
     var body: some View {
-        Button(action: onEdit) {
-            VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
-                HStack(alignment: .center, spacing: DesignSystem.Spacing.sm) {
-                    if let shortcut = transform.shortcut {
-                        KeycapBadge(shortcut: shortcut)
-                    } else {
-                        UnboundShortcutChip()
-                    }
-                    Spacer()
-                    if isHovered {
-                        cardActions
-                    }
-                }
+        ZStack(alignment: .topTrailing) {
+            Button(action: onEdit) {
+                cardBody
+            }
+            .buttonStyle(.plain)
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(transform.name)
-                        .font(DesignSystem.Typography.sectionTitle)
-                        .foregroundStyle(DesignSystem.Colors.textPrimary)
-                        .lineLimit(1)
-                    Text(firstSentence(of: transform.content))
-                        .font(DesignSystem.Typography.bodySmall)
-                        .foregroundStyle(DesignSystem.Colors.textSecondary)
-                        .lineLimit(3, reservesSpace: true)
-                        .multilineTextAlignment(.leading)
-                }
+            if isHovered {
+                cardActions
+                    .padding(.top, DesignSystem.Spacing.md)
+                    .padding(.trailing, DesignSystem.Spacing.md)
+                    .transition(.opacity)
+                    .zIndex(1)
             }
-            .padding(DesignSystem.Spacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(DesignSystem.Colors.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius))
-            .overlay {
-                RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
-                    .stroke(isHovered ? DesignSystem.Colors.accent.opacity(0.35) : DesignSystem.Colors.border, lineWidth: 0.5)
-            }
-            .shadow(
-                color: (isHovered ? DesignSystem.Shadows.cardHover : DesignSystem.Shadows.cardRest).color,
-                radius: (isHovered ? DesignSystem.Shadows.cardHover : DesignSystem.Shadows.cardRest).radius,
-                y: (isHovered ? DesignSystem.Shadows.cardHover : DesignSystem.Shadows.cardRest).y
-            )
-            .animation(DesignSystem.Animation.hoverTransition, value: isHovered)
         }
-        .buttonStyle(.plain)
         .onHover { isHovered = $0 }
+        .animation(DesignSystem.Animation.hoverTransition, value: isHovered)
+    }
+
+    private var cardBody: some View {
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+            HStack(alignment: .center, spacing: DesignSystem.Spacing.sm) {
+                if let shortcut = transform.shortcut {
+                    KeycapBadge(shortcut: shortcut)
+                } else {
+                    UnboundShortcutChip()
+                }
+                Spacer()
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(transform.name)
+                    .font(DesignSystem.Typography.sectionTitle)
+                    .foregroundStyle(DesignSystem.Colors.textPrimary)
+                    .lineLimit(1)
+                Text(firstSentence(of: transform.content))
+                    .font(DesignSystem.Typography.bodySmall)
+                    .foregroundStyle(DesignSystem.Colors.textSecondary)
+                    .lineLimit(3, reservesSpace: true)
+                    .multilineTextAlignment(.leading)
+            }
+        }
+        .padding(DesignSystem.Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(DesignSystem.Colors.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius))
+        .overlay {
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
+                .stroke(isHovered ? DesignSystem.Colors.accent.opacity(0.35) : DesignSystem.Colors.border, lineWidth: 0.5)
+        }
+        .shadow(
+            color: (isHovered ? DesignSystem.Shadows.cardHover : DesignSystem.Shadows.cardRest).color,
+            radius: (isHovered ? DesignSystem.Shadows.cardHover : DesignSystem.Shadows.cardRest).radius,
+            y: (isHovered ? DesignSystem.Shadows.cardHover : DesignSystem.Shadows.cardRest).y
+        )
     }
 
     @ViewBuilder
@@ -251,6 +271,7 @@ private struct TransformCard: View {
                 Button("Reset", action: onReset)
                     .parakeetAction(.subtle)
                     .controlSize(.small)
+                    .accessibilityLabel("Reset Transform")
             } else {
                 Button(action: onDelete) {
                     Image(systemName: "trash")
@@ -258,17 +279,27 @@ private struct TransformCard: View {
                 .parakeetAction(.subtle)
                 .controlSize(.small)
                 .help("Delete this Transform")
+                .accessibilityLabel("Delete Transform")
             }
         }
-        .transition(.opacity)
     }
 
     private func firstSentence(of body: String) -> String {
-        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let endIndex = trimmed.firstIndex(where: { ".!?".contains($0) }) else {
-            return trimmed
+        let trimmed = body
+            .split(whereSeparator: { $0.isNewline })
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: { !$0.isEmpty }) ?? ""
+        let maxLength = 160
+
+        for index in trimmed.indices where ".!?".contains(trimmed[index]) {
+            let prefix = trimmed[..<index].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard prefix.count >= 12 else { continue }
+            return String(trimmed[...index]).trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        return String(trimmed[..<endIndex]) + "."
+
+        guard trimmed.count > maxLength else { return trimmed }
+        let end = trimmed.index(trimmed.startIndex, offsetBy: maxLength)
+        return String(trimmed[..<end]).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
     }
 }
 
@@ -287,7 +318,7 @@ private struct CreateYourOwnTile: View {
                 Text("Create your own")
                     .font(DesignSystem.Typography.sectionTitle)
                     .foregroundStyle(isHovered ? DesignSystem.Colors.textPrimary : DesignSystem.Colors.textSecondary)
-                Text("Upload your own prompt")
+                Text("Open editor to create a prompt")
                     .font(DesignSystem.Typography.bodySmall)
                     .foregroundStyle(DesignSystem.Colors.textTertiary)
             }
