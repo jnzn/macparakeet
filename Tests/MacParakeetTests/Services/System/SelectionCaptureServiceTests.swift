@@ -29,8 +29,9 @@ final class SelectionCaptureServiceTests: XCTestCase {
         let result = await service.captureSelection()
 
         switch result {
-        case .ax(let text, _):
+        case .ax(let text, _, let target):
             XCTAssertEqual(text, "Hello world")
+            XCTAssertEqual(target?.processIdentifier, 1234)
         default:
             XCTFail("Expected .ax, got \(result.pathTag)")
         }
@@ -54,10 +55,11 @@ final class SelectionCaptureServiceTests: XCTestCase {
         let result = await service.captureSelection()
 
         switch result {
-        case .clipboard(let text, let snapshot):
+        case .clipboard(let text, let snapshot, let target):
             XCTAssertEqual(text, "Clipboard selection")
             XCTAssertEqual(snapshot.originalChangeCount, 1)
             XCTAssertEqual(snapshot.temporaryChangeCount, 2)
+            XCTAssertEqual(target?.processIdentifier, 1234)
         default:
             XCTFail("Expected .clipboard, got \(result.pathTag)")
         }
@@ -108,7 +110,7 @@ final class SelectionCaptureServiceTests: XCTestCase {
 
         let result = await service.captureSelection()
 
-        guard case .clipboard(_, let snapshot) = result else {
+        guard case .clipboard(_, let snapshot, _) = result else {
             XCTFail("Expected .clipboard, got \(result.pathTag)")
             return
         }
@@ -206,6 +208,9 @@ final class FakeSelectionCaptureBackend: SelectionCaptureBackend, @unchecked Sen
     func isAccessibilityTrusted() -> Bool { trusted }
     func focusedElement() -> AXUIElement? { focused }
     func selectedText(of element: AXUIElement) -> String? { selectedTextValue }
+
+    @MainActor
+    func frontmostApplicationProcessIdentifier() -> pid_t? { 1234 }
 
     @MainActor
     func snapshotPasteboard() -> PasteboardSnapshot {

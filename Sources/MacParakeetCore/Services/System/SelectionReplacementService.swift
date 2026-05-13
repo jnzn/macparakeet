@@ -19,6 +19,7 @@ public enum SelectionReplacementError: Error, LocalizedError, Sendable {
     case eventSourceUnavailable
     case pasteboardWriteFailed
     case eventPostingFailed
+    case targetActivationFailed
     case allPathsFailed
 
     public var errorDescription: String? {
@@ -31,6 +32,8 @@ public enum SelectionReplacementError: Error, LocalizedError, Sendable {
             return "Could not write replacement text to the clipboard."
         case .eventPostingFailed:
             return "Failed to post Cmd+V keystroke."
+        case .targetActivationFailed:
+            return "Could not reactivate the original app before pasting."
         case .allPathsFailed:
             return "Selection replacement failed via both AX-write and clipboard paste."
         }
@@ -53,6 +56,9 @@ protocol SelectionReplacementBackend: Sendable {
 
     @MainActor
     func writePasteboardString(_ text: String) -> Bool
+
+    @MainActor
+    func activateApplication(processIdentifier: pid_t) -> Bool
 
     @MainActor
     func postCmdV() throws
@@ -112,7 +118,7 @@ public actor SelectionReplacementService {
         in context: SelectionCaptureResult
     ) async throws -> SelectionReplacementPath {
         switch context {
-        case .ax(_, let focused):
+        case .ax(_, let focused, _):
             // AX-write is the no-side-effect path. If it succeeds, we're done.
             if backend.writeSelectionViaAX(newText, element: focused.element) {
                 return .ax
@@ -121,16 +127,16 @@ public actor SelectionReplacementService {
             // capture path didn't touch the clipboard, so we capture a fresh
             // snapshot here to preserve whatever the user had on it).
             let freshSnapshot = await snapshotPasteboardForFallback()
-            try await pasteAndRestore(newText: newText, snapshot: freshSnapshot)
+            try await pasteAndRestore(newText: newText, snapshot: freshSnapshot, target: context.target)
             return .clipboardPaste
 
-        case .clipboard(_, let savedSnapshot):
+        case .clipboard(_, let savedSnapshot, _):
             // Original capture already hijacked the clipboard. Paste then
             // restore the snapshot we promised the user we'd put back. If the
             // user copied something else while the LLM was running, preserve
             // that newer clipboard instead of the pre-transform snapshot.
             let restoreSnapshot = await snapshotForClipboardContext(savedSnapshot)
-            try await pasteAndRestore(newText: newText, snapshot: restoreSnapshot)
+            try await pasteAndRestore(newText: newText, snapshot: restoreSnapshot, target: context.target)
             return .clipboardPaste
 
         case .empty, .failed:
@@ -159,7 +165,8 @@ public actor SelectionReplacementService {
 
     private func pasteAndRestore(
         newText: String,
-        snapshot: PasteboardSnapshot
+        snapshot: PasteboardSnapshot,
+        target: SelectionCaptureTarget?
     ) async throws {
         // Write our payload and capture the changeCount *after* the write —
         // that's the value the restore guard compares against. If anyone
@@ -172,6 +179,15 @@ public actor SelectionReplacementService {
             // called clearContents().
             await restoreSnapshotOnMain(snapshot)
             throw SelectionReplacementError.pasteboardWriteFailed
+        }
+
+        if let target {
+            let didActivate = await activateApplicationOnMain(target.processIdentifier)
+            guard didActivate else {
+                await restoreIfSafe(snapshot, ourChangeCount: ourChangeCount)
+                throw SelectionReplacementError.targetActivationFailed
+            }
+            await Task.yield()
         }
 
         do {
@@ -195,6 +211,11 @@ public actor SelectionReplacementService {
     private func writeAndCaptureChangeCountOnMain(_ text: String) -> Int? {
         guard backend.writePasteboardString(text) else { return nil }
         return backend.currentChangeCount()
+    }
+
+    @MainActor
+    private func activateApplicationOnMain(_ processIdentifier: pid_t) -> Bool {
+        backend.activateApplication(processIdentifier: processIdentifier)
     }
 
     @MainActor
@@ -288,6 +309,14 @@ struct SystemSelectionReplacementBackend: SelectionReplacementBackend, @unchecke
             return copy
         }
         return PasteboardSnapshot(items: items, originalChangeCount: pasteboard.changeCount)
+    }
+
+    @MainActor
+    func activateApplication(processIdentifier: pid_t) -> Bool {
+        guard let app = NSRunningApplication(processIdentifier: processIdentifier) else {
+            return false
+        }
+        return app.activate()
     }
 
     @MainActor

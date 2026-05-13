@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import MacParakeetCore
 
@@ -10,25 +11,40 @@ import MacParakeetCore
 @MainActor
 @Observable
 public final class TransformsViewModel {
+    public static let historyFetchLimit = 200
+
     public var transforms: [Prompt] = []
+    public var history: [TransformHistoryEntry] = []
     public var errorMessage: String?
+    public var historyErrorMessage: String?
 
     /// Pending delete confirmation. Set when the user hits delete on a
     /// (non-built-in) Transform; cleared on confirm or cancel.
     public var pendingDeleteTransform: Prompt?
+    public var pendingDeleteHistoryEntry: TransformHistoryEntry?
+    public var isConfirmingClearHistory: Bool = false
+    public var copiedHistoryEntryID: UUID?
 
     /// True when the user has at least one LLM provider configured. Drives
     /// the calm "Configure in Settings" hero state.
     public var hasLLMProvider: Bool = false
 
     private var repo: PromptRepositoryProtocol?
+    private var historyRepo: TransformHistoryRepositoryProtocol?
+    private var copiedResetTask: Task<Void, Never>?
 
     public init() {}
 
-    public func configure(repo: PromptRepositoryProtocol, hasLLMProvider: Bool) {
+    public func configure(
+        repo: PromptRepositoryProtocol,
+        historyRepo: TransformHistoryRepositoryProtocol? = nil,
+        hasLLMProvider: Bool
+    ) {
         self.repo = repo
+        self.historyRepo = historyRepo
         self.hasLLMProvider = hasLLMProvider
         load()
+        loadHistory()
     }
 
     /// Refresh the list from the repository. Built-ins are seeded by the
@@ -46,6 +62,17 @@ public final class TransformsViewModel {
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    public func loadHistory() {
+        guard let historyRepo else { return }
+        do {
+            history = try historyRepo.fetchRecent(limit: Self.historyFetchLimit)
+            historyErrorMessage = nil
+        } catch {
+            history = []
+            historyErrorMessage = error.localizedDescription
         }
     }
 
@@ -97,6 +124,47 @@ public final class TransformsViewModel {
         guard let pending = pendingDeleteTransform else { return }
         pendingDeleteTransform = nil
         delete(pending)
+    }
+
+    public func confirmPendingHistoryDelete() {
+        guard let pending = pendingDeleteHistoryEntry else { return }
+        pendingDeleteHistoryEntry = nil
+        deleteHistoryEntry(pending)
+    }
+
+    public func deleteHistoryEntry(_ entry: TransformHistoryEntry) {
+        guard let historyRepo else { return }
+        do {
+            _ = try historyRepo.delete(id: entry.id)
+            history.removeAll { $0.id == entry.id }
+            historyErrorMessage = nil
+        } catch {
+            historyErrorMessage = error.localizedDescription
+        }
+    }
+
+    public func clearHistory() {
+        guard let historyRepo else { return }
+        do {
+            try historyRepo.deleteAll()
+            history = []
+            isConfirmingClearHistory = false
+            historyErrorMessage = nil
+        } catch {
+            historyErrorMessage = error.localizedDescription
+        }
+    }
+
+    public func copyOutputToClipboard(_ entry: TransformHistoryEntry) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(entry.outputText, forType: .string)
+        copiedResetTask?.cancel()
+        copiedHistoryEntryID = entry.id
+        copiedResetTask = Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            self.copiedHistoryEntryID = nil
+        }
     }
 
     /// Reset a built-in Transform's content / shortcut / runningLabel back
