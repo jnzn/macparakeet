@@ -234,6 +234,26 @@ final class TransformsHotkeyRegistryTests: XCTestCase {
         )
     }
 
+    func testCollisionModifierChordDictationHotkeyDoesNotConflictWithSubsetTransformChord() {
+        let opt4 = KeyboardShortcut(
+            modifiers: KeyboardShortcut.ModifierFlag.option.rawValue,
+            keyCode: 0x15,
+            keyLabel: "4"
+        )
+        XCTAssertNil(
+            checker.check(
+                candidate: opt4,
+                existing: [:],
+                excludingPromptID: nil,
+                dictationHotkeys: [
+                    .fn,
+                    .modifierChord(modifiers: ["option", "command"]),
+                ],
+                meetingHotkey: nil
+            )
+        )
+    }
+
     func testCollisionMeetingHotkeyConflictReturnsMeeting() {
         let opt1 = KeyboardShortcut(
             modifiers: KeyboardShortcut.ModifierFlag.option.rawValue,

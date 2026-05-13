@@ -544,7 +544,6 @@ public struct HotkeyTrigger: Sendable {
             let rhs = Self.modifierRequirements(forChord: other)
             guard lhs.count >= 2, !rhs.isEmpty else { return false }
             return Self.requirements(lhs, canBeSatisfiedBy: rhs)
-                || Self.requirements(rhs, canBeSatisfiedBy: lhs)
         case (.chord, .modifierChord):
             return other.overlaps(with: self)
         case (.keyCode, .keyCode):

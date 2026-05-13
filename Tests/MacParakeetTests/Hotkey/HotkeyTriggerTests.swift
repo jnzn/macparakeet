@@ -877,9 +877,17 @@ final class HotkeyTriggerTests: XCTestCase {
         XCTAssertTrue(keyChord.overlaps(with: modifierOnly))
     }
 
-    func testModifierChordOverlapsModifierPlusKeyChordWithSubsetModifiers() {
+    func testModifierChordDoesNotOverlapModifierPlusKeyChordWithSubsetModifiers() {
         let modifierOnly = HotkeyTrigger.modifierChord(modifiers: ["command", "option"])
         let keyChord = HotkeyTrigger.chord(modifiers: ["command"], keyCode: 46)
+
+        XCTAssertFalse(modifierOnly.overlaps(with: keyChord))
+        XCTAssertFalse(keyChord.overlaps(with: modifierOnly))
+    }
+
+    func testModifierChordOverlapsModifierPlusKeyChordWithSupersetModifiers() {
+        let modifierOnly = HotkeyTrigger.modifierChord(modifiers: ["command", "option"])
+        let keyChord = HotkeyTrigger.chord(modifiers: ["command", "option", "shift"], keyCode: 46)
 
         XCTAssertTrue(modifierOnly.overlaps(with: keyChord))
         XCTAssertTrue(keyChord.overlaps(with: modifierOnly))
