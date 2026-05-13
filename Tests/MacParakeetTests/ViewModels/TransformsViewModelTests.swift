@@ -365,8 +365,8 @@ final class TransformsViewModelTests: XCTestCase {
         // Regression: SwiftUI alert sets `pendingDeleteHistoryEntry = nil`
         // before the Delete button's Task runs. The view must call
         // `deleteHistoryEntry(entry)` with the closure-captured entry, not
-        // route through `confirmPendingHistoryDelete()` (which would read a
-        // now-nil pending field and silently no-op).
+        // route through a pending-field wrapper that would read a now-nil
+        // value and silently no-op.
         let entry = TransformHistoryEntry(
             transformName: "Polish",
             inputText: "rough",

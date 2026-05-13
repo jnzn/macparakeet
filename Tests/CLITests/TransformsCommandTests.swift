@@ -566,12 +566,13 @@ final class TransformsCommandTests: XCTestCase {
         ])
 
         XCTAssertThrowsError(try show.run()) { error in
-            guard case CLITransformHistoryError.prefixTooShort(let min, let provided) = error else {
-                XCTFail("Expected prefixTooShort, got \(error)")
+            guard case CLITransformHistoryError.invalidPrefix(let min, let provided, let reason) = error else {
+                XCTFail("Expected invalidPrefix, got \(error)")
                 return
             }
             XCTAssertEqual(min, 4)
             XCTAssertEqual(provided, "abc")
+            XCTAssertEqual(reason, .tooShort)
         }
     }
 
@@ -593,10 +594,11 @@ final class TransformsCommandTests: XCTestCase {
         ])
 
         XCTAssertThrowsError(try show.run()) { error in
-            guard case CLITransformHistoryError.prefixTooShort = error else {
-                XCTFail("Expected prefixTooShort for non-hex prefix, got \(error)")
+            guard case CLITransformHistoryError.invalidPrefix(_, _, let reason) = error else {
+                XCTFail("Expected invalidPrefix for non-hex prefix, got \(error)")
                 return
             }
+            XCTAssertEqual(reason, .nonHex)
         }
     }
 

@@ -548,14 +548,23 @@ private func findTransformHistoryEntry(
     }
 
     // Length and hex-character validation against the hyphenless form so
-    // inputs like "12--" don't pass length-only checks then silently miss.
+    // inputs like "12--" don't pass length-only checks then silently miss
+    // and "12zz" surfaces as a clearer error than "too short".
     let normalized = trimmed.replacingOccurrences(of: "-", with: "")
     let hexCharacters = Set("0123456789abcdefABCDEF")
     let isHex = !normalized.isEmpty && normalized.allSatisfy { hexCharacters.contains($0) }
-    guard isHex, normalized.count >= transformHistoryIDPrefixMinimumLength else {
-        throw CLITransformHistoryError.prefixTooShort(
+    if !isHex {
+        throw CLITransformHistoryError.invalidPrefix(
             min: transformHistoryIDPrefixMinimumLength,
-            provided: trimmed
+            provided: trimmed,
+            reason: .nonHex
+        )
+    }
+    guard normalized.count >= transformHistoryIDPrefixMinimumLength else {
+        throw CLITransformHistoryError.invalidPrefix(
+            min: transformHistoryIDPrefixMinimumLength,
+            provided: trimmed,
+            reason: .tooShort
         )
     }
 
@@ -644,8 +653,13 @@ struct TransformHistoryClearResult: Encodable {
 enum CLITransformHistoryError: Error, CustomStringConvertible, LocalizedError {
     case notFound(String)
     case ambiguous(String, [String])
-    case prefixTooShort(min: Int, provided: String)
+    case invalidPrefix(min: Int, provided: String, reason: InvalidPrefixReason)
     case deleteFailed(String)
+
+    enum InvalidPrefixReason {
+        case tooShort
+        case nonHex
+    }
 
     var description: String {
         switch self {
@@ -653,8 +667,13 @@ enum CLITransformHistoryError: Error, CustomStringConvertible, LocalizedError {
             return "No Transform history item matching '\(value)'"
         case .ambiguous(let value, let matches):
             return "Ambiguous Transform history ID '\(value)' (matches: \(matches.joined(separator: ", ")))"
-        case .prefixTooShort(let min, let provided):
-            return "Transform history ID prefix '\(provided)' is too short. Use at least \(min) characters."
+        case .invalidPrefix(let min, let provided, let reason):
+            switch reason {
+            case .tooShort:
+                return "Transform history ID prefix '\(provided)' is too short. Use at least \(min) hex characters."
+            case .nonHex:
+                return "Transform history ID prefix '\(provided)' contains non-hex characters. Use \(min)+ hex characters (0-9, a-f), optionally with hyphens."
+            }
         case .deleteFailed(let value):
             return "Failed to delete Transform history item '\(value)'"
         }

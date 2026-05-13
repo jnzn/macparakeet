@@ -278,6 +278,10 @@ final class TransformsCoordinator {
             llmElapsedMs: result.llmElapsedMs,
             totalElapsedMs: result.totalElapsedMs
         )
+        // Intentional silent-on-failure: the rewrite already succeeded
+        // (text was pasted into the host app), so a failed history write
+        // is a secondary concern. We log to os.log for support workflows
+        // but don't surface to the user — they already got their result.
         Task.detached { [historyRepository, logger] in
             do {
                 try historyRepository.save(entry)

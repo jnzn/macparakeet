@@ -294,7 +294,7 @@ enum CLIErrorType {
         if let history = error as? CLITransformHistoryError {
             switch history {
             case .notFound, .ambiguous: return lookup
-            case .prefixTooShort:       return validation
+            case .invalidPrefix:        return validation
             case .deleteFailed:         return runtime
             }
         }
@@ -391,7 +391,7 @@ private func rethrowWithOptionalJSONEnvelope(_ error: Error, json: Bool) throws 
     if let transforms = error as? CLITransformsError, transforms.isValidationMisuse {
         throw cliValidationMisuseExitCode
     }
-    if let history = error as? CLITransformHistoryError, case .prefixTooShort = history {
+    if let history = error as? CLITransformHistoryError, case .invalidPrefix = history {
         throw cliValidationMisuseExitCode
     }
     throw ExitCode.failure

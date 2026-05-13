@@ -66,6 +66,13 @@ public final class TransformHistoryRepository: TransformHistoryRepositoryProtoco
     }
 
     public func fetch(idPrefix: String) throws -> [TransformHistoryEntry] {
+        // GRDB's `PersistableRecord` writes a Codable `UUID` as a 16-byte
+        // BLOB into the `.text`-affinity `id` column (SQLite's type system
+        // is dynamic). `hex(id)` returns the lowercase hex of those bytes
+        // — that's the branch that matches a hex prefix. The `replace(...)`
+        // branch handles the (rare) case where a row was written as a
+        // TEXT UUID string by another path. Both branches present so the
+        // lookup keeps working if GRDB's storage encoding ever shifts.
         let escapedPrefix = Self.escapeLikePattern(
             idPrefix
                 .trimmingCharacters(in: .whitespacesAndNewlines)

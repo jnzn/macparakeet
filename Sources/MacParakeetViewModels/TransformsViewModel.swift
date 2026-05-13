@@ -201,12 +201,6 @@ public final class TransformsViewModel {
         }
     }
 
-    public func confirmPendingHistoryDelete() async {
-        guard let pending = pendingDeleteHistoryEntry else { return }
-        pendingDeleteHistoryEntry = nil
-        await deleteHistoryEntry(pending)
-    }
-
     public func clearHistory() async {
         guard let historyRepo else { return }
         historySnapshotGeneration += 1
