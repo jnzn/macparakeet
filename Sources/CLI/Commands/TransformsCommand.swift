@@ -151,6 +151,7 @@ extension TransformsCommand {
                 try AppPaths.ensureDirectories()
                 let db = try DatabaseManager(path: resolvedDatabasePath(database))
                 let repo = PromptRepository(dbQueue: db.dbQueue)
+                let historyRepo = TransformHistoryRepository(dbQueue: db.dbQueue)
                 let transform = try findTransform(idOrName: idOrName, repo: repo)
 
                 let text = try readInput(input)
@@ -166,15 +167,47 @@ extension TransformsCommand {
 
                 if json {
                     let result = try await service.transformDetailed(text: text, prompt: transform.content)
+                    try saveCLITransformHistory(
+                        repo: historyRepo,
+                        transform: transform,
+                        inputText: text,
+                        outputText: result.output,
+                        inputPath: input,
+                        llmElapsedMs: result.latencyMs,
+                        totalElapsedMs: result.latencyMs
+                    )
                     try printJSON(result)
                 } else if stream {
+                    let startedAt = Date()
+                    var output = ""
                     let tokenStream = service.transformStream(text: text, prompt: transform.content)
                     for try await token in tokenStream {
+                        output += token
                         print(token, terminator: "")
                     }
                     print()
+                    let elapsedMs = elapsedMilliseconds(since: startedAt)
+                    try saveCLITransformHistory(
+                        repo: historyRepo,
+                        transform: transform,
+                        inputText: text,
+                        outputText: output,
+                        inputPath: input,
+                        llmElapsedMs: elapsedMs,
+                        totalElapsedMs: elapsedMs
+                    )
                 } else {
-                    print(try await service.transform(text: text, prompt: transform.content))
+                    let result = try await service.transformDetailed(text: text, prompt: transform.content)
+                    try saveCLITransformHistory(
+                        repo: historyRepo,
+                        transform: transform,
+                        inputText: text,
+                        outputText: result.output,
+                        inputPath: input,
+                        llmElapsedMs: result.latencyMs,
+                        totalElapsedMs: result.latencyMs
+                    )
+                    print(result.output)
                 }
             }
         }
@@ -532,6 +565,32 @@ private func transformHistoryRepo(database: String?) throws -> TransformHistoryR
     try AppPaths.ensureDirectories()
     let db = try DatabaseManager(path: resolvedDatabasePath(database))
     return TransformHistoryRepository(dbQueue: db.dbQueue)
+}
+
+private func saveCLITransformHistory(
+    repo: TransformHistoryRepositoryProtocol,
+    transform: Prompt,
+    inputText: String,
+    outputText: String,
+    inputPath: String,
+    llmElapsedMs: Int,
+    totalElapsedMs: Int
+) throws {
+    try repo.save(TransformHistoryEntry(
+        transformId: transform.id,
+        transformName: transform.name,
+        inputText: inputText,
+        outputText: outputText,
+        sourceAppName: "macparakeet-cli",
+        capturePath: inputPath == "-" ? "stdin" : "file",
+        replacementPath: "stdout",
+        llmElapsedMs: llmElapsedMs,
+        totalElapsedMs: totalElapsedMs
+    ))
+}
+
+private func elapsedMilliseconds(since startedAt: Date) -> Int {
+    max(0, Int(Date().timeIntervalSince(startedAt) * 1_000))
 }
 
 private func findTransformHistoryEntry(

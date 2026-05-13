@@ -306,7 +306,9 @@ struct TransformsView: View {
                 .padding(DesignSystem.Spacing.md)
                 .background(DesignSystem.Colors.surfaceElevated)
                 .clipShape(RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius))
-            } else if viewModel.history.isEmpty {
+            }
+
+            if viewModel.history.isEmpty {
                 TransformHistoryEmptyState()
             } else {
                 LazyVStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {

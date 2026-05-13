@@ -116,7 +116,7 @@ by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
     limit 20.
   - `transforms history show <id-prefix> [--json]` — full input/output for
     one row. ID prefixes must be at least 4 hex chars; `--json` maps
-    too-short-prefix to `errorType: "validation"`, missing-row to
+    invalid-prefix errors to `errorType: "validation"`, missing-row to
     `errorType: "lookup"`.
   - `transforms history delete <id-prefix> [--json]` / `transforms history
     clear [--json]` — single-row delete and bulk clear. `--json` emits

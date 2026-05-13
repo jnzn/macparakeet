@@ -2,10 +2,11 @@ import XCTest
 @testable import MacParakeetCore
 
 final class TransformHistoryRepositoryTests: XCTestCase {
+    var manager: DatabaseManager!
     var repo: TransformHistoryRepository!
 
     override func setUp() async throws {
-        let manager = try DatabaseManager()
+        manager = try DatabaseManager()
         repo = TransformHistoryRepository(dbQueue: manager.dbQueue)
     }
 
@@ -132,6 +133,39 @@ final class TransformHistoryRepositoryTests: XCTestCase {
         XCTAssertEqual(try repo.fetchRecent(limit: 10).map(\.id), [second.id])
 
         try repo.deleteAll()
+        XCTAssertEqual(try repo.count(), 0)
+    }
+
+    func testDeleteHandlesLegacyTextUUIDRowsResolvedByPrefixLookup() throws {
+        let id = UUID(uuidString: "33333333-3333-3333-3333-333333333333")!
+        try repo.save(TransformHistoryEntry(
+            id: id,
+            transformName: "Legacy",
+            inputText: "old",
+            outputText: "new",
+            capturePath: "ax",
+            replacementPath: "ax",
+            llmElapsedMs: 1,
+            totalElapsedMs: 2
+        ))
+        try manager.dbQueue.write { db in
+            try db.execute(
+                sql: """
+                    UPDATE transform_history
+                    SET id = ?
+                    WHERE lower(hex(id)) = ?
+                    """,
+                arguments: [
+                    id.uuidString.lowercased(),
+                    id.uuidString.replacingOccurrences(of: "-", with: "").lowercased(),
+                ]
+            )
+        }
+
+        let legacy = try XCTUnwrap(try repo.fetch(idPrefix: "3333").first)
+
+        XCTAssertEqual(legacy.id, id)
+        XCTAssertTrue(try repo.delete(id: legacy.id))
         XCTAssertEqual(try repo.count(), 0)
     }
 }

@@ -747,9 +747,16 @@ public final class DatabaseManager: Sendable {
         // existing developer/prerelease databases from retaining selected-text
         // rewrite history or writing samples after the feature was reverted.
         migrator.registerMigration("v0.16-drop-transform-workbench-tables") { db in
+            let historyAlreadyRestored = try Bool.fetchOne(
+                db,
+                sql: "SELECT EXISTS(SELECT 1 FROM grdb_migrations WHERE identifier = ?)",
+                arguments: ["v0.17-recreate-transform-history"]
+            ) ?? false
             try db.execute(sql: "DROP TABLE IF EXISTS transform_profiles")
             try db.execute(sql: "DROP TABLE IF EXISTS writing_samples")
-            try db.execute(sql: "DROP TABLE IF EXISTS transform_history")
+            if !historyAlreadyRestored {
+                try db.execute(sql: "DROP TABLE IF EXISTS transform_history")
+            }
         }
 
         // v0.17 — Restore local Transform run history (without the workbench

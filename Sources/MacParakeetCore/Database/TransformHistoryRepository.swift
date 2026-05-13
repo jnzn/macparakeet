@@ -104,7 +104,17 @@ public final class TransformHistoryRepository: TransformHistoryRepositoryProtoco
 
     public func delete(id: UUID) throws -> Bool {
         try dbQueue.write { db in
-            try TransformHistoryEntry.deleteOne(db, key: id)
+            if try TransformHistoryEntry.deleteOne(db, key: id) {
+                return true
+            }
+            // Historical/prerelease rows may have TEXT UUID primary keys,
+            // while GRDB persists new UUID keys as BLOBs. Prefix lookup can
+            // surface either form, so delete needs the same legacy fallback.
+            try db.execute(
+                sql: "DELETE FROM transform_history WHERE lower(id) = ?",
+                arguments: [id.uuidString.lowercased()]
+            )
+            return db.changesCount > 0
         }
     }
 

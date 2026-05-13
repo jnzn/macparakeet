@@ -40,14 +40,13 @@ public final class TransformsViewModel {
     private var clipboardService: ClipboardServiceProtocol?
     private var copiedResetTask: Task<Void, Never>?
 
-    /// Monotonic counter advanced on every load / delete / clear so that
-    /// an older in-flight snapshot can't overwrite a newer one. Concurrent
-    /// `loadHistory()` (triggered by `.transformHistoryChanged`
-    /// notifications during rapid runs) racing a user-triggered delete is
-    /// the realistic race this guards against — without it the older
-    /// snapshot would briefly resurrect the just-deleted row until the
-    /// next notification reloaded.
-    private var historySnapshotGeneration: Int = 0
+    /// Passive reloads are allowed to coalesce with each other, but never to
+    /// outrank a user mutation. A `.transformHistoryChanged` reload can start
+    /// after delete/clear begins and still read the old rows before the write
+    /// reaches SQLite; mutation generation keeps that stale snapshot out.
+    private var historyLoadGeneration: Int = 0
+    private var historyMutationGeneration: Int = 0
+    private var activeHistoryMutationCount: Int = 0
 
     public init() {}
 
@@ -157,24 +156,34 @@ public final class TransformsViewModel {
     /// the "showing N of M" footer.
     public func loadHistory() async {
         guard let historyRepo else {
-            historySnapshotGeneration += 1
+            historyLoadGeneration += 1
             history = []
             totalHistoryCount = 0
             return
         }
-        historySnapshotGeneration += 1
-        let myGeneration = historySnapshotGeneration
+        historyLoadGeneration += 1
+        let myLoadGeneration = historyLoadGeneration
+        let mutationGenerationAtStart = historyMutationGeneration
+        let startedDuringMutation = activeHistoryMutationCount > 0
         do {
             let snapshot = try await Self.fetchHistorySnapshot(
                 repo: historyRepo,
                 limit: Self.historyFetchLimit
             )
-            guard myGeneration == historySnapshotGeneration else { return }
+            guard shouldApplyHistoryLoad(
+                loadGeneration: myLoadGeneration,
+                mutationGenerationAtStart: mutationGenerationAtStart,
+                startedDuringMutation: startedDuringMutation
+            ) else { return }
             history = snapshot.entries
             totalHistoryCount = snapshot.totalCount
             historyErrorMessage = nil
         } catch {
-            guard myGeneration == historySnapshotGeneration else { return }
+            guard shouldApplyHistoryLoad(
+                loadGeneration: myLoadGeneration,
+                mutationGenerationAtStart: mutationGenerationAtStart,
+                startedDuringMutation: startedDuringMutation
+            ) else { return }
             history = []
             totalHistoryCount = 0
             historyErrorMessage = error.localizedDescription
@@ -183,42 +192,63 @@ public final class TransformsViewModel {
 
     public func deleteHistoryEntry(_ entry: TransformHistoryEntry) async {
         guard let historyRepo else { return }
-        historySnapshotGeneration += 1
-        let myGeneration = historySnapshotGeneration
+        let myGeneration = beginHistoryMutation()
+        defer { endHistoryMutation() }
         do {
             let snapshot = try await Self.deleteHistoryEntryAndFetchSnapshot(
                 repo: historyRepo,
                 id: entry.id,
                 limit: Self.historyFetchLimit
             )
-            guard myGeneration == historySnapshotGeneration else { return }
+            guard myGeneration == historyMutationGeneration else { return }
             history = snapshot.entries
             totalHistoryCount = snapshot.totalCount
             historyErrorMessage = nil
         } catch {
-            guard myGeneration == historySnapshotGeneration else { return }
+            guard myGeneration == historyMutationGeneration else { return }
             historyErrorMessage = error.localizedDescription
         }
     }
 
     public func clearHistory() async {
         guard let historyRepo else { return }
-        historySnapshotGeneration += 1
-        let myGeneration = historySnapshotGeneration
+        let myGeneration = beginHistoryMutation()
+        defer { endHistoryMutation() }
         do {
             let snapshot = try await Self.clearHistoryAndFetchSnapshot(
                 repo: historyRepo,
                 limit: Self.historyFetchLimit
             )
-            guard myGeneration == historySnapshotGeneration else { return }
+            guard myGeneration == historyMutationGeneration else { return }
             history = snapshot.entries
             totalHistoryCount = snapshot.totalCount
             isConfirmingClearHistory = false
             historyErrorMessage = nil
         } catch {
-            guard myGeneration == historySnapshotGeneration else { return }
+            guard myGeneration == historyMutationGeneration else { return }
             historyErrorMessage = error.localizedDescription
         }
+    }
+
+    private func beginHistoryMutation() -> Int {
+        historyMutationGeneration += 1
+        activeHistoryMutationCount += 1
+        return historyMutationGeneration
+    }
+
+    private func endHistoryMutation() {
+        activeHistoryMutationCount = max(0, activeHistoryMutationCount - 1)
+    }
+
+    private func shouldApplyHistoryLoad(
+        loadGeneration: Int,
+        mutationGenerationAtStart: Int,
+        startedDuringMutation: Bool
+    ) -> Bool {
+        !startedDuringMutation
+            && loadGeneration == historyLoadGeneration
+            && mutationGenerationAtStart == historyMutationGeneration
+            && activeHistoryMutationCount == 0
     }
 
     /// Copy a prior run's output back to the clipboard, with a brief

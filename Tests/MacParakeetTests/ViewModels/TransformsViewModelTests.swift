@@ -416,6 +416,48 @@ final class TransformsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.totalHistoryCount, 0)
     }
 
+    func testPassiveLoadStartedDuringDeleteCannotOverrideMutationSnapshot() async throws {
+        let entry = TransformHistoryEntry(
+            transformName: "Polish",
+            inputText: "rough",
+            outputText: "polished",
+            capturePath: "ax",
+            replacementPath: "ax",
+            llmElapsedMs: 1,
+            totalElapsedMs: 2
+        )
+        let blockingRepo = BlockingTransformHistoryRepository(entries: [entry])
+        let viewModel = TransformsViewModel()
+        viewModel.configure(
+            repo: repo,
+            historyRepo: blockingRepo,
+            clipboardService: clipboardService,
+            hasLLMProvider: true
+        )
+        await viewModel.loadHistory()
+        XCTAssertEqual(viewModel.history.map(\.id), [entry.id])
+
+        blockingRepo.shouldBlockDelete = true
+        let delete = Task { await viewModel.deleteHistoryEntry(entry) }
+        let deleteBlocked = await Task.detached {
+            blockingRepo.waitForDeleteToBlock()
+        }.value
+        XCTAssertTrue(deleteBlocked, "Delete did not reach the controlled block point.")
+
+        let load = Task { await viewModel.loadHistory() }
+        let staleLoadRead = await Task.detached {
+            blockingRepo.waitForFetchDuringBlockedDelete()
+        }.value
+        XCTAssertTrue(staleLoadRead, "Passive load did not read while delete was blocked.")
+        blockingRepo.releaseDelete()
+
+        await load.value
+        await delete.value
+
+        XCTAssertTrue(viewModel.history.isEmpty)
+        XCTAssertEqual(viewModel.totalHistoryCount, 0)
+    }
+
     func testCopyOutputToClipboardWritesToClipboardAndFlagsCopied() async throws {
         let entry = TransformHistoryEntry(
             transformName: "Polish",
@@ -449,5 +491,109 @@ final class MockTransformsClipboardService: ClipboardServiceProtocol, @unchecked
     func copyToClipboard(_ text: String) async -> Bool {
         lastCopied = text
         return copyReturnValue
+    }
+}
+
+private final class BlockingTransformHistoryRepository: TransformHistoryRepositoryProtocol, @unchecked Sendable {
+    private let lock = NSLock()
+    private var entries: [TransformHistoryEntry]
+    private var deleteIsBlocked = false
+    private let deleteBlocked = DispatchSemaphore(value: 0)
+    private let releaseBlockedDelete = DispatchSemaphore(value: 0)
+    private let fetchDuringBlockedDelete = DispatchSemaphore(value: 0)
+
+    var shouldBlockDelete = false
+
+    init(entries: [TransformHistoryEntry]) {
+        self.entries = entries
+    }
+
+    func save(_ entry: TransformHistoryEntry) throws {
+        lock.lock()
+        entries.append(entry)
+        lock.unlock()
+    }
+
+    func fetchAll() throws -> [TransformHistoryEntry] {
+        lock.lock()
+        let snapshot = entries
+        lock.unlock()
+        return snapshot.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    func fetchRecent(limit: Int) throws -> [TransformHistoryEntry] {
+        Array(try fetchAll().prefix(max(0, limit)))
+    }
+
+    func fetchRecentWithCount(limit: Int) throws -> (entries: [TransformHistoryEntry], totalCount: Int) {
+        lock.lock()
+        let snapshot = entries
+        let blocked = deleteIsBlocked
+        lock.unlock()
+        if blocked {
+            fetchDuringBlockedDelete.signal()
+        }
+        return (Array(snapshot.sorted { $0.createdAt > $1.createdAt }.prefix(max(0, limit))), snapshot.count)
+    }
+
+    func fetch(id: UUID) throws -> TransformHistoryEntry? {
+        lock.lock()
+        let entry = entries.first { $0.id == id }
+        lock.unlock()
+        return entry
+    }
+
+    func fetch(idPrefix: String) throws -> [TransformHistoryEntry] {
+        let prefix = idPrefix.replacingOccurrences(of: "-", with: "").lowercased()
+        lock.lock()
+        let snapshot = entries.filter {
+            $0.id.uuidString.replacingOccurrences(of: "-", with: "").lowercased().hasPrefix(prefix)
+        }
+        lock.unlock()
+        return snapshot
+    }
+
+    func count() throws -> Int {
+        lock.lock()
+        let count = entries.count
+        lock.unlock()
+        return count
+    }
+
+    func delete(id: UUID) throws -> Bool {
+        if shouldBlockDelete {
+            lock.lock()
+            deleteIsBlocked = true
+            lock.unlock()
+            deleteBlocked.signal()
+            _ = releaseBlockedDelete.wait(timeout: .now() + 5)
+            lock.lock()
+            deleteIsBlocked = false
+            lock.unlock()
+        }
+
+        lock.lock()
+        defer { lock.unlock() }
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { return false }
+        entries.remove(at: index)
+        return true
+    }
+
+    func deleteAll() throws {
+        lock.lock()
+        entries.removeAll()
+        lock.unlock()
+    }
+
+    func waitForDeleteToBlock() -> Bool {
+        deleteBlocked.wait(timeout: .now() + 5) == .success
+    }
+
+    func waitForFetchDuringBlockedDelete() -> Bool {
+        fetchDuringBlockedDelete.wait(timeout: .now() + 5) == .success
+    }
+
+    func releaseDelete() {
+        releaseBlockedDelete.signal()
     }
 }
