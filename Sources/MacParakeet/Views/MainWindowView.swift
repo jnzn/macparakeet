@@ -219,6 +219,8 @@ struct MainWindowView: View {
             TransformShortcutReservedHotkey(name: "Dictation", trigger: settingsViewModel.hotkeyTrigger),
             TransformShortcutReservedHotkey(name: "Push-to-talk", trigger: settingsViewModel.pushToTalkHotkeyTrigger),
             TransformShortcutReservedHotkey(name: "Meeting recording", trigger: settingsViewModel.meetingHotkeyTrigger),
+            TransformShortcutReservedHotkey(name: "File transcription", trigger: settingsViewModel.fileTranscriptionHotkeyTrigger),
+            TransformShortcutReservedHotkey(name: "YouTube transcription", trigger: settingsViewModel.youtubeTranscriptionHotkeyTrigger),
         ].filter { !$0.trigger.isDisabled }
     }
 

@@ -72,6 +72,46 @@ final class TransformHistoryRepositoryTests: XCTestCase {
         XCTAssertEqual(try repo.count(), 5)
     }
 
+    func testFetchRecentAndCountForTransformUsesTransformSpecificWindow() throws {
+        let polishID = UUID(uuidString: "0FCE9DDB-7E2D-4B1A-AE3E-6F7C9B2A4D11")!
+        let distillID = UUID(uuidString: "1AD7C2B0-9C6F-4F0E-9C39-5E4D1F1D2A55")!
+        for index in 0..<5 {
+            try repo.save(
+                TransformHistoryEntry(
+                    transformId: polishID,
+                    transformName: "Polish",
+                    inputText: "rough \(index)",
+                    outputText: "polished \(index)",
+                    capturePath: "ax",
+                    replacementPath: "ax",
+                    llmElapsedMs: 1,
+                    totalElapsedMs: 2,
+                    createdAt: Date(timeIntervalSince1970: TimeInterval(index)),
+                    updatedAt: Date(timeIntervalSince1970: TimeInterval(index))
+                )
+            )
+        }
+        try repo.save(
+            TransformHistoryEntry(
+                transformId: distillID,
+                transformName: "Distill",
+                inputText: "long",
+                outputText: "short",
+                capturePath: "clipboard",
+                replacementPath: "clipboardPaste",
+                llmElapsedMs: 3,
+                totalElapsedMs: 4,
+                createdAt: Date(timeIntervalSince1970: 1_000),
+                updatedAt: Date(timeIntervalSince1970: 1_000)
+            )
+        )
+
+        let fetched = try repo.fetchRecent(transformId: polishID, limit: 2)
+
+        XCTAssertEqual(fetched.map(\.inputText), ["rough 4", "rough 3"])
+        XCTAssertEqual(try repo.count(transformId: polishID), 5)
+    }
+
     func testFetchByIDAndIDPrefix() throws {
         let first = TransformHistoryEntry(
             id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,

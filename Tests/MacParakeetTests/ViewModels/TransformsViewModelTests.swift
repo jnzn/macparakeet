@@ -342,6 +342,48 @@ final class TransformsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.selectedHistory.map(\.transformName), ["Polish"])
     }
 
+    func testSelectedHistoryLoadsTransformSpecificRowsOutsideGlobalRecentWindow() async throws {
+        let polish = viewModel.transforms.first(where: { $0.name == "Polish" })!
+        let distill = viewModel.transforms.first(where: { $0.name == "Distill" })!
+        try historyRepo.save(
+            TransformHistoryEntry(
+                transformId: polish.id,
+                transformName: "Polish",
+                inputText: "old polish",
+                outputText: "Old polish.",
+                capturePath: "ax",
+                replacementPath: "ax",
+                llmElapsedMs: 1,
+                totalElapsedMs: 2,
+                createdAt: Date(timeIntervalSince1970: 1),
+                updatedAt: Date(timeIntervalSince1970: 1)
+            )
+        )
+        for index in 0..<TransformsViewModel.historyFetchLimit {
+            try historyRepo.save(
+                TransformHistoryEntry(
+                    transformId: distill.id,
+                    transformName: "Distill",
+                    inputText: "long \(index)",
+                    outputText: "short \(index)",
+                    capturePath: "clipboard",
+                    replacementPath: "clipboardPaste",
+                    llmElapsedMs: 3,
+                    totalElapsedMs: 4,
+                    createdAt: Date(timeIntervalSince1970: TimeInterval(10 + index)),
+                    updatedAt: Date(timeIntervalSince1970: TimeInterval(10 + index))
+                )
+            )
+        }
+
+        viewModel.selectTransform(polish)
+        await viewModel.loadHistory()
+
+        XCTAssertFalse(viewModel.history.contains(where: { $0.transformId == polish.id }))
+        XCTAssertEqual(viewModel.selectedHistory.map(\.inputText), ["old polish"])
+        XCTAssertEqual(viewModel.selectedHistoryTotalCount, 1)
+    }
+
     func testDeleteAndClearHistory() async throws {
         let first = TransformHistoryEntry(
             transformName: "Polish",
@@ -416,6 +458,7 @@ final class TransformsViewModelTests: XCTestCase {
         await viewModel.clearSelectedHistory()
 
         XCTAssertTrue(viewModel.selectedHistory.isEmpty)
+        XCTAssertEqual(viewModel.selectedHistoryTotalCount, 0)
         XCTAssertEqual(viewModel.history.map(\.transformName), ["Distill"])
         XCTAssertEqual(viewModel.totalHistoryCount, 1)
         XCTAssertEqual(try historyRepo.count(), 1)

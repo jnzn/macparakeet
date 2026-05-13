@@ -3,10 +3,12 @@ import XCTest
 
 final class TransformProfileRepositoryTests: XCTestCase {
     var repo: TransformProfileRepository!
+    var promptRepo: PromptRepository!
 
     override func setUp() async throws {
         let manager = try DatabaseManager()
         repo = TransformProfileRepository(dbQueue: manager.dbQueue)
+        promptRepo = PromptRepository(dbQueue: manager.dbQueue)
     }
 
     func testSaveFetchAndUpdateProfile() throws {
@@ -35,15 +37,16 @@ final class TransformProfileRepositoryTests: XCTestCase {
     }
 
     func testDeleteProfile() throws {
-        let promptID = UUID()
+        let prompt = Prompt(name: "Custom", content: "Rewrite.", category: .transform)
+        try promptRepo.save(prompt)
         let profile = TransformProfile(
-            promptId: promptID,
+            promptId: prompt.id,
             enabledRuleIDsJSON: "[\"custom.facts\"]"
         )
         try repo.save(profile)
 
-        XCTAssertTrue(try repo.delete(promptId: promptID))
-        XCTAssertNil(try repo.fetch(promptId: promptID))
-        XCTAssertFalse(try repo.delete(promptId: promptID))
+        XCTAssertTrue(try repo.delete(promptId: prompt.id))
+        XCTAssertNil(try repo.fetch(promptId: prompt.id))
+        XCTAssertFalse(try repo.delete(promptId: prompt.id))
     }
 }

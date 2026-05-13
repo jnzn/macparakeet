@@ -195,7 +195,7 @@ struct TransformsView: View {
                     TransformListRow(
                         transform: transform,
                         isSelected: viewModel.selectedTransformID == transform.id && !viewModel.isCreatingDraft,
-                        historyCount: viewModel.history.filter { $0.transformId == transform.id }.count,
+                        historyCount: viewModel.selectedTransformID == transform.id ? viewModel.selectedHistoryTotalCount : viewModel.history.filter { $0.transformId == transform.id }.count,
                         action: {
                             showBuiltInPrompt = false
                             viewModel.selectTransform(transform)
@@ -356,7 +356,7 @@ struct TransformsView: View {
                 }
                 .toggleStyle(.switch)
 
-                if viewModel.writingSamples.isEmpty {
+                if viewModel.writingSamples.isEmpty && !viewModel.isAddingWritingSample {
                     WritingSamplesEmptyState {
                         viewModel.isAddingWritingSample = true
                     }
@@ -436,6 +436,7 @@ struct TransformsView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(DesignSystem.Colors.border, lineWidth: 0.5)
                 }
+                .accessibilityLabel("Transform prompt instructions")
                 .onChange(of: viewModel.draftContent) { _, _ in revalidate() }
 
             TextEditor(text: $viewModel.draftCustomInstructions)
@@ -459,6 +460,7 @@ struct TransformsView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(DesignSystem.Colors.border, lineWidth: 0.5)
                 }
+                .accessibilityLabel("Optional extra instructions")
 
             if let error = viewModel.contentError {
                 InlineValidation(message: error)
@@ -478,7 +480,7 @@ struct TransformsView: View {
                     TransformHistoryEmptyState()
                 } else {
                     HStack {
-                        Text("\(viewModel.selectedHistory.count) saved")
+                        Text("\(viewModel.selectedHistoryTotalCount) saved")
                             .font(DesignSystem.Typography.caption)
                             .foregroundStyle(DesignSystem.Colors.textSecondary)
                         Spacer()
@@ -693,6 +695,7 @@ private struct WritingSampleRow: View {
             .buttonStyle(.plain)
             .foregroundStyle(DesignSystem.Colors.textSecondary)
             .help("Delete writing sample")
+            .accessibilityLabel("Delete writing sample")
         }
         .padding(DesignSystem.Spacing.md)
         .background(DesignSystem.Colors.surface)
@@ -742,6 +745,7 @@ private struct WritingSampleEditor: View {
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(DesignSystem.Colors.border, lineWidth: 0.5)
                 }
+                .accessibilityLabel("Writing sample text")
 
             HStack {
                 Text("\(wordCount)/\(TransformsViewModel.minimumWritingSampleWords) words")
@@ -821,6 +825,7 @@ private struct TransformHistoryRow: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(DesignSystem.Colors.textSecondary)
                 .help("Copy transformed text")
+                .accessibilityLabel("Copy transformed text")
 
                 Button(role: .destructive, action: onDelete) {
                     Image(systemName: "trash")
@@ -828,6 +833,7 @@ private struct TransformHistoryRow: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(DesignSystem.Colors.textSecondary)
                 .help("Delete history item")
+                .accessibilityLabel("Delete history item")
             }
 
             Text(entry.outputText)

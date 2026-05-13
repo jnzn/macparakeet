@@ -2,11 +2,6 @@ import Foundation
 import MacParakeetCore
 import MacParakeetViewModels
 
-/// Adapter that lets the editor sheet's ViewModel layer call into the
-/// GUI's `TransformsHotkeyCollisionChecker` without importing it
-/// (MacParakeetViewModels can't depend on MacParakeet — only the other
-/// way around). The protocol mirror is defined in
-/// `TransformEditorViewModel.swift`; this file is the binding.
 extension TransformsHotkeyCollisionChecker: TransformShortcutCollisionChecking {
     public func checkForEditor(
         candidate: KeyboardShortcut,

@@ -721,7 +721,9 @@ public final class DatabaseManager: Sendable {
         // when a user explicitly enables them.
         migrator.registerMigration("v0.15-transform-workbench") { db in
             try db.create(table: "transform_profiles") { t in
-                t.column("promptId", .text).primaryKey()
+                t.column("promptId", .text)
+                    .primaryKey()
+                    .references("prompts", onDelete: .cascade)
                 t.column("enabledRuleIDsJSON", .text).notNull().defaults(to: "[]")
                 t.column("customInstructions", .text)
                 t.column("useWritingSamples", .boolean).notNull().defaults(to: false)

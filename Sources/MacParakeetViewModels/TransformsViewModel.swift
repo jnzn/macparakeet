@@ -24,6 +24,8 @@ public final class TransformsViewModel {
     public var profiles: [UUID: TransformProfile] = [:]
     public var history: [TransformHistoryEntry] = []
     public var totalHistoryCount: Int = 0
+    public var selectedHistory: [TransformHistoryEntry] = []
+    public var selectedHistoryTotalCount: Int = 0
     public var writingSamples: [WritingSample] = []
     public var errorMessage: String?
     public var historyErrorMessage: String?
@@ -126,14 +128,19 @@ public final class TransformsViewModel {
         do {
             let snapshot = try await Self.fetchHistorySnapshot(
                 repo: historyRepo,
+                selectedTransformID: selectedTransformID,
                 limit: Self.historyFetchLimit
             )
             history = snapshot.entries
             totalHistoryCount = snapshot.totalCount
+            selectedHistory = snapshot.selectedEntries
+            selectedHistoryTotalCount = snapshot.selectedTotalCount
             historyErrorMessage = nil
         } catch {
             history = []
             totalHistoryCount = 0
+            selectedHistory = []
+            selectedHistoryTotalCount = 0
             historyErrorMessage = error.localizedDescription
         }
     }
@@ -157,6 +164,9 @@ public final class TransformsViewModel {
         selectedTransformID = prompt.id
         isCreatingDraft = false
         loadDraft(from: prompt)
+        Task {
+            await loadHistory()
+        }
     }
 
     public func startCreatingTransform() {
@@ -176,6 +186,8 @@ public final class TransformsViewModel {
         draftEnabledRuleIDs = profile.enabledRuleIDs
         draftCustomInstructions = ""
         draftUseWritingSamples = false
+        selectedHistory = []
+        selectedHistoryTotalCount = 0
         clearValidation()
     }
 
@@ -294,10 +306,13 @@ public final class TransformsViewModel {
             let snapshot = try await Self.deleteHistoryEntryAndFetchSnapshot(
                 repo: historyRepo,
                 id: entry.id,
+                selectedTransformID: selectedTransformID,
                 limit: Self.historyFetchLimit
             )
             history = snapshot.entries
             totalHistoryCount = snapshot.totalCount
+            selectedHistory = snapshot.selectedEntries
+            selectedHistoryTotalCount = snapshot.selectedTotalCount
             historyErrorMessage = nil
         } catch {
             historyErrorMessage = error.localizedDescription
@@ -309,10 +324,13 @@ public final class TransformsViewModel {
         do {
             let snapshot = try await Self.clearHistoryAndFetchSnapshot(
                 repo: historyRepo,
+                selectedTransformID: selectedTransformID,
                 limit: Self.historyFetchLimit
             )
             history = snapshot.entries
             totalHistoryCount = snapshot.totalCount
+            selectedHistory = snapshot.selectedEntries
+            selectedHistoryTotalCount = snapshot.selectedTotalCount
             isConfirmingClearHistory = false
             historyErrorMessage = nil
         } catch {
@@ -334,6 +352,8 @@ public final class TransformsViewModel {
             )
             history = snapshot.entries
             totalHistoryCount = snapshot.totalCount
+            selectedHistory = snapshot.selectedEntries
+            selectedHistoryTotalCount = snapshot.selectedTotalCount
             isConfirmingClearHistory = false
             historyErrorMessage = nil
         } catch {
@@ -364,25 +384,55 @@ public final class TransformsViewModel {
 
     private static func fetchHistorySnapshot(
         repo: TransformHistoryRepositoryProtocol,
+        selectedTransformID: UUID?,
         limit: Int
-    ) async throws -> (entries: [TransformHistoryEntry], totalCount: Int) {
+    ) async throws -> (
+        entries: [TransformHistoryEntry],
+        totalCount: Int,
+        selectedEntries: [TransformHistoryEntry],
+        selectedTotalCount: Int
+    ) {
         try await Task.detached(priority: .userInitiated) {
             let entries = try repo.fetchRecent(limit: limit)
             let totalCount = try repo.count()
-            return (entries, totalCount)
+            let selectedEntries: [TransformHistoryEntry]
+            let selectedTotalCount: Int
+            if let selectedTransformID {
+                selectedEntries = try repo.fetchRecent(transformId: selectedTransformID, limit: limit)
+                selectedTotalCount = try repo.count(transformId: selectedTransformID)
+            } else {
+                selectedEntries = []
+                selectedTotalCount = 0
+            }
+            return (entries, totalCount, selectedEntries, selectedTotalCount)
         }.value
     }
 
     private static func deleteHistoryEntryAndFetchSnapshot(
         repo: TransformHistoryRepositoryProtocol,
         id: UUID,
+        selectedTransformID: UUID?,
         limit: Int
-    ) async throws -> (entries: [TransformHistoryEntry], totalCount: Int) {
+    ) async throws -> (
+        entries: [TransformHistoryEntry],
+        totalCount: Int,
+        selectedEntries: [TransformHistoryEntry],
+        selectedTotalCount: Int
+    ) {
         try await Task.detached(priority: .userInitiated) {
             _ = try repo.delete(id: id)
             let entries = try repo.fetchRecent(limit: limit)
             let totalCount = try repo.count()
-            return (entries, totalCount)
+            let selectedEntries: [TransformHistoryEntry]
+            let selectedTotalCount: Int
+            if let selectedTransformID {
+                selectedEntries = try repo.fetchRecent(transformId: selectedTransformID, limit: limit)
+                selectedTotalCount = try repo.count(transformId: selectedTransformID)
+            } else {
+                selectedEntries = []
+                selectedTotalCount = 0
+            }
+            return (entries, totalCount, selectedEntries, selectedTotalCount)
         }.value
     }
 
@@ -390,24 +440,46 @@ public final class TransformsViewModel {
         repo: TransformHistoryRepositoryProtocol,
         transformId: UUID,
         limit: Int
-    ) async throws -> (entries: [TransformHistoryEntry], totalCount: Int) {
+    ) async throws -> (
+        entries: [TransformHistoryEntry],
+        totalCount: Int,
+        selectedEntries: [TransformHistoryEntry],
+        selectedTotalCount: Int
+    ) {
         try await Task.detached(priority: .userInitiated) {
             try repo.deleteAll(transformId: transformId)
             let entries = try repo.fetchRecent(limit: limit)
             let totalCount = try repo.count()
-            return (entries, totalCount)
+            let selectedEntries = try repo.fetchRecent(transformId: transformId, limit: limit)
+            let selectedTotalCount = try repo.count(transformId: transformId)
+            return (entries, totalCount, selectedEntries, selectedTotalCount)
         }.value
     }
 
     private static func clearHistoryAndFetchSnapshot(
         repo: TransformHistoryRepositoryProtocol,
+        selectedTransformID: UUID?,
         limit: Int
-    ) async throws -> (entries: [TransformHistoryEntry], totalCount: Int) {
+    ) async throws -> (
+        entries: [TransformHistoryEntry],
+        totalCount: Int,
+        selectedEntries: [TransformHistoryEntry],
+        selectedTotalCount: Int
+    ) {
         try await Task.detached(priority: .userInitiated) {
             try repo.deleteAll()
             let entries = try repo.fetchRecent(limit: limit)
             let totalCount = try repo.count()
-            return (entries, totalCount)
+            let selectedEntries: [TransformHistoryEntry]
+            let selectedTotalCount: Int
+            if let selectedTransformID {
+                selectedEntries = try repo.fetchRecent(transformId: selectedTransformID, limit: limit)
+                selectedTotalCount = try repo.count(transformId: selectedTransformID)
+            } else {
+                selectedEntries = []
+                selectedTotalCount = 0
+            }
+            return (entries, totalCount, selectedEntries, selectedTotalCount)
         }.value
     }
 
@@ -528,11 +600,6 @@ public final class TransformsViewModel {
 
     public var activeRules: [TransformRule] {
         TransformRule.rules(for: selectedTransform ?? draftPromptForRules)
-    }
-
-    public var selectedHistory: [TransformHistoryEntry] {
-        guard let selectedTransformID else { return [] }
-        return history.filter { $0.transformId == selectedTransformID }
     }
 
     public var normalizedDraftName: String {

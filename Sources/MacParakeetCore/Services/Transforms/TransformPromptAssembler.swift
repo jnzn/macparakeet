@@ -35,11 +35,11 @@ public enum TransformPromptAssembler {
                 .filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                 .prefix(maxSamples)
             if !usableSamples.isEmpty {
-                let sampleText = usableSamples.enumerated().map { index, sample in
+                let sampleText: String = usableSamples.enumerated().map { index, sample -> String in
                     let trimmed = sample.text.trimmingCharacters(in: .whitespacesAndNewlines)
                     let clipped = String(trimmed.prefix(maxSampleCharacters))
                     return """
-                        Sample \(index + 1) — \(sample.title):
+                        Sample \(index + 1) - \(sample.title):
                         \(clipped)
                         """
                 }.joined(separator: "\n\n")

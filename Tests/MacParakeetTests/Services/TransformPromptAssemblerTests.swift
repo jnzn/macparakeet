@@ -43,8 +43,10 @@ final class TransformPromptAssemblerTests: XCTestCase {
         )
 
         XCTAssertTrue(assembled.contains("Voice reference samples"))
+        XCTAssertTrue(assembled.contains("Sample 1 - Email:"))
         XCTAssertTrue(assembled.contains("Email"))
         XCTAssertTrue(assembled.contains("This is how I write in email."))
+        XCTAssertFalse(assembled.contains("SQL(elements"))
     }
 
     func testAssembleLimitsWritingSamples() {
