@@ -80,7 +80,7 @@ struct YouTubeInputPanelView: View {
                         .font(DesignSystem.Typography.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                        .fixedSize()
+                        .layoutPriority(1)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(

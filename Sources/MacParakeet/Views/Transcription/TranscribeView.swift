@@ -210,7 +210,7 @@ struct TranscribeView: View {
                                 .font(DesignSystem.Typography.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
-                                .fixedSize()
+                                .layoutPriority(1)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
                                 .background(
@@ -244,7 +244,7 @@ struct TranscribeView: View {
                             .font(DesignSystem.Typography.caption.weight(.semibold))
                             .foregroundStyle(DesignSystem.Colors.onAccent)
                             .lineLimit(1)
-                            .fixedSize()
+                            .layoutPriority(1)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 9)
                             .background(
