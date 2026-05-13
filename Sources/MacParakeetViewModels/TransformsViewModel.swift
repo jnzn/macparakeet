@@ -200,7 +200,7 @@ public final class TransformsViewModel {
         }
     }
 
-    private nonisolated static func fetchHistorySnapshot(
+    private static func fetchHistorySnapshot(
         repo: TransformHistoryRepositoryProtocol,
         limit: Int
     ) async throws -> (entries: [TransformHistoryEntry], totalCount: Int) {
@@ -211,7 +211,7 @@ public final class TransformsViewModel {
         }.value
     }
 
-    private nonisolated static func deleteHistoryEntryAndFetchSnapshot(
+    private static func deleteHistoryEntryAndFetchSnapshot(
         repo: TransformHistoryRepositoryProtocol,
         id: UUID,
         limit: Int
@@ -224,7 +224,7 @@ public final class TransformsViewModel {
         }.value
     }
 
-    private nonisolated static func clearHistoryAndFetchSnapshot(
+    private static func clearHistoryAndFetchSnapshot(
         repo: TransformHistoryRepositoryProtocol,
         limit: Int
     ) async throws -> (entries: [TransformHistoryEntry], totalCount: Int) {
