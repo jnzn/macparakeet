@@ -266,22 +266,14 @@ struct ShortcutRecorderField: View {
 
     var body: some View {
         HStack {
-            Group {
-                if let shortcut {
-                    HStack(spacing: 6) {
-                        KeycapBadge(shortcut: shortcut)
-                        Text(shortcut.keyLabel.uppercased())
-                            .font(DesignSystem.Typography.bodySmall.monospacedDigit())
-                            .foregroundStyle(DesignSystem.Colors.textTertiary)
-                            .accessibilityHidden(true)
-                    }
-                } else {
-                    Text(isRecording ? "Press a keyboard combo\u{2026}" : "Click to add a shortcut")
-                        .font(DesignSystem.Typography.body)
-                        .foregroundStyle(isRecording ? DesignSystem.Colors.accent : DesignSystem.Colors.textSecondary)
-                }
+            Button(action: { isRecording.toggle() }) {
+                recorderContent
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Spacer()
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
+            .accessibilityLabel(isRecording ? "Stop recording" : "Start recording")
+
             Button(action: { isRecording.toggle() }) {
                 Image(systemName: isRecording ? "stop.circle" : "pencil")
                     .foregroundStyle(DesignSystem.Colors.textSecondary)
@@ -309,10 +301,6 @@ struct ShortcutRecorderField: View {
                     lineWidth: isRecording ? 1.0 : 0.5
                 )
         }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            isRecording.toggle()
-        }
         .onChange(of: isRecording) { _, recording in
             if recording {
                 notifyRecordingState(true)
@@ -323,6 +311,23 @@ struct ShortcutRecorderField: View {
             }
         }
         .onDisappear { stopRecordingIfNeeded() }
+    }
+
+    @ViewBuilder
+    private var recorderContent: some View {
+        if let shortcut {
+            HStack(spacing: 6) {
+                KeycapBadge(shortcut: shortcut)
+                Text(shortcut.keyLabel.uppercased())
+                    .font(DesignSystem.Typography.bodySmall.monospacedDigit())
+                    .foregroundStyle(DesignSystem.Colors.textTertiary)
+                    .accessibilityHidden(true)
+            }
+        } else {
+            Text(isRecording ? "Press a keyboard combo\u{2026}" : "Click to add a shortcut")
+                .font(DesignSystem.Typography.body)
+                .foregroundStyle(isRecording ? DesignSystem.Colors.accent : DesignSystem.Colors.textSecondary)
+        }
     }
 
     private func installMonitor() {

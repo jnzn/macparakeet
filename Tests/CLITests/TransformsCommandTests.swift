@@ -1,3 +1,4 @@
+import ArgumentParser
 import Foundation
 import XCTest
 @testable import CLI
@@ -134,6 +135,38 @@ final class TransformsCommandTests: XCTestCase {
         XCTAssertNil(object["updatedAt"])
     }
 
+    func testTransformErrorsMapToJSONFailureTaxonomy() {
+        let validation = CLIErrorEnvelope(error: CLITransformsError.invalidShortcut("bad"))
+        XCTAssertEqual(validation.errorType, "validation")
+        XCTAssertTrue(validation.error.contains("Couldn't parse shortcut"))
+
+        let lookup = CLIErrorEnvelope(error: CLITransformsError.notFound("missing"))
+        XCTAssertEqual(lookup.errorType, "lookup")
+        XCTAssertTrue(lookup.error.contains("No Transform found"))
+    }
+
+    func testTransformValidationJSONWrapperUsesMisuseExitCode() throws {
+        var thrownError: Error?
+        let output = try captureStandardOutput {
+            do {
+                try emitJSONOrRethrow(json: true) {
+                    throw CLITransformsError.duplicateName("Sharpen")
+                }
+            } catch {
+                thrownError = error
+            }
+        }
+
+        let exit = try XCTUnwrap(thrownError as? ExitCode)
+        XCTAssertEqual(exit.rawValue, 2)
+
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any]
+        )
+        XCTAssertEqual(object["ok"] as? Bool, false)
+        XCTAssertEqual(object["errorType"] as? String, "validation")
+    }
+
     // MARK: - End-to-end: create + list + show + delete against a real DB
 
     func testCreateListShowDeleteRoundTrip() throws {
@@ -207,7 +240,7 @@ final class TransformsCommandTests: XCTestCase {
         XCTAssertNoThrow(try show.run())
     }
 
-    func testLookupExactNameWinsOverUUIDPrefix() throws {
+    func testLookupUUIDPrefixWinsOverExactNameCollision() throws {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("transforms-cli-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
@@ -230,11 +263,51 @@ final class TransformsCommandTests: XCTestCase {
             "0fce",
             "--database", dbPath,
         ])
-        try del.run()
+        XCTAssertThrowsError(try del.run()) { error in
+            let message = String(describing: error)
+            XCTAssertTrue(message.contains("Cannot delete the built-in Transform"), "Expected UUID prefix to resolve before exact name, got: \(message)")
+        }
 
         let after = try repo.fetchVisible(category: .transform)
-        XCTAssertFalse(after.contains(where: { $0.id == custom.id }))
+        XCTAssertTrue(after.contains(where: { $0.id == custom.id }))
         XCTAssertTrue(after.contains(where: { $0.id.uuidString == "0FCE9DDB-7E2D-4B1A-AE3E-6F7C9B2A4D11" }))
+    }
+
+    func testLookupRejectsUnicodeCaseInsensitiveNameAmbiguity() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("transforms-cli-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let dbPath = tmp.appendingPathComponent("test.db").path
+
+        let db = try DatabaseManager(path: dbPath)
+        let repo = PromptRepository(dbQueue: db.dbQueue)
+        try repo.save(Prompt(
+            id: UUID(),
+            name: "straße",
+            content: "First body.",
+            category: .transform,
+            isBuiltIn: false,
+            sortOrder: 200
+        ))
+        try repo.save(Prompt(
+            id: UUID(),
+            name: "STRASSE",
+            content: "Second body.",
+            category: .transform,
+            isBuiltIn: false,
+            sortOrder: 201
+        ))
+
+        let show = try TransformsCommand.ShowSubcommand.parse([
+            "strasse",
+            "--database", dbPath,
+        ])
+
+        XCTAssertThrowsError(try show.run()) { error in
+            let message = String(describing: error)
+            XCTAssertTrue(message.contains("matches multiple Transforms"), "Expected ambiguous Unicode name lookup, got: \(message)")
+        }
     }
 
     func testCreateRejectsBareKeyShortcut() throws {

@@ -288,6 +288,9 @@ enum CLIErrorType {
         }
         if error is CLILookupError { return lookup }
         if error is CLIInputError { return inputEmpty }
+        if let transforms = error as? CLITransformsError {
+            return transforms.errorType
+        }
         if let qpe = error as? QuickPromptCLIError {
             switch qpe {
             case .cannotDeleteBuiltIn: return validation
@@ -376,6 +379,9 @@ private func rethrowWithOptionalJSONEnvelope(_ error: Error, json: Bool) throws 
     let envelope = CLIErrorEnvelope(error: error)
     try? printJSON(envelope)
     if error is ValidationError || error is CLIInputError {
+        throw cliValidationMisuseExitCode
+    }
+    if let transforms = error as? CLITransformsError, transforms.isValidationMisuse {
         throw cliValidationMisuseExitCode
     }
     throw ExitCode.failure

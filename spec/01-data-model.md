@@ -583,6 +583,8 @@ struct Prompt: Codable, Identifiable, Sendable {
     var isVisible: Bool
     var isAutoRun: Bool
     var sortOrder: Int
+    var keyboardShortcut: String?
+    var runningLabel: String?
     var createdAt: Date
     var updatedAt: Date
 
@@ -852,6 +854,8 @@ migrator.registerMigration("v0.7-prompts-and-summaries") { db in
 // v0.10 — quick_prompts (v0.6 Live Ask product surface)
 // v0.10 — transcription library indexes (sourceType/favorite/status + createdAt)
 // v0.11 — daily_dictation_stats
+// v0.12 — dictations.displayRawTranscript
+// v0.13 — prompts.keyboardShortcut and prompts.runningLabel for Transforms
 ```
 
 ### Migration Rules
@@ -982,4 +986,4 @@ let processing = try dbQueue.read { db in
 
 ---
 
-*Last updated: 2026-04-04*
+*Last updated: 2026-05-13*

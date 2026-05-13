@@ -363,12 +363,9 @@ private func findTransform(idOrName: String, repo: PromptRepository) throws -> P
     if let uuid = UUID(uuidString: query), let match = all.first(where: { $0.id == uuid }) {
         return match
     }
-    // Case-insensitive name match
-    if let nameMatch = all.first(where: { $0.name.caseInsensitiveCompare(query) == .orderedSame }) {
-        return nameMatch
-    }
-    // ID prefix. Dashes are optional, but very short prefixes are treated as
-    // names so a one-character custom Transform does not get shadowed.
+    // ID prefix. Dashes are optional. Prefix lookup intentionally precedes
+    // name lookup so an ambiguous machine identifier never silently resolves
+    // to a same-text custom name.
     if let prefix = normalizedUUIDPrefix(query) {
         let prefixMatches = all.filter {
             $0.id.uuidString
@@ -382,6 +379,14 @@ private func findTransform(idOrName: String, repo: PromptRepository) throws -> P
         if prefixMatches.count > 1 {
             throw CLITransformsError.ambiguous(query, prefixMatches.map(\.name))
         }
+    }
+    // Case-insensitive name match
+    let nameMatches = all.filter { $0.name.caseInsensitiveCompare(query) == .orderedSame }
+    if nameMatches.count == 1 {
+        return nameMatches[0]
+    }
+    if nameMatches.count > 1 {
+        throw CLITransformsError.ambiguous(query, nameMatches.map(\.name))
     }
     throw CLITransformsError.notFound(query)
 }
@@ -463,6 +468,36 @@ enum CLITransformsError: Error, CustomStringConvertible {
             return "Shortcut “\(shortcut)” conflicts with your \(name) hotkey."
         case .deleteBuiltIn(let n):
             return "Cannot delete the built-in Transform “\(n)”. Reset or edit it in the Transforms tab."
+        }
+    }
+
+    var errorType: String {
+        switch self {
+        case .notFound, .ambiguous:
+            return CLIErrorType.lookup
+        case .duplicateName,
+             .invalidShortcut,
+             .shortcutMissingModifier,
+             .shortcutMacOSDeadKey,
+             .duplicateShortcut,
+             .shortcutConflictsWithAppHotkey,
+             .deleteBuiltIn:
+            return CLIErrorType.validation
+        }
+    }
+
+    var isValidationMisuse: Bool {
+        switch self {
+        case .notFound, .ambiguous:
+            return false
+        case .duplicateName,
+             .invalidShortcut,
+             .shortcutMissingModifier,
+             .shortcutMacOSDeadKey,
+             .duplicateShortcut,
+             .shortcutConflictsWithAppHotkey,
+             .deleteBuiltIn:
+            return true
         }
     }
 }

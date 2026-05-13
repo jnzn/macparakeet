@@ -51,7 +51,8 @@ struct TransformsView: View {
         ) { transform in
             Button("Delete", role: .destructive) {
                 Task {
-                    if await viewModel.confirmPendingDelete() {
+                    viewModel.pendingDeleteTransform = nil
+                    if await viewModel.delete(transform) {
                         onBindingsChanged()
                     }
                 }
@@ -213,14 +214,24 @@ private struct TransformCard: View {
                 cardBody
             }
             .buttonStyle(.plain)
-
-            if isHovered {
-                cardActions
-                    .padding(.top, DesignSystem.Spacing.md)
-                    .padding(.trailing, DesignSystem.Spacing.md)
-                    .transition(.opacity)
-                    .zIndex(1)
+            .contextMenu {
+                cardActionMenu
             }
+            .accessibilityAction(named: transform.isBuiltIn ? "Reset Transform" : "Delete Transform") {
+                if transform.isBuiltIn {
+                    onReset()
+                } else {
+                    onDelete()
+                }
+            }
+
+            cardActions
+                .padding(.top, DesignSystem.Spacing.md)
+                .padding(.trailing, DesignSystem.Spacing.md)
+                .opacity(isHovered ? 1 : 0)
+                .allowsHitTesting(isHovered)
+                .accessibilityHidden(!isHovered)
+                .zIndex(1)
         }
         .onHover { isHovered = $0 }
         .animation(DesignSystem.Animation.hoverTransition, value: isHovered)
@@ -281,6 +292,15 @@ private struct TransformCard: View {
                 .help("Delete this Transform")
                 .accessibilityLabel("Delete Transform")
             }
+        }
+    }
+
+    @ViewBuilder
+    private var cardActionMenu: some View {
+        if transform.isBuiltIn {
+            Button("Reset Transform", action: onReset)
+        } else {
+            Button("Delete Transform", role: .destructive, action: onDelete)
         }
     }
 
@@ -372,6 +392,8 @@ struct KeycapBadge: View {
                         .stroke(DesignSystem.Colors.border, lineWidth: 0.5)
                 }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(shortcutAccessibilityLabel)
     }
 
     private var orderedModifierGlyphs: [String] {
@@ -380,6 +402,14 @@ struct KeycapBadge: View {
         return ordered
             .filter { (shortcut.modifiers & $0.rawValue) != 0 }
             .map(\.displayGlyph)
+    }
+
+    private var shortcutAccessibilityLabel: String {
+        let ordered: [TransformShortcut.ModifierFlag] = [.control, .option, .shift, .command]
+        let modifierNames = ordered
+            .filter { (shortcut.modifiers & $0.rawValue) != 0 }
+            .map(\.displayName)
+        return (modifierNames + [shortcut.keyLabel.uppercased()]).joined(separator: " ")
     }
 }
 
