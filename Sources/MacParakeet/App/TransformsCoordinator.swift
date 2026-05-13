@@ -1,7 +1,6 @@
 import AppKit
 import Foundation
 import MacParakeetCore
-import MacParakeetViewModels
 import OSLog
 
 /// Wires the productized Transforms feature to the app surface (ADR-022):
@@ -24,10 +23,7 @@ import OSLog
 final class TransformsCoordinator {
     private let llmServiceProvider: () -> LLMServiceProtocol?
     private let promptRepository: PromptRepositoryProtocol
-    private let profileRepository: TransformProfileRepositoryProtocol
-    private let historyRepository: TransformHistoryRepositoryProtocol
-    private let writingSampleRepository: WritingSampleRepositoryProtocol
-    private let reservedHotkeysProvider: @MainActor () -> [TransformShortcutReservedHotkey]
+    private let reservedHotkeysProvider: () -> [TransformShortcutReservedHotkey]
     private let logger = Logger(subsystem: "com.macparakeet", category: "TransformsCoordinator")
 
     private var registry: TransformsHotkeyRegistry?
@@ -52,16 +48,10 @@ final class TransformsCoordinator {
     init(
         llmServiceProvider: @escaping () -> LLMServiceProtocol?,
         promptRepository: PromptRepositoryProtocol,
-        profileRepository: TransformProfileRepositoryProtocol,
-        historyRepository: TransformHistoryRepositoryProtocol,
-        writingSampleRepository: WritingSampleRepositoryProtocol,
-        reservedHotkeysProvider: @escaping @MainActor () -> [TransformShortcutReservedHotkey] = { [] }
+        reservedHotkeysProvider: @escaping () -> [TransformShortcutReservedHotkey] = { [] }
     ) {
         self.llmServiceProvider = llmServiceProvider
         self.promptRepository = promptRepository
-        self.profileRepository = profileRepository
-        self.historyRepository = historyRepository
-        self.writingSampleRepository = writingSampleRepository
         self.reservedHotkeysProvider = reservedHotkeysProvider
     }
 
@@ -136,46 +126,29 @@ final class TransformsCoordinator {
         guard let registry else { return }
         let prompts: [Prompt]
         do {
-            prompts = try promptRepository
-                .fetchVisible(category: .transform)
-                .sorted(by: { lhs, rhs in
-                    if lhs.sortOrder != rhs.sortOrder { return lhs.sortOrder < rhs.sortOrder }
-                    return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-                })
+            prompts = try promptRepository.fetchVisible(category: .transform)
         } catch {
             logger.error("transforms: fetchVisible failed: \(error.localizedDescription, privacy: .public)")
             return
         }
 
-        let bindings = Self.validatedBindings(
-            for: prompts,
-            reservedHotkeys: reservedHotkeysProvider()
-        )
         promptIndex = Dictionary(uniqueKeysWithValues: prompts.map { ($0.id, $0) })
-        activeBindingIDs = Set(bindings.keys)
-        registry.replaceBindings(bindings)
-    }
 
-    nonisolated static func validatedBindings(
-        for prompts: [Prompt],
-        reservedHotkeys: [TransformShortcutReservedHotkey]
-    ) -> [UUID: KeyboardShortcut] {
-        let collisionChecker = TransformsHotkeyCollisionChecker()
-        let activeReservedHotkeys = reservedHotkeys.filter { !$0.trigger.isDisabled }
+        let reservedHotkeys = reservedHotkeysProvider().filter { !$0.trigger.isDisabled }
         var bindings: [UUID: KeyboardShortcut] = [:]
         for prompt in prompts {
-            guard let shortcut = prompt.shortcut else { continue }
-            guard collisionChecker.check(
-                candidate: shortcut,
-                existing: bindings,
-                excludingPromptID: nil,
-                reservedHotkeys: activeReservedHotkeys
-            ) == nil else {
-                continue
+            if let shortcut = prompt.shortcut {
+                if let conflict = reservedHotkeys.first(where: { shortcut.hotkeyTrigger.overlaps(with: $0.trigger) }) {
+                    logger.notice(
+                        "transforms: skipping binding for \(prompt.name, privacy: .public); conflicts with \(conflict.name, privacy: .public) \(conflict.trigger.formattedLabel, privacy: .public)"
+                    )
+                    continue
+                }
+                bindings[prompt.id] = shortcut
             }
-            bindings[prompt.id] = shortcut
         }
-        return bindings
+        activeBindingIDs = Set(bindings.keys)
+        registry.replaceBindings(bindings)
     }
 
     /// True when at least one Transform has a hotkey bound. Used by the
@@ -217,9 +190,10 @@ final class TransformsCoordinator {
 
         let runID = UUID()
         activeRunID = runID
+
         panelController?.show(label: prompt.derivedRunningLabel)
 
-        let promptBody = assembledPrompt(for: prompt)
+        let promptBody = prompt.content
         let runningTransformName = prompt.name
 
         let telemetryName = TelemetryTransformName(
@@ -252,15 +226,11 @@ final class TransformsCoordinator {
                 self.panelController?.done(message: "Done")
                 Telemetry.send(.transformExecuted(
                     transformName: telemetryName,
-                    capturePath: Self.telemetryCapturePath(for: result.capturePath),
+                    capturePath: result.captureTag == "ax" ? .ax : .clipboard,
                     replacePath: result.path == .ax ? .ax : .clipboardPaste,
                     llmMs: result.llmElapsedMs,
                     totalMs: result.totalElapsedMs
                 ))
-                self.saveHistory(
-                    result: result,
-                    prompt: prompt
-                )
                 self.logger.notice("transforms: \(runningTransformName, privacy: .public) completed")
             } catch let error as TransformExecutorError {
                 guard self.activeRunID == runID else { return }
@@ -287,57 +257,6 @@ final class TransformsCoordinator {
                 self.panelController?.fail(message: error.localizedDescription)
                 Telemetry.send(.transformFailed(transformName: telemetryName, reason: .llmFailed))
             }
-        }
-    }
-
-    private static func telemetryCapturePath(for path: SelectionCapturePath) -> TelemetryTransformCapturePath {
-        switch path {
-        case .ax:
-            return .ax
-        case .clipboard:
-            return .clipboard
-        }
-    }
-
-    private func saveHistory(
-        result: TransformExecutionResult,
-        prompt: Prompt
-    ) {
-        let now = Date()
-        let entry = TransformHistoryEntry(
-            transformId: prompt.id,
-            transformName: prompt.name,
-            inputText: result.inputText,
-            outputText: result.outputText,
-            sourceAppBundleID: result.sourceTarget?.bundleIdentifier,
-            sourceAppName: result.sourceTarget?.localizedName,
-            capturePath: result.capturePath.rawValue,
-            replacementPath: result.path.rawValue,
-            llmElapsedMs: result.llmElapsedMs,
-            totalElapsedMs: result.totalElapsedMs,
-            createdAt: now,
-            updatedAt: now
-        )
-        do {
-            try historyRepository.save(entry)
-            NotificationCenter.default.post(name: .transformHistoryChanged, object: nil)
-        } catch {
-            logger.error("transforms: failed to save local history: \(error.localizedDescription, privacy: .public)")
-        }
-    }
-
-    private func assembledPrompt(for prompt: Prompt) -> String {
-        do {
-            let profile = try profileRepository.fetch(promptId: prompt.id) ?? .defaultProfile(for: prompt)
-            let samples = profile.useWritingSamples ? try writingSampleRepository.fetchAll() : []
-            return TransformPromptAssembler.assemble(
-                prompt: prompt,
-                profile: profile,
-                writingSamples: samples
-            )
-        } catch {
-            logger.error("transforms: failed to assemble profile prompt, falling back to base prompt: \(error.localizedDescription, privacy: .public)")
-            return prompt.content
         }
     }
 }

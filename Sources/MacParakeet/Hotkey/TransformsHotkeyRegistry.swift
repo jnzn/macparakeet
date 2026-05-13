@@ -1,7 +1,6 @@
 import Cocoa
 import Foundation
 import MacParakeetCore
-import MacParakeetViewModels
 
 /// Single process-wide event tap that dispatches keyboard chords to bound
 /// Transforms. Owns one `CGEventTap` and a `[KeyMatch: Prompt.ID]` dispatch
@@ -65,9 +64,6 @@ public final class TransformsHotkeyRegistry {
             keyCode: shortcut.keyCode,
             modifierBits: cgFlags(for: shortcut.modifiers)
         )
-        if let existingPromptID = dispatchTable[match], existingPromptID != promptID {
-            return
-        }
         dispatchTable[match] = promptID
     }
 
@@ -83,13 +79,11 @@ public final class TransformsHotkeyRegistry {
     /// repository reloads after a save/delete/import.
     public func replaceBindings(_ bindings: [UUID: KeyboardShortcut]) {
         dispatchTable.removeAll(keepingCapacity: true)
-        pressedKeys.removeAll(keepingCapacity: true)
         for (promptID, shortcut) in bindings {
             let match = KeyMatch(
                 keyCode: shortcut.keyCode,
                 modifierBits: cgFlags(for: shortcut.modifiers)
             )
-            guard dispatchTable[match] == nil else { continue }
             dispatchTable[match] = promptID
         }
     }
@@ -221,7 +215,7 @@ public enum TransformsHotkeyCollision: Equatable, Sendable {
     /// Another Transform already binds this combo.
     case duplicateTransform(otherPromptID: UUID)
     /// Another app-level MacParakeet hotkey conflicts with this combo.
-    case reservedHotkey(name: String, shortcut: String)
+    case reservedHotkey(name: String)
 
     public var message: String {
         switch self {
@@ -231,8 +225,8 @@ public enum TransformsHotkeyCollision: Equatable, Sendable {
             return "This shortcut produces a special character on Mac (\u{2325} dead-key). Pick another combo."
         case .duplicateTransform:
             return "Another Transform already uses this shortcut."
-        case .reservedHotkey(let name, let shortcut):
-            return "This shortcut conflicts with \(name): \(shortcut)."
+        case .reservedHotkey(let name):
+            return "This shortcut conflicts with \(name)."
         }
     }
 }
@@ -264,11 +258,10 @@ public struct TransformsHotkeyCollisionChecker {
         }
 
         let candidateTrigger = candidate.hotkeyTrigger
-        for reserved in reservedHotkeys where candidateTrigger.overlaps(with: reserved.trigger) {
-            return .reservedHotkey(
-                name: reserved.name,
-                shortcut: reserved.trigger.formattedLabel
-            )
+        for reserved in reservedHotkeys where !reserved.trigger.isDisabled {
+            if candidateTrigger.overlaps(with: reserved.trigger) {
+                return .reservedHotkey(name: reserved.name)
+            }
         }
         return nil
     }

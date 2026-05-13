@@ -1,7 +1,6 @@
 import XCTest
 @testable import MacParakeet
 @testable import MacParakeetCore
-@testable import MacParakeetViewModels
 
 final class TransformsHotkeyRegistryTests: XCTestCase {
 
@@ -65,29 +64,6 @@ final class TransformsHotkeyRegistryTests: XCTestCase {
         XCTAssertTrue(registry.isEmpty)
     }
 
-    func testDuplicateRegistrationKeepsFirstBinding() throws {
-        let registry = TransformsHotkeyRegistry()
-        let first = UUID()
-        let second = UUID()
-        let opt1 = KeyboardShortcut(
-            modifiers: KeyboardShortcut.ModifierFlag.option.rawValue,
-            keyCode: 0x12,
-            keyLabel: "1"
-        )
-
-        registry.register(promptID: first, shortcut: opt1)
-        registry.register(promptID: second, shortcut: opt1)
-
-        var triggeredIDs: [UUID] = []
-        registry.onTrigger = { triggeredIDs.append($0) }
-
-        let keyDown = try XCTUnwrap(CGEvent(keyboardEventSource: nil, virtualKey: 0x12, keyDown: true))
-        keyDown.flags = .maskAlternate
-
-        XCTAssertNil(registry.handleEvent(type: .keyDown, event: keyDown))
-        XCTAssertEqual(triggeredIDs, [first])
-    }
-
     func testReplaceBindingsRebuildsTableFromScratch() {
         let registry = TransformsHotkeyRegistry()
         let a = UUID()
@@ -117,41 +93,6 @@ final class TransformsHotkeyRegistryTests: XCTestCase {
         XCTAssertFalse(registry.isEmpty)
         registry.unregister(promptID: b)
         XCTAssertTrue(registry.isEmpty)
-    }
-
-    func testValidatedRuntimeBindingsSkipReservedHotkeyConflicts() {
-        let opt1 = KeyboardShortcut(
-            modifiers: KeyboardShortcut.ModifierFlag.option.rawValue,
-            keyCode: 0x12,
-            keyLabel: "1"
-        )
-        let opt4 = KeyboardShortcut(
-            modifiers: KeyboardShortcut.ModifierFlag.option.rawValue,
-            keyCode: 0x15,
-            keyLabel: "4"
-        )
-        let conflicting = Prompt(
-            id: UUID(),
-            name: "Conflicting",
-            content: "Body",
-            category: .transform,
-            keyboardShortcut: opt1.encodedString()
-        )
-        let allowed = Prompt(
-            id: UUID(),
-            name: "Allowed",
-            content: "Body",
-            category: .transform,
-            keyboardShortcut: opt4.encodedString()
-        )
-
-        let bindings = TransformsCoordinator.validatedBindings(
-            for: [conflicting, allowed],
-            reservedHotkeys: [reserved("Dictation", opt1.hotkeyTrigger)]
-        )
-
-        XCTAssertNil(bindings[conflicting.id])
-        XCTAssertEqual(bindings[allowed.id], opt4)
     }
 
     func testHandleKeyUpSwallowsOwnedShortcutEvenAfterModifiersClear() throws {
@@ -184,7 +125,7 @@ final class TransformsHotkeyRegistryTests: XCTestCase {
         XCTAssertNotNil(registry.handleEvent(type: .keyUp, event: unrelatedKeyUp))
     }
 
-    func testTapDisabledRecoveryClearsPressedKeys() throws {
+    func testTapDisabledRecoveryClearsPressedKeyState() throws {
         let registry = TransformsHotkeyRegistry()
         let id = UUID()
         registry.register(
@@ -196,31 +137,25 @@ final class TransformsHotkeyRegistryTests: XCTestCase {
             )
         )
 
-        var triggeredIDs: [UUID] = []
-        registry.onTrigger = { triggeredIDs.append($0) }
+        var triggerCount = 0
+        registry.onTrigger = { _ in triggerCount += 1 }
 
         let keyDown = try XCTUnwrap(CGEvent(keyboardEventSource: nil, virtualKey: 0x12, keyDown: true))
         keyDown.flags = .maskAlternate
 
         XCTAssertNil(registry.handleEvent(type: .keyDown, event: keyDown))
-        XCTAssertEqual(triggeredIDs, [id])
+        XCTAssertEqual(triggerCount, 1)
 
-        _ = registry.handleEvent(type: .tapDisabledByTimeout, event: keyDown)
+        let disabled = try XCTUnwrap(CGEvent(keyboardEventSource: nil, virtualKey: 0x12, keyDown: true))
+        XCTAssertNotNil(registry.handleEvent(type: .tapDisabledByTimeout, event: disabled))
 
-        let recoveredKeyDown = try XCTUnwrap(CGEvent(keyboardEventSource: nil, virtualKey: 0x12, keyDown: true))
-        recoveredKeyDown.flags = .maskAlternate
-
-        XCTAssertNil(registry.handleEvent(type: .keyDown, event: recoveredKeyDown))
-        XCTAssertEqual(triggeredIDs, [id, id])
+        XCTAssertNil(registry.handleEvent(type: .keyDown, event: keyDown))
+        XCTAssertEqual(triggerCount, 2)
     }
 
     // MARK: - Collision detection
 
     private let checker = TransformsHotkeyCollisionChecker()
-
-    private func reserved(_ name: String, _ trigger: HotkeyTrigger) -> TransformShortcutReservedHotkey {
-        TransformShortcutReservedHotkey(name: name, trigger: trigger)
-    }
 
     func testCollisionMissingModifierIsRejected() {
         let bareKey = KeyboardShortcut(modifiers: 0, keyCode: 0x12, keyLabel: "1")
@@ -263,7 +198,7 @@ final class TransformsHotkeyRegistryTests: XCTestCase {
             candidate: opt1,
             existing: [otherID: opt1],
             excludingPromptID: nil,
-                reservedHotkeys: []
+            reservedHotkeys: []
         )
         XCTAssertEqual(result, .duplicateTransform(otherPromptID: otherID))
     }
@@ -287,7 +222,7 @@ final class TransformsHotkeyRegistryTests: XCTestCase {
         )
     }
 
-    func testCollisionDictationHotkeyConflictReturnsDictation() {
+    func testCollisionReservedHotkeyConflictReturnsName() {
         let opt1 = KeyboardShortcut(
             modifiers: KeyboardShortcut.ModifierFlag.option.rawValue,
             keyCode: 0x12,
@@ -298,13 +233,15 @@ final class TransformsHotkeyRegistryTests: XCTestCase {
                 candidate: opt1,
                 existing: [:],
                 excludingPromptID: nil,
-                reservedHotkeys: [reserved("Dictation", opt1.hotkeyTrigger)]
+                reservedHotkeys: [
+                    TransformShortcutReservedHotkey(name: "push to talk", trigger: opt1.hotkeyTrigger)
+                ]
             ),
-            .reservedHotkey(name: "Dictation", shortcut: opt1.hotkeyTrigger.formattedLabel)
+            .reservedHotkey(name: "push to talk")
         )
     }
 
-    func testCollisionModifierOnlyDictationHotkeyConflictsWithChordUsingThatModifier() {
+    func testCollisionModifierOnlyReservedHotkeyConflictsWithChordUsingThatModifier() {
         let opt1 = KeyboardShortcut(
             modifiers: KeyboardShortcut.ModifierFlag.option.rawValue,
             keyCode: 0x12,
@@ -315,13 +252,15 @@ final class TransformsHotkeyRegistryTests: XCTestCase {
                 candidate: opt1,
                 existing: [:],
                 excludingPromptID: nil,
-                reservedHotkeys: [reserved("Dictation", .option)]
+                reservedHotkeys: [
+                    TransformShortcutReservedHotkey(name: "hands-free dictation", trigger: .option)
+                ]
             ),
-            .reservedHotkey(name: "Dictation", shortcut: HotkeyTrigger.option.formattedLabel)
+            .reservedHotkey(name: "hands-free dictation")
         )
     }
 
-    func testCollisionModifierChordDictationHotkeyDoesNotConflictWithSubsetTransformChord() {
+    func testCollisionModifierChordReservedHotkeyDoesNotConflictWithSubsetTransformChord() {
         let opt4 = KeyboardShortcut(
             modifiers: KeyboardShortcut.ModifierFlag.option.rawValue,
             keyCode: 0x15,
@@ -333,27 +272,31 @@ final class TransformsHotkeyRegistryTests: XCTestCase {
                 existing: [:],
                 excludingPromptID: nil,
                 reservedHotkeys: [
-                    reserved("Dictation", .fn),
-                    reserved("Push-to-talk", .modifierChord(modifiers: ["option", "command"])),
+                    TransformShortcutReservedHotkey(name: "hands-free dictation", trigger: .fn),
+                    TransformShortcutReservedHotkey(
+                        name: "meeting recording",
+                        trigger: .modifierChord(modifiers: ["option", "command"])
+                    ),
                 ]
             )
         )
     }
 
-    func testCollisionMeetingHotkeyConflictReturnsMeeting() {
+    func testCollisionDisabledReservedHotkeyIsIgnored() {
         let opt1 = KeyboardShortcut(
             modifiers: KeyboardShortcut.ModifierFlag.option.rawValue,
             keyCode: 0x12,
             keyLabel: "1"
         )
-        XCTAssertEqual(
+        XCTAssertNil(
             checker.check(
                 candidate: opt1,
                 existing: [:],
                 excludingPromptID: nil,
-                reservedHotkeys: [reserved("Meeting recording", opt1.hotkeyTrigger)]
-            ),
-            .reservedHotkey(name: "Meeting recording", shortcut: opt1.hotkeyTrigger.formattedLabel)
+                reservedHotkeys: [
+                    TransformShortcutReservedHotkey(name: "file transcription", trigger: .disabled)
+                ]
+            )
         )
     }
 
@@ -387,7 +330,7 @@ final class TransformsHotkeyRegistryTests: XCTestCase {
             candidate: bare,
             existing: [UUID(): bare],
             excludingPromptID: nil,
-                reservedHotkeys: []
+            reservedHotkeys: []
         )
         XCTAssertEqual(result, .missingModifier)
     }

@@ -19,7 +19,7 @@ struct SettingsView: View {
     @Bindable var viewModel: SettingsViewModel
     @Bindable var llmSettingsViewModel: LLMSettingsViewModel
     let updater: SPUUpdater
-    let transformHotkeys: [TransformShortcutReservedHotkey]
+    let transformHotkeys: [Prompt]
     /// Fired by each `HotkeyRecorderView` when it starts/stops capturing
     /// keystrokes. Wired up to `AppHotkeyCoordinator.suspend` / `resume` so
     /// active global taps don't swallow the keyDown the user is recording.
@@ -43,7 +43,7 @@ struct SettingsView: View {
         viewModel: SettingsViewModel,
         llmSettingsViewModel: LLMSettingsViewModel,
         updater: SPUUpdater,
-        transformHotkeys: [TransformShortcutReservedHotkey] = [],
+        transformHotkeys: [Prompt] = [],
         onHotkeyRecordingStateChanged: @escaping (Bool) -> Void
     ) {
         self.viewModel = viewModel
@@ -1133,11 +1133,17 @@ struct SettingsView: View {
         return nil
     }
 
-    private func transformHotkeyConflict(for trigger: HotkeyTrigger) -> TransformShortcutReservedHotkey? {
-        guard AppFeatures.transformsEnabled, !trigger.isDisabled else { return nil }
-        return transformHotkeys.first { conflict in
-            trigger.overlaps(with: conflict.trigger)
+    private func transformHotkeyConflict(for trigger: HotkeyTrigger) -> (name: String, trigger: HotkeyTrigger)? {
+        guard !trigger.isDisabled else { return nil }
+        for transform in transformHotkeys {
+            guard let shortcut = transform.shortcut else { continue }
+            let transformTrigger = shortcut.hotkeyTrigger
+            guard !transformTrigger.isDisabled else { continue }
+            if trigger.overlaps(with: transformTrigger) {
+                return ("Transform \(transform.name)", transformTrigger)
+            }
         }
+        return nil
     }
 
     private func transcriptionHotkeyConflictText(_ message: String) -> some View {

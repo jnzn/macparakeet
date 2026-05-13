@@ -6,11 +6,6 @@ import OSLog
 
 // MARK: - Result Types
 
-public enum SelectionCapturePath: String, Sendable, Equatable {
-    case ax
-    case clipboard
-}
-
 /// Source of a successful selection read. Used by `TransformExecutor` to pick
 /// the right replacement path: an `.ax` capture can attempt an AX-write first,
 /// while a `.clipboard` capture must paste-back via Cmd+V.
@@ -277,7 +272,11 @@ public actor SelectionCaptureService {
             let now = await currentChangeCountOnMain()
             if now != snapshot.originalChangeCount {
                 if let text = await currentStringOnMain(), !text.isEmpty {
-                    return .clipboard(text: text, savedClipboard: snapshot.withTemporaryChangeCount(now), target: target)
+                    return .clipboard(
+                        text: text,
+                        savedClipboard: snapshot.withTemporaryChangeCount(now),
+                        target: target
+                    )
                 }
                 // Change count moved but no string available (image, file, etc.).
                 // Cmd+C *did* write — the user's pre-hijack clipboard is now

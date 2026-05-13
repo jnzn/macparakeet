@@ -110,7 +110,7 @@ public actor SelectionReplacementService {
         backend: any SelectionReplacementBackend,
         postPasteDelay: Duration = SelectionReplacementService.defaultPostPasteDelay,
         activationTimeout: Duration = SelectionReplacementService.defaultActivationTimeout,
-        activationPollIntervalNanos: UInt64 = 10_000_000,  // 10 ms
+        activationPollIntervalNanos: UInt64 = 10_000_000,
         logger: Logger = Logger(subsystem: "com.macparakeet.core", category: "SelectionReplacementService")
     ) {
         self.backend = backend
@@ -321,25 +321,6 @@ struct SystemSelectionReplacementBackend: SelectionReplacementBackend, @unchecke
     }
 
     @MainActor
-    func currentChangeCount() -> Int {
-        pasteboard.changeCount
-    }
-
-    @MainActor
-    func snapshotPasteboard() -> PasteboardSnapshot {
-        let items = pasteboard.pasteboardItems?.map { item -> NSPasteboardItem in
-            let copy = NSPasteboardItem()
-            for type in item.types {
-                if let data = item.data(forType: type) {
-                    copy.setData(data, forType: type)
-                }
-            }
-            return copy
-        }
-        return PasteboardSnapshot(items: items, originalChangeCount: pasteboard.changeCount)
-    }
-
-    @MainActor
     func activateApplication(target: SelectionCaptureTarget) -> Bool {
         guard let app = NSRunningApplication(processIdentifier: target.processIdentifier),
               app.bundleIdentifier == target.bundleIdentifier
@@ -356,6 +337,25 @@ struct SystemSelectionReplacementBackend: SelectionReplacementBackend, @unchecke
         }
         return app.processIdentifier == target.processIdentifier
             && app.bundleIdentifier == target.bundleIdentifier
+    }
+
+    @MainActor
+    func currentChangeCount() -> Int {
+        pasteboard.changeCount
+    }
+
+    @MainActor
+    func snapshotPasteboard() -> PasteboardSnapshot {
+        let items = pasteboard.pasteboardItems?.map { item -> NSPasteboardItem in
+            let copy = NSPasteboardItem()
+            for type in item.types {
+                if let data = item.data(forType: type) {
+                    copy.setData(data, forType: type)
+                }
+            }
+            return copy
+        }
+        return PasteboardSnapshot(items: items, originalChangeCount: pasteboard.changeCount)
     }
 
     @MainActor

@@ -31,33 +31,24 @@ public enum TransformProgress: Sendable, Equatable {
 // MARK: - Result
 
 public struct TransformExecutionResult: Sendable {
-    public let inputText: String
     public let outputText: String
     public let path: SelectionReplacementPath
     public let totalElapsedMs: Int
     public let llmElapsedMs: Int
     public let captureTag: String
-    public let capturePath: SelectionCapturePath
-    public let sourceTarget: SelectionCaptureTarget?
 
     public init(
-        inputText: String,
         outputText: String,
         path: SelectionReplacementPath,
         totalElapsedMs: Int,
         llmElapsedMs: Int,
-        captureTag: String,
-        capturePath: SelectionCapturePath? = nil,
-        sourceTarget: SelectionCaptureTarget? = nil
+        captureTag: String
     ) {
-        self.inputText = inputText
         self.outputText = outputText
         self.path = path
         self.totalElapsedMs = totalElapsedMs
         self.llmElapsedMs = llmElapsedMs
         self.captureTag = captureTag
-        self.capturePath = capturePath ?? SelectionCapturePath(rawValue: captureTag) ?? .clipboard
-        self.sourceTarget = sourceTarget
     }
 }
 
@@ -137,7 +128,6 @@ public actor TransformExecutor {
             throw TransformExecutorError.cancelled
         }
 
-        let capturePath: SelectionCapturePath
         switch captured {
         case .empty:
             onProgress(.failed(TransformExecutorError.emptySelection.localizedDescription))
@@ -145,10 +135,8 @@ public actor TransformExecutor {
         case .failed(let error):
             onProgress(.failed(error.localizedDescription))
             throw TransformExecutorError.captureFailed(error)
-        case .ax:
-            capturePath = .ax
-        case .clipboard:
-            capturePath = .clipboard
+        default:
+            break
         }
 
         guard let inputText = captured.capturedText, !inputText.isEmpty else {
@@ -233,14 +221,11 @@ public actor TransformExecutor {
 
         let totalMs = Self.elapsedMs(from: start)
         let result = TransformExecutionResult(
-            inputText: inputText,
             outputText: accumulated,
             path: path,
             totalElapsedMs: totalMs,
             llmElapsedMs: llmElapsedMs,
-            captureTag: captured.pathTag,
-            capturePath: capturePath,
-            sourceTarget: captured.target
+            captureTag: captured.pathTag
         )
         onProgress(.done(path))
 

@@ -102,24 +102,6 @@ final class TransformsCommandTests: XCTestCase {
         XCTAssertEqual(del.idOrName, "Sharpen")
     }
 
-    func testParsesHistoryListAsDefaultSubcommand() throws {
-        let cmd = try TransformsCommand.parseAsRoot(["history", "--limit", "5", "--json"])
-        let history = try XCTUnwrap(cmd as? TransformsCommand.HistorySubcommand.ListSubcommand)
-        XCTAssertEqual(history.limit, 5)
-        XCTAssertTrue(history.json)
-    }
-
-    func testParsesHistoryShowDeleteAndClear() throws {
-        let show = try TransformsCommand.parseAsRoot(["history", "show", "abc123"])
-        XCTAssertEqual(try XCTUnwrap(show as? TransformsCommand.HistorySubcommand.ShowSubcommand).idPrefix, "abc123")
-
-        let delete = try TransformsCommand.parseAsRoot(["history", "delete", "abc123"])
-        XCTAssertEqual(try XCTUnwrap(delete as? TransformsCommand.HistorySubcommand.DeleteSubcommand).idPrefix, "abc123")
-
-        let clear = try TransformsCommand.parseAsRoot(["history", "clear", "--json"])
-        XCTAssertTrue(try XCTUnwrap(clear as? TransformsCommand.HistorySubcommand.ClearSubcommand).json)
-    }
-
     // MARK: - JSON contract
 
     func testTransformDTOJSONUsesDocumentedSnakeCaseKeys() throws {
@@ -153,66 +135,69 @@ final class TransformsCommandTests: XCTestCase {
         XCTAssertNil(object["updatedAt"])
     }
 
-    func testTransformHistoryDTOJSONUsesDocumentedSnakeCaseKeys() throws {
-        let entry = TransformHistoryEntry(
-            id: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
-            transformId: UUID(uuidString: "0FCE9DDB-7E2D-4B1A-AE3E-6F7C9B2A4D11"),
-            transformName: "Polish",
-            inputText: "rough",
-            outputText: "polished",
-            sourceAppBundleID: "com.apple.TextEdit",
-            sourceAppName: "TextEdit",
-            capturePath: "ax",
-            replacementPath: "ax",
-            llmElapsedMs: 12,
-            totalElapsedMs: 34,
-            createdAt: Date(timeIntervalSince1970: 0),
-            updatedAt: Date(timeIntervalSince1970: 1)
-        )
+    func testTransformErrorsMapToJSONFailureTaxonomy() {
+        let validation = CLIErrorEnvelope(error: CLITransformsError.invalidShortcut("bad"))
+        XCTAssertEqual(validation.errorType, "validation")
+        XCTAssertTrue(validation.error.contains("Couldn't parse shortcut"))
 
-        let data = try cliJSONEncoder.encode(TransformHistoryDTO(entry: entry))
-        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-
-        XCTAssertEqual(object["id"] as? String, "22222222-2222-2222-2222-222222222222")
-        XCTAssertEqual(object["transform_name"] as? String, "Polish")
-        XCTAssertEqual(object["input_text"] as? String, "rough")
-        XCTAssertEqual(object["output_text"] as? String, "polished")
-        XCTAssertEqual(object["source_app_bundle_id"] as? String, "com.apple.TextEdit")
-        XCTAssertEqual(object["llm_elapsed_ms"] as? Int, 12)
-        XCTAssertNotNil(object["created_at"])
-        XCTAssertNil(object["transformName"])
-        XCTAssertNil(object["inputText"])
-        XCTAssertNil(object["outputText"])
+        let lookup = CLIErrorEnvelope(error: CLITransformsError.notFound("missing"))
+        XCTAssertEqual(lookup.errorType, "lookup")
+        XCTAssertTrue(lookup.error.contains("No Transform found"))
     }
 
-    func testAssembledTransformPromptUsesProfileAndWritingSamples() throws {
-        let manager = try DatabaseManager()
-        let promptRepo = PromptRepository(dbQueue: manager.dbQueue)
-        let profileRepo = TransformProfileRepository(dbQueue: manager.dbQueue)
-        let writingSampleRepo = WritingSampleRepository(dbQueue: manager.dbQueue)
-        let polish = try XCTUnwrap(try promptRepo.fetchVisible(category: .transform).first { $0.name == "Polish" })
-        var profile = TransformProfile.defaultProfile(for: polish)
-        profile.customInstructions = "Keep it direct."
-        profile.useWritingSamples = true
-        try profileRepo.save(profile)
-        try writingSampleRepo.save(
-            WritingSample(
-                title: "Launch note",
-                text: "This is a realistic writing sample with enough substance to show cadence, directness, and personal phrasing.",
-                wordCount: 15
-            )
-        )
+    func testTransformValidationJSONWrapperUsesMisuseExitCode() throws {
+        var thrownError: Error?
+        let output = try captureStandardOutput {
+            do {
+                try emitJSONOrRethrow(json: true) {
+                    throw CLITransformsError.duplicateName("Sharpen")
+                }
+            } catch {
+                thrownError = error
+            }
+        }
 
-        let assembled = try assembledTransformPrompt(
-            transform: polish,
-            profileRepo: profileRepo,
-            writingSampleRepo: writingSampleRepo
-        )
+        let exit = try XCTUnwrap(thrownError as? ExitCode)
+        XCTAssertEqual(exit.rawValue, 2)
 
-        XCTAssertTrue(assembled.contains("User-selected rules:"))
-        XCTAssertTrue(assembled.contains("Additional user instructions:\nKeep it direct."))
-        XCTAssertTrue(assembled.contains("Voice reference samples:"))
-        XCTAssertTrue(assembled.contains("Sample 1"), assembled)
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any]
+        )
+        XCTAssertEqual(object["ok"] as? Bool, false)
+        XCTAssertEqual(object["errorType"] as? String, "validation")
+    }
+
+    func testShowJSONLookupFailureEmitsEnvelopeAndFailureExitCode() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("transforms-cli-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let dbPath = tmp.appendingPathComponent("test.db").path
+        _ = try DatabaseManager(path: dbPath)
+
+        let show = try TransformsCommand.ShowSubcommand.parse([
+            "missing",
+            "--database", dbPath,
+            "--json",
+        ])
+        var thrownError: Error?
+        let output = try captureStandardOutput {
+            do {
+                try show.run()
+            } catch {
+                thrownError = error
+            }
+        }
+
+        let exit = try XCTUnwrap(thrownError as? ExitCode)
+        XCTAssertEqual(exit.rawValue, 1)
+
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any]
+        )
+        XCTAssertEqual(object["ok"] as? Bool, false)
+        XCTAssertEqual(object["errorType"] as? String, "lookup")
+        XCTAssertTrue((object["error"] as? String)?.contains("No Transform found") ?? false)
     }
 
     // MARK: - End-to-end: create + list + show + delete against a real DB
@@ -253,308 +238,109 @@ final class TransformsCommandTests: XCTestCase {
         XCTAssertFalse(after.contains(where: { $0.name == "Sharpen" }))
     }
 
-    func testDeletePrefersExactNameOverUnsafeIDPrefix() throws {
+    func testLookupRequiresAtLeastFourHexCharactersForIDPrefix() throws {
         let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("transforms-cli-prefix-\(UUID().uuidString)")
+            .appendingPathComponent("transforms-cli-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let dbPath = tmp.appendingPathComponent("test.db").path
+        _ = try DatabaseManager(path: dbPath)
+
+        let show = try TransformsCommand.ShowSubcommand.parse([
+            "0fc",
+            "--database", dbPath,
+        ])
+
+        XCTAssertThrowsError(try show.run()) { error in
+            let message = String(describing: error)
+            XCTAssertTrue(message.contains("No Transform found"), "Expected short-prefix lookup to fail, got: \(message)")
+        }
+    }
+
+    func testLookupAcceptsHyphenlessUUIDPrefix() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("transforms-cli-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let dbPath = tmp.appendingPathComponent("test.db").path
+        _ = try DatabaseManager(path: dbPath)
+
+        let show = try TransformsCommand.ShowSubcommand.parse([
+            "0fce9ddb7e2d",
+            "--database", dbPath,
+        ])
+
+        XCTAssertNoThrow(try show.run())
+    }
+
+    func testLookupUUIDPrefixWinsOverExactNameCollision() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("transforms-cli-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
         let dbPath = tmp.appendingPathComponent("test.db").path
 
         let db = try DatabaseManager(path: dbPath)
         let repo = PromptRepository(dbQueue: db.dbQueue)
-        let prefixVictim = Prompt(
-            id: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
-            name: "Keep",
-            content: "Do not delete",
+        let custom = Prompt(
+            id: UUID(),
+            name: "0fce",
+            content: "Custom body.",
             category: .transform,
-            isBuiltIn: false
+            isBuiltIn: false,
+            sortOrder: 200
         )
-        let namedA = Prompt(
-            id: UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!,
-            name: "a",
-            content: "Delete by name",
-            category: .transform,
-            isBuiltIn: false
-        )
-        try repo.save(prefixVictim)
-        try repo.save(namedA)
+        try repo.save(custom)
 
         let del = try TransformsCommand.DeleteSubcommand.parse([
-            "a",
+            "0fce",
             "--database", dbPath,
         ])
-        try del.run()
-
-        XCTAssertNotNil(try repo.fetch(id: prefixVictim.id))
-        XCTAssertNil(try repo.fetch(id: namedA.id))
-    }
-
-    func testShowRejectsTooShortUUIDPrefix() throws {
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("transforms-cli-prefix-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tmp) }
-        let dbPath = tmp.appendingPathComponent("test.db").path
-
-        _ = try DatabaseManager(path: dbPath)
-
-        let show = try TransformsCommand.ShowSubcommand.parse([
-            "abc",
-            "--database", dbPath,
-        ])
-
-        XCTAssertThrowsError(try show.run()) { error in
-            guard case CLITransformsError.prefixTooShort(let min, let provided) = error else {
-                XCTFail("Expected prefixTooShort, got \(error)")
-                return
-            }
-            XCTAssertEqual(min, 4)
-            XCTAssertEqual(provided, "abc")
-        }
-    }
-
-    func testShowJSONMapsTooShortUUIDPrefixToValidationError() throws {
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("transforms-cli-prefix-json-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tmp) }
-        let dbPath = tmp.appendingPathComponent("test.db").path
-
-        _ = try DatabaseManager(path: dbPath)
-
-        let show = try TransformsCommand.ShowSubcommand.parse([
-            "abc",
-            "--database", dbPath,
-            "--json",
-        ])
-
-        var thrownError: Error?
-        let output = try captureStandardOutput {
-            do {
-                try show.run()
-            } catch {
-                thrownError = error
-            }
+        XCTAssertThrowsError(try del.run()) { error in
+            let message = String(describing: error)
+            XCTAssertTrue(message.contains("Cannot delete the built-in Transform"), "Expected UUID prefix to resolve before exact name, got: \(message)")
         }
 
-        let exit = try XCTUnwrap(thrownError as? ExitCode)
-        XCTAssertEqual(exit.rawValue, 2)
-
-        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any])
-        XCTAssertEqual(object["ok"] as? Bool, false)
-        XCTAssertEqual(object["errorType"] as? String, "validation")
-        XCTAssertTrue((object["error"] as? String)?.contains("abc") == true)
+        let after = try repo.fetchVisible(category: .transform)
+        XCTAssertTrue(after.contains(where: { $0.id == custom.id }))
+        XCTAssertTrue(after.contains(where: { $0.id.uuidString == "0FCE9DDB-7E2D-4B1A-AE3E-6F7C9B2A4D11" }))
     }
 
-    func testShowRejectsAmbiguousExactNames() throws {
+    func testLookupRejectsUnicodeCaseInsensitiveNameAmbiguity() throws {
         let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("transforms-cli-name-\(UUID().uuidString)")
+            .appendingPathComponent("transforms-cli-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
         let dbPath = tmp.appendingPathComponent("test.db").path
 
         let db = try DatabaseManager(path: dbPath)
         let repo = PromptRepository(dbQueue: db.dbQueue)
-        let uppercaseName = "\u{00C5}ngstrom"
-        let lowercaseName = "\u{00E5}ngstrom"
-        try repo.save(
-            Prompt(
-                name: uppercaseName,
-                content: "First",
-                category: .transform,
-                isBuiltIn: false
-            )
-        )
-        try repo.save(
-            Prompt(
-                name: lowercaseName,
-                content: "Second",
-                category: .transform,
-                isBuiltIn: false
-            )
-        )
-
-        let show = try TransformsCommand.ShowSubcommand.parse([
-            uppercaseName.uppercased(),
-            "--database", dbPath,
-        ])
-
-        XCTAssertThrowsError(try show.run()) { error in
-            guard case CLITransformsError.ambiguous(let query, let names) = error else {
-                XCTFail("Expected ambiguous, got \(error)")
-                return
-            }
-            XCTAssertEqual(query, uppercaseName.uppercased())
-            XCTAssertEqual(Set(names), [uppercaseName, lowercaseName])
-        }
-    }
-
-    func testDeleteJSONUsesDocumentedShape() throws {
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("transforms-cli-json-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tmp) }
-        let dbPath = tmp.appendingPathComponent("test.db").path
-
-        let db = try DatabaseManager(path: dbPath)
-        let repo = PromptRepository(dbQueue: db.dbQueue)
-        let prompt = Prompt(
-            id: UUID(uuidString: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC")!,
-            name: "JSON Delete",
-            content: "Delete me",
+        try repo.save(Prompt(
+            id: UUID(),
+            name: "straße",
+            content: "First body.",
             category: .transform,
-            isBuiltIn: false
-        )
-        try repo.save(prompt)
+            isBuiltIn: false,
+            sortOrder: 200
+        ))
+        try repo.save(Prompt(
+            id: UUID(),
+            name: "STRASSE",
+            content: "Second body.",
+            category: .transform,
+            isBuiltIn: false,
+            sortOrder: 201
+        ))
 
-        let del = try TransformsCommand.DeleteSubcommand.parse([
-            "JSON Delete",
-            "--database", dbPath,
-            "--json",
-        ])
-        let output = try captureStandardOutput {
-            try del.run()
-        }
-
-        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any])
-        XCTAssertEqual(object["deleted"] as? Bool, true)
-        XCTAssertEqual(object["id"] as? String, "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC")
-        XCTAssertEqual(object["name"] as? String, "JSON Delete")
-        XCTAssertNil(object["ok"])
-    }
-
-    func testHistoryDeleteAndClearRoundTrip() throws {
-        // These subcommands intentionally reopen the database from `--database`,
-        // so this round-trip needs a file-backed path rather than one in-memory queue.
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("transforms-history-cli-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tmp) }
-        let dbPath = tmp.appendingPathComponent("test.db").path
-
-        let db = try DatabaseManager(path: dbPath)
-        let repo = TransformHistoryRepository(dbQueue: db.dbQueue)
-        let first = TransformHistoryEntry(
-            transformName: "Polish",
-            inputText: "rough",
-            outputText: "polished",
-            capturePath: "ax",
-            replacementPath: "ax",
-            llmElapsedMs: 1,
-            totalElapsedMs: 2
-        )
-        let second = TransformHistoryEntry(
-            transformName: "Distill",
-            inputText: "long",
-            outputText: "short",
-            capturePath: "clipboard",
-            replacementPath: "clipboardPaste",
-            llmElapsedMs: 3,
-            totalElapsedMs: 4
-        )
-        try repo.save(first)
-        try repo.save(second)
-
-        let del = try TransformsCommand.HistorySubcommand.DeleteSubcommand.parse([
-            String(first.id.uuidString.prefix(8)),
-            "--database", dbPath,
-        ])
-        try del.run()
-        XCTAssertEqual(try repo.fetchAll().map(\.id), [second.id])
-
-        let clear = try TransformsCommand.HistorySubcommand.ClearSubcommand.parse([
-            "--database", dbPath,
-        ])
-        try clear.run()
-        XCTAssertEqual(try repo.count(), 0)
-    }
-
-    func testHistoryShowRejectsTooShortPrefix() throws {
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("transforms-history-cli-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tmp) }
-        let dbPath = tmp.appendingPathComponent("test.db").path
-
-        _ = try DatabaseManager(path: dbPath)
-
-        let show = try TransformsCommand.HistorySubcommand.ShowSubcommand.parse([
-            "abc",
+        let show = try TransformsCommand.ShowSubcommand.parse([
+            "strasse",
             "--database", dbPath,
         ])
 
         XCTAssertThrowsError(try show.run()) { error in
-            guard case CLITransformHistoryError.prefixTooShort(let min, let provided) = error else {
-                XCTFail("Expected prefixTooShort, got \(error)")
-                return
-            }
-            XCTAssertEqual(min, 4)
-            XCTAssertEqual(provided, "abc")
+            let message = String(describing: error)
+            XCTAssertTrue(message.contains("matches multiple Transforms"), "Expected ambiguous Unicode name lookup, got: \(message)")
         }
-    }
-
-    func testHistoryShowJSONMapsTooShortPrefixToValidationError() throws {
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("transforms-history-cli-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tmp) }
-        let dbPath = tmp.appendingPathComponent("test.db").path
-
-        _ = try DatabaseManager(path: dbPath)
-
-        let show = try TransformsCommand.HistorySubcommand.ShowSubcommand.parse([
-            "abc",
-            "--database", dbPath,
-            "--json",
-        ])
-
-        var thrownError: Error?
-        let output = try captureStandardOutput {
-            do {
-                try show.run()
-            } catch {
-                thrownError = error
-            }
-        }
-
-        let exit = try XCTUnwrap(thrownError as? ExitCode)
-        XCTAssertEqual(exit.rawValue, 2)
-
-        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any])
-        XCTAssertEqual(object["ok"] as? Bool, false)
-        XCTAssertEqual(object["errorType"] as? String, "validation")
-    }
-
-    func testHistoryShowJSONMapsMissingItemToLookupError() throws {
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("transforms-history-cli-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tmp) }
-        let dbPath = tmp.appendingPathComponent("test.db").path
-
-        _ = try DatabaseManager(path: dbPath)
-
-        let show = try TransformsCommand.HistorySubcommand.ShowSubcommand.parse([
-            "abcd",
-            "--database", dbPath,
-            "--json",
-        ])
-
-        var thrownError: Error?
-        let output = try captureStandardOutput {
-            do {
-                try show.run()
-            } catch {
-                thrownError = error
-            }
-        }
-
-        let exit = try XCTUnwrap(thrownError as? ExitCode)
-        XCTAssertEqual(exit, .failure)
-
-        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any])
-        XCTAssertEqual(object["ok"] as? Bool, false)
-        XCTAssertEqual(object["errorType"] as? String, "lookup")
     }
 
     func testCreateRejectsBareKeyShortcut() throws {

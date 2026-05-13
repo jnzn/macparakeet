@@ -149,25 +149,17 @@ final class SelectionReplacementServiceTests: XCTestCase {
         )
         let service = SelectionReplacementService(backend: backend, postPasteDelay: .milliseconds(1))
         let snapshot = PasteboardSnapshot(items: nil, originalChangeCount: 42)
+        let target = SelectionCaptureTarget(
+            processIdentifier: 1234,
+            bundleIdentifier: "com.example.Source"
+        )
 
         _ = try await service.replace(
             with: "polished",
-            in: .clipboard(
-                text: "raw",
-                savedClipboard: snapshot,
-                target: SelectionCaptureTarget(
-                    processIdentifier: 1234,
-                    bundleIdentifier: "com.example.Source"
-                )
-            )
+            in: .clipboard(text: "raw", savedClipboard: snapshot, target: target)
         )
 
-        XCTAssertEqual(backend.activatedTargets(), [
-            SelectionCaptureTarget(
-                processIdentifier: 1234,
-                bundleIdentifier: "com.example.Source"
-            )
-        ])
+        XCTAssertEqual(backend.activatedTargets(), [target])
         XCTAssertEqual(backend.cmdVPostCount(), 1)
     }
 
