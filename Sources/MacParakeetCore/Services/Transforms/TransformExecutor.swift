@@ -31,7 +31,6 @@ public enum TransformProgress: Sendable, Equatable {
 // MARK: - Result
 
 public struct TransformExecutionResult: Sendable {
-    public let inputText: String
     public let outputText: String
     public let path: SelectionReplacementPath
     public let totalElapsedMs: Int
@@ -39,14 +38,12 @@ public struct TransformExecutionResult: Sendable {
     public let captureTag: String
 
     public init(
-        inputText: String,
         outputText: String,
         path: SelectionReplacementPath,
         totalElapsedMs: Int,
         llmElapsedMs: Int,
         captureTag: String
     ) {
-        self.inputText = inputText
         self.outputText = outputText
         self.path = path
         self.totalElapsedMs = totalElapsedMs
@@ -224,7 +221,6 @@ public actor TransformExecutor {
 
         let totalMs = Self.elapsedMs(from: start)
         let result = TransformExecutionResult(
-            inputText: inputText,
             outputText: accumulated,
             path: path,
             totalElapsedMs: totalMs,

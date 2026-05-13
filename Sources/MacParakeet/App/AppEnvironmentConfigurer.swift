@@ -128,12 +128,7 @@ final class AppEnvironmentConfigurer {
             self?.settingsViewModel.refreshStats()
         }
         promptsViewModel.configure(repo: env.promptRepo)
-        transformsViewModel.configure(
-            repo: env.promptRepo,
-            historyRepo: env.transformHistoryRepo,
-            clipboardService: env.clipboardService,
-            hasLLMProvider: hasLLMConfig
-        )
+        transformsViewModel.configure(repo: env.promptRepo, hasLLMProvider: hasLLMConfig)
         llmSettingsViewModel.configure(
             configStore: env.llmConfigStore,
             llmClient: env.llmClient

@@ -203,7 +203,6 @@ final class TransformExecutorTests: XCTestCase {
 
         let recorder = TransformProgressRecorder()
         let result = try await executor.run(prompt: "polish") { recorder.record($0) }
-        XCTAssertEqual(result.inputText, "Hello world")
         XCTAssertEqual(result.outputText, "Hi there!")
         XCTAssertEqual(result.path, .ax)
         XCTAssertEqual(result.captureTag, "ax")

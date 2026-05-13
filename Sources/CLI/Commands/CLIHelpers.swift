@@ -288,31 +288,6 @@ enum CLIErrorType {
         }
         if error is CLILookupError { return lookup }
         if error is CLIInputError { return inputEmpty }
-        if let transforms = error as? CLITransformsError {
-            switch transforms {
-            case .notFound, .ambiguous:
-                return lookup
-            case .duplicateName,
-                 .invalidShortcut,
-                 .shortcutMissingModifier,
-                 .shortcutMacOSDeadKey,
-                 .duplicateShortcut,
-                 .shortcutConflictsWithDictation,
-                 .shortcutConflictsWithMeeting,
-                 .deleteBuiltIn:
-                return validation
-            }
-        }
-        if let transformHistory = error as? CLITransformHistoryError {
-            switch transformHistory {
-            case .notFound, .ambiguous:
-                return lookup
-            case .prefixTooShort:
-                return validation
-            case .deleteFailed:
-                return runtime
-            }
-        }
         if let qpe = error as? QuickPromptCLIError {
             switch qpe {
             case .cannotDeleteBuiltIn: return validation
@@ -400,7 +375,7 @@ private func rethrowWithOptionalJSONEnvelope(_ error: Error, json: Bool) throws 
     guard json else { throw error }
     let envelope = CLIErrorEnvelope(error: error)
     try? printJSON(envelope)
-    if envelope.errorType == CLIErrorType.validation || error is CLIInputError {
+    if error is ValidationError || error is CLIInputError {
         throw cliValidationMisuseExitCode
     }
     throw ExitCode.failure
