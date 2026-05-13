@@ -899,6 +899,70 @@ final class DatabaseManagerTests: XCTestCase {
         try? FileManager.default.removeItem(atPath: dbPath)
     }
 
+    func testTransformWorkbenchCleanupMigrationDropsLegacyTables() throws {
+        let dbPath = FileManager.default.temporaryDirectory
+            .appendingPathComponent("transform_workbench_cleanup_\(UUID().uuidString).db")
+            .path
+        defer { cleanupDatabaseFiles(atPath: dbPath) }
+
+        do {
+            let manager = try DatabaseManager(path: dbPath)
+            try manager.dbQueue.write { db in
+                try db.execute(sql: """
+                    CREATE TABLE IF NOT EXISTS transform_history (
+                        id TEXT PRIMARY KEY,
+                        inputText TEXT NOT NULL,
+                        outputText TEXT NOT NULL
+                    )
+                """)
+                try db.execute(sql: """
+                    CREATE TABLE IF NOT EXISTS transform_profiles (
+                        promptId TEXT PRIMARY KEY,
+                        customInstructions TEXT
+                    )
+                """)
+                try db.execute(sql: """
+                    CREATE TABLE IF NOT EXISTS writing_samples (
+                        id TEXT PRIMARY KEY,
+                        text TEXT NOT NULL
+                    )
+                """)
+                try db.execute(
+                    sql: "DELETE FROM grdb_migrations WHERE identifier = ?",
+                    arguments: ["v0.16-drop-transform-workbench-tables"]
+                )
+            }
+        }
+
+        let manager = try DatabaseManager(path: dbPath)
+        try manager.dbQueue.read { db in
+            XCTAssertFalse(try db.tableExists("transform_history"))
+            XCTAssertFalse(try db.tableExists("transform_profiles"))
+            XCTAssertFalse(try db.tableExists("writing_samples"))
+
+            let appliedMigrationIDs = try String.fetchAll(
+                db,
+                sql: """
+                    SELECT identifier FROM grdb_migrations
+                    WHERE identifier IN (?, ?, ?)
+                """,
+                arguments: [
+                    "v0.14-transform-history",
+                    "v0.15-transform-workbench",
+                    "v0.16-drop-transform-workbench-tables",
+                ]
+            )
+            XCTAssertEqual(
+                Set(appliedMigrationIDs),
+                [
+                    "v0.14-transform-history",
+                    "v0.15-transform-workbench",
+                    "v0.16-drop-transform-workbench-tables",
+                ]
+            )
+        }
+    }
+
     func testEngineAttributionMigrationToleratesExistingColumnsWhenMigrationMarkerIsMissing() throws {
         let tempDir = FileManager.default.temporaryDirectory
         let dbPath = tempDir.appendingPathComponent("engine_attribution_rerun_\(UUID().uuidString).db").path

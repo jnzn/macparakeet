@@ -189,7 +189,7 @@ extension TransformsCommand {
             abstract: "Headless-install a new Transform with an optional bound shortcut."
         )
 
-        @Option(name: .long, help: "Transform name (must be unique across Transforms).")
+        @Option(name: .long, help: "Transform name (must be unique across prompts).")
         var name: String
 
         @Option(name: .long, help: "Prompt body text. Mutually exclusive with --from-file.")

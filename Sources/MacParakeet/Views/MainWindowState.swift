@@ -29,4 +29,3 @@ extension Notification.Name {
     /// registry.
     static let transformsBindingsChanged = Notification.Name("com.macparakeet.transforms.bindingsChanged")
 }
-

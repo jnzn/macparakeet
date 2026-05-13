@@ -10,7 +10,7 @@ import MacParakeetCore
 /// user knows what's needed before they can save. Inline rules:
 ///
 /// - Name: required, no leading/trailing whitespace, must be unique
-///   case-insensitively across all Transforms (matches the existing
+///   case-insensitively across all prompt categories (matches the existing
 ///   `idx_prompts_name` SQLite uniqueness index).
 /// - Shortcut: optional in the draft (the editor pre-fills it), but if
 ///   present must include a modifier, not be a macOS dead-key, and not
@@ -91,17 +91,18 @@ public final class TransformEditorViewModel {
 
     /// Run all validation rules against the current draft + the surrounding
     /// state passed in by the view layer. The view layer is responsible
-    /// for providing the *other* transforms' bindings and app-level reserved
-    /// hotkeys — they live outside the editor's awareness.
+    /// for providing all prompt names, the *other* transforms' bindings,
+    /// and app-level reserved hotkeys — they live outside the editor's
+    /// awareness.
     public func validate(
-        existingTransforms: [Prompt],
+        existingPrompts: [Prompt],
         reservedHotkeys: [TransformShortcutReservedHotkey],
         collisionChecker: TransformShortcutCollisionChecking
     ) {
-        validateName(against: existingTransforms)
+        validateName(against: existingPrompts)
         validateContent()
         validateShortcut(
-            existingTransforms: existingTransforms,
+            existingPrompts: existingPrompts,
             reservedHotkeys: reservedHotkeys,
             collisionChecker: collisionChecker
         )
@@ -118,7 +119,7 @@ public final class TransformEditorViewModel {
             other.id != editingID
                 && other.name.caseInsensitiveCompare(trimmed) == .orderedSame
         }
-        nameError = duplicate ? "Another Transform already uses this name." : nil
+        nameError = duplicate ? "Another prompt already uses this name." : nil
     }
 
     private func validateContent() {
@@ -127,7 +128,7 @@ public final class TransformEditorViewModel {
     }
 
     private func validateShortcut(
-        existingTransforms: [Prompt],
+        existingPrompts: [Prompt],
         reservedHotkeys: [TransformShortcutReservedHotkey],
         collisionChecker: TransformShortcutCollisionChecking
     ) {
@@ -140,8 +141,10 @@ public final class TransformEditorViewModel {
         }
         let editingID = mode.initialPrompt?.id
         let bindings: [UUID: KeyboardShortcut] = Dictionary(uniqueKeysWithValues:
-            existingTransforms.compactMap { prompt in
-                guard let s = prompt.shortcut else { return nil }
+            existingPrompts.compactMap { prompt in
+                guard prompt.category == .transform,
+                      let s = prompt.shortcut
+                else { return nil }
                 return (prompt.id, s)
             }
         )

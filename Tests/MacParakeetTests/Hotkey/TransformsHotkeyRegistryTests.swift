@@ -125,6 +125,34 @@ final class TransformsHotkeyRegistryTests: XCTestCase {
         XCTAssertNotNil(registry.handleEvent(type: .keyUp, event: unrelatedKeyUp))
     }
 
+    func testTapDisabledRecoveryClearsPressedKeyState() throws {
+        let registry = TransformsHotkeyRegistry()
+        let id = UUID()
+        registry.register(
+            promptID: id,
+            shortcut: KeyboardShortcut(
+                modifiers: KeyboardShortcut.ModifierFlag.option.rawValue,
+                keyCode: 0x12,
+                keyLabel: "1"
+            )
+        )
+
+        var triggerCount = 0
+        registry.onTrigger = { _ in triggerCount += 1 }
+
+        let keyDown = try XCTUnwrap(CGEvent(keyboardEventSource: nil, virtualKey: 0x12, keyDown: true))
+        keyDown.flags = .maskAlternate
+
+        XCTAssertNil(registry.handleEvent(type: .keyDown, event: keyDown))
+        XCTAssertEqual(triggerCount, 1)
+
+        let disabled = try XCTUnwrap(CGEvent(keyboardEventSource: nil, virtualKey: 0x12, keyDown: true))
+        XCTAssertNotNil(registry.handleEvent(type: .tapDisabledByTimeout, event: disabled))
+
+        XCTAssertNil(registry.handleEvent(type: .keyDown, event: keyDown))
+        XCTAssertEqual(triggerCount, 2)
+    }
+
     // MARK: - Collision detection
 
     private let checker = TransformsHotkeyCollisionChecker()

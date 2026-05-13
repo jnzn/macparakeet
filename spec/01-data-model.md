@@ -856,6 +856,9 @@ migrator.registerMigration("v0.7-prompts-and-summaries") { db in
 // v0.11 — daily_dictation_stats
 // v0.12 — dictations.displayRawTranscript
 // v0.13 — prompts.keyboardShortcut and prompts.runningLabel for Transforms
+// v0.14 — transform_history (removed by v0.16 before merge)
+// v0.15 — transform_profiles and writing_samples (removed by v0.16 before merge)
+// v0.16 — drop abandoned Transform Workbench tables
 ```
 
 ### Migration Rules
@@ -905,6 +908,8 @@ migrator.registerMigration("v0.7-prompts-and-summaries") { db in
 | `transcriptions.derivedSnippet` | v0.9 | Cached display preview snippet derived from transcript content |
 | `quick_prompts` | v0.10 | User-customizable live Ask tab shortcut pills; v0.6 product feature |
 | `idx_transcriptions_source_type_created_at` / `idx_transcriptions_favorite_created_at` / `idx_transcriptions_status_created_at` | v0.10 | Library filter/sort indexes for source type, favorites, and status |
+| ~~`transform_history`~~ | ~~v0.14~~ | ~~Local Transform run history~~ (dropped in v0.16 before merge) |
+| ~~`transform_profiles`~~ / ~~`writing_samples`~~ | ~~v0.15~~ | ~~Transform Workbench tables~~ (dropped in v0.16 before merge) |
 
 ### Tables NOT Planned (YAGNI)
 

@@ -155,6 +155,7 @@ public final class TransformsHotkeyRegistry {
 
     func handleEvent(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            pressedKeys.removeAll(keepingCapacity: true)
             if let tap = eventTap {
                 CGEvent.tapEnable(tap: tap, enable: true)
             }

@@ -68,7 +68,7 @@ final class TransformEditorViewModelTests: XCTestCase {
         let vm = TransformEditorViewModel(mode: .create)
         vm.content = "Some body."
         vm.validate(
-            existingTransforms: [],
+            existingPrompts: [],
             reservedHotkeys: [],
             collisionChecker: StubCollisionChecker()
         )
@@ -80,7 +80,7 @@ final class TransformEditorViewModelTests: XCTestCase {
         let vm = TransformEditorViewModel(mode: .create)
         vm.name = "Sharpen"
         vm.validate(
-            existingTransforms: [],
+            existingPrompts: [],
             reservedHotkeys: [],
             collisionChecker: StubCollisionChecker()
         )
@@ -99,7 +99,26 @@ final class TransformEditorViewModelTests: XCTestCase {
         vm.name = "polish"  // different case
         vm.content = "Body"
         vm.validate(
-            existingTransforms: [other],
+            existingPrompts: [other],
+            reservedHotkeys: [],
+            collisionChecker: StubCollisionChecker()
+        )
+        XCTAssertNotNil(vm.nameError)
+        XCTAssertFalse(vm.isValid)
+    }
+
+    func testValidationRejectsDuplicateNameAcrossPromptCategories() {
+        let summary = Prompt(
+            id: UUID(),
+            name: "Summary",
+            content: "body",
+            category: .result
+        )
+        let vm = TransformEditorViewModel(mode: .create)
+        vm.name = "summary"
+        vm.content = "Body"
+        vm.validate(
+            existingPrompts: [summary],
             reservedHotkeys: [],
             collisionChecker: StubCollisionChecker()
         )
@@ -116,7 +135,7 @@ final class TransformEditorViewModelTests: XCTestCase {
         )
         let vm = TransformEditorViewModel(mode: .edit(prompt))
         vm.validate(
-            existingTransforms: [prompt],
+            existingPrompts: [prompt],
             reservedHotkeys: [],
             collisionChecker: StubCollisionChecker()
         )
@@ -132,7 +151,7 @@ final class TransformEditorViewModelTests: XCTestCase {
         vm.content = "Body"
         vm.shortcut = KeyboardShortcut(modifiers: 0, keyCode: 0x12, keyLabel: "1")
         vm.validate(
-            existingTransforms: [],
+            existingPrompts: [],
             reservedHotkeys: [],
             collisionChecker: stub
         )
@@ -152,7 +171,7 @@ final class TransformEditorViewModelTests: XCTestCase {
         vm.content = "Body"
         vm.shortcut = opt1
         vm.validate(
-            existingTransforms: [],
+            existingPrompts: [],
             reservedHotkeys: reserved,
             collisionChecker: stub
         )
@@ -166,7 +185,7 @@ final class TransformEditorViewModelTests: XCTestCase {
         vm.content = "Body"
         vm.shortcut = nil
         vm.validate(
-            existingTransforms: [],
+            existingPrompts: [],
             reservedHotkeys: [],
             collisionChecker: StubCollisionChecker()
         )
@@ -182,7 +201,7 @@ final class TransformEditorViewModelTests: XCTestCase {
         vm.name = ""
         vm.content = ""
         vm.validate(
-            existingTransforms: [],
+            existingPrompts: [],
             reservedHotkeys: [],
             collisionChecker: StubCollisionChecker()
         )
@@ -196,7 +215,7 @@ final class TransformEditorViewModelTests: XCTestCase {
         vm.runningLabel = "Sharpening…"
         vm.shortcut = opt1
         vm.validate(
-            existingTransforms: [],
+            existingPrompts: [],
             reservedHotkeys: [],
             collisionChecker: StubCollisionChecker()
         )
@@ -225,7 +244,7 @@ final class TransformEditorViewModelTests: XCTestCase {
         let vm = TransformEditorViewModel(mode: .edit(prompt))
         vm.content = "New body"
         vm.validate(
-            existingTransforms: [],
+            existingPrompts: [],
             reservedHotkeys: [],
             collisionChecker: StubCollisionChecker()
         )
@@ -242,7 +261,7 @@ final class TransformEditorViewModelTests: XCTestCase {
         vm.content = "Body"
         vm.runningLabel = "   " // whitespace only
         vm.validate(
-            existingTransforms: [],
+            existingPrompts: [],
             reservedHotkeys: [],
             collisionChecker: StubCollisionChecker()
         )

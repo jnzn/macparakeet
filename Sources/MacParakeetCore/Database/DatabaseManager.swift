@@ -683,6 +683,75 @@ public final class DatabaseManager: Sendable {
             }
         }
 
+        // v0.14 — Local-only Transform history. Retained as a registered
+        // migration so databases that ran the former workbench schema keep a
+        // valid GRDB migration ledger; v0.16 drops the table.
+        migrator.registerMigration("v0.14-transform-history") { db in
+            try db.create(table: "transform_history") { t in
+                t.column("id", .text).primaryKey()
+                t.column("transformId", .text)
+                t.column("transformName", .text).notNull()
+                t.column("inputText", .text).notNull()
+                t.column("outputText", .text).notNull()
+                t.column("sourceAppBundleID", .text)
+                t.column("sourceAppName", .text)
+                t.column("capturePath", .text).notNull()
+                t.column("replacementPath", .text).notNull()
+                t.column("llmElapsedMs", .integer).notNull().defaults(to: 0)
+                t.column("totalElapsedMs", .integer).notNull().defaults(to: 0)
+                t.column("createdAt", .text).notNull()
+                t.column("updatedAt", .text).notNull()
+            }
+            try db.create(
+                index: "idx_transform_history_created_at",
+                on: "transform_history",
+                columns: ["createdAt"]
+            )
+            try db.create(
+                index: "idx_transform_history_transform_id",
+                on: "transform_history",
+                columns: ["transformId"]
+            )
+        }
+
+        // v0.15 — Transform Workbench profiles and writing samples. Retained
+        // for migration-ledger compatibility; v0.16 drops these tables because
+        // the workbench surface was removed before merge.
+        migrator.registerMigration("v0.15-transform-workbench") { db in
+            try db.create(table: "transform_profiles") { t in
+                t.column("promptId", .text)
+                    .primaryKey()
+                    .references("prompts", onDelete: .cascade)
+                t.column("enabledRuleIDsJSON", .text).notNull().defaults(to: "[]")
+                t.column("customInstructions", .text)
+                t.column("useWritingSamples", .boolean).notNull().defaults(to: false)
+                t.column("createdAt", .text).notNull()
+                t.column("updatedAt", .text).notNull()
+            }
+            try db.create(table: "writing_samples") { t in
+                t.column("id", .text).primaryKey()
+                t.column("title", .text).notNull()
+                t.column("text", .text).notNull()
+                t.column("wordCount", .integer).notNull().defaults(to: 0)
+                t.column("createdAt", .text).notNull()
+                t.column("updatedAt", .text).notNull()
+            }
+            try db.create(
+                index: "idx_writing_samples_updated_at",
+                on: "writing_samples",
+                columns: ["updatedAt"]
+            )
+        }
+
+        // v0.16 — Remove the abandoned Transform Workbench tables. This keeps
+        // existing developer/prerelease databases from retaining selected-text
+        // rewrite history or writing samples after the feature was reverted.
+        migrator.registerMigration("v0.16-drop-transform-workbench-tables") { db in
+            try db.execute(sql: "DROP TABLE IF EXISTS transform_profiles")
+            try db.execute(sql: "DROP TABLE IF EXISTS writing_samples")
+            try db.execute(sql: "DROP TABLE IF EXISTS transform_history")
+        }
+
         try migrator.migrate(dbQueue)
         try reconcileBuiltInPrompts()
         try reconcileBuiltInQuickPrompts()

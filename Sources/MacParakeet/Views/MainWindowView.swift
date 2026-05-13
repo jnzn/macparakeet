@@ -151,6 +151,7 @@ struct MainWindowView: View {
                     case .transforms:
                         TransformsView(
                             viewModel: transformsViewModel,
+                            reservedHotkeys: transformReservedHotkeys,
                             llmConfiguredAction: { state.selectedItem = .settings },
                             onEdit: { state.editingTransform = $0 },
                             onCreate: { state.isCreatingTransform = true },
@@ -159,9 +160,9 @@ struct MainWindowView: View {
                             }
                         )
                         .sheet(isPresented: $state.isCreatingTransform) {
-                            TransformEditorSheet(
-                                viewModel: TransformEditorViewModel(mode: .create),
-                                existingTransforms: transformsViewModel.transforms,
+                            TransformEditorSheetHost(
+                                mode: .create,
+                                existingPrompts: transformsViewModel.allPrompts,
                                 reservedHotkeys: transformReservedHotkeys,
                                 onShortcutRecordingStateChanged: onHotkeyRecordingStateChanged,
                                 onSave: { prompt in
@@ -177,9 +178,9 @@ struct MainWindowView: View {
                             )
                         }
                         .sheet(item: $state.editingTransform) { transform in
-                            TransformEditorSheet(
-                                viewModel: TransformEditorViewModel(mode: .edit(transform)),
-                                existingTransforms: transformsViewModel.transforms,
+                            TransformEditorSheetHost(
+                                mode: .edit(transform),
+                                existingPrompts: transformsViewModel.allPrompts,
                                 reservedHotkeys: transformReservedHotkeys,
                                 onShortcutRecordingStateChanged: onHotkeyRecordingStateChanged,
                                 onSave: { prompt in
@@ -193,9 +194,14 @@ struct MainWindowView: View {
                                 onCancel: { state.editingTransform = nil },
                                 onReset: transform.isBuiltIn ? {
                                     Task {
-                                        if await transformsViewModel.resetBuiltIn(transform) {
+                                        if await transformsViewModel.resetBuiltIn(
+                                            transform,
+                                            reservedHotkeys: transformReservedHotkeys
+                                        ) {
                                             state.editingTransform = nil
                                             NotificationCenter.default.post(name: .transformsBindingsChanged, object: nil)
+                                        } else {
+                                            state.editingTransform = nil
                                         }
                                     }
                                 } : nil
@@ -345,6 +351,47 @@ struct MainWindowView: View {
         .overlay(alignment: .top) {
             Divider()
         }
+    }
+}
+
+private struct TransformEditorSheetHost: View {
+    @State private var editorViewModel: TransformEditorViewModel
+
+    let existingPrompts: [Prompt]
+    let reservedHotkeys: [TransformShortcutReservedHotkey]
+    let onShortcutRecordingStateChanged: (Bool) -> Void
+    let onSave: (Prompt) -> Void
+    let onCancel: () -> Void
+    let onReset: (() -> Void)?
+
+    init(
+        mode: TransformEditorViewModel.Mode,
+        existingPrompts: [Prompt],
+        reservedHotkeys: [TransformShortcutReservedHotkey],
+        onShortcutRecordingStateChanged: @escaping (Bool) -> Void,
+        onSave: @escaping (Prompt) -> Void,
+        onCancel: @escaping () -> Void,
+        onReset: (() -> Void)?
+    ) {
+        _editorViewModel = State(initialValue: TransformEditorViewModel(mode: mode))
+        self.existingPrompts = existingPrompts
+        self.reservedHotkeys = reservedHotkeys
+        self.onShortcutRecordingStateChanged = onShortcutRecordingStateChanged
+        self.onSave = onSave
+        self.onCancel = onCancel
+        self.onReset = onReset
+    }
+
+    var body: some View {
+        TransformEditorSheet(
+            viewModel: editorViewModel,
+            existingPrompts: existingPrompts,
+            reservedHotkeys: reservedHotkeys,
+            onShortcutRecordingStateChanged: onShortcutRecordingStateChanged,
+            onSave: onSave,
+            onCancel: onCancel,
+            onReset: onReset
+        )
     }
 }
 

@@ -9,6 +9,8 @@ final class TransformsViewModelTests: XCTestCase {
     var viewModel: TransformsViewModel!
 
     override func setUp() async throws {
+        // The no-argument initializer is the in-memory test database.
+        // `DatabaseManager(path:)` is the file-backed production path.
         manager = try DatabaseManager()
         repo = PromptRepository(dbQueue: manager.dbQueue)
         viewModel = TransformsViewModel()
@@ -118,6 +120,58 @@ final class TransformsViewModelTests: XCTestCase {
         XCTAssertEqual(restored.runningLabel, "Polishing…", "Default running label should be restored.")
     }
 
+    func testResetBuiltInRejectsDefaultShortcutWhenAlreadyUsed() async throws {
+        var polish = try XCTUnwrap(viewModel.transforms.first(where: { $0.name == "Polish" }))
+        polish.content = "Custom polish prompt body."
+        polish.keyboardShortcut = KeyboardShortcut.parse("opt+4")!.encodedString()
+        let savedPolish = await viewModel.save(polish)
+        XCTAssertTrue(savedPolish)
+
+        let custom = Prompt(
+            id: UUID(),
+            name: "Custom Opt One",
+            content: "Body.",
+            category: .transform,
+            isBuiltIn: false,
+            sortOrder: 200,
+            keyboardShortcut: KeyboardShortcut.parse("opt+1")!.encodedString()
+        )
+        let savedCustom = await viewModel.save(custom)
+        XCTAssertTrue(savedCustom)
+
+        let reset = await viewModel.resetBuiltIn(polish)
+        XCTAssertFalse(reset)
+        XCTAssertTrue(viewModel.errorMessage?.contains("already used") ?? false)
+
+        let reloadedPolish = try XCTUnwrap(viewModel.transforms.first(where: { $0.id == polish.id }))
+        XCTAssertEqual(reloadedPolish.content, "Custom polish prompt body.")
+        XCTAssertEqual(reloadedPolish.shortcut?.displayString, "⌥4")
+
+        let reloadedCustom = try XCTUnwrap(viewModel.transforms.first(where: { $0.id == custom.id }))
+        XCTAssertEqual(reloadedCustom.shortcut?.displayString, "⌥1")
+    }
+
+    func testResetBuiltInRejectsDefaultShortcutWhenReservedByAppHotkey() async throws {
+        var polish = try XCTUnwrap(viewModel.transforms.first(where: { $0.name == "Polish" }))
+        polish.content = "Custom polish prompt body."
+        polish.keyboardShortcut = KeyboardShortcut.parse("opt+4")!.encodedString()
+        let savedPolish = await viewModel.save(polish)
+        XCTAssertTrue(savedPolish)
+
+        let reset = await viewModel.resetBuiltIn(
+            polish,
+            reservedHotkeys: [
+                TransformShortcutReservedHotkey(name: "hands-free dictation", trigger: .option)
+            ]
+        )
+        XCTAssertFalse(reset)
+        XCTAssertTrue(viewModel.errorMessage?.contains("conflicts with hands-free dictation") ?? false)
+
+        let reloadedPolish = try XCTUnwrap(viewModel.transforms.first(where: { $0.id == polish.id }))
+        XCTAssertEqual(reloadedPolish.content, "Custom polish prompt body.")
+        XCTAssertEqual(reloadedPolish.shortcut?.displayString, "⌥4")
+    }
+
     func testReseedMissingBuiltInsRecreatesDeletedDefault() async throws {
         // Force-delete Polish via raw SQL (bypassing the built-in protection)
         // to simulate a corrupted state where a built-in is missing.
@@ -145,5 +199,70 @@ final class TransformsViewModelTests: XCTestCase {
 
         let reloaded = viewModel.transforms.first(where: { $0.name == "Polish" })!
         XCTAssertEqual(reloaded.content, customContent, "Reseed must not overwrite existing built-in customizations.")
+    }
+
+    func testReseedDoesNotOverwriteExistingBuiltInWhenVisibleStateIsStale() async throws {
+        var polish = try XCTUnwrap(viewModel.transforms.first(where: { $0.name == "Polish" }))
+        let customContent = "User-customized Polish body while UI state is stale."
+        polish.content = customContent
+        let saved = await viewModel.save(polish)
+        XCTAssertTrue(saved)
+
+        viewModel.transforms = []
+        viewModel.allPrompts = []
+
+        let reseeded = await viewModel.reseedMissingBuiltIns()
+        XCTAssertTrue(reseeded)
+
+        let reloaded = try XCTUnwrap(viewModel.transforms.first(where: { $0.id == polish.id }))
+        XCTAssertEqual(reloaded.content, customContent)
+    }
+
+    func testReseedMissingBuiltInsClearsDefaultShortcutWhenAlreadyUsed() async throws {
+        let polish = try XCTUnwrap(viewModel.transforms.first(where: { $0.name == "Polish" }))
+        try await manager.dbQueue.write { db in
+            try db.execute(sql: "DELETE FROM prompts WHERE id = ?", arguments: [polish.id])
+        }
+        await viewModel.load()
+
+        let custom = Prompt(
+            id: UUID(),
+            name: "Custom Opt One",
+            content: "Body.",
+            category: .transform,
+            isBuiltIn: false,
+            sortOrder: 200,
+            keyboardShortcut: KeyboardShortcut.parse("opt+1")!.encodedString()
+        )
+        let savedCustom = await viewModel.save(custom)
+        XCTAssertTrue(savedCustom)
+
+        let reseeded = await viewModel.reseedMissingBuiltIns()
+        XCTAssertTrue(reseeded)
+
+        let restoredPolish = try XCTUnwrap(viewModel.transforms.first(where: { $0.name == "Polish" }))
+        XCTAssertNil(restoredPolish.shortcut)
+        let reloadedCustom = try XCTUnwrap(viewModel.transforms.first(where: { $0.id == custom.id }))
+        XCTAssertEqual(reloadedCustom.shortcut?.displayString, "⌥1")
+        XCTAssertTrue(viewModel.errorMessage?.contains("without conflicting shortcuts") ?? false)
+    }
+
+    func testReseedMissingBuiltInsClearsDefaultShortcutWhenReservedByAppHotkey() async throws {
+        let polish = try XCTUnwrap(viewModel.transforms.first(where: { $0.name == "Polish" }))
+        try await manager.dbQueue.write { db in
+            try db.execute(sql: "DELETE FROM prompts WHERE id = ?", arguments: [polish.id])
+        }
+        await viewModel.load()
+
+        let reseeded = await viewModel.reseedMissingBuiltIns(
+            reservedHotkeys: [
+                TransformShortcutReservedHotkey(name: "hands-free dictation", trigger: .option)
+            ]
+        )
+        XCTAssertTrue(reseeded)
+
+        let restoredPolish = try XCTUnwrap(viewModel.transforms.first(where: { $0.name == "Polish" }))
+        XCTAssertNil(restoredPolish.shortcut)
+        XCTAssertTrue(viewModel.errorMessage?.contains("conflicts with hands-free dictation") ?? false)
     }
 }

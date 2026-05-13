@@ -14,7 +14,7 @@ import MacParakeetViewModels
 /// `viewModel.isValid`.
 struct TransformEditorSheet: View {
     @Bindable var viewModel: TransformEditorViewModel
-    let existingTransforms: [Prompt]
+    let existingPrompts: [Prompt]
     let reservedHotkeys: [TransformShortcutReservedHotkey]
     let onShortcutRecordingStateChanged: (Bool) -> Void
     let onSave: (Prompt) -> Void
@@ -204,7 +204,7 @@ struct TransformEditorSheet: View {
 
     private func revalidate() {
         viewModel.validate(
-            existingTransforms: existingTransforms,
+            existingPrompts: existingPrompts,
             reservedHotkeys: reservedHotkeys,
             collisionChecker: collisionChecker
         )
@@ -272,14 +272,14 @@ struct ShortcutRecorderField: View {
             }
             .buttonStyle(.plain)
             .contentShape(Rectangle())
-            .accessibilityLabel(isRecording ? "Stop recording" : "Start recording")
+            .accessibilityLabel(recorderAccessibilityLabel)
 
             Button(action: { isRecording.toggle() }) {
                 Image(systemName: isRecording ? "stop.circle" : "pencil")
                     .foregroundStyle(DesignSystem.Colors.textSecondary)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(isRecording ? "Stop recording" : "Start recording")
+            .accessibilityLabel(isRecording ? "Stop recording shortcut" : "Record shortcut")
             if shortcut != nil {
                 Button(action: { shortcut = nil }) {
                     Image(systemName: "xmark.circle.fill")
@@ -369,6 +369,24 @@ struct ShortcutRecorderField: View {
         guard notifiedRecordingActive != active else { return }
         notifiedRecordingActive = active
         onRecordingStateChanged(active)
+    }
+
+    private var recorderAccessibilityLabel: String {
+        if isRecording {
+            return "Stop recording shortcut"
+        }
+        if let shortcut {
+            return "Current shortcut \(shortcutAccessibilityLabel(shortcut)). Record shortcut"
+        }
+        return "No shortcut set. Record shortcut"
+    }
+
+    private func shortcutAccessibilityLabel(_ shortcut: TransformShortcut) -> String {
+        let ordered: [TransformShortcut.ModifierFlag] = [.control, .option, .shift, .command]
+        let modifierNames = ordered
+            .filter { (shortcut.modifiers & $0.rawValue) != 0 }
+            .map(\.displayName)
+        return (modifierNames + [shortcut.keyLabel.uppercased()]).joined(separator: " ")
     }
 
     private func labelForKey(event: NSEvent) -> String {

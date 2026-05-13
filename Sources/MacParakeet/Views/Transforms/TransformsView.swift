@@ -15,6 +15,7 @@ import MacParakeetViewModels
 /// `cardRest`/`cardHover` shadow tokens.
 struct TransformsView: View {
     @Bindable var viewModel: TransformsViewModel
+    let reservedHotkeys: [TransformShortcutReservedHotkey]
     let llmConfiguredAction: () -> Void
     let onEdit: (Prompt) -> Void
     let onCreate: () -> Void
@@ -29,6 +30,10 @@ struct TransformsView: View {
                     heroExplainer
                 } else {
                     noProviderBanner
+                }
+
+                if let error = viewModel.errorMessage {
+                    errorBanner(error)
                 }
 
                 myTransformsHeader
@@ -138,6 +143,26 @@ struct TransformsView: View {
         }
     }
 
+    private func errorBanner(_ message: String) -> some View {
+        HStack(alignment: .center, spacing: DesignSystem.Spacing.sm) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(DesignSystem.Colors.warningAmber)
+            Text(message)
+                .font(DesignSystem.Typography.bodySmall)
+                .foregroundStyle(DesignSystem.Colors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: DesignSystem.Spacing.md)
+        }
+        .padding(DesignSystem.Spacing.md)
+        .background(DesignSystem.Colors.surfaceElevated)
+        .clipShape(RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius))
+        .overlay {
+            RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
+                .stroke(DesignSystem.Colors.warningAmber.opacity(0.35), lineWidth: 0.5)
+        }
+    }
+
     @ViewBuilder
     private var myTransformsHeader: some View {
         HStack(alignment: .firstTextBaseline) {
@@ -167,7 +192,7 @@ struct TransformsView: View {
                     },
                     onReset: {
                         Task {
-                            if await viewModel.resetBuiltIn(transform) {
+                            if await viewModel.resetBuiltIn(transform, reservedHotkeys: reservedHotkeys) {
                                 onBindingsChanged()
                             }
                         }
@@ -184,7 +209,7 @@ struct TransformsView: View {
         HStack(spacing: DesignSystem.Spacing.md) {
             Button(action: {
                 Task {
-                    if await viewModel.reseedMissingBuiltIns() {
+                    if await viewModel.reseedMissingBuiltIns(reservedHotkeys: reservedHotkeys) {
                         onBindingsChanged()
                     }
                 }

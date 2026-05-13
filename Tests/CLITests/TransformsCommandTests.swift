@@ -167,6 +167,39 @@ final class TransformsCommandTests: XCTestCase {
         XCTAssertEqual(object["errorType"] as? String, "validation")
     }
 
+    func testShowJSONLookupFailureEmitsEnvelopeAndFailureExitCode() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("transforms-cli-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let dbPath = tmp.appendingPathComponent("test.db").path
+        _ = try DatabaseManager(path: dbPath)
+
+        let show = try TransformsCommand.ShowSubcommand.parse([
+            "missing",
+            "--database", dbPath,
+            "--json",
+        ])
+        var thrownError: Error?
+        let output = try captureStandardOutput {
+            do {
+                try show.run()
+            } catch {
+                thrownError = error
+            }
+        }
+
+        let exit = try XCTUnwrap(thrownError as? ExitCode)
+        XCTAssertEqual(exit.rawValue, 1)
+
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any]
+        )
+        XCTAssertEqual(object["ok"] as? Bool, false)
+        XCTAssertEqual(object["errorType"] as? String, "lookup")
+        XCTAssertTrue((object["error"] as? String)?.contains("No Transform found") ?? false)
+    }
+
     // MARK: - End-to-end: create + list + show + delete against a real DB
 
     func testCreateListShowDeleteRoundTrip() throws {
