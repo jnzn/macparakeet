@@ -3,7 +3,7 @@ import AppKit
 import Foundation
 import MacParakeetCore
 
-struct FlowProcessCommand: AsyncParsableCommand {
+struct VocabProcessCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "process",
         abstract: "Run clean text processing on input text."

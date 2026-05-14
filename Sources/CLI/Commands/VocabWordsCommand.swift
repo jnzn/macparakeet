@@ -2,7 +2,7 @@ import ArgumentParser
 import Foundation
 import MacParakeetCore
 
-struct FlowWordsCommand: AsyncParsableCommand {
+struct VocabWordsCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "words",
         abstract: "Manage custom words vocabulary.",
@@ -122,10 +122,10 @@ struct FlowWordsCommand: AsyncParsableCommand {
             let matches = words.filter { $0.id.uuidString.lowercased().hasPrefix(id.lowercased()) }
 
             guard let word = matches.first else {
-                throw FlowError.notFound("No word matching '\(id)'")
+                throw VocabError.notFound("No word matching '\(id)'")
             }
             guard matches.count == 1 else {
-                throw FlowError.ambiguous("Multiple words match '\(id)'. Be more specific.")
+                throw VocabError.ambiguous("Multiple words match '\(id)'. Be more specific.")
             }
 
             _ = try repo.delete(id: word.id)
@@ -134,7 +134,7 @@ struct FlowWordsCommand: AsyncParsableCommand {
     }
 }
 
-enum FlowError: Error, LocalizedError {
+enum VocabError: Error, LocalizedError {
     case notFound(String)
     case ambiguous(String)
 

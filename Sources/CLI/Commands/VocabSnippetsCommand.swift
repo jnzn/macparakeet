@@ -2,7 +2,7 @@ import ArgumentParser
 import Foundation
 import MacParakeetCore
 
-struct FlowSnippetsCommand: AsyncParsableCommand {
+struct VocabSnippetsCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "snippets",
         abstract: "Manage text snippets.",
@@ -106,10 +106,10 @@ struct FlowSnippetsCommand: AsyncParsableCommand {
             let matches = snippets.filter { $0.id.uuidString.lowercased().hasPrefix(id.lowercased()) }
 
             guard let snippet = matches.first else {
-                throw FlowError.notFound("No snippet matching '\(id)'")
+                throw VocabError.notFound("No snippet matching '\(id)'")
             }
             guard matches.count == 1 else {
-                throw FlowError.ambiguous("Multiple snippets match '\(id)'. Be more specific.")
+                throw VocabError.ambiguous("Multiple snippets match '\(id)'. Be more specific.")
             }
 
             _ = try repo.delete(id: snippet.id)

@@ -80,6 +80,14 @@ by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
 
 ## [Unreleased]
 
+### Changed
+
+- `flow` command renamed to `vocab`. All subcommands move:
+  `flow words` → `vocab words`, `flow snippets` → `vocab snippets`,
+  `flow process` → `vocab process`. `flow vocabulary export/import/schema`
+  flattened to `vocab export/import/schema`. No deprecated alias — the
+  old `flow` surface had no external consumers.
+
 ### Added (2.2.0)
 
 - `transforms list / show / run / create / delete` — new subcommand tree
