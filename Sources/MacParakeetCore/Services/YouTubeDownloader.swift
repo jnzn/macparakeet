@@ -384,8 +384,6 @@ public actor YouTubeDownloader {
             "--retries", "3",
             "--concurrent-fragments", "4",
             "--embed-metadata",
-            "--embed-thumbnail",
-            "--convert-thumbnails", "jpg",
             "--newline",
             "-o", outputTemplate,
             "--", url,
