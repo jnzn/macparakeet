@@ -979,6 +979,8 @@ final class TelemetryServiceTests: XCTestCase {
             .llmChatFailed(provider: "openai", errorType: "network"),
             .llmTransformUsed(provider: "openai"),
             .llmTransformFailed(provider: "openai", errorType: "network"),
+            .askMenuOpened,
+            .askPromptFired(source: .emptyState, group: "CAPTURE", label: "Action items"),
             .llmFormatterUsed(
                 provider: "lmstudio",
                 source: .dictation,

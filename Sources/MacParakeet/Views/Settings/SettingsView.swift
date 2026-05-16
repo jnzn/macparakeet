@@ -20,6 +20,9 @@ struct SettingsView: View {
     @Bindable var llmSettingsViewModel: LLMSettingsViewModel
     let updater: SPUUpdater
     let transformHotkeys: [Prompt]
+    let requestedTab: SettingsTab?
+    let requestedTabRevision: Int
+    let onRequestedTabConsumed: () -> Void
     /// Fired by each `HotkeyRecorderView` when it starts/stops capturing
     /// keystrokes. Wired up to `AppHotkeyCoordinator.suspend` / `resume` so
     /// active global taps don't swallow the keyDown the user is recording.
@@ -44,13 +47,20 @@ struct SettingsView: View {
         llmSettingsViewModel: LLMSettingsViewModel,
         updater: SPUUpdater,
         transformHotkeys: [Prompt] = [],
+        requestedTab: SettingsTab? = nil,
+        requestedTabRevision: Int = 0,
+        onRequestedTabConsumed: @escaping () -> Void = {},
         onHotkeyRecordingStateChanged: @escaping (Bool) -> Void
     ) {
         self.viewModel = viewModel
         self.llmSettingsViewModel = llmSettingsViewModel
         self.updater = updater
         self.transformHotkeys = transformHotkeys
+        self.requestedTab = requestedTab
+        self.requestedTabRevision = requestedTabRevision
+        self.onRequestedTabConsumed = onRequestedTabConsumed
         self.onHotkeyRecordingStateChanged = onHotkeyRecordingStateChanged
+        self._rootViewModel = State(initialValue: SettingsRootViewModel(initialTab: requestedTab))
         self._automaticallyChecksForUpdates = State(initialValue: updater.automaticallyChecksForUpdates)
         self._automaticallyDownloadsUpdates = State(initialValue: updater.automaticallyDownloadsUpdates)
     }
@@ -106,6 +116,17 @@ struct SettingsView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             viewModel.refreshPermissions()
+        }
+        .onAppear {
+            if requestedTab != nil {
+                onRequestedTabConsumed()
+            }
+        }
+        .onChange(of: requestedTabRevision) { _, _ in
+            if let requestedTab {
+                rootViewModel.open(tab: requestedTab)
+                onRequestedTabConsumed()
+            }
         }
     }
 

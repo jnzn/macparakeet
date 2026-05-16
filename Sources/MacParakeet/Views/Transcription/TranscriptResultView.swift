@@ -67,6 +67,7 @@ struct TranscriptResultView: View {
     var onBack: (() -> Void)?
     var onStartNew: (() -> Void)?
     var onRetranscribe: ((Transcription, SpeechEngineSelection?) -> Void)?
+    var onSetUpAI: (() -> Void)?
 
     @State private var backHovered = false
     @State private var headerExpanded = false
@@ -989,6 +990,10 @@ struct TranscriptResultView: View {
                 LazyVStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
                     transcriptPaneHeader
 
+                    if shouldShowTranscriptAISetupBanner {
+                        chatConfigurationBanner
+                    }
+
                     if let userNotes = activeTranscription.userNotes,
                        !userNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         meetingNotesSection(userNotes)
@@ -1158,6 +1163,12 @@ struct TranscriptResultView: View {
                 RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
                     .strokeBorder(DesignSystem.Colors.accent.opacity(0.30), lineWidth: 1)
             )
+    }
+
+    private var shouldShowTranscriptAISetupBanner: Bool {
+        !viewModel.llmAvailable
+            && !viewModel.hasPromptResultTabs
+            && !viewModel.hasConversations
     }
 
     private func transcriptTextBlock(_ text: String) -> some View {
@@ -2058,6 +2069,14 @@ struct TranscriptResultView: View {
             }
 
             Spacer()
+
+            Button {
+                onSetUpAI?()
+            } label: {
+                Label("Set up AI", systemImage: "gearshape")
+            }
+            .parakeetAction(.secondary)
+            .controlSize(.small)
         }
         .padding(DesignSystem.Spacing.md)
         .background(

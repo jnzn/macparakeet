@@ -38,6 +38,8 @@ public enum TelemetryEventName: String, Sendable, CaseIterable {
     /// e.g. an employer never leaves the device.
     case transformExecuted = "transform_executed"
     case transformFailed = "transform_failed"
+    case askMenuOpened = "ask_menu_opened"
+    case askPromptFired = "ask_prompt_fired"
     case llmFormatterUsed = "llm_formatter_used"
     case llmFormatterFailed = "llm_formatter_failed"
     case llmProviderUnavailable = "llm_provider_unavailable"
@@ -226,6 +228,12 @@ public enum TelemetryTransformCapturePath: String, Sendable, Equatable {
 public enum TelemetryTransformReplacePath: String, Sendable, Equatable {
     case ax
     case clipboardPaste = "clipboard_paste"
+}
+
+public enum TelemetryAskPromptSource: String, Sendable, Equatable {
+    case emptyState = "empty_state"
+    case menu
+    case followUp = "follow_up"
 }
 
 /// Why a Transforms run terminated abnormally. Maps onto
@@ -425,6 +433,8 @@ public enum TelemetryEventSpec: Sendable {
         transformName: TelemetryTransformName,
         reason: TelemetryTransformFailureReason
     )
+    case askMenuOpened
+    case askPromptFired(source: TelemetryAskPromptSource, group: String, label: String)
     case llmFormatterUsed(
         provider: String,
         source: TelemetryFormatterSource,
@@ -669,6 +679,8 @@ extension TelemetryEventSpec {
         case .llmTransformFailed: return .llmTransformFailed
         case .transformExecuted: return .transformExecuted
         case .transformFailed: return .transformFailed
+        case .askMenuOpened: return .askMenuOpened
+        case .askPromptFired: return .askPromptFired
         case .llmFormatterUsed: return .llmFormatterUsed
         case .llmFormatterFailed: return .llmFormatterFailed
         case .llmProviderUnavailable: return .llmProviderUnavailable
@@ -755,6 +767,7 @@ extension TelemetryEventSpec {
              .promptCreated,
              .promptUpdated,
              .promptDeleted,
+             .askMenuOpened,
              .licenseActivated,
              .trialStarted,
              .trialExpired,
@@ -950,6 +963,12 @@ extension TelemetryEventSpec {
             return [
                 "transform_name": name.rawValue,
                 "reason": reason.rawValue,
+            ]
+        case .askPromptFired(let source, let group, let label):
+            return [
+                "source": source.rawValue,
+                "group": group,
+                "label": label,
             ]
         case .llmFormatterUsed(
             let provider,
@@ -1376,6 +1395,8 @@ public enum TelemetryImplementedContract {
         .llmTransformFailed: ["provider", "error_type"],
         .transformExecuted: ["transform_name", "capture_path", "replace_path", "llm_ms", "total_ms"],
         .transformFailed: ["transform_name", "reason"],
+        .askMenuOpened: [],
+        .askPromptFired: ["source", "group", "label"],
         .llmFormatterUsed: ["provider", "source", "duration_seconds", "input_chars", "output_chars", "default_prompt_used", "input_truncated"],
         .llmFormatterFailed: ["provider", "source", "duration_seconds", "error_type", "default_prompt_used", "input_truncated"],
         .llmProviderUnavailable: ["provider", "error_type", "feature"],

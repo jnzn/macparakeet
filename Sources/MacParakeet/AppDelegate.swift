@@ -228,8 +228,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             self.onboardingCoordinator.show(environment: self.appEnvironment)
         },
-        onOpenSettings: { [weak self] in
-            self?.windowCoordinator.openMainWindowToSettings()
+        onOpenSettings: { [weak self] tab in
+            self?.windowCoordinator.openMainWindowToSettings(tab: tab)
         },
         onHotkeyTriggerChanged: { [weak self] in
             self?.handleHotkeyTriggerChange()
