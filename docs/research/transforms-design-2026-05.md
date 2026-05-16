@@ -1,8 +1,14 @@
 # Transforms — Design Exploration
 
 > Status: **HISTORICAL DESIGN INPUT**. Superseded by ADR-022 and the productized Transforms implementation on `main`; kept as the design rationale that led to the shipped surface.
-> Updated: 2026-05-11
+> Updated: 2026-05-16
 > Related: `wisprflow-parity-2026-05.md` (audit that triggered this), `plans/active/2026-05-voice-command-agent-mode.md` (the voice-driven sibling), `docs/agent-mode-vision.md` (north-star framing)
+
+Implementation update: Phase 1 and Phase 2 are now complete on `main`.
+`Polish`, `Distill`, and `Decide` ship as built-in Transform prompt rows;
+the Transforms tab, hotkey registry, CLI surface, and local Transform history
+are implemented. Future work is richer editing/review affordances and the
+voice-driven command layer.
 
 ## Thesis
 
@@ -20,15 +26,17 @@ Reading the audit, it's tempting to characterize this as scope creep — MacPara
 
    | Piece | Status |
    |---|---|
-   | LLM provider stack (`LLMService.transform`, `transformStream`, `transformDetailed`) | Built; used by CLI today |
-   | Prompt model with `.transform` category | Built; no built-ins ship in that category yet |
-   | Global hotkey infrastructure (`GlobalShortcutManager` for chord-triggered actions; `HotkeyManager` for gesture-based; `HotkeyRecorderView` for binding UI) | Built; used for dictation and meeting recording toggle |
+   | LLM provider stack (`LLMService.transform`, `transformStream`, `transformDetailed`) | Built; used by GUI Transforms and CLI surfaces |
+   | Prompt model with `.transform` category | Built; built-ins now ship as `Polish`, `Distill`, and `Decide` |
+   | Global hotkey infrastructure (`GlobalShortcutManager` for chord-triggered actions; `HotkeyManager` for gesture-based; `HotkeyRecorderView` for binding UI) | Built; `TransformsHotkeyRegistry` dispatches bound Transform shortcuts |
    | Dictation has both `rawTranscript` and `cleanTranscript` stored separately | Built; ready for Undo AI edit too |
    | Accessibility permission already requested (for paste simulation) | Built |
    | Paste-back via simulated Cmd+V | Built; used by dictation insertion |
    | CLI surface that proves the prompt-driven rewrite shape works | Built (`macparakeet-cli llm transform`) |
 
-   The genuinely new pieces are narrow: AX-based selection capture, the Transforms management UI, and the bind-N-hotkeys-to-N-transforms mux.
+   The originally new pieces were narrow: AX-based selection capture, the
+   Transforms management UI, and the bind-N-hotkeys-to-N-transforms mux. ADR-022
+   implements that spine on `main`.
 
 ## What we're building
 
@@ -250,7 +258,7 @@ The behavior is therefore: hotkey fires with empty selection → friendly educat
 
 Tight phasing keeps scope small and lets us validate the AX path before investing in UI.
 
-**Phase 1 — Spine end-to-end (~1 sprint).** Goal: hardcoded Opt+1 → Polish working against the user's currently-configured LLM provider, no UI.
+**Phase 1 — Spine end-to-end (~1 sprint).** Goal: hardcoded Opt+1 → Polish working against the user's currently-configured LLM provider, no UI. **Completed.**
 
 - Implement `SelectionCaptureService` with AX-first + clipboard fallback.
 - Implement `SelectionReplacementService` with AX-write + paste-back fallback.
@@ -259,7 +267,7 @@ Tight phasing keeps scope small and lets us validate the AX path before investin
 - Manual smoke test across: Notes, Mail, Slack desktop, Discord, Chrome, Safari address bar, Cursor, Xcode editor, Terminal. Each app gets a row in a spreadsheet of "AX worked / clipboard fallback / both failed."
 - Decision gate: ship to nightly users on `main`. If the app coverage is bad (e.g., fails on Slack and Mail), step back and rethink before building UI.
 
-**Phase 2 — Productize (~1 sprint).** Goal: shippable feature behind a feature flag.
+**Phase 2 — Productize (~1 sprint).** Goal: shippable feature behind a feature flag. **Completed; enabled on `main`.**
 
 - Wire `Prompt.category == .transform` to the executor via the new registry.
 - Build the Transforms management UI (sidebar tab + edit pane).
@@ -298,12 +306,15 @@ Tight phasing keeps scope small and lets us validate the AX path before investin
 
 The same conversation that prioritized Transforms accepted Undo AI edit as a small follow-up. The work is independent of this design — `Dictation` already stores `rawTranscript` and `cleanTranscript` separately, so it's a context-menu affordance in `DictationHistoryView.swift` that swaps the displayed and exported text back to `rawTranscript`. A separate ~1-day task that doesn't need an ADR.
 
-## Open work to start
+## Implementation Status
 
-The next concrete artifacts, in order:
+This design fed ADR-022 and `plans/completed/2026-05-transforms-phase-2-productize.md`.
+The concrete implementation artifacts are complete:
 
-1. **Spike** — wire Opt+1 to a hardcoded Polish prompt and run the app-coverage smoke matrix. Single afternoon.
-2. **ADR** — `ADR-022-transforms-system-wide-rewrite.md`. Locks: AX-first + clipboard-fallback strategy, `Prompt.category == .transform` as the unit, BYO-key requirement, feature-flag rollout.
-3. **Plan** — `plans/active/2026-05-transforms-phase-1.md` covering the Phase 1 spine. Phase 2 gets its own plan after the smoke matrix passes.
+1. **Spike** — shipped through PR #278 and follow-up polish.
+2. **ADR** — `spec/adr/022-transforms-system-wide-rewrite.md`, now accepted/implemented.
+3. **Product plan** — archived at `plans/completed/2026-05-transforms-phase-2-productize.md`.
 
-I'd recommend the spike first — the AX coverage question dominates everything downstream. If AX is solid across the apps our users care about, this is straightforward. If it's bad, the design rebalances toward clipboard-only with different latency/UX trade-offs.
+Remaining Transform work should start from the current shipped surface, not this
+historical open-work list: rule toggles, diff preview, per-Transform model
+selection, and voice-triggered command mode are all follow-up scope.

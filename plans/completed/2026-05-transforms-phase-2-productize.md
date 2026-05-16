@@ -47,7 +47,7 @@ PR #278 + the three follow-up commits delivered a substantial foundation. From t
 | LLM service path: `LLMService.transform / transformStream / transformDetailed` | Built (pre-spike) | `Sources/MacParakeetCore/Services/LLM/LLMService.swift` |
 | CLI `macparakeet-cli llm transform --prompt … <input>` | Built (pre-spike) | `Sources/CLI/Commands/LLMTransformCommand.swift` |
 | Feature flag `AppFeatures.transformsSpikeEnabled` (default `false`) | Built | `Sources/MacParakeetCore/AppFeatures.swift:32` |
-| `Prompt.Category.transform` enum case (no built-ins shipped under this category yet) | Built (pre-spike) | `Sources/MacParakeetCore/Models/Prompt.swift:19` |
+| `Prompt.Category.transform` enum case (built-ins seeded by completed Phase 2) | Built (pre-spike) | `Sources/MacParakeetCore/Models/Prompt.swift:19` |
 | Test coverage: capture, replacement, executor, paste resolver | Built | `Tests/MacParakeetTests/Services/{System,Transforms}/…` |
 
 **What the spike intentionally skipped:**
