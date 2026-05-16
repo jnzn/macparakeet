@@ -644,6 +644,12 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
                 ?? embeddedMetadata.durationMs
             let channelName = Self.firstNonEmpty(downloadResult.channelName, embeddedMetadata.author)
             let videoDescription = Self.firstNonEmpty(downloadResult.videoDescription, embeddedMetadata.description)
+            let artifactMetadata = YouTubeAudioArtifactMetadata(
+                title: title,
+                artist: channelName,
+                description: videoDescription,
+                thumbnailURL: downloadResult.thumbnailURL
+            )
 
             var transcription = Transcription(
                 fileName: title,
@@ -723,7 +729,8 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
                YouTubeAudioPlaybackConverter.needsConversion(forPath: storedPath) {
                 schedulePlaybackConversion(
                     transcriptionId: completed.id,
-                    inputPath: storedPath
+                    inputPath: storedPath,
+                    metadata: artifactMetadata
                 )
             }
 
@@ -742,7 +749,8 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
     /// and the audio scrubber would be empty.
     private func schedulePlaybackConversion(
         transcriptionId: UUID,
-        inputPath: String
+        inputPath: String,
+        metadata: YouTubeAudioArtifactMetadata?
     ) {
         let converter = playbackConverter
         let repo = transcriptionRepo
@@ -750,7 +758,8 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
         Task.detached(priority: .utility) {
             do {
                 let newPath = try await converter.convertToPlayableM4AIfNeeded(
-                    inputPath: inputPath
+                    inputPath: inputPath,
+                    metadata: metadata
                 )
                 guard newPath != inputPath else { return }
                 try repo.updateFilePath(id: transcriptionId, filePath: newPath)

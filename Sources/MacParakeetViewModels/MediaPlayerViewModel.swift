@@ -123,6 +123,12 @@ public final class MediaPlayerViewModel {
                     schedulePlaybackConversion(
                         inputPath: filePath,
                         transcriptionId: transcription.id,
+                        metadata: YouTubeAudioArtifactMetadata(
+                            title: transcription.fileName,
+                            artist: transcription.channelName,
+                            description: transcription.videoDescription,
+                            thumbnailURL: transcription.thumbnailURL
+                        ),
                         persist: persist
                     )
                     logger.info("Prepared YouTube media: queued lazy m4a conversion for unplayable saved audio")
@@ -151,6 +157,7 @@ public final class MediaPlayerViewModel {
     private func schedulePlaybackConversion(
         inputPath: String,
         transcriptionId: UUID,
+        metadata: YouTubeAudioArtifactMetadata?,
         persist: @escaping @MainActor @Sendable (UUID, String, String) async throws -> Void
     ) {
         playbackConversionTask?.cancel()
@@ -159,7 +166,8 @@ public final class MediaPlayerViewModel {
         playbackConversionTask = Task { @MainActor [weak self] in
             do {
                 let newPath = try await converter.convertToPlayableM4AIfNeeded(
-                    inputPath: inputPath
+                    inputPath: inputPath,
+                    metadata: metadata
                 )
                 guard !Task.isCancelled, let self else { return }
                 guard newPath != inputPath else {

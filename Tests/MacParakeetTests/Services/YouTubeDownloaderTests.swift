@@ -63,6 +63,9 @@ final class YouTubeDownloaderTests: XCTestCase {
             "--no-playlist",
             "--retries", "3",
             "--concurrent-fragments", "4",
+            "--embed-metadata",
+            "--embed-thumbnail",
+            "--convert-thumbnails", "jpg",
             "--newline",
             "-o", "/tmp/video.%(ext)s",
             "--", "https://www.youtube.com/watch?v=abc",
@@ -78,6 +81,8 @@ final class YouTubeDownloaderTests: XCTestCase {
         )
 
         XCTAssertEqual(formatSelector(in: args), "bestaudio/best")
+        XCTAssertTrue(args.contains("--embed-metadata"))
+        XCTAssertTrue(args.contains("--embed-thumbnail"))
     }
 
     func testDownloadAudioArgumentsIncludeJavaScriptRuntimeArgsBeforeFFmpeg() {

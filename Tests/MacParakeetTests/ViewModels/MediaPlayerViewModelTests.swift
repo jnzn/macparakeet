@@ -148,7 +148,10 @@ final class MediaPlayerViewModelTests: XCTestCase {
         let transcription = Transcription(
             fileName: "Talk",
             filePath: webm.path,
-            sourceURL: "https://www.youtube.com/watch?v=abc"
+            sourceURL: "https://www.youtube.com/watch?v=abc",
+            thumbnailURL: "https://img.example/thumb.jpg",
+            channelName: "Talk Channel",
+            videoDescription: "Talk description"
         )
         await vm.prepare(for: transcription)
 
@@ -157,6 +160,11 @@ final class MediaPlayerViewModelTests: XCTestCase {
         XCTAssertEqual(captured.path, dir.appendingPathComponent("video.m4a").path)
         XCTAssertEqual(captured.source, webm.path,
                        "Persist callback must receive the source path for cleanup-after-DB-write")
+        let metadata = await stubConverter.lastMetadataSnapshot()
+        XCTAssertEqual(metadata?.title, "Talk")
+        XCTAssertEqual(metadata?.artist, "Talk Channel")
+        XCTAssertEqual(metadata?.description, "Talk description")
+        XCTAssertEqual(metadata?.thumbnailURL, "https://img.example/thumb.jpg")
     }
 
     @MainActor
@@ -316,18 +324,27 @@ private final class InvocationCounter: @unchecked Sendable {
 private actor StubPlaybackConverter: YouTubeAudioPlaybackConverting {
     private let transformedPath: String
     private(set) var invocationCount: Int = 0
+    private var lastMetadata: YouTubeAudioArtifactMetadata?
 
     init(transformedPath: String) {
         self.transformedPath = transformedPath
     }
 
-    func convertToPlayableM4AIfNeeded(inputPath: String) async throws -> String {
+    func convertToPlayableM4AIfNeeded(
+        inputPath: String,
+        metadata: YouTubeAudioArtifactMetadata?
+    ) async throws -> String {
         invocationCount += 1
+        lastMetadata = metadata
         return transformedPath
     }
 
     func currentInvocationCount() -> Int {
         invocationCount
+    }
+
+    func lastMetadataSnapshot() -> YouTubeAudioArtifactMetadata? {
+        lastMetadata
     }
 }
 
@@ -336,7 +353,10 @@ private actor StubPlaybackConverter: YouTubeAudioPlaybackConverting {
 /// sleeps. `Task.sleep` throws `CancellationError` when the surrounding
 /// task is cancelled, which propagates out as a converter failure.
 private final class SuspendingStubPlaybackConverter: YouTubeAudioPlaybackConverting, @unchecked Sendable {
-    func convertToPlayableM4AIfNeeded(inputPath: String) async throws -> String {
+    func convertToPlayableM4AIfNeeded(
+        inputPath: String,
+        metadata: YouTubeAudioArtifactMetadata?
+    ) async throws -> String {
         try await Task.sleep(nanoseconds: UInt64.max)
         return inputPath
     }

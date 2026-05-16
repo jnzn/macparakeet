@@ -85,6 +85,30 @@ private final class SaveFailingTranscriptionRepository: TranscriptionRepositoryP
     func updateStatus(id: UUID, status: Transcription.TranscriptionStatus, errorMessage: String?) throws {}
 }
 
+private final class CapturingPlaybackConverter: YouTubeAudioPlaybackConverting, @unchecked Sendable {
+    private let transformedPath: String
+    private let expectation: XCTestExpectation
+    private let capturedMetadata = OSAllocatedUnfairLock<YouTubeAudioArtifactMetadata?>(initialState: nil)
+
+    init(transformedPath: String, expectation: XCTestExpectation) {
+        self.transformedPath = transformedPath
+        self.expectation = expectation
+    }
+
+    func convertToPlayableM4AIfNeeded(
+        inputPath: String,
+        metadata: YouTubeAudioArtifactMetadata?
+    ) async throws -> String {
+        capturedMetadata.withLock { $0 = metadata }
+        expectation.fulfill()
+        return transformedPath
+    }
+
+    func metadataSnapshot() -> YouTubeAudioArtifactMetadata? {
+        capturedMetadata.withLock { $0 }
+    }
+}
+
 private struct StubMediaMetadataExtractor: MediaMetadataExtracting {
     let metadata: MediaMetadata
 
@@ -726,6 +750,44 @@ final class TranscriptionServiceTests: XCTestCase {
         XCTAssertTrue(phases.contains { if case .downloading(42) = $0 { true } else { false } })
         XCTAssertTrue(phases.contains { if case .downloading(100) = $0 { true } else { false } })
         XCTAssertTrue(phases.contains { if case .transcribing = $0 { true } else { false } })
+    }
+
+    func testTranscribeURLPassesYouTubeMetadataToPlaybackConversion() async throws {
+        let downloadedURL = try makeTempDownloadedAudio(fileExtension: "webm")
+        defer { try? FileManager.default.removeItem(at: downloadedURL) }
+
+        let downloader = MockYouTubeDownloader(result: YouTubeDownloader.DownloadResult(
+            audioFileURL: downloadedURL,
+            title: "Video Title",
+            durationSeconds: 120,
+            channelName: "Channel Name",
+            thumbnailURL: "https://img.example/thumb.jpg",
+            videoDescription: "Video description"
+        ))
+        let conversionExpectation = expectation(description: "playback conversion received metadata")
+        let converter = CapturingPlaybackConverter(
+            transformedPath: downloadedURL.deletingPathExtension().appendingPathExtension("m4a").path,
+            expectation: conversionExpectation
+        )
+
+        await mockSTT.configure(result: STTResult(text: "Downloaded transcript"))
+
+        let service = TranscriptionService(
+            audioProcessor: mockAudio,
+            sttTranscriber: mockSTT,
+            transcriptionRepo: transcriptionRepo,
+            youtubeDownloader: downloader,
+            playbackConverter: converter
+        )
+
+        _ = try await service.transcribeURL(urlString: "https://youtu.be/dQw4w9WgXcQ")
+        await fulfillment(of: [conversionExpectation], timeout: 2.0)
+
+        let metadata = try XCTUnwrap(converter.metadataSnapshot())
+        XCTAssertEqual(metadata.title, "Video Title")
+        XCTAssertEqual(metadata.artist, "Channel Name")
+        XCTAssertEqual(metadata.description, "Video description")
+        XCTAssertEqual(metadata.thumbnailURL, "https://img.example/thumb.jpg")
     }
 
     func testTranscribeMeetingUsesFinalizeLaneAndMergesFreshSourceTranscriptsByAlignment() async throws {
@@ -1589,10 +1651,10 @@ final class TranscriptionServiceTests: XCTestCase {
         XCTAssertEqual(errorType, "YouTubeDownloadError.downloadFailed")
     }
 
-    private func makeTempDownloadedAudio() throws -> URL {
+    private func makeTempDownloadedAudio(fileExtension: String = "m4a") throws -> URL {
         try AppPaths.ensureDirectories()
         let url = URL(fileURLWithPath: AppPaths.tempDir)
-            .appendingPathComponent("downloaded-\(UUID().uuidString).m4a")
+            .appendingPathComponent("downloaded-\(UUID().uuidString).\(fileExtension)")
         let created = FileManager.default.createFile(atPath: url.path, contents: Data("audio".utf8))
         XCTAssertTrue(created)
         return url
