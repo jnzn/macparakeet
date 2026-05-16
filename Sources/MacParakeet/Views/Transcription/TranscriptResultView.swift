@@ -1254,9 +1254,7 @@ struct TranscriptResultView: View {
                     tabCapsule(for: tab)
                 }
 
-                if promptResultsViewModel.hasPromptResultGenerationCapability {
-                    generateTabButton
-                }
+                generateTabButton
 
                 Spacer()
             }
@@ -1351,30 +1349,32 @@ struct TranscriptResultView: View {
     }
 
     private var generateTabButton: some View {
-        Image(systemName: "plus")
-            .font(.system(size: 12, weight: .semibold))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .contentShape(Rectangle())
-            .foregroundStyle(
-                promptResultsViewModel.canGeneratePromptResult
-                    ? DesignSystem.Colors.textSecondary
-                    : DesignSystem.Colors.textTertiary
-            )
-            .onTapGesture {
-                guard promptResultsViewModel.canGeneratePromptResult else { return }
-                showGeneratePopover = true
-            }
-            .popover(isPresented: $showGeneratePopover) {
-                promptGenerationPopover
-                    .frame(width: 420)
-                    .padding(DesignSystem.Spacing.lg)
-            }
-            .accessibilityAddTraits(.isButton)
-            .accessibilityLabel("New prompt generation")
-            .onHover { hovering in
-                if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-            }
+        let hasAI = promptResultsViewModel.hasPromptResultGenerationCapability
+        return Button {
+            showGeneratePopover = true
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 12, weight: .semibold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .foregroundStyle(
+                    hasAI
+                        ? DesignSystem.Colors.textSecondary
+                        : DesignSystem.Colors.accent
+                )
+        }
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .popover(isPresented: $showGeneratePopover) {
+            promptGenerationPopover
+                .frame(width: 420)
+                .padding(DesignSystem.Spacing.lg)
+        }
+        .accessibilityLabel(hasAI ? "New prompt generation" : "Set up AI for prompt generation")
+        .help(hasAI ? "Generate a prompt result" : "Set up AI for summaries and action items")
+        .onHover { hovering in
+            if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+        }
     }
 
     private func tabIcon(_ tab: TranscriptionViewModel.TranscriptTab) -> String {
@@ -1587,7 +1587,16 @@ struct TranscriptResultView: View {
         )
     }
 
+    @ViewBuilder
     private var promptGenerationPopover: some View {
+        if promptResultsViewModel.hasPromptResultGenerationCapability {
+            promptGenerationControls
+        } else {
+            promptGenerationSetupPopover
+        }
+    }
+
+    private var promptGenerationControls: some View {
         VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
             // Prompt chips
             promptChips
@@ -1648,6 +1657,41 @@ struct TranscriptResultView: View {
                 .controlSize(.regular)
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(!promptResultsViewModel.canGenerateManualPromptResult || transcriptText.isEmpty)
+            }
+        }
+    }
+
+    private var promptGenerationSetupPopover: some View {
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+            HStack(alignment: .top, spacing: DesignSystem.Spacing.sm) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(DesignSystem.Colors.accent)
+                    .frame(width: 20, height: 20)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Turn on AI for summaries and action items")
+                        .font(DesignSystem.Typography.body.weight(.semibold))
+                        .foregroundStyle(DesignSystem.Colors.textPrimary)
+
+                    Text("MacParakeet can generate summaries, action items, and custom prompt results from this transcript. Transcription still works without AI.")
+                        .font(DesignSystem.Typography.bodySmall)
+                        .foregroundStyle(DesignSystem.Colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            HStack {
+                Spacer()
+
+                Button {
+                    showGeneratePopover = false
+                    onSetUpAI?()
+                } label: {
+                    Label("Set up AI", systemImage: "gearshape")
+                }
+                .parakeetAction(.primaryProminent)
+                .controlSize(.regular)
             }
         }
     }

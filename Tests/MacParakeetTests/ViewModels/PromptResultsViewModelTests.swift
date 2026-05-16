@@ -19,6 +19,12 @@ final class PromptResultsViewModelTests: XCTestCase {
         promptRepo.prompts = Prompt.builtInPrompts()
     }
 
+    func testGenerationCapabilityIsFalseBeforeAIConfigured() {
+        XCTAssertFalse(viewModel.hasPromptResultGenerationCapability)
+        XCTAssertFalse(viewModel.canGeneratePromptResult)
+        XCTAssertFalse(viewModel.canGenerateManualPromptResult)
+    }
+
     func testConfigureLoadsVisiblePromptsAndDefaultSelection() {
         viewModel.configure(
             llmService: llm,

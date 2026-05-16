@@ -160,6 +160,18 @@ Existing plan:
 
 - `plans/active/2026-05-ai-setup-ux.md`
 
+2026-05-16 refinement:
+
+- Chat and Live Ask already had `Set up AI` CTAs that route to Settings -> AI.
+- Prompt-result generation was the remaining hidden surface: the `+` tab only
+  rendered when an LLM service existed, so users without AI configured could not
+  discover summaries, action items, or custom prompt results from the result
+  screen.
+- The result screen now always shows the `+` affordance. With AI configured it
+  opens the existing generation popover. Without AI configured it opens a
+  compact setup popover with a `Set up AI` action. Transcription remains
+  available without AI.
+
 ### P1: Short meeting/demo auto-run silently skips below 500 chars
 
 **Verification status:** confirmed as threshold/UX behavior. The current working
