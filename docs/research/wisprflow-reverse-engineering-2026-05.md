@@ -343,14 +343,14 @@ WisprFlow captures rich context from the active app to inform dictation, cleanup
   appUrl: string,          // "slack.com"
   appCodingCliAgent: string | null,  // "cline", "codex", "cursor-agent", etc.
   appCodingCliAgentConfidence: "high" | "low" | null,
-  
+
   textboxContents: {
     beforeText: string,    // Text before cursor
     afterText: string,     // Text after cursor
     selectedText: string,  // Currently selected text
     contents: string,      // Full textbox contents
   },
-  
+
   appContext: {
     conversationId: string,       // Chat thread ID
     nearestTexts: string,         // Nearby visible text
@@ -361,7 +361,7 @@ WisprFlow captures rich context from the active app to inform dictation, cleanup
     vsCodeVariableNames: string[],// Variables from VS Code
     vsCodeFileNames: string[],    // Open files in VS Code
   },
-  
+
   dictionaryContext: string[],    // User's custom dictionary words
   starredDictionaryContext: string[], // Starred (priority) dictionary words
 }

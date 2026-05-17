@@ -85,8 +85,10 @@ by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
 - `flow` command renamed to `vocab`. All subcommands move:
   `flow words` → `vocab words`, `flow snippets` → `vocab snippets`,
   `flow process` → `vocab process`. `flow vocabulary export/import/schema`
-  flattened to `vocab export/import/schema`. No deprecated alias — the
-  old `flow` surface had no external consumers.
+  flattened to `vocab export/import/schema`. The old `flow` command remains as
+  a deprecated alias for this minor release, including the legacy
+  `flow vocabulary export/import/schema` forms, and will be removed at the next
+  major CLI version.
 
 ### Added
 
