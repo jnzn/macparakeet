@@ -1,5 +1,4 @@
 import AppKit
-import ApplicationServices
 import Carbon
 import Foundation
 import OSLog
@@ -37,42 +36,6 @@ protocol ClipboardEventPosting {
     func simulatePaste(using pasteShortcutKeyResolver: PasteShortcutKeyResolver) throws
     @MainActor
     func simulateKeystroke(_ keyCode: UInt16) throws
-}
-
-protocol ClipboardFocusedTextInserting {
-    @MainActor
-    func insertText(_ text: String) -> Bool
-}
-
-struct AXClipboardFocusedTextInserter: ClipboardFocusedTextInserting {
-    @MainActor
-    func insertText(_ text: String) -> Bool {
-        guard AXIsProcessTrusted() else {
-            return false
-        }
-
-        let systemElement = AXUIElementCreateSystemWide()
-        var rawFocusedElement: CFTypeRef?
-        let copyStatus = AXUIElementCopyAttributeValue(
-            systemElement,
-            kAXFocusedUIElementAttribute as CFString,
-            &rawFocusedElement
-        )
-        guard copyStatus == .success,
-              let rawFocusedElement,
-              CFGetTypeID(rawFocusedElement) == AXUIElementGetTypeID()
-        else {
-            return false
-        }
-
-        let focusedElement = unsafeDowncast(rawFocusedElement as AnyObject, to: AXUIElement.self)
-        let setStatus = AXUIElementSetAttributeValue(
-            focusedElement,
-            kAXSelectedTextAttribute as CFString,
-            text as CFString
-        )
-        return setStatus == .success
-    }
 }
 
 struct CGClipboardEventPosting: ClipboardEventPosting {
@@ -230,7 +193,6 @@ public final class ClipboardService: ClipboardServiceProtocol {
     private let pasteboard: NSPasteboard
     private let pasteShortcutKeyResolver: PasteShortcutKeyResolver
     private let eventPosting: ClipboardEventPosting
-    private let focusedTextInserter: ClipboardFocusedTextInserting?
     private let clipboardRestoreDelay: TimeInterval
     private let restoreCoordinator: ClipboardRestoreCoordinator
     private let pasteboardStringWriter: @MainActor (NSPasteboard, String) -> Bool
@@ -240,7 +202,6 @@ public final class ClipboardService: ClipboardServiceProtocol {
             pasteboard: .general,
             pasteShortcutKeyResolver: PasteShortcutKeyResolver(),
             eventPosting: CGClipboardEventPosting(),
-            focusedTextInserter: AXClipboardFocusedTextInserter(),
             clipboardRestoreDelay: Self.defaultClipboardRestoreDelay,
             restoreCoordinator: Self.sharedRestoreCoordinator,
             pasteboardStringWriter: { pasteboard, text in
@@ -253,7 +214,6 @@ public final class ClipboardService: ClipboardServiceProtocol {
         pasteboard: NSPasteboard = .general,
         pasteShortcutKeyResolver: PasteShortcutKeyResolver = PasteShortcutKeyResolver(),
         eventPosting: ClipboardEventPosting = CGClipboardEventPosting(),
-        focusedTextInserter: ClipboardFocusedTextInserting?,
         clipboardRestoreDelay: TimeInterval = ClipboardService.defaultClipboardRestoreDelay,
         restoreAttemptObserver: (@MainActor () -> Void)? = nil,
         pasteboardStringWriter: @escaping @MainActor (NSPasteboard, String) -> Bool = { pasteboard, text in
@@ -264,7 +224,6 @@ public final class ClipboardService: ClipboardServiceProtocol {
             pasteboard: pasteboard,
             pasteShortcutKeyResolver: pasteShortcutKeyResolver,
             eventPosting: eventPosting,
-            focusedTextInserter: focusedTextInserter,
             clipboardRestoreDelay: clipboardRestoreDelay,
             restoreCoordinator: ClipboardRestoreCoordinator(restoreAttemptObserver: restoreAttemptObserver),
             pasteboardStringWriter: pasteboardStringWriter
@@ -275,7 +234,6 @@ public final class ClipboardService: ClipboardServiceProtocol {
         pasteboard: NSPasteboard,
         pasteShortcutKeyResolver: PasteShortcutKeyResolver,
         eventPosting: ClipboardEventPosting,
-        focusedTextInserter: ClipboardFocusedTextInserting?,
         clipboardRestoreDelay: TimeInterval,
         restoreCoordinator: ClipboardRestoreCoordinator,
         pasteboardStringWriter: @escaping @MainActor (NSPasteboard, String) -> Bool
@@ -283,21 +241,17 @@ public final class ClipboardService: ClipboardServiceProtocol {
         self.pasteboard = pasteboard
         self.pasteShortcutKeyResolver = pasteShortcutKeyResolver
         self.eventPosting = eventPosting
-        self.focusedTextInserter = focusedTextInserter
         self.clipboardRestoreDelay = clipboardRestoreDelay
         self.restoreCoordinator = restoreCoordinator
         self.pasteboardStringWriter = pasteboardStringWriter
     }
 
     /// Paste text into the active app by:
-    /// 1. Trying AX-focused text insertion without touching the clipboard.
-    /// 2. Falling back to saving current clipboard, setting transcript, and simulating Cmd+V.
-    /// 3. Restoring original clipboard after a delay long enough for slow paste targets.
+    /// 1. Saving current clipboard
+    /// 2. Setting transcript on clipboard
+    /// 3. Simulating Cmd+V
+    /// 4. Restoring original clipboard after a delay long enough for slow paste targets
     public func pasteText(_ text: String) async throws {
-        if focusedTextInserter?.insertText(text) == true {
-            return
-        }
-
         let restoreDelay = clipboardRestoreDelay
 
         // 1. Save current clipboard contents

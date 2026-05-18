@@ -281,7 +281,7 @@ DictationService.stopRecording()
     │ ── Receives raw transcript
     │ ── Runs TextProcessingPipeline (if mode == .clean)
     │ ── Saves to DictationRepository
-    │ ── Inserts via AX-focused text insertion, with NSPasteboard + CGEvent fallback
+    │ ── Inserts via NSPasteboard + simulated Cmd+V, then restores clipboard
     │
     ▼
 DictationResult returned

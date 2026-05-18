@@ -195,8 +195,8 @@ Both modes coexist with no configuration required. The 400ms threshold distingui
 │    - (v0.2) Raw → clean pipeline → polished text                 │
 ├─────────────────────────────────────────────────────────────────┤
 │ 6. Result                                                        │
-│    - Auto-insert into target app (AX first, clipboard fallback)   │
-│    - Previous clipboard saved/restored only on fallback paste     │
+│    - Auto-paste into target app (NSPasteboard + simulated Cmd+V) │
+│    - Previous clipboard contents saved and restored after paste  │
 │    - Save to dictation history (database)                        │
 │    - Save audio file (if storage enabled)                        │
 │    - Overlay shows success checkmark, auto-dismisses             │
@@ -206,19 +206,17 @@ Both modes coexist with no configuration required. The 400ms threshold distingui
 **Text insertion:**
 
 ```swift
-// 1. Try direct AX insertion into the focused editable element.
-if focusedElement.setSelectedText(transcript) {
-    return
-}
-
-// 2. Fallback for apps that do not support AX insertion:
-//    save current clipboard, set transcript, simulate Cmd+V.
+// 1. Save current clipboard
 let savedContents = NSPasteboard.general.pasteboardItems
+
+// 2. Set transcript
 NSPasteboard.general.clearContents()
 NSPasteboard.general.setString(transcript, forType: .string)
+
+// 3. Simulate Cmd+V
 simulateCommandV()
 
-// 3. Restore clipboard after a short delay for slower paste targets.
+// 4. Restore clipboard after a short delay for slower paste targets.
 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
     restore(savedContents)
 }

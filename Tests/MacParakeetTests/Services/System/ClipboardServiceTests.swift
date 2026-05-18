@@ -13,48 +13,22 @@ final class ClipboardServiceTests: XCTestCase {
         )
     }
 
-    func testPasteTextUsesFocusedTextInsertionWithoutTouchingClipboard() async throws {
-        let pasteboard = makeScratchPasteboard()
-        defer { pasteboard.releaseGlobally() }
-        replacePasteboard(pasteboard, with: "original")
-
-        var pasteWasPosted = false
-        let focusedInserter = RecordingFocusedTextInserter(insertSucceeds: true)
-        let service = ClipboardService(
-            pasteboard: pasteboard,
-            eventPosting: RecordingClipboardEventPosting {
-                pasteWasPosted = true
-            },
-            focusedTextInserter: focusedInserter,
-            clipboardRestoreDelay: Self.shortRestoreDelay
-        )
-
-        try await service.pasteText("dictation")
-
-        XCTAssertEqual(focusedInserter.insertedTexts, ["dictation"])
-        XCTAssertFalse(pasteWasPosted)
-        XCTAssertEqual(pasteboard.string(forType: .string), "original")
-    }
-
-    func testPasteTextFallsBackToClipboardWhenFocusedTextInsertionFails() async throws {
+    func testPasteTextAlwaysUsesClipboardPastePath() async throws {
         let pasteboard = makeScratchPasteboard()
         defer { pasteboard.releaseGlobally() }
         replacePasteboard(pasteboard, with: "original")
 
         var pastedStrings: [String] = []
-        let focusedInserter = RecordingFocusedTextInserter(insertSucceeds: false)
         let service = ClipboardService(
             pasteboard: pasteboard,
             eventPosting: RecordingClipboardEventPosting {
                 pastedStrings.append(pasteboard.string(forType: .string) ?? "")
             },
-            focusedTextInserter: focusedInserter,
             clipboardRestoreDelay: Self.shortRestoreDelay
         )
 
         try await service.pasteText("dictation")
 
-        XCTAssertEqual(focusedInserter.insertedTexts, ["dictation"])
         XCTAssertEqual(pastedStrings, ["dictation"])
 
         try await waitForPasteboardString("original", on: pasteboard)
@@ -79,7 +53,6 @@ final class ClipboardServiceTests: XCTestCase {
             eventPosting: RecordingClipboardEventPosting {
                 pasteWasPosted = true
             },
-            focusedTextInserter: nil,
             clipboardRestoreDelay: Self.shortRestoreDelay,
             pasteboardStringWriter: { _, text in
                 attemptedWrites.append(text)
@@ -110,7 +83,6 @@ final class ClipboardServiceTests: XCTestCase {
             eventPosting: RecordingClipboardEventPosting {
                 pastedStrings.append(pasteboard.string(forType: .string) ?? "")
             },
-            focusedTextInserter: nil,
             clipboardRestoreDelay: Self.shortRestoreDelay
         )
 
@@ -135,7 +107,6 @@ final class ClipboardServiceTests: XCTestCase {
             eventPosting: RecordingClipboardEventPosting {
                 pastedStrings.append(pasteboard.string(forType: .string) ?? "")
             },
-            focusedTextInserter: nil,
             clipboardRestoreDelay: Self.shortRestoreDelay
         )
 
@@ -167,7 +138,6 @@ final class ClipboardServiceTests: XCTestCase {
                     keystrokes.append(keyCode)
                 }
             ),
-            focusedTextInserter: nil,
             clipboardRestoreDelay: Self.shortRestoreDelay
         )
 
@@ -196,7 +166,6 @@ final class ClipboardServiceTests: XCTestCase {
                     keystrokes.append(keyCode)
                 }
             ),
-            focusedTextInserter: nil,
             clipboardRestoreDelay: Self.shortRestoreDelay
         )
 
@@ -209,37 +178,6 @@ final class ClipboardServiceTests: XCTestCase {
         try await waitForPasteboardString("original", on: pasteboard)
     }
 
-    func testPasteTextWithActionUsesFocusedTextInsertionThenFiresKeystroke() async throws {
-        let pasteboard = makeScratchPasteboard()
-        defer { pasteboard.releaseGlobally() }
-        replacePasteboard(pasteboard, with: "original")
-
-        var pasteWasPosted = false
-        var keystrokes: [UInt16] = []
-        let focusedInserter = RecordingFocusedTextInserter(insertSucceeds: true)
-        let service = ClipboardService(
-            pasteboard: pasteboard,
-            eventPosting: RecordingClipboardEventPosting(
-                onPaste: {
-                    pasteWasPosted = true
-                },
-                onKeystroke: { keyCode in
-                    keystrokes.append(keyCode)
-                }
-            ),
-            focusedTextInserter: focusedInserter,
-            clipboardRestoreDelay: Self.shortRestoreDelay
-        )
-
-        let fired = try await service.pasteTextWithAction("dictation", postPasteAction: .returnKey)
-
-        XCTAssertTrue(fired)
-        XCTAssertEqual(focusedInserter.insertedTexts, ["dictation"])
-        XCTAssertFalse(pasteWasPosted)
-        XCTAssertEqual(keystrokes, [KeyAction.returnKey.keyCode])
-        XCTAssertEqual(pasteboard.string(forType: .string), "original")
-    }
-
     func testUserClipboardChangeDuringRestoreWindowIsNotClobbered() async throws {
         let pasteboard = makeScratchPasteboard()
         defer { pasteboard.releaseGlobally() }
@@ -249,7 +187,6 @@ final class ClipboardServiceTests: XCTestCase {
         let service = ClipboardService(
             pasteboard: pasteboard,
             eventPosting: RecordingClipboardEventPosting(),
-            focusedTextInserter: nil,
             clipboardRestoreDelay: Self.shortRestoreDelay,
             restoreAttemptObserver: {
                 restoreAttempted.fulfill()
@@ -272,7 +209,6 @@ final class ClipboardServiceTests: XCTestCase {
         let service = ClipboardService(
             pasteboard: pasteboard,
             eventPosting: RecordingClipboardEventPosting(),
-            focusedTextInserter: nil,
             clipboardRestoreDelay: Self.shortRestoreDelay
         )
 
@@ -294,7 +230,6 @@ final class ClipboardServiceTests: XCTestCase {
         let service = ClipboardService(
             pasteboard: pasteboard,
             eventPosting: RecordingClipboardEventPosting(),
-            focusedTextInserter: nil,
             clipboardRestoreDelay: Self.shortRestoreDelay,
             restoreAttemptObserver: {
                 restoreAttempted.fulfill()
@@ -317,7 +252,6 @@ final class ClipboardServiceTests: XCTestCase {
         let service = ClipboardService(
             pasteboard: pasteboard,
             eventPosting: RecordingClipboardEventPosting(),
-            focusedTextInserter: nil,
             clipboardRestoreDelay: Self.shortRestoreDelay,
             pasteboardStringWriter: { _, _ in false }
         )
@@ -337,7 +271,6 @@ final class ClipboardServiceTests: XCTestCase {
         let service = ClipboardService(
             pasteboard: pasteboard,
             eventPosting: RecordingClipboardEventPosting(),
-            focusedTextInserter: nil,
             clipboardRestoreDelay: Self.shortRestoreDelay,
             pasteboardStringWriter: { pasteboard, text in
                 guard !failNextWrite else {
@@ -387,21 +320,6 @@ final class ClipboardServiceTests: XCTestCase {
         XCTAssertEqual(pasteboard.string(forType: .string), expected, file: file, line: line)
     }
 
-}
-
-@MainActor
-private final class RecordingFocusedTextInserter: ClipboardFocusedTextInserting {
-    private let insertSucceeds: Bool
-    private(set) var insertedTexts: [String] = []
-
-    init(insertSucceeds: Bool) {
-        self.insertSucceeds = insertSucceeds
-    }
-
-    func insertText(_ text: String) -> Bool {
-        insertedTexts.append(text)
-        return insertSucceeds
-    }
 }
 
 @MainActor
