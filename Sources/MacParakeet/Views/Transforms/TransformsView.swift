@@ -498,7 +498,7 @@ private struct TransformHistoryRow: View {
             }
         }
         .contextMenu {
-            Button("Copy Result", action: onCopyOutput)
+            Button("Copy Transformed", action: onCopyOutput)
             Button("Copy Original", action: onCopyInput)
             Button(isExpanded ? "Hide Details" : "Show Details", action: onToggleExpanded)
         }
@@ -545,10 +545,13 @@ private struct TransformHistoryRow: View {
 
             Spacer(minLength: DesignSystem.Spacing.sm)
 
-            TransformHistoryTextButton(
-                title: copiedTarget == .output ? "Copied result" : "Copy result",
-                systemImage: copiedTarget == .output ? "checkmark" : "doc.on.doc",
-                color: copiedTarget == .output ? DesignSystem.Colors.successGreen : DesignSystem.Colors.textSecondary,
+            TransformHistoryCopyButton(
+                title: "Copy",
+                copiedTitle: "Copied",
+                systemImage: "doc.on.doc",
+                copiedSystemImage: "checkmark",
+                isCopied: copiedTarget == .output,
+                prominence: .primary,
                 help: "Copy transformed result",
                 action: onCopyOutput
             )
@@ -596,10 +599,13 @@ private struct TransformHistoryRow: View {
 
                         Spacer(minLength: DesignSystem.Spacing.sm)
 
-                        TransformHistoryInlineCopyButton(
-                            title: copiedTarget == .input ? "Copied original" : "Copy original",
-                            systemImage: copiedTarget == .input ? "checkmark" : "doc.text",
-                            color: copiedTarget == .input ? DesignSystem.Colors.successGreen : DesignSystem.Colors.textSecondary,
+                        TransformHistoryCopyButton(
+                            title: "Copy original",
+                            copiedTitle: "Copied original",
+                            systemImage: "doc.text",
+                            copiedSystemImage: "checkmark",
+                            isCopied: copiedTarget == .input,
+                            prominence: .inline,
                             help: "Copy original text",
                             action: onCopyInput
                         )
@@ -690,43 +696,129 @@ private struct TransformHistoryMetaChip: View {
     }
 }
 
-private struct TransformHistoryTextButton: View {
-    let title: String
-    let systemImage: String
-    let color: Color
-    let help: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(DesignSystem.Typography.caption.weight(.medium))
-        }
-        .parakeetAction(.secondary)
-        .controlSize(.small)
-        .foregroundStyle(color)
-        .help(help)
-        .accessibilityLabel(help)
+private struct TransformHistoryCopyButton: View {
+    enum Prominence {
+        case primary
+        case inline
     }
-}
 
-private struct TransformHistoryInlineCopyButton: View {
     let title: String
+    let copiedTitle: String
     let systemImage: String
-    let color: Color
+    let copiedSystemImage: String
+    let isCopied: Bool
+    let prominence: Prominence
     let help: String
     let action: () -> Void
 
+    @State private var isHovered = false
+
     var body: some View {
         Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(DesignSystem.Typography.micro.weight(.medium))
+            HStack(spacing: 7) {
+                Image(systemName: isCopied ? copiedSystemImage : systemImage)
+                    .font(.system(size: imageSize, weight: .semibold))
+                    .frame(width: 14)
+
+                Text(isCopied ? copiedTitle : title)
+                    .font(labelFont)
+                    .lineLimit(1)
+            }
+            .frame(minWidth: minWidth, minHeight: height)
+            .padding(.horizontal, horizontalPadding)
+            .foregroundStyle(foregroundColor)
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(backgroundColor)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(borderColor, lineWidth: 0.5)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         }
-        .parakeetAction(.subtle)
-        .controlSize(.small)
-        .foregroundStyle(color)
+        .buttonStyle(.plain)
         .help(help)
-        .accessibilityLabel(help)
+        .accessibilityLabel(isCopied ? copiedTitle : help)
+        .onHover { hovering in
+            withAnimation(DesignSystem.Animation.hoverTransition) {
+                isHovered = hovering
+            }
+        }
+        .animation(DesignSystem.Animation.contentSwap, value: isCopied)
+    }
+
+    private var labelFont: Font {
+        switch prominence {
+        case .primary:
+            return DesignSystem.Typography.caption.weight(.semibold)
+        case .inline:
+            return DesignSystem.Typography.micro.weight(.medium)
+        }
+    }
+
+    private var imageSize: CGFloat {
+        switch prominence {
+        case .primary:
+            return 13
+        case .inline:
+            return 11
+        }
+    }
+
+    private var minWidth: CGFloat {
+        switch prominence {
+        case .primary:
+            return 88
+        case .inline:
+            return 104
+        }
+    }
+
+    private var height: CGFloat {
+        switch prominence {
+        case .primary:
+            return 30
+        case .inline:
+            return 24
+        }
+    }
+
+    private var horizontalPadding: CGFloat {
+        switch prominence {
+        case .primary:
+            return 10
+        case .inline:
+            return 8
+        }
+    }
+
+    private var cornerRadius: CGFloat {
+        switch prominence {
+        case .primary:
+            return 8
+        case .inline:
+            return 7
+        }
+    }
+
+    private var foregroundColor: Color {
+        if isCopied { return DesignSystem.Colors.successGreen }
+        return isHovered ? DesignSystem.Colors.textPrimary : DesignSystem.Colors.textSecondary
+    }
+
+    private var backgroundColor: Color {
+        if isCopied {
+            return DesignSystem.Colors.successGreen.opacity(isHovered ? 0.18 : 0.12)
+        }
+        return DesignSystem.Colors.surfaceElevated.opacity(isHovered ? 0.92 : 0.62)
+    }
+
+    private var borderColor: Color {
+        if isCopied {
+            return DesignSystem.Colors.successGreen.opacity(isHovered ? 0.48 : 0.34)
+        }
+        return DesignSystem.Colors.border.opacity(isHovered ? 0.72 : 0.48)
     }
 }
 
