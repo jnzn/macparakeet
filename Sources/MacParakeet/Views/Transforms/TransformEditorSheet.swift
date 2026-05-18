@@ -5,8 +5,8 @@ import MacParakeetViewModels
 /// Modal sheet for Create-your-own and Edit-Transform flows (ADR-022).
 ///
 /// Two-column layout: framing copy on the left (~32% width), three stacked
-/// field cards on the right (Name → Keyboard shortcut → Customize prompt
-/// → optional Running label). Footer: *Autosave On* indicator on builtins,
+/// field cards on the right (Name → Keyboard shortcut → Customize prompt).
+/// Footer: *Autosave On* indicator on builtins,
 /// Cancel + Save on the right.
 ///
 /// Validation is reactive — fires on every field change after the first
@@ -38,7 +38,6 @@ struct TransformEditorSheet: View {
                         nameCard
                         shortcutCard
                         contentCard
-                        runningLabelCard
                     }
                     .padding(DesignSystem.Spacing.xl)
                 }
@@ -147,28 +146,6 @@ struct TransformEditorSheet: View {
                         .font(DesignSystem.Typography.caption)
                         .foregroundStyle(DesignSystem.Colors.textTertiary)
                 }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var runningLabelCard: some View {
-        EditorCard(title: "Running label (optional)") {
-            VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
-                TextField("Polishing\u{2026}", text: $viewModel.runningLabel)
-                    .textFieldStyle(.plain)
-                    .font(DesignSystem.Typography.body)
-                    .padding(.horizontal, DesignSystem.Spacing.md)
-                    .padding(.vertical, DesignSystem.Spacing.sm)
-                    .background(DesignSystem.Colors.surface)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(DesignSystem.Colors.border, lineWidth: 0.5)
-                    }
-                Text("Shown in the floating pill while this Transform runs. Defaults to “\(viewModel.normalizedName.isEmpty ? "Transforming\u{2026}" : "\(viewModel.normalizedName)ing\u{2026}")”.")
-                    .font(DesignSystem.Typography.caption)
-                    .foregroundStyle(DesignSystem.Colors.textTertiary)
             }
         }
     }

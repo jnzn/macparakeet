@@ -41,7 +41,7 @@ final class TransformsCoordinator {
 
     /// Cached snapshot of bound `.transform` prompts, keyed by ID. Used to
     /// resolve a `KeyboardShortcut`-triggered ID back to its prompt body
-    /// and running label without re-hitting the DB on every keystroke.
+    /// without re-hitting the DB on every keystroke.
     private var promptIndex: [UUID: Prompt] = [:]
     private var activeBindingIDs: Set<UUID> = []
 
@@ -170,7 +170,7 @@ final class TransformsCoordinator {
         }
 
         guard let llmService = llmServiceProvider() else {
-            panelController?.show(label: prompt.derivedRunningLabel)
+            panelController?.show()
             panelController?.fail(message: "Add an LLM provider in Settings")
             Telemetry.send(.transformFailed(
                 transformName: TelemetryTransformName(builtInName: prompt.name, isBuiltIn: prompt.isBuiltIn),
@@ -193,7 +193,7 @@ final class TransformsCoordinator {
         let runID = UUID()
         activeRunID = runID
 
-        panelController?.show(label: prompt.derivedRunningLabel)
+        panelController?.show()
 
         let promptBody = prompt.content
         let runningTransformName = prompt.name

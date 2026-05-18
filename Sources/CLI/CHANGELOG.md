@@ -107,13 +107,13 @@ by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
     provider. Distinct from `llm transform --prompt "..."`, which
     takes an ad-hoc prompt string.
   - `transforms create --name --prompt|--from-file [--shortcut "opt+1"]
-    [--running-label] [--json]` — headless install of a new Transform.
+    [--json]` — headless install of a new Transform.
     Shortcut format: `opt+1`, `cmd+shift+P`, etc. Refuses bare-key
     bindings (must include a modifier).
   - `transforms delete <id|name> [--json]` — deletes a custom
     Transform. Built-ins are protected.
   - `transforms list/show/create --json` use a snake-cased `TransformDTO`
-    payload (`id`, `name`, `shortcut`, `running_label`, `is_built_in`,
+    payload (`id`, `name`, `shortcut`, `is_built_in`,
     `prompt`, `created_at`, `updated_at`). `transforms run --json`
     emits the LLM result envelope, and `transforms delete --json` emits
     `{deleted,id,name}`.

@@ -48,7 +48,7 @@ final class TransformSpikeProgressPanelController {
 
     /// Open (or reuse) the panel showing the in-progress indicator. Idempotent
     /// — calling `show` while a panel is visible just resets state.
-    func show(label _: String = "Still polishing…") {
+    func show() {
         autoDismissTask?.cancel()
         autoDismissTask = nil
 
@@ -107,7 +107,7 @@ final class TransformSpikeProgressPanelController {
     func fail(message: String) {
         if viewModel == nil {
             // Spike-grade: surface the error briefly even if show() never ran.
-            show(label: "Transforms")
+            show()
         }
         viewModel?.phase = .failed(message: message)
         scheduleRelayout()
