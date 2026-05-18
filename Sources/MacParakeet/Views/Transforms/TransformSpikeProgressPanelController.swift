@@ -279,7 +279,7 @@ private struct TransformSpikeProgressView: View {
     private var indicator: some View {
         switch viewModel.phase {
         case .working:
-            RhodoneaScribeLoader(tint: DesignSystem.Colors.accent, paused: reduceMotion)
+            FormatterVisualView(size: 22, accessibilityLabel: "Transforming selected text")
         case .done:
             CheckmarkView(tint: DesignSystem.Colors.successGreen)
         case .failed:
@@ -315,105 +315,6 @@ private struct TransformSpikeProgressView: View {
         case .done: return 1
         case .failed: return 2
         }
-    }
-}
-
-// MARK: - Rhodonea Scribe Loader
-
-/// Sacred-geometry rose curve (rhodonea), squared form for smooth motion:
-/// `r(θ) = sin²(5θ/2)`. Five petals radiate from the center with five-fold
-/// pentagonal symmetry — the same symmetry family as the golden ratio and the
-/// pentagram. Picked over a stock `ProgressView()` and over the prior generic
-/// lissajous per `docs/research/transforms-design-2026-05.md` — Transforms is
-/// a writing/refinement surface and earns its own motion vocabulary, distinct
-/// from the dictation overlay's Merkaba (4-fold) and the meeting pill's
-/// rosette (6-fold). Three modes, three symmetries.
-///
-/// Implementation: a faint base curve is always drawn so the full sacred
-/// figure is legible, then a brighter "scribe head" traces it with a fading
-/// trail. The squared form keeps `r ≥ 0` everywhere — no jumps through the
-/// origin — so the head sweeps smoothly out to each petal tip and back.
-/// 60Hz TimelineView drives a Canvas that walks the curve over a 3-second
-/// period.
-private struct RhodoneaScribeLoader: View {
-    var tint: Color
-    var paused: Bool = false
-    var period: Double = 3.0
-
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: paused)) { context in
-            Canvas { ctx, size in
-                let now = context.date.timeIntervalSinceReferenceDate
-                let t = (now.truncatingRemainder(dividingBy: period)) / period
-                Self.draw(in: ctx, size: size, t: t, tint: tint)
-            }
-        }
-    }
-
-    private static func draw(in ctx: GraphicsContext, size: CGSize, t: Double, tint: Color) {
-        // Step 1 — Faint full curve so the sacred figure is always readable.
-        var basePath = Path()
-        let baseSamples = 240
-        for i in 0...baseSamples {
-            let phase = Double(i) / Double(baseSamples)
-            let p = point(phase: phase, size: size)
-            if i == 0 { basePath.move(to: p) } else { basePath.addLine(to: p) }
-        }
-        ctx.stroke(
-            basePath,
-            with: .color(tint.opacity(0.18)),
-            style: StrokeStyle(lineWidth: 1.1, lineCap: .round, lineJoin: .round)
-        )
-
-        // Step 2 — Bright scribe trail behind the head, fading toward the tail.
-        let segments = 42
-        let trailArc = 0.30  // fraction of full period rendered as bright trail
-        let baseLineWidth: CGFloat = 1.7
-
-        for i in 0..<segments {
-            let frac = Double(i) / Double(segments - 1)
-            let nextFrac = Double(i + 1) / Double(segments - 1)
-            let phaseA = t - frac * trailArc
-            let phaseB = t - nextFrac * trailArc
-
-            let pA = point(phase: phaseA, size: size)
-            let pB = point(phase: phaseB, size: size)
-
-            var seg = Path()
-            seg.move(to: pA)
-            seg.addLine(to: pB)
-
-            let alpha = pow(1.0 - frac, 1.6)
-            let width = baseLineWidth * (1.0 - frac * 0.35)
-
-            ctx.stroke(
-                seg,
-                with: .color(tint.opacity(alpha)),
-                style: StrokeStyle(lineWidth: width, lineCap: .round)
-            )
-        }
-
-        // Step 3 — Bright head dot for a clear "now" point.
-        let head = point(phase: t, size: size)
-        let dotR: CGFloat = 1.7
-        let dotRect = CGRect(x: head.x - dotR, y: head.y - dotR, width: dotR * 2, height: dotR * 2)
-        ctx.fill(Path(ellipseIn: dotRect), with: .color(tint))
-    }
-
-    /// Squared rhodonea `r(θ) = sin²(5θ/2)` — 5 petals in θ ∈ [0, 2π], with
-    /// `r ≥ 0` everywhere so the head returns smoothly to the origin between
-    /// petals instead of jumping through it (which standard `cos(kθ)` roses do
-    /// when `r` flips negative).
-    private static func point(phase: Double, size: CGSize) -> CGPoint {
-        let theta = phase * 2 * .pi
-        let cx = size.width / 2
-        let cy = size.height / 2
-        let radius = min(size.width, size.height) * 0.44
-        let s = sin(2.5 * theta)
-        let r = radius * s * s
-        let x = cx + r * cos(theta)
-        let y = cy + r * sin(theta)
-        return CGPoint(x: x, y: y)
     }
 }
 
