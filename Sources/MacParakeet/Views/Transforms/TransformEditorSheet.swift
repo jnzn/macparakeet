@@ -80,7 +80,7 @@ struct TransformEditorSheet: View {
     private var nameCard: some View {
         EditorCard(title: "Name your Transform shortcut") {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
-                TextField("Boss Mode", text: $viewModel.name)
+                TextField("Make concise", text: $viewModel.name)
                     .textFieldStyle(.plain)
                     .font(DesignSystem.Typography.bodyLarge)
                     .padding(.horizontal, DesignSystem.Spacing.md)

@@ -254,20 +254,22 @@ struct TransformsView: View {
 
     @ViewBuilder
     private var footerActions: some View {
-        HStack(spacing: DesignSystem.Spacing.md) {
-            Button(action: {
-                Task {
-                    if await viewModel.reseedMissingBuiltIns(reservedHotkeys: reservedHotkeys) {
-                        onBindingsChanged()
+        if viewModel.hasMissingBuiltInTransforms {
+            HStack(spacing: DesignSystem.Spacing.md) {
+                Button(action: {
+                    Task {
+                        if await viewModel.reseedMissingBuiltIns(reservedHotkeys: reservedHotkeys) {
+                            onBindingsChanged()
+                        }
                     }
+                }) {
+                    Label("Restore missing defaults", systemImage: "arrow.counterclockwise")
                 }
-            }) {
-                Label("Restore missing defaults", systemImage: "arrow.counterclockwise")
+                .parakeetAction(.subtle)
+                Spacer()
             }
-            .parakeetAction(.subtle)
-            Spacer()
+            .padding(.top, DesignSystem.Spacing.md)
         }
-        .padding(.top, DesignSystem.Spacing.md)
     }
 
     @ViewBuilder

@@ -33,6 +33,7 @@ final class TransformsViewModelTests: XCTestCase {
         // Built-in count is exposed via the helper.
         XCTAssertEqual(viewModel.builtInTransforms.count, 3)
         XCTAssertEqual(viewModel.customTransforms.count, 0)
+        XCTAssertFalse(viewModel.hasMissingBuiltInTransforms)
     }
 
     func testLoadOrdersBySortOrder() {
@@ -190,11 +191,13 @@ final class TransformsViewModelTests: XCTestCase {
         }
         await viewModel.load()
         XCTAssertEqual(viewModel.transforms.count, 2, "Polish should be gone before reseed.")
+        XCTAssertTrue(viewModel.hasMissingBuiltInTransforms)
 
         await viewModel.reseedMissingBuiltIns()
 
         XCTAssertEqual(viewModel.transforms.count, 3)
         XCTAssertTrue(viewModel.transforms.contains(where: { $0.name == "Polish" }))
+        XCTAssertFalse(viewModel.hasMissingBuiltInTransforms)
     }
 
     func testReseedDoesNotOverwriteExistingBuiltIn() async {
@@ -337,28 +340,6 @@ final class TransformsViewModelTests: XCTestCase {
 
         XCTAssertEqual(viewModel.history.map(\.id), [second.id])
         XCTAssertEqual(viewModel.totalHistoryCount, 1)
-    }
-
-    func testClearHistoryEmptiesTheTableAndResetsConfirmFlag() async throws {
-        try historyRepo.save(
-            TransformHistoryEntry(
-                transformName: "Polish",
-                inputText: "rough",
-                outputText: "polished",
-                capturePath: "ax",
-                replacementPath: "ax",
-                llmElapsedMs: 1,
-                totalElapsedMs: 2
-            )
-        )
-        await viewModel.loadHistory()
-        viewModel.isConfirmingClearHistory = true
-
-        await viewModel.clearHistory()
-
-        XCTAssertTrue(viewModel.history.isEmpty)
-        XCTAssertEqual(viewModel.totalHistoryCount, 0)
-        XCTAssertFalse(viewModel.isConfirmingClearHistory)
     }
 
     func testDeleteHistoryEntryWorksWithoutPendingState() async throws {

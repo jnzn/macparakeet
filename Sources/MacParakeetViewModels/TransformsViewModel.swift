@@ -31,9 +31,8 @@ public final class TransformsViewModel {
     public var errorMessage: String?
 
     /// Recent Transform runs, newest first. Surfaced read-only in the
-    /// Transforms tab (copy, delete, clear-all). Capped at
-    /// `historyFetchLimit` rows; the DB keeps the full set so power users
-    /// who clear and re-fill keep their working window intact.
+    /// Transforms tab for copy and per-item delete; bulk clear lives in
+    /// Settings reset/cleanup. Capped at `historyFetchLimit` rows.
     public var history: [TransformHistoryEntry] = []
     public var totalHistoryCount: Int = 0
     public var historyErrorMessage: String?
@@ -42,7 +41,6 @@ public final class TransformsViewModel {
     /// (non-built-in) Transform; cleared on confirm or cancel.
     public var pendingDeleteTransform: Prompt?
     public var pendingDeleteHistoryEntry: TransformHistoryEntry?
-    public var isConfirmingClearHistory: Bool = false
     public var copiedHistoryEntryID: UUID?
     public var copiedHistoryTarget: TransformHistoryCopyTarget?
 
@@ -225,26 +223,6 @@ public final class TransformsViewModel {
         }
     }
 
-    public func clearHistory() async {
-        guard let historyRepo else { return }
-        let myGeneration = beginHistoryMutation()
-        defer { endHistoryMutation() }
-        do {
-            let snapshot = try await Self.clearHistoryAndFetchSnapshot(
-                repo: historyRepo,
-                limit: Self.historyFetchLimit
-            )
-            guard myGeneration == historyMutationGeneration else { return }
-            history = snapshot.entries
-            totalHistoryCount = snapshot.totalCount
-            isConfirmingClearHistory = false
-            historyErrorMessage = nil
-        } catch {
-            guard myGeneration == historyMutationGeneration else { return }
-            historyErrorMessage = error.localizedDescription
-        }
-    }
-
     private func beginHistoryMutation() -> Int {
         historyMutationGeneration += 1
         activeHistoryMutationCount += 1
@@ -324,16 +302,6 @@ public final class TransformsViewModel {
     ) async throws -> (entries: [TransformHistoryEntry], totalCount: Int) {
         try await Task.detached(priority: .userInitiated) {
             _ = try repo.delete(id: id)
-            return try repo.fetchRecentWithCount(limit: limit)
-        }.value
-    }
-
-    private static func clearHistoryAndFetchSnapshot(
-        repo: TransformHistoryRepositoryProtocol,
-        limit: Int
-    ) async throws -> (entries: [TransformHistoryEntry], totalCount: Int) {
-        try await Task.detached(priority: .userInitiated) {
-            try repo.deleteAll()
             return try repo.fetchRecentWithCount(limit: limit)
         }.value
     }
@@ -451,6 +419,16 @@ public final class TransformsViewModel {
 
     public var builtInTransforms: [Prompt] {
         transforms.filter(\.isBuiltIn)
+    }
+
+    public var hasMissingBuiltInTransforms: Bool {
+        let visibleIDs = Set(transforms.map(\.id))
+        let canonicalIDs = Set(
+            Prompt.builtInPrompts()
+                .filter { $0.category == .transform }
+                .map(\.id)
+        )
+        return !canonicalIDs.isSubset(of: visibleIDs)
     }
 
     /// Bindings map for the registry — `[Prompt.ID: KeyboardShortcut]`.
