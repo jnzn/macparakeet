@@ -163,12 +163,26 @@ final class MediaPlayerViewModelTests: XCTestCase {
         let vm = MediaPlayerViewModel(playbackRateDefaults: isolatedPlaybackDefaults())
         let player = AVPlayer()
         vm.player = player
-        vm.isPlaying = true
+        player.rate = 1.0
 
         vm.setPlaybackRate(1.25)
 
         XCTAssertEqual(player.defaultRate, 1.25, accuracy: 0.001)
         XCTAssertEqual(player.rate, 1.25, accuracy: 0.001)
+    }
+
+    @MainActor
+    func testChangingPlaybackRateDoesNotResumePausedPlayerWhenIsPlayingIsStale() {
+        let vm = MediaPlayerViewModel(playbackRateDefaults: isolatedPlaybackDefaults())
+        let player = AVPlayer()
+        vm.player = player
+        vm.isPlaying = true
+        player.pause()
+
+        vm.setPlaybackRate(1.5)
+
+        XCTAssertEqual(player.defaultRate, 1.5, accuracy: 0.001)
+        XCTAssertEqual(player.rate, 0.0, accuracy: 0.001)
     }
 
     @MainActor

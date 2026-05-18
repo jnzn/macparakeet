@@ -48,7 +48,7 @@ public enum PlaybackRate: Sendable {
 public final class MediaPlayerViewModel {
     public var player: AVPlayer?
     public var isPlaying: Bool = false
-    public var playbackRate: Float
+    public private(set) var playbackRate: Float
     public var currentTimeMs: Int = 0
     public var durationMs: Int = 0
     public var playerState: PlayerState = .idle
@@ -304,7 +304,7 @@ public final class MediaPlayerViewModel {
 
         guard let player else { return }
         player.defaultRate = normalizedRate
-        if player.timeControlStatus == .playing || isPlaying {
+        if player.timeControlStatus != .paused {
             player.rate = normalizedRate
         }
     }
