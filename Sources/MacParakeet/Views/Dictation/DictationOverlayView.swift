@@ -575,8 +575,8 @@ struct DictationOverlayView: View {
     // MARK: - Formatting State (AI formatter refinement)
 
     /// Shown between `.processing` and `.success` when the AI formatter is
-    /// enabled and actually running on the transcript. Renders the rhodonea
-    /// scribe loader as the transcript is refined.
+    /// enabled and actually running on the transcript. Renders the spinning
+    /// Seed of Life bloom via `FormatterVisualView`.
     ///
     /// For command sessions we fall back to the standard spinner + a
     /// "Refining..." label so the copy continues to read during refinement
@@ -591,12 +591,7 @@ struct DictationOverlayView: View {
                         .foregroundStyle(.white.opacity(0.80))
                 }
             } else {
-                RhodoneaScribeLoader(
-                    tint: DesignSystem.Colors.accent,
-                    paused: reduceMotion,
-                    accessibilityLabel: "Refining transcript"
-                )
-                .frame(width: 26, height: 26)
+                FormatterVisualView()
             }
         }
     }

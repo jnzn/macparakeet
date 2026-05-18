@@ -279,7 +279,12 @@ private struct TransformSpikeProgressView: View {
     private var indicator: some View {
         switch viewModel.phase {
         case .working:
-            FormatterVisualView(size: 22, accessibilityLabel: "Transforming selected text")
+            RhodoneaScribeLoader(
+                tint: DesignSystem.Colors.accent,
+                paused: reduceMotion,
+                accessibilityLabel: "Transforming selected text"
+            )
+            .frame(width: 22, height: 22)
         case .done:
             CheckmarkView(tint: DesignSystem.Colors.successGreen)
         case .failed:
