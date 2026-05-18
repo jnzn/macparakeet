@@ -272,6 +272,7 @@ npx wrangler r2 object put macparakeet-downloads/MacParakeet.dmg \
 | `notarytool` auth failure | Keychain profile missing | Run `xcrun notarytool store-credentials "AC_PASSWORD"` (see Step 2 above) |
 | Update found but same version | Build number in appcast ≤ installed build | Ensure `sparkle:version` (build number) is strictly greater |
 | `notarytool` bus error / crash | Using `--wait` flag | **Never use `xcrun notarytool submit --wait`.** Submit without `--wait`, then poll with `xcrun notarytool info <submission-id>`. See gotcha #1 below. |
+| `notarytool` stays `In Progress` beyond the normal window | Apple accepted upload but the submission is likely stale/stuck | Stop local pollers, discard release artifacts, rebuild/sign from scratch, and submit a fresh archive. Do not continue from orphaned `In Progress` submissions. See gotcha #1a below. |
 | TCC permissions silently fail | User ran app from DMG volume instead of /Applications | DMG must include Applications symlink. See gotcha #3 below. |
 | YouTube transcription fails with `[PYI:ERROR] Failed to load Python shared library ... different Team IDs` | Bundled `yt-dlp_macos` was re-signed with hardened runtime but without disabling library validation | Sign `yt-dlp` with `com.apple.security.cs.disable-library-validation=true`, smoke-test `Contents/Resources/yt-dlp --version`, and repair any bad managed copy in Application Support |
 
@@ -295,6 +296,30 @@ xcrun notarytool info <SUBMISSION_ID> --keychain-profile "AC_PASSWORD"
 ```
 
 The `sign_notarize.sh` script already handles this correctly — it submits and polls in a loop. If you're running notarization manually, never add `--wait`.
+
+#### 1a. Restart from clean artifacts if notarization stalls
+
+Normal notarization usually returns `Accepted` in roughly 2-5 minutes. If a
+fresh app or DMG submission stays `In Progress` well beyond that window, treat
+the submission as stale instead of waiting indefinitely. This can happen even
+when `notarytool submit` produced a valid submission ID.
+
+For a clean restart:
+
+```bash
+# Stop any local release pollers first.
+ps -axo pid,ppid,etime,command | rg 'notarytool|sign_notarize|build_app_bundle|hdiutil'
+
+# Then discard generated release artifacts and rebuild/sign fresh.
+rm -rf dist/MacParakeet.app dist/MacParakeet.app.zip \
+  dist/MacParakeet.dmg dist/MacParakeet-rw.dmg dist/.dmg-staging
+VERSION=X.Y.Z scripts/dist/build_app_bundle.sh
+SKIP_NOTARIZE=1 CREATE_DMG=0 scripts/dist/sign_notarize.sh
+```
+
+Submit the newly-created archive and poll that exact fresh submission ID. Only
+staple, DMG, upload, or update Sparkle after a clean `Accepted` response for the
+artifact you are actually shipping.
 
 #### 2. Cloudflare CDN caches R2 objects — Sparkle cache-busting is mandatory
 
