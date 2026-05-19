@@ -424,6 +424,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             historyRepository: env.transformHistoryRepo,
             reservedHotkeysProvider: { [weak self] in
                 self?.transformReservedHotkeysForTransforms() ?? []
+            },
+            onLLMProviderRequired: { [weak self] in
+                self?.windowCoordinator.openMainWindowToSettings(tab: .ai)
             }
         )
         transforms.start()

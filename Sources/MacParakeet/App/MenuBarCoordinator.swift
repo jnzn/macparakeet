@@ -153,16 +153,6 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
         menu.addItem(pasteItem)
         pasteLastMenuItem = pasteItem
 
-        let pasteTransformItem = NSMenuItem(
-            title: "Paste Last Transform",
-            action: #selector(pasteLastTransform),
-            keyEquivalent: ""
-        )
-        pasteTransformItem.isEnabled = false
-        pasteTransformItem.target = self
-        menu.addItem(pasteTransformItem)
-        pasteLastTransformMenuItem = pasteTransformItem
-
         let recentItem = NSMenuItem(
             title: "Recent Dictations",
             action: nil,
@@ -172,6 +162,16 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
         recentItem.isHidden = true
         menu.addItem(recentItem)
         recentDictationsMenuItem = recentItem
+
+        let pasteTransformItem = NSMenuItem(
+            title: "Paste Last Transform",
+            action: #selector(pasteLastTransform),
+            keyEquivalent: ""
+        )
+        pasteTransformItem.isEnabled = false
+        pasteTransformItem.target = self
+        menu.addItem(pasteTransformItem)
+        pasteLastTransformMenuItem = pasteTransformItem
 
         let recentTransformsItem = NSMenuItem(
             title: "Recent Transforms",
@@ -426,11 +426,8 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
 
         let submenu = NSMenu()
         for dictation in dictations {
-            let text = dictation.displayText
-                .replacingOccurrences(of: "\n", with: " ")
-            let truncated = text.count > 40 ? String(text.prefix(40)) + "…" : text
             let item = NSMenuItem(
-                title: truncated,
+                title: MenuPreviewFormatter.dictationTitle(text: dictation.displayText),
                 action: #selector(pasteRecentDictation(_:)),
                 keyEquivalent: ""
             )
@@ -447,14 +444,8 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
 
         let submenu = NSMenu()
         for entry in entries {
-            let preview = entry.outputText
-                .replacingOccurrences(of: "\n", with: " ")
-            let truncated = preview.count > 34 ? String(preview.prefix(34)) + "…" : preview
-            let title = truncated.isEmpty
-                ? entry.transformName
-                : "\(entry.transformName): \(truncated)"
             let item = NSMenuItem(
-                title: title,
+                title: MenuPreviewFormatter.transformTitle(outputText: entry.outputText),
                 action: #selector(pasteRecentTransform(_:)),
                 keyEquivalent: ""
             )

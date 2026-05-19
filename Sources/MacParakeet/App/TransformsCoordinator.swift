@@ -28,6 +28,7 @@ final class TransformsCoordinator {
     private let promptRepository: PromptRepositoryProtocol
     private let historyRepository: TransformHistoryRepositoryProtocol?
     private let reservedHotkeysProvider: () -> [TransformShortcutReservedHotkey]
+    private let onLLMProviderRequired: () -> Void
     private let logger = Logger(subsystem: "com.macparakeet", category: "TransformsCoordinator")
 
     private var registry: TransformsHotkeyRegistry?
@@ -53,12 +54,14 @@ final class TransformsCoordinator {
         llmServiceProvider: @escaping () -> LLMServiceProtocol?,
         promptRepository: PromptRepositoryProtocol,
         historyRepository: TransformHistoryRepositoryProtocol? = nil,
-        reservedHotkeysProvider: @escaping () -> [TransformShortcutReservedHotkey] = { [] }
+        reservedHotkeysProvider: @escaping () -> [TransformShortcutReservedHotkey] = { [] },
+        onLLMProviderRequired: @escaping () -> Void = {}
     ) {
         self.llmServiceProvider = llmServiceProvider
         self.promptRepository = promptRepository
         self.historyRepository = historyRepository
         self.reservedHotkeysProvider = reservedHotkeysProvider
+        self.onLLMProviderRequired = onLLMProviderRequired
     }
 
     // MARK: - Lifecycle
@@ -173,14 +176,13 @@ final class TransformsCoordinator {
             return
         }
 
+        let telemetryName = TelemetryTransformName(
+            builtInName: prompt.name,
+            isBuiltIn: prompt.isBuiltIn
+        )
+
         guard let llmService = llmServiceProvider() else {
-            panelController?.show()
-            panelController?.fail(message: "Add an LLM provider in Settings")
-            Telemetry.send(.transformFailed(
-                transformName: TelemetryTransformName(builtInName: prompt.name, isBuiltIn: prompt.isBuiltIn),
-                reason: .noProvider
-            ))
-            logger.notice("transforms: no LLM provider configured for \(prompt.name, privacy: .public)")
+            handleMissingLLMProvider(prompt: prompt, telemetryName: telemetryName)
             return
         }
 
@@ -201,11 +203,6 @@ final class TransformsCoordinator {
 
         let promptBody = prompt.content
         let runningTransformName = prompt.name
-
-        let telemetryName = TelemetryTransformName(
-            builtInName: prompt.name,
-            isBuiltIn: prompt.isBuiltIn
-        )
 
         inFlightTask = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -250,8 +247,7 @@ final class TransformsCoordinator {
                     self.panelController?.fail(message: error.localizedDescription)
                     Telemetry.send(.transformFailed(transformName: telemetryName, reason: .emptySelection))
                 case .llmNotConfigured:
-                    self.panelController?.fail(message: error.localizedDescription)
-                    Telemetry.send(.transformFailed(transformName: telemetryName, reason: .noProvider))
+                    self.handleMissingLLMProvider(prompt: prompt, telemetryName: telemetryName)
                 case .llmFailed, .captureFailed:
                     self.panelController?.fail(message: error.localizedDescription)
                     Telemetry.send(.transformFailed(transformName: telemetryName, reason: .llmFailed))
@@ -266,6 +262,14 @@ final class TransformsCoordinator {
                 Telemetry.send(.transformFailed(transformName: telemetryName, reason: .llmFailed))
             }
         }
+    }
+
+    private func handleMissingLLMProvider(prompt: Prompt, telemetryName: TelemetryTransformName) {
+        panelController?.show()
+        panelController?.fail(message: "Opening AI settings...")
+        onLLMProviderRequired()
+        Telemetry.send(.transformFailed(transformName: telemetryName, reason: .noProvider))
+        logger.notice("transforms: no LLM provider configured for \(prompt.name, privacy: .public)")
     }
 
     private func saveHistoryEntry(prompt: Prompt, result: TransformExecutionResult) {
