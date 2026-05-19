@@ -262,7 +262,8 @@ final class TelemetryServiceTests: XCTestCase {
                 wordCount: 84,
                 mode: .persistent,
                 speechEngine: "whisper",
-                engineVariant: SpeechEnginePreference.defaultWhisperModelVariant
+                engineVariant: SpeechEnginePreference.defaultWhisperModelVariant,
+                language: "KO-kr"
             ),
             appVer: "0.4.2",
             osVer: "15.3",
@@ -291,6 +292,7 @@ final class TelemetryServiceTests: XCTestCase {
         XCTAssertEqual(props["mode"], "persistent")
         XCTAssertEqual(props["speech_engine"], "whisper")
         XCTAssertEqual(props["engine_variant"], SpeechEnginePreference.defaultWhisperModelVariant)
+        XCTAssertEqual(props["language"], "ko")
     }
 
     func testCLISurfaceSerializesAsCli() throws {
@@ -435,7 +437,8 @@ final class TelemetryServiceTests: XCTestCase {
                 diarizationRequested: true,
                 diarizationApplied: true,
                 speechEngine: "whisper",
-                engineVariant: SpeechEnginePreference.defaultWhisperModelVariant
+                engineVariant: SpeechEnginePreference.defaultWhisperModelVariant,
+                language: "ja-JP"
             ),
             appVer: "0.4.2",
             osVer: "15.3",
@@ -459,6 +462,7 @@ final class TelemetryServiceTests: XCTestCase {
         XCTAssertEqual(props["diarization_applied"], "true")
         XCTAssertEqual(props["speech_engine"], "whisper")
         XCTAssertEqual(props["engine_variant"], SpeechEnginePreference.defaultWhisperModelVariant)
+        XCTAssertEqual(props["language"], "ja")
     }
 
     func testTranscriptionFailedSerializesStage() throws {
@@ -529,6 +533,7 @@ final class TelemetryServiceTests: XCTestCase {
                 fileSizeBucket: "10_100mb",
                 speechEngine: "whisper",
                 engineVariant: SpeechEnginePreference.defaultWhisperModelVariant,
+                language: "zh-Hant",
                 errorType: nil
             ),
             appVer: "0.4.2",
@@ -554,6 +559,7 @@ final class TelemetryServiceTests: XCTestCase {
         XCTAssertEqual(props["file_size_bucket"], "10_100mb")
         XCTAssertEqual(props["speech_engine"], "whisper")
         XCTAssertEqual(props["engine_variant"], SpeechEnginePreference.defaultWhisperModelVariant)
+        XCTAssertEqual(props["language"], "zh")
         XCTAssertNil(props["file_path"])
         XCTAssertNil(props["file_name"])
         XCTAssertNil(props["source_url"])
@@ -570,7 +576,8 @@ final class TelemetryServiceTests: XCTestCase {
                 wordCount: 10,
                 errorType: nil,
                 speechEngine: "whisper",
-                engineVariant: "/Users/example/local-models/private-variant"
+                engineVariant: "/Users/example/local-models/private-variant",
+                language: "/Users/example/private-language"
             ),
             appVer: "0.4.2",
             osVer: "15.3",
@@ -587,6 +594,7 @@ final class TelemetryServiceTests: XCTestCase {
 
         XCTAssertEqual(props["speech_engine"], "whisper")
         XCTAssertEqual(props["engine_variant"], "custom")
+        XCTAssertNil(props["language"])
     }
 
     func testDictationOperationSerializesCancelReason() throws {

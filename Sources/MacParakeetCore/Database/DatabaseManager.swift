@@ -878,6 +878,19 @@ public final class DatabaseManager: Sendable {
             )
         }
 
+        // v0.19 — Dictation language attribution. Transcriptions have stored
+        // `language` since v0.1; dictations now keep the same normalized STT
+        // language code so completion and operation telemetry can use the
+        // persisted row as the source of truth without sending transcript text.
+        migrator.registerMigration("v0.19-dictation-language") { db in
+            let existingColumns = try db.columns(in: "dictations").map(\.name)
+            if !existingColumns.contains("language") {
+                try db.alter(table: "dictations") { t in
+                    t.add(column: "language", .text)
+                }
+            }
+        }
+
         try migrator.migrate(dbQueue)
         try reconcileBuiltInPrompts()
         try reconcileBuiltInQuickPrompts()

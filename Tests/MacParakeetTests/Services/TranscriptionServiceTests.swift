@@ -204,12 +204,23 @@ final class TranscriptionServiceTests: XCTestCase {
     }
 
     func testTranscribeFilePersistsDetectedLanguage() async throws {
-        await mockSTT.configure(result: STTResult(text: "hello world", language: "ko"))
+        let telemetry = TelemetrySpy()
+        Telemetry.configure(telemetry)
+        defer { Telemetry.configure(NoOpTelemetryService()) }
+
+        await mockSTT.configure(result: STTResult(text: "hello world", language: "KO-kr"))
 
         let result = try await service.transcribe(fileURL: URL(fileURLWithPath: "/tmp/korean.mp3"))
 
         XCTAssertEqual(result.language, "ko")
         XCTAssertEqual(try transcriptionRepo.fetch(id: result.id)?.language, "ko")
+
+        let completed = try XCTUnwrap(telemetry.snapshot().reversed().first {
+            if case .transcriptionCompleted = $0 { return true }
+            return false
+        })
+        let props = try telemetryProps(for: completed)
+        XCTAssertEqual(props["language"], "ko")
     }
 
     func testTranscribeFilePersistsEngineAttributionFromSTTResult() async throws {
@@ -930,6 +941,7 @@ final class TranscriptionServiceTests: XCTestCase {
             let speakerCount,
             let diarizationRequested,
             let diarizationApplied,
+            _,
             _,
             _
         ) = try XCTUnwrap(completedEvent) else {
@@ -1705,6 +1717,22 @@ final class TranscriptionServiceTests: XCTestCase {
         XCTAssertEqual(source, .youtube)
         XCTAssertEqual(stage, .download)
         XCTAssertEqual(errorType, "YouTubeDownloadError.downloadFailed")
+    }
+
+    private func telemetryProps(for spec: TelemetryEventSpec) throws -> [String: String] {
+        let event = TelemetryEvent(
+            spec: spec,
+            appVer: "test",
+            osVer: "test",
+            locale: "en-US",
+            chip: "test",
+            session: "test"
+        )
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let data = try encoder.encode(event)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        return try XCTUnwrap(json["props"] as? [String: String])
     }
 
     private func makeTempDownloadedAudio(fileExtension: String = "m4a") throws -> URL {

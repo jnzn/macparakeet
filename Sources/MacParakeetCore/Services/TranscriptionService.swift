@@ -322,6 +322,7 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
                 fileName: recording.displayName,
                 filePath: recording.mixedAudioURL.path,
                 fileSizeBytes: fileSize,
+                language: nil,
                 status: .processing,
                 sourceType: .meeting,
                 userNotes: recording.userNotes
@@ -492,6 +493,7 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
                 filePath: storedFileURL?.path,
                 fileSizeBytes: fileSize,
                 durationMs: embeddedMetadata.durationMs,
+                language: nil,
                 status: .processing,
                 channelName: embeddedMetadata.author,
                 videoDescription: embeddedMetadata.description,
@@ -665,6 +667,7 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
                 fileName: title,
                 filePath: keepDownloadedAudio ? downloadResult.audioFileURL.path : nil,
                 durationMs: durationMs,
+                language: nil,
                 status: .processing,
                 sourceURL: urlString,
                 thumbnailURL: downloadResult.thumbnailURL,
@@ -1127,7 +1130,7 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
 
             transcription.rawTranscript = result.text
             transcription.wordTimestamps = words
-            transcription.language = result.language ?? transcription.language
+            transcription.language = SpeechEnginePreference.normalizeKnownLanguage(result.language) ?? transcription.language
             transcription.engine = result.engine.rawValue
             transcription.engineVariant = result.engineVariant
             if let speechDurationMs = words.map(\.endMs).max() {
@@ -1303,8 +1306,8 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
         from sourceResults: [MeetingTranscriptFinalizer.SourceTranscript]
     ) -> String? {
         let languages = Set(sourceResults.compactMap { source in
-            source.result.language?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        }.filter { !$0.isEmpty })
+            SpeechEnginePreference.normalizeKnownLanguage(source.result.language)
+        })
         return languages.count == 1 ? languages.first : nil
     }
 
@@ -1373,7 +1376,8 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
             diarizationRequested: diarizationRequested,
             diarizationApplied: diarizationApplied,
             speechEngine: transcription.engine,
-            engineVariant: transcription.engineVariant
+            engineVariant: transcription.engineVariant,
+            language: transcription.language
         ))
         sendTranscriptionOperation(
             operation,
@@ -1386,7 +1390,8 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
             diarizationRequested: diarizationRequested,
             diarizationApplied: diarizationApplied,
             speechEngine: transcription.engine,
-            engineVariant: transcription.engineVariant
+            engineVariant: transcription.engineVariant,
+            language: transcription.language
         )
 
         return transcription
@@ -1485,6 +1490,7 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
         diarizationApplied: Bool = false,
         speechEngine: String? = nil,
         engineVariant: String? = nil,
+        language: String? = nil,
         errorType: String? = nil
     ) {
         Telemetry.send(.transcriptionOperation(
@@ -1505,6 +1511,7 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
             fileSizeBucket: operation.fileSizeBucket,
             speechEngine: speechEngine,
             engineVariant: engineVariant,
+            language: language,
             errorType: errorType
         ))
     }

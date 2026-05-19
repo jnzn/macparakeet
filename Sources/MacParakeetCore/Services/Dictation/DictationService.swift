@@ -319,6 +319,7 @@ public actor DictationService: DictationServiceProtocol {
                 wordCount: result.dictation.wordCount,
                 speechEngine: result.dictation.engine,
                 engineVariant: result.dictation.engineVariant,
+                language: result.dictation.language,
                 device: device
             )
             Telemetry.send(.dictationCompleted(
@@ -327,6 +328,7 @@ public actor DictationService: DictationServiceProtocol {
                 mode: currentTelemetryContext.mode,
                 speechEngine: result.dictation.engine,
                 engineVariant: result.dictation.engineVariant,
+                language: result.dictation.language,
                 device: device
             ))
             logger.debug(
@@ -475,6 +477,7 @@ public actor DictationService: DictationServiceProtocol {
                 wordCount: result.dictation.wordCount,
                 speechEngine: result.dictation.engine,
                 engineVariant: result.dictation.engineVariant,
+                language: result.dictation.language,
                 device: device
             )
             Telemetry.send(.dictationCompleted(
@@ -483,6 +486,7 @@ public actor DictationService: DictationServiceProtocol {
                 mode: currentTelemetryContext.mode,
                 speechEngine: result.dictation.engine,
                 engineVariant: result.dictation.engineVariant,
+                language: result.dictation.language,
                 device: device
             ))
             try? await Task.sleep(for: .milliseconds(500))
@@ -626,7 +630,8 @@ public actor DictationService: DictationServiceProtocol {
             hidden: !saveHistory,
             wordCount: wc,
             engine: result.engine.rawValue,
-            engineVariant: result.engineVariant
+            engineVariant: result.engineVariant,
+            language: SpeechEnginePreference.normalizeKnownLanguage(result.language)
         )
 
         if saveHistory, shouldSaveAudio?() ?? false {
@@ -811,6 +816,7 @@ public actor DictationService: DictationServiceProtocol {
         cancelReason: TelemetryDictationCancelReason? = nil,
         speechEngine: String? = nil,
         engineVariant: String? = nil,
+        language: String? = nil,
         device: RecordingDeviceInfo? = nil
     ) {
         guard let id = operationID ?? currentOperationID else { return }
@@ -828,6 +834,7 @@ public actor DictationService: DictationServiceProtocol {
             cancelReason: cancelReason,
             speechEngine: speechEngine,
             engineVariant: engineVariant,
+            language: language,
             device: device
         ))
     }

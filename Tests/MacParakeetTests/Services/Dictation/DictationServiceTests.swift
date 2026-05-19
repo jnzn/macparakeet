@@ -231,6 +231,7 @@ final class DictationServiceTests: XCTestCase {
                 TimestampedWord(word: "Hello", startMs: 0, endMs: 500, confidence: 0.98),
                 TimestampedWord(word: "world", startMs: 520, endMs: 1000, confidence: 0.95)
             ],
+            language: "KO_kr",
             engine: .whisper,
             engineVariant: SpeechEnginePreference.defaultWhisperModelVariant
         )
@@ -251,10 +252,12 @@ final class DictationServiceTests: XCTestCase {
         XCTAssertEqual(fetched?.rawTranscript, "Hello world")
         XCTAssertEqual(fetched?.engine, "whisper")
         XCTAssertEqual(fetched?.engineVariant, SpeechEnginePreference.defaultWhisperModelVariant)
+        XCTAssertEqual(fetched?.language, "ko")
 
         let operation = try XCTUnwrap(dictationOperationProps(in: telemetry.snapshot()).last)
         XCTAssertEqual(operation["speech_engine"], "whisper")
         XCTAssertEqual(operation["engine_variant"], SpeechEnginePreference.defaultWhisperModelVariant)
+        XCTAssertEqual(operation["language"], "ko")
     }
 
     func testFirstDictationFlagFlipsAfterSuccessfulSave() async throws {

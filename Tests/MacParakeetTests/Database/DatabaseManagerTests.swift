@@ -1006,6 +1006,33 @@ final class DatabaseManagerTests: XCTestCase {
         }
     }
 
+    func testDictationLanguageMigrationToleratesExistingColumnWhenMigrationMarkerIsMissing() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+        let dbPath = tempDir.appendingPathComponent("dictation_language_rerun_\(UUID().uuidString).db").path
+        defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+        let manager1 = try DatabaseManager(path: dbPath)
+        try manager1.dbQueue.write { db in
+            try db.execute(
+                sql: "DELETE FROM grdb_migrations WHERE identifier = ?",
+                arguments: ["v0.19-dictation-language"]
+            )
+        }
+
+        let manager2 = try DatabaseManager(path: dbPath)
+        try manager2.dbQueue.read { db in
+            let dictationColumns = try db.columns(in: "dictations").map(\.name)
+            XCTAssertTrue(dictationColumns.contains("language"))
+
+            let migrationRecorded = try Bool.fetchOne(
+                db,
+                sql: "SELECT EXISTS(SELECT 1 FROM grdb_migrations WHERE identifier = ?)",
+                arguments: ["v0.19-dictation-language"]
+            ) ?? false
+            XCTAssertTrue(migrationRecorded)
+        }
+    }
+
     /// Recreates the dictations table at its v0.5 shape (after `v0.5-private-dictation`
     /// added `hidden` and `wordCount`). Used by partial-migration test fixtures so the
     /// v0.7.4 lifetime-stats backfill has a real table to read from.

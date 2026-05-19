@@ -70,7 +70,8 @@ CREATE TABLE dictations (
     hidden INTEGER NOT NULL DEFAULT 0,                -- v0.5: Private dictation mode (excluded from history)
     wordCount INTEGER NOT NULL DEFAULT 0,             -- v0.5: Cached word count for voice stats
     engine TEXT,                                      -- v0.8: STT engine (`parakeet` / `whisper`)
-    engineVariant TEXT                                -- v0.8: Engine-specific model variant
+    engineVariant TEXT,                               -- v0.8: Engine-specific model variant
+    language TEXT                                     -- v0.19: Normalized detected STT language code
 );
 
 CREATE INDEX idx_dictations_created_at ON dictations(createdAt);
@@ -84,6 +85,7 @@ CREATE INDEX idx_dictations_created_at ON dictations(createdAt);
 - `pastedToApp` captures the frontmost app's bundle ID at paste time (e.g., `com.apple.TextEdit`). Useful for history context.
 - `processingMode` records which mode was active when the dictation was captured.
 - `engine` / `engineVariant` record the STT engine attribution for rows created after the v0.8 migration. Legacy rows keep `NULL` rather than being silently relabeled.
+- `language` records the normalized detected STT language code for rows created after the v0.19 migration. Unknown, auto-detect, or non-catalog values remain `NULL`.
 - ~~FTS5 was created in v0.1 but dropped in v0.5~~ — search uses `LIKE` queries instead. The FTS5 table and its 3 sync triggers added write overhead on every INSERT/UPDATE/DELETE without being queried.
 
 ---
@@ -135,6 +137,7 @@ CREATE INDEX idx_transcriptions_status_created_at ON transcriptions(status, crea
 
 **Notes:**
 - `wordTimestamps` is a JSON text column, not a separate table. One transcription = one blob of timestamps. GRDB can decode this via `Codable`.
+- `language` stores the normalized detected/specified STT language code when available. New transcription service rows start unknown and are filled from the STT result; legacy/default rows may still contain `en`.
 - `speakerCount` and `speakers` are nullable, populated only when diarization is available (v0.4).
 - `filePath` is nullable because the original file may be moved or deleted after transcription.
 - For meeting recordings, `filePath` points to the mixed `meeting.m4a` artifact used for playback/export, while the per-source `microphone.m4a`, `system.m4a`, and `meeting-recording-metadata.json` sidecar remain inside the same session folder. When the user typed notes during the meeting, a `notes.md` companion file is written into that folder at finalize/recovery time so the notes are inspectable in Finder / any editor without launching the app. The DB column `transcriptions.userNotes` is canonical; `notes.md` is a snapshot at finalize and is not synced with later edits via `macparakeet-cli meetings notes`.

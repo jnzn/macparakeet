@@ -262,6 +262,7 @@ public final class SettingsViewModel {
     public var whisperDefaultLanguage: String {
         didSet {
             SpeechEnginePreference.saveWhisperDefaultLanguage(whisperDefaultLanguage, defaults: defaults)
+            Telemetry.send(.settingChanged(setting: .whisperDefaultLanguage))
         }
     }
     public var speechEngineSwitching = false

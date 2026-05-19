@@ -1000,11 +1000,20 @@ final class SettingsViewModelTests: XCTestCase {
     }
 
     func testWhisperDefaultLanguagePersistsNormalizedValue() {
+        let telemetry = SettingsTelemetrySpy()
+        Telemetry.configure(telemetry)
+
         viewModel.whisperDefaultLanguage = "KO_kr"
         XCTAssertEqual(SpeechEnginePreference.whisperDefaultLanguage(defaults: testDefaults), "ko")
 
         viewModel.whisperDefaultLanguage = "auto"
         XCTAssertNil(SpeechEnginePreference.whisperDefaultLanguage(defaults: testDefaults))
+
+        let settings = telemetry.snapshot().compactMap { event -> TelemetrySettingName? in
+            guard case .settingChanged(let setting) = event else { return nil }
+            return setting
+        }
+        XCTAssertEqual(settings, [.whisperDefaultLanguage, .whisperDefaultLanguage])
     }
 
     func testSpeechEngineChangeCallsSwitcherAndPersistsOnSuccess() async throws {

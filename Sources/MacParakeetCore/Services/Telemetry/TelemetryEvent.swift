@@ -332,6 +332,7 @@ public enum TelemetrySettingName: String, Sendable, Equatable {
     case saveTranscriptionAudio = "save_transcription_audio"
     case youtubeAudioQuality = "youtube_audio_quality"
     case speakerDiarization = "speaker_diarization"
+    case whisperDefaultLanguage = "whisper_default_language"
     case autoSave = "auto_save"
     case meetingAutoSave = "meeting_auto_save"
     case meetingHotkey = "meeting_hotkey"
@@ -362,6 +363,7 @@ public enum TelemetryEventSpec: Sendable {
         mode: TelemetryDictationMode?,
         speechEngine: String? = nil,
         engineVariant: String? = nil,
+        language: String? = nil,
         device: RecordingDeviceInfo? = nil
     )
     case dictationCancelled(durationSeconds: Double?, reason: TelemetryDictationCancelReason?, device: RecordingDeviceInfo? = nil)
@@ -379,6 +381,7 @@ public enum TelemetryEventSpec: Sendable {
         cancelReason: TelemetryDictationCancelReason? = nil,
         speechEngine: String? = nil,
         engineVariant: String? = nil,
+        language: String? = nil,
         device: RecordingDeviceInfo? = nil
     )
     case dictationFirstLoadCaptionShown(firstInstall: Bool)
@@ -393,7 +396,8 @@ public enum TelemetryEventSpec: Sendable {
         diarizationRequested: Bool,
         diarizationApplied: Bool,
         speechEngine: String? = nil,
-        engineVariant: String? = nil
+        engineVariant: String? = nil,
+        language: String? = nil
     )
     case transcriptionCancelled(
         source: TelemetryTranscriptionSource,
@@ -424,6 +428,7 @@ public enum TelemetryEventSpec: Sendable {
         fileSizeBucket: String?,
         speechEngine: String? = nil,
         engineVariant: String? = nil,
+        language: String? = nil,
         errorType: String?
     )
     case diarizationStarted(source: TelemetryTranscriptionSource)
@@ -845,6 +850,7 @@ extension TelemetryEventSpec {
             let mode,
             let speechEngine,
             let engineVariant,
+            let language,
             let device
         ):
             return Self.mergeDevice(Self.compactProps(
@@ -852,7 +858,8 @@ extension TelemetryEventSpec {
                 ("word_count", "\(wordCount)"),
                 ("mode", mode?.rawValue),
                 ("speech_engine", speechEngine),
-                ("engine_variant", Self.safeEngineVariant(engineVariant))
+                ("engine_variant", Self.safeEngineVariant(engineVariant)),
+                ("language", Self.safeLanguageCode(language))
             ), device)
         case .dictationCancelled(let durationSeconds, let reason, let device):
             return Self.mergeDevice(Self.compactProps(
@@ -879,6 +886,7 @@ extension TelemetryEventSpec {
             let cancelReason,
             let speechEngine,
             let engineVariant,
+            let language,
             let device
         ):
             return Self.mergeDevice(Self.compactProps(
@@ -892,6 +900,7 @@ extension TelemetryEventSpec {
                 ("word_count", wordCount.map(String.init)),
                 ("speech_engine", speechEngine),
                 ("engine_variant", Self.safeEngineVariant(engineVariant)),
+                ("language", Self.safeLanguageCode(language)),
                 ("error_type", errorType),
                 ("cancel_reason", cancelReason?.rawValue)
             ), device)
@@ -916,7 +925,8 @@ extension TelemetryEventSpec {
             let diarizationRequested,
             let diarizationApplied,
             let speechEngine,
-            let engineVariant
+            let engineVariant,
+            let language
         ):
             return Self.compactProps(
                 ("source", source.rawValue),
@@ -927,7 +937,8 @@ extension TelemetryEventSpec {
                 ("diarization_requested", Self.boolString(diarizationRequested)),
                 ("diarization_applied", Self.boolString(diarizationApplied)),
                 ("speech_engine", speechEngine),
-                ("engine_variant", Self.safeEngineVariant(engineVariant))
+                ("engine_variant", Self.safeEngineVariant(engineVariant)),
+                ("language", Self.safeLanguageCode(language))
             )
         case .transcriptionCancelled(let source, let audioDurationSeconds, let stage):
             return Self.compactProps(
@@ -961,6 +972,7 @@ extension TelemetryEventSpec {
             let fileSizeBucket,
             let speechEngine,
             let engineVariant,
+            let language,
             let errorType
         ):
             return Self.compactProps(
@@ -982,6 +994,7 @@ extension TelemetryEventSpec {
                 ("file_size_bucket", fileSizeBucket),
                 ("speech_engine", speechEngine),
                 ("engine_variant", Self.safeEngineVariant(engineVariant)),
+                ("language", Self.safeLanguageCode(language)),
                 ("error_type", errorType)
             )
         case .diarizationStarted(let source):
@@ -1462,6 +1475,10 @@ extension TelemetryEventSpec {
         ]
 
         return allowedVariants.contains(normalized) ? normalized : "custom"
+    }
+
+    private static func safeLanguageCode(_ language: String?) -> String? {
+        SpeechEnginePreference.normalizeKnownLanguage(language)
     }
 
     private static func mergeDevice(_ base: [String: String]?, _ device: RecordingDeviceInfo?) -> [String: String]? {

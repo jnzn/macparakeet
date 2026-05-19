@@ -182,11 +182,11 @@ when the question is "what happened to this operation?"
 | Event | Props | Question It Answers |
 |---|---|---|
 | `dictation_started` | `trigger` (hotkey, pill_click, menu_bar) | How do people start dictating? |
-| `dictation_completed` | `duration_seconds`, `word_count`, `mode` (hold, persistent), `speech_engine`, `engine_variant`, `device_*` | How long are dictations? Which mode and STT engine are popular? |
+| `dictation_completed` | `duration_seconds`, `word_count`, `mode` (hold, persistent), `speech_engine`, `engine_variant`, `language`, `device_*` | How long are dictations? Which mode, language, and STT engine are popular? |
 | `dictation_cancelled` | `duration_seconds`, `reason` (escape, hotkey, ui), `device_*` | Are people cancelling often? Why? |
 | `dictation_empty` | `duration_seconds`, `device_*` | Are people getting empty results? (quality signal) |
 | `dictation_failed` | `error_type`, `device_*` | Core feature failures — blind spot without this |
-| `dictation_operation` | `operation_id`, `workflow_id`, `parent_operation_id`, `outcome`, `trigger`, `mode`, `duration_seconds`, `word_count`, `speech_engine`, `engine_variant`, `error_type`, `cancel_reason`, `device_*` | One wide outcome event per dictation attempt |
+| `dictation_operation` | `operation_id`, `workflow_id`, `parent_operation_id`, `outcome`, `trigger`, `mode`, `duration_seconds`, `word_count`, `speech_engine`, `engine_variant`, `language`, `error_type`, `cancel_reason`, `device_*` | One wide outcome event per dictation attempt |
 
 > **Device props** (optional, included when available): `device_transport`, `device_sub_transport`, `device_sample_rate`, `device_channels`, `device_fallback`, `device_selected`. Raw device names and UIDs are intentionally not serialized.
 
@@ -196,15 +196,20 @@ transcription output, not the user's current mutable engine setting. Unknown
 model variants are serialized as `custom` so local model paths or future
 private identifiers cannot leak into telemetry.
 
+`language` is the normalized STT language code (`en`, `ko`, `ja`, `zh`, etc.)
+reported by the speech engine. It is not derived from the user's macOS locale
+and is omitted when unknown, set to auto-detect, or outside the bounded language
+catalog.
+
 ### 3. Transcription — "Is file transcription valuable?"
 
 | Event | Props | Question It Answers |
 |---|---|---|
 | `transcription_started` | `source` (file, youtube, drag_drop, meeting), `audio_duration_seconds` | What sources are popular? How big are the jobs? |
-| `transcription_completed` | `source`, `audio_duration_seconds`, `processing_seconds`, `word_count`, `speaker_count`, `diarization_requested`, `diarization_applied`, `speech_engine`, `engine_variant` | Real-world performance, speaker-label coverage, and STT engine adoption across file, YouTube, and meeting pipelines |
+| `transcription_completed` | `source`, `audio_duration_seconds`, `processing_seconds`, `word_count`, `speaker_count`, `diarization_requested`, `diarization_applied`, `speech_engine`, `engine_variant`, `language` | Real-world performance, speaker-label coverage, language coverage, and STT engine adoption across file, YouTube, and meeting pipelines |
 | `transcription_cancelled` | `source`, `audio_duration_seconds`, `stage` (download, audio_conversion, stt, diarization, post_processing) | Where do users abandon jobs? |
 | `transcription_failed` | `source`, `stage`, `error_type` | What's breaking, and in which pipeline stage? |
-| `transcription_operation` | `operation_id`, `workflow_id`, `parent_operation_id`, `outcome`, `source`, `stage`, `duration_seconds`, `audio_duration_seconds`, `processing_seconds`, `word_count`, `speaker_count`, `diarization_requested`, `diarization_applied`, `input_kind`, `media_extension`, `file_size_bucket`, `speech_engine`, `engine_variant`, `error_type` | One wide outcome event per file, YouTube, or meeting transcription |
+| `transcription_operation` | `operation_id`, `workflow_id`, `parent_operation_id`, `outcome`, `source`, `stage`, `duration_seconds`, `audio_duration_seconds`, `processing_seconds`, `word_count`, `speaker_count`, `diarization_requested`, `diarization_applied`, `input_kind`, `media_extension`, `file_size_bucket`, `speech_engine`, `engine_variant`, `language`, `error_type` | One wide outcome event per file, YouTube, or meeting transcription |
 
 `transcription_operation` is the broad product-health outcome event. Its
 `stage` values are `preflight`, `download`, `audio_conversion`, `stt`,
@@ -291,7 +296,7 @@ events remain useful for diarization-specific timing and failure analysis.
 | `prompt_created` | — | Are custom prompt templates used? |
 | `prompt_updated` | — | Are custom prompts actively maintained? |
 | `prompt_deleted` | — | Are custom prompts abandoned or cleaned up? |
-| `setting_changed` | `setting` (save_history, audio_retention, menu_bar_only, hide_pill, save_transcription_audio, youtube_audio_quality, speaker_diarization, auto_save, meeting_auto_save, microphone_selection, meeting_audio_source_mode, launch_at_login, silence_auto_stop, voice_return, calendar_auto_start_mode, calendar_reminder_minutes, calendar_trigger_filter, calendar_auto_stop_enabled, calendar_included_calendars) | Which non-hotkey settings get toggled? Hotkey changes use `hotkey_customized`. |
+| `setting_changed` | `setting` (save_history, audio_retention, menu_bar_only, hide_pill, save_transcription_audio, youtube_audio_quality, speaker_diarization, whisper_default_language, auto_save, meeting_auto_save, microphone_selection, meeting_audio_source_mode, launch_at_login, silence_auto_stop, voice_return, calendar_auto_start_mode, calendar_reminder_minutes, calendar_trigger_filter, calendar_auto_stop_enabled, calendar_included_calendars) | Which non-hotkey settings get toggled? Hotkey changes use `hotkey_customized`. The Whisper language picker emits only the setting name; the selected language is observed from actual STT usage rows. |
 | `telemetry_opted_out` | — | How many opt out? (send this one last event, then stop) |
 
 ### 5b. Calendar Auto-Start — "Do calendar-driven meetings work?"
@@ -583,7 +588,9 @@ Transforms, feedback, auto-save, model lifecycle, and speech-engine switches.
 It also exposes a dedicated speech-engine usage panel so Parakeet-vs-Whisper
 adoption can be read from actual usage rows (`dictation_operation`,
 `transcription_operation`, `model_operation`) and settings intent rows
-(`speech_engine_switch_operation`).
+(`speech_engine_switch_operation`). A separate language usage panel reads the
+same dictation/transcription operation and completion rows so CJK and other
+multilingual adoption can be monitored without collecting transcript content.
 
 Queries are simple SQL against D1. Dashboard is a Cloudflare Pages site at
 `https://macparakeet.com/stats/`.
