@@ -98,6 +98,18 @@ First launch downloads the speech model (~6 GB) plus speaker-detection assets (~
 
 The DMG is the stable release.
 
+**Standalone CLI (Homebrew):**
+
+```bash
+brew install moona3k/tap/macparakeet-cli
+macparakeet-cli --version
+macparakeet-cli health --json
+```
+
+The Homebrew formula installs the public `macparakeet-cli` surface plus
+Homebrew-managed `ffmpeg` and `yt-dlp`. It shares the same local database and
+model cache as the app.
+
 **Build from source:**
 
 ```bash
@@ -112,21 +124,22 @@ The dev script creates a signed `.app` bundle so macOS grants mic and accessibil
 **CLI:**
 
 ```bash
-swift run macparakeet-cli transcribe /path/to/audio.mp3
-swift run macparakeet-cli transcribe /path/to/audio.mp3 --format transcript --no-history
-swift run macparakeet-cli models download whisper-large-v3-v20240930-turbo-632MB
-swift run macparakeet-cli models list
-swift run macparakeet-cli models select parakeet
-swift run macparakeet-cli transcribe /path/to/korean.mp3 --engine whisper --language ko --format json
-swift run macparakeet-cli models status
-swift run macparakeet-cli history
+macparakeet-cli transcribe /path/to/audio.mp3
+macparakeet-cli transcribe /path/to/audio.mp3 --format transcript --no-history
+macparakeet-cli models download whisper-large-v3-v20240930-turbo-632MB
+macparakeet-cli models list
+macparakeet-cli models select parakeet
+macparakeet-cli transcribe /path/to/korean.mp3 --engine whisper --language ko --format json
+macparakeet-cli models status
+macparakeet-cli history
 ```
 
 Use `--format transcript` for transcript-only stdout in shell pipelines. Add
 `--no-history` when you want a one-off transcription without saving a completed
 row to MacParakeet history. `models list` and `models select` inspect or update
 the shared speech default used by the app and `--engine app-default`. The
-Whisper CLI commands above require a downloaded local WhisperKit model.
+Whisper CLI commands above require a downloaded local WhisperKit model. When
+developing from source, prefix the same commands with `swift run`.
 
 ## Tech stack
 

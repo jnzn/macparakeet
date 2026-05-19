@@ -246,6 +246,35 @@ curl -s "https://macparakeet.com/appcast.xml?ts=$(date +%s)" | grep "sparkle:ver
 2. Confirm appcast `sparkle:version` is newer than the installed app's build number
 3. Launch the app → "Check for Updates..." from the menu bar → should find and validate the update
 
+## Standalone CLI Homebrew release
+
+The app DMG/Sparkle channel and the standalone CLI Homebrew channel are
+separate releases. The CLI release ships a signed standalone
+`macparakeet-cli` binary attached to a `cli-vX.Y.Z` GitHub release, then
+updates the formula in <https://github.com/moona3k/homebrew-tap>.
+
+Use [`scripts/dist/homebrew-tap-scaffold/HOWTO.md`](../scripts/dist/homebrew-tap-scaffold/HOWTO.md)
+for the exact checklist. At minimum:
+
+1. Bump `Sources/CLI/MacParakeetCLI.swift` and
+   `Sources/CLI/CHANGELOG.md`.
+2. Build `swift build -c release --product macparakeet-cli`.
+3. Sign the binary with Developer ID, notarize the zip, and publish the
+   tarball/checksums to `cli-vX.Y.Z`.
+4. Update `Formula/macparakeet-cli.rb` in `moona3k/homebrew-tap` with the
+   release URL, version, and tarball SHA256.
+5. Verify from the tap:
+
+```bash
+brew reinstall moona3k/tap/macparakeet-cli
+macparakeet-cli --version
+macparakeet-cli health --json
+brew test moona3k/tap/macparakeet-cli
+```
+
+Do not call the CLI fully released until both the GitHub release asset and
+the tap formula are live and the fresh Homebrew install path passes.
+
 ### Quick reference (copy-paste)
 
 ```bash
