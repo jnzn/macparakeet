@@ -706,6 +706,31 @@ struct OnboardingFlowView: View {
 
     private var engineSetupView: some View {
         VStack(alignment: .leading, spacing: 14) {
+            if let recommendation = viewModel.whisperRecommendation {
+                onboardingCard {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "globe.asia.australia.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(DesignSystem.Colors.accent)
+                            .frame(width: 34, height: 34)
+                            .background(
+                                RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
+                                    .fill(DesignSystem.Colors.accent.opacity(0.1))
+                            )
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("\(recommendation.languageName) setup")
+                                .font(DesignSystem.Typography.sectionTitle)
+                            Text("Your Mac language suggests \(recommendation.languageName). MacParakeet will set up local Whisper instead of Parakeet so dictation works for this language from the first run.")
+                                .font(DesignSystem.Typography.bodySmall)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(DesignSystem.Spacing.lg)
+                }
+            }
+
             onboardingCard {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 10) {
@@ -1003,6 +1028,9 @@ struct OnboardingFlowView: View {
         case .hotkey:
             return "Two ways to dictate — pick whichever feels natural."
         case .engine:
+            if let recommendation = viewModel.whisperRecommendation {
+                return "Preparing local Whisper for \(recommendation.languageName) so dictation works for your Mac language."
+            }
             return "The speech model (~6 GB) downloads once. Usually takes 2–5 minutes on broadband, longer on slower connections."
         case .done:
             return "You're all set. Start dictating or transcribe your first file."
@@ -1047,6 +1075,19 @@ struct OnboardingFlowView: View {
     }
 
     private func engineDetail(_ state: OnboardingViewModel.EngineState) -> String {
+        if let recommendation = viewModel.whisperRecommendation {
+            switch state {
+            case .idle:
+                return "Whisper Large v3 Turbo (~632 MB) will download once, then run fully on-device with \(recommendation.languageName) selected."
+            case .working(_, _):
+                return "Preparing local Whisper for \(recommendation.languageName). Audio stays on this Mac; no cloud STT is used."
+            case .ready:
+                return "Whisper is ready for \(recommendation.languageName) dictation and transcription."
+            case .failed:
+                return "Whisper setup failed. Please retry to complete multilingual speech setup."
+            }
+        }
+
         switch state {
         case .idle:
             return "The speech model (~6 GB) will download now. Internet is required this one time only."
@@ -1141,6 +1182,9 @@ struct OnboardingFlowView: View {
         case .meetingRecording, .calendar:
             return nil
         case .engine:
+            if viewModel.whisperRecommendation != nil {
+                return "Preparing Whisper — this can take several minutes. Everything works offline after setup."
+            }
             return "Downloading — this can take several minutes. Everything works offline after setup."
         case .welcome, .hotkey, .done:
             return nil
