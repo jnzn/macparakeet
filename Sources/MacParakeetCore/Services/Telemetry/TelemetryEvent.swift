@@ -356,7 +356,14 @@ public enum TelemetryEventSpec: Sendable {
     case appLaunched
     case appQuit(sessionDurationSeconds: Double)
     case dictationStarted(trigger: TelemetryDictationTrigger?, mode: TelemetryDictationMode?)
-    case dictationCompleted(durationSeconds: Double, wordCount: Int, mode: TelemetryDictationMode?, device: RecordingDeviceInfo? = nil)
+    case dictationCompleted(
+        durationSeconds: Double,
+        wordCount: Int,
+        mode: TelemetryDictationMode?,
+        speechEngine: String? = nil,
+        engineVariant: String? = nil,
+        device: RecordingDeviceInfo? = nil
+    )
     case dictationCancelled(durationSeconds: Double?, reason: TelemetryDictationCancelReason?, device: RecordingDeviceInfo? = nil)
     case dictationEmpty(durationSeconds: Double?, device: RecordingDeviceInfo? = nil)
     case dictationFailed(errorType: String, errorDetail: String? = nil, device: RecordingDeviceInfo? = nil)
@@ -384,7 +391,9 @@ public enum TelemetryEventSpec: Sendable {
         wordCount: Int,
         speakerCount: Int? = nil,
         diarizationRequested: Bool,
-        diarizationApplied: Bool
+        diarizationApplied: Bool,
+        speechEngine: String? = nil,
+        engineVariant: String? = nil
     )
     case transcriptionCancelled(
         source: TelemetryTranscriptionSource,
@@ -530,10 +539,30 @@ public enum TelemetryEventSpec: Sendable {
     case permissionGranted(permission: TelemetryPermission)
     case permissionDenied(permission: TelemetryPermission)
     // Performance
-    case modelLoaded(loadTimeSeconds: Double)
-    case modelDownloadStarted
-    case modelDownloadCompleted(durationSeconds: Double)
-    case modelDownloadFailed(errorType: String, errorDetail: String? = nil)
+    case modelLoaded(
+        loadTimeSeconds: Double,
+        modelKind: TelemetryModelKind? = nil,
+        speechEngine: SpeechEnginePreference? = nil,
+        engineVariant: String? = nil
+    )
+    case modelDownloadStarted(
+        modelKind: TelemetryModelKind? = nil,
+        speechEngine: SpeechEnginePreference? = nil,
+        engineVariant: String? = nil
+    )
+    case modelDownloadCompleted(
+        durationSeconds: Double,
+        modelKind: TelemetryModelKind? = nil,
+        speechEngine: SpeechEnginePreference? = nil,
+        engineVariant: String? = nil
+    )
+    case modelDownloadFailed(
+        errorType: String,
+        errorDetail: String? = nil,
+        modelKind: TelemetryModelKind? = nil,
+        speechEngine: SpeechEnginePreference? = nil,
+        engineVariant: String? = nil
+    )
     case modelOperation(
         operationID: String,
         operationContext: ObservabilityOperationContext? = nil,
@@ -810,11 +839,20 @@ extension TelemetryEventSpec {
                 ("trigger", trigger?.rawValue),
                 ("mode", mode?.rawValue)
             )
-        case .dictationCompleted(let durationSeconds, let wordCount, let mode, let device):
+        case .dictationCompleted(
+            let durationSeconds,
+            let wordCount,
+            let mode,
+            let speechEngine,
+            let engineVariant,
+            let device
+        ):
             return Self.mergeDevice(Self.compactProps(
                 ("duration_seconds", Self.format(durationSeconds)),
                 ("word_count", "\(wordCount)"),
-                ("mode", mode?.rawValue)
+                ("mode", mode?.rawValue),
+                ("speech_engine", speechEngine),
+                ("engine_variant", Self.safeEngineVariant(engineVariant))
             ), device)
         case .dictationCancelled(let durationSeconds, let reason, let device):
             return Self.mergeDevice(Self.compactProps(
@@ -876,7 +914,9 @@ extension TelemetryEventSpec {
             let wordCount,
             let speakerCount,
             let diarizationRequested,
-            let diarizationApplied
+            let diarizationApplied,
+            let speechEngine,
+            let engineVariant
         ):
             return Self.compactProps(
                 ("source", source.rawValue),
@@ -885,7 +925,9 @@ extension TelemetryEventSpec {
                 ("word_count", "\(wordCount)"),
                 ("speaker_count", speakerCount.map(String.init)),
                 ("diarization_requested", Self.boolString(diarizationRequested)),
-                ("diarization_applied", Self.boolString(diarizationApplied))
+                ("diarization_applied", Self.boolString(diarizationApplied)),
+                ("speech_engine", speechEngine),
+                ("engine_variant", Self.safeEngineVariant(engineVariant))
             )
         case .transcriptionCancelled(let source, let audioDurationSeconds, let stage):
             return Self.compactProps(
@@ -1117,14 +1159,33 @@ extension TelemetryEventSpec {
             return ["permission": permission.rawValue]
         case .permissionDenied(let permission):
             return ["permission": permission.rawValue]
-        case .modelLoaded(let loadTimeSeconds):
-            return ["load_time_seconds": Self.format(loadTimeSeconds)]
-        case .modelDownloadStarted:
-            return nil
-        case .modelDownloadCompleted(let durationSeconds):
-            return ["duration_seconds": Self.format(durationSeconds)]
-        case .modelDownloadFailed(let errorType, let errorDetail):
-            var props = ["error_type": errorType]
+        case .modelLoaded(let loadTimeSeconds, let modelKind, let speechEngine, let engineVariant):
+            return Self.compactProps(
+                ("load_time_seconds", Self.format(loadTimeSeconds)),
+                ("model_kind", modelKind?.rawValue),
+                ("speech_engine", speechEngine?.rawValue),
+                ("engine_variant", Self.safeEngineVariant(engineVariant))
+            )
+        case .modelDownloadStarted(let modelKind, let speechEngine, let engineVariant):
+            return Self.compactProps(
+                ("model_kind", modelKind?.rawValue),
+                ("speech_engine", speechEngine?.rawValue),
+                ("engine_variant", Self.safeEngineVariant(engineVariant))
+            )
+        case .modelDownloadCompleted(let durationSeconds, let modelKind, let speechEngine, let engineVariant):
+            return Self.compactProps(
+                ("duration_seconds", Self.format(durationSeconds)),
+                ("model_kind", modelKind?.rawValue),
+                ("speech_engine", speechEngine?.rawValue),
+                ("engine_variant", Self.safeEngineVariant(engineVariant))
+            )
+        case .modelDownloadFailed(let errorType, let errorDetail, let modelKind, let speechEngine, let engineVariant):
+            var props = Self.compactProps(
+                ("error_type", errorType),
+                ("model_kind", modelKind?.rawValue),
+                ("speech_engine", speechEngine?.rawValue),
+                ("engine_variant", Self.safeEngineVariant(engineVariant))
+            ) ?? [:]
             if let errorDetail = Self.sanitizedErrorDetail(errorDetail) { props["error_detail"] = errorDetail }
             return props
         case .modelOperation(

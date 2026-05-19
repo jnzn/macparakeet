@@ -182,7 +182,7 @@ when the question is "what happened to this operation?"
 | Event | Props | Question It Answers |
 |---|---|---|
 | `dictation_started` | `trigger` (hotkey, pill_click, menu_bar) | How do people start dictating? |
-| `dictation_completed` | `duration_seconds`, `word_count`, `mode` (hold, persistent), `device_*` | How long are dictations? Which mode is popular? |
+| `dictation_completed` | `duration_seconds`, `word_count`, `mode` (hold, persistent), `speech_engine`, `engine_variant`, `device_*` | How long are dictations? Which mode and STT engine are popular? |
 | `dictation_cancelled` | `duration_seconds`, `reason` (escape, hotkey, ui), `device_*` | Are people cancelling often? Why? |
 | `dictation_empty` | `duration_seconds`, `device_*` | Are people getting empty results? (quality signal) |
 | `dictation_failed` | `error_type`, `device_*` | Core feature failures — blind spot without this |
@@ -201,7 +201,7 @@ private identifiers cannot leak into telemetry.
 | Event | Props | Question It Answers |
 |---|---|---|
 | `transcription_started` | `source` (file, youtube, drag_drop, meeting), `audio_duration_seconds` | What sources are popular? How big are the jobs? |
-| `transcription_completed` | `source`, `audio_duration_seconds`, `processing_seconds`, `word_count`, `speaker_count`, `diarization_requested`, `diarization_applied` | Real-world performance and speaker-label coverage across file, YouTube, and meeting pipelines |
+| `transcription_completed` | `source`, `audio_duration_seconds`, `processing_seconds`, `word_count`, `speaker_count`, `diarization_requested`, `diarization_applied`, `speech_engine`, `engine_variant` | Real-world performance, speaker-label coverage, and STT engine adoption across file, YouTube, and meeting pipelines |
 | `transcription_cancelled` | `source`, `audio_duration_seconds`, `stage` (download, audio_conversion, stt, diarization, post_processing) | Where do users abandon jobs? |
 | `transcription_failed` | `source`, `stage`, `error_type` | What's breaking, and in which pipeline stage? |
 | `transcription_operation` | `operation_id`, `workflow_id`, `parent_operation_id`, `outcome`, `source`, `stage`, `duration_seconds`, `audio_duration_seconds`, `processing_seconds`, `word_count`, `speaker_count`, `diarization_requested`, `diarization_applied`, `input_kind`, `media_extension`, `file_size_bucket`, `speech_engine`, `engine_variant`, `error_type` | One wide outcome event per file, YouTube, or meeting transcription |
@@ -332,10 +332,10 @@ events remain useful for diarization-specific timing and failure analysis.
 
 | Event | Props | Question It Answers |
 |---|---|---|
-| `model_loaded` | `load_time_seconds` | How long does model warmup take on different chips? |
-| `model_download_started` | — | First-run model setup funnel |
-| `model_download_completed` | `duration_seconds` | How long do model downloads take? |
-| `model_download_failed` | `error_type` | Are downloads failing? |
+| `model_loaded` | `load_time_seconds`, `model_kind`, `speech_engine`, `engine_variant` | How long does model warmup take on different chips and engines? |
+| `model_download_started` | `model_kind`, `speech_engine`, `engine_variant` | First-run and Whisper model setup funnel by engine |
+| `model_download_completed` | `duration_seconds`, `model_kind`, `speech_engine`, `engine_variant` | How long do model downloads take by engine/model? |
+| `model_download_failed` | `error_type`, `model_kind`, `speech_engine`, `engine_variant` | Are downloads failing for Parakeet setup or Whisper downloads? |
 | `model_operation` | `operation_id`, `workflow_id`, `parent_operation_id`, `action`, `outcome`, `stage`, `model_kind`, `speech_engine`, `engine_variant`, `duration_seconds`, `error_type` | Canonical model lifecycle event for downloads, warm-up, repairs, cache clears, and cancellations |
 | `speech_engine_switch_operation` | `operation_id`, `workflow_id`, `parent_operation_id`, `from_engine`, `to_engine`, `outcome`, `duration_seconds`, `blocked_reason`, `error_type` | Why engine switches succeed, fail, cancel, or get blocked |
 
@@ -577,11 +577,13 @@ The deployed stats endpoint returns both `operations.failures` and
 explicit failure breadcrumb events and crash reports; normal terminal outcomes
 are excluded from that panel.
 
-The dashboard's operation reliability panel currently covers GUI product
-operation events that map directly to user-visible work: dictation,
-transcription, meeting, LLM, feedback, and auto-save. `model_operation` and
-`speech_engine_switch_operation` remain accepted canonical events and are
-visible in the event breakdown until they have dedicated dashboard panels.
+The dashboard's operation reliability panel covers GUI product operation events
+that map directly to user-visible work: dictation, transcription, meeting, LLM,
+Transforms, feedback, auto-save, model lifecycle, and speech-engine switches.
+It also exposes a dedicated speech-engine usage panel so Parakeet-vs-Whisper
+adoption can be read from actual usage rows (`dictation_operation`,
+`transcription_operation`, `model_operation`) and settings intent rows
+(`speech_engine_switch_operation`).
 
 Queries are simple SQL against D1. Dashboard is a Cloudflare Pages site at
 `https://macparakeet.com/stats/`.

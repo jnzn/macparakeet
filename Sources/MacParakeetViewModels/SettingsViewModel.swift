@@ -1047,7 +1047,11 @@ public final class SettingsViewModel {
         let friendly = SpeechEnginePreference.friendlyVariantName(modelVariant)
         let operationContext = Observability.childOperationContext()
         whisperModelStatusDetail = "Downloading Whisper \(friendly)..."
-        Telemetry.send(.modelDownloadStarted)
+        Telemetry.send(.modelDownloadStarted(
+            modelKind: .whisperSTT,
+            speechEngine: .whisper,
+            engineVariant: modelVariant
+        ))
 
         Task {
             do {
@@ -1061,7 +1065,12 @@ public final class SettingsViewModel {
                     }
                 }
                 let durationSeconds = Observability.durationSeconds(since: operationContext.startedAt)
-                Telemetry.send(.modelDownloadCompleted(durationSeconds: durationSeconds))
+                Telemetry.send(.modelDownloadCompleted(
+                    durationSeconds: durationSeconds,
+                    modelKind: .whisperSTT,
+                    speechEngine: .whisper,
+                    engineVariant: modelVariant
+                ))
                 Telemetry.send(.modelOperation(
                     operationID: operationContext.operationID,
                     operationContext: operationContext,
@@ -1101,7 +1110,10 @@ public final class SettingsViewModel {
                 let errorType = TelemetryErrorClassifier.classify(error)
                 Telemetry.send(.modelDownloadFailed(
                     errorType: errorType,
-                    errorDetail: TelemetryErrorClassifier.errorDetail(error)
+                    errorDetail: TelemetryErrorClassifier.errorDetail(error),
+                    modelKind: .whisperSTT,
+                    speechEngine: .whisper,
+                    engineVariant: modelVariant
                 ))
                 Telemetry.send(.modelOperation(
                     operationID: operationContext.operationID,

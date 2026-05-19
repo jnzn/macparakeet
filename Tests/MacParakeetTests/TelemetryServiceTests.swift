@@ -257,7 +257,13 @@ final class TelemetryServiceTests: XCTestCase {
 
     func testEventSerializesToJSON() throws {
         let event = TelemetryEvent(
-            spec: .dictationCompleted(durationSeconds: 12.5, wordCount: 84, mode: .persistent),
+            spec: .dictationCompleted(
+                durationSeconds: 12.5,
+                wordCount: 84,
+                mode: .persistent,
+                speechEngine: "whisper",
+                engineVariant: SpeechEnginePreference.defaultWhisperModelVariant
+            ),
             appVer: "0.4.2",
             osVer: "15.3",
             locale: "en-US",
@@ -283,6 +289,8 @@ final class TelemetryServiceTests: XCTestCase {
         XCTAssertEqual(props["duration_seconds"], "12.5")
         XCTAssertEqual(props["word_count"], "84")
         XCTAssertEqual(props["mode"], "persistent")
+        XCTAssertEqual(props["speech_engine"], "whisper")
+        XCTAssertEqual(props["engine_variant"], SpeechEnginePreference.defaultWhisperModelVariant)
     }
 
     func testCLISurfaceSerializesAsCli() throws {
@@ -425,7 +433,9 @@ final class TelemetryServiceTests: XCTestCase {
                 wordCount: 240,
                 speakerCount: 3,
                 diarizationRequested: true,
-                diarizationApplied: true
+                diarizationApplied: true,
+                speechEngine: "whisper",
+                engineVariant: SpeechEnginePreference.defaultWhisperModelVariant
             ),
             appVer: "0.4.2",
             osVer: "15.3",
@@ -447,6 +457,8 @@ final class TelemetryServiceTests: XCTestCase {
         XCTAssertEqual(props["speaker_count"], "3")
         XCTAssertEqual(props["diarization_requested"], "true")
         XCTAssertEqual(props["diarization_applied"], "true")
+        XCTAssertEqual(props["speech_engine"], "whisper")
+        XCTAssertEqual(props["engine_variant"], SpeechEnginePreference.defaultWhisperModelVariant)
     }
 
     func testTranscriptionFailedSerializesStage() throws {
@@ -652,6 +664,73 @@ final class TelemetryServiceTests: XCTestCase {
         XCTAssertEqual(props["engine_variant"], "custom")
         XCTAssertEqual(props["duration_seconds"], "42.4")
         XCTAssertNil(props["model_path"])
+    }
+
+    func testModelBreadcrumbsSerializeEngineDimensions() throws {
+        let specs: [(TelemetryEventSpec, String)] = [
+            (
+                .modelLoaded(
+                    loadTimeSeconds: 2.5,
+                    modelKind: .whisperSTT,
+                    speechEngine: .whisper,
+                    engineVariant: SpeechEnginePreference.defaultWhisperModelVariant
+                ),
+                "model_loaded"
+            ),
+            (
+                .modelDownloadStarted(
+                    modelKind: .whisperSTT,
+                    speechEngine: .whisper,
+                    engineVariant: SpeechEnginePreference.defaultWhisperModelVariant
+                ),
+                "model_download_started"
+            ),
+            (
+                .modelDownloadCompleted(
+                    durationSeconds: 30,
+                    modelKind: .whisperSTT,
+                    speechEngine: .whisper,
+                    engineVariant: SpeechEnginePreference.defaultWhisperModelVariant
+                ),
+                "model_download_completed"
+            ),
+            (
+                .modelDownloadFailed(
+                    errorType: "network",
+                    modelKind: .whisperSTT,
+                    speechEngine: .whisper,
+                    engineVariant: "/Users/alice/private-whisper-model"
+                ),
+                "model_download_failed"
+            ),
+        ]
+
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+
+        for (spec, eventName) in specs {
+            let event = TelemetryEvent(
+                spec: spec,
+                appVer: "0.4.2",
+                osVer: "15.3",
+                locale: "en-US",
+                chip: "Apple M1",
+                session: "test-session"
+            )
+            let data = try encoder.encode(event)
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            let props = try XCTUnwrap(json["props"] as? [String: String])
+
+            XCTAssertEqual(json["event"] as? String, eventName)
+            XCTAssertEqual(props["model_kind"], "whisper_stt")
+            XCTAssertEqual(props["speech_engine"], "whisper")
+            if eventName == "model_download_failed" {
+                XCTAssertEqual(props["engine_variant"], "custom")
+            } else {
+                XCTAssertEqual(props["engine_variant"], SpeechEnginePreference.defaultWhisperModelVariant)
+            }
+            XCTAssertNil(props["model_path"])
+        }
     }
 
     func testSpeechEngineSwitchOperationSerializesBlockedReason() throws {
@@ -1113,7 +1192,7 @@ final class TelemetryServiceTests: XCTestCase {
             .permissionGranted(permission: .microphone),
             .permissionDenied(permission: .accessibility),
             .modelLoaded(loadTimeSeconds: 2.5),
-            .modelDownloadStarted,
+            .modelDownloadStarted(),
             .modelDownloadCompleted(durationSeconds: 30.0),
             .modelDownloadFailed(errorType: "network"),
             .modelOperation(

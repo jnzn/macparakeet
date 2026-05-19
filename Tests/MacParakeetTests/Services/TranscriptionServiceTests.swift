@@ -929,7 +929,9 @@ final class TranscriptionServiceTests: XCTestCase {
             _,
             let speakerCount,
             let diarizationRequested,
-            let diarizationApplied
+            let diarizationApplied,
+            _,
+            _
         ) = try XCTUnwrap(completedEvent) else {
             return XCTFail("Expected transcription_completed telemetry")
         }

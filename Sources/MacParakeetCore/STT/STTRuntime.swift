@@ -204,7 +204,12 @@ public actor STTRuntime: STTRuntimeProtocol {
             }
             let elapsed = start.duration(to: .now)
             let seconds = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
-            Telemetry.send(.modelLoaded(loadTimeSeconds: seconds))
+            Telemetry.send(.modelLoaded(
+                loadTimeSeconds: seconds,
+                modelKind: modelKind,
+                speechEngine: activeSpeechEngine,
+                engineVariant: engineVariant
+            ))
             Telemetry.send(.modelOperation(
                 operationID: operationContext.operationID,
                 operationContext: operationContext,

@@ -406,7 +406,10 @@ public final class OnboardingViewModel {
             }
 
             let warmUpStartedAt = Date()
-            Telemetry.send(.modelDownloadStarted)
+            Telemetry.send(.modelDownloadStarted(
+                modelKind: .localSpeechStack,
+                speechEngine: .parakeet
+            ))
             await sttClient.backgroundWarmUp()
             guard self.engineGeneration == generation, self.warmUpObservationToken == observationToken else { return }
 
@@ -433,7 +436,11 @@ public final class OnboardingViewModel {
                     self.engineState = .working(message: message, progress: progress)
                 case .ready:
                     let durationSeconds = Date().timeIntervalSince(warmUpStartedAt)
-                    Telemetry.send(.modelDownloadCompleted(durationSeconds: durationSeconds))
+                    Telemetry.send(.modelDownloadCompleted(
+                        durationSeconds: durationSeconds,
+                        modelKind: .localSpeechStack,
+                        speechEngine: .parakeet
+                    ))
                     do {
                         try await self.prepareDiarizationModelsIfNeeded(generation: generation)
                     } catch is CancellationError {
@@ -449,7 +456,12 @@ public final class OnboardingViewModel {
                     self.isBusy = false
                     break observationLoop
                 case .failed(let message):
-                    Telemetry.send(.modelDownloadFailed(errorType: "BackgroundWarmUpError", errorDetail: message))
+                    Telemetry.send(.modelDownloadFailed(
+                        errorType: "BackgroundWarmUpError",
+                        errorDetail: message,
+                        modelKind: .localSpeechStack,
+                        speechEngine: .parakeet
+                    ))
                     self.engineState = .failed(message: message)
                     self.isBusy = false
                     break observationLoop
@@ -544,7 +556,12 @@ public final class OnboardingViewModel {
             let stallSeconds = Int(Self.warmUpStallTimeout.components.seconds)
             let detail = "no warm-up progress for \(stallSeconds)s"
             self.logger.error("warm_up_stall_detected detail=\(detail, privacy: .public)")
-            Telemetry.send(.modelDownloadFailed(errorType: "WarmUpStalled", errorDetail: detail))
+            Telemetry.send(.modelDownloadFailed(
+                errorType: "WarmUpStalled",
+                errorDetail: detail,
+                modelKind: .localSpeechStack,
+                speechEngine: .parakeet
+            ))
             self.engineState = .failed(
                 message: "Setup is taking longer than expected. Check your network connection and tap Retry."
             )

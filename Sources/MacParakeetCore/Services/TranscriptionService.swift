@@ -1371,7 +1371,9 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
             wordCount: wordCount,
             speakerCount: transcription.speakerCount,
             diarizationRequested: diarizationRequested,
-            diarizationApplied: diarizationApplied
+            diarizationApplied: diarizationApplied,
+            speechEngine: transcription.engine,
+            engineVariant: transcription.engineVariant
         ))
         sendTranscriptionOperation(
             operation,

@@ -325,6 +325,8 @@ public actor DictationService: DictationServiceProtocol {
                 durationSeconds: Double(result.dictation.durationMs) / 1000.0,
                 wordCount: result.dictation.wordCount,
                 mode: currentTelemetryContext.mode,
+                speechEngine: result.dictation.engine,
+                engineVariant: result.dictation.engineVariant,
                 device: device
             ))
             logger.debug(
@@ -479,6 +481,8 @@ public actor DictationService: DictationServiceProtocol {
                 durationSeconds: Double(result.dictation.durationMs) / 1000.0,
                 wordCount: result.dictation.wordCount,
                 mode: currentTelemetryContext.mode,
+                speechEngine: result.dictation.engine,
+                engineVariant: result.dictation.engineVariant,
                 device: device
             ))
             try? await Task.sleep(for: .milliseconds(500))
