@@ -78,6 +78,14 @@ ArgumentParser's plain-text stderr path with exit code `2`. Downstream
 agents that branch on `errorType` should also handle the parse-error case
 by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
 
+## [2.3.1] -- 2026-05-19
+
+### Changed
+
+- Patch release for the standalone Homebrew channel. No command, flag, JSON
+  schema, or exit-code changes from 2.3.0; the release artifact is rebuilt
+  from latest `main` after the STT-language telemetry/data-model update.
+
 ## [2.3.0] -- 2026-05-16
 
 ### Changed

@@ -32,7 +32,7 @@ The examples below use the current release version; update it before each
 release:
 
 ```bash
-export VERSION=2.3.0
+export VERSION=2.3.1
 ```
 
 ### 2. Build the standalone CLI binary
@@ -116,7 +116,7 @@ brew untap moona3k/tap 2>/dev/null   # if previously tapped
 brew tap moona3k/tap
 brew install macparakeet-cli
 
-macparakeet-cli --version    # 2.3.0
+macparakeet-cli --version    # 2.3.1
 macparakeet-cli health --json
 ```
 

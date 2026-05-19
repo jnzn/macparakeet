@@ -19,7 +19,7 @@ the local Parakeet TDT pipeline without any cloud STT dependency.
 
 ```bash
 brew install moona3k/tap/macparakeet-cli
-macparakeet-cli --version   # 2.3.0
+macparakeet-cli --version   # 2.3.1
 macparakeet-cli health --json
 ```
 
