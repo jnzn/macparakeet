@@ -38,6 +38,7 @@ public enum TelemetryEventName: String, Sendable, CaseIterable {
     /// e.g. an employer never leaves the device.
     case transformExecuted = "transform_executed"
     case transformFailed = "transform_failed"
+    case transformOperation = "transform_operation"
     case askMenuOpened = "ask_menu_opened"
     case askPromptFired = "ask_prompt_fired"
     case llmFormatterUsed = "llm_formatter_used"
@@ -230,6 +231,13 @@ public enum TelemetryTransformReplacePath: String, Sendable, Equatable {
     case clipboardPaste = "clipboard_paste"
 }
 
+public enum TelemetryTransformOperationStage: String, Sendable, Equatable {
+    case capture
+    case llm
+    case replacement
+    case complete
+}
+
 public enum TelemetryAskPromptSource: String, Sendable, Equatable {
     case emptyState = "empty_state"
     case menu
@@ -242,6 +250,7 @@ public enum TelemetryAskPromptSource: String, Sendable, Equatable {
 public enum TelemetryTransformFailureReason: String, Sendable, Equatable {
     case emptySelection = "empty_selection"
     case noProvider = "no_provider"
+    case captureFailed = "capture_failed"
     case llmFailed = "llm_failed"
     case replacementFailed = "replacement_failed"
     case cancelled
@@ -432,6 +441,19 @@ public enum TelemetryEventSpec: Sendable {
     case transformFailed(
         transformName: TelemetryTransformName,
         reason: TelemetryTransformFailureReason
+    )
+    case transformOperation(
+        operationID: String,
+        operationContext: ObservabilityOperationContext? = nil,
+        outcome: ObservabilityOutcome,
+        transformName: TelemetryTransformName,
+        stage: TelemetryTransformOperationStage?,
+        capturePath: TelemetryTransformCapturePath?,
+        replacePath: TelemetryTransformReplacePath?,
+        durationSeconds: Double,
+        llmMs: Int?,
+        totalMs: Int?,
+        errorType: TelemetryTransformFailureReason?
     )
     case askMenuOpened
     case askPromptFired(source: TelemetryAskPromptSource, group: String, label: String)
@@ -679,6 +701,7 @@ extension TelemetryEventSpec {
         case .llmTransformFailed: return .llmTransformFailed
         case .transformExecuted: return .transformExecuted
         case .transformFailed: return .transformFailed
+        case .transformOperation: return .transformOperation
         case .askMenuOpened: return .askMenuOpened
         case .askPromptFired: return .askPromptFired
         case .llmFormatterUsed: return .llmFormatterUsed
@@ -964,6 +987,33 @@ extension TelemetryEventSpec {
                 "transform_name": name.rawValue,
                 "reason": reason.rawValue,
             ]
+        case .transformOperation(
+            let operationID,
+            let operationContext,
+            let outcome,
+            let name,
+            let stage,
+            let capture,
+            let replace,
+            let durationSeconds,
+            let llmMs,
+            let totalMs,
+            let errorType
+        ):
+            return Self.compactProps(
+                ("operation_id", operationID),
+                ("workflow_id", operationContext?.workflowID),
+                ("parent_operation_id", operationContext?.parentOperationID),
+                ("outcome", outcome.rawValue),
+                ("transform_name", name.rawValue),
+                ("stage", stage?.rawValue),
+                ("capture_path", capture?.rawValue),
+                ("replace_path", replace?.rawValue),
+                ("duration_seconds", Self.format(durationSeconds)),
+                ("llm_ms", llmMs.map(String.init)),
+                ("total_ms", totalMs.map(String.init)),
+                ("error_type", errorType?.rawValue)
+            )
         case .askPromptFired(let source, let group, let label):
             return [
                 "source": source.rawValue,
@@ -1395,6 +1445,7 @@ public enum TelemetryImplementedContract {
         .llmTransformFailed: ["provider", "error_type"],
         .transformExecuted: ["transform_name", "capture_path", "replace_path", "llm_ms", "total_ms"],
         .transformFailed: ["transform_name", "reason"],
+        .transformOperation: ["operation_id", "outcome", "transform_name", "duration_seconds"],
         .askMenuOpened: [],
         .askPromptFired: ["source", "group", "label"],
         .llmFormatterUsed: ["provider", "source", "duration_seconds", "input_chars", "output_chars", "default_prompt_used", "input_truncated"],

@@ -132,7 +132,7 @@ MacParakeet uses two event shapes together:
   `llm_formatter_used` preserve existing funnel and feature-adoption analysis.
 - **Operation events** such as `dictation_operation`,
   `transcription_operation`, `meeting_operation`, `llm_operation`,
-  `feedback_operation`, `auto_save_operation`, `model_operation`,
+  `transform_operation`, `feedback_operation`, `auto_save_operation`, `model_operation`,
   `speech_engine_switch_operation`, and `cli_operation` are wide,
   outcome-focused events emitted once per operation completion. They carry a
   short-lived `operation_id`, `workflow_id`, optional `parent_operation_id`,
@@ -234,7 +234,8 @@ events remain useful for diarization-specific timing and failure analysis.
 | `llm_transform_used` | `provider` | One-off transform feature usage |
 | `llm_transform_failed` | `provider`, `error_type` | One-off transform failure rates |
 | `transform_executed` | `transform_name`, `capture_path`, `replace_path`, `llm_ms`, `total_ms` | End-to-end system-wide Transform completions by built-in/custom bucket |
-| `transform_failed` | `transform_name`, `reason` | End-to-end system-wide Transform failure reasons |
+| `transform_failed` | `transform_name`, `reason` | End-to-end system-wide Transform failure reasons (`empty_selection`, `no_provider`, `capture_failed`, `llm_failed`, `replacement_failed`, `cancelled`) |
+| `transform_operation` | `operation_id`, `workflow_id`, `parent_operation_id`, `outcome`, `transform_name`, `stage`, `capture_path`, `replace_path`, `duration_seconds`, `llm_ms`, `total_ms`, `error_type` | One safe outcome event per system-wide Transform attempt, without prompts, selected text, or output text |
 | `ask_menu_opened` | — | Whether users discover the live meeting Ask prompt menu |
 | `ask_prompt_fired` | `source`, `group`, `label` | Which built-in live Ask prompts are used, with custom prompts collapsed to `custom` |
 | `llm_formatter_used` | `provider`, `source`, `duration_seconds`, `input_chars`, `output_chars`, `default_prompt_used`, `input_truncated` | Is transcript/dictation formatting useful, and how expensive is it? |

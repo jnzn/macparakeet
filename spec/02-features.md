@@ -1631,8 +1631,8 @@ Meeting transcription uses the current speech engine captured at recording start
 - `prompts.keyboardShortcut` stores an encoded `KeyboardShortcut`; `prompts.runningLabel` stores optional progress-pill copy.
 - `TransformsHotkeyRegistry` owns one process-wide event tap and dispatches hotkeys to Transform prompt IDs.
 - Selection capture is AX-first with clipboard fallback; replacement uses clipboard paste with snapshot/restore guards so the output lands in the currently focused target rather than forcing activation back to the selection source.
-- `TransformExecutor` uses `LLMService.transformDetailed` so CLI JSON output and local history can capture provider/model/latency metadata where available.
-- `transform_history` stores local input/output/source-app/timing rows for completed Transform runs. This is deliberate local user data; telemetry and `llm_runs` do not duplicate the content.
+- `TransformExecutor` uses `LLMService.transformStream` in the GUI so the progress pill can react to streamed output; CLI JSON uses the detailed LLM path for provider/model/latency metadata where available.
+- `transform_history` stores local input/output/source-app/timing rows for completed Transform runs. This is deliberate local user data; telemetry records only privacy-safe `transform_executed`, `transform_failed`, and `transform_operation` metadata and does not duplicate the content.
 - The menu bar supports pasting the latest Transform result and recent Transform results, mirroring the dictation paste history affordance.
 - `macparakeet-cli transforms` manages and runs saved Transforms headlessly; `macparakeet-cli transforms history` reads and manages local Transform history.
 

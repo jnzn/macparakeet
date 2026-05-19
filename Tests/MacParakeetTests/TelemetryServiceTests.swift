@@ -785,6 +785,55 @@ final class TelemetryServiceTests: XCTestCase {
         XCTAssertNil(duration.props?["durationMs"])
     }
 
+    func testTransformFailureCanRepresentCaptureFailures() {
+        let failed = TelemetryEventSpec.transformFailed(
+            transformName: .polish,
+            reason: .captureFailed
+        )
+
+        XCTAssertEqual(failed.props?["transform_name"], "polish")
+        XCTAssertEqual(failed.props?["reason"], "capture_failed")
+    }
+
+    func testTransformOperationPropsArePrivacySafeWideEvent() {
+        let context = ObservabilityOperationContext(
+            operationID: "op-transform",
+            workflowID: "wf-transform",
+            parentOperationID: "op-parent",
+            startedAt: Date(timeIntervalSince1970: 0)
+        )
+        let operation = TelemetryEventSpec.transformOperation(
+            operationID: context.operationID,
+            operationContext: context,
+            outcome: .failure,
+            transformName: .custom,
+            stage: .capture,
+            capturePath: .clipboard,
+            replacePath: nil,
+            durationSeconds: 1.25,
+            llmMs: nil,
+            totalMs: nil,
+            errorType: .captureFailed
+        )
+        let props = operation.props
+
+        XCTAssertEqual(operation.name, .transformOperation)
+        XCTAssertEqual(props?["operation_id"], "op-transform")
+        XCTAssertEqual(props?["workflow_id"], "wf-transform")
+        XCTAssertEqual(props?["parent_operation_id"], "op-parent")
+        XCTAssertEqual(props?["outcome"], "failure")
+        XCTAssertEqual(props?["transform_name"], "custom")
+        XCTAssertEqual(props?["stage"], "capture")
+        XCTAssertEqual(props?["capture_path"], "clipboard")
+        XCTAssertEqual(props?["duration_seconds"], "1.2")
+        XCTAssertEqual(props?["error_type"], "capture_failed")
+        XCTAssertNil(props?["reason"])
+        XCTAssertNil(props?["replace_path"])
+        XCTAssertNil(props?["prompt"])
+        XCTAssertNil(props?["input_text"])
+        XCTAssertNil(props?["output_text"])
+    }
+
     func testImplementedContractCoversEveryTypedEventName() {
         XCTAssertEqual(
             Set(TelemetryEventName.allCases),
@@ -979,6 +1028,26 @@ final class TelemetryServiceTests: XCTestCase {
             .llmChatFailed(provider: "openai", errorType: "network"),
             .llmTransformUsed(provider: "openai"),
             .llmTransformFailed(provider: "openai", errorType: "network"),
+            .transformExecuted(
+                transformName: .polish,
+                capturePath: .ax,
+                replacePath: .clipboardPaste,
+                llmMs: 1200,
+                totalMs: 1500
+            ),
+            .transformFailed(transformName: .custom, reason: .replacementFailed),
+            .transformOperation(
+                operationID: "op-transform",
+                outcome: .success,
+                transformName: .polish,
+                stage: .complete,
+                capturePath: .ax,
+                replacePath: .clipboardPaste,
+                durationSeconds: 1.5,
+                llmMs: 1200,
+                totalMs: 1500,
+                errorType: nil
+            ),
             .askMenuOpened,
             .askPromptFired(source: .emptyState, group: "CAPTURE", label: "Action items"),
             .llmFormatterUsed(
