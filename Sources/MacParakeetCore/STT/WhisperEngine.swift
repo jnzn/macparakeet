@@ -280,14 +280,18 @@ public actor WhisperEngine: STTTranscribing {
             let startedAt = Date()
             let variant = modelVariant
             let folderName = modelFolder.lastPathComponent
-            let watchdog = Self.makePrepareWatchdog(modelVariant: variant, folderName: folderName)
+            let watchdog = Self.makePrepareWatchdog(
+                modelVariant: variant,
+                folderName: folderName,
+                onProgress: onProgress
+            )
             defer { watchdog.cancel() }
 
             logger.notice("whisper_model_prepare_start model=\(variant, privacy: .public) folder=\(folderName, privacy: .public)")
             AudioCaptureDiagnostics.append(
                 "whisper_model_prepare_start model=\(variant) folder=\(folderName)"
             )
-            onProgress?("Loading Whisper model...")
+            onProgress?("Optimizing Whisper for this Mac...")
             whisperKit = try await WhisperKit(WhisperKitConfig(
                 model: modelVariant,
                 downloadBase: downloadBase,
@@ -491,20 +495,27 @@ public actor WhisperEngine: STTTranscribing {
 
     private nonisolated static func makePrepareWatchdog(
         modelVariant: String,
-        folderName: String
+        folderName: String,
+        onProgress: (@Sendable (String) -> Void)?
     ) -> Task<Void, Never> {
         Task.detached(priority: .background) {
-            try? await Task.sleep(for: .seconds(15))
-            guard !Task.isCancelled else { return }
-            AudioCaptureDiagnostics.append(
-                "whisper_model_prepare_still_loading elapsed_s=15 model=\(modelVariant) folder=\(folderName)"
-            )
+            let milestones: [(elapsedSeconds: Int, message: String)] = [
+                (15, "Optimizing Whisper for this Mac..."),
+                (60, "Still optimizing Whisper with Core ML. The first load can take a few minutes..."),
+                (180, "Still preparing Whisper. This one-time optimization should be faster next time..."),
+                (300, "Whisper is still optimizing. Leave MacParakeet open until Core ML finishes...")
+            ]
 
-            try? await Task.sleep(for: .seconds(45))
-            guard !Task.isCancelled else { return }
-            AudioCaptureDiagnostics.append(
-                "whisper_model_prepare_still_loading elapsed_s=60 model=\(modelVariant) folder=\(folderName)"
-            )
+            var previousElapsedSeconds = 0
+            for milestone in milestones {
+                try? await Task.sleep(for: .seconds(milestone.elapsedSeconds - previousElapsedSeconds))
+                guard !Task.isCancelled else { return }
+                previousElapsedSeconds = milestone.elapsedSeconds
+                onProgress?(milestone.message)
+                AudioCaptureDiagnostics.append(
+                    "whisper_model_prepare_still_loading elapsed_s=\(milestone.elapsedSeconds) model=\(modelVariant) folder=\(folderName)"
+                )
+            }
         }
     }
 

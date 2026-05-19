@@ -1527,7 +1527,7 @@ struct SettingsView: View {
                             "Runs on the Neural Engine"
                         ],
                         helpText: "Best for English and other European languages including Spanish, French, German, and Italian. Runs on the Neural Engine for the lowest latency on Apple Silicon.",
-                        modelStatus: viewModel.parakeetStatus,
+                        modelStatus: displayedParakeetModelStatus,
                         isSelected: viewModel.speechEnginePreference == .parakeet,
                         isBusy: viewModel.speechEngineSwitching,
                         onSelect: { selectEngine(.parakeet) }
@@ -1543,7 +1543,7 @@ struct SettingsView: View {
                             "Whisper Large v3 Turbo (632 MB)"
                         ],
                         helpText: "Best for languages outside Parakeet's coverage. Adds Korean, Japanese, Chinese, Thai, Hindi, Arabic, Vietnamese, and 80+ more — any language Whisper supports.",
-                        modelStatus: viewModel.whisperModelStatus,
+                        modelStatus: displayedWhisperModelStatus,
                         isSelected: viewModel.speechEnginePreference == .whisper,
                         isBusy: viewModel.speechEngineSwitching,
                         onSelect: { handleWhisperTileTap() }
@@ -1604,24 +1604,24 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
                 modelStatusRow(
                     title: "Parakeet",
-                    detail: viewModel.parakeetStatusDetail,
-                    status: viewModel.parakeetStatus,
+                    detail: displayedParakeetModelStatusDetail,
+                    status: displayedParakeetModelStatus,
                     isWorking: viewModel.parakeetRepairing,
                     actionsDisabled: viewModel.speechEngineSwitching,
-                    primaryAction: parakeetPrimaryAction,
-                    overflowAction: parakeetOverflowAction
+                    primaryAction: displayedParakeetModelStatus == .preparing ? nil : parakeetPrimaryAction,
+                    overflowAction: displayedParakeetModelStatus == .preparing ? nil : parakeetOverflowAction
                 )
 
                 Divider()
 
                 modelStatusRow(
                     title: "Whisper",
-                    detail: viewModel.whisperModelStatusDetail,
-                    status: viewModel.whisperModelStatus,
+                    detail: displayedWhisperModelStatusDetail,
+                    status: displayedWhisperModelStatus,
                     isWorking: viewModel.whisperDownloading,
                     actionsDisabled: viewModel.speechEngineSwitching,
-                    primaryAction: whisperPrimaryAction,
-                    overflowAction: whisperOverflowAction
+                    primaryAction: displayedWhisperModelStatus == .preparing ? nil : whisperPrimaryAction,
+                    overflowAction: displayedWhisperModelStatus == .preparing ? nil : whisperOverflowAction
                 )
             }
         }
@@ -1629,8 +1629,9 @@ struct SettingsView: View {
 
     private var engineSelectorCardStatus: SettingsCardStatus? {
         if viewModel.speechEngineSwitching {
-            let target = viewModel.speechEngineSwitchTarget ?? viewModel.speechEnginePreference
-            return SettingsCardStatus(.recommended, label: "Switching to \(target.displayName)")
+            let target = currentSpeechEngineSwitchTarget
+            let label = target == .whisper ? "Preparing Whisper" : "Switching to \(target.displayName)"
+            return SettingsCardStatus(.recommended, label: label)
         }
         if viewModel.speechEngineError != nil {
             return SettingsCardStatus(.required, label: "Action needed")
@@ -1640,20 +1641,57 @@ struct SettingsView: View {
 
     private var speechEngineSwitchBannerState: (title: String, detail: String)? {
         guard viewModel.speechEngineSwitching else { return nil }
-        let target = viewModel.speechEngineSwitchTarget ?? viewModel.speechEnginePreference
+        let target = currentSpeechEngineSwitchTarget
         let phase = viewModel.speechEngineSwitchDetail ?? "Preparing speech engine..."
+        let title = target == .whisper ? "Preparing Whisper" : "Switching to \(target.displayName)"
         return (
-            "Switching to \(target.displayName)",
+            title,
             "\(phase) Dictation, file transcription, and meetings pause until this finishes."
         )
     }
 
     private var enginesModelsCardStatus: SettingsCardStatus? {
         SettingsStatusRules.localModelsCardStatus(
-            parakeet: viewModel.parakeetStatus,
-            whisper: viewModel.whisperModelStatus,
+            parakeet: displayedParakeetModelStatus,
+            whisper: displayedWhisperModelStatus,
             activeEngine: viewModel.speechEnginePreference
         )
+    }
+
+    private var currentSpeechEngineSwitchTarget: SpeechEnginePreference {
+        viewModel.speechEngineSwitchTarget ?? viewModel.speechEnginePreference
+    }
+
+    private var displayedParakeetModelStatus: SettingsViewModel.LocalModelStatus {
+        guard viewModel.speechEngineSwitching,
+              currentSpeechEngineSwitchTarget == .parakeet else {
+            return viewModel.parakeetStatus
+        }
+        return .preparing
+    }
+
+    private var displayedParakeetModelStatusDetail: String {
+        guard viewModel.speechEngineSwitching,
+              currentSpeechEngineSwitchTarget == .parakeet else {
+            return viewModel.parakeetStatusDetail
+        }
+        return viewModel.speechEngineSwitchDetail ?? "Loading Parakeet model on Neural Engine..."
+    }
+
+    private var displayedWhisperModelStatus: SettingsViewModel.LocalModelStatus {
+        guard viewModel.speechEngineSwitching,
+              currentSpeechEngineSwitchTarget == .whisper else {
+            return viewModel.whisperModelStatus
+        }
+        return .preparing
+    }
+
+    private var displayedWhisperModelStatusDetail: String {
+        guard viewModel.speechEngineSwitching,
+              currentSpeechEngineSwitchTarget == .whisper else {
+            return viewModel.whisperModelStatusDetail
+        }
+        return viewModel.speechEngineSwitchDetail ?? "Optimizing Whisper for this Mac..."
     }
 
     private func speechEngineSwitchBanner(title: String, detail: String) -> some View {
@@ -1705,8 +1743,9 @@ struct SettingsView: View {
     /// and is surfaced only if they explicitly switch.
     ///
     /// When Whisper IS selected: returns nil for usable (`.ready` /
-    /// `.notLoaded`) or transient (`.checking` / `.unknown`) states, and a
-    /// populated state when the user needs to act (download, wait, retry).
+    /// `.notLoaded`) or transient (`.preparing` / `.checking` / `.unknown`)
+    /// states, and a populated state when the user needs to act (download,
+    /// wait, retry).
     /// The banner stays mounted across `.notDownloaded` → `.repairing` →
     /// terminal state so the action surface doesn't blink out on click.
     private var whisperDownloadBannerState: (mode: EngineDownloadBanner.Mode, subtitle: String)? {
@@ -1721,7 +1760,7 @@ struct SettingsView: View {
             return (.downloading, viewModel.whisperModelStatusDetail)
         case .failed:
             return (.retry, viewModel.whisperModelStatusDetail)
-        case .ready, .notLoaded, .checking, .unknown:
+        case .ready, .notLoaded, .preparing, .checking, .unknown:
             return nil
         }
     }
@@ -1741,6 +1780,8 @@ struct SettingsView: View {
             viewModel.speechEngineError = "Download the Whisper model from Local Models below before switching engines."
         case .repairing:
             viewModel.speechEngineError = "Whisper model is downloading — switch engines once it finishes."
+        case .preparing:
+            viewModel.speechEngineError = "Whisper is preparing for this Mac — switch engines once it finishes."
         case .failed:
             viewModel.speechEngineError = "Whisper model failed to load — retry below."
         case .checking, .unknown:
@@ -2151,7 +2192,8 @@ struct SettingsView: View {
                               !actionsDisabled,
                               !isWorking,
                               status != .checking,
-                              status != .repairing {
+                              status != .repairing,
+                              status != .preparing {
                         Menu {
                             Button(overflow.label, action: overflow.run)
                                 .help(overflow.help ?? overflow.label)
@@ -2165,7 +2207,7 @@ struct SettingsView: View {
                         .fixedSize()
                         .help(overflow.help ?? "More actions")
                         .accessibilityLabel("More actions")
-                    } else if isWorking || status == .checking || status == .repairing {
+                    } else if isWorking || status == .checking || status == .repairing || status == .preparing {
                         ProgressView()
                             .controlSize(.small)
                             .frame(width: 22, height: 22)
@@ -2343,6 +2385,8 @@ struct SettingsView: View {
             ("checkmark.circle.fill", "Installed", DesignSystem.Colors.successGreen)
         case .notDownloaded:
             ("arrow.down.circle.fill", "Not Downloaded", DesignSystem.Colors.errorRed)
+        case .preparing:
+            ("gearshape.fill", "Preparing", DesignSystem.Colors.warningAmber)
         case .repairing:
             ("wrench.and.screwdriver.fill", "Repairing", DesignSystem.Colors.warningAmber)
         case .failed:
@@ -2376,6 +2420,8 @@ struct SettingsView: View {
             "Model files are installed locally. The model will load when selected or used."
         case .notDownloaded:
             "Model files are missing and must be downloaded before use."
+        case .preparing:
+            "Model is being prepared for this Mac."
         case .repairing:
             "Model setup is currently running."
         case .failed:

@@ -12,6 +12,7 @@ public final class SettingsViewModel {
         case ready
         case notLoaded
         case notDownloaded
+        case preparing
         case repairing
         case failed
     }
@@ -1018,7 +1019,7 @@ public final class SettingsViewModel {
             // to `.ready` after asking the runtime if Whisper is the active
             // engine and currently loaded.
             whisperModelStatus = .notLoaded
-            whisperModelStatusDetail = "\(friendly) · Installed locally, loads when selected."
+            whisperModelStatusDetail = "\(friendly) · Installed locally. First load may optimize for this Mac."
         } else {
             whisperModelStatus = .notDownloaded
             whisperModelStatusDetail = "\(friendly) · Needs download before use."
@@ -1333,7 +1334,7 @@ public final class SettingsViewModel {
         case .parakeet:
             "Loading Parakeet model on Neural Engine..."
         case .whisper:
-            "Loading Whisper model..."
+            "Optimizing Whisper for this Mac..."
         }
     }
 

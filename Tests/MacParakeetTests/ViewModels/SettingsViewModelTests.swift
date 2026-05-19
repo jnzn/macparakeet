@@ -1030,7 +1030,7 @@ final class SettingsViewModelTests: XCTestCase {
     }
 
     func testSpeechEngineChangeShowsProgressAndClearsWhenDone() async throws {
-        let switcher = MockSpeechEngineSwitcher(progressMessages: ["Loading Whisper model..."])
+        let switcher = MockSpeechEngineSwitcher(progressMessages: ["Optimizing Whisper for this Mac..."])
         await switcher.blockNextSwitch()
         viewModel.whisperModelStatus = .notLoaded
         viewModel.configure(
@@ -1046,7 +1046,7 @@ final class SettingsViewModelTests: XCTestCase {
 
         try await waitUntil { viewModel.speechEngineSwitching }
         try await waitUntil { viewModel.speechEngineSwitchTarget == .whisper }
-        try await waitUntil { viewModel.speechEngineSwitchDetail == "Loading Whisper model..." }
+        try await waitUntil { viewModel.speechEngineSwitchDetail == "Optimizing Whisper for this Mac..." }
 
         await switcher.releaseSwitch()
         try await waitForSpeechEngineSwitchingToFinish()
@@ -1056,7 +1056,7 @@ final class SettingsViewModelTests: XCTestCase {
     }
 
     func testModelRepairsAreIgnoredWhileSpeechEngineIsSwitching() async throws {
-        let switcher = MockSpeechEngineSwitcher(progressMessages: ["Loading Whisper model..."])
+        let switcher = MockSpeechEngineSwitcher(progressMessages: ["Optimizing Whisper for this Mac..."])
         await switcher.blockNextSwitch()
         let stt = MockSTTClient()
         viewModel.whisperModelStatus = .notLoaded
