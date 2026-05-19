@@ -11,6 +11,10 @@ import OSLog
 ///   prompt body and surfaces progress in the brand-finished floating
 ///   pill (`TransformSpikeProgressPanelController`, retained from the
 ///   spike)
+/// - pastes the result into the currently focused target instead of forcing
+///   replacement back into the captured source surface, so read-only
+///   selections (browser text, terminal scrollback, PDFs) can still feed a
+///   paste-ready result into the user's active input
 /// - manages cancel-then-restart on re-trigger, run-ID stale-event
 ///   guarding, and per-Transform telemetry
 ///
@@ -213,6 +217,7 @@ final class TransformsCoordinator {
             do {
                 let result = try await executor.run(
                     prompt: promptBody,
+                    replacementMode: .pasteIntoCurrentFocus,
                     onProgress: { [weak self] progress in
                         if case .failed = progress {
                             Task { @MainActor [weak self, runID] in

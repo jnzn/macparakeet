@@ -1624,15 +1624,16 @@ Meeting transcription uses the current speech engine captured at recording start
 
 > Status: **IMPLEMENTED ON MAIN** — Productized ADR-022 surface enabled by `AppFeatures.transformsEnabled = true`.
 
-**What:** System-wide selected-text rewrites through the user's configured LLM provider. The user selects text in any app, presses a bound Transform hotkey, and MacParakeet captures the selection, runs the saved prompt, and replaces the selection in place. The default built-ins are `Polish` (`Option-1`), `Distill` (`Option-2`), and `Decide` (`Option-3`).
+**What:** System-wide selected-text rewrites through the user's configured LLM provider. The user selects text in any app, presses a bound Transform hotkey, and MacParakeet captures the selection, runs the saved prompt, and pastes the result into the currently focused target. Editable selections are replaced by normal `Cmd+V` semantics; read-only selections still produce a pasteable result and a local history row. The default built-ins are `Polish` (`Option-1`), `Distill` (`Option-2`), and `Decide` (`Option-3`).
 
 **Implementation:**
 - Transforms are `Prompt` rows with `category == .transform`; they reuse Prompt Library persistence but have their own sidebar surface and never appear in summary prompt pickers.
 - `prompts.keyboardShortcut` stores an encoded `KeyboardShortcut`; `prompts.runningLabel` stores optional progress-pill copy.
 - `TransformsHotkeyRegistry` owns one process-wide event tap and dispatches hotkeys to Transform prompt IDs.
-- Selection capture is AX-first with clipboard fallback; replacement tries AX write first and falls back to clipboard paste with snapshot/restore guards.
+- Selection capture is AX-first with clipboard fallback; replacement uses clipboard paste with snapshot/restore guards so the output lands in the currently focused target rather than forcing activation back to the selection source.
 - `TransformExecutor` uses `LLMService.transformDetailed` so CLI JSON output and local history can capture provider/model/latency metadata where available.
 - `transform_history` stores local input/output/source-app/timing rows for completed Transform runs. This is deliberate local user data; telemetry and `llm_runs` do not duplicate the content.
+- The menu bar supports pasting the latest Transform result and recent Transform results, mirroring the dictation paste history affordance.
 - `macparakeet-cli transforms` manages and runs saved Transforms headlessly; `macparakeet-cli transforms history` reads and manages local Transform history.
 
 **Acceptance criteria:**

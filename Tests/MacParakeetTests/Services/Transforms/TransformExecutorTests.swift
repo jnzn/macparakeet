@@ -278,6 +278,46 @@ final class TransformExecutorTests: XCTestCase {
         XCTAssertEqual(replacementBackend.lastAXText(), "Hi there!")
     }
 
+    func testRunCanPasteResultIntoCurrentFocusInsteadOfAXReplacing() async throws {
+        let captureBackend = FakeSelectionCaptureBackend(
+            isTrusted: true,
+            focusedElement: AXUIElementCreateSystemWide(),
+            selectedText: "Hello world"
+        )
+        let captureService = SelectionCaptureService(
+            backend: captureBackend,
+            clipboardPollTimeout: .milliseconds(40),
+            pollIntervalNanos: 1_000_000
+        )
+        let replacementBackend = FakeSelectionReplacementBackend(
+            isTrusted: true,
+            axWriteSucceeds: true
+        )
+        let replacementService = SelectionReplacementService(
+            backend: replacementBackend,
+            postPasteDelay: .milliseconds(1)
+        )
+        let llm = MockTransformLLMService()
+        llm.streamTokens = ["Hi there!"]
+        let executor = TransformExecutor(
+            captureService: captureService,
+            replacementService: replacementService,
+            llmService: llm
+        )
+
+        let result = try await executor.run(
+            prompt: "polish",
+            replacementMode: .pasteIntoCurrentFocus,
+            onProgress: { _ in }
+        )
+
+        XCTAssertEqual(result.outputText, "Hi there!")
+        XCTAssertEqual(result.path, .clipboardPaste)
+        XCTAssertNil(replacementBackend.lastAXText())
+        XCTAssertEqual(replacementBackend.lastClipboardText(), "Hi there!")
+        XCTAssertEqual(replacementBackend.cmdVPostCount(), 1)
+    }
+
     func testRunPropagatesLLMStreamError() async {
         let captureBackend = FakeSelectionCaptureBackend(
             isTrusted: true,
