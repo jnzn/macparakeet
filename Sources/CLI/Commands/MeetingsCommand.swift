@@ -11,6 +11,7 @@ struct MeetingsCommand: AsyncParsableCommand {
             ShowSubcommand.self,
             TranscriptSubcommand.self,
             NotesSubcommand.self,
+            ResultsSubcommand.self,
             ExportSubcommand.self,
         ]
     )
@@ -271,6 +272,135 @@ struct MeetingsCommand: AsyncParsableCommand {
         }
     }
 
+    struct ResultsSubcommand: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "results",
+            abstract: "Read or write saved prompt results for meetings.",
+            subcommands: [
+                ListSubcommand.self,
+                AddSubcommand.self,
+            ]
+        )
+
+        struct ListSubcommand: AsyncParsableCommand {
+            static let configuration = CommandConfiguration(
+                commandName: "list",
+                abstract: "List saved PromptResults for a meeting."
+            )
+
+            @Argument(help: "Meeting UUID, UUID prefix, or exact title.")
+            var meeting: String
+
+            @Flag(name: .long, help: "Emit JSON instead of human-readable output.")
+            var json: Bool = false
+
+            @Option(help: "Path to SQLite database file (defaults to the app database).")
+            var database: String?
+
+            func run() async throws {
+                try emitJSONOrRethrow(json: json) {
+                    let repositories = try makeMeetingResultRepositories(database: database)
+                    let transcription = try findMeeting(idOrName: meeting, repo: repositories.transcriptions)
+                    let results = try repositories.promptResults
+                        .fetchAll(transcriptionId: transcription.id)
+                        .map { MeetingPromptResultRecord(result: $0, transcription: transcription) }
+
+                    if json {
+                        try printJSON(results)
+                        return
+                    }
+
+                    guard !results.isEmpty else {
+                        print("No prompt results found for \(transcription.fileName).")
+                        return
+                    }
+
+                    for result in results {
+                        let previewText = preview(result.content, maxLength: 80) ?? ""
+                        print("\(result.shortID)  \(result.name)  \(formatDate(result.createdAt))  \(previewText)")
+                    }
+                    print()
+                    print("\(results.count) result(s)")
+                }
+            }
+        }
+
+        struct AddSubcommand: AsyncParsableCommand {
+            static let configuration = CommandConfiguration(
+                commandName: "add",
+                abstract: "Store externally generated output as a PromptResult for a meeting."
+            )
+
+            @Argument(help: "Meeting UUID, UUID prefix, or exact title.")
+            var meeting: String
+
+            @Option(name: .long, help: "Display name for the saved result.")
+            var name: String
+
+            @Option(name: .long, help: "Generated result content to store.")
+            var content: String?
+
+            @Flag(name: .long, help: "Read generated result content from stdin.")
+            var stdin: Bool = false
+
+            @Option(name: .long, help: "Prompt or instructions that produced this result.")
+            var promptContent: String?
+
+            @Option(name: .long, help: "Extra instructions or provenance to store with the result.")
+            var extra: String?
+
+            @Flag(name: .long, help: "Emit the saved result object as JSON.")
+            var json: Bool = false
+
+            @Option(help: "Path to SQLite database file (defaults to the app database).")
+            var database: String?
+
+            func validate() throws {
+                if content != nil && stdin {
+                    throw ValidationError("Use either --content or --stdin, not both.")
+                }
+                if content == nil && !stdin {
+                    throw ValidationError("Pass --content or --stdin.")
+                }
+                if normalizedNonEmptyText(name) == nil {
+                    throw ValidationError("--name must not be empty.")
+                }
+            }
+
+            func run() async throws {
+                try emitJSONOrRethrow(json: json) {
+                    let repositories = try makeMeetingResultRepositories(database: database)
+                    let transcription = try findMeeting(idOrName: meeting, repo: repositories.transcriptions)
+                    let resultContent = try resultInput(content: content, stdin: stdin)
+                    guard let resultName = normalizedNonEmptyText(name) else {
+                        throw ValidationError("--name must not be empty.")
+                    }
+                    let promptSnapshot = normalizedNonEmptyText(promptContent)
+                        ?? "External result imported with `macparakeet-cli meetings results add`."
+                    let now = Date()
+                    let promptResult = PromptResult(
+                        transcriptionId: transcription.id,
+                        promptName: resultName,
+                        promptContent: promptSnapshot,
+                        extraInstructions: normalizedNonEmptyText(extra),
+                        content: resultContent,
+                        userNotesSnapshot: transcription.userNotes,
+                        createdAt: now,
+                        updatedAt: now
+                    )
+
+                    try repositories.promptResults.save(promptResult)
+                    let record = MeetingPromptResultRecord(result: promptResult, transcription: transcription)
+                    if json {
+                        try printJSON(record)
+                    } else {
+                        print("Saved PromptResult \(record.shortID) for \(transcription.fileName).")
+                    }
+                }
+            }
+        }
+    }
+
     struct ExportSubcommand: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
             commandName: "export",
@@ -440,9 +570,54 @@ private struct MeetingNotesRecord: Encodable {
     }
 }
 
-private func makeTranscriptionRepository(database: String?) throws -> TranscriptionRepository {
+private struct MeetingPromptResultRecord: Encodable {
+    let id: UUID
+    let shortID: String
+    let meetingId: UUID
+    let meetingTitle: String
+    let name: String
+    let promptContent: String
+    let extraInstructions: String?
+    let content: String
+    let userNotesSnapshot: String?
+    let createdAt: Date
+    let updatedAt: Date
+
+    init(result: PromptResult, transcription: Transcription) {
+        id = result.id
+        shortID = String(result.id.uuidString.prefix(8))
+        meetingId = transcription.id
+        meetingTitle = transcription.fileName
+        name = result.promptName
+        promptContent = result.promptContent
+        extraInstructions = result.extraInstructions
+        content = result.content
+        userNotesSnapshot = result.userNotesSnapshot
+        createdAt = result.createdAt
+        updatedAt = result.updatedAt
+    }
+}
+
+private struct MeetingResultRepositories {
+    let transcriptions: TranscriptionRepository
+    let promptResults: PromptResultRepository
+}
+
+private func makeDatabaseManager(database: String?) throws -> DatabaseManager {
     try AppPaths.ensureDirectories()
-    let dbManager = try DatabaseManager(path: resolvedDatabasePath(database))
+    return try DatabaseManager(path: resolvedDatabasePath(database))
+}
+
+private func makeMeetingResultRepositories(database: String?) throws -> MeetingResultRepositories {
+    let dbManager = try makeDatabaseManager(database: database)
+    return MeetingResultRepositories(
+        transcriptions: TranscriptionRepository(dbQueue: dbManager.dbQueue),
+        promptResults: PromptResultRepository(dbQueue: dbManager.dbQueue)
+    )
+}
+
+private func makeTranscriptionRepository(database: String?) throws -> TranscriptionRepository {
+    let dbManager = try makeDatabaseManager(database: database)
     return TranscriptionRepository(dbQueue: dbManager.dbQueue)
 }
 
@@ -451,8 +626,17 @@ private func preferredTranscriptText(_ transcription: Transcription) -> String {
 }
 
 private func normalizedNotes(_ value: String?) -> String? {
-    guard let value else { return nil }
-    return value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : value
+    guard let value, normalizedNonEmptyText(value) != nil else { return nil }
+    return value
+}
+
+private func normalizedNonEmptyText(_ value: String?) -> String? {
+    guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !trimmed.isEmpty
+    else {
+        return nil
+    }
+    return trimmed
 }
 
 private func preview(_ value: String?, maxLength: Int = 120) -> String? {
@@ -473,13 +657,28 @@ private func notesInput(text: String?, stdin: Bool) throws -> String {
     if stdin {
         let data = FileHandle.standardInput.readDataToEndOfFile()
         guard let decoded = String(data: data, encoding: .utf8) else {
-            throw CLIInputError.empty
+            throw CLIInputError.invalidEncoding
         }
         value = decoded
     } else {
         value = text ?? ""
     }
     guard normalizedNotes(value) != nil else { throw CLIInputError.empty }
+    return value
+}
+
+private func resultInput(content: String?, stdin: Bool) throws -> String {
+    let value: String
+    if stdin {
+        let data = FileHandle.standardInput.readDataToEndOfFile()
+        guard let decoded = String(data: data, encoding: .utf8) else {
+            throw CLIInputError.invalidEncoding
+        }
+        value = decoded
+    } else {
+        value = content ?? ""
+    }
+    guard normalizedNonEmptyText(value) != nil else { throw CLIInputError.empty }
     return value
 }
 
