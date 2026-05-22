@@ -407,12 +407,8 @@ struct OnboardingFlowView: View {
         onboardingCard {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    HStack(spacing: DesignSystem.Spacing.sm) {
-                        Text("Meeting Recording (Optional)")
-                            .font(DesignSystem.Typography.sectionTitle)
-
-                        LabsBadge()
-                    }
+                    Text("Meeting Recording (Optional)")
+                        .font(DesignSystem.Typography.sectionTitle)
 
                     Spacer()
 
@@ -433,11 +429,6 @@ struct OnboardingFlowView: View {
                             : DesignSystem.Colors.warningAmber
                         )
                 }
-
-                Text(LabsBadge.message)
-                    .font(DesignSystem.Typography.caption)
-                    .foregroundStyle(DesignSystem.Colors.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
 
                 Text("To capture audio from calls, MacParakeet needs macOS's \"Screen & System Audio Recording\" permission.")
                     .font(DesignSystem.Typography.bodySmall)
@@ -493,7 +484,7 @@ struct OnboardingFlowView: View {
         onboardingCard {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("Calendar Reminders (Optional)")
+                    Text("Calendar Meetings (Optional)")
                         .font(DesignSystem.Typography.sectionTitle)
                     Spacer()
                     Text(viewModel.calendarPermissionGranted ? "Granted" : "Not granted")
@@ -514,7 +505,7 @@ struct OnboardingFlowView: View {
                         )
                 }
 
-                Text("MacParakeet can read your macOS calendar to send a quiet notification before each scheduled meeting — so you're ready to start the recording.")
+                Text("MacParakeet can read your macOS calendar to send a quiet notification before each scheduled meeting and, if you choose, start recording automatically.")
                     .font(DesignSystem.Typography.bodySmall)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -526,7 +517,7 @@ struct OnboardingFlowView: View {
 
                 HStack(spacing: 10) {
                     accentButton(
-                        viewModel.isBusy ? "Requesting..." : "Enable Calendar Reminders",
+                        viewModel.isBusy ? "Requesting..." : "Enable Calendar Access",
                         disabled: viewModel.isBusy || viewModel.calendarPermissionGranted
                     ) {
                         viewModel.requestCalendarAccess()
@@ -1000,7 +991,7 @@ struct OnboardingFlowView: View {
         case .microphone: return "Enable Microphone Access"
         case .accessibility: return "Enable Accessibility"
         case .meetingRecording: return "Meeting Recording (Optional)"
-        case .calendar: return "Calendar Reminders (Optional)"
+        case .calendar: return "Calendar Meetings (Optional)"
         case .hotkey: return "Learn the Hotkey"
         case .engine: return "Prepare Speech Model"
         case .done: return "All Set"
@@ -1018,7 +1009,7 @@ struct OnboardingFlowView: View {
         case .meetingRecording:
             return "Optional. This is only needed to capture system audio during meeting recording."
         case .calendar:
-            return "Optional. Lets MacParakeet remind you before scheduled meetings so you never miss the start of a recording."
+            return "Optional. Lets MacParakeet remind you before scheduled meetings and enable opt-in auto-start."
         case .hotkey:
             return "Two ways to dictate — pick whichever feels natural."
         case .engine:

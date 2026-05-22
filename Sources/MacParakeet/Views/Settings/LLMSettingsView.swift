@@ -182,7 +182,7 @@ struct LLMSettingsView: View {
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text("AI for summaries and chat")
+                Text("AI for summaries, chat, meeting Ask, and Transforms")
                     .font(DesignSystem.Typography.body.weight(.semibold))
                     .foregroundStyle(DesignSystem.Colors.textPrimary)
                 Text(setupStatusCopy(for: status))
@@ -265,7 +265,7 @@ struct LLMSettingsView: View {
     private func setupStatusCopy(for status: LLMSettingsViewModel.AISetupStatus) -> String {
         switch status {
         case .setUpNeeded:
-            return "Choose how MacParakeet should run AI features. Transcription still works without this."
+            return "Choose how MacParakeet should run AI features. Transcription, dictation, and meeting recording still work without this."
         case .ready(let displayName):
             return "Ready: using \(displayName)."
         case .cannotConnect(let displayName, let message):

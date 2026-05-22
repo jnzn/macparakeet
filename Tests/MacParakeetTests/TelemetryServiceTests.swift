@@ -1136,7 +1136,7 @@ final class TelemetryServiceTests: XCTestCase {
                 errorType: nil
             ),
             .askMenuOpened,
-            .askPromptFired(source: .emptyState, group: "CAPTURE", label: "Action items"),
+            .askPromptFired(source: .emptyState, group: "capture", label: "action_items"),
             .llmFormatterUsed(
                 provider: "lmstudio",
                 source: .dictation,

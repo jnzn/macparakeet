@@ -413,7 +413,10 @@ if [[ "$BUILD_SYSTEM" == "xcodebuild" ]]; then
     SPARKLE_FW="$(find "$XCODE_DERIVED_DATA" -type d -name "Sparkle.framework" -path "*/Release/*" 2>/dev/null | head -n 1)"
   fi
 else
-  SPARKLE_FW="$(find "$ROOT_DIR/.build" -type d -name "Sparkle.framework" -not -path "*/artifacts/*" 2>/dev/null | head -n 1)"
+  SPARKLE_FW="$(find "$ROOT_DIR/.build" -type d -name "Sparkle.framework" -path "*/release/*" -not -path "*/artifacts/*" 2>/dev/null | head -n 1)"
+  if [[ ! -d "$SPARKLE_FW" ]]; then
+    SPARKLE_FW="$(find "$ROOT_DIR/.build" -type d -name "Sparkle.framework" -not -path "*/artifacts/*" 2>/dev/null | head -n 1)"
+  fi
 fi
 
 if [[ -z "$SPARKLE_FW" || ! -d "$SPARKLE_FW" ]]; then

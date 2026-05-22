@@ -1246,10 +1246,11 @@ final class LLMServiceTests: XCTestCase {
 
         let events = telemetry.snapshot()
         XCTAssertTrue(events.contains { event in
-            if case .llmProviderUnavailable(let provider, let errorType, let feature, _) = event {
+            if case .llmProviderUnavailable(let provider, let errorType, let feature, let source) = event {
                 return provider == "localCLI"
                     && errorType == "LLMError.cliError"
                     && feature == .chat
+                    && source == .transcriptChat
             }
             return false
         })
@@ -1257,6 +1258,7 @@ final class LLMServiceTests: XCTestCase {
             if case .llmChatFailed = event { return true }
             return false
         })
+        XCTAssertEqual(llmOperationProps(in: events).first?["outcome"], "unavailable")
     }
 
     func testTransformEmitsProviderUnavailableOnAuthFailed() async {
@@ -1336,8 +1338,8 @@ final class LLMServiceTests: XCTestCase {
 
         let events = telemetry.snapshot()
         XCTAssertTrue(events.contains { event in
-            if case .llmProviderUnavailable(let provider, _, let feature, _) = event {
-                return provider == "ollama" && feature == .chat
+            if case .llmProviderUnavailable(let provider, _, let feature, let source) = event {
+                return provider == "ollama" && feature == .chat && source == .transcriptChat
             }
             return false
         })
@@ -1345,6 +1347,7 @@ final class LLMServiceTests: XCTestCase {
             if case .llmChatFailed = event { return true }
             return false
         })
+        XCTAssertEqual(llmOperationProps(in: events).first?["outcome"], "unavailable")
     }
 
     func testStreamingTransformEmitsProviderUnavailableOnAuthFailed() async {

@@ -281,6 +281,27 @@ public enum TelemetryLLMFeature: String, Sendable, Equatable {
     case transform
 }
 
+public enum TelemetryLLMSource: String, Sendable, Equatable {
+    case dictation
+    case transcription
+    case meetingAsk = "meeting_ask"
+    case transcriptChat = "transcript_chat"
+
+    public init(_ source: TelemetryFormatterSource) {
+        switch source {
+        case .dictation: self = .dictation
+        case .transcription: self = .transcription
+        }
+    }
+
+    public init(_ source: TelemetryChatSource) {
+        switch source {
+        case .meetingAsk: self = .meetingAsk
+        case .transcriptChat: self = .transcriptChat
+        }
+    }
+}
+
 /// Why a meeting recording started. Lets us distinguish manual user action
 /// from calendar-driven auto-start in adoption metrics.
 public enum TelemetryMeetingRecordingTrigger: String, Sendable, Equatable {
@@ -512,7 +533,7 @@ public enum TelemetryEventSpec: Sendable {
         provider: String,
         errorType: String,
         feature: TelemetryLLMFeature,
-        source: TelemetryFormatterSource? = nil
+        source: TelemetryLLMSource? = nil
     )
     case llmOperation(
         operationID: String,

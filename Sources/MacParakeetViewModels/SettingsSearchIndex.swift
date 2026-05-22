@@ -235,7 +235,7 @@ public enum SettingsSearchIndex {
             id: "ai.provider",
             tab: .ai,
             title: "AI Setup",
-            subtitle: "Optional. Powers summaries, chat, and meeting Ask.",
+            subtitle: "Optional. Powers summaries, chat, meeting Ask, and Transforms.",
             keywords: [
                 "ai", "llm", "openai", "anthropic", "claude", "gpt", "lm studio", "ollama",
                 "openai compatible", "summary", "summaries", "chat", "ask", "api key",

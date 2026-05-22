@@ -242,7 +242,7 @@ events remain useful for diarization-specific timing and failure analysis.
 | `transform_failed` | `transform_name`, `reason` | End-to-end system-wide Transform failure reasons (`empty_selection`, `no_provider`, `capture_failed`, `llm_failed`, `replacement_failed`, `cancelled`) |
 | `transform_operation` | `operation_id`, `workflow_id`, `parent_operation_id`, `outcome`, `transform_name`, `stage`, `capture_path`, `replace_path`, `duration_seconds`, `llm_ms`, `total_ms`, `error_type` | One safe outcome event per system-wide Transform attempt, without prompts, selected text, or output text |
 | `ask_menu_opened` | — | Whether users discover the live meeting Ask prompt menu |
-| `ask_prompt_fired` | `source`, `group`, `label` | Which built-in live Ask prompts are used, with custom prompts collapsed to `custom` |
+| `ask_prompt_fired` | `source`, `group`, `label` | Which built-in live Ask prompts are used, using stable built-in slugs. Edited built-ins and custom prompts collapse to `custom`. |
 | `llm_formatter_used` | `provider`, `source`, `duration_seconds`, `input_chars`, `output_chars`, `default_prompt_used`, `input_truncated` | Is transcript/dictation formatting useful, and how expensive is it? |
 | `llm_formatter_failed` | `provider`, `source`, `duration_seconds`, `error_type`, `default_prompt_used`, `input_truncated` | Formatter failure rates and prompt-shape correlations |
 | `llm_operation` | `operation_id`, `workflow_id`, `parent_operation_id`, `feature`, `provider`, `streaming`, `outcome`, `duration_seconds`, `input_chars`, `output_chars`, `input_truncated`, `prompt_default_used`, `message_count`, `error_type` | One safe outcome event per LLM call, without prompts, responses, or provider error bodies |

@@ -348,11 +348,6 @@ private struct LibraryFilterChip: View {
             HStack(spacing: 6) {
                 Text(filter.rawValue)
                     .font(DesignSystem.Typography.bodySmall.weight(isSelected ? .semibold : .regular))
-                if filter == .meeting {
-                    LabsBadge()
-                        .scaleEffect(0.82)
-                        .help(LabsBadge.message)
-                }
             }
             .foregroundStyle(foreground)
             .padding(.horizontal, DesignSystem.Spacing.md)

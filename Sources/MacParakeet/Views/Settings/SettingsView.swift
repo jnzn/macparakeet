@@ -637,14 +637,9 @@ struct SettingsView: View {
             title: "Meeting Recording",
             subtitle: "Dedicated controls for meeting audio capture.",
             icon: "record.circle",
-            isLabs: true,
             status: meetingRecordingCardStatus
         ) {
             VStack(spacing: DesignSystem.Spacing.md) {
-                LabsNotice()
-
-                Divider()
-
                 HStack(alignment: .center) {
                     rowText(
                         title: "Meeting hotkey",
@@ -1271,7 +1266,7 @@ struct SettingsView: View {
     private var aiProviderCard: some View {
         SettingsCard(
             title: "AI Setup",
-            subtitle: "Optional. Powers summaries, chat, and meeting Ask.",
+            subtitle: "Optional. Powers summaries, chat, meeting Ask, and Transforms.",
             icon: "brain",
             status: aiProviderCardStatus
         ) {

@@ -58,7 +58,7 @@ struct SettingsToggleRow: View {
         SettingsRow(title: title, detail: detail, alignment: .top) {
             Toggle("", isOn: $isOn)
                 .labelsHidden()
-                .toggleStyle(.switch)
+                .parakeetSwitch()
                 .accessibilityLabel(title)
                 .accessibilityHint(detail)
         }

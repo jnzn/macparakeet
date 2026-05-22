@@ -229,7 +229,7 @@ public final class LLMService: LLMServiceProtocol, Sendable {
                     feature: "prompt_result",
                     provider: config.id.rawValue,
                     streaming: false,
-                    outcome: .failure,
+                    outcome: Self.outcomeForLLMError(error),
                     startedAt: startedAt,
                     inputChars: transcript.count,
                     inputTruncated: assembly.inputTruncated,
@@ -299,7 +299,8 @@ public final class LLMService: LLMServiceProtocol, Sendable {
                     Telemetry.send(.llmProviderUnavailable(
                         provider: config.id.rawValue,
                         errorType: kind,
-                        feature: .chat
+                        feature: .chat,
+                        source: TelemetryLLMSource(source)
                     ))
                 } else {
                     Telemetry.send(.llmChatFailed(provider: config.id.rawValue, source: source, errorType: kind))
@@ -309,7 +310,7 @@ public final class LLMService: LLMServiceProtocol, Sendable {
                     feature: "chat",
                     provider: config.id.rawValue,
                     streaming: false,
-                    outcome: .failure,
+                    outcome: Self.outcomeForLLMError(error),
                     startedAt: startedAt,
                     inputChars: question.count + transcript.count,
                     inputTruncated: assembly.inputTruncated,
@@ -382,7 +383,7 @@ public final class LLMService: LLMServiceProtocol, Sendable {
                     feature: "transform",
                     provider: config.id.rawValue,
                     streaming: false,
-                    outcome: .failure,
+                    outcome: Self.outcomeForLLMError(error),
                     startedAt: startedAt,
                     inputChars: text.count + prompt.count,
                     inputTruncated: assembly.inputTruncated,
@@ -530,7 +531,7 @@ public final class LLMService: LLMServiceProtocol, Sendable {
                         provider: config.id.rawValue,
                         errorType: kind,
                         feature: .formatter,
-                        source: source
+                        source: TelemetryLLMSource(source)
                     ))
                 } else {
                     Telemetry.send(.llmFormatterFailed(
@@ -547,7 +548,7 @@ public final class LLMService: LLMServiceProtocol, Sendable {
                     feature: "formatter_\(source.rawValue)",
                     provider: config.id.rawValue,
                     streaming: false,
-                    outcome: .failure,
+                    outcome: Self.outcomeForLLMError(error),
                     startedAt: startedAt,
                     inputChars: inputChars,
                     inputTruncated: inputTruncated,
@@ -642,7 +643,7 @@ public final class LLMService: LLMServiceProtocol, Sendable {
                             feature: "prompt_result",
                             provider: provider,
                             streaming: true,
-                            outcome: error is CancellationError ? .cancelled : .failure,
+                            outcome: Self.outcomeForLLMError(error),
                             startedAt: startedAt,
                             inputChars: transcript.count,
                             outputChars: outputChars,
@@ -724,7 +725,8 @@ public final class LLMService: LLMServiceProtocol, Sendable {
                             Telemetry.send(.llmProviderUnavailable(
                                 provider: provider,
                                 errorType: kind,
-                                feature: .chat
+                                feature: .chat,
+                                source: TelemetryLLMSource(source)
                             ))
                         } else {
                             Telemetry.send(.llmChatFailed(
@@ -740,7 +742,7 @@ public final class LLMService: LLMServiceProtocol, Sendable {
                             feature: "chat",
                             provider: provider,
                             streaming: true,
-                            outcome: error is CancellationError ? .cancelled : .failure,
+                            outcome: Self.outcomeForLLMError(error),
                             startedAt: startedAt,
                             inputChars: question.count + transcript.count,
                             outputChars: outputChars,
@@ -829,7 +831,7 @@ public final class LLMService: LLMServiceProtocol, Sendable {
                             feature: "transform",
                             provider: provider,
                             streaming: true,
-                            outcome: error is CancellationError ? .cancelled : .failure,
+                            outcome: Self.outcomeForLLMError(error),
                             startedAt: startedAt,
                             inputChars: text.count + prompt.count,
                             outputChars: outputChars,
@@ -1002,6 +1004,13 @@ public final class LLMService: LLMServiceProtocol, Sendable {
             return .unavailable
         }
         return .failure
+    }
+
+    private static func outcomeForLLMError(_ error: Error) -> ObservabilityOutcome {
+        if error is CancellationError {
+            return .cancelled
+        }
+        return isProviderUnavailable(error) ? .unavailable : .failure
     }
 
     private func sendLLMOperation(
