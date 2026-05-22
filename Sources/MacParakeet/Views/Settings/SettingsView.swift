@@ -2250,7 +2250,7 @@ struct SettingsView: View {
 
             if !viewModel.pushToTalkHotkeyTrigger.isDisabled && !viewModel.hotkeyTrigger.isDisabled {
                 Divider()
-                    .padding(.leading, 88)
+                    .padding(.leading, 108)
             }
 
             if !viewModel.hotkeyTrigger.isDisabled {
@@ -2292,7 +2292,7 @@ struct SettingsView: View {
                     miniSettingsKeyCap(keys[0])
                 }
             }
-            .frame(width: 80, alignment: .center)
+            .frame(minWidth: 100, alignment: .leading)
 
             Text(action)
                 .font(DesignSystem.Typography.bodySmall.weight(.medium))
@@ -2309,6 +2309,8 @@ struct SettingsView: View {
     private func miniSettingsKeyCap(_ label: String) -> some View {
         Text(label)
             .font(.system(size: 10, weight: .medium, design: .rounded))
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
             .background(
