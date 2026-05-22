@@ -16,7 +16,7 @@ See [00-vision.md](./00-vision.md) for positioning and market context.
 │  v0.1 - "Core" (MVP)                                            │
 │  "Dictation + Transcription — fast, private, done"              │
 ├─────────────────────────────────────────────────────────────────┤
-│  • System-wide dictation (Fn key: double-tap + hold-to-talk)    │
+│  • System-wide dictation (Fn hold + Fn+Space hands-free)        │
 │  • Persistent idle pill (always-visible click-to-dictate pill)  │
 │  • File transcription (drag-and-drop audio/video)               │
 │  • Menu bar app with main window                                │
@@ -137,29 +137,29 @@ See [00-vision.md](./00-vision.md) for positioning and market context.
 
 **Activation — Configurable Hotkey:**
 
-The hotkey (default: `Fn`, configurable via a "record a shortcut" UI in Settings) serves as the universal activation trigger with two coexisting modes. Supports bare modifiers (Fn, Control, etc.), standalone keys (F5, Tab, etc.), modifier+key chords (Cmd+9 or Ctrl+Shift+D), and modifier-only chords (Command+Option, including side-specific variants like Right Command+Right Option). See ADR-009 for full details.
+Dictation has two configurable shortcuts: push-to-talk defaults to `Fn`, and hands-free mode defaults to `Fn+Space`. The "record a shortcut" UI supports bare modifiers (Fn, Control, etc.), standalone keys (F5, Tab, etc.), modifier+key chords (Fn+Space, Cmd+9, Ctrl+Shift+D), and modifier-only chords (Command+Option, including side-specific variants like Right Command+Right Option). See ADR-009 for full details.
 
 | Mode | Gesture | Behavior |
 |------|---------|----------|
-| **Double-tap** | Tap hotkey twice within 400ms | Persistent recording. Press hotkey again to stop. |
-| **Press-and-hold** | Hold hotkey for > 400ms | Hold-to-talk. Release auto-stops and pastes. |
+| **Hands-free** | Tap the hands-free shortcut | Persistent recording. Tap the shortcut again to stop. |
+| **Press-and-hold** | Hold the push-to-talk shortcut | Hold-to-talk. Release auto-stops and pastes. |
 
-Both modes coexist with no configuration required. The 400ms threshold distinguishes taps from holds.
+Both modes coexist with no double-tap requirement.
 
 **Implementation:**
 - `CGEvent` tap for system-wide key event interception
 - `HotkeyTrigger` struct with `.modifier` / `.keyCode` / `.chord` / `.modifierChord` kind discriminator (see ADR-009)
 - Modifier triggers: `flagsChanged` events with `CGEventFlags` mask, bare-tap filtering
 - KeyCode triggers: `keyDown`/`keyUp` events with event swallowing, edge detection via `triggerKeyIsPressed` boolean
-- Modifier+key chord triggers: require ALL modifier flags present on `keyDown` of the trigger key. Release-any-part behavior: releasing either the trigger key or any required modifier stops dictation. `chordModifierReleased` flag prevents double-fire when modifier is released while trigger key is still held.
+- Modifier+key chord triggers: require ALL modifier flags present on `keyDown` of the trigger key. Hold-to-talk chord triggers use release-any-part behavior: releasing either the trigger key or any required modifier stops dictation. `chordModifierReleased` flag prevents double-fire when modifier is released while trigger key is still held.
 - Modifier-only chord triggers: require an exact set of 2+ chord-eligible modifiers before emitting the same key-agnostic gesture signals as single-key triggers. Generic and side-specific variants are persisted distinctly, and overlap checks block ambiguous assignments.
 - Edge detection: only fire on actual transitions of the target key state
 - Bare-tap filtering (modifiers only): if a regular key is pressed while the modifier is held (e.g., Ctrl+C), the release is not counted as a tap — prevents keyboard shortcuts from triggering dictation
-- Gesture interruption: if a non-Escape key is pressed during `waitingForSecondTap`, the state machine resets — prevents double-tap detection across typing
-- Chord validation: Escape blocked for all kinds. Modifier+key chords containing Command warn about system shortcut conflicts (Cmd+Tab, Cmd+Space, Cmd+Q/W/H/M). Fn is bare-modifier-only — not allowed in chords.
-- Combined-trigger key-down: schedule startup debounce and a 400ms hold window. A second tap inside the window enters hands-free persistent mode; holding past the window confirms push-to-talk.
-- Dedicated push-to-talk key-down: schedule only the startup debounce, then start hold-to-talk because there is no double-tap ambiguity.
-- On key-up: quick taps discard any provisional capture for combined/double-tap detection; dedicated push-to-talk releases after startup debounce stop and process.
+- Gesture interruption: if a non-Escape key is pressed during a pending tap/hold window, the state machine resets — prevents detection across typing
+- Chord validation: Escape blocked for all kinds. Modifier+key chords containing Command warn about system shortcut conflicts (Cmd+Tab, Cmd+Space, Cmd+Q/W/H/M). Fn is allowed in modifier+key chords such as Fn+Space.
+- Hands-free key-down: toggles persistent recording immediately for key and modifier+key triggers; bare modifier hands-free triggers toggle on bare release so normal modifier shortcuts are not captured.
+- Dedicated push-to-talk key-down: schedule only the startup debounce, then start hold-to-talk.
+- On key-up: dedicated push-to-talk releases after startup debounce stop and process.
 - Escape is permanently reserved for cancel-dictation and cannot be assigned as hotkey
 - Requires Accessibility permission (prompted on first activation).
 - Stop orchestration is state-driven (proceed, defer-until-recording, reject-not-recording) to avoid first-start races when stop arrives before `startRecording()` fully transitions to `.recording`.
@@ -170,8 +170,8 @@ Both modes coexist with no configuration required. The 400ms threshold distingui
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │ 1. User activates recording:                                     │
-│    - Double-tap Fn (persistent mode), OR                         │
-│    - Hold Fn > 400ms (hold-to-talk mode)                        │
+│    - Tap Fn+Space (hands-free persistent mode), OR               │
+│    - Hold Fn (hold-to-talk mode)                                 │
 ├─────────────────────────────────────────────────────────────────┤
 │ 2. Overlay appears (bottom-center pill)                          │
 │    - Recording indicator (waveform animation)                    │
@@ -183,7 +183,7 @@ Both modes coexist with no configuration required. The 400ms threshold distingui
 ├─────────────────────────────────────────────────────────────────┤
 │ 4. User stops recording:                                         │
 │    - Release Fn (hold-to-talk auto-stop), OR                     │
-│    - Press Fn again (persistent mode), OR                        │
+│    - Tap Fn+Space again (hands-free mode), OR                    │
 │    - Press Escape (soft cancel with undo window), OR             │
 │    - Silence auto-stop (2s default, if enabled in settings)      │
 │    - If stop is requested while startup is in-flight, stop is     │
@@ -226,7 +226,7 @@ DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
 **Soft cancel (Esc):**
 - Pressing Escape during recording triggers soft cancel
 - 5-second undo window: overlay shows countdown ring + Undo button
-- During undo window, Fn key is blocked (prevents accidental re-activation)
+- During undo window, dictation shortcuts are blocked (prevents accidental re-activation)
 - Audio buffer preserved until countdown expires or user confirms discard
 - Tapping the countdown ring dismisses immediately (confirms discard)
 - Tapping Undo resumes processing (transcribe + paste)
@@ -237,7 +237,7 @@ Compact dark pill, icon-only controls, positioned at bottom-center of screen (40
 
 ```
          ┌───────────────────────────────┐
-         │  Stop & paste (Fn)            │  ← Hover tooltip (dark capsule)
+         │  Stop & paste                 │  ← Hover tooltip (dark capsule)
          └───────────────────────────────┘
          ┌─────────────────────────────┐
          │  [X] ∿∿∿∿∿∿∿∿∿∿∿∿  [■]    │  ← Recording pill
@@ -251,12 +251,12 @@ Compact dark pill, icon-only controls, positioned at bottom-center of screen (40
 **Controls:** Icon buttons only, no text labels
 **Border:** Subtle white stroke (`Color.white.opacity(0.1)`, 1px)
 
-**Hover tooltips:** AppKit-level `MouseTrackingOverlay` using `NSTrackingArea` with `.activeAlways` flag (required because the overlay is a non-activating `NSPanel`). Sits on top of the hosting view with `hitTest -> nil` for click passthrough. Zone-based detection by relative X position. Tooltips render as dark capsule positioned above the pill with 13pt medium white text. Keyboard shortcuts highlighted in light blue.
+**Hover tooltips:** AppKit-level `MouseTrackingOverlay` using `NSTrackingArea` with `.activeAlways` flag (required because the overlay is a non-activating `NSPanel`). Sits on top of the hosting view with `hitTest -> nil` for click passthrough. Zone-based detection by relative X position. Tooltips render as dark capsule positioned above the pill with 13pt medium white text. Keyboard shortcuts are highlighted only when the action has a fixed shortcut.
 
 | Zone | Tooltip | Shortcut Highlight |
 |------|---------|-------------------|
 | X button (left) | Cancel | `Esc` in blue |
-| Stop button (right) | Stop & paste | Trigger key name in blue |
+| Stop button (right) | Stop & paste | -- |
 | Countdown ring | Dismiss | -- |
 | Undo button | Undo | -- |
 
@@ -267,14 +267,14 @@ Space is always reserved for the tooltip (opacity toggle, not conditional render
 1. **Recording** -- `[X cancel] [waveform 12 bars] [stop]` (~150px)
    - X button: white icon on dark circle (0.2 opacity background), triggers soft cancel (Esc)
    - Waveform: 12 white bars, 3px wide, max 20px tall, center-peaking wave pattern, updates in real-time from audio level
-   - Stop button: white square (10x10, cornerRadius 3) inside red circle, triggers stop (Fn)
+   - Stop button: white square (10x10, cornerRadius 3) inside red circle, triggers stop
    - Recording timer displayed (e.g., "0:03") -- hover tooltips provide additional guidance
 
 2. **Cancelled** -- `[countdown ring] [Undo button]` (~140px)
    - Countdown ring: circular progress indicator (accent color, depletes over 5 seconds) with remaining seconds number in center
    - Tap ring to dismiss immediately (confirms discard)
    - Undo button: "Undo" text on subtle white background (0.15 opacity), rounded rect
-   - 5-second countdown, Fn key blocked during cancel window
+   - 5-second countdown, dictation shortcuts blocked during cancel window
    - Audio buffer preserved until confirmed discard
 
 3. **Processing** -- `[spinner] [red dot]` (~100px)
@@ -309,9 +309,9 @@ Space is always reserved for the tooltip (opacity toggle, not conditional render
 ```
 
 **Acceptance criteria:**
-- [x] Double-tap hotkey activates persistent recording from any app
-- [x] Hold hotkey (> 400ms) activates hold-mode, release auto-stops and pastes
-- [x] Hotkey trigger configurable to bare modifiers, standalone keys, modifier+key chords, and modifier-only chords via record-a-shortcut UI; Fn remains bare-modifier-only and Escape remains reserved
+- [x] Hands-free shortcut activates persistent recording from any app
+- [x] Hold shortcut activates hold-mode, release auto-stops and pastes
+- [x] Hotkey trigger configurable to bare modifiers, standalone keys, modifier+key chords, and modifier-only chords via record-a-shortcut UI; Fn+Space is supported and Escape remains reserved
 - [x] Overlay appears at bottom-center with waveform animation
 - [x] Hover tooltips display correctly on non-activating panel
 - [ ] Parakeet transcribes with <500ms end-to-end latency for short dictations
@@ -444,7 +444,7 @@ The app lives primarily in the menu bar. Click the icon for quick actions, or op
 ┌────────────────────────────┐
 │ 🎙 MacParakeet              │
 ├────────────────────────────┤
-│ Start Dictation        Fn   │
+│ Start Dictation  Fn+Space   │
 │ Open Window            ⌘O   │
 ├────────────────────────────┤
 │ Recent Files            ►   │
@@ -456,7 +456,7 @@ The app lives primarily in the menu bar. Click the icon for quick actions, or op
 
 - Menu bar icon always visible, shows state: idle, recording (animated), processing
 - Click icon opens dropdown menu
-- "Start Dictation" activates recording (same as Fn double-tap)
+- "Start Dictation" activates recording (same as the hands-free shortcut)
 - "Recent Files" shows last 5 transcriptions with one-click copy
 - Dynamic dock behavior: dock icon appears when main window is open, hidden otherwise
 
@@ -607,11 +607,12 @@ Audio path is computed from ID by default. Files stored as WAV (16kHz mono). Use
 │                                                                  │
 │ DICTATION                                                        │
 │ ┌──────────────────────────────────────────────────────────────┐ │
-│ │ Hotkey: [fn Fn   Change...]  (double-tap / hold)            │ │
+│ │ Push to talk: [fn Fn   Change...]                          │ │
+│ │ Hands-free:  [fn+Space Change...]                          │ │
 │ │                                                              │ │
 │ │ Stop mode:                                                   │ │
 │ │   ( ) Auto-stop after silence     Delay: [2 sec ▾]          │ │
-│ │   (•) Manual stop (press Fn again)                           │ │
+│ │   (•) Manual stop (tap hands-free shortcut again)             │ │
 │ │                                                              │ │
 │ └──────────────────────────────────────────────────────────────┘ │
 │                                                                  │
@@ -645,7 +646,8 @@ Audio path is computed from ID by default. Files stored as WAV (16kHz mono). Use
 | Setting | Options | Default |
 |---------|---------|---------|
 | Launch at login | On / Off | Off |
-| Dictation hotkey | Bare modifiers, standalone keys, modifier+key chords, and modifier-only chords with overlap checks | Fn (double-tap / hold) |
+| Push-to-talk hotkey | Bare modifiers, standalone keys, modifier+key chords, and modifier-only chords with overlap checks | Fn |
+| Hands-free hotkey | Bare modifiers, standalone keys, modifier+key chords, and modifier-only chords with overlap checks | Fn+Space |
 | Stop mode | Auto-stop after silence / Manual | Manual |
 | Silence delay | 1s, 1.5s, 2s, 3s, 5s | 2s |
 | Save audio recordings | On / Off | On |

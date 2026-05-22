@@ -76,6 +76,17 @@ final class AppHotkeyCoordinator {
         struct Spec: Equatable {
             let trigger: HotkeyTrigger
             let gestureMode: HotkeyGestureController.Mode
+            let startupDebounceMs: Int
+
+            init(
+                trigger: HotkeyTrigger,
+                gestureMode: HotkeyGestureController.Mode,
+                startupDebounceMs: Int = FnKeyStateMachine.defaultStartupDebounceMs
+            ) {
+                self.trigger = trigger
+                self.gestureMode = gestureMode
+                self.startupDebounceMs = startupDebounceMs
+            }
         }
 
         struct Conflict: Equatable {
@@ -96,15 +107,15 @@ final class AppHotkeyCoordinator {
             return "Dictation Shortcuts: Disabled"
         }
         if !handsFree.isDisabled, handsFree == pushToTalk {
-            return "Dictation: \(handsFree.displayName) (hold or double-tap)"
+            return "Dictation Shortcuts: Conflict on \(handsFree.displayName)"
         }
         if handsFree.isDisabled {
             return "Push-to-talk: Hold \(pushToTalk.displayName)"
         }
         if pushToTalk.isDisabled {
-            return "Hands-free: Double-tap \(handsFree.displayName)"
+            return "Hands-free: Tap \(handsFree.displayName)"
         }
-        return "Dictation: Hold \(pushToTalk.displayName) / Double-tap \(handsFree.displayName)"
+        return "Dictation: Hold \(pushToTalk.displayName) / Tap \(handsFree.displayName)"
     }
 
     static func dictationHotkeyPlan(
@@ -116,24 +127,12 @@ final class AppHotkeyCoordinator {
         }
 
         if !handsFreeTrigger.isDisabled, !pushToTalkTrigger.isDisabled {
-            if handsFreeTrigger == pushToTalkTrigger {
-                return DictationHotkeyPlan(
-                    specs: [
-                        DictationHotkeyPlan.Spec(
-                            trigger: handsFreeTrigger,
-                            gestureMode: .doubleTapAndHold
-                        ),
-                    ],
-                    conflict: nil
-                )
-            }
-
             if handsFreeTrigger.overlaps(with: pushToTalkTrigger) {
                 return DictationHotkeyPlan(
                     specs: [
                         DictationHotkeyPlan.Spec(
                             trigger: handsFreeTrigger,
-                            gestureMode: .doubleTapOnly
+                            gestureMode: .singleTapToggle
                         ),
                     ],
                     conflict: DictationHotkeyPlan.Conflict(
@@ -149,7 +148,7 @@ final class AppHotkeyCoordinator {
             specs.append(
                 DictationHotkeyPlan.Spec(
                     trigger: handsFreeTrigger,
-                    gestureMode: .doubleTapOnly
+                    gestureMode: .singleTapToggle
                 )
             )
         }
@@ -157,11 +156,28 @@ final class AppHotkeyCoordinator {
             specs.append(
                 DictationHotkeyPlan.Spec(
                     trigger: pushToTalkTrigger,
-                    gestureMode: .holdOnly
+                    gestureMode: .holdOnly,
+                    startupDebounceMs: pushToTalkStartupDebounceMs(
+                        handsFree: handsFreeTrigger,
+                        pushToTalk: pushToTalkTrigger
+                    )
                 )
             )
         }
         return DictationHotkeyPlan(specs: specs, conflict: nil)
+    }
+
+    private static func pushToTalkStartupDebounceMs(
+        handsFree handsFreeTrigger: HotkeyTrigger,
+        pushToTalk pushToTalkTrigger: HotkeyTrigger
+    ) -> Int {
+        guard pushToTalkTrigger.kind == .modifier,
+              pushToTalkTrigger.modifierName == "fn",
+              handsFreeTrigger.kind == .chord,
+              handsFreeTrigger.chordModifiers?.contains("fn") == true else {
+            return FnKeyStateMachine.defaultStartupDebounceMs
+        }
+        return FnKeyStateMachine.defaultTapThresholdMs
     }
 
     func setupDictationHotkeys() {
@@ -178,6 +194,7 @@ final class AppHotkeyCoordinator {
             startDictationHotkey(
                 trigger: spec.trigger,
                 gestureMode: spec.gestureMode,
+                startupDebounceMs: spec.startupDebounceMs,
                 resumeMode: Self.resumeMode(activeRecordingMode, for: spec.gestureMode),
                 suppressUntilReset: Self.shouldSuppressPeer(activeRecordingMode, for: spec.gestureMode)
             )
@@ -195,12 +212,17 @@ final class AppHotkeyCoordinator {
     private func startDictationHotkey(
         trigger: HotkeyTrigger,
         gestureMode: HotkeyGestureController.Mode,
+        startupDebounceMs: Int = FnKeyStateMachine.defaultStartupDebounceMs,
         resumeMode: FnKeyStateMachine.RecordingMode? = nil,
         suppressUntilReset: Bool = false
     ) -> HotkeyManager? {
         guard !trigger.isDisabled else { return nil }
 
-        let manager = HotkeyManager(trigger: trigger, gestureMode: gestureMode)
+        let manager = HotkeyManager(
+            trigger: trigger,
+            gestureMode: gestureMode,
+            startupDebounceMs: startupDebounceMs
+        )
         manager.onStartRecording = { [weak self, weak manager] mode in
             if let manager {
                 self?.suppressOtherDictationHotkeys(activeManager: manager)
@@ -345,12 +367,14 @@ final class AppHotkeyCoordinator {
     ) -> FnKeyStateMachine.RecordingMode? {
         guard let activeMode else { return nil }
         switch (activeMode, gestureMode) {
-        case (.persistent, .doubleTapOnly),
+        case (.persistent, .singleTapToggle),
+             (.persistent, .doubleTapOnly),
              (.persistent, .doubleTapAndHold),
              (.holdToTalk, .holdOnly),
              (.holdToTalk, .doubleTapAndHold):
             return activeMode
         case (.persistent, .holdOnly),
+             (.holdToTalk, .singleTapToggle),
              (.holdToTalk, .doubleTapOnly):
             return nil
         }
