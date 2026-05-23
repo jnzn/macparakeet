@@ -705,9 +705,9 @@ public final class SettingsViewModel {
                 return (.disabled, .disabled, false, true)
             }
             return (
-                defaultHandsFreeTrigger(avoiding: storedHandsFree),
                 storedHandsFree,
-                true,
+                storedHandsFree,
+                false,
                 true
             )
         }
@@ -719,6 +719,7 @@ public final class SettingsViewModel {
         )
         if !storedHandsFree.isDisabled,
            !pushToTalk.isDisabled,
+           storedHandsFree != pushToTalk,
            storedHandsFree.overlaps(with: pushToTalk) {
             return (defaultHandsFreeTrigger(avoiding: pushToTalk), pushToTalk, true, false)
         }
