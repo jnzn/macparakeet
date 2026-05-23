@@ -20,6 +20,13 @@ final class AIAssistantServiceTests: XCTestCase {
         XCTAssertEqual(config.modelName, "gpt-5.2")
     }
 
+    func test_defaultHotkeyTrigger_isOptionA() {
+        let trigger = AIAssistantConfig.defaultHotkeyTrigger
+        XCTAssertEqual(trigger.kind, .chord)
+        XCTAssertEqual(trigger.chordModifiers, ["option"])
+        XCTAssertEqual(trigger.keyCode, 0)  // kVK_ANSI_A = 0
+    }
+
     func testTimeoutFloorsAtMinimum() {
         let config = AIAssistantConfig(provider: .claude, timeoutSeconds: 1)
         XCTAssertEqual(config.timeoutSeconds, AIAssistantConfig.minimumTimeout)

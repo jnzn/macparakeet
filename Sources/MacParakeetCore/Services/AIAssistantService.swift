@@ -153,12 +153,17 @@ public struct AIAssistantConfig: Codable, Sendable, Equatable {
 
     public static let minimumTimeout: Double = 5
     public static let defaultTimeout: Double = 120
-    /// Shipped default trigger: the Fn / Globe key held alone. Dictation
-    /// moved off Fn to right-Option (see `HotkeyTrigger.defaultDictation`),
-    /// freeing Fn for the AI Assistant hold-to-talk gesture. Fn never
-    /// appears in app-level shortcuts, reads naturally on Apple laptop
-    /// keyboards, and costs the user one finger on the bottom-left corner.
-    public static let defaultHotkeyTrigger: HotkeyTrigger = .fn
+    /// Shipped default trigger: Option+A chord. A first-class chord that is
+    /// fully supported by the existing HotkeyTrigger chord infrastructure
+    /// (CGEventFlags.maskAlternate + keyCode 0). More ergonomic than the
+    /// earlier Fn-only hold-to-talk and pairs naturally with right-Option
+    /// dictation so the two gestures separate cleanly by hand.
+    public static let defaultHotkeyTrigger: HotkeyTrigger = HotkeyTrigger(
+        kind: .chord,
+        modifierName: nil,
+        keyCode: 0,          // kVK_ANSI_A
+        chordModifiers: ["option"]
+    )
     /// Shipped default bubble tint — transparent, so the underlying liquid-
     /// glass material does the work (system-appropriate light/dark adapts
     /// automatically). Users pick a tint color via Settings to override;
