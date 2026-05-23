@@ -57,7 +57,7 @@ Copy guidance: avoid a hard minute count (slower Macs overrun it; the watchdog h
 
 ### Stage B — background optimize (the real cancel)
 
-> **Detailed implementation plan:** `plans/active/2026-05-engine-switch-stage-b-background-optimize.md` (drafted 2026-05-23, with WhisperKit API + control-plane confirmations).
+> **Detailed implementation plan + 2026-05-23 validation findings:** `plans/active/2026-05-engine-switch-stage-b-background-optimize.md`. **Status: full reactive flow ON HOLD pending telemetry — ship A3 + cold-switch instrumentation first (see that doc's §0).**
 
 - **B1. Dedicated background prepare.** Run `whisperEngine.prepare()` on its own runtime channel **without** `acceptsNewJobs = false` and without touching the active engine, so Parakeet stays active. (Do not reuse `backgroundWarmUp` — that channel tracks the *active* engine's readiness.)
 - **B2. VM orchestration.** Cold Whisper tap → start background prepare → on completion call `setSpeechEngine(.whisper)` (now fast). Defer the flip if a meeting/job is running when prepare finishes (lease guard already enforces).

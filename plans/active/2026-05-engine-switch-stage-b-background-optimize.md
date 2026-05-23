@@ -5,6 +5,38 @@
 > Parent: `plans/active/2026-05-engine-switch-ux-revamp.md` (Stage A shipped in PR #335)
 > ADRs: `spec/adr/021-whisperkit-multilingual-stt.md`, `spec/adr/016-centralized-stt-runtime-scheduler.md`
 > Scope: make switching to Whisper non-blocking (optimize in the background while Parakeet stays usable) with a meaningful cancel, plus disable-with-reason on the engine cards (A3). No change to STT accuracy or transcript output.
+> **Status (2026-05-23): full reactive flow ON HOLD pending telemetry; A3 + cold-switch instrumentation proposed first. See "Validation findings" below before building §3–§5.**
+
+## 0. Validation findings + status (2026-05-23)
+
+> This section reflects empirical testing + a reframe done after the rest of the doc was drafted. The full reactive background-optimize flow (§3–§5) remains documented and viable, but is **not greenlit**. Read this first.
+
+### Validated empirically (CLI spike, M4 Pro)
+
+Ran the real engines via `macparakeet-cli` (isolated `--database`, `--no-history`, `MACPARAKEET_TELEMETRY=0`) to test whether the ANE **serializes** or **parallelizes** the two engines.
+
+- **Warm-inference contention is benign.** While Whisper saturated the ANE transcribing a 206 s clip (**12.6 s** wall, ~16× realtime), Parakeet on a 5 s clip stayed **sub-0.6 s on every run** — baseline median **~0.29 s** vs under-load median **~0.38 s** (worst **0.59 s**). The pattern is fine-grained time-slicing, **not** serialization. The catastrophic failure mode for Stage B — background Whisper *freezing* dictation — is **ruled out for the inference case.**
+- **Why the CLI proxy is valid:** ANE contention is system-wide, so the cross-process CLI test faithfully reproduces the hardware contention an in-process build would see. Caveats: process-per-call over-weights model load (real warm dictation is faster than these absolute numbers); small N; single run.
+
+### NOT established (do not claim these)
+
+- **Cold-compile contention is unmeasured.** The one-time CoreML/ANE specialization (the real multi-minute "first switch") could not be reproduced on this machine: moving `~/Library/Caches/com.apple.e5rt.e5bundlecache` aside had no effect (it was **empty, 0 B**), and a forced "cold" Whisper load returned **11.3 s — no slower than warm (12.6 s)**. The warm specialization is evidently baked into the model directory, not that cache. A true cold compile would need `models clear` + a ~616 MB re-download (deferred — low ROI vs instrumented rollout).
+- **Hypothesis, not a result:** the specialization cache being empty yet Whisper loading fast suggests the one-time cost is largely CPU/disk-bound (compilation + the original download), which would *not* monopolize the ANE Parakeet uses — so Parakeet would likely stay responsive during it too. Confirm with telemetry; do not treat as measured.
+- **Hardware:** all numbers are M4 Pro (best case). Slower Macs unverified.
+
+### Reframe that narrows the problem
+
+Onboarding auto-detects CJK languages (`ko/ja/zh/yue` from `Locale.preferredLanguages`) and prepares Whisper during the dedicated "Prepare Speech Model" step (verified: `OnboardingViewModel.recommendedWhisperLanguage`). So for the target users, the cold compile happens **in onboarding, behind a progress UI** — not as a surprise mid-session freeze. The brutal "freeze with no exit" only hits a narrower group: someone who starts on Parakeet and *later* switches to Whisper manually for the first time. **Frequency of that path is unknown.**
+
+### Proposed direction (pending owner decision)
+
+Main failure mode ruled out + painful path narrower than assumed + frequency unmeasured ⇒ the disciplined sequence is:
+
+1. **Ship A3** (disable engine cards + named blocker while a meeting/job is active). Cheap, independent of all concurrency work. (§3.5)
+2. **Instrument first:** add `was_cold` + duration to the existing `speechEngineSwitchOperation` event to measure how often / how long cold *mid-session* switches actually occur in the wild. (§7)
+3. **Decide the full Stage B from that data.** If cold mid-session switches are rare → Stage A's honest label may suffice; don't build the complex flow. If common/painful → build it, and **prefer the simpler opportunistic pre-warm** (reuse `prepareWhisperInBackground()` triggered after download / at idle, so the switch is just the fast path) over the full reactive flip-retry-cancel flow (§3.2–§3.4).
+
+**Status: A3 = ready to build · cold-switch telemetry = ready to build · full reactive Stage B = on hold pending telemetry.**
 
 ## 1. Goal
 
