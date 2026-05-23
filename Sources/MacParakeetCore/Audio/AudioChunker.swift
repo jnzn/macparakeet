@@ -156,6 +156,10 @@ public extension AudioChunker {
             return Array(UnsafeBufferPointer(start: channelData[0], count: frameCount))
         }
 
+        if channelCount > 2 {
+            return Array(UnsafeBufferPointer(start: channelData[0], count: frameCount))
+        }
+
         var mixed = [Float](repeating: 0, count: frameCount)
         for channelIndex in 0..<channelCount {
             let channel = UnsafeBufferPointer(start: channelData[channelIndex], count: frameCount)
@@ -182,6 +186,12 @@ public extension AudioChunker {
             }
         }
 
+        if channelCount > 2 {
+            return Array(UnsafeBufferPointer(start: channelData[0], count: frameCount)).map {
+                Float($0) / Float(Int16.max)
+            }
+        }
+
         var mixed = [Float](repeating: 0, count: frameCount)
         for channelIndex in 0..<channelCount {
             let channel = UnsafeBufferPointer(start: channelData[channelIndex], count: frameCount)
@@ -203,6 +213,12 @@ public extension AudioChunker {
         channelCount: Int
     ) -> [Float] {
         if channelCount == 1 {
+            return Array(UnsafeBufferPointer(start: channelData[0], count: frameCount)).map {
+                Float($0) / Float(Int32.max)
+            }
+        }
+
+        if channelCount > 2 {
             return Array(UnsafeBufferPointer(start: channelData[0], count: frameCount)).map {
                 Float($0) / Float(Int32.max)
             }
