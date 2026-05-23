@@ -51,7 +51,7 @@
 
 ---
 
-MacParakeet runs NVIDIA's Parakeet TDT on Apple's Neural Engine via [FluidAudio](https://github.com/FluidInference/FluidAudio) CoreML. The v0.6 release scope includes system-wide dictation, file/URL transcription, meeting recording, optional local WhisperKit recognition for languages Parakeet does not cover, and productized Transforms on `main`. All speech recognition happens on your Mac.
+MacParakeet runs NVIDIA's Parakeet TDT on Apple's Neural Engine via [FluidAudio](https://github.com/FluidInference/FluidAudio) CoreML. The current stable release includes system-wide dictation, file/URL transcription, meeting recording, meeting calendar support, optional local WhisperKit recognition for languages Parakeet does not cover, and Transforms for selected-text rewrites. All speech recognition happens on your Mac.
 
 ## Release status
 
@@ -59,10 +59,10 @@ The [notarized DMG](https://downloads.macparakeet.com/MacParakeet.dmg) is the st
 
 | Channel | Status | Includes |
 |---------|--------|----------|
-| Stable DMG | Recommended for normal use | Dictation, file/video/YouTube transcription, meeting recording, optional WhisperKit, exports, vocabulary, AI features |
-| `main` branch | Development | v0.6 release scope plus productized Transforms and calendar auto-start (`AppFeatures.calendarEnabled = true`); calendar auto-start defaults to opt-in `.off` |
+| Stable DMG | Recommended for normal use | Dictation, file/video/YouTube transcription, meeting recording, meeting calendar reminders and opt-in auto-start, Transforms, optional WhisperKit, exports, vocabulary, AI features |
+| `main` branch | Development | Latest stable release plus in-progress fixes and development changes |
 
-Calendar reminders and auto-start are implemented and enabled on `main`; calendar auto-start defaults to mode `.off`, so it stays opt-in until a user turns it on. Calendar-driven auto-stop was removed by ADR-017; recordings stop manually.
+Meeting calendar support is live in the stable DMG. MacParakeet reads upcoming meetings from the local macOS Calendar store through EventKit, can show reminders, and can optionally start a recording after a countdown. Auto-start defaults to `.off` and must be opted into; recordings still stop manually.
 
 ## What it does
 
@@ -71,6 +71,8 @@ Calendar reminders and auto-start are implemented and enabled on `main`; calenda
 **File transcription** — Drag audio or video files, or paste a YouTube URL. Full transcript with word-level timestamps, speaker labels, and export to 7 formats (TXT, Markdown, SRT, VTT, DOCX, PDF, JSON). Assign global hotkeys to trigger File or YouTube transcription from anywhere.
 
 **Meeting recording** — Record system audio and microphone together, see a live local transcript preview, take notes during the call, then save the finalized transcript to the library with export, prompts, and chat.
+
+**Meeting calendar support** — Grant Calendar access to get local reminders for upcoming meetings or opt into auto-start. MacParakeet uses calendars already configured in macOS Calendar through EventKit; it does not add Google or Microsoft sign-ins, and recordings still stop manually.
 
 **Text cleanup** — Filler word removal, custom word replacements, text snippets with triggers. Deterministic pipeline, no LLM needed.
 
@@ -209,11 +211,10 @@ All speech recognition runs locally. Parakeet uses the Neural Engine; the option
 
 ## Contributing
 
-- **Report bugs** — [Open an issue](https://github.com/moona3k/macparakeet/issues)
-- **Submit a PR** — Fork, make changes, `swift test`, open a PR
+- **Report bugs** — [Open an issue](https://github.com/moona3k/macparakeet/issues) with steps to reproduce and relevant logs or screenshots.
+- **Discuss new work first** — For features or behavior changes, open an issue before starting a PR so we can agree on scope and product fit.
+- **Submit scoped PRs** — Once the issue direction is clear, fork, make the scoped changes, run `swift test`, and link the issue in the PR.
 - **Read the specs** — Architecture decisions and feature specs live in `spec/`
-
-For larger changes, open an issue first.
 
 ## Support
 
