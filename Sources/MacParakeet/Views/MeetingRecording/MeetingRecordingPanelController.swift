@@ -55,6 +55,7 @@ final class MeetingRecordingPanelController {
         panel.isMovableByWindowBackground = true
         panel.level = .floating
         panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.minSize = NSSize(width: 360, height: 320)
         panel.setFrameAutosaveName("MeetingRecordingPanel")
