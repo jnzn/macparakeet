@@ -27,8 +27,8 @@ testing.
 - **Persisted history** -- list, search, and inspect prior dictations and
   transcriptions via the shared SQLite database.
 - **Prompt and meeting inspection** -- list and run prompt library entries
-  against transcriptions; list, show, transcript, notes append, and
-  export meeting recordings.
+  against transcriptions; list, show, transcript, notes append, prompt-result
+  write-back, and export meeting recordings.
 - **Headless verification hooks** -- agents can drive deterministic runs (pin
   all flags) or smoke-test GUI-default behavior with the explicit
   `app-default` flag group.
@@ -67,8 +67,9 @@ sitting at a keyboard, it lives in the .app.
   (OpenAI, Anthropic, Ollama, LM Studio, OpenAI-compatible local, or a
   configured CLI subprocess), or skip the LLM entirely and consume raw
   transcripts.
-- **JSON output everywhere** -- every read-only command supports `--json`
-  with a stable schema (see
+- **Machine-readable output** -- read-only query commands use `--json`,
+  format-selecting commands use `--format json`, and LLM/prompt commands use
+  `--json` for structured envelopes (see
   [`../Sources/CLI/CHANGELOG.md`](../Sources/CLI/CHANGELOG.md) for the
   contract).
 
@@ -84,6 +85,8 @@ macparakeet-cli health --json
 
 This installs the standalone CLI plus its Homebrew-managed `ffmpeg` and
 `yt-dlp` runtime dependencies. It does not require `MacParakeet.app`.
+Parakeet's CoreML cache is managed by FluidAudio. WhisperKit model downloads
+live under `~/Library/Application Support/MacParakeet/models/stt/whisper/`.
 
 **Bundled app alternative:** after installing
 [MacParakeet](https://macparakeet.com), the same CLI surface is available at:
@@ -110,10 +113,14 @@ personal AI compute box -- unified memory, ANE, ~8W idle, silent.
 
 ## Common commands (the agent vocabulary)
 
-Every command below produces JSON when `--json` is passed. Schemas are stable
-per [`../Sources/CLI/CHANGELOG.md`](../Sources/CLI/CHANGELOG.md).
+The commands below show the machine-readable flag each command expects:
+`--json` for fixed-shape query/envelope commands, `--format json` for
+format-selecting commands. Schemas are stable per
+[`../Sources/CLI/CHANGELOG.md`](../Sources/CLI/CHANGELOG.md).
 
-Agents can discover the supported automation surface at runtime:
+Agents can discover the curated core automation surface at runtime. This spec
+is intentionally agent-facing and does not list every setup/helper command in
+this README:
 
 ```bash
 macparakeet-cli spec --json
@@ -373,9 +380,9 @@ macparakeet-cli transcribe "<path-or-youtube-url>" \
   --downloaded-audio app-default \
   --youtube-audio-quality app-default \
   --format json
-macparakeet-cli config list
-macparakeet-cli config set speech-engine parakeet
-macparakeet-cli config set speaker-detection off
+macparakeet-cli config list --json
+macparakeet-cli config set speech-engine parakeet --json
+macparakeet-cli config set speaker-detection off --json
 macparakeet-cli history transcriptions --json
 macparakeet-cli history search-transcriptions "<query>" --json
 macparakeet-cli history search "<query>" --json
@@ -451,8 +458,8 @@ macparakeet-cli prompts run "<prompt-name>" \
   `prompts run` or `llm` targets a hosted provider, or when a configured
   Local CLI command contacts its own service), Sparkle update checks (app,
   not CLI), and a single privacy-safe
-  `cli_operation` event per successfully parsed CLI invocation, posted to the self-hosted
-  endpoint at `https://macparakeet.com/api/telemetry`. The telemetry event
+  `cli_operation` event per successfully parsed CLI invocation, posted to the
+  self-hosted endpoint at `https://macparakeet.com/api/telemetry`. The telemetry event
   ships only allowlisted invocation metadata (`operation_id`, `workflow_id`,
   `parent_operation_id`, `command`, `subcommand`, `outcome`,
   `duration_seconds`, `input_kind`, `output_format`, `json`, `exit_code`,
