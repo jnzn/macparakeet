@@ -652,6 +652,7 @@ public final class OnboardingViewModel {
 
         let previousPreference = SpeechEnginePreference.current(defaults: defaults)
         let operationContext = Observability.childOperationContext()
+        let switchWasCold = SpeechEnginePreference.isColdSwitch(to: .whisper, defaults: defaults)
         engineState = .working(message: "Preparing Whisper for this Mac...", progress: nil)
 
         do {
@@ -680,7 +681,8 @@ public final class OnboardingViewModel {
                 outcome: .success,
                 durationSeconds: Observability.durationSeconds(since: operationContext.startedAt),
                 blockedReason: nil,
-                errorType: nil
+                errorType: nil,
+                wasCold: switchWasCold
             ))
         } catch {
             let errorType = TelemetryErrorClassifier.classify(error)
@@ -692,7 +694,8 @@ public final class OnboardingViewModel {
                 outcome: error is CancellationError ? .cancelled : .failure,
                 durationSeconds: Observability.durationSeconds(since: operationContext.startedAt),
                 blockedReason: Self.telemetrySpeechEngineSwitchBlockedReason(for: error),
-                errorType: errorType
+                errorType: errorType,
+                wasCold: switchWasCold
             ))
             throw error
         }
