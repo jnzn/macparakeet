@@ -159,7 +159,7 @@ PDX dist build differs from upstream only via env vars passed to
 ```bash
 APP_NAME="MacParakeet (PDX Edition)" \
 BUNDLE_ID="com.macparakeet.pdx" \
-VERSION="0.6.0-pdx" \
+VERSION="0.7.1-pdx" \
 XCODE_DERIVED_DATA="/tmp/mp-pdx-dist" \
 scripts/dist/build_app_bundle.sh
 ```
