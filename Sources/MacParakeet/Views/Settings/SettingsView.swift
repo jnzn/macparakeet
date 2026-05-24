@@ -704,6 +704,7 @@ struct SettingsView: View {
                 settingsToggleRow(
                     title: "Pause media while dictating",
                     detail: "Pauses playing media during dictation and resumes it when capture stops.",
+                    isBeta: true,
                     isOn: $viewModel.pauseMediaDuringDictation
                 )
 
@@ -2257,9 +2258,10 @@ struct SettingsView: View {
     private func settingsToggleRow(
         title: String,
         detail: String,
+        isBeta: Bool = false,
         isOn: Binding<Bool>
     ) -> some View {
-        SettingsToggleRow(title: title, detail: detail, isOn: isOn)
+        SettingsToggleRow(title: title, detail: detail, isBeta: isBeta, isOn: isOn)
     }
 
     private func rowText(title: String, detail: String) -> some View {

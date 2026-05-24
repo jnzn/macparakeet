@@ -52,10 +52,40 @@ struct SettingsRow<Trailing: View>: View {
 struct SettingsToggleRow: View {
     let title: String
     let detail: String
+    let isBeta: Bool
     @Binding var isOn: Bool
 
+    init(
+        title: String,
+        detail: String,
+        isBeta: Bool = false,
+        isOn: Binding<Bool>
+    ) {
+        self.title = title
+        self.detail = detail
+        self.isBeta = isBeta
+        self._isOn = isOn
+    }
+
     var body: some View {
-        SettingsRow(title: title, detail: detail, alignment: .top) {
+        HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: DesignSystem.Spacing.sm) {
+                    Text(title)
+                        .font(DesignSystem.Typography.body)
+
+                    if isBeta {
+                        BetaBadge()
+                    }
+                }
+
+                Text(detail)
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: DesignSystem.Spacing.md)
+
             Toggle("", isOn: $isOn)
                 .labelsHidden()
                 .parakeetSwitch()
