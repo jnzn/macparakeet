@@ -14,7 +14,7 @@ final class MeetingRecordingFlowCoordinator {
         switch stateMachine.state {
         case .idle, .finishing:
             return false
-        case .checkingPermissions, .starting, .recording, .stopping, .transcribing:
+        case .checkingPermissions, .starting, .recording, .stopping, .transcribing, .enhancing:
             return true
         }
     }
@@ -27,7 +27,7 @@ final class MeetingRecordingFlowCoordinator {
             return .starting
         case .recording:
             return .recording
-        case .stopping, .transcribing:
+        case .stopping, .transcribing, .enhancing:
             return .finishing
         }
     }
@@ -57,6 +57,7 @@ final class MeetingRecordingFlowCoordinator {
     private var transcriptObservationTask: Task<Void, Never>?
     private var activeFlowSettlementWaiters: [CheckedContinuation<Void, Never>] = []
     private var completedTranscription: Transcription?
+    private var completedRecordingOutput: MeetingRecordingOutput?
     private var currentMeetingOperationContext: ObservabilityOperationContext?
     private var currentMeetingTrigger: TelemetryMeetingRecordingTrigger?
     private var pendingAudioSourceMode: MeetingAudioSourceMode?
@@ -127,7 +128,7 @@ final class MeetingRecordingFlowCoordinator {
             sendEvent(.startRequested)
         case .recording, .starting, .stopping:
             sendEvent(.stopRequested)
-        case .checkingPermissions, .transcribing, .finishing:
+        case .checkingPermissions, .transcribing, .enhancing, .finishing:
             break
         }
     }
@@ -449,7 +450,8 @@ final class MeetingRecordingFlowCoordinator {
                     self.currentMeetingOperationContext = nil
                     self.currentMeetingTrigger = nil
                     self.completedTranscription = transcription
-                    self.sendEvent(.transcriptionCompleted(generation: gen, transcriptionID: transcription.id))
+                    self.completedRecordingOutput = stoppedOutput
+                    self.sendEvent(.transcriptionCompleted(generation: gen, transcriptionID: transcription.id, whisperAvailable: WhisperEngine.isModelDownloaded()))
                 } catch {
                     Telemetry.send(.meetingRecordingFailed(
                         errorType: TelemetryErrorClassifier.classify(error),
@@ -473,8 +475,8 @@ final class MeetingRecordingFlowCoordinator {
             stopPillPolling()
             stopTranscriptObservation()
             // If flower is still collapsing, the callback will check completedTranscription
-            // If spinner is showing, transition to checkmark now
-            if pillViewModel?.state == .transcribing {
+            // If spinner is showing (transcribing or enhancing), transition to checkmark now
+            if pillViewModel?.state == .transcribing || pillViewModel?.state == .enhancing {
                 pillViewModel?.state = .completed
             }
             panelViewModel?.state = .hidden
@@ -506,6 +508,26 @@ final class MeetingRecordingFlowCoordinator {
                 self.currentMeetingTrigger = nil
             }
 
+        case .startWhisperEnhancement(let transcriptionID):
+            let gen = stateMachine.generation
+            guard let output = completedRecordingOutput,
+                  let existing = completedTranscription else { break }
+            pillViewModel?.state = .enhancing
+            actionTask = Task { @MainActor in
+                do {
+                    let enhanced = try await self.transcriptionService.retranscribeMeeting(
+                        existing: existing,
+                        recording: output,
+                        speechEngineOverride: SpeechEngineSelection(engine: .whisper),
+                        onProgress: nil
+                    )
+                    self.completedTranscription = enhanced
+                    self.sendEvent(.enhancingCompleted(generation: gen, transcriptionID: enhanced.id))
+                } catch {
+                    self.sendEvent(.enhancingFailed(generation: gen, transcriptionID: transcriptionID))
+                }
+            }
+
         case .showError(let message):
             stopPillPolling()
             stopTranscriptObservation()
@@ -526,6 +548,7 @@ final class MeetingRecordingFlowCoordinator {
             panelController = nil
             panelViewModel = nil
             completedTranscription = nil
+            completedRecordingOutput = nil
             onFlowReturnedToIdle()
 
         case .updateMenuBar(let state):
@@ -724,7 +747,7 @@ final class MeetingRecordingFlowCoordinator {
         switch stateMachine.state {
         case .starting, .recording:
             break
-        case .idle, .checkingPermissions, .stopping, .transcribing, .finishing:
+        case .idle, .checkingPermissions, .stopping, .transcribing, .enhancing, .finishing:
             return
         }
         panelController?.show()

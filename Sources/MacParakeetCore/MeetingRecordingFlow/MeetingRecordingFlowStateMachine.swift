@@ -12,6 +12,7 @@ public enum MeetingRecordingFlowState: Equatable, Sendable {
     case recording
     case stopping
     case transcribing
+    case enhancing
     case finishing(outcome: MeetingRecordingFlowFinishOutcome)
 }
 
@@ -35,8 +36,10 @@ public enum MeetingRecordingFlowEvent: Equatable, Sendable {
     /// stop+transcribe path as `.stopRequested` so whatever audio was
     /// captured before the failure still becomes a saved Transcription.
     case captureFailed(generation: Int)
-    case transcriptionCompleted(generation: Int, transcriptionID: UUID)
+    case transcriptionCompleted(generation: Int, transcriptionID: UUID, whisperAvailable: Bool)
     case transcriptionFailed(generation: Int, message: String)
+    case enhancingCompleted(generation: Int, transcriptionID: UUID)
+    case enhancingFailed(generation: Int, transcriptionID: UUID)
     case dismissRequested
     case autoDismissExpired(generation: Int)
 }
@@ -56,6 +59,7 @@ public enum MeetingRecordingFlowEffect: Equatable, Sendable {
     case presentPermissionAlert(MeetingRecordingPermissionFailure)
     case startAutoDismissTimer(seconds: Double)
     case cancelAutoDismissTimer
+    case startWhisperEnhancement(transcriptionID: UUID)
 }
 
 public struct MeetingRecordingFlowStateMachine: Equatable, Sendable {
@@ -126,7 +130,22 @@ public struct MeetingRecordingFlowStateMachine: Equatable, Sendable {
             state = .transcribing
             return [.showTranscribingState, .updateMenuBar(.processing), .stopRecordingAndTranscribe]
 
-        case (.transcribing, .transcriptionCompleted(let gen, let transcriptionID)):
+        case (.transcribing, .transcriptionCompleted(let gen, let transcriptionID, let whisperAvailable)):
+            guard gen == generation else { return [] }
+            if whisperAvailable {
+                state = .enhancing
+                return [.startWhisperEnhancement(transcriptionID: transcriptionID), .updateMenuBar(.processing)]
+            } else {
+                state = .finishing(outcome: .completed(transcriptionID))
+                return [
+                    .showCompleted,
+                    .updateMenuBar(.idle),
+                    .navigateToTranscription(transcriptionID),
+                    .startAutoDismissTimer(seconds: 1),
+                ]
+            }
+
+        case (.enhancing, .enhancingCompleted(let gen, let transcriptionID)):
             guard gen == generation else { return [] }
             state = .finishing(outcome: .completed(transcriptionID))
             return [
@@ -135,6 +154,23 @@ public struct MeetingRecordingFlowStateMachine: Equatable, Sendable {
                 .navigateToTranscription(transcriptionID),
                 .startAutoDismissTimer(seconds: 1),
             ]
+
+        case (.enhancing, .enhancingFailed(let gen, let transcriptionID)):
+            guard gen == generation else { return [] }
+            state = .finishing(outcome: .completed(transcriptionID))
+            return [
+                .showCompleted,
+                .updateMenuBar(.idle),
+                .navigateToTranscription(transcriptionID),
+                .startAutoDismissTimer(seconds: 1),
+            ]
+
+        case (.enhancing, .cancelRequested):
+            state = .idle
+            return [.hidePill, .updateMenuBar(.idle)]
+
+        case (.enhancing, .dismissRequested):
+            return []
 
         case (.transcribing, .transcriptionFailed(let gen, let message)):
             guard gen == generation else { return [] }

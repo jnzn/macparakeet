@@ -122,7 +122,7 @@ final class MeetingRecordingFlowStateMachineTests: XCTestCase {
         _ = machine.handle(.recordingStarted(generation: 1))
         _ = machine.handle(.stopRequested)
 
-        let effects = machine.handle(.transcriptionCompleted(generation: 1, transcriptionID: transcriptionID))
+        let effects = machine.handle(.transcriptionCompleted(generation: 1, transcriptionID: transcriptionID, whisperAvailable: false))
 
         XCTAssertEqual(machine.state, .finishing(outcome: .completed(transcriptionID)))
         XCTAssertEqual(
@@ -159,7 +159,7 @@ final class MeetingRecordingFlowStateMachineTests: XCTestCase {
         _ = machine.handle(.permissionsGranted(generation: 1))
         _ = machine.handle(.recordingStarted(generation: 1))
         _ = machine.handle(.stopRequested)
-        _ = machine.handle(.transcriptionCompleted(generation: 1, transcriptionID: transcriptionID))
+        _ = machine.handle(.transcriptionCompleted(generation: 1, transcriptionID: transcriptionID, whisperAvailable: false))
 
         let effects = machine.handle(.autoDismissExpired(generation: 1))
 

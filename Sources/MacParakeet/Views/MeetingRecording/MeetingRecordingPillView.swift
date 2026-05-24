@@ -80,6 +80,12 @@ struct MeetingRecordingPillView: View {
                 SpinnerRingView(size: 26)
             }
             .transition(.opacity.animation(.easeInOut(duration: 0.3)))
+        case .enhancing:
+            statusPill(
+                icon: AnyView(SpinnerRingView(size: 18)),
+                title: "Enhancing transcript…"
+            )
+            .transition(.opacity.animation(.easeInOut(duration: 0.3)))
         case .completed:
             iconPill {
                 MeetingCompletionCheckmarkView()
