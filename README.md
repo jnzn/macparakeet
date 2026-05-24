@@ -34,11 +34,11 @@
 </p>
 
 <p align="center">
-  <img src="Assets/screenshots/youtube-transcript.png?v=1" width="720" alt="MacParakeet — YouTube transcript with synced video playback and timestamped transcript, summary, and chat tabs">
+  <img src="Assets/screenshots/library.png?v=4" width="720" alt="MacParakeet — Transcription library with thumbnails">
 </p>
 
 <p align="center">
-  <img src="Assets/screenshots/library.png?v=4" width="720" alt="MacParakeet — Transcription library with thumbnails">
+  <img src="Assets/screenshots/youtube-transcript.png?v=1" width="720" alt="MacParakeet — YouTube transcript with synced video playback and timestamped transcript, summary, and chat tabs">
 </p>
 
 <p align="center">
