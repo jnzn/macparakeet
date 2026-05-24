@@ -44,7 +44,6 @@ security import "$P12" \
   -A
 
 security add-trusted-cert \
-  -d \
   -r trustAsRoot \
   -k "$KEYCHAIN" \
   "$CERT"
