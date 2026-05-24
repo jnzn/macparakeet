@@ -11,6 +11,7 @@ public protocol PermissionServiceProtocol: Sendable {
     func requestScreenRecordingPermission() -> Bool
     func openMicrophoneSettings()
     func openScreenRecordingSettings()
+    func openAccessibilitySettings()
     func checkAccessibilityPermission() -> Bool
     func requestAccessibilityPermission(prompt: Bool) -> Bool
 }
@@ -54,6 +55,13 @@ public final class PermissionService: PermissionServiceProtocol, Sendable {
 
     public func openScreenRecordingSettings() {
         guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") else {
+            return
+        }
+        NSWorkspace.shared.open(url)
+    }
+
+    public func openAccessibilitySettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else {
             return
         }
         NSWorkspace.shared.open(url)
