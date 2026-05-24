@@ -168,12 +168,15 @@ Then ad-hoc sign and zip (no notarization — PDX is personal-use
 only):
 
 ```bash
+# One-time setup (run once per build machine, prompts for macOS password):
+# scripts/dev/create_pdx_cert.sh
+
 APP="dist/MacParakeet (PDX Edition).app"
 xattr -cr "$APP"
 find "$APP/Contents/Resources" -maxdepth 1 -type f -perm -111 -print0 \
-  | while IFS= read -r -d '' h; do codesign --force --sign - "$h"; done
+  | while IFS= read -r -d '' h; do codesign --force --sign "MacParakeet PDX" "$h"; done
 xattr -cr "$APP"
-codesign --force --sign - "$APP"
+codesign --force --sign "MacParakeet PDX" "$APP"
 ditto -c -k --keepParent --sequesterRsrc "$APP" dist/MacParakeet-PDX-Edition.zip
 ```
 

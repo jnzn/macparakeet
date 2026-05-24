@@ -393,15 +393,18 @@ scripts/dist/build_app_bundle.sh
 
 # 3. Ad-hoc sign inside-out (NO --options runtime — that breaks
 #    ad-hoc + library validation)
+# One-time setup (run once per build machine, prompts for macOS password):
+# scripts/dev/create_pdx_cert.sh
+
 SRC="dist/MacParakeet (PDX Edition).app"
 WORK="/tmp/mp-pdx-sign"
 mkdir -p "$WORK" && cp -R "$SRC" "$WORK/"
 APP="$WORK/MacParakeet (PDX Edition).app"
 xattr -cr "$APP"
 find "$APP/Contents/Resources" -maxdepth 1 -type f -perm -111 -print0 \
-  | while IFS= read -r -d '' h; do codesign --force --sign - "$h"; done
+  | while IFS= read -r -d '' h; do codesign --force --sign "MacParakeet PDX" "$h"; done
 xattr -cr "$APP"
-codesign --force --sign - "$APP"
+codesign --force --sign "MacParakeet PDX" "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"
 
 # 4. Smoke test (binary launches and stays alive past dyld)
