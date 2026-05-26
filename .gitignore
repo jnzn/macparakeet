@@ -86,3 +86,4 @@ recup_dir*/
 
 # Swift code-coverage scratch files
 *.profraw
+scripts/dev/MacParakeetPDX.p12
