@@ -736,6 +736,14 @@ struct SettingsView: View {
                         .frame(width: 140)
                     }
                 }
+
+                Divider()
+
+                settingsToggleRow(
+                    title: "Keep dictation on clipboard",
+                    detail: "Leaves the same text MacParakeet pastes on the clipboard, useful when remote desktops need a manual ⌘V.",
+                    isOn: $viewModel.keepDictationOnClipboard
+                )
             }
         }
     }

@@ -135,6 +135,14 @@ public enum SettingsSearchIndex {
             cardAnchor: "dictation"
         ),
         SettingsSearchEntry(
+            id: "dictation.keep.clipboard",
+            tab: .modes,
+            title: "Keep dictation on clipboard",
+            subtitle: "in Dictation",
+            keywords: ["clipboard", "copy", "paste", "cmd v", "command v", "transcript", "retain", "remote"],
+            cardAnchor: "dictation"
+        ),
+        SettingsSearchEntry(
             id: "transcription",
             tab: .modes,
             title: "Transcription",
