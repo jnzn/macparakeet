@@ -826,6 +826,8 @@ struct TranscriptResultView: View {
         switch transcription.sourceType {
         case .meeting:
             return "record.circle.fill"
+        case .voiceMemo:
+            return "mic.fill"
         case .youtube:
             return "play.rectangle.fill"
         case .file:
@@ -837,6 +839,8 @@ struct TranscriptResultView: View {
         switch transcription.sourceType {
         case .meeting:
             return "Meeting"
+        case .voiceMemo:
+            return "Memo"
         case .youtube:
             return "YouTube"
         case .file:
@@ -848,6 +852,8 @@ struct TranscriptResultView: View {
         switch transcription.sourceType {
         case .meeting:
             return "Meeting recording"
+        case .voiceMemo:
+            return "Voice memo"
         case .youtube:
             return "YouTube source"
         case .file:
@@ -859,6 +865,8 @@ struct TranscriptResultView: View {
         switch transcription.sourceType {
         case .meeting:
             return DesignSystem.Colors.accent
+        case .voiceMemo:
+            return DesignSystem.Colors.recordingRed
         case .youtube:
             return DesignSystem.Colors.youtubeRed
         case .file:

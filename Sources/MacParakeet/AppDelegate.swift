@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkeyCoordinator: AppHotkeyCoordinator?
     private var dictationFlowCoordinator: DictationFlowCoordinator?
     private var meetingRecordingFlowCoordinator: MeetingRecordingFlowCoordinator?
+    private var voiceMemoFlowCoordinator: VoiceMemoFlowCoordinator?
     private var aiAssistantFlowCoordinator: AIAssistantFlowCoordinator?
     private var meetingAutoStartCoordinator: MeetingAutoStartCoordinator?
     private var hasPresentedHotkeyUnavailableAlert = false
@@ -169,6 +170,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         },
         onMeetingHotkeyTriggerChanged: { [weak self] in
             self?.handleMeetingHotkeyTriggerChange()
+        },
+        onVoiceMemoHotkeyTriggerChanged: { [weak self] in
+            self?.handleVoiceMemoHotkeyTriggerChange()
         },
         onFileTranscriptionHotkeyTriggerChanged: { [weak self] in
             self?.handleFileTranscriptionHotkeyTriggerChange()
@@ -336,6 +340,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         dictationFlowCoordinator = runtime.dictationFlowCoordinator
         meetingRecordingFlowCoordinator = runtime.meetingRecordingFlowCoordinator
+        voiceMemoFlowCoordinator = runtime.voiceMemoFlowCoordinator
         aiAssistantFlowCoordinator = runtime.aiAssistantFlowCoordinator
         hotkeyCoordinator = runtime.hotkeyCoordinator
         meetingAutoStartCoordinator = runtime.meetingAutoStartCoordinator
@@ -416,6 +421,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshAuxiliaryHotkeys()
     }
 
+    private func handleVoiceMemoHotkeyTriggerChange() {
+        refreshAuxiliaryHotkeys()
+    }
+
     private func handleFileTranscriptionHotkeyTriggerChange() {
         refreshAuxiliaryHotkeys()
     }
@@ -426,6 +435,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func refreshAuxiliaryHotkeys() {
         hotkeyCoordinator?.refreshMeetingHotkey()
+        hotkeyCoordinator?.refreshVoiceMemoHotkey()
         hotkeyCoordinator?.refreshFileTranscriptionHotkey()
         hotkeyCoordinator?.refreshYouTubeTranscriptionHotkey()
         menuBarCoordinator.refreshMeetingHotkeyShortcut()

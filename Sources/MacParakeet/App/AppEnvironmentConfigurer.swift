@@ -7,11 +7,13 @@ final class AppEnvironmentConfigurer {
     private final class CoordinatorRefs {
         weak var dictation: DictationFlowCoordinator?
         weak var meeting: MeetingRecordingFlowCoordinator?
+        weak var voiceMemo: VoiceMemoFlowCoordinator?
     }
 
     struct Runtime {
         let dictationFlowCoordinator: DictationFlowCoordinator
         let meetingRecordingFlowCoordinator: MeetingRecordingFlowCoordinator
+        let voiceMemoFlowCoordinator: VoiceMemoFlowCoordinator
         let aiAssistantFlowCoordinator: AIAssistantFlowCoordinator
         let hotkeyCoordinator: AppHotkeyCoordinator
         let meetingAutoStartCoordinator: MeetingAutoStartCoordinator?
@@ -210,6 +212,7 @@ final class AppEnvironmentConfigurer {
             settingsViewModel: settingsViewModel,
             shouldSuppressIdlePill: {
                 coordinatorRefs.meeting?.isMeetingRecordingActive == true
+                    || coordinatorRefs.voiceMemo?.isVoiceMemoActive == true
             },
             liveBubbleCleanupEnabled: { [env] in env.runtimePreferences.liveBubbleCleanupEnabled },
             onMenuBarIconUpdate: { _ in callbacks.onMenuBarIconUpdate() },
@@ -248,6 +251,32 @@ final class AppEnvironmentConfigurer {
         coordinatorRefs.meeting = meetingCoordinator
         liveMeetingCoordinator = meetingCoordinator
 
+        let voiceMemoCoordinator = VoiceMemoFlowCoordinator(
+            meetingRecordingService: env.meetingRecordingService,
+            transcriptionService: env.transcriptionService,
+            permissionService: env.permissionService,
+            libraryViewModel: libraryViewModel,
+            isMeetingRecordingActive: { [weak meetingCoordinator] in
+                meetingCoordinator?.isMeetingRecordingActive ?? false
+            },
+            onTranscriptionReady: { [weak self] transcription in
+                guard let self else { return }
+                self.transcriptionViewModel.presentCompletedTranscription(transcription, autoSave: true)
+                self.libraryViewModel.loadTranscriptions()
+                self.mainWindowState.navigateToTranscription(from: .library)
+                callbacks.onOpenMainWindow()
+            },
+            onRecordingBegan: {
+                coordinatorRefs.dictation?.hideIdlePill()
+            },
+            onFlowReturnedToIdle: {
+                callbacks.onMenuBarIconUpdate()
+                guard coordinatorRefs.dictation?.isDictationActive != true else { return }
+                coordinatorRefs.dictation?.showIdlePill()
+            }
+        )
+        coordinatorRefs.voiceMemo = voiceMemoCoordinator
+
         let aiAssistantCoordinator = AIAssistantFlowCoordinator(
             service: env.aiAssistantService,
             accessibilityService: env.accessibilityService,
@@ -278,6 +307,9 @@ final class AppEnvironmentConfigurer {
                 coordinatorRefs.dictation?.dismissOverlayIfError()
             },
             onToggleMeetingRecording: callbacks.onToggleMeetingRecordingFromHotkey,
+            onToggleVoiceMemo: { [weak voiceMemoCoordinator] in
+                voiceMemoCoordinator?.toggleRecording()
+            },
             onAIAssistantHotkeyPress: { [weak aiAssistantCoordinator] in
                 aiAssistantCoordinator?.handleHotkeyPress()
             },
@@ -298,6 +330,7 @@ final class AppEnvironmentConfigurer {
 
         hotkeyCoordinator.setupPrimaryHotkey()
         hotkeyCoordinator.setupMeetingHotkey()
+        hotkeyCoordinator.setupVoiceMemoHotkey()
         hotkeyCoordinator.setupAIAssistantHotkey()
         hotkeyCoordinator.setupFileTranscriptionHotkey()
         hotkeyCoordinator.setupYouTubeTranscriptionHotkey()
@@ -350,6 +383,7 @@ final class AppEnvironmentConfigurer {
         return Runtime(
             dictationFlowCoordinator: dictationCoordinator,
             meetingRecordingFlowCoordinator: meetingCoordinator,
+            voiceMemoFlowCoordinator: voiceMemoCoordinator,
             aiAssistantFlowCoordinator: aiAssistantCoordinator,
             hotkeyCoordinator: hotkeyCoordinator,
             meetingAutoStartCoordinator: calendarCoordinator

@@ -11,6 +11,11 @@ public protocol TranscriptionServiceProtocol: Sendable {
         recording: MeetingRecordingOutput,
         onProgress: (@Sendable (TranscriptionProgress) -> Void)?
     ) async throws -> Transcription
+    func transcribeMeeting(
+        recording: MeetingRecordingOutput,
+        sourceType: Transcription.SourceType,
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)?
+    ) async throws -> Transcription
     func retranscribe(
         existing transcription: Transcription,
         fileURL: URL,
@@ -59,6 +64,14 @@ extension TranscriptionServiceProtocol {
 
     public func transcribeMeeting(recording: MeetingRecordingOutput) async throws -> Transcription {
         try await transcribeMeeting(recording: recording, onProgress: nil)
+    }
+
+    public func transcribeMeeting(
+        recording: MeetingRecordingOutput,
+        sourceType: Transcription.SourceType,
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)?
+    ) async throws -> Transcription {
+        try await transcribeMeeting(recording: recording, onProgress: onProgress)
     }
 
     public func retranscribe(
@@ -235,6 +248,14 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
         recording: MeetingRecordingOutput,
         onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
     ) async throws -> Transcription {
+        try await transcribeMeeting(recording: recording, sourceType: .meeting, onProgress: onProgress)
+    }
+
+    public func transcribeMeeting(
+        recording: MeetingRecordingOutput,
+        sourceType: Transcription.SourceType,
+        onProgress: (@Sendable (TranscriptionProgress) -> Void)? = nil
+    ) async throws -> Transcription {
         let fileSize = (try? FileManager.default.attributesOfItem(atPath: recording.mixedAudioURL.path)[.size] as? Int)
             .flatMap { $0 }
         let operation = TranscriptionOperationContext(
@@ -255,7 +276,7 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
                 filePath: recording.mixedAudioURL.path,
                 fileSizeBytes: fileSize,
                 status: .processing,
-                sourceType: .meeting,
+                sourceType: sourceType,
                 userNotes: recording.userNotes
             )
             do {

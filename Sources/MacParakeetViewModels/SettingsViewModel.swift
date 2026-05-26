@@ -95,6 +95,15 @@ public final class SettingsViewModel {
             Telemetry.send(.settingChanged(setting: .meetingHotkey))
         }
     }
+    public var voiceMemoHotkeyTrigger: HotkeyTrigger {
+        didSet {
+            voiceMemoHotkeyTrigger.save(to: defaults, defaultsKey: HotkeyTrigger.voiceMemoDefaultsKey)
+            NotificationCenter.default.post(
+                name: .macParakeetVoiceMemoHotkeyTriggerDidChange,
+                object: nil
+            )
+        }
+    }
     public var fileTranscriptionHotkeyTrigger: HotkeyTrigger {
         didSet {
             fileTranscriptionHotkeyTrigger.save(to: defaults, defaultsKey: HotkeyTrigger.fileTranscriptionDefaultsKey)
@@ -471,6 +480,11 @@ public final class SettingsViewModel {
         telemetryEnabled = AppPreferences.isTelemetryEnabled(defaults: defaults)
         hotkeyTrigger = HotkeyTrigger.current(defaults: defaults)
         meetingHotkeyTrigger = Self.resolveMeetingHotkeyTrigger(defaults: defaults)
+        voiceMemoHotkeyTrigger = HotkeyTrigger.current(
+            defaults: defaults,
+            defaultsKey: HotkeyTrigger.voiceMemoDefaultsKey,
+            fallback: .defaultVoiceMemo
+        )
         fileTranscriptionHotkeyTrigger = Self.resolveTranscriptionHotkeyTrigger(
             defaults: defaults,
             defaultsKey: HotkeyTrigger.fileTranscriptionDefaultsKey
