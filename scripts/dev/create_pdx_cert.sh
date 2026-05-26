@@ -3,6 +3,9 @@
 # After running this, sign PDX builds with --sign "MacParakeet PDX" instead of --sign -.
 # The same cert across builds gives TCC a stable identity so permissions survive
 # drag-replace app updates.
+#
+# NOTE: macOS will show a keychain password dialog when importing the private key.
+# That is expected — it is asking permission to store the key in your login keychain.
 set -euo pipefail
 
 CERT_NAME="MacParakeet PDX"
@@ -16,10 +19,10 @@ if security find-identity -v -p codesigning "$KEYCHAIN" 2>/dev/null | grep -q "\
 fi
 
 echo "Creating self-signed certificate '$CERT_NAME'…"
+echo "(macOS will ask for your login keychain password — that is expected)"
 
 KEY="$TMPDIR_LOCAL/key.pem"
 CERT="$TMPDIR_LOCAL/cert.pem"
-P12="$TMPDIR_LOCAL/cert.p12"
 
 openssl genrsa -out "$KEY" 2048 2>/dev/null
 
@@ -30,19 +33,19 @@ openssl req -new -x509 \
   -subj "/CN=$CERT_NAME" \
   2>/dev/null
 
-openssl pkcs12 -export \
-  -inkey "$KEY" \
-  -in "$CERT" \
-  -out "$P12" \
-  -passout pass: \
-  2>/dev/null
-
-security import "$P12" \
+# Import private key — macOS shows a keychain password prompt here
+security import "$KEY" \
   -k "$KEYCHAIN" \
-  -P "" \
   -T /usr/bin/codesign \
   -A
 
+# Import certificate
+security import "$CERT" \
+  -k "$KEYCHAIN" \
+  -T /usr/bin/codesign \
+  -A
+
+# Trust the certificate for code signing
 security add-trusted-cert \
   -r trustAsRoot \
   -k "$KEYCHAIN" \
