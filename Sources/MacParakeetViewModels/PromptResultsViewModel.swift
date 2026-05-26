@@ -83,8 +83,10 @@ public final class PromptResultsViewModel {
     private var transcriptionRepo: TranscriptionRepositoryProtocol?
     private var configStore: LLMConfigStoreProtocol?
     private var cliConfigStore: LocalCLIConfigStore?
+    private var llmClient: LLMClientProtocol?
     private var currentTranscriptionID: UUID?
     private var streamingTask: Task<Void, Never>?
+    private var modelListTask: Task<Void, Never>?
     private let logger = Logger(subsystem: "com.macparakeet.viewmodels", category: "PromptResultsViewModel")
 
     public var canGeneratePromptResult: Bool {
@@ -143,6 +145,7 @@ public final class PromptResultsViewModel {
         promptResultRepo: PromptResultRepositoryProtocol?,
         transcriptionRepo: TranscriptionRepositoryProtocol? = nil,
         configStore: LLMConfigStoreProtocol? = nil,
+        llmClient: LLMClientProtocol? = nil,
         cliConfigStore: LocalCLIConfigStore = LocalCLIConfigStore()
     ) {
         self.llmService = llmService
@@ -150,6 +153,7 @@ public final class PromptResultsViewModel {
         self.promptResultRepo = promptResultRepo
         self.transcriptionRepo = transcriptionRepo
         self.configStore = configStore
+        self.llmClient = llmClient
         self.cliConfigStore = cliConfigStore
         loadVisiblePrompts()
         refreshModelInfo()
@@ -162,6 +166,7 @@ public final class PromptResultsViewModel {
     }
 
     public func refreshModelInfo() {
+        modelListTask?.cancel()
         guard let configStore, let config = try? configStore.loadConfig() else {
             currentModelName = ""
             currentProviderID = nil
@@ -180,11 +185,8 @@ public final class PromptResultsViewModel {
         }
 
         currentModelName = config.modelName
-        var models = LLMSettingsViewModel.suggestedModels(for: config.id)
-        if !config.modelName.isEmpty && !models.contains(config.modelName) {
-            models.insert(config.modelName, at: 0)
-        }
-        availableModels = models
+        availableModels = LLMModelAvailability.pickerModels(for: config, discoveredModels: [])
+        refreshAvailableModels(for: config)
     }
 
     public func selectModel(_ modelName: String) {
@@ -195,6 +197,16 @@ public final class PromptResultsViewModel {
             onModelChanged?()
         } catch {
             refreshModelInfo()
+        }
+    }
+
+    private func refreshAvailableModels(for config: LLMProviderConfig) {
+        modelListTask = LLMModelAvailability.refreshPickerModelsTask(
+            for: config,
+            llmClient: llmClient,
+            configStore: configStore
+        ) { [weak self] models in
+            self?.availableModels = models
         }
     }
 

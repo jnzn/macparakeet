@@ -85,7 +85,7 @@ final class LLMSettingsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.modelName, "claude-sonnet-4-6")
 
         viewModel.selectedProviderID = .gemini
-        XCTAssertEqual(viewModel.modelName, "gemini-3.1-pro-preview")
+        XCTAssertEqual(viewModel.modelName, "gemini-3.5-flash")
 
         viewModel.selectedProviderID = .ollama
         XCTAssertEqual(viewModel.modelName, "qwen3.5:4b")
@@ -242,7 +242,7 @@ final class LLMSettingsViewModelTests: XCTestCase {
 
         XCTAssertFalse(viewModel.useCustomModel)
         XCTAssertEqual(viewModel.customModelName, "")
-        XCTAssertEqual(viewModel.modelName, "gpt-5.4")
+        XCTAssertEqual(viewModel.modelName, "gpt-5.5")
     }
 
     func testClearResetsAIFormatterPreferences() {
@@ -281,7 +281,10 @@ final class LLMSettingsViewModelTests: XCTestCase {
             apiKey: "gemini-key",
             model: "gemini-3.1-pro-preview"
         )
+        mockClient.modelsList = ["gemini-3.1-pro-preview", "gemini-3-flash-preview"]
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        mockClient.capturedContext = nil
 
         viewModel.modelName = "gemini-3-flash-preview"
         XCTAssertTrue(viewModel.hasUnsavedChanges)
@@ -490,6 +493,21 @@ final class LLMSettingsViewModelTests: XCTestCase {
         XCTAssertFalse(viewModel.useCustomModel)
         XCTAssertEqual(viewModel.modelName, "qwen3.5:4b")
         XCTAssertEqual(viewModel.modelListErrorMessage, "Connection failed: Failed to fetch models.")
+    }
+
+    func testOpenAILoadsAvailableModelsWhenConfigured() async throws {
+        mockClient.modelsList = ["gpt-5.2", "gpt-4.1", "gpt-5-mini"]
+        mockConfigStore.config = .openai(apiKey: "sk-test", model: "gpt-4.1")
+
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(viewModel.availableModels, ["gpt-5.2", "gpt-4.1", "gpt-5-mini"])
+        XCTAssertEqual(viewModel.modelName, "gpt-4.1")
+        XCTAssertEqual(viewModel.discoveredModelCount, 3)
+        XCTAssertEqual(mockClient.capturedContext?.providerConfig.id, .openai)
+        XCTAssertNil(viewModel.modelListErrorMessage)
     }
 
     func testSwitchingProviderLoadsStoredKey() {
@@ -781,7 +799,7 @@ final class LLMSettingsViewModelTests: XCTestCase {
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
         viewModel.selectedProviderID = .openrouter
         XCTAssertTrue(viewModel.requiresAPIKey)
-        XCTAssertEqual(viewModel.modelName, "anthropic/claude-opus-4-6")
+        XCTAssertEqual(viewModel.modelName, "anthropic/claude-sonnet-4.6")
     }
 
     // MARK: - Local CLI

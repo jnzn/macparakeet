@@ -47,6 +47,7 @@ public final class TranscriptChatViewModel {
     public var availableModels: [String] = []
 
     private var llmService: LLMServiceProtocol?
+    private var llmClient: LLMClientProtocol?
     private var configStore: LLMConfigStoreProtocol?
     private var cliConfigStore: LocalCLIConfigStore?
     private var transcriptionRepo: TranscriptionRepositoryProtocol?
@@ -73,6 +74,7 @@ public final class TranscriptChatViewModel {
     private var userNotesProvider: (@MainActor () -> String?)?
     private var chatHistory: [ChatMessage] = []
     private var streamingTask: Task<Void, Never>?
+    private var modelListTask: Task<Void, Never>?
     private var streamingAssistantID: UUID?
     private let logger = Logger(subsystem: "com.macparakeet.viewmodels", category: "TranscriptChatViewModel")
 
@@ -82,7 +84,7 @@ public final class TranscriptChatViewModel {
 
     public var modelDisplayName: String {
         guard !currentModelName.isEmpty else { return "" }
-        // Strip provider prefix for OpenRouter models (e.g. "anthropic/claude-sonnet-4-6" -> "claude-sonnet-4-6")
+        // Strip provider prefix for OpenRouter models (e.g. "anthropic/claude-sonnet-4.6" -> "claude-sonnet-4.6")
         if currentProviderID == .openrouter, let slashIndex = currentModelName.firstIndex(of: "/") {
             return String(currentModelName[currentModelName.index(after: slashIndex)...])
         }
@@ -96,10 +98,12 @@ public final class TranscriptChatViewModel {
         transcriptText: String,
         transcriptionRepo: TranscriptionRepositoryProtocol? = nil,
         configStore: LLMConfigStoreProtocol? = nil,
+        llmClient: LLMClientProtocol? = nil,
         conversationRepo: ChatConversationRepositoryProtocol? = nil,
         cliConfigStore: LocalCLIConfigStore = LocalCLIConfigStore()
     ) {
         self.llmService = llmService
+        self.llmClient = llmClient
         self.transcriptText = transcriptText
         self.transcriptionRepo = transcriptionRepo
         self.configStore = configStore
@@ -109,6 +113,7 @@ public final class TranscriptChatViewModel {
     }
 
     public func refreshModelInfo() {
+        modelListTask?.cancel()
         guard let configStore, let config = try? configStore.loadConfig() else {
             currentModelName = ""
             currentProviderID = nil
@@ -127,11 +132,8 @@ public final class TranscriptChatViewModel {
         }
 
         currentModelName = config.modelName
-        var models = LLMSettingsViewModel.suggestedModels(for: config.id)
-        if !config.modelName.isEmpty && !models.contains(config.modelName) {
-            models.insert(config.modelName, at: 0)
-        }
-        availableModels = models
+        availableModels = LLMModelAvailability.pickerModels(for: config, discoveredModels: [])
+        refreshAvailableModels(for: config)
     }
 
     public func selectModel(_ modelName: String) {
@@ -142,6 +144,16 @@ public final class TranscriptChatViewModel {
             onModelChanged?()
         } catch {
             refreshModelInfo()
+        }
+    }
+
+    private func refreshAvailableModels(for config: LLMProviderConfig) {
+        modelListTask = LLMModelAvailability.refreshPickerModelsTask(
+            for: config,
+            llmClient: llmClient,
+            configStore: configStore
+        ) { [weak self] models in
+            self?.availableModels = models
         }
     }
 

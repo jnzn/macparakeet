@@ -575,7 +575,11 @@ public final class LLMClient: LLMClientProtocol, Sendable {
 
     public func listModels(context: LLMExecutionContext) async throws -> [String] {
         let config = context.providerConfig
-        if config.id == .ollama {
+        let endpoint = config.id.modelListEndpoint
+        guard endpoint != .none else {
+            throw LLMError.connectionFailed("Model listing is not supported for this provider.")
+        }
+        if endpoint == .ollama {
             do {
                 return try await listOllamaModels(config: config)
             } catch {
@@ -585,12 +589,11 @@ public final class LLMClient: LLMClientProtocol, Sendable {
             }
         }
 
-        let url = config.baseURL.appendingPathComponent("models")
+        let url = Self.modelsURL(for: config)
         var request = URLRequest(url: url, timeoutInterval: 15)
         request.httpMethod = "GET"
 
-        switch config.id {
-        case .anthropic:
+        if endpoint == .anthropic {
             // Anthropic uses x-api-key header and anthropic-version
             if let key = config.apiKey {
                 request.setValue(key, forHTTPHeaderField: "x-api-key")
@@ -598,15 +601,9 @@ public final class LLMClient: LLMClientProtocol, Sendable {
                 // constant so chat + listModels stay in sync.
                 request.setValue(LLMClient.anthropicAPIVersion, forHTTPHeaderField: "anthropic-version")
             }
-        case .gemini:
-            // Gemini uses ?key= query parameter on their native endpoint
-            // But since we use the OpenAI-compatible endpoint, Bearer works
-            if let key = config.apiKey {
-                request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-            }
-        case .ollama:
+        } else if endpoint == .ollama {
             request.setValue("Bearer ollama", forHTTPHeaderField: "Authorization")
-        default:
+        } else if endpoint == .openAICompatible {
             if let key = config.apiKey {
                 request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
             }
@@ -622,6 +619,16 @@ public final class LLMClient: LLMClientProtocol, Sendable {
 
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             throw LLMError.connectionFailed("Failed to fetch models.")
+        }
+
+        if config.id.modelListEndpoint == .gemini,
+           let modelsResponse = try? JSONDecoder().decode(GeminiModelsListResponse.self, from: data) {
+            return modelsResponse.models
+                .filter { $0.supportedGenerationMethods?.contains("generateContent") ?? true }
+                .map { entry in
+                    entry.name.hasPrefix("models/") ? String(entry.name.dropFirst(7)) : entry.name
+                }
+                .sorted()
         }
 
         // Try OpenAI-compatible format: { "data": [{ "id": "..." }] }
@@ -673,6 +680,46 @@ public final class LLMClient: LLMClientProtocol, Sendable {
         segments.append(contentsOf: ["api", "tags"])
         components.path = "/" + segments.joined(separator: "/")
         components.query = nil
+        return components.url
+    }
+
+    private static func modelsURL(for config: LLMProviderConfig) -> URL {
+        if config.id.modelListEndpoint == .anthropic,
+           let url = urlByAppendingQueryItems(
+            [URLQueryItem(name: "limit", value: "1000")],
+            to: config.baseURL.appendingPathComponent("models")
+           ) {
+            return url
+        }
+        if config.id.modelListEndpoint == .gemini,
+           let url = geminiModelsURL(from: config.baseURL, apiKey: config.apiKey) {
+            return url
+        }
+        return config.baseURL.appendingPathComponent("models")
+    }
+
+    private static func geminiModelsURL(from baseURL: URL, apiKey: String?) -> URL? {
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else { return nil }
+        var segments = components.path
+            .split(separator: "/")
+            .map(String.init)
+        if segments.last == "openai" {
+            segments.removeLast()
+        }
+        segments.append("models")
+        components.path = "/" + segments.joined(separator: "/")
+        var queryItems = components.queryItems ?? []
+        queryItems.append(URLQueryItem(name: "pageSize", value: "1000"))
+        if let apiKey {
+            queryItems.append(URLQueryItem(name: "key", value: apiKey))
+        }
+        components.queryItems = queryItems
+        return components.url
+    }
+
+    private static func urlByAppendingQueryItems(_ items: [URLQueryItem], to url: URL) -> URL? {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        components.queryItems = (components.queryItems ?? []) + items
         return components.url
     }
 
@@ -1114,6 +1161,15 @@ struct ModelsListResponse: Decodable {
 
     struct ModelEntry: Decodable {
         let id: String
+    }
+}
+
+struct GeminiModelsListResponse: Decodable {
+    let models: [ModelEntry]
+
+    struct ModelEntry: Decodable {
+        let name: String
+        let supportedGenerationMethods: [String]?
     }
 }
 
