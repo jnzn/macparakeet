@@ -140,6 +140,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         meetingRecordingActiveProvider: { [weak self] in
             self?.meetingRecordingFlowCoordinator?.isMeetingRecordingActive == true
         },
+        voiceMemoHotkeyTriggerProvider: { [weak self] in
+            self?.settingsViewModel.voiceMemoHotkeyTrigger ?? .defaultVoiceMemo
+        },
+        voiceMemoActiveProvider: { [weak self] in
+            self?.voiceMemoFlowCoordinator?.isVoiceMemoActive == true
+        },
         onOpenMainWindow: { [weak self] in
             self?.windowCoordinator.openMainWindow()
         },
@@ -148,6 +154,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         },
         onToggleMeetingRecording: { [weak self] in
             self?.toggleMeetingRecording(originatesFromWindow: false)
+        },
+        onToggleVoiceMemo: { [weak self] in
+            self?.voiceMemoFlowCoordinator?.toggleRecording()
         },
         onQuit: { [weak self] in
             self?.quitApp()
@@ -439,6 +448,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeyCoordinator?.refreshFileTranscriptionHotkey()
         hotkeyCoordinator?.refreshYouTubeTranscriptionHotkey()
         menuBarCoordinator.refreshMeetingHotkeyShortcut()
+        menuBarCoordinator.refreshVoiceMemoHotkeyShortcut()
         menuBarCoordinator.refreshTranscriptionHotkeyShortcuts()
     }
 

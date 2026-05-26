@@ -13,9 +13,12 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
     private let fileTranscriptionHotkeyTriggerProvider: () -> HotkeyTrigger
     private let youtubeTranscriptionHotkeyTriggerProvider: () -> HotkeyTrigger
     private let meetingRecordingActiveProvider: () -> Bool
+    private let voiceMemoHotkeyTriggerProvider: () -> HotkeyTrigger
+    private let voiceMemoActiveProvider: () -> Bool
     private let onOpenMainWindow: () -> Void
     private let onOpenSettings: () -> Void
     private let onToggleMeetingRecording: () -> Void
+    private let onToggleVoiceMemo: () -> Void
     private let onQuit: () -> Void
     private let onShowAboutPanel: () -> Void
 
@@ -23,6 +26,7 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
     private var pasteLastMenuItem: NSMenuItem?
     private var recentDictationsMenuItem: NSMenuItem?
     private var recordMeetingMenuItem: NSMenuItem?
+    private var recordVoiceMemoMenuItem: NSMenuItem?
     private var transcribeFileMenuItem: NSMenuItem?
     private var transcribeYouTubeMenuItem: NSMenuItem?
     private var hotkeyMenuItem: NSMenuItem?
@@ -36,9 +40,12 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
         fileTranscriptionHotkeyTriggerProvider: @escaping () -> HotkeyTrigger,
         youtubeTranscriptionHotkeyTriggerProvider: @escaping () -> HotkeyTrigger,
         meetingRecordingActiveProvider: @escaping () -> Bool,
+        voiceMemoHotkeyTriggerProvider: @escaping () -> HotkeyTrigger,
+        voiceMemoActiveProvider: @escaping () -> Bool,
         onOpenMainWindow: @escaping () -> Void,
         onOpenSettings: @escaping () -> Void,
         onToggleMeetingRecording: @escaping () -> Void,
+        onToggleVoiceMemo: @escaping () -> Void,
         onQuit: @escaping () -> Void,
         onShowAboutPanel: @escaping () -> Void
     ) {
@@ -50,9 +57,12 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
         self.fileTranscriptionHotkeyTriggerProvider = fileTranscriptionHotkeyTriggerProvider
         self.youtubeTranscriptionHotkeyTriggerProvider = youtubeTranscriptionHotkeyTriggerProvider
         self.meetingRecordingActiveProvider = meetingRecordingActiveProvider
+        self.voiceMemoHotkeyTriggerProvider = voiceMemoHotkeyTriggerProvider
+        self.voiceMemoActiveProvider = voiceMemoActiveProvider
         self.onOpenMainWindow = onOpenMainWindow
         self.onOpenSettings = onOpenSettings
         self.onToggleMeetingRecording = onToggleMeetingRecording
+        self.onToggleVoiceMemo = onToggleVoiceMemo
         self.onQuit = onQuit
         self.onShowAboutPanel = onShowAboutPanel
     }
@@ -182,6 +192,16 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
             recordMeetingMenuItem = recordMeetingItem
         }
 
+        let recordVoiceMemoItem = NSMenuItem(
+            title: "Record Voice Memo",
+            action: #selector(toggleVoiceMemoFromMenu),
+            keyEquivalent: ""
+        )
+        recordVoiceMemoItem.target = self
+        applyChordShortcut(voiceMemoHotkeyTriggerProvider(), to: recordVoiceMemoItem)
+        menu.addItem(recordVoiceMemoItem)
+        recordVoiceMemoMenuItem = recordVoiceMemoItem
+
         menu.addItem(NSMenuItem.separator())
 
         let hotkeyItem = NSMenuItem(
@@ -230,6 +250,11 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
         if let transcribeYouTubeMenuItem {
             applyChordShortcut(youtubeTranscriptionHotkeyTriggerProvider(), to: transcribeYouTubeMenuItem)
         }
+    }
+
+    func refreshVoiceMemoHotkeyShortcut() {
+        guard let recordVoiceMemoMenuItem else { return }
+        applyChordShortcut(voiceMemoHotkeyTriggerProvider(), to: recordVoiceMemoMenuItem)
     }
 
     /// Entry point for the file-transcription global hotkey. Shares its
@@ -320,6 +345,10 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
         onToggleMeetingRecording()
     }
 
+    @objc private func toggleVoiceMemoFromMenu() {
+        onToggleVoiceMemo()
+    }
+
     func menuNeedsUpdate(_ menu: NSMenu) {
         guard let env = environmentProvider() else {
             pasteLastMenuItem?.isEnabled = false
@@ -334,6 +363,10 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
         recordMeetingMenuItem?.title = meetingRecordingActiveProvider()
             ? "Stop Meeting Recording"
             : "Record Meeting"
+
+        recordVoiceMemoMenuItem?.title = voiceMemoActiveProvider()
+            ? "Stop Voice Memo"
+            : "Record Voice Memo"
     }
 
     private func handleDroppedFile(_ url: URL) {

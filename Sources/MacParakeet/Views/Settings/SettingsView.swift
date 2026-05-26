@@ -213,6 +213,7 @@ struct SettingsView: View {
             if AppFeatures.meetingRecordingEnabled {
                 meetingRecordingCard.id("meeting")
             }
+            voiceMemoCard.id("voiceMemo")
         }
     }
 
@@ -668,6 +669,35 @@ struct SettingsView: View {
                 // `calendarCard`. Calendar is meeting-only — folding it
                 // here removes a card without losing any controls.
                 meetingCalendarSection
+            }
+        }
+    }
+
+    private var voiceMemoCard: some View {
+        settingsCard(
+            title: "Voice Memo",
+            subtitle: "Quick mic-only recording — no system audio permission needed.",
+            icon: "mic.fill"
+        ) {
+            HStack(alignment: .center) {
+                rowText(
+                    title: "Hotkey",
+                    detail: "Global shortcut to start or stop a voice memo recording."
+                )
+                Spacer(minLength: DesignSystem.Spacing.md)
+                HotkeyRecorderView(
+                    trigger: $viewModel.voiceMemoHotkeyTrigger,
+                    defaultTrigger: .defaultVoiceMemo
+                ) { candidate in
+                    guard !candidate.isDisabled else { return .allowed }
+                    if candidate == viewModel.hotkeyTrigger {
+                        return .blocked("Already used by dictation.")
+                    }
+                    if AppFeatures.meetingRecordingEnabled, candidate == viewModel.meetingHotkeyTrigger {
+                        return .blocked("Already used by meeting recording.")
+                    }
+                    return .allowed
+                }
             }
         }
     }
