@@ -281,6 +281,20 @@ public actor DictationService: DictationServiceProtocol {
                     "app_context_captured session=\(requestedSessionID) hasTitle=\(ctx.windowTitle != nil) hasField=\(ctx.focusedFieldValue != nil) hasSelection=\(ctx.selectedText != nil)"
                 )
             }
+            // When AI formatting will run, also capture visible window content
+            // (AX text tree first, Vision OCR fallback). Runs in a detached task
+            // while the user is still speaking — latency is hidden behind speech.
+            if shouldUseAIFormatter() || shouldFormatPasteWithAI() {
+                let content = await Task.detached(priority: .userInitiated) {
+                    AppContextService.captureWindowContent()
+                }.value
+                if let content {
+                    activeAppContext = (activeAppContext ?? AppContext()).withWindowContent(content)
+                    logger.info(
+                        "window_content_captured session=\(requestedSessionID) chars=\(content.count, privacy: .public)"
+                    )
+                }
+            }
             Telemetry.send(.dictationStarted(trigger: context.trigger, mode: context.mode))
             logger.debug("startRecording capture started session=\(requestedSessionID)")
             startStreamingSessionIfEnabled(sessionID: requestedSessionID)
@@ -714,7 +728,8 @@ public actor DictationService: DictationServiceProtocol {
             rawText: result.text,
             mode: mode,
             customWords: words,
-            snippets: snippets
+            snippets: snippets,
+            profile: activeProfile
         )
         let cleanTranscript = refinement.text
         let expandedSnippetIDs = refinement.expandedSnippetIDs

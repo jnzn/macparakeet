@@ -170,26 +170,28 @@ public actor MeetingAudioCaptureService {
                 )
             }
 
-            try tap.start(
-                handler: { [weak self] buffer, time in
-                    guard let copy = Self.deepCopyBuffer(buffer) else {
-                        Logger(subsystem: "com.macparakeet.core", category: "MeetingAudioCaptureService")
-                            .warning("deepCopyBuffer nil for system tap: format=\(buffer.format.commonFormat.rawValue) rate=\(buffer.format.sampleRate) ch=\(buffer.format.channelCount) interleaved=\(buffer.format.isInterleaved) frames=\(buffer.frameLength)")
-                        self?.eventSink.emit(
-                            .error(
-                                .captureRuntimeFailure(
-                                    "system buffer copy failed (format=\(buffer.format.commonFormat.rawValue) rate=\(buffer.format.sampleRate) channels=\(buffer.format.channelCount))"
+            if sourceMode.capturesSystemAudio {
+                try tap.start(
+                    handler: { [weak self] buffer, time in
+                        guard let copy = Self.deepCopyBuffer(buffer) else {
+                            Logger(subsystem: "com.macparakeet.core", category: "MeetingAudioCaptureService")
+                                .warning("deepCopyBuffer nil for system tap: format=\(buffer.format.commonFormat.rawValue) rate=\(buffer.format.sampleRate) ch=\(buffer.format.channelCount) interleaved=\(buffer.format.isInterleaved) frames=\(buffer.frameLength)")
+                            self?.eventSink.emit(
+                                .error(
+                                    .captureRuntimeFailure(
+                                        "system buffer copy failed (format=\(buffer.format.commonFormat.rawValue) rate=\(buffer.format.sampleRate) channels=\(buffer.format.channelCount))"
+                                    )
                                 )
                             )
-                        )
-                        return
+                            return
+                        }
+                        self?.eventSink.emit(.systemBuffer(copy, time))
+                    },
+                    onStall: { [weak self] error in
+                        self?.eventSink.emit(.error(error))
                     }
-                    self?.eventSink.emit(.systemBuffer(copy, time))
-                },
-                onStall: { [weak self] error in
-                    self?.eventSink.emit(.error(error))
-                }
-            )
+                )
+            }
         } catch {
             if attemptedMicrophoneStart {
                 microphoneCapture.stop()

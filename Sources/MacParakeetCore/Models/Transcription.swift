@@ -12,6 +12,7 @@ public struct Transcription: Codable, Identifiable, Sendable {
         case file
         case youtube
         case meeting
+        case voiceMemo
     }
 
     public var id: UUID

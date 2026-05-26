@@ -41,6 +41,7 @@ final class AppSettingsObserverCoordinatorTests: XCTestCase {
                 self.meetingHotkeyTriggerCount += 1
                 self.onCallback?()
             },
+            onVoiceMemoHotkeyTriggerChanged: { },
             onFileTranscriptionHotkeyTriggerChanged: { [unowned self] in
                 self.fileTranscriptionHotkeyTriggerCount += 1
                 self.onCallback?()

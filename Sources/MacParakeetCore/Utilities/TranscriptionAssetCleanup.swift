@@ -27,7 +27,7 @@ public enum TranscriptionAssetCleanup {
         switch transcription.sourceType {
         case .youtube:
             try removeYouTubeFile(at: URL(fileURLWithPath: filePath), fileManager: fileManager)
-        case .meeting:
+        case .meeting, .voiceMemo:
             try removeMeetingFolder(containing: URL(fileURLWithPath: filePath), fileManager: fileManager)
         case .file:
             return

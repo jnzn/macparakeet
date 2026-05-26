@@ -7,6 +7,7 @@ public enum LibraryFilter: String, CaseIterable, Sendable {
     case youtube = "YouTube"
     case local = "Local"
     case meeting = "Meetings"
+    case voiceMemo = "Memos"
     case favorites = "Favorites"
 }
 
@@ -95,6 +96,7 @@ public final class TranscriptionLibraryViewModel {
         case .youtube: result = result.filter { $0.sourceType == .youtube }
         case .local: result = result.filter { $0.sourceType == .file }
         case .meeting: result = result.filter { $0.sourceType == .meeting }
+        case .voiceMemo: result = result.filter { $0.sourceType == .voiceMemo }
         case .favorites: result = result.filter(\.isFavorite)
         }
 

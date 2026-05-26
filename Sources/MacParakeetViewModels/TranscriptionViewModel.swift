@@ -334,7 +334,7 @@ public final class TranscriptionViewModel {
             .file
         case .youtube:
             .youtube
-        case .meeting:
+        case .meeting, .voiceMemo:
             .meeting
         }
 

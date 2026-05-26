@@ -13,6 +13,7 @@ final class AppHotkeyCoordinator {
     private let onReadyForSecondTap: () -> Void
     private let onEscapeWhileIdle: () -> Void
     private let onToggleMeetingRecording: () -> Void
+    private let onToggleVoiceMemo: () -> Void
     private let onAIAssistantHotkeyPress: () -> Void
     private let onAIAssistantHotkeyRelease: () -> Void
     private let onAIAssistantHotkeyDoubleTap: () -> Void
@@ -24,6 +25,7 @@ final class AppHotkeyCoordinator {
 
     private var hotkeyManager: HotkeyManager?
     private var meetingHotkeyManager: GlobalShortcutManager?
+    private var voiceMemoHotkeyManager: GlobalShortcutManager?
     private var aiAssistantHotkeyManager: GlobalShortcutManager?
     private var fileTranscriptionHotkeyManager: GlobalShortcutManager?
     private var youtubeTranscriptionHotkeyManager: GlobalShortcutManager?
@@ -43,6 +45,7 @@ final class AppHotkeyCoordinator {
         onReadyForSecondTap: @escaping () -> Void,
         onEscapeWhileIdle: @escaping () -> Void,
         onToggleMeetingRecording: @escaping () -> Void,
+        onToggleVoiceMemo: @escaping () -> Void,
         onAIAssistantHotkeyPress: @escaping () -> Void,
         onAIAssistantHotkeyRelease: @escaping () -> Void,
         onAIAssistantHotkeyDoubleTap: @escaping () -> Void,
@@ -61,6 +64,7 @@ final class AppHotkeyCoordinator {
         self.onReadyForSecondTap = onReadyForSecondTap
         self.onEscapeWhileIdle = onEscapeWhileIdle
         self.onToggleMeetingRecording = onToggleMeetingRecording
+        self.onToggleVoiceMemo = onToggleVoiceMemo
         self.onAIAssistantHotkeyPress = onAIAssistantHotkeyPress
         self.onAIAssistantHotkeyRelease = onAIAssistantHotkeyRelease
         self.onAIAssistantHotkeyDoubleTap = onAIAssistantHotkeyDoubleTap
@@ -130,11 +134,27 @@ final class AppHotkeyCoordinator {
             trigger: settingsViewModel.meetingHotkeyTrigger,
             conflicts: [
                 settingsViewModel.hotkeyTrigger,
+                settingsViewModel.voiceMemoHotkeyTrigger,
                 settingsViewModel.fileTranscriptionHotkeyTrigger,
                 settingsViewModel.youtubeTranscriptionHotkeyTrigger,
             ],
             onTrigger: { [weak self] in
                 self?.onToggleMeetingRecording()
+            }
+        )
+    }
+
+    func setupVoiceMemoHotkey() {
+        voiceMemoHotkeyManager = startAuxiliaryHotkey(
+            trigger: settingsViewModel.voiceMemoHotkeyTrigger,
+            conflicts: [
+                settingsViewModel.hotkeyTrigger,
+                settingsViewModel.meetingHotkeyTrigger,
+                settingsViewModel.fileTranscriptionHotkeyTrigger,
+                settingsViewModel.youtubeTranscriptionHotkeyTrigger,
+            ],
+            onTrigger: { [weak self] in
+                self?.onToggleVoiceMemo()
             }
         )
     }
@@ -237,17 +257,20 @@ final class AppHotkeyCoordinator {
     func refreshAllHotkeys() {
         hotkeyManager?.stop()
         meetingHotkeyManager?.stop()
+        voiceMemoHotkeyManager?.stop()
         aiAssistantHotkeyManager?.stop()
         fileTranscriptionHotkeyManager?.stop()
         youtubeTranscriptionHotkeyManager?.stop()
         hotkeyManager = nil
         meetingHotkeyManager = nil
+        voiceMemoHotkeyManager = nil
         aiAssistantHotkeyManager = nil
         fileTranscriptionHotkeyManager = nil
         youtubeTranscriptionHotkeyManager = nil
         onPrimaryHotkeyManagerChanged(nil)
         setupPrimaryHotkey()
         setupMeetingHotkey()
+        setupVoiceMemoHotkey()
         setupAIAssistantHotkey()
         setupFileTranscriptionHotkey()
         setupYouTubeTranscriptionHotkey()
@@ -265,6 +288,12 @@ final class AppHotkeyCoordinator {
         meetingHotkeyManager?.stop()
         meetingHotkeyManager = nil
         setupMeetingHotkey()
+    }
+
+    func refreshVoiceMemoHotkey() {
+        voiceMemoHotkeyManager?.stop()
+        voiceMemoHotkeyManager = nil
+        setupVoiceMemoHotkey()
     }
 
     func refreshFileTranscriptionHotkey() {
@@ -304,11 +333,13 @@ final class AppHotkeyCoordinator {
     func stopAll() {
         hotkeyManager?.stop()
         meetingHotkeyManager?.stop()
+        voiceMemoHotkeyManager?.stop()
         aiAssistantHotkeyManager?.stop()
         fileTranscriptionHotkeyManager?.stop()
         youtubeTranscriptionHotkeyManager?.stop()
         hotkeyManager = nil
         meetingHotkeyManager = nil
+        voiceMemoHotkeyManager = nil
         aiAssistantHotkeyManager = nil
         fileTranscriptionHotkeyManager = nil
         youtubeTranscriptionHotkeyManager = nil

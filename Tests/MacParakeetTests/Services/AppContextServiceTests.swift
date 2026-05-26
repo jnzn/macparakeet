@@ -97,4 +97,41 @@ final class AppContextServiceTests: XCTestCase {
         // than accidentally block a legitimate app. Document the behavior.
         XCTAssertFalse(AppContextService.isBlocklisted(bundleID: "COM.1PASSWORD.1PASSWORD"))
     }
+
+    // MARK: - windowContent
+
+    func testContextWithWindowContentIsNotEmpty() {
+        XCTAssertFalse(AppContext(windowContent: "Hello world").isEmpty)
+    }
+
+    func testWithWindowContentPreservesOtherFields() {
+        let base = AppContext(bundleID: "com.apple.mail", windowTitle: "Inbox", focusedFieldValue: "Hi")
+        let updated = base.withWindowContent("Dear team,")
+        XCTAssertEqual(updated.bundleID, "com.apple.mail")
+        XCTAssertEqual(updated.windowTitle, "Inbox")
+        XCTAssertEqual(updated.focusedFieldValue, "Hi")
+        XCTAssertEqual(updated.windowContent, "Dear team,")
+    }
+
+    func testAsPromptBlockIncludesWindowContent() {
+        let ctx = AppContext(windowContent: "Meeting notes from last week")
+        let block = ctx.asPromptBlock()
+        XCTAssertTrue(block.contains("Active window content"))
+        XCTAssertTrue(block.contains("Meeting notes from last week"))
+        XCTAssertTrue(block.contains("do NOT reproduce"))
+    }
+
+    func testAsPromptBlockTruncatesLongWindowContent() {
+        let long = String(repeating: "a", count: 2000)
+        let ctx = AppContext(windowContent: long)
+        let block = ctx.asPromptBlock(maxWindowContentChars: 100)
+        XCTAssertTrue(block.contains("…"))
+        XCTAssertLessThan(block.count, 300)
+    }
+
+    func testWindowContentDoesNotAppearWhenBlank() {
+        let ctx = AppContext(windowTitle: "Mail", windowContent: "   ")
+        let block = ctx.asPromptBlock()
+        XCTAssertFalse(block.contains("Active window content"))
+    }
 }

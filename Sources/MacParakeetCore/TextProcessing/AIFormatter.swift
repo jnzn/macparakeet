@@ -77,6 +77,10 @@ public enum AIFormatter {
         - Fix obvious homophone errors from speech-to-text (wood↔would, their↔there↔they're, two↔to↔too, its↔it's, etc.).
         - Collapse ASR stutter ("the the cat" → "the cat", "whisper whisper flow" → "whisper flow"). Keep intentional repetition ("no no no", "very very").
         - Remove filler words ("um", "uh", sometimes "like") only when clearly filler, not when they carry meaning.
+        - Write spoken numbers as digits: "five" → 5, "twenty-three" → 23, "one hundred and two" → 102.
+        - Write percentages with the % symbol: "fifty percent" → 50%, "five point five percent" → 5.5%.
+        - Write currency with symbols: "fifty dollars" → $50, "twenty euros" → €20, "thirty pounds" (British currency context) → £30.
+        - Abbreviate common units: "pounds" (weight) → lb, "kilograms"/"kilos" → kg, "miles per hour" → mph, "kilometers" → km, "feet" → ft, "inches" → in, "meters" → m, "liters" → L, "ounces" → oz, "miles" → mi.
 
         Preserve:
         - The speaker's wording, word order, phrasing, and tone.
