@@ -19,7 +19,8 @@ if security find-identity -v -p codesigning "$KEYCHAIN" 2>/dev/null | grep -q "\
 fi
 
 echo "Creating self-signed certificate '$CERT_NAME'…"
-echo "(macOS will ask for your login keychain password — that is expected)"
+echo "Enter your login keychain password when prompted:"
+security unlock-keychain "$KEYCHAIN"
 
 KEY="$TMPDIR_LOCAL/key.pem"
 CERT="$TMPDIR_LOCAL/cert.pem"
