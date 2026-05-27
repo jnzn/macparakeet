@@ -7,6 +7,7 @@ public final class MeetingRecordingPillViewModel {
         case recording
         case completing
         case transcribing
+        case enhancing
         case completed
         case error(String)
     }

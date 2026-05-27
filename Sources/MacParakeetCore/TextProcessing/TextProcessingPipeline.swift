@@ -9,10 +9,14 @@ public struct TextProcessingPipeline: Sendable {
     public init() {}
 
     /// Process raw STT text through the full pipeline.
+    /// Pass `isTerminalProfile: true` when the frontmost app is a terminal emulator
+    /// so that spoken symbol words ("slash", "tilde", etc.) are converted to their
+    /// literal characters at paste time — without requiring an LLM API key.
     public func process(
         text: String,
         customWords: [CustomWord],
-        snippets: [TextSnippet]
+        snippets: [TextSnippet],
+        isTerminalProfile: Bool = false
     ) -> TextProcessingResult {
         guard !text.isEmpty else {
             return TextProcessingResult(text: "")
@@ -28,6 +32,11 @@ public struct TextProcessingPipeline: Sendable {
 
         // Step 2: Custom word replacements
         result = applyCustomWords(to: result, words: customWords)
+
+        // Step 2.5: Terminal symbol expansion (only for terminal app profiles)
+        if isTerminalProfile {
+            result = expandTerminalSymbols(in: result)
+        }
 
         // Step 3: Extract trailing action snippet (before expansion, so trigger isn't mangled)
         var actionIDs = Set<UUID>()
@@ -45,8 +54,8 @@ public struct TextProcessingPipeline: Sendable {
         let (expandedText, expandedIDs) = expandSnippets(in: result, snippets: textSnippets)
         result = expandedText
 
-        // Step 5: Whitespace cleanup
-        result = cleanWhitespace(in: result)
+        // Step 5: Whitespace cleanup — skip first-letter capitalisation for terminal
+        result = cleanWhitespace(in: result, capitalizeFirst: !isTerminalProfile)
 
         return TextProcessingResult(
             text: result,
@@ -176,7 +185,7 @@ public struct TextProcessingPipeline: Sendable {
 
     // MARK: - Step 5: Whitespace Cleanup
 
-    func cleanWhitespace(in text: String) -> String {
+    func cleanWhitespace(in text: String, capitalizeFirst: Bool = true) -> String {
         var result = text
 
         // 5a: Collapse multiple spaces
@@ -189,8 +198,6 @@ public struct TextProcessingPipeline: Sendable {
         }
 
         // 5a2: Clean spaces around newlines, preserving newline count
-        // "Hello, \n world" → "Hello,\nworld"
-        // "Hello, \n\n world" → "Hello,\n\nworld" (paragraph break preserved)
         if let regex = try? NSRegularExpression(pattern: " *(\n+) *") {
             result = regex.stringByReplacingMatches(
                 in: result,
@@ -211,9 +218,101 @@ public struct TextProcessingPipeline: Sendable {
         // 5c: Trim
         result = result.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // 5d: Capitalize first letter
-        if let first = result.first, first.isLowercase {
+        // 5d: Capitalize first letter (skipped for terminal profiles)
+        if capitalizeFirst, let first = result.first, first.isLowercase {
             result = first.uppercased() + result.dropFirst()
+        }
+
+        return result
+    }
+
+    // MARK: - Step 2.5: Terminal Symbol Expansion
+
+    private static let terminalSymbolMap: [(pattern: String, replacement: String)] = [
+        ("backslash", "\\"),
+        ("slash",     "/"),
+        ("tilde",     "~"),
+        ("underscore", "_"),
+        ("dollar sign", "$"),
+        ("dollar",    "$"),
+        ("at sign",   "@"),
+        ("at",        "@"),
+        ("hash",      "#"),
+        ("pound sign", "#"),
+        ("pound",     "#"),
+        ("asterisk",  "*"),
+        ("star",      "*"),
+        ("pipe",      "|"),
+        ("ampersand", "&"),
+        ("plus",      "+"),
+        ("equals sign", "="),
+        ("equals",    "="),
+        ("colon",     ":"),
+        ("semicolon", ";"),
+        ("question mark", "?"),
+        ("bang",      "!"),
+        ("exclamation mark", "!"),
+        ("exclamation", "!"),
+        ("backtick",  "`"),
+        ("open paren", "("),
+        ("close paren", ")"),
+        ("open bracket", "["),
+        ("close bracket", "]"),
+        ("open brace", "{"),
+        ("close brace", "}"),
+        ("less than", "<"),
+        ("left angle", "<"),
+        ("greater than", ">"),
+        ("right angle", ">"),
+        ("dash",      "-"),
+        ("hyphen",    "-"),
+        ("dot",       "."),
+        ("period",    "."),
+        ("percent",   "%"),
+        ("caret",     "^"),
+    ]
+
+    func expandTerminalSymbols(in text: String) -> String {
+        var result = text
+
+        for (spoken, literal) in Self.terminalSymbolMap {
+            let escaped = NSRegularExpression.escapedPattern(for: spoken)
+            let pattern = "(?i)\\b\(escaped)\\b"
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let literalEscaped = NSRegularExpression.escapedTemplate(for: literal)
+            result = regex.stringByReplacingMatches(
+                in: result,
+                range: NSRange(result.startIndex..., in: result),
+                withTemplate: literalEscaped
+            )
+        }
+
+        // Compact path-forming separators that sit between two word characters.
+        // "foo / bar" → "foo/bar", "readme . md" → "readme.md", "50 % done" → "50%done"
+        // Shell metacharacters (- * $ # | &) are left with their surrounding spaces
+        // because they carry meaning as flag prefixes, globs, or redirects.
+        let pathSeparators = #"[/\\._~@%]"#  // \\ = literal backslash in the char class
+        let pathCompact = #"(\w) (\#(pathSeparators)) (\w)"#
+        if let regex = try? NSRegularExpression(pattern: pathCompact) {
+            var keepGoing = true
+            while keepGoing {
+                let before = result
+                result = regex.stringByReplacingMatches(
+                    in: result,
+                    range: NSRange(result.startIndex..., in: result),
+                    withTemplate: "$1$2$3"
+                )
+                keepGoing = result != before
+            }
+        }
+
+        // Tilde home-dir prefix: "~ / dev" → "~/dev"
+        if let regex = try? NSRegularExpression(pattern: #"~\s+/\s*"#) {
+            result = regex.stringByReplacingMatches(
+                in: result,
+                range: NSRange(result.startIndex..., in: result),
+                withTemplate: "~/"
+            )
         }
 
         return result

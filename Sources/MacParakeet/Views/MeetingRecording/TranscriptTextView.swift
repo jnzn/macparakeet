@@ -123,8 +123,22 @@ struct TranscriptTextView: NSViewRepresentable {
         let speakerFont = NSFont.systemFont(ofSize: 11, weight: .medium)
         let dotFont = NSFont.systemFont(ofSize: 10, weight: .medium)
         let timestampFont = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
-        let textColor = NSColor.white.withAlphaComponent(0.9)
-        let timestampColor = NSColor.white.withAlphaComponent(0.3)
+        // Body/timestamp adapt to appearance: forest-green accent in light mode
+        // (white is unreadable on the off-white panel), unchanged white in dark.
+        // Dynamic NSColors resolve per-appearance at draw time inside the NSTextView,
+        // same pattern as MarkdownContentView and DesignSystem.adaptive.
+        let textColor = NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            return isDark
+                ? NSColor.white.withAlphaComponent(0.9)
+                : NSColor(red: 0.16, green: 0.45, blue: 0.27, alpha: 1)  // DesignSystem accent (light)
+        }
+        let timestampColor = NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            return isDark
+                ? NSColor.white.withAlphaComponent(0.3)
+                : NSColor(red: 0.16, green: 0.45, blue: 0.27, alpha: 0.45)  // muted accent (light)
+        }
 
         for (offset, line) in lineSlice.enumerated() {
             let globalIndex = startingIndex + offset

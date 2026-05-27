@@ -1,8 +1,14 @@
 # Auto-memory
 MEMORY.md
 
+# Private journal (telemetry analyses, postmortems, field notes — agent-only)
+journal/
+
 # Claude Code
 .claude/
+
+# Git worktrees
+.worktrees/
 
 # Xcode
 .build/
@@ -80,3 +86,4 @@ recup_dir*/
 
 # Swift code-coverage scratch files
 *.profraw
+scripts/dev/MacParakeetPDX.p12

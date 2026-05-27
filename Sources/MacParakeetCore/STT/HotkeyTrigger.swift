@@ -201,6 +201,7 @@ public struct HotkeyTrigger: Sendable {
         modifierKeyCode: 61  // 61 = physical right-option keyCode
     )
     public static let defaultMeetingRecording: HotkeyTrigger = .chord(modifiers: ["command", "shift"], keyCode: 46)
+    public static let defaultVoiceMemo: HotkeyTrigger = .chord(modifiers: ["option", "shift"], keyCode: 46)
 
     // MARK: - Factory
 
@@ -323,6 +324,11 @@ public struct HotkeyTrigger: Sendable {
             46,  // M
         ]
         if hasCommand && destructiveCmdKeys.contains(code) {
+            // Only bare Cmd+M maps to the system Minimize command; multi-modifier
+            // variants such as Cmd+Shift+M remain valid app-owned defaults.
+            if code == 46 && Set(modifiers ?? []) != ["command"] {
+                return .allowed
+            }
             return .warned("Conflicts with a common system shortcut.")
         }
 
@@ -333,6 +339,9 @@ public struct HotkeyTrigger: Sendable {
 
     public static let defaultsKey = "hotkeyTrigger"
     public static let meetingDefaultsKey = "meetingHotkeyTrigger"
+    public static let voiceMemoDefaultsKey = "voiceMemoHotkeyTrigger"
+    public static let fileTranscriptionDefaultsKey = "fileTranscriptionHotkeyTrigger"
+    public static let youtubeTranscriptionDefaultsKey = "youtubeTranscriptionHotkeyTrigger"
 
     /// Legacy modifier names from the old TriggerKey enum.
     private static let legacyModifiers: [String: HotkeyTrigger] = [

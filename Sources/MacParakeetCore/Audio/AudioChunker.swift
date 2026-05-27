@@ -152,7 +152,7 @@ public extension AudioChunker {
         frameCount: Int,
         channelCount: Int
     ) -> [Float] {
-        if channelCount == 1 {
+        guard channelCount == 2 else {
             return Array(UnsafeBufferPointer(start: channelData[0], count: frameCount))
         }
 
@@ -176,7 +176,7 @@ public extension AudioChunker {
         frameCount: Int,
         channelCount: Int
     ) -> [Float] {
-        if channelCount == 1 {
+        guard channelCount == 2 else {
             return Array(UnsafeBufferPointer(start: channelData[0], count: frameCount)).map {
                 Float($0) / Float(Int16.max)
             }
@@ -202,7 +202,7 @@ public extension AudioChunker {
         frameCount: Int,
         channelCount: Int
     ) -> [Float] {
-        if channelCount == 1 {
+        guard channelCount == 2 else {
             return Array(UnsafeBufferPointer(start: channelData[0], count: frameCount)).map {
                 Float($0) / Float(Int32.max)
             }

@@ -181,3 +181,59 @@ final class AudioChunkerTests: XCTestCase {
         XCTAssertEqual(samples?[3] ?? .nan, 0.0, accuracy: 0.0001)
     }
 }
+
+final class AudioChunkerMultiChannelTests: XCTestCase {
+    func test_downmix_sixChannels_returnsOnlyChannelZero() {
+        let frameCount = 4
+        let channelCount = 6
+        // Standard AVAudioFormat(channels:interleaved:) returns nil for >2 channels.
+        // Use a discrete channel layout to construct a valid 6-channel format.
+        guard let channelLayout = AVAudioChannelLayout(layoutTag: kAudioChannelLayoutTag_DiscreteInOrder | AVAudioChannelCount(channelCount)) else {
+            return XCTFail("Failed to create 6-channel layout")
+        }
+        let format = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 16000,
+            interleaved: false,
+            channelLayout: channelLayout
+        )
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frameCount)) else {
+            return XCTFail("Failed to create 6-channel PCM buffer")
+        }
+        buffer.frameLength = AVAudioFrameCount(frameCount)
+
+        guard let channelData = buffer.floatChannelData else {
+            return XCTFail("Missing float channel data")
+        }
+        for frame in 0..<frameCount { channelData[0][frame] = 1.0 }
+        for ch in 1..<channelCount { for frame in 0..<frameCount { channelData[ch][frame] = 0.0 } }
+
+        let result = AudioChunker.extractSamples(from: buffer)
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.first ?? .nan, Float(1.0), accuracy: Float(0.001),
+            "6-channel buffer should use only channel 0, not average all channels")
+    }
+
+    func test_downmix_stereo_averagesBothChannels() {
+        guard let format = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 16000,
+            channels: 2,
+            interleaved: false
+        ) else {
+            return XCTFail("Failed to create stereo Float32 format")
+        }
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4) else {
+            return XCTFail("Failed to create stereo PCM buffer")
+        }
+        buffer.frameLength = 4
+        guard let data = buffer.floatChannelData else {
+            return XCTFail("Missing float channel data")
+        }
+        for f in 0..<4 { data[0][f] = 1.0 }
+        for f in 0..<4 { data[1][f] = 0.0 }
+        let result = AudioChunker.extractSamples(from: buffer)
+        XCTAssertEqual(result?.first ?? .nan, Float(0.5), accuracy: Float(0.001),
+            "Stereo downmix must still average both channels")
+    }
+}

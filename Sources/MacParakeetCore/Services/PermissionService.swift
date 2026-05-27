@@ -11,6 +11,7 @@ public protocol PermissionServiceProtocol: Sendable {
     func requestScreenRecordingPermission() -> Bool
     func openMicrophoneSettings()
     func openScreenRecordingSettings()
+    func openAccessibilitySettings()
     func checkAccessibilityPermission() -> Bool
     func requestAccessibilityPermission(prompt: Bool) -> Bool
 }
@@ -59,14 +60,20 @@ public final class PermissionService: PermissionServiceProtocol, Sendable {
         NSWorkspace.shared.open(url)
     }
 
+    public func openAccessibilitySettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else {
+            return
+        }
+        NSWorkspace.shared.open(url)
+    }
+
     public func checkAccessibilityPermission() -> Bool {
         // AXIsProcessTrusted() checks if the app has Accessibility permission
         return AXIsProcessTrusted()
     }
 
     public func requestAccessibilityPermission(prompt: Bool = true) -> Bool {
-        let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
-        let options: CFDictionary = [promptKey: prompt] as CFDictionary
+        let options: CFDictionary = ["AXTrustedCheckOptionPrompt": prompt] as CFDictionary
         return AXIsProcessTrustedWithOptions(options)
     }
 }

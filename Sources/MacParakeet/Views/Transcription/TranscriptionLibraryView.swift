@@ -14,6 +14,12 @@ struct TranscriptionLibraryView: View {
 
     @State private var pendingDelete: Transcription?
 
+    private var visibleLibraryFilters: [LibraryFilter] {
+        LibraryFilter.allCases.filter { filter in
+            AppFeatures.meetingRecordingEnabled || filter != .meeting
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header
@@ -37,7 +43,7 @@ struct TranscriptionLibraryView: View {
             // Filter bar
             if showsFilterBar {
                 HStack(spacing: 0) {
-                    ForEach(LibraryFilter.allCases, id: \.self) { filter in
+                    ForEach(visibleLibraryFilters, id: \.self) { filter in
                         Button {
                             viewModel.filter = filter
                         } label: {
@@ -63,6 +69,14 @@ struct TranscriptionLibraryView: View {
                 .padding(.bottom, DesignSystem.Spacing.sm)
             }
 
+            if let errorMessage = viewModel.errorMessage {
+                Text(errorMessage)
+                    .font(DesignSystem.Typography.bodySmall)
+                    .foregroundStyle(DesignSystem.Colors.errorRed)
+                    .padding(.horizontal, DesignSystem.Spacing.lg)
+                    .padding(.bottom, DesignSystem.Spacing.sm)
+            }
+
             // Grid
             if viewModel.filteredTranscriptions.isEmpty {
                 emptyState
@@ -73,7 +87,11 @@ struct TranscriptionLibraryView: View {
                         spacing: DesignSystem.Spacing.md
                     ) {
                         ForEach(viewModel.filteredTranscriptions) { transcription in
-                            TranscriptionThumbnailCard(transcription: transcription, searchText: viewModel.searchText) {
+                            TranscriptionThumbnailCard(
+                                transcription: transcription,
+                                searchText: viewModel.searchText,
+                                isGeneratingTitle: viewModel.generatingTitleIDs.contains(transcription.id)
+                            ) {
                                 onSelect(transcription)
                             } menuContent: {
                                 libraryMenuItems(for: transcription)
@@ -130,6 +148,15 @@ struct TranscriptionLibraryView: View {
                 transcription.isFavorite ? "Remove from Favorites" : "Add to Favorites",
                 systemImage: transcription.isFavorite ? "star.slash" : "star"
             )
+        }
+
+        if viewModel.llmAvailable {
+            Button {
+                Task { await viewModel.generateTitle(for: transcription) }
+            } label: {
+                Label("Generate Title with AI", systemImage: "wand.and.stars")
+            }
+            .disabled(viewModel.generatingTitleIDs.contains(transcription.id))
         }
 
         Divider()

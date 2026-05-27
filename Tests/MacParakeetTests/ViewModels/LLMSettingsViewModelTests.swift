@@ -78,6 +78,16 @@ final class LLMSettingsViewModelTests: XCTestCase {
         XCTAssertTrue(viewModel.requiresAPIKey)
     }
 
+    func testOpenAICompatibleProviderStartsInCustomModelMode() {
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.selectedProviderID = .openaiCompatible
+
+        XCTAssertFalse(viewModel.requiresAPIKey)
+        XCTAssertTrue(viewModel.supportsAPIKey)
+        XCTAssertTrue(viewModel.useCustomModel)
+        XCTAssertTrue(viewModel.availableModels.isEmpty)
+    }
+
     // MARK: - Save
 
     func testSavePersistsToStore() {
@@ -106,6 +116,19 @@ final class LLMSettingsViewModelTests: XCTestCase {
 
         let saved = mockConfigStore.config
         XCTAssertEqual(saved?.baseURL.absoluteString, "https://my-server.com/v1")
+    }
+
+    func testOpenAICompatibleProviderRequiresEndpointBeforeSave() {
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.selectedProviderID = .openaiCompatible
+        viewModel.customModelName = "third-party-model"
+
+        XCTAssertFalse(viewModel.canSave)
+        XCTAssertEqual(viewModel.validationMessage, "Enter a valid HTTPS URL, or http:// for localhost, Tailscale (*.ts.net), .local, or private-network hosts.")
+
+        viewModel.baseURLOverride = "https://api.example.com/v1"
+
+        XCTAssertTrue(viewModel.canSave)
     }
 
     // MARK: - Load Existing
@@ -745,5 +768,50 @@ final class LLMSettingsViewModelTests: XCTestCase {
         viewModel.selectedProviderID = .openai
         XCTAssertTrue(viewModel.requiresAPIKey)
         XCTAssertFalse(viewModel.availableModels.isEmpty)
+    }
+
+    func testSaveOpenAICompatibleProviderPersistsCustomEndpoint() {
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.selectedProviderID = .openaiCompatible
+        viewModel.apiKeyInput = "sk-third-party"
+        viewModel.customModelName = "vendor/model"
+        viewModel.baseURLOverride = "https://api.example.com/v1"
+
+        viewModel.saveConfiguration()
+
+        let saved = mockConfigStore.config
+        XCTAssertEqual(saved?.id, .openaiCompatible)
+        XCTAssertEqual(saved?.apiKey, "sk-third-party")
+        XCTAssertEqual(saved?.modelName, "vendor/model")
+        XCTAssertEqual(saved?.baseURL.absoluteString, "https://api.example.com/v1")
+        XCTAssertEqual(saved?.isLocal, false)
+    }
+
+    func testSaveOpenAICompatibleProviderAllowsEmptyAPIKey() {
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.selectedProviderID = .openaiCompatible
+        viewModel.customModelName = "vendor/model"
+        viewModel.baseURLOverride = "https://api.example.com/v1"
+
+        viewModel.saveConfiguration()
+
+        let saved = mockConfigStore.config
+        XCTAssertEqual(saved?.id, .openaiCompatible)
+        XCTAssertNil(saved?.apiKey)
+    }
+
+    func testOpenAICompatibleLoopbackEndpointIsTreatedAsLocal() {
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.selectedProviderID = .openaiCompatible
+        viewModel.customModelName = "local-model"
+        viewModel.baseURLOverride = "http://localhost:8000/v1"
+
+        XCTAssertTrue(viewModel.isLocalConfiguration)
+
+        viewModel.saveConfiguration()
+
+        let saved = mockConfigStore.config
+        XCTAssertEqual(saved?.id, .openaiCompatible)
+        XCTAssertEqual(saved?.isLocal, true)
     }
 }

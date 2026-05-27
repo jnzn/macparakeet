@@ -22,6 +22,52 @@ public protocol AppRuntimePreferencesProtocol: Sendable {
     /// extra round-trip at paste-time adds user-visible latency for diminishing
     /// returns. Opt-in for users who want the extra polish.
     var formatPasteWithAI: Bool { get }
+    var selectedMicrophoneDeviceUID: String? { get }
+    var meetingAudioSourceMode: MeetingAudioSourceMode { get }
+}
+
+public enum MeetingAudioSourceMode: String, CaseIterable, Hashable, Sendable, Equatable {
+    case microphoneAndSystem = "microphone_and_system"
+    case systemOnly = "system_only"
+    case microphoneOnly = "microphone_only"
+
+    public var capturesMicrophone: Bool {
+        self == .microphoneAndSystem || self == .microphoneOnly
+    }
+
+    public var capturesSystemAudio: Bool {
+        self == .microphoneAndSystem || self == .systemOnly
+    }
+
+    public var displayTitle: String {
+        switch self {
+        case .microphoneAndSystem:
+            return "Microphone + System Audio"
+        case .systemOnly:
+            return "System Audio Only"
+        case .microphoneOnly:
+            return "Microphone Only"
+        }
+    }
+
+    public var detail: String {
+        switch self {
+        case .microphoneAndSystem:
+            return "Capture your microphone and computer audio. Weak mic bleed is suppressed live."
+        case .systemOnly:
+            return "Capture computer audio for meetings. Your microphone is still used for dictation."
+        case .microphoneOnly:
+            return "Capture only your microphone. No system audio recording permission required."
+        }
+    }
+
+    public static func current(defaults: UserDefaults = .standard) -> MeetingAudioSourceMode {
+        guard let raw = defaults.string(forKey: UserDefaultsAppRuntimePreferences.meetingAudioSourceModeKey),
+              let mode = MeetingAudioSourceMode(rawValue: raw) else {
+            return .microphoneAndSystem
+        }
+        return mode
+    }
 }
 
 public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProtocol, @unchecked Sendable {
@@ -40,6 +86,8 @@ public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProto
     public static let streamingOverlayEnabledKey = "streamingOverlayEnabled"
     public static let liveBubbleCleanupEnabledKey = "liveBubbleCleanupEnabled"
     public static let formatPasteWithAIKey = "formatPasteWithAI"
+    public static let selectedMicrophoneDeviceUIDKey = "selectedMicrophoneDeviceUID"
+    public static let meetingAudioSourceModeKey = "meetingAudioSourceMode"
 
     private let defaults: UserDefaults
 
@@ -94,5 +142,13 @@ public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProto
 
     public var formatPasteWithAI: Bool {
         defaults.object(forKey: Self.formatPasteWithAIKey) as? Bool ?? false
+    }
+
+    public var selectedMicrophoneDeviceUID: String? {
+        AudioDeviceManager.normalizedUID(defaults.string(forKey: Self.selectedMicrophoneDeviceUIDKey))
+    }
+
+    public var meetingAudioSourceMode: MeetingAudioSourceMode {
+        MeetingAudioSourceMode.current(defaults: defaults)
     }
 }

@@ -4,6 +4,9 @@ import AppKit
 #if canImport(ApplicationServices)
 import ApplicationServices
 #endif
+#if canImport(Vision)
+import Vision
+#endif
 import Foundation
 
 /// Snapshot of what the user is dictating *into* at the moment `startRecording`
@@ -20,23 +23,39 @@ public struct AppContext: Equatable, Sendable {
     public let windowTitle: String?
     public let focusedFieldValue: String?
     public let selectedText: String?
+    /// Visible text content from the active window (AX tree or OCR).
+    /// Only populated when an LLM is configured. Capped at ~1500 chars.
+    public let windowContent: String?
 
     public init(
         bundleID: String? = nil,
         windowTitle: String? = nil,
         focusedFieldValue: String? = nil,
-        selectedText: String? = nil
+        selectedText: String? = nil,
+        windowContent: String? = nil
     ) {
         self.bundleID = bundleID
         self.windowTitle = windowTitle
         self.focusedFieldValue = focusedFieldValue
         self.selectedText = selectedText
+        self.windowContent = windowContent
     }
 
-    /// True when none of the three content signals came back with text. A
-    /// bundle ID alone is not enough to warrant a context block in the prompt.
+    /// Returns a copy with `windowContent` filled in.
+    public func withWindowContent(_ content: String) -> AppContext {
+        AppContext(
+            bundleID: bundleID,
+            windowTitle: windowTitle,
+            focusedFieldValue: focusedFieldValue,
+            selectedText: selectedText,
+            windowContent: content
+        )
+    }
+
+    /// True when none of the content signals came back with text.
+    /// A bundle ID alone is not enough to warrant a context block in the prompt.
     public var isEmpty: Bool {
-        isBlank(windowTitle) && isBlank(focusedFieldValue) && isBlank(selectedText)
+        isBlank(windowTitle) && isBlank(focusedFieldValue) && isBlank(selectedText) && isBlank(windowContent)
     }
 
     /// Context hint lines to prepend to the cleanup prompt. Returns empty
@@ -45,7 +64,8 @@ public struct AppContext: Equatable, Sendable {
     /// an entire document.
     public func asPromptBlock(
         maxFieldChars: Int = 300,
-        maxSelectionChars: Int = 500
+        maxSelectionChars: Int = 500,
+        maxWindowContentChars: Int = 1500
     ) -> String {
         var lines: [String] = []
         if let windowTitle, !isBlank(windowTitle) {
@@ -58,6 +78,11 @@ public struct AppContext: Equatable, Sendable {
         if let selectedText, !isBlank(selectedText) {
             let cleaned = selectedText.trimmingCharacters(in: .whitespacesAndNewlines)
             lines.append("- Selected text: \"\(Self.truncate(cleaned, limit: maxSelectionChars))\"")
+        }
+        if let windowContent, !isBlank(windowContent) {
+            let cleaned = windowContent.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Explicit instruction so the model doesn't reproduce document content in output.
+            lines.append("- Active window content (reference only — do NOT reproduce in output): \"\(Self.truncate(cleaned, limit: maxWindowContentChars))\"")
         }
         return lines.joined(separator: "\n")
     }
@@ -316,4 +341,140 @@ public enum AppContextService {
         return value as? T
     }
     #endif
+
+    // MARK: - Window Content Capture
+
+    /// Synchronous best-effort extraction of visible text from the frontmost window.
+    /// Designed to run inside a `Task.detached` block while the user is speaking.
+    ///
+    /// Tier 1 — Accessibility text (native apps, <5ms):
+    ///   Reads the focused window's content elements via AX. Works for Mail, Notes,
+    ///   Obsidian, Bear, most Cocoa apps. Silent Electron fallback to Tier 2.
+    ///
+    /// Tier 2 — Vision OCR on a silent window screenshot (~100–200ms):
+    ///   `CGWindowListCreateImage` captures the specific window without any visual
+    ///   disruption (no flash, no focus steal). `VNRecognizeTextRequest` (.fast mode)
+    ///   extracts text locally. Requires Screen Recording permission (already granted
+    ///   for meeting recording).
+    ///
+    /// Returns nil when the app is blocklisted, AX is denied, or both tiers fail.
+    public static func captureWindowContent(maxChars: Int = 1500, timeoutSeconds: Float = 0.1) -> String? {
+        #if canImport(AppKit)
+        guard let frontApp = NSWorkspace.shared.frontmostApplication,
+              !isBlocklisted(bundleID: frontApp.bundleIdentifier) else { return nil }
+        let pid = frontApp.processIdentifier
+
+        // Tier 1: Accessibility text tree
+        #if canImport(ApplicationServices)
+        if let text = axContentText(pid: pid, maxChars: maxChars, timeoutSeconds: timeoutSeconds) {
+            return text
+        }
+        #endif
+
+        // Tier 2: Silent window screenshot + Vision OCR
+        guard let windowID = frontmostWindowID(pid: pid) else { return nil }
+        return visionWindowOCR(windowID: windowID, maxChars: maxChars)
+        #else
+        return nil
+        #endif
+    }
+
+    #if canImport(AppKit)
+    /// CGWindowID of the frontmost on-screen window belonging to `pid`, or nil.
+    private static func frontmostWindowID(pid: pid_t) -> CGWindowID? {
+        guard let list = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements],
+            kCGNullWindowID
+        ) as? [[String: Any]] else { return nil }
+
+        // Window list is front-to-back; first match for this PID at layer 0 is frontmost.
+        return list.first { dict in
+            (dict[kCGWindowOwnerPID as String] as? Int32) == pid &&
+            (dict[kCGWindowLayer as String] as? Int) == 0
+        }.flatMap { dict in
+            dict[kCGWindowNumber as String] as? CGWindowID
+        }
+    }
+    #endif
+
+    #if canImport(AppKit) && canImport(ApplicationServices)
+    /// Lightweight AX text extraction: checks the focused window's immediate
+    /// content elements (AXTextArea, AXWebArea, AXScrollArea) up to one level
+    /// deep. Avoids full-tree walks that stall on complex Electron shells.
+    private static func axContentText(pid: pid_t, maxChars: Int, timeoutSeconds: Float) -> String? {
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, timeoutSeconds)
+
+        guard let window: AXUIElement = copyAXAttribute(app, kAXFocusedWindowAttribute as CFString) else {
+            return nil
+        }
+
+        // Some native text editors expose the whole document directly.
+        if let doc: String = copyAXAttribute(window, kAXDocumentAttribute as CFString), !doc.isEmpty {
+            return doc.count > maxChars ? String(doc.prefix(maxChars)) + "…" : doc
+        }
+
+        let contentRoles: Set<String> = ["AXTextArea", "AXWebArea", "AXTextView"]
+        var collected: [String] = []
+
+        func harvest(_ element: AXUIElement) {
+            guard collected.joined().count < maxChars else { return }
+            if let role: String = copyAXAttribute(element, kAXRoleAttribute as CFString),
+               contentRoles.contains(role),
+               let value: String = copyAXAttribute(element, kAXValueAttribute as CFString),
+               !value.isEmpty {
+                collected.append(value)
+            }
+        }
+
+        // Walk immediate children, then one level deeper inside scroll areas.
+        if let children: [AXUIElement] = copyAXAttribute(window, kAXChildrenAttribute as CFString) {
+            for child in children {
+                harvest(child)
+                if let grandchildren: [AXUIElement] = copyAXAttribute(child, kAXChildrenAttribute as CFString) {
+                    for grandchild in grandchildren { harvest(grandchild) }
+                }
+            }
+        }
+
+        let result = collected.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !result.isEmpty else { return nil }
+        return result.count > maxChars ? String(result.prefix(maxChars)) + "…" : result
+    }
+    #endif
+
+    /// Captures a silent screenshot of the given window and extracts text with
+    /// Vision OCR (.fast mode, no language correction). Returns nil if Screen
+    /// Recording permission is unavailable or the window is gone.
+    private static func visionWindowOCR(windowID: CGWindowID, maxChars: Int) -> String? {
+        #if canImport(Vision) && canImport(AppKit)
+        // TODO: migrate to SCScreenshotManager when the call site becomes async.
+        // CGWindowListCreateImage is deprecated in macOS 14 but still functional;
+        // SCScreenshotManager requires an async context incompatible with this sync path.
+        guard let image = CGWindowListCreateImage(
+            .null,
+            .optionIncludingWindow,
+            windowID,
+            [.boundsIgnoreFraming, .nominalResolution]
+        ) else { return nil }
+
+        var extracted: String?
+        let request = VNRecognizeTextRequest { req, _ in
+            guard let observations = req.results as? [VNRecognizedTextObservation] else { return }
+            let text = observations
+                .compactMap { $0.topCandidates(1).first?.string }
+                .joined(separator: " ")
+            extracted = text.isEmpty ? nil : text
+        }
+        request.recognitionLevel = .fast
+        request.usesLanguageCorrection = false
+
+        try? VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
+
+        guard let text = extracted, !text.isEmpty else { return nil }
+        return text.count > maxChars ? String(text.prefix(maxChars)) + "…" : text
+        #else
+        return nil
+        #endif
+    }
 }

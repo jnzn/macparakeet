@@ -85,7 +85,7 @@ struct HotkeyRecorderView: View {
                     Divider()
                 }
 
-                Button("Reset to Default (\(defaultTrigger.shortSymbol))") {
+                Button("Reset to Default (\(Self.resetLabel(for: defaultTrigger)))") {
                     resetToDefault()
                 }
                 .disabled(trigger == defaultTrigger)
@@ -300,6 +300,12 @@ struct HotkeyRecorderView: View {
         case .sideSpecific:
             return HotkeyTrigger(kind: .modifier, modifierName: name, keyCode: nil, modifierKeyCode: keyCode)
         }
+    }
+
+    static func resetLabel(for trigger: HotkeyTrigger) -> String {
+        if trigger == .fn { return "🌐 Fn" }
+        if trigger.kind == .modifier { return trigger.displayName }
+        return trigger.shortSymbol
     }
 
     private func stopRecording() {

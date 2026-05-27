@@ -80,6 +80,12 @@ struct MeetingRecordingPillView: View {
                 SpinnerRingView(size: 26)
             }
             .transition(.opacity.animation(.easeInOut(duration: 0.3)))
+        case .enhancing:
+            statusPill(
+                icon: AnyView(SpinnerRingView(size: 18)),
+                title: "Enhancing transcript…"
+            )
+            .transition(.opacity.animation(.easeInOut(duration: 0.3)))
         case .completed:
             iconPill {
                 MeetingCompletionCheckmarkView()
@@ -209,6 +215,12 @@ struct MeetingRecordingPillView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Recording meeting, \(viewModel.formattedElapsed) elapsed")
+        .accessibilityAction {
+            onTap?()
+        }
+        .accessibilityAction(named: Text("End and transcribe")) {
+            viewModel.onStop?()
+        }
     }
 
     private var pillBackground: some View {

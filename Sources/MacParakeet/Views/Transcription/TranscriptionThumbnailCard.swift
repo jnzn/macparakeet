@@ -7,6 +7,7 @@ private let sharedThumbnailCache = ThumbnailCacheService.shared
 struct TranscriptionThumbnailCard<MenuContent: View>: View {
     let transcription: Transcription
     var searchText: String = ""
+    var isGeneratingTitle: Bool = false
     var onTap: () -> Void
     @ViewBuilder var menuContent: () -> MenuContent
 
@@ -36,6 +37,22 @@ struct TranscriptionThumbnailCard<MenuContent: View>: View {
             moreButton
                 .opacity(hovered ? 1 : 0)
                 .allowsHitTesting(hovered)
+        }
+        .overlay {
+            if isGeneratingTitle {
+                RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
+                    .fill(.black.opacity(0.35))
+                    .overlay {
+                        VStack(spacing: DesignSystem.Spacing.sm) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Generating title…")
+                                .font(DesignSystem.Typography.caption)
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    .allowsHitTesting(false)
+            }
         }
         .onHover { hovered = $0 }
         .animation(DesignSystem.Animation.hoverTransition, value: hovered)
@@ -158,6 +175,13 @@ struct TranscriptionThumbnailCard<MenuContent: View>: View {
         }
     }
 
+    private var displayTitle: String {
+        if let derived = transcription.derivedTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !derived.isEmpty {
+            return derived
+        }
+        return transcription.fileName
+    }
+
     private var sourceIcon: String {
         if transcription.sourceURL != nil {
             return "play.rectangle.fill"
@@ -171,7 +195,7 @@ struct TranscriptionThumbnailCard<MenuContent: View>: View {
 
     private var infoArea: some View {
         VStack(alignment: .leading, spacing: 4) {
-            highlightedText(transcription.fileName)
+            highlightedText(displayTitle)
                 .font(DesignSystem.Typography.bodySmall.weight(.medium))
                 .foregroundStyle(DesignSystem.Colors.textPrimary)
                 .lineLimit(2)
@@ -190,6 +214,13 @@ struct TranscriptionThumbnailCard<MenuContent: View>: View {
                 Text(transcription.createdAt.relativeFormatted)
                     .font(DesignSystem.Typography.caption)
                     .foregroundStyle(DesignSystem.Colors.textTertiary)
+                    .lineLimit(1)
+            }
+
+            if transcription.recoveredFromCrash {
+                Label("Recovered", systemImage: "wrench.and.screwdriver")
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(DesignSystem.Colors.warningAmber)
                     .lineLimit(1)
             }
         }
