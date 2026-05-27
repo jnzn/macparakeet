@@ -70,7 +70,9 @@ final class AppEnvironment {
             selectedInputDeviceUIDProvider: selectedInputDeviceUIDProvider
         )
         meetingRecordingService = MeetingRecordingService(
+            micProcessingMode: .vpioPreferred,
             audioCaptureService: MeetingAudioCaptureService(
+                micProcessingMode: .vpioPreferred,
                 selectedInputDeviceUIDProvider: selectedInputDeviceUIDProvider,
                 sourceModeProvider: meetingAudioSourceModeProvider
             ),

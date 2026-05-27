@@ -4,9 +4,11 @@ import AppKit
 @MainActor
 public protocol ExportServiceProtocol: Sendable {
     func exportToTxt(transcription: Transcription, url: URL) throws
+    func exportToTxt(transcription: Transcription, url: URL, options: TranscriptExportOptions) throws
     func exportToSRT(transcription: Transcription, url: URL) throws
     func exportToVTT(transcription: Transcription, url: URL) throws
     func exportToMarkdown(transcription: Transcription, url: URL) throws
+    func exportToMarkdown(transcription: Transcription, url: URL, options: TranscriptExportOptions) throws
     func exportToJSON(transcription: Transcription, url: URL) throws
     @MainActor func exportToPDF(transcription: Transcription, url: URL) throws
     @MainActor func exportToDocx(transcription: Transcription, url: URL) throws
@@ -16,6 +18,15 @@ public protocol ExportServiceProtocol: Sendable {
     func formatVTT(words: [WordTimestamp], speakers: [SpeakerInfo]?) -> String
     func formatMarkdown(transcription: Transcription) -> String
     func formatForClipboard(transcription: Transcription) -> String
+}
+
+public extension ExportServiceProtocol {
+    func exportToTxt(transcription: Transcription, url: URL, options: TranscriptExportOptions) throws {
+        try exportToTxt(transcription: transcription, url: url)
+    }
+    func exportToMarkdown(transcription: Transcription, url: URL, options: TranscriptExportOptions) throws {
+        try exportToMarkdown(transcription: transcription, url: url)
+    }
 }
 
 public struct TranscriptExportOptions: Sendable, Equatable {
