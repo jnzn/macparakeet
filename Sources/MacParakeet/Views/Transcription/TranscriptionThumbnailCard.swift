@@ -7,6 +7,7 @@ private let sharedThumbnailCache = ThumbnailCacheService.shared
 struct TranscriptionThumbnailCard<MenuContent: View>: View {
     let transcription: Transcription
     var searchText: String = ""
+    var isGeneratingTitle: Bool = false
     var onTap: () -> Void
     @ViewBuilder var menuContent: () -> MenuContent
 
@@ -36,6 +37,22 @@ struct TranscriptionThumbnailCard<MenuContent: View>: View {
             moreButton
                 .opacity(hovered ? 1 : 0)
                 .allowsHitTesting(hovered)
+        }
+        .overlay {
+            if isGeneratingTitle {
+                RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
+                    .fill(.black.opacity(0.35))
+                    .overlay {
+                        VStack(spacing: DesignSystem.Spacing.sm) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Generating title…")
+                                .font(DesignSystem.Typography.caption)
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    .allowsHitTesting(false)
+            }
         }
         .onHover { hovered = $0 }
         .animation(DesignSystem.Animation.hoverTransition, value: hovered)

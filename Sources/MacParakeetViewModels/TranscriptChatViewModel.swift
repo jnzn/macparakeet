@@ -282,6 +282,14 @@ public final class TranscriptChatViewModel {
         transcriptText = text
     }
 
+    /// Snapshot of the in-memory live chat history (model-level messages),
+    /// used to carry a mid-recording Ask-tab thread over to the background
+    /// transcription processor, which promotes it to a persisted conversation
+    /// once the transcription exists.
+    public func liveChatHistorySnapshot() -> [ChatMessage] {
+        chatHistory
+    }
+
     /// Promotes an in-memory live chat (no transcriptionId, no conversationRepo)
     /// into a persisted `ChatConversation` linked to a finalized transcription.
     /// Call this once after `sendMessage()` was used in live in-memory mode and the

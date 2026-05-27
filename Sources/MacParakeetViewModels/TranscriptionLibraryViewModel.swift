@@ -77,15 +77,36 @@ public final class TranscriptionLibraryViewModel {
     public var nowProvider: @Sendable () -> Date = { Date() }
     public var calendar: Calendar = .autoupdatingCurrent
 
+    /// True when an LLM provider is configured — gates the "Generate Title"
+    /// action in the UI.
+    public private(set) var llmAvailable: Bool = false
+    /// IDs of transcriptions whose title is currently being generated, so the
+    /// card can show a spinner and the action can avoid double-fires.
+    public private(set) var generatingTitleIDs: Set<UUID> = []
+
     private var transcriptionRepo: TranscriptionRepositoryProtocol?
+    private var llmService: LLMServiceProtocol?
     public let scope: TranscriptionLibraryScope
 
     public init(scope: TranscriptionLibraryScope = .all) {
         self.scope = scope
     }
 
-    public func configure(transcriptionRepo: TranscriptionRepositoryProtocol) {
+    public func configure(
+        transcriptionRepo: TranscriptionRepositoryProtocol,
+        llmService: LLMServiceProtocol? = nil
+    ) {
         self.transcriptionRepo = transcriptionRepo
+        self.llmService = llmService
+        self.llmAvailable = llmService != nil
+    }
+
+    /// Update LLM availability when the user configures (or clears) a provider
+    /// mid-session. Stores the service so the title action works without a
+    /// relaunch.
+    public func updateLLMAvailability(_ available: Bool, llmService: LLMServiceProtocol?) {
+        self.llmAvailable = available
+        self.llmService = available ? llmService : nil
     }
 
     private func recomputeFiltered() {
@@ -176,6 +197,34 @@ public final class TranscriptionLibraryViewModel {
         } catch {
             logger.error("Failed to update transcription favorite: \(error.localizedDescription, privacy: .private)")
             errorMessage = "Failed to update favorite: \(error.localizedDescription)"
+        }
+    }
+
+    /// Generate a concise title via the configured LLM and rename the item.
+    /// No-ops when no provider is configured, the transcript is empty, or a
+    /// generation for this id is already in flight. Best-effort: failures are
+    /// logged and surfaced via `errorMessage`, never thrown.
+    public func generateTitle(for transcription: Transcription) async {
+        guard let llmService else { return }
+        guard !generatingTitleIDs.contains(transcription.id) else { return }
+        let text = transcription.cleanTranscript ?? transcription.rawTranscript ?? ""
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+
+        generatingTitleIDs.insert(transcription.id)
+        defer { generatingTitleIDs.remove(transcription.id) }
+
+        do {
+            errorMessage = nil
+            let title = try await llmService.generateTitle(transcript: text)
+            guard !title.isEmpty, title != transcription.fileName else { return }
+            try transcriptionRepo?.updateFileName(id: transcription.id, fileName: title)
+            if let idx = transcriptions.firstIndex(where: { $0.id == transcription.id }) {
+                transcriptions[idx].fileName = title
+                transcriptions[idx].derivedTitle = title
+            }
+        } catch {
+            logger.error("Failed to generate title: \(error.localizedDescription, privacy: .private)")
+            errorMessage = "Couldn't generate a title. Check your AI provider settings."
         }
     }
 
