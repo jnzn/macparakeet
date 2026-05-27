@@ -317,6 +317,15 @@ public final class SettingsViewModel {
             defaults.set(meetingAutoSaveFormat.rawValue, forKey: AutoSaveScope.meeting.formatKey)
         }
     }
+    public var meetingAutoSaveIncludeTimestamps: Bool {
+        didSet { defaults.set(meetingAutoSaveIncludeTimestamps, forKey: AutoSaveScope.meeting.includeTimestampsKey) }
+    }
+    public var meetingAutoSaveIncludeSpeakers: Bool {
+        didSet { defaults.set(meetingAutoSaveIncludeSpeakers, forKey: AutoSaveScope.meeting.includeSpeakersKey) }
+    }
+    public var meetingAutoSaveIncludeMetadata: Bool {
+        didSet { defaults.set(meetingAutoSaveIncludeMetadata, forKey: AutoSaveScope.meeting.includeMetadataKey) }
+    }
     public var meetingAutoSaveFolderPath: String?
 
     // Calendar auto-start (ADR-017)
@@ -517,6 +526,9 @@ public final class SettingsViewModel {
         autoSaveFolderPath = Self.resolveAutoSaveFolderPath(defaults: defaults, scope: .transcription)
         meetingAutoSave = defaults.bool(forKey: AutoSaveScope.meeting.enabledKey)
         meetingAutoSaveFormat = AutoSaveFormat(rawValue: defaults.string(forKey: AutoSaveScope.meeting.formatKey) ?? "md") ?? .md
+        meetingAutoSaveIncludeTimestamps = defaults.object(forKey: AutoSaveScope.meeting.includeTimestampsKey) as? Bool ?? true
+        meetingAutoSaveIncludeSpeakers = defaults.object(forKey: AutoSaveScope.meeting.includeSpeakersKey) as? Bool ?? true
+        meetingAutoSaveIncludeMetadata = defaults.object(forKey: AutoSaveScope.meeting.includeMetadataKey) as? Bool ?? true
         meetingAutoSaveFolderPath = Self.resolveAutoSaveFolderPath(defaults: defaults, scope: .meeting)
         calendarAutoStartMode = Self.resolveCalendarAutoStartMode(defaults: defaults)
         calendarReminderMinutes = Self.resolveCalendarReminderMinutes(defaults: defaults)

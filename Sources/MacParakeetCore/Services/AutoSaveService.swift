@@ -47,6 +47,27 @@ public enum AutoSaveScope: String, Sendable {
         case .meeting: return "meetingAutoSaveFolderBookmark"
         }
     }
+
+    public var includeTimestampsKey: String {
+        switch self {
+        case .transcription: return "autoSaveIncludeTimestamps"
+        case .meeting: return "meetingAutoSaveIncludeTimestamps"
+        }
+    }
+
+    public var includeSpeakersKey: String {
+        switch self {
+        case .transcription: return "autoSaveIncludeSpeakers"
+        case .meeting: return "meetingAutoSaveIncludeSpeakers"
+        }
+    }
+
+    public var includeMetadataKey: String {
+        switch self {
+        case .transcription: return "autoSaveIncludeMetadata"
+        case .meeting: return "meetingAutoSaveIncludeMetadata"
+        }
+    }
 }
 
 /// Automatically saves completed transcriptions to a user-chosen folder.
@@ -96,9 +117,15 @@ public final class AutoSaveService {
             // Ensure the folder still exists
             try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
 
+            let contentOptions = TranscriptExportOptions(
+                includeTimestamps: defaults.object(forKey: scope.includeTimestampsKey) as? Bool ?? true,
+                includeSpeakerLabels: defaults.object(forKey: scope.includeSpeakersKey) as? Bool ?? true,
+                includeMetadata: defaults.object(forKey: scope.includeMetadataKey) as? Bool ?? true
+            )
+
             switch format {
-            case .txt: try exportService.exportToTxt(transcription: transcription, url: fileURL)
-            case .md: try exportService.exportToMarkdown(transcription: transcription, url: fileURL)
+            case .txt: try exportService.exportToTxt(transcription: transcription, url: fileURL, options: contentOptions)
+            case .md: try exportService.exportToMarkdown(transcription: transcription, url: fileURL, options: contentOptions)
             case .srt: try exportService.exportToSRT(transcription: transcription, url: fileURL)
             case .vtt: try exportService.exportToVTT(transcription: transcription, url: fileURL)
             case .json: try exportService.exportToJSON(transcription: transcription, url: fileURL)
