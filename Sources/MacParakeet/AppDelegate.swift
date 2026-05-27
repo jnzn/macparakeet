@@ -343,6 +343,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 },
                 onRecoverPendingMeetingRecordings: { [weak self] in
                     self?.meetingRecoveryCoordinator.presentPendingMeetingRecoveryDialog()
+                },
+                onMeetingProcessingCountChanged: { [weak self] count in
+                    self?.menuBarCoordinator.setProcessingCount(count)
                 }
             )
         )

@@ -87,7 +87,11 @@ struct TranscriptionLibraryView: View {
                         spacing: DesignSystem.Spacing.md
                     ) {
                         ForEach(viewModel.filteredTranscriptions) { transcription in
-                            TranscriptionThumbnailCard(transcription: transcription, searchText: viewModel.searchText) {
+                            TranscriptionThumbnailCard(
+                                transcription: transcription,
+                                searchText: viewModel.searchText,
+                                isGeneratingTitle: viewModel.generatingTitleIDs.contains(transcription.id)
+                            ) {
                                 onSelect(transcription)
                             } menuContent: {
                                 libraryMenuItems(for: transcription)
@@ -144,6 +148,15 @@ struct TranscriptionLibraryView: View {
                 transcription.isFavorite ? "Remove from Favorites" : "Add to Favorites",
                 systemImage: transcription.isFavorite ? "star.slash" : "star"
             )
+        }
+
+        if viewModel.llmAvailable {
+            Button {
+                Task { await viewModel.generateTitle(for: transcription) }
+            } label: {
+                Label("Generate Title with AI", systemImage: "wand.and.stars")
+            }
+            .disabled(viewModel.generatingTitleIDs.contains(transcription.id))
         }
 
         Divider()

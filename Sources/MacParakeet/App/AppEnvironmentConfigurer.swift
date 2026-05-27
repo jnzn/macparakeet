@@ -29,6 +29,9 @@ final class AppEnvironmentConfigurer {
         let onHotkeyBecameAvailable: () -> Void
         let onHotkeyUnavailable: () -> Void
         let onRecoverPendingMeetingRecordings: () -> Void
+        /// Number of meetings transcribing in the background changed — drives
+        /// the menu-bar "N processing" row and the processing icon state.
+        let onMeetingProcessingCountChanged: (Int) -> Void
     }
 
     private let transcriptionViewModel: TranscriptionViewModel
@@ -100,8 +103,14 @@ final class AppEnvironmentConfigurer {
             promptResultsViewModel: promptResultsViewModel
         )
         historyViewModel.configure(dictationRepo: env.dictationRepo)
-        libraryViewModel.configure(transcriptionRepo: env.transcriptionRepo)
-        meetingsViewModel.configure(transcriptionRepo: env.transcriptionRepo)
+        libraryViewModel.configure(
+            transcriptionRepo: env.transcriptionRepo,
+            llmService: hasLLMConfig ? env.llmService : nil
+        )
+        meetingsViewModel.configure(
+            transcriptionRepo: env.transcriptionRepo,
+            llmService: hasLLMConfig ? env.llmService : nil
+        )
         settingsViewModel.configure(
             permissionService: env.permissionService,
             dictationRepo: env.dictationRepo,
@@ -221,6 +230,31 @@ final class AppEnvironmentConfigurer {
         )
         coordinatorRefs.dictation = dictationCoordinator
 
+        let meetingBackgroundProcessor = MeetingBackgroundProcessor(
+            transcriptionService: env.transcriptionService,
+            meetingRecordingService: env.meetingRecordingService,
+            transcriptionRepo: env.transcriptionRepo,
+            conversationRepo: env.chatConversationRepo,
+            llmService: hasLLMConfig ? env.llmService : nil,
+            onTranscriptionReady: { [weak self] transcription in
+                guard let self else { return }
+                self.transcriptionViewModel.presentCompletedTranscription(transcription, autoSave: true)
+                self.libraryViewModel.loadTranscriptions()
+                self.meetingsViewModel.loadTranscriptions()
+                // A backgrounded meeting can finish while the user is recording
+                // (or doing) something else. Don't yank focus to it — it just
+                // appears in the Library. Only navigate when nothing is active.
+                let recordingActive = coordinatorRefs.meeting?.isMeetingRecordingActive == true
+                if !recordingActive {
+                    self.mainWindowState.navigateToTranscription(from: .meetings)
+                    callbacks.onOpenMainWindow()
+                }
+            },
+            onProcessingCountChanged: { count in
+                callbacks.onMeetingProcessingCountChanged(count)
+            }
+        )
+
         let meetingCoordinator = MeetingRecordingFlowCoordinator(
             meetingRecordingService: env.meetingRecordingService,
             transcriptionService: env.transcriptionService,
@@ -230,15 +264,8 @@ final class AppEnvironmentConfigurer {
             configStore: env.llmConfigStore,
             meetingAudioSourceModeProvider: { env.runtimePreferences.meetingAudioSourceMode },
             llmService: hasLLMConfig ? env.llmService : nil,
+            backgroundProcessor: meetingBackgroundProcessor,
             onMenuBarIconUpdate: { _ in callbacks.onMenuBarIconUpdate() },
-            onTranscriptionReady: { [weak self] transcription in
-                guard let self else { return }
-                self.transcriptionViewModel.presentCompletedTranscription(transcription, autoSave: true)
-                self.libraryViewModel.loadTranscriptions()
-                self.meetingsViewModel.loadTranscriptions()
-                self.mainWindowState.navigateToTranscription(from: .meetings)
-                callbacks.onOpenMainWindow()
-            },
             onRecordingBegan: {
                 coordinatorRefs.dictation?.hideIdlePill()
             },
@@ -394,6 +421,8 @@ final class AppEnvironmentConfigurer {
         let hasConfig = (try? env.llmConfigStore.loadConfig()) != nil
         let service: LLMService? = hasConfig ? env.llmService : nil
         transcriptionViewModel.updateLLMAvailability(hasConfig, llmService: service)
+        libraryViewModel.updateLLMAvailability(hasConfig, llmService: service)
+        meetingsViewModel.updateLLMAvailability(hasConfig, llmService: service)
         chatViewModel.updateLLMService(service)
         promptResultsViewModel.updateLLMService(service)
         liveMeetingCoordinator?.updateLLMService(service)

@@ -212,4 +212,48 @@ final class TranscriptionLibraryViewModelTests: XCTestCase {
         let fetched = try repo.fetch(id: t.id)
         XCTAssertNil(fetched)
     }
+
+    // MARK: - Generate Title
+
+    func testGenerateTitleRenamesAndPersists() async throws {
+        let llm = MockLLMService()
+        llm.summarizeResult = "Q2 Roadmap Sync"
+        vm.configure(transcriptionRepo: repo, llmService: llm)
+
+        let t = Transcription(fileName: "audio_2026.m4a", rawTranscript: "we discussed the roadmap", status: .completed)
+        try repo.save(t)
+        vm.loadTranscriptions()
+
+        await vm.generateTitle(for: t)
+
+        XCTAssertEqual(try repo.fetch(id: t.id)?.fileName, "Q2 Roadmap Sync")
+        XCTAssertEqual(vm.transcriptions.first(where: { $0.id == t.id })?.fileName, "Q2 Roadmap Sync")
+        XCTAssertTrue(vm.generatingTitleIDs.isEmpty)
+    }
+
+    func testGenerateTitleNoOpsWithoutLLM() async throws {
+        // No llmService configured.
+        let t = Transcription(fileName: "audio.m4a", rawTranscript: "hello", status: .completed)
+        try repo.save(t)
+        vm.loadTranscriptions()
+
+        await vm.generateTitle(for: t)
+
+        XCTAssertEqual(try repo.fetch(id: t.id)?.fileName, "audio.m4a")
+        XCTAssertFalse(vm.llmAvailable)
+    }
+
+    func testGenerateTitleNoOpsWithEmptyTranscript() async throws {
+        let llm = MockLLMService()
+        vm.configure(transcriptionRepo: repo, llmService: llm)
+
+        let t = Transcription(fileName: "empty.m4a", rawTranscript: "   ", status: .completed)
+        try repo.save(t)
+        vm.loadTranscriptions()
+
+        await vm.generateTitle(for: t)
+
+        XCTAssertEqual(try repo.fetch(id: t.id)?.fileName, "empty.m4a")
+        XCTAssertEqual(llm.summarizeCallCount, 0)
+    }
 }
