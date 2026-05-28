@@ -207,6 +207,13 @@ final class AppEnvironment {
                 Telemetry.send(.firstDictationCompleted(
                     activationWindow: TelemetryActivationWindow(secondsSinceOnboarding: secondsSinceOnboarding)
                 ))
+            },
+            resolveActiveProfile: {
+                AppProfile.resolve(bundleID: AppContextService.frontmostBundleID())
+            },
+            resolveAppContext: { [accessibilityService] in
+                let ctx = await AppContextService.captureContext(accessibility: accessibilityService)
+                return ctx.isEmpty ? nil : ctx
             }
         )
 

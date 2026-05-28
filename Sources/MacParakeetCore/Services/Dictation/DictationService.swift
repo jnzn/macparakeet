@@ -78,6 +78,16 @@ public actor DictationService: DictationServiceProtocol {
     private let aiFormatterPromptTemplate: @Sendable () -> String
     private let markFirstDictationCompleted: (@Sendable () -> Void)?
     private let cancelWindow: Duration
+    /// Resolves the active `AppProfile` based on the frontmost app at the time
+    /// of dictation start. Called once per `startRecording`; the result is
+    /// captured in `activeProfile` and reused throughout the dictation.
+    private let resolveActiveProfile: @Sendable () -> AppProfile?
+    /// Captures an AX snapshot of the frontmost app (window title, focused
+    /// field value, selected text) at dictation start. Best-effort: returns
+    /// nil when AX is unavailable, the app is blocklisted, or nothing useful
+    /// came back. Injected into the cleanup LLM prompt so the model can
+    /// disambiguate ambiguous transcriptions using real context.
+    private let resolveAppContext: @Sendable () async -> AppContext?
 
     private var _state: DictationState = .idle
     private var cancelResetTask: Task<Void, Never>?
@@ -91,6 +101,14 @@ public actor DictationService: DictationServiceProtocol {
     private var activeSessionID: Int = 0
     private var cancellationRequestedDuringStartSessionID: Int?
     private var pendingCancelReason: TelemetryDictationCancelReason?
+    /// Profile resolved at the start of the current dictation, or nil if no
+    /// profile matched the frontmost app. Overrides the formatter prompt for
+    /// the paste-path polish. Cleared by the next `startRecording` (overwritten).
+    private var activeProfile: AppProfile?
+    /// AX snapshot captured at dictation start. Nil when context capture is
+    /// disabled, the app is blocklisted, or no useful signals came back. Used
+    /// to prepend a context block to the paste-polish LLM prompt.
+    private var activeAppContext: AppContext?
 
     public var state: DictationState {
         _state
@@ -116,7 +134,9 @@ public actor DictationService: DictationServiceProtocol {
         shouldUseAIFormatter: (@Sendable () -> Bool)? = nil,
         aiFormatterPromptTemplate: (@Sendable () -> String)? = nil,
         markFirstDictationCompleted: (@Sendable () -> Void)? = nil,
-        cancelWindow: Duration = .seconds(5)
+        cancelWindow: Duration = .seconds(5),
+        resolveActiveProfile: (@Sendable () -> AppProfile?)? = nil,
+        resolveAppContext: (@Sendable () async -> AppContext?)? = nil
     ) {
         self.audioProcessor = audioProcessor
         self.sttTranscriber = sttTranscriber
@@ -135,6 +155,8 @@ public actor DictationService: DictationServiceProtocol {
         self.aiFormatterPromptTemplate = aiFormatterPromptTemplate ?? { AIFormatter.defaultPromptTemplate }
         self.markFirstDictationCompleted = markFirstDictationCompleted
         self.cancelWindow = cancelWindow
+        self.resolveActiveProfile = resolveActiveProfile ?? { nil }
+        self.resolveAppContext = resolveAppContext ?? { nil }
     }
 
     public func startRecording(context: DictationTelemetryContext = DictationTelemetryContext()) async throws {
@@ -244,6 +266,22 @@ public actor DictationService: DictationServiceProtocol {
             }
             currentTelemetryContext = context
             recordingStartedAt = Date()
+            activeProfile = resolveActiveProfile()
+            if let profile = activeProfile {
+                logger.info(
+                    "active_profile session=\(requestedSessionID) id=\(profile.id, privacy: .public) name=\(profile.displayName, privacy: .public)"
+                )
+            }
+            // Capture app context asynchronously — AX calls can block briefly
+            // on a busy target app. The resolver wraps them in Task.detached
+            // with a per-call AX timeout, so this await returns quickly and
+            // never blocks the actor beyond the timeout budget.
+            activeAppContext = await resolveAppContext()
+            if let ctx = activeAppContext {
+                logger.info(
+                    "app_context_captured session=\(requestedSessionID) hasTitle=\(ctx.windowTitle != nil) hasField=\(ctx.focusedFieldValue != nil) hasSelection=\(ctx.selectedText != nil)"
+                )
+            }
             Telemetry.send(.dictationStarted(trigger: context.trigger, mode: context.mode))
             logger.debug("dictation_capture_started session=\(requestedSessionID, privacy: .public)")
         } catch {
@@ -718,14 +756,20 @@ public actor DictationService: DictationServiceProtocol {
             )
         }
 
-        let promptTemplate = aiFormatterPromptTemplate()
+        let userTemplate = aiFormatterPromptTemplate()
+        // Profile override wins over user template; context injection is then
+        // layered on top of whichever base template is selected.
+        let baseTemplate = activeProfile?.promptOverride ?? userTemplate
+        let promptTemplate = AIFormatter.injectContextIntoPrompt(template: baseTemplate, context: activeAppContext)
         // Normalize before comparing: `AIFormatter.renderPrompt` passes the
         // template through `normalizedPromptTemplate` before sending, which
         // trims whitespace and folds legacy-v1 prompts back onto the current
         // default. Raw comparison would report those cases as custom prompts
-        // even though the LLM sees the shipped default.
-        let defaultPromptUsed = AIFormatter.normalizedPromptTemplate(promptTemplate)
-            == AIFormatter.defaultPromptTemplate
+        // even though the LLM sees the shipped default. Profile overrides and
+        // context injection don't flip the bit — context is a per-dictation
+        // prefix, not a user-configured change to the base prompt.
+        let defaultPromptUsed = activeProfile?.promptOverride == nil
+            && AIFormatter.normalizedPromptTemplate(userTemplate) == AIFormatter.defaultPromptTemplate
         let startedAt = Date()
         do {
             let result = try await llmService.formatTranscriptDetailed(
