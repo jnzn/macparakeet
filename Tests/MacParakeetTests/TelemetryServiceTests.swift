@@ -1162,7 +1162,8 @@ final class TelemetryServiceTests: XCTestCase {
 
     func testTelemetryEnabledDefault() {
         let defaults = UserDefaults(suiteName: "test-telemetry-\(UUID().uuidString)")!
-        XCTAssertTrue(AppPreferences.isTelemetryEnabled(defaults: defaults))
+        // PDX Edition hard-disables telemetry — always false regardless of defaults.
+        XCTAssertFalse(AppPreferences.isTelemetryEnabled(defaults: defaults))
     }
 
     func testTelemetryEnabledRespectsUserChoice() {
