@@ -121,10 +121,10 @@ struct MeetingsView: View {
 
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
                 upcomingSection
-                recentMeetingsSection
                 attentionSection
                 intelligenceSection
                 meetingPromptsSection
+                recentMeetingsSection
             }
         }
     }
