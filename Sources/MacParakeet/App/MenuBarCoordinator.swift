@@ -243,6 +243,9 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
         goMenu.addItem(makeMenuItem(title: "Transcribe", action: #selector(showTranscribe), key: ""))
         goMenu.addItem(makeMenuItem(title: "Library", action: #selector(showLibrary), key: ""))
         goMenu.addItem(makeMenuItem(title: "Dictations", action: #selector(showDictations), key: ""))
+        if AppFeatures.meetingRecordingEnabled {
+            goMenu.addItem(makeMenuItem(title: "Meetings", action: #selector(showMeetings), key: ""))
+        }
         goMenu.addItem(NSMenuItem.separator())
         goMenu.addItem(makeMenuItem(title: "Vocabulary", action: #selector(showVocabulary), key: ""))
         if AppFeatures.transformsEnabled {
@@ -486,6 +489,10 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
 
     @objc private func showTranscribe() {
         navigate(to: .transcribe)
+    }
+
+    @objc private func showMeetings() {
+        navigate(to: .meetings)
     }
 
     @objc private func showLibrary() {
