@@ -1,36 +1,9 @@
 import AppKit
-import Sparkle
 import MacParakeetCore
 import MacParakeetViewModels
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    // MARK: - Auto-Update
-
-    /// Sparkle update gating: refuses checks during active meeting recordings
-    /// (so a relaunch can't kill an in-flight recording) and during local
-    /// dev/sentinel builds (so a `0.0.0` / `dev` binary doesn't auto-update
-    /// itself to the shipped release). See `SparkleUpdateGuard`.
-    private lazy var sparkleUpdateGuard: SparkleUpdateGuard = SparkleUpdateGuard(
-        isMeetingRecordingActive: { [weak self] in
-            self?.meetingRecordingFlowCoordinator?.isMeetingRecordingActive == true
-        }
-    )
-
-    #if DEBUG
-    private lazy var updaterController: SPUStandardUpdaterController = SPUStandardUpdaterController(
-        startingUpdater: false,
-        updaterDelegate: sparkleUpdateGuard,
-        userDriverDelegate: nil
-    )
-    #else
-    private lazy var updaterController: SPUStandardUpdaterController = SPUStandardUpdaterController(
-        startingUpdater: true,
-        updaterDelegate: sparkleUpdateGuard,
-        userDriverDelegate: nil
-    )
-    #endif
-
     // MARK: - Runtime Services
 
     private var appEnvironment: AppEnvironment?
@@ -64,7 +37,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let textSnippetsViewModel = TextSnippetsViewModel()
     private let vocabularyBackupViewModel = VocabularyBackupViewModel()
     private let feedbackViewModel = FeedbackViewModel()
-    private let discoverViewModel = DiscoverViewModel()
     private let libraryViewModel = TranscriptionLibraryViewModel()
     private let llmSettingsViewModel = LLMSettingsViewModel()
     private let chatViewModel = TranscriptChatViewModel()
@@ -178,10 +150,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         textSnippetsViewModel: textSnippetsViewModel,
         vocabularyBackupViewModel: vocabularyBackupViewModel,
         feedbackViewModel: feedbackViewModel,
-        discoverViewModel: discoverViewModel,
         libraryViewModel: libraryViewModel,
         meetingPillViewModel: meetingPillViewModel,
-        updaterController: updaterController,
         onRecordMeeting: { [weak self] in
             self?.toggleMeetingRecording(originatesFromWindow: true)
         },
@@ -211,7 +181,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
 
     private lazy var menuBarCoordinator = MenuBarCoordinator(
-        updaterController: updaterController,
         transcriptionViewModel: transcriptionViewModel,
         youtubeInputController: youtubeInputController,
         environmentProvider: { [weak self] in
@@ -323,7 +292,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuBarCoordinator.setupMenuBar()
         settingsObserverCoordinator.startObserving()
         windowCoordinator.applyActivationPolicyFromSettings()
-        setupDiscoverContent()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -525,16 +493,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = alert.runModal()
 
         NSApp.terminate(nil)
-    }
-
-    private func setupDiscoverContent() {
-        guard let fallbackURL = Bundle.module.url(forResource: "discover-fallback", withExtension: "json"),
-              let data = try? Data(contentsOf: fallbackURL) else { return }
-
-        let service = DiscoverService(fallbackData: data)
-        discoverViewModel.configure(service: service)
-        discoverViewModel.loadCached()
-        discoverViewModel.refreshInBackground()
     }
 
     // MARK: - Disk Image Guard

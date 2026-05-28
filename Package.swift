@@ -11,9 +11,7 @@ let packageDependencies: [Package.Dependency] = [
     // FluidAudio for Parakeet STT on CoreML/ANE
     .package(url: "https://github.com/FluidInference/FluidAudio", .upToNextMinor(from: "0.14.5")),
     // ArgumentParser for CLI
-    .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0"),
-    // Sparkle for auto-updates (non-App Store distribution)
-    .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.0")
+    .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0")
 ] + (skipWhisperKit ? [] : [
     // WhisperKit for multilingual STT fallback (Korean + 95 other languages).
     // Argmax is not Swift 6 language-mode clean yet, so CI can omit this package
@@ -49,8 +47,7 @@ let package = Package(
             name: "MacParakeet",
             dependencies: [
                 "MacParakeetCore",
-                "MacParakeetViewModels",
-                .product(name: "Sparkle", package: "Sparkle")
+                "MacParakeetViewModels"
             ],
             path: "Sources/MacParakeet",
             resources: [.process("Resources")]

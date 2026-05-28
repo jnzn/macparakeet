@@ -1,12 +1,10 @@
 import AppKit
-import Sparkle
 import UniformTypeIdentifiers
 import MacParakeetCore
 import MacParakeetViewModels
 
 @MainActor
 final class MenuBarCoordinator: NSObject, NSMenuDelegate {
-    private let updaterController: SPUStandardUpdaterController
     private let transcriptionViewModel: TranscriptionViewModel
     private let youtubeInputController: YouTubeInputPanelController
     private let environmentProvider: () -> AppEnvironment?
@@ -40,7 +38,6 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
     private var hotkeyMenuItem: NSMenuItem?
 
     init(
-        updaterController: SPUStandardUpdaterController,
         transcriptionViewModel: TranscriptionViewModel,
         youtubeInputController: YouTubeInputPanelController,
         environmentProvider: @escaping () -> AppEnvironment?,
@@ -60,7 +57,6 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
         onQuit: @escaping () -> Void,
         onShowAboutPanel: @escaping () -> Void
     ) {
-        self.updaterController = updaterController
         self.transcriptionViewModel = transcriptionViewModel
         self.youtubeInputController = youtubeInputController
         self.environmentProvider = environmentProvider
@@ -116,15 +112,6 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
         )
         settingsItem.target = self
         appMenu.addItem(settingsItem)
-
-        let checkForUpdatesItem = NSMenuItem(
-            title: "Check for Updates...",
-            action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
-            keyEquivalent: ""
-        )
-        checkForUpdatesItem.target = updaterController
-        appMenu.addItem(checkForUpdatesItem)
-        appMenu.addItem(NSMenuItem.separator())
 
         let servicesItem = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
         let servicesMenu = NSMenu(title: "Services")
@@ -414,14 +401,6 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
         )
         settingsItem.target = self
         menu.addItem(settingsItem)
-
-        let checkForUpdatesItem = NSMenuItem(
-            title: "Check for Updates...",
-            action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
-            keyEquivalent: ""
-        )
-        checkForUpdatesItem.target = updaterController
-        menu.addItem(checkForUpdatesItem)
 
         menu.addItem(NSMenuItem.separator())
 

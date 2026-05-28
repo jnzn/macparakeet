@@ -1,4 +1,3 @@
-import Sparkle
 import SwiftUI
 import MacParakeetCore
 import MacParakeetViewModels
@@ -11,7 +10,6 @@ enum SidebarItem: String, CaseIterable, Identifiable {
     case vocabulary = "Vocabulary"
     case feedback = "Feedback"
     case settings = "Settings"
-    case discover = "Discover"
 
     var id: String { rawValue }
 
@@ -24,7 +22,6 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         case .vocabulary: return "book.fill"
         case .feedback: return "bubble.left.and.text.bubble.right"
         case .settings: return "gearshape"
-        case .discover: return "sparkles"
         }
     }
 
@@ -42,9 +39,6 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         }
         return items
     }
-
-    /// Note: `.discover` is intentionally excluded from the arrays above.
-    /// It renders as a pinned card below the sidebar list via `safeAreaInset`.
 }
 
 struct MainWindowView: View {
@@ -62,10 +56,8 @@ struct MainWindowView: View {
     let textSnippetsViewModel: TextSnippetsViewModel
     let vocabularyBackupViewModel: VocabularyBackupViewModel
     let feedbackViewModel: FeedbackViewModel
-    let discoverViewModel: DiscoverViewModel
     let libraryViewModel: TranscriptionLibraryViewModel
     let meetingPillViewModel: MeetingRecordingPillViewModel
-    let updater: SPUUpdater
     let onRecordMeeting: () -> Void
     let onPauseToggleMeeting: (() -> Void)?
     /// Routed to `AppHotkeyCoordinator.suspend` / `resume` while a hotkey
@@ -92,13 +84,6 @@ struct MainWindowView: View {
                 }
                 .listStyle(.sidebar)
                 .tint(DesignSystem.Colors.accent)
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    DiscoverSidebarCard(
-                        viewModel: discoverViewModel,
-                        isSelected: state.selectedItem == .discover,
-                        onTap: { state.selectedItem = .discover }
-                    )
-                }
                 .navigationSplitViewColumnWidth(min: 170, ideal: DesignSystem.Layout.sidebarMinWidth, max: 240)
             } detail: {
                 Group {
@@ -224,7 +209,6 @@ struct MainWindowView: View {
                         SettingsView(
                             viewModel: settingsViewModel,
                             llmSettingsViewModel: llmSettingsViewModel,
-                            updater: updater,
                             transformHotkeys: transformsViewModel.transforms,
                             requestedTab: state.requestedSettingsTab,
                             requestedTabRevision: state.requestedSettingsTabRevision,
@@ -233,8 +217,6 @@ struct MainWindowView: View {
                             },
                             onHotkeyRecordingStateChanged: onHotkeyRecordingStateChanged
                         )
-                    case .discover:
-                        DiscoverView(viewModel: discoverViewModel, thoughtsService: DiscoverThoughtsService())
                     }
                 }
             }

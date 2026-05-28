@@ -1,5 +1,4 @@
 import AppKit
-import Sparkle
 import SwiftUI
 import MacParakeetCore
 import MacParakeetViewModels
@@ -19,10 +18,8 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
     private let textSnippetsViewModel: TextSnippetsViewModel
     private let vocabularyBackupViewModel: VocabularyBackupViewModel
     private let feedbackViewModel: FeedbackViewModel
-    private let discoverViewModel: DiscoverViewModel
     private let libraryViewModel: TranscriptionLibraryViewModel
     private let meetingPillViewModel: MeetingRecordingPillViewModel
-    private let updaterController: SPUStandardUpdaterController
     private let onRecordMeeting: () -> Void
     private let onPauseToggleMeeting: (() -> Void)?
     private let onHotkeyRecordingStateChanged: (Bool) -> Void
@@ -45,10 +42,8 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
         textSnippetsViewModel: TextSnippetsViewModel,
         vocabularyBackupViewModel: VocabularyBackupViewModel,
         feedbackViewModel: FeedbackViewModel,
-        discoverViewModel: DiscoverViewModel,
         libraryViewModel: TranscriptionLibraryViewModel,
         meetingPillViewModel: MeetingRecordingPillViewModel,
-        updaterController: SPUStandardUpdaterController,
         onRecordMeeting: @escaping () -> Void,
         onPauseToggleMeeting: (() -> Void)? = nil,
         onHotkeyRecordingStateChanged: @escaping (Bool) -> Void,
@@ -68,10 +63,8 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
         self.textSnippetsViewModel = textSnippetsViewModel
         self.vocabularyBackupViewModel = vocabularyBackupViewModel
         self.feedbackViewModel = feedbackViewModel
-        self.discoverViewModel = discoverViewModel
         self.libraryViewModel = libraryViewModel
         self.meetingPillViewModel = meetingPillViewModel
-        self.updaterController = updaterController
         self.onRecordMeeting = onRecordMeeting
         self.onPauseToggleMeeting = onPauseToggleMeeting
         self.onHotkeyRecordingStateChanged = onHotkeyRecordingStateChanged
@@ -178,10 +171,8 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
             textSnippetsViewModel: textSnippetsViewModel,
             vocabularyBackupViewModel: vocabularyBackupViewModel,
             feedbackViewModel: feedbackViewModel,
-            discoverViewModel: discoverViewModel,
             libraryViewModel: libraryViewModel,
             meetingPillViewModel: meetingPillViewModel,
-            updater: updaterController.updater,
             onRecordMeeting: onRecordMeeting,
             onPauseToggleMeeting: onPauseToggleMeeting,
             onHotkeyRecordingStateChanged: onHotkeyRecordingStateChanged

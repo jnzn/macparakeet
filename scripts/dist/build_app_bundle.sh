@@ -66,7 +66,7 @@ mkdir -p "$MACOS_DIR" "$RESOURCES_DIR" "$FRAMEWORKS_DIR" "$LEGAL_DIR"
 
 if [[ "$VERSION" == "0.0.0" ]]; then
   echo "Warning: VERSION not set; building a local/dev bundle with CFBundleShortVersionString=0.0.0." >&2
-  echo "Set VERSION=X.Y.Z for release builds so Sparkle and release metadata are correct." >&2
+  echo "Set VERSION=X.Y.Z for release builds so release metadata is correct." >&2
 fi
 
 build_swiftpm() {
@@ -468,53 +468,6 @@ bundle_meeting_echo_assets() {
 
 bundle_meeting_echo_assets
 
-# Embed Sparkle.framework for auto-updates.
-#
-# Sparkle is linked via @rpath and must live in Contents/Frameworks/.
-# For xcodebuild, the framework is produced in the derived-data product dir.
-# For SwiftPM, it's in .build/<triple>/release/.
-echo "Embedding Sparkle.framework…"
-SPARKLE_FW=""
-if [[ "$BUILD_SYSTEM" == "xcodebuild" ]]; then
-  SPARKLE_FW="$XCODE_DERIVED_DATA/Build/Products/Release/PackageFrameworks/Sparkle.framework"
-  # Fallback: xcodebuild may place it differently
-  if [[ ! -d "$SPARKLE_FW" ]]; then
-    SPARKLE_FW="$(find "$XCODE_DERIVED_DATA" -type d -name "Sparkle.framework" -path "*/Release/*" 2>/dev/null | head -n 1)"
-  fi
-else
-  SPARKLE_FW="$(find "$ROOT_DIR/.build" -type d -name "Sparkle.framework" -path "*/release/*" -not -path "*/artifacts/*" 2>/dev/null | head -n 1)"
-  if [[ ! -d "$SPARKLE_FW" ]]; then
-    SPARKLE_FW="$(find "$ROOT_DIR/.build" -type d -name "Sparkle.framework" -not -path "*/artifacts/*" 2>/dev/null | head -n 1)"
-  fi
-fi
-
-if [[ -z "$SPARKLE_FW" || ! -d "$SPARKLE_FW" ]]; then
-  # Last resort: use the xcframework artifact directly
-  SPARKLE_FW="$ROOT_DIR/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
-fi
-
-if [[ -d "$SPARKLE_FW" ]]; then
-  rm -rf "$FRAMEWORKS_DIR/Sparkle.framework"
-  cp -R "$SPARKLE_FW" "$FRAMEWORKS_DIR/"
-  echo "Embedded Sparkle.framework from: $SPARKLE_FW"
-
-  # Ensure the binary's rpath includes Contents/Frameworks/ (standard macOS location).
-  # xcodebuild may set @executable_path/../lib instead.
-  BINARY="$MACOS_DIR/$APP_NAME"
-  if ! otool -l "$BINARY" | grep -q '@executable_path/../Frameworks'; then
-    echo "Adding @executable_path/../Frameworks to rpath…"
-    install_name_tool -add_rpath @executable_path/../Frameworks "$BINARY"
-  fi
-else
-  echo "Error: Sparkle.framework not found — app will crash at launch without it." >&2
-  echo "Searched:" >&2
-  echo "  $XCODE_DERIVED_DATA/Build/Products/Release/PackageFrameworks/Sparkle.framework" >&2
-  echo "  $XCODE_DERIVED_DATA (find)" >&2
-  echo "  $ROOT_DIR/.build (find)" >&2
-  echo "  $ROOT_DIR/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework" >&2
-  exit 1
-fi
-
 # Copy app icon into Resources.
 ICON_SRC="$ROOT_DIR/Assets/AppIcon.icns"
 if [[ -f "$ICON_SRC" ]]; then
@@ -589,12 +542,6 @@ cat >"$INFO_PLIST" <<EOF
   <string>MacParakeet needs system audio recording access for meeting recording.</string>
   <key>NSCalendarsFullAccessUsageDescription</key>
   <string>MacParakeet reads your calendar so it can remind you before a meeting starts and (optionally) begin recording for you. Events stay on your Mac.</string>
-  <key>SUFeedURL</key>
-  <string>https://macparakeet.com/appcast.xml</string>
-  <key>SUEnableAutomaticChecks</key>
-  <true/>
-  <key>SUPublicEDKey</key>
-  <string>2aqRU0Agz+xxZwt0kLybmKz/SAvZUsyn+z9fU0I6ynY=</string>
 $(printf "%b" "$LICENSING_PLIST")
 </dict>
 </plist>
