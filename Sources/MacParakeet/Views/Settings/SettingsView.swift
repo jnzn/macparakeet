@@ -1,5 +1,4 @@
 import Foundation
-import Sparkle
 import SwiftUI
 import AppKit
 import MacParakeetCore
@@ -84,7 +83,6 @@ struct SettingsView: View {
     @Bindable var viewModel: SettingsViewModel
     @Bindable var llmSettingsViewModel: LLMSettingsViewModel
     @Bindable var voiceProfilesViewModel: VoiceProfilesViewModel
-    let updater: SPUUpdater
     let transformHotkeys: [Prompt]
     let requestedTab: SettingsTab?
     let requestedAnchor: String?
@@ -105,8 +103,6 @@ struct SettingsView: View {
     /// tab — important because tapping a result almost always triggers
     /// a tab swap, which mounts a new ScrollView.
     @State private var pendingScrollTarget: String?
-    @State private var automaticallyChecksForUpdates: Bool
-    @State private var automaticallyDownloadsUpdates: Bool
     @State private var copiedBuildIdentity = false
     /// Which downloaded model a destructive confirmation is pending for. Drives
     /// the shared delete-confirmation alert on the Engine tab.
@@ -122,7 +118,6 @@ struct SettingsView: View {
         viewModel: SettingsViewModel,
         llmSettingsViewModel: LLMSettingsViewModel,
         voiceProfilesViewModel: VoiceProfilesViewModel,
-        updater: SPUUpdater,
         transformHotkeys: [Prompt] = [],
         requestedTab: SettingsTab? = nil,
         requestedAnchor: String? = nil,
@@ -133,7 +128,6 @@ struct SettingsView: View {
         self.viewModel = viewModel
         self.llmSettingsViewModel = llmSettingsViewModel
         self.voiceProfilesViewModel = voiceProfilesViewModel
-        self.updater = updater
         self.transformHotkeys = transformHotkeys
         self.requestedTab = requestedTab
         self.requestedAnchor = requestedAnchor
@@ -141,8 +135,6 @@ struct SettingsView: View {
         self.onRequestedTabConsumed = onRequestedTabConsumed
         self.onHotkeyRecordingStateChanged = onHotkeyRecordingStateChanged
         self._rootViewModel = State(initialValue: SettingsRootViewModel(initialTab: requestedTab))
-        self._automaticallyChecksForUpdates = State(initialValue: updater.automaticallyChecksForUpdates)
-        self._automaticallyDownloadsUpdates = State(initialValue: updater.automaticallyDownloadsUpdates)
     }
 
     var body: some View {
@@ -647,7 +639,6 @@ struct SettingsView: View {
             startupCard.id("system.startup")
             permissionsCard.id("system.permissions")
             storageCard.id("system.storage")
-            updatesCard.id("system.updates")
             privacyCard.id("system.privacy")
             onboardingCard.id("system.onboarding")
             aboutCard.id("system.about")
@@ -3686,50 +3677,6 @@ struct SettingsView: View {
                 .buttonStyle(.link)
                 .font(DesignSystem.Typography.caption)
                 .accessibilityHint("Opens the telemetry documentation on GitHub in your browser.")
-            }
-        }
-    }
-
-    // MARK: - Updates
-
-    private var updatesCard: some View {
-        settingsCard(
-            title: "Updates",
-            subtitle: "Keep MacParakeet up to date.",
-            icon: "arrow.triangle.2.circlepath"
-        ) {
-            VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
-                HStack {
-                    Toggle("Automatically check for updates", isOn: $automaticallyChecksForUpdates)
-                        .onChange(of: automaticallyChecksForUpdates) { _, newValue in
-                            updater.automaticallyChecksForUpdates = newValue
-                        }
-                        .font(DesignSystem.Typography.body)
-                }
-
-                HStack {
-                    Toggle("Automatically download updates", isOn: $automaticallyDownloadsUpdates)
-                        .onChange(of: automaticallyDownloadsUpdates) { _, newValue in
-                            updater.automaticallyDownloadsUpdates = newValue
-                        }
-                        .font(DesignSystem.Typography.body)
-                        .disabled(!automaticallyChecksForUpdates)
-                }
-
-                Divider()
-
-                HStack {
-                    rowText(
-                        title: "Manual check",
-                        detail: "Check for a new version right now."
-                    )
-                    Spacer()
-                    Button("Check for Updates...") {
-                        updater.checkForUpdates()
-                    }
-                    .parakeetAction(.primaryProminent)
-                    .disabled(!updater.canCheckForUpdates)
-                }
             }
         }
     }

@@ -81,7 +81,7 @@ mkdir -p "$MACOS_DIR" "$RESOURCES_DIR" "$FRAMEWORKS_DIR" "$LEGAL_DIR"
 
 if [[ "$VERSION" == "0.0.0" ]]; then
   echo "Warning: VERSION not set; building a local/dev bundle with CFBundleShortVersionString=0.0.0." >&2
-  echo "Set VERSION=X.Y.Z for release builds so Sparkle and release metadata are correct." >&2
+  echo "Set VERSION=X.Y.Z for release builds so release metadata is correct." >&2
 fi
 
 build_swiftpm_helper() {
@@ -546,48 +546,6 @@ bundle_meeting_echo_assets() {
 
 bundle_meeting_echo_assets
 
-# Embed Sparkle.framework for auto-updates.
-#
-# Sparkle is linked via @rpath and must live in Contents/Frameworks/.
-# Xcode produces the framework in its derived-data product directory.
-echo "Embedding Sparkle.framework…"
-SPARKLE_PRODUCTS="$XCODE_DERIVED_DATA"
-if [[ "$UNIVERSAL" == "1" ]]; then
-  SPARKLE_PRODUCTS="$XCODE_DERIVED_DATA-arm64"
-fi
-SPARKLE_FW="$SPARKLE_PRODUCTS/Build/Products/Release/PackageFrameworks/Sparkle.framework"
-if [[ ! -d "$SPARKLE_FW" ]]; then
-  SPARKLE_FW="$(find "$SPARKLE_PRODUCTS" -type d -name "Sparkle.framework" -path "*/Release/*" 2>/dev/null | head -n 1)"
-fi
-
-if [[ -z "$SPARKLE_FW" || ! -d "$SPARKLE_FW" ]]; then
-  # Last resort: use the xcframework artifact directly
-  SPARKLE_FW="$ROOT_DIR/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
-fi
-
-if [[ -d "$SPARKLE_FW" ]]; then
-  rm -rf "$FRAMEWORKS_DIR/Sparkle.framework"
-  # Follow Xcode's product symlink while preserving relative links inside the framework.
-  cp -RH "$SPARKLE_FW" "$FRAMEWORKS_DIR/"
-  echo "Embedded Sparkle.framework from: $SPARKLE_FW"
-
-  # Ensure the binary's rpath includes Contents/Frameworks/ (standard macOS location).
-  # xcodebuild may set @executable_path/../lib instead.
-  BINARY="$MACOS_DIR/$APP_NAME"
-  if ! otool -l "$BINARY" | grep -q '@executable_path/../Frameworks'; then
-    echo "Adding @executable_path/../Frameworks to rpath…"
-    install_name_tool -add_rpath @executable_path/../Frameworks "$BINARY"
-  fi
-else
-  echo "Error: Sparkle.framework not found — app will crash at launch without it." >&2
-  echo "Searched:" >&2
-  echo "  $XCODE_DERIVED_DATA/Build/Products/Release/PackageFrameworks/Sparkle.framework" >&2
-  echo "  $XCODE_DERIVED_DATA (find)" >&2
-  echo "  $ROOT_DIR/.build (find)" >&2
-  echo "  $ROOT_DIR/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework" >&2
-  exit 1
-fi
-
 # Copy app icon into Resources.
 ICON_SRC="$ROOT_DIR/Assets/AppIcon.icns"
 if [[ -f "$ICON_SRC" ]]; then
@@ -611,21 +569,6 @@ echo "Bundled legal notices: $LEGAL_DIR"
 
 echo "[3/4] Writing Info.plist…"
 INFO_PLIST="$CONTENTS_DIR/Info.plist"
-# Sparkle auto-update trust anchor (issue #564, finding S-3). The public EdDSA
-# key MUST ship non-empty in Info.plist or Sparkle 2.x cannot verify update
-# signatures, and the feed MUST be HTTPS so the appcast itself can't be
-# tampered with in transit. SU_PUBLIC_ED_KEY / SU_FEED_URL are the values
-# written into the plist below; the release gate after the write reads them
-# back from the artifact and refuses to ship if they drift or go missing.
-SU_PUBLIC_ED_KEY="2aqRU0Agz+xxZwt0kLybmKz/SAvZUsyn+z9fU0I6ynY="
-SU_FEED_URL="https://macparakeet.com/appcast.xml"
-# Expected key the gate asserts the written plist actually carries. Deliberately
-# a second, independent copy: verifying the artifact against the same variable
-# used to write it would pass even if that variable were edited to a wrong
-# value, so the trust anchor is pinned in two places. A real key rotation must
-# update BOTH — the build fails until they agree, which is the intended
-# confirmation step.
-EXPECTED_SU_PUBLIC_ED_KEY="2aqRU0Agz+xxZwt0kLybmKz/SAvZUsyn+z9fU0I6ynY="
 CHECKOUT_URL="${MACPARAKEET_CHECKOUT_URL:-}"
 LS_VARIANT_ID="${MACPARAKEET_LS_VARIANT_ID:-}"
 LICENSING_PLIST=""
@@ -697,44 +640,10 @@ cat >"$INFO_PLIST" <<EOF
   <string>MacParakeet needs system audio recording access for meeting recording.</string>
   <key>NSCalendarsFullAccessUsageDescription</key>
   <string>MacParakeet reads your calendar so it can remind you before a meeting starts and (optionally) begin recording for you. Events stay on your Mac.</string>
-  <key>SUFeedURL</key>
-  <string>${SU_FEED_URL}</string>
-  <key>SUEnableAutomaticChecks</key>
-  <true/>
-  <key>SUPublicEDKey</key>
-  <string>${SU_PUBLIC_ED_KEY}</string>
 $(printf "%b" "$LICENSING_PLIST")
 </dict>
 </plist>
 EOF
-
-# Release gate: prove the Sparkle auto-update trust anchor actually shipped
-# (issue #564, finding S-3). A missing or empty SUPublicEDKey would let Sparkle
-# accept an unsigned update, and a non-HTTPS feed would let the appcast itself
-# be MITM'd — both are silent failures the user only discovers when a malicious
-# update lands. Read the values back from the written plist (not the variables)
-# so a malformed plist or a future heredoc refactor that drops the keys fails
-# the build loudly instead of shipping a defenseless updater.
-echo "Verifying Sparkle update-signature trust anchor…"
-WRITTEN_ED_KEY="$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$INFO_PLIST" 2>/dev/null || true)"
-WRITTEN_FEED_URL="$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$INFO_PLIST" 2>/dev/null || true)"
-if [[ -z "$WRITTEN_ED_KEY" ]]; then
-  echo "FATAL: SUPublicEDKey is missing or empty in $INFO_PLIST — Sparkle could not verify update signatures. Refusing to ship." >&2
-  exit 1
-fi
-if [[ "$WRITTEN_ED_KEY" != "$EXPECTED_SU_PUBLIC_ED_KEY" ]]; then
-  echo "FATAL: SUPublicEDKey in $INFO_PLIST does not match the expected release key. Refusing to ship." >&2
-  exit 1
-fi
-if [[ -z "$WRITTEN_FEED_URL" ]]; then
-  echo "FATAL: SUFeedURL is missing or empty in $INFO_PLIST — Sparkle has no appcast to check. Refusing to ship." >&2
-  exit 1
-fi
-if [[ "$WRITTEN_FEED_URL" != https://* ]]; then
-  echo "FATAL: SUFeedURL is not HTTPS ('$WRITTEN_FEED_URL') — the appcast could be MITM'd. Refusing to ship." >&2
-  exit 1
-fi
-echo "Sparkle trust anchor OK: SUPublicEDKey present and matches, feed is HTTPS."
 
 # Archive dSYM for crash symbolication.
 #

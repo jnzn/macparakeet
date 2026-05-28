@@ -1,36 +1,9 @@
 import AppKit
-import Sparkle
 import MacParakeetCore
 import MacParakeetViewModels
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    // MARK: - Auto-Update
-
-    /// Sparkle update gating: refuses checks during active meeting recordings
-    /// (so a relaunch can't kill an in-flight recording) and during local
-    /// dev/sentinel builds (so a `0.0.0` / `dev` binary doesn't auto-update
-    /// itself to the shipped release). See `SparkleUpdateGuard`.
-    private lazy var sparkleUpdateGuard: SparkleUpdateGuard = SparkleUpdateGuard(
-        isMeetingRecordingActive: { [weak self] in
-            self?.meetingRecordingFlowCoordinator?.isMeetingRecordingActive == true
-        }
-    )
-
-    #if DEBUG
-    private lazy var updaterController: SPUStandardUpdaterController = SPUStandardUpdaterController(
-        startingUpdater: false,
-        updaterDelegate: sparkleUpdateGuard,
-        userDriverDelegate: nil
-    )
-    #else
-    private lazy var updaterController: SPUStandardUpdaterController = SPUStandardUpdaterController(
-        startingUpdater: true,
-        updaterDelegate: sparkleUpdateGuard,
-        userDriverDelegate: nil
-    )
-    #endif
-
     // MARK: - Runtime Services
 
     private var appEnvironment: AppEnvironment?
@@ -72,7 +45,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let textSnippetsViewModel = TextSnippetsViewModel()
     private let vocabularyBackupViewModel = VocabularyBackupViewModel()
     private let feedbackViewModel = FeedbackViewModel()
-    private let discoverViewModel = DiscoverViewModel()
     private let libraryViewModel = TranscriptionLibraryViewModel()
     /// One shared app-owned handle for native Split and transcribe: created
     /// eagerly (before `AppEnvironment` exists) and `configure`d once it does,
@@ -218,14 +190,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         textSnippetsViewModel: textSnippetsViewModel,
         vocabularyBackupViewModel: vocabularyBackupViewModel,
         feedbackViewModel: feedbackViewModel,
-        discoverViewModel: discoverViewModel,
         libraryViewModel: libraryViewModel,
         meetingsWorkspaceViewModel: meetingsWorkspaceViewModel,
         meetingPillViewModel: meetingPillViewModel,
         meetingSplitViewModel: meetingSplitViewModel,
         meetingImportViewModel: meetingImportViewModel,
         shareManagementViewModel: shareManagementViewModel,
-        updaterController: updaterController,
         onRecordMeeting: { [weak self] in
             self?.toggleMeetingRecording(originatesFromWindow: true)
         },
@@ -260,7 +230,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
 
     private lazy var menuBarCoordinator = MenuBarCoordinator(
-        updaterController: updaterController,
         transcriptionViewModel: transcriptionViewModel,
         youtubeInputController: youtubeInputController,
         environmentProvider: { [weak self] in
@@ -357,9 +326,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         onShowIdlePillChanged: { [weak self] in
             self?.handleShowIdlePillChange()
         },
-        onShowDiscoverChanged: { [weak self] in
-            self?.setupDiscoverContent()
-        },
+        onShowDiscoverChanged: {},
         onShowMeetingRecordingPillChanged: { [weak self] in
             self?.handleShowMeetingRecordingPillChange()
         },
@@ -398,7 +365,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuBarCoordinator.setMenuBarIconVisible(settingsViewModel.showMenuBarIcon)
         settingsObserverCoordinator.startObserving()
         windowCoordinator.applyActivationPolicyFromSettings()
-        setupDiscoverContent()
         #if DEBUG
         showDebugDictationPreviewQAIfRequested()
         #endif
@@ -805,27 +771,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = alert.runModal()
 
         NSApp.terminate(nil)
-    }
-
-    private func setupDiscoverContent() {
-        // Respect the user preference before touching the network. When
-        // Discover is hidden the feed is neither loaded nor fetched, so the
-        // app makes no request to the Discover endpoint at launch.
-        guard settingsViewModel.showDiscover else {
-            discoverViewModel.cancelDiscover()
-            if mainWindowState.selectedItem == .discover {
-                mainWindowState.selectedItem = .transcribe
-            }
-            return
-        }
-        guard let fallbackURL = Bundle.module.url(forResource: "discover-fallback", withExtension: "json"),
-            let data = try? Data(contentsOf: fallbackURL)
-        else { return }
-
-        let service = DiscoverService(fallbackData: data)
-        discoverViewModel.configure(service: service)
-        discoverViewModel.loadCached()
-        discoverViewModel.refreshInBackground()
     }
 
     // MARK: - Disk Image Guard

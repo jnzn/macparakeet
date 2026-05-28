@@ -1,5 +1,4 @@
 import AppKit
-import Sparkle
 import SwiftUI
 import MacParakeetCore
 import MacParakeetViewModels
@@ -61,14 +60,12 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
     private let textSnippetsViewModel: TextSnippetsViewModel
     private let vocabularyBackupViewModel: VocabularyBackupViewModel
     private let feedbackViewModel: FeedbackViewModel
-    private let discoverViewModel: DiscoverViewModel
     private let libraryViewModel: TranscriptionLibraryViewModel
     private let meetingsWorkspaceViewModel: MeetingsWorkspaceViewModel
     private let meetingPillViewModel: MeetingRecordingPillViewModel
     private let meetingSplitViewModel: MeetingSplitViewModel
     private let meetingImportViewModel: MeetingImportViewModel
     private let shareManagementViewModel: ShareManagementViewModel?
-    private let updaterController: SPUStandardUpdaterController
     private let onRecordMeeting: () -> Void
     private let onRecordMeetingFromWorkspace: () -> Void
     private let onPauseToggleMeeting: (() -> Void)?
@@ -94,14 +91,12 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
         textSnippetsViewModel: TextSnippetsViewModel,
         vocabularyBackupViewModel: VocabularyBackupViewModel,
         feedbackViewModel: FeedbackViewModel,
-        discoverViewModel: DiscoverViewModel,
         libraryViewModel: TranscriptionLibraryViewModel,
         meetingsWorkspaceViewModel: MeetingsWorkspaceViewModel,
         meetingPillViewModel: MeetingRecordingPillViewModel,
         meetingSplitViewModel: MeetingSplitViewModel,
         meetingImportViewModel: MeetingImportViewModel,
         shareManagementViewModel: ShareManagementViewModel? = nil,
-        updaterController: SPUStandardUpdaterController,
         onRecordMeeting: @escaping () -> Void,
         onRecordMeetingFromWorkspace: @escaping () -> Void,
         onPauseToggleMeeting: (() -> Void)? = nil,
@@ -123,14 +118,12 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
         self.textSnippetsViewModel = textSnippetsViewModel
         self.vocabularyBackupViewModel = vocabularyBackupViewModel
         self.feedbackViewModel = feedbackViewModel
-        self.discoverViewModel = discoverViewModel
         self.libraryViewModel = libraryViewModel
         self.meetingsWorkspaceViewModel = meetingsWorkspaceViewModel
         self.meetingPillViewModel = meetingPillViewModel
         self.meetingSplitViewModel = meetingSplitViewModel
         self.meetingImportViewModel = meetingImportViewModel
         self.shareManagementViewModel = shareManagementViewModel
-        self.updaterController = updaterController
         self.onRecordMeeting = onRecordMeeting
         self.onRecordMeetingFromWorkspace = onRecordMeetingFromWorkspace
         self.onPauseToggleMeeting = onPauseToggleMeeting
@@ -239,14 +232,12 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
             textSnippetsViewModel: textSnippetsViewModel,
             vocabularyBackupViewModel: vocabularyBackupViewModel,
             feedbackViewModel: feedbackViewModel,
-            discoverViewModel: discoverViewModel,
             libraryViewModel: libraryViewModel,
             meetingsWorkspaceViewModel: meetingsWorkspaceViewModel,
             meetingPillViewModel: meetingPillViewModel,
             meetingSplitViewModel: meetingSplitViewModel,
             meetingImportViewModel: meetingImportViewModel,
             shareManagementViewModel: shareManagementViewModel,
-            updater: updaterController.updater,
             onRecordMeeting: onRecordMeeting,
             onRecordMeetingFromWorkspace: onRecordMeetingFromWorkspace,
             onPauseToggleMeeting: onPauseToggleMeeting,
