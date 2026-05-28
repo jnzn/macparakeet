@@ -116,7 +116,7 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
         let menu = NSMenu()
 
         let openItem = NSMenuItem(
-            title: "Open MacParakeet",
+            title: "Open PDX Edition",
             action: #selector(dockOpenMainWindow),
             keyEquivalent: ""
         )
@@ -134,7 +134,7 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
         menu.addItem(NSMenuItem.separator())
 
         let quitItem = NSMenuItem(
-            title: "Quit MacParakeet",
+            title: "Quit PDX Edition",
             action: #selector(dockQuit),
             keyEquivalent: ""
         )
@@ -189,7 +189,7 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "MacParakeet"
+        window.title = "MacParakeet (PDX Edition)"
         window.center()
         window.setFrameAutosaveName("MainWindow")
         window.minSize = NSSize(
