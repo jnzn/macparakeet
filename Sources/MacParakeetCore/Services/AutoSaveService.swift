@@ -51,6 +51,27 @@ public enum AutoSaveScope: String, Sendable {
         case .meeting: return "meetingAutoSaveFolderBookmark"
         }
     }
+
+    public var includeTimestampsKey: String {
+        switch self {
+        case .transcription: return "autoSaveIncludeTimestamps"
+        case .meeting: return "meetingAutoSaveIncludeTimestamps"
+        }
+    }
+
+    public var includeSpeakersKey: String {
+        switch self {
+        case .transcription: return "autoSaveIncludeSpeakers"
+        case .meeting: return "meetingAutoSaveIncludeSpeakers"
+        }
+    }
+
+    public var includeMetadataKey: String {
+        switch self {
+        case .transcription: return "autoSaveIncludeMetadata"
+        case .meeting: return "meetingAutoSaveIncludeMetadata"
+        }
+    }
 }
 
 /// Outcome of attempting an automatic export.
