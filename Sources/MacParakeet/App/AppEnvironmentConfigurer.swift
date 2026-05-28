@@ -128,7 +128,8 @@ final class AppEnvironmentConfigurer {
             meetingTypeRepository: env.meetingTypeRepo,
             meetingLabelRepository: env.meetingLabelRepo,
             meetingClassificationService: env.meetingClassificationService,
-            speakerAttributionReader: env.speakerAttributionReader
+            speakerAttributionReader: env.speakerAttributionReader,
+            llmService: hasLLMConfig ? env.llmService : nil
         )
         meetingsWorkspaceViewModel.configure(
             transcriptionRepo: env.transcriptionRepo,
@@ -602,6 +603,7 @@ final class AppEnvironmentConfigurer {
         let hasConfig = (try? env.llmConfigStore.loadConfig()) != nil
         let service: LLMService? = hasConfig ? env.llmService : nil
         transcriptionViewModel.updateLLMAvailability(hasConfig, llmService: service)
+        libraryViewModel.updateLLMAvailability(hasConfig, llmService: service)
         chatViewModel.updateLLMService(service)
         promptResultsViewModel.updateLLMService(
             service,

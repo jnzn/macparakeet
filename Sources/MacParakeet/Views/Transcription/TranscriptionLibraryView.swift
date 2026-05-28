@@ -324,7 +324,8 @@ struct TranscriptionLibraryView: View {
                             searchText: viewModel.searchText,
                             isSelected: viewModel.isTranscriptionSelected(transcription),
                             showsSelectionControls: viewModel.isBulkSelectionModeEnabled,
-                            sourceLabelStyle: sourceLabelStyle
+                            sourceLabelStyle: sourceLabelStyle,
+                            isGeneratingTitle: viewModel.generatingTitleIDs.contains(transcription.id)
                         ) {
                             if viewModel.isBulkOperationInProgress || bulkExportInProgress {
                                 return
@@ -547,6 +548,15 @@ struct TranscriptionLibraryView: View {
                 transcription.isFavorite ? "Remove from Favorites" : "Add to Favorites",
                 systemImage: transcription.isFavorite ? "star.slash" : "star"
             )
+        }
+
+        if viewModel.llmAvailable {
+            Button {
+                Task { await viewModel.generateTitle(for: transcription) }
+            } label: {
+                Label("Generate Title with AI", systemImage: "wand.and.stars")
+            }
+            .disabled(viewModel.generatingTitleIDs.contains(transcription.id))
         }
 
         Divider()

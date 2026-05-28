@@ -12,6 +12,7 @@ struct TranscriptionThumbnailCard<MenuContent: View>: View {
     var isSelected: Bool = false
     var showsSelectionControls: Bool = false
     var sourceLabelStyle: LibrarySourceLabelStyle = .visible
+    var isGeneratingTitle: Bool = false
     var onTap: () -> Void
     @ViewBuilder var menuContent: () -> MenuContent
 
@@ -27,6 +28,22 @@ struct TranscriptionThumbnailCard<MenuContent: View>: View {
             }
         }
         .accessibilityElement(children: .contain)
+        .overlay {
+            if isGeneratingTitle {
+                RoundedRectangle(cornerRadius: DesignSystem.Layout.cardCornerRadius)
+                    .fill(.black.opacity(0.35))
+                    .overlay {
+                        VStack(spacing: DesignSystem.Spacing.sm) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Generating title…")
+                                .font(DesignSystem.Typography.caption)
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    .allowsHitTesting(false)
+            }
+        }
         .onHover { hovered = $0 }
         .animation(DesignSystem.Animation.hoverTransition, value: hovered)
         .onAppear {
