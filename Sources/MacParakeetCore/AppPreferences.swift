@@ -13,8 +13,11 @@ public enum AppPreferences {
         defaults.object(forKey: menuBarOnlyModeKey) as? Bool ?? false
     }
 
+    /// PDX Edition: telemetry is hard-disabled. The upstream toggle defaulted on
+    /// (opt-out) and sent events to upstream's analytics endpoint. This fork has
+    /// no analytics endpoint and no telemetry opt-in UI.
     public static func isTelemetryEnabled(defaults: UserDefaults = .standard) -> Bool {
-        defaults.object(forKey: telemetryEnabledKey) as? Bool ?? true
+        false
     }
 }
 
