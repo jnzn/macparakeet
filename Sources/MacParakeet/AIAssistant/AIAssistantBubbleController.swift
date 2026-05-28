@@ -27,9 +27,17 @@ final class AIAssistantBubbleController {
     /// — captured at session start so "Replace selection" can activate the
     /// right window even if the user has since clicked to other apps.
     /// Nil when the bubble was spawned outside a normal press flow (error
-    /// bubbles) — in that case the replace UI is suppressed.
+    /// bubbles, ambient-context mode) — in that case the replace UI is
+    /// suppressed.
     private let sourceAppPID: pid_t?
     private let onDismissed: () -> Void
+    /// Fallback question submitted when the user speaks nothing in ambient-
+    /// context mode (no text selected). Nil in normal selection-based mode.
+    private let defaultQuestion: String?
+    /// On-screen context text captured from the frontmost app in ambient-
+    /// context mode. Set asynchronously after the bubble opens via
+    /// `setAmbientContext(_:)`. Nil in normal selection-based mode.
+    private var ambientContext: String?
 
     private let state = AIAssistantBubbleState()
     private var panel: AIAssistantBubblePanel?
@@ -52,6 +60,7 @@ final class AIAssistantBubbleController {
         selectionReplacer: SelectionReplacer,
         selectionAnchorRect: CGRect?,
         sourceAppPID: pid_t?,
+        defaultQuestion: String? = nil,
         onDismissed: @escaping () -> Void
     ) {
         self.selection = selection
@@ -60,6 +69,7 @@ final class AIAssistantBubbleController {
         self.selectionReplacer = selectionReplacer
         self.selectionAnchorRect = selectionAnchorRect
         self.sourceAppPID = sourceAppPID
+        self.defaultQuestion = defaultQuestion
         self.onDismissed = onDismissed
         self.state.canReplaceSelection = (sourceAppPID != nil)
 
@@ -94,19 +104,31 @@ final class AIAssistantBubbleController {
 
     /// Called after voice capture completes. Transitions out of the
     /// listening state and submits the dictated transcript as the first
-    /// (or next) question to the CLI. Empty transcripts clear the listening
-    /// state but don't submit — matches the "no voice, no action" rule.
-    /// Partial observer stays subscribed so follow-up primary dictation
-    /// can feed the live preview.
+    /// (or next) question to the CLI. In ambient-context mode (no text
+    /// selected), an empty transcript falls back to `defaultQuestion`
+    /// instead of doing nothing. In normal selection mode, empty transcripts
+    /// clear the listening state but don't submit.
     func submitVoiceTranscript(_ transcript: String) {
         state.isListening = false
         state.listeningPartialText = ""
         let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            refreshUnfocusedAutoDismissTimer()
+        if trimmed.isEmpty {
+            if let fallback = defaultQuestion {
+                submit(question: fallback)
+            } else {
+                refreshUnfocusedAutoDismissTimer()
+            }
             return
         }
         submit(question: trimmed)
+    }
+
+    /// Provide the on-screen context captured asynchronously after the bubble
+    /// opened in ambient-context mode. Called from `AIAssistantFlowCoordinator`
+    /// once `AppContextService.captureContext` resolves. Safe to call at any
+    /// point before `submit` fires (context is read inside `submit`).
+    func setAmbientContext(_ context: String?) {
+        ambientContext = context
     }
 
     /// Called when voice capture is cancelled or errors out without a
@@ -435,7 +457,8 @@ final class AIAssistantBubbleController {
             selection: selection,
             question: trimmed,
             history: history,
-            providerOverride: activeProvider
+            providerOverride: activeProvider,
+            ambientContext: ambientContext
         )
         // Check auto-replace intent before awaiting the LLM. Captured here
         // so a mid-flight config edit in Settings doesn't change behavior

@@ -421,17 +421,27 @@ public struct AIAssistantRequest: Sendable {
     /// the config's default provider. The bubble's provider-switcher
     /// sets this per ask so subsequent turns stay on the chosen CLI.
     public let providerOverride: AIAssistantConfig.Provider?
+    /// On-screen context text captured from the frontmost app when the user
+    /// invoked the AI Assistant with no text selected (ambient-context mode).
+    /// Contains AX-sourced window title, focused-field content, and/or
+    /// Vision-OCR text. Nil when the user made a normal text selection —
+    /// in that case `selection` is the reference and context is not used.
+    /// Distinct from `selection`: never shown in the bubble UI; reference
+    /// only for the LLM.
+    public let ambientContext: String?
 
     public init(
         selection: String,
         question: String,
         history: [AIAssistantTurn] = [],
-        providerOverride: AIAssistantConfig.Provider? = nil
+        providerOverride: AIAssistantConfig.Provider? = nil,
+        ambientContext: String? = nil
     ) {
         self.selection = selection
         self.question = question
         self.history = history
         self.providerOverride = providerOverride
+        self.ambientContext = ambientContext
     }
 }
 
@@ -487,10 +497,13 @@ public final class AIAssistantService: AIAssistantServiceProtocol, @unchecked Se
             commandTemplate: resolvedTemplate,
             timeoutSeconds: config.timeoutSeconds
         )
-        let system = Self.renderSystemPrompt(selection: request.selection)
+        let system = Self.renderSystemPrompt(
+            selection: request.selection,
+            ambientContext: request.ambientContext
+        )
         let user = Self.renderUserPrompt(history: request.history, question: request.question)
         logger.info(
-            "ask provider=\(resolvedProvider.rawValue, privacy: .public) override=\(request.providerOverride != nil, privacy: .public) selectionChars=\(request.selection.count) questionChars=\(request.question.count) historyTurns=\(request.history.count)"
+            "ask provider=\(resolvedProvider.rawValue, privacy: .public) override=\(request.providerOverride != nil, privacy: .public) selectionChars=\(request.selection.count) questionChars=\(request.question.count) historyTurns=\(request.history.count) ambientContext=\(request.ambientContext != nil, privacy: .public)"
         )
         let resolvedExecutor = resolvedProvider == .ollama ? ollamaExecutor : executor
         let output = try await resolvedExecutor.execute(
@@ -503,10 +516,29 @@ public final class AIAssistantService: AIAssistantServiceProtocol, @unchecked Se
 
     // MARK: - Prompt rendering
 
-    /// The selection is pinned context for the whole bubble session. It lives
-    /// in the system prompt so the CLI treats it as a stable reference.
-    static func renderSystemPrompt(selection: String) -> String {
+    /// The selection (or ambient on-screen context) is pinned reference for the
+    /// whole bubble session. It lives in the system prompt so the CLI treats it
+    /// as stable context.
+    ///
+    /// When `ambientContext` is provided the user did NOT select text — they
+    /// invoked the assistant while looking at something on screen. The context
+    /// block is framed accordingly so the model knows it's answering about what
+    /// the user is currently viewing, not a hand-picked excerpt.
+    static func renderSystemPrompt(selection: String, ambientContext: String? = nil) -> String {
         let trimmedSelection = selection.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let context = ambientContext?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !context.isEmpty {
+            return """
+                You are an AI assistant embedded in a macOS dictation app. The user invoked the assistant without selecting text — they are asking about what is currently on their screen. Respond directly and concisely without preamble. Answer the user's question using the on-screen context below as your reference.
+
+                On-screen context (the user did not select text; they are asking about what is currently visible on screen):
+                \"\"\"
+                \(context)
+                \"\"\"
+                """
+        }
+
         return """
             You are an AI assistant embedded in a macOS dictation app. The user has selected text in another app and is asking questions about it. Respond directly and concisely without preamble. If the user asks you to rewrite or transform the selected text, output ONLY the transformed text — no explanation. If they ask a question about it, answer the question.
 

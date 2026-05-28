@@ -169,6 +169,59 @@ final class AIAssistantServiceTests: XCTestCase {
         XCTAssertTrue(system.contains("Selected text"))
     }
 
+    func testSystemPromptWithAmbientContextUsesAmbientFraming() {
+        let system = AIAssistantService.renderSystemPrompt(
+            selection: "",
+            ambientContext: "Window: Xcode — ContentView.swift\nActive window content: struct ContentView"
+        )
+        XCTAssertTrue(system.contains("On-screen context"))
+        XCTAssertTrue(system.contains("did not select text"))
+        XCTAssertTrue(system.contains("ContentView.swift"))
+        // Must NOT use the "Selected text" framing when ambient context is set.
+        XCTAssertFalse(system.contains("Selected text (reference"))
+    }
+
+    func testSystemPromptWithNilAmbientContextFallsBackToSelectionFraming() {
+        let system = AIAssistantService.renderSystemPrompt(
+            selection: "hello world",
+            ambientContext: nil
+        )
+        XCTAssertTrue(system.contains("Selected text"))
+        XCTAssertTrue(system.contains("hello world"))
+        XCTAssertFalse(system.contains("On-screen context"))
+    }
+
+    func testSystemPromptWithBlankAmbientContextFallsBackToSelectionFraming() {
+        // An empty/whitespace-only context string should behave like nil.
+        let system = AIAssistantService.renderSystemPrompt(
+            selection: "abc",
+            ambientContext: "   "
+        )
+        XCTAssertTrue(system.contains("Selected text"))
+        XCTAssertFalse(system.contains("On-screen context"))
+    }
+
+    func testAmbientContextIsIncludedInAskRequest() async throws {
+        let mockExecutor = MockExecutor()
+        mockExecutor.stubbedResponse = "It is Xcode."
+        let service = AIAssistantService(
+            executor: mockExecutor,
+            configProvider: { AIAssistantConfig.defaultClaude }
+        )
+        let request = AIAssistantRequest(
+            selection: "",
+            question: "What am I looking at?",
+            ambientContext: "Window: Xcode — MyFile.swift"
+        )
+        _ = try await service.ask(request)
+
+        XCTAssertEqual(mockExecutor.invocations.count, 1)
+        let call = mockExecutor.invocations[0]
+        XCTAssertTrue(call.systemPrompt.contains("On-screen context"))
+        XCTAssertTrue(call.systemPrompt.contains("Xcode — MyFile.swift"))
+        XCTAssertFalse(call.systemPrompt.contains("Selected text (reference"))
+    }
+
     func testUserPromptWithoutHistoryIsJustQuestion() {
         let user = AIAssistantService.renderUserPrompt(history: [], question: "  What does this do?  ")
         XCTAssertEqual(user, "What does this do?")

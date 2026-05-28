@@ -111,8 +111,11 @@ final class AIAssistantFlowCoordinator {
             selection = result.text
             logger.info("hotkey_press selection source=\(result.source.rawValue, privacy: .public) chars=\(selection.count)")
         } catch SelectionReader.Error.noSelection {
-            logger.info("hotkey_press selection_error reason=no_selection")
-            spawnErrorBubble(message: Self.selectionErrorMessage(for: .noSelection))
+            // No text selected → ambient-context mode. Open a listening
+            // bubble with a default question and concurrently capture the
+            // on-screen context so the LLM has something to answer about.
+            logger.info("hotkey_press selection_empty → ambient context mode")
+            startAmbientContextSession()
             return
         } catch SelectionReader.Error.accessibilityPermissionRequired {
             logger.info("hotkey_press selection_error reason=no_permission")
@@ -141,58 +144,36 @@ final class AIAssistantFlowCoordinator {
         }
 
         logger.info("hotkey_press spawn listening bubble selectionChars=\(selection.count)")
-        let bubble = AIAssistantBubbleController(
+        spawnListeningBubble(
             selection: selection,
-            service: service,
-            configStore: configStore,
-            selectionReplacer: selectionReplacer,
-            selectionAnchorRect: selectionAnchorRect,
             sourceAppPID: sourcePID,
-            onDismissed: { [weak self] in
-                self?.activeBubble = nil
-                self?.isCapturingVoice = false
-            }
+            selectionAnchorRect: selectionAnchorRect,
+            defaultQuestion: nil
         )
-        bubble.showListening()
-        activeBubble = bubble
+    }
 
-        // Start voice capture. DictationService returns the transcript from
-        // its stopRecording call on release, so the paste/history side-effects
-        // are avoided — we consume the result ourselves.
-        //
-        // First-start retry: AVAudioEngine.start() often fails the very first
-        // time the process touches audio (CoreAudio HAL cold-start race,
-        // observed as `com.apple.coreaudio.avfaudio error 2003329396`). A
-        // short re-try after the first failure succeeds reliably. Matches the
-        // behavior observed when a user invokes primary dictation first to
-        // "warm up" and then uses the AI hotkey.
-        isCapturingVoice = true
-        mode = .holding
-        pressStartedAt = Date()
-        pendingSubmitTask?.cancel()
-        pendingSubmitTask = nil
-        Task { [dictationService, logger] in
-            do {
-                // Tell DictationService to bypass per-app profile polish
-                // (terminal transliteration, email formality, etc.) for
-                // this recording. The spoken input is a direct instruction
-                // to the CLI agent — it should reach Claude/Codex as raw
-                // Parakeet output, not mangled by the Terminal profile's
-                // "see dee slash" → "cd /" rule.
-                await dictationService.setSuppressLLMPolish(true)
-                try await Self.startRecordingWithColdRetry(
-                    service: dictationService,
-                    logger: logger
-                )
-            } catch {
-                logger.warning("hotkey_press startRecording failed error=\(error.localizedDescription, privacy: .private)")
-                await dictationService.setSuppressLLMPolish(false)
-                await MainActor.run { [weak self] in
-                    self?.activeBubble?.clearListening()
-                    self?.activeBubble?.showError("Couldn't start voice capture: \(error.localizedDescription)")
-                    self?.isCapturingVoice = false
-                    self?.mode = .idle
-                }
+    /// Opens an ambient-context listening session when the user pressed the
+    /// AI hotkey with no text selected. The bubble opens immediately (for
+    /// responsive feel) with an empty selection and a default fallback
+    /// question. Concurrently, `AppContextService.captureContext` runs so
+    /// the LLM gets on-screen context; the result is handed to the bubble
+    /// via `setAmbientContext` before the user's voice transcript arrives.
+    private func startAmbientContextSession() {
+        let bubble = spawnListeningBubble(
+            selection: "",
+            sourceAppPID: nil,        // no editable selection to replace
+            selectionAnchorRect: nil,
+            defaultQuestion: "What am I looking at? What is this?"
+        )
+        // Capture on-screen context concurrently. `captureContext` is async
+        // and safe to run without blocking the press handler.
+        Task { [accessibilityService, weak bubble] in
+            let context = await AppContextService.captureContext(
+                accessibility: accessibilityService
+            )
+            let contextText = context.isEmpty ? nil : context.asPromptBlock()
+            await MainActor.run {
+                bubble?.setAmbientContext(contextText)
             }
         }
     }
@@ -335,6 +316,79 @@ final class AIAssistantFlowCoordinator {
     }
 
     // MARK: - Private
+
+    /// Creates an `AIAssistantBubbleController` in the "Listening…" state and
+    /// starts voice capture. Used by both the normal selection path and the
+    /// ambient-context (no-selection) path so the bubble-creation and
+    /// recording-start logic isn't duplicated.
+    ///
+    /// Returns the newly created bubble (already assigned to `activeBubble`)
+    /// so callers that need to hand further state to it (e.g. ambient context)
+    /// can hold the reference.
+    @discardableResult
+    private func spawnListeningBubble(
+        selection: String,
+        sourceAppPID: pid_t?,
+        selectionAnchorRect: CGRect?,
+        defaultQuestion: String?
+    ) -> AIAssistantBubbleController {
+        let bubble = AIAssistantBubbleController(
+            selection: selection,
+            service: service,
+            configStore: configStore,
+            selectionReplacer: selectionReplacer,
+            selectionAnchorRect: selectionAnchorRect,
+            sourceAppPID: sourceAppPID,
+            defaultQuestion: defaultQuestion,
+            onDismissed: { [weak self] in
+                self?.activeBubble = nil
+                self?.isCapturingVoice = false
+            }
+        )
+        bubble.showListening()
+        activeBubble = bubble
+
+        // Start voice capture. DictationService returns the transcript from
+        // its stopRecording call on release, so the paste/history side-effects
+        // are avoided — we consume the result ourselves.
+        //
+        // First-start retry: AVAudioEngine.start() often fails the very first
+        // time the process touches audio (CoreAudio HAL cold-start race,
+        // observed as `com.apple.coreaudio.avfaudio error 2003329396`). A
+        // short re-try after the first failure succeeds reliably. Matches the
+        // behavior observed when a user invokes primary dictation first to
+        // "warm up" and then uses the AI hotkey.
+        isCapturingVoice = true
+        mode = .holding
+        pressStartedAt = Date()
+        pendingSubmitTask?.cancel()
+        pendingSubmitTask = nil
+        Task { [dictationService, logger] in
+            do {
+                // Tell DictationService to bypass per-app profile polish
+                // (terminal transliteration, email formality, etc.) for
+                // this recording. The spoken input is a direct instruction
+                // to the CLI agent — it should reach Claude/Codex as raw
+                // Parakeet output, not mangled by the Terminal profile's
+                // "see dee slash" → "cd /" rule.
+                await dictationService.setSuppressLLMPolish(true)
+                try await Self.startRecordingWithColdRetry(
+                    service: dictationService,
+                    logger: logger
+                )
+            } catch {
+                logger.warning("hotkey_press startRecording failed error=\(error.localizedDescription, privacy: .private)")
+                await dictationService.setSuppressLLMPolish(false)
+                await MainActor.run { [weak self] in
+                    self?.activeBubble?.clearListening()
+                    self?.activeBubble?.showError("Couldn't start voice capture: \(error.localizedDescription)")
+                    self?.isCapturingVoice = false
+                    self?.mode = .idle
+                }
+            }
+        }
+        return bubble
+    }
 
     private func spawnErrorBubble(message: String) {
         // Error bubbles have no source selection to replace; pass nil PID
