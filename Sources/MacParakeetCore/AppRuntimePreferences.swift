@@ -21,6 +21,12 @@ public protocol AppRuntimePreferencesProtocol: Sendable {
     /// subsequent call.
     @discardableResult
     func markFirstDictationCompleted() -> Bool
+    /// Fork-only experimental flag: show a live streaming transcript bubble
+    /// above the dictation pill while speaking. Default off.
+    var streamingOverlayEnabled: Bool { get }
+    /// When AI Formatter is on, also clean the overlay bubble mid-dictation
+    /// (on pauses). Toggle off to get only the final end-of-dictation cleanup.
+    var liveBubbleCleanupEnabled: Bool { get }
 }
 
 public enum YouTubeAudioQuality: String, CaseIterable, Hashable, Sendable, Equatable {
@@ -117,6 +123,8 @@ public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProto
     public static let pauseMediaDuringDictationKey = "pauseMediaDuringDictation"
     public static let keepDictationOnClipboardKey = "keepDictationOnClipboard"
     public static let hasCompletedFirstDictationKey = "hasCompletedFirstDictation"
+    public static let streamingOverlayEnabledKey = "streamingOverlayEnabled"
+    public static let liveBubbleCleanupEnabledKey = "liveBubbleCleanupEnabled"
 
     private let defaults: UserDefaults
 
@@ -190,5 +198,13 @@ public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProto
         guard !hasCompletedFirstDictation else { return false }
         defaults.set(true, forKey: Self.hasCompletedFirstDictationKey)
         return true
+    }
+
+    public var streamingOverlayEnabled: Bool {
+        defaults.object(forKey: Self.streamingOverlayEnabledKey) as? Bool ?? false
+    }
+
+    public var liveBubbleCleanupEnabled: Bool {
+        defaults.object(forKey: Self.liveBubbleCleanupEnabledKey) as? Bool ?? true
     }
 }

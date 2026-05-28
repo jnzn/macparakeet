@@ -1,3 +1,4 @@
+@preconcurrency import AVFoundation
 import Foundation
 import OSLog
 
@@ -89,6 +90,17 @@ public actor DictationService: DictationServiceProtocol {
     /// disambiguate ambiguous transcriptions using real context.
     private let resolveAppContext: @Sendable () async -> AppContext?
 
+    // MARK: - Streaming overlay (fork-only)
+    private let streamingBroadcaster: StreamingAudioBroadcaster?
+    private let streamingTranscriber: StreamingDictationTranscriber?
+    private let streamingOverlayEnabled: @Sendable () -> Bool
+    private let streamingPartialHandler: (@Sendable (String) -> Void)?
+    /// Active background task feeding audio into the streaming transcriber.
+    private var activeStreamingTask: Task<Void, Never>?
+    /// Most recent streaming partial keyed by session ID. Guards against stale
+    /// callback delivery from a replaced session overwriting fresh text.
+    private var lastStreamingPartialBySession: [Int: String] = [:]
+
     private var _state: DictationState = .idle
     private var cancelResetTask: Task<Void, Never>?
     private var cancelGeneration: Int = 0
@@ -150,7 +162,11 @@ public actor DictationService: DictationServiceProtocol {
         markFirstDictationCompleted: (@Sendable () -> Void)? = nil,
         cancelWindow: Duration = .seconds(5),
         resolveActiveProfile: (@Sendable () -> AppProfile?)? = nil,
-        resolveAppContext: (@Sendable () async -> AppContext?)? = nil
+        resolveAppContext: (@Sendable () async -> AppContext?)? = nil,
+        streamingBroadcaster: StreamingAudioBroadcaster? = nil,
+        streamingTranscriber: StreamingDictationTranscriber? = nil,
+        streamingOverlayEnabled: (@Sendable () -> Bool)? = nil,
+        streamingPartialHandler: (@Sendable (String) -> Void)? = nil
     ) {
         self.audioProcessor = audioProcessor
         self.sttTranscriber = sttTranscriber
@@ -171,6 +187,10 @@ public actor DictationService: DictationServiceProtocol {
         self.cancelWindow = cancelWindow
         self.resolveActiveProfile = resolveActiveProfile ?? { nil }
         self.resolveAppContext = resolveAppContext ?? { nil }
+        self.streamingBroadcaster = streamingBroadcaster
+        self.streamingTranscriber = streamingTranscriber
+        self.streamingOverlayEnabled = streamingOverlayEnabled ?? { false }
+        self.streamingPartialHandler = streamingPartialHandler
     }
 
     public func startRecording(context: DictationTelemetryContext = DictationTelemetryContext()) async throws {
@@ -298,6 +318,7 @@ public actor DictationService: DictationServiceProtocol {
             }
             Telemetry.send(.dictationStarted(trigger: context.trigger, mode: context.mode))
             logger.debug("dictation_capture_started session=\(requestedSessionID, privacy: .public)")
+            startStreamingSessionIfEnabled(sessionID: requestedSessionID)
         } catch {
             let activeAtFailure = activeSessionID
             guard activeAtFailure == requestedSessionID else {
@@ -596,6 +617,133 @@ public actor DictationService: DictationServiceProtocol {
             recordingStartedAt = nil
             clearCurrentOperation()
             throw error
+        }
+    }
+
+    // MARK: - Streaming overlay (fork-only)
+
+    /// Spin up a background task that feeds audio buffers from the broadcaster into
+    /// the streaming transcriber and logs partial transcripts. Best-effort: errors
+    /// here never affect the authoritative batch dictation path.
+    private func startStreamingSessionIfEnabled(sessionID: Int) {
+        guard streamingOverlayEnabled(),
+              let broadcaster = streamingBroadcaster,
+              let transcriber = streamingTranscriber
+        else { return }
+
+        activeStreamingTask?.cancel()
+        // Subscribe to the broadcaster synchronously so buffers produced while the
+        // streaming model loads (worst case ~70 s on first-ever dictation) are
+        // dropped into the AsyncStream's bufferingNewest(200) window instead of
+        // missed entirely. Subsequent dictations load instantly from cache.
+        let audioStream = Task<AsyncStream<AVAudioPCMBuffer>, Never> {
+            await broadcaster.subscribeToAudioBuffers()
+        }
+        activeStreamingTask = Task { [weak self, logger = self.logger] in
+            let stream = await audioStream.value
+            do {
+                if await transcriber.isReady() == false {
+                    try await transcriber.loadModels()
+                }
+                let partialStream = try await transcriber.startSession()
+                logger.debug("streaming_session_started session=\(sessionID)")
+
+                let partialTask = Task { [weak self] in
+                    for await partial in partialStream {
+                        logger.info(
+                            "streaming_partial session=\(sessionID) chars=\(partial.count)"
+                        )
+                        #if DEBUG
+                        logger.debug(
+                            "streaming_partial_text session=\(sessionID) text=\(partial, privacy: .public)"
+                        )
+                        #endif
+                        await self?.reportStreamingPartial(partial, sessionID: sessionID)
+                    }
+                }
+
+                for await buffer in stream {
+                    if Task.isCancelled { break }
+                    do {
+                        try await transcriber.appendAudio(buffer)
+                    } catch {
+                        logger.warning(
+                            "streaming_append_error session=\(sessionID) error=\(error.localizedDescription, privacy: .private)"
+                        )
+                        break
+                    }
+                }
+
+                if Task.isCancelled {
+                    partialTask.cancel()
+                } else {
+                    _ = try? await transcriber.finish()
+                    _ = await partialTask.value
+                }
+                logger.debug("streaming_session_ended session=\(sessionID)")
+            } catch is CancellationError {
+                // Don't touch transcriber state on cancellation; let the next
+                // startSession clean up.
+            } catch {
+                logger.warning(
+                    "streaming_session_error session=\(sessionID) error=\(error.localizedDescription, privacy: .private)"
+                )
+            }
+        }
+    }
+
+    /// Deliver a streaming partial transcript to the overlay UI, guarded so stale
+    /// callbacks from a replaced session never overwrite the current session's text.
+    private func reportStreamingPartial(_ partial: String, sessionID: Int) {
+        guard sessionID == activeSessionID else { return }
+        lastStreamingPartialBySession[sessionID] = partial
+        streamingPartialHandler?(partial)
+    }
+
+    /// Returns the most recent streaming partial text seen for the given session,
+    /// or nil if none yet (or if the session has been replaced). Used by the
+    /// dictation flow coordinator's watchdog as a fallback when batch transcribe stalls.
+    public func currentStreamingPartial(sessionID: Int) -> String? {
+        guard sessionID == activeSessionID else { return nil }
+        return lastStreamingPartialBySession[sessionID]
+    }
+
+    private func endStreamingSession() {
+        activeStreamingTask?.cancel()
+        activeStreamingTask = nil
+    }
+
+    /// Run a live LLM cleanup pass on `text` using the same formatter prompt as
+    /// end-of-dictation polish. Returns the cleaned string, or nil when the formatter
+    /// is unavailable, suppressed, or the LLM call fails.
+    public func cleanupTextLive(_ text: String) async -> String? {
+        guard shouldUseAIFormatter(), let llmService else {
+            logger.info("live_cleanup_skipped reason=formatter_or_service_unavailable")
+            return nil
+        }
+        guard !suppressLLMPolish else {
+            logger.info("live_cleanup_skipped reason=suppressed_for_assistant")
+            return nil
+        }
+        let userTemplate = aiFormatterPromptTemplate()
+        let baseTemplate = activeProfile?.promptOverride ?? userTemplate
+        let template = AIFormatter.injectContextIntoPrompt(template: baseTemplate, context: activeAppContext)
+        let defaultPromptUsed = activeProfile?.promptOverride == nil
+            && AIFormatter.normalizedPromptTemplate(userTemplate) == AIFormatter.defaultPromptTemplate
+        logger.info("live_cleanup_start inputChars=\(text.count) profile=\(self.activeProfile?.id ?? "none", privacy: .public) hasContext=\(self.activeAppContext != nil)")
+        do {
+            let formatted = try await llmService.formatTranscript(
+                transcript: text,
+                promptTemplate: template,
+                source: .dictation,
+                defaultPromptUsed: defaultPromptUsed
+            )
+            let trimmed = formatted.trimmingCharacters(in: .whitespacesAndNewlines)
+            logger.info("live_cleanup_done outputChars=\(trimmed.count)")
+            return trimmed.isEmpty ? nil : trimmed
+        } catch {
+            logger.warning("live_cleanup_failed error=\(error.localizedDescription, privacy: .private)")
+            return nil
         }
     }
 

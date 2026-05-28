@@ -85,6 +85,11 @@ public actor AudioRecorder {
     /// the stop() race (writes after audioFile is nilled) and the cross-session race
     /// (stale callback from session A writing after session B has started).
     nonisolated private let sessionGeneration = OSAllocatedUnfairLock(initialState: 0)
+    /// Optional subscriber continuation that receives a copy of every converted 16 kHz
+    /// mono Float32 buffer written to the WAV file. Used by streaming dictation to feed
+    /// a live ASR pipeline alongside the existing batch capture. Yields are non-blocking
+    /// and safe to invoke from the processing queue.
+    nonisolated private let broadcastContinuation = OSAllocatedUnfairLock<AsyncStream<AVAudioPCMBuffer>.Continuation?>(initialState: nil)
     /// Diagnostic timers (first-buffer timeout + recording heartbeat). See
     /// `CaptureDiagnosticsTimers` for the field contract. Lives off-actor
     /// because the timer event handlers run on `diagnosticsQueue`.
@@ -150,6 +155,20 @@ public actor AudioRecorder {
     /// telemetry treats `nil` as "device unknown".
     public var deviceInfo: RecordingDeviceInfo? {
         nil
+    }
+
+    /// Subscribe to a live stream of converted 16 kHz mono Float32 buffers produced
+    /// by the current (or next) recording session. Single-subscriber: replaces any
+    /// prior subscription. Stream terminates when recording stops.
+    public func subscribeToAudioBuffers() async -> AsyncStream<AVAudioPCMBuffer> {
+        let (stream, continuation) = AsyncStream<AVAudioPCMBuffer>.makeStream(bufferingPolicy: .bufferingNewest(200))
+        let previous = broadcastContinuation.withLock { slot -> AsyncStream<AVAudioPCMBuffer>.Continuation? in
+            let prior = slot
+            slot = continuation
+            return prior
+        }
+        previous?.finish()
+        return stream
     }
 
     /// Subscribe to the shared microphone stream and start writing converted
@@ -336,6 +355,10 @@ public actor AudioRecorder {
                     try fileBox.file.write(from: convertedBuffer)
                     self.sampleCounter.withLock { $0 += convertedFrameLength }
                     self.runtimeMetrics.withLock { $0.outputBufferCount += 1 }
+                    // Broadcast to streaming dictation subscriber (if any). Non-blocking;
+                    // bufferingNewest(200) drops oldest frames under backpressure instead
+                    // of stalling the processing queue.
+                    self.broadcastContinuation.withLock { $0?.yield(convertedBuffer) }
                 } catch {
                     let alreadyLogged = self.tapErrorLogged.withLock { logged in
                         let was = logged; logged = true; return was
@@ -478,6 +501,11 @@ public actor AudioRecorder {
             sessionGeneration.withLock { $0 += 1 }
             disarmCaptureDiagnostics()
         }
+        // Terminate the broadcast stream so the streaming dictation task exits cleanly.
+        let prior = broadcastContinuation.withLock { slot -> AsyncStream<AVAudioPCMBuffer>.Continuation? in
+            let p = slot; slot = nil; return p
+        }
+        prior?.finish()
         audioFile = nil
         recording = false
         atomicAudioLevel.withLock { $0 = 0.0 }

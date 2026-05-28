@@ -1,7 +1,8 @@
+@preconcurrency import AVFoundation
 import Foundation
 
 /// Unified audio processor that handles both microphone capture and file conversion.
-public actor AudioProcessor: AudioProcessorProtocol {
+public actor AudioProcessor: AudioProcessorProtocol, StreamingAudioBroadcaster {
     private let recorder: AudioRecorder
     private let converter: AudioFileConverter
 
@@ -19,6 +20,10 @@ public actor AudioProcessor: AudioProcessorProtocol {
         )
         self.recorder = AudioRecorder(sharedStream: stream)
         self.converter = AudioFileConverter()
+    }
+
+    public func subscribeToAudioBuffers() async -> AsyncStream<AVAudioPCMBuffer> {
+        await recorder.subscribeToAudioBuffers()
     }
 
     public var audioLevel: Float {

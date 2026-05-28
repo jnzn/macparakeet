@@ -265,6 +265,22 @@ public final class SettingsViewModel {
         }
     }
 
+    /// Fork-only experimental flag: show a live streaming transcript bubble
+    /// above the dictation pill while speaking. Default off.
+    public var streamingOverlayEnabled: Bool {
+        didSet {
+            defaults.set(streamingOverlayEnabled, forKey: UserDefaultsAppRuntimePreferences.streamingOverlayEnabledKey)
+        }
+    }
+
+    /// When AI Formatter is on, also clean the overlay bubble mid-dictation
+    /// (on pauses). Toggle off to get only the final end-of-dictation cleanup.
+    public var liveBubbleCleanupEnabled: Bool {
+        didSet {
+            defaults.set(liveBubbleCleanupEnabled, forKey: UserDefaultsAppRuntimePreferences.liveBubbleCleanupEnabledKey)
+        }
+    }
+
     // Transcription
     public var youtubeAudioQuality: YouTubeAudioQuality {
         didSet {
@@ -551,6 +567,8 @@ public final class SettingsViewModel {
         saveDictationHistory = defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveDictationHistoryKey) as? Bool ?? true
         saveAudioRecordings = defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveAudioRecordingsKey) as? Bool ?? true
         saveTranscriptionAudio = defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveTranscriptionAudioKey) as? Bool ?? true
+        streamingOverlayEnabled = defaults.object(forKey: UserDefaultsAppRuntimePreferences.streamingOverlayEnabledKey) as? Bool ?? false
+        liveBubbleCleanupEnabled = defaults.object(forKey: UserDefaultsAppRuntimePreferences.liveBubbleCleanupEnabledKey) as? Bool ?? true
         youtubeAudioQuality = YouTubeAudioQuality.current(defaults: defaults)
         speakerDiarization = defaults.object(forKey: UserDefaultsAppRuntimePreferences.speakerDiarizationKey) as? Bool ?? false
         speechEnginePreference = SpeechEnginePreference.current(defaults: defaults)

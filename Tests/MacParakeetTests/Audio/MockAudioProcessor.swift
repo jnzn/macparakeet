@@ -1,7 +1,8 @@
+@preconcurrency import AVFoundation
 import Foundation
 @testable import MacParakeetCore
 
-public actor MockAudioProcessor: AudioProcessorProtocol {
+public actor MockAudioProcessor: AudioProcessorProtocol, StreamingAudioBroadcaster {
     public var convertResult: URL?
     public var convertError: Error?
     public var captureResult: URL?
@@ -14,8 +15,25 @@ public actor MockAudioProcessor: AudioProcessorProtocol {
     public var convertCallCount = 0
     public var lastConvertURL: URL?
     public var convertURLs: [URL] = []
+    private var broadcastContinuation: AsyncStream<AVAudioPCMBuffer>.Continuation?
 
     public init() {}
+
+    public func subscribeToAudioBuffers() async -> AsyncStream<AVAudioPCMBuffer> {
+        let (stream, continuation) = AsyncStream<AVAudioPCMBuffer>.makeStream()
+        broadcastContinuation?.finish()
+        broadcastContinuation = continuation
+        return stream
+    }
+
+    public func emitBroadcastBuffer(_ buffer: AVAudioPCMBuffer) {
+        broadcastContinuation?.yield(buffer)
+    }
+
+    public func finishBroadcast() {
+        broadcastContinuation?.finish()
+        broadcastContinuation = nil
+    }
 
     public func configure(convertResult: URL) {
         self.convertResult = convertResult
@@ -75,6 +93,8 @@ public actor MockAudioProcessor: AudioProcessorProtocol {
     public func stopCapture() async throws -> URL {
         stopCaptureCalled = true
         _isRecording = false
+        broadcastContinuation?.finish()
+        broadcastContinuation = nil
         if let error = captureError { throw error }
         return captureResult ?? URL(fileURLWithPath: "/tmp/recording.wav")
     }
