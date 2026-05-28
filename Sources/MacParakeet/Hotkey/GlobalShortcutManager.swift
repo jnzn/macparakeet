@@ -6,7 +6,22 @@ import MacParakeetCore
 /// meeting recording. Unlike `HotkeyManager`, this does not model hold or
 /// dictation gesture handling.
 public final class GlobalShortcutManager {
+    /// Fired on every press (hotkey down). Together with `onRelease` this
+    /// enables hold-to-talk gestures.
     public var onTrigger: (() -> Void)?
+    /// Fired on key-up for every press.
+    public var onRelease: (() -> Void)?
+    /// Fired when the user double-taps the hotkey within
+    /// `doubleTapWindowSeconds`. When set, `onTrigger` still fires on each
+    /// press — consumers decide how to reconcile the two (typically:
+    /// ignore onTrigger while a bubble is open, use onDoubleTap to open
+    /// a locked-listening bubble, use onRelease of a long press for
+    /// hold-to-talk). Nil means double-taps are treated as regular
+    /// press/release pairs.
+    public var onDoubleTap: (() -> Void)?
+
+    /// Max interval between two press events to count as a double-tap.
+    public var doubleTapWindowSeconds: TimeInterval = 0.35
 
     private let trigger: HotkeyTrigger
     private let requiredChordFlags: UInt64
@@ -19,6 +34,9 @@ public final class GlobalShortcutManager {
     private var modifierChordRequiredWasPressed = false
     private var modifierChordTriggeredDuringPress = false
     private var modifierChordBlockedUntilRelease = false
+    /// Timestamp of the last press — used for double-tap detection when
+    /// `onDoubleTap` is set.
+    private var lastPressAt: Date?
 
     public init(trigger: HotkeyTrigger) {
         self.trigger = trigger
@@ -226,15 +244,35 @@ public final class GlobalShortcutManager {
             guard keyCode == triggerCode else { return Unmanaged.passUnretained(event) }
             guard !triggerKeyIsPressed else { return nil }
             triggerKeyIsPressed = true
-            onTrigger?()
+            emitPress()
             return nil
         case .keyUp:
             guard keyCode == triggerCode else { return Unmanaged.passUnretained(event) }
+            let wasPressed = triggerKeyIsPressed
             triggerKeyIsPressed = false
+            if wasPressed { onRelease?() }
             return nil
         default:
             return Unmanaged.passUnretained(event)
         }
+    }
+
+    /// Dispatch a press event. Detects double-taps: if this press lands
+    /// within `doubleTapWindowSeconds` of the previous press AND the
+    /// consumer registered an `onDoubleTap` handler, fire onDoubleTap ONLY
+    /// (suppress onTrigger for that second press) so flow coordinators
+    /// don't double-process the gesture. Otherwise fires onTrigger normally.
+    private func emitPress() {
+        let now = Date()
+        if let prev = lastPressAt,
+           now.timeIntervalSince(prev) <= doubleTapWindowSeconds,
+           onDoubleTap != nil {
+            onDoubleTap?()
+            lastPressAt = nil
+            return
+        }
+        lastPressAt = now
+        onTrigger?()
     }
 
     private func handleChordEvent(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
@@ -319,12 +357,13 @@ public final class GlobalShortcutManager {
             guard flags == requiredChordFlags else { return false }
             guard !triggerKeyIsPressed else { return true }
             triggerKeyIsPressed = true
-            onTrigger?()
+            emitPress()
             return true
         case .keyUp:
             guard keyCode == triggerCode else { return false }
             guard triggerKeyIsPressed else { return false }
             triggerKeyIsPressed = false
+            onRelease?()
             return true
         default:
             return false

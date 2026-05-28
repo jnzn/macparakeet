@@ -14,6 +14,7 @@ final class AppEnvironmentConfigurer {
         let meetingRecordingFlowCoordinator: MeetingRecordingFlowCoordinator
         let hotkeyCoordinator: AppHotkeyCoordinator
         let meetingAutoStartCoordinator: MeetingAutoStartCoordinator?
+        let aiAssistantFlowCoordinator: AIAssistantFlowCoordinator
     }
 
     struct Callbacks {
@@ -360,11 +361,41 @@ final class AppEnvironmentConfigurer {
             calendarCoordinator = nil
         }
 
+        // AI Assistant flow coordinator (PDX feature). Constructed after the
+        // hotkey coordinator so it can share the dictation service; wired via
+        // a dedicated GlobalShortcutManager that uses the config's hotkey
+        // trigger (default Option+A). The coordinator is retained in Runtime
+        // so AppDelegate can call dismissAny() on app termination.
+        let aiAssistantCoordinator = AIAssistantFlowCoordinator(
+            service: env.aiAssistantService,
+            accessibilityService: env.accessibilityService,
+            clipboardService: env.clipboardService,
+            configStore: env.aiAssistantConfigStore,
+            dictationService: env.dictationService
+        )
+        let aiConfig = env.aiAssistantConfigStore.load()
+        let aiTrigger = aiConfig?.effectiveHotkeyTrigger
+            ?? AIAssistantConfig.defaultHotkeyTrigger
+        if !aiTrigger.isDisabled {
+            let aiManager = GlobalShortcutManager(trigger: aiTrigger)
+            aiManager.onTrigger = {
+                Task { @MainActor in aiAssistantCoordinator.handleHotkeyPress() }
+            }
+            aiManager.onRelease = {
+                Task { @MainActor in aiAssistantCoordinator.handleHotkeyRelease() }
+            }
+            aiManager.onDoubleTap = {
+                Task { @MainActor in aiAssistantCoordinator.handleHotkeyDoubleTap() }
+            }
+            _ = aiManager.start()
+        }
+
         return Runtime(
             dictationFlowCoordinator: dictationCoordinator,
             meetingRecordingFlowCoordinator: meetingCoordinator,
             hotkeyCoordinator: hotkeyCoordinator,
-            meetingAutoStartCoordinator: calendarCoordinator
+            meetingAutoStartCoordinator: calendarCoordinator,
+            aiAssistantFlowCoordinator: aiAssistantCoordinator
         )
     }
 

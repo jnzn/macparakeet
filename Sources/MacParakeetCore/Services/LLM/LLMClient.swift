@@ -375,6 +375,7 @@ public final class LLMClient: LLMClientProtocol, Sendable {
             messages: messages.map { OllamaMessage(role: $0.role.rawValue, content: $0.content) },
             stream: stream,
             think: false,
+            keep_alive: nil,
             options: OllamaRequestOptions(num_ctx: 8192)
         )
 
@@ -1358,6 +1359,7 @@ struct OllamaChatRequest: Encodable {
     let messages: [OllamaMessage]
     let stream: Bool
     let think: Bool
+    let keep_alive: String?
     let options: OllamaRequestOptions
 }
 

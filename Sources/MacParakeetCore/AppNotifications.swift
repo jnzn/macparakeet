@@ -30,4 +30,9 @@ public extension Notification.Name {
     /// `MeetingAutoStartCoordinator` re-reads its config and re-evaluates on
     /// the next poll tick instead of waiting for the timer.
     static let macParakeetCalendarSettingsDidChange = Notification.Name("macparakeet.calendarSettingsDidChange")
+    /// Posted by the AI Assistant bubble while it is streaming a response from
+    /// the LLM. `userInfo["partial"]` carries the accumulated text so far
+    /// (`String`). Observed by `AIAssistantBubbleController` to stream text
+    /// into the bubble view without waiting for the full response.
+    static let macParakeetStreamingPartial = Notification.Name("macparakeet.streamingPartial")
 }

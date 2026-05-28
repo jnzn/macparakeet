@@ -27,6 +27,8 @@ struct OnboardingFlowView: View {
         return current.isDisabled ? .defaultPushToTalk : current
     }
 
+    @State private var aiAssistantOnboardingViewModel = AIAssistantOnboardingViewModel()
+
     private var usesSharedDictationGesture: Bool {
         HotkeyTrigger.isSharedDictationGesture(
             handsFree: handsFreeDisplayTrigger,
@@ -194,6 +196,7 @@ struct OnboardingFlowView: View {
         case .meetingRecording: return "record.circle"
         case .calendar: return "calendar"
         case .hotkey: return "keyboard"
+        case .aiAssistant: return "sparkles"
         case .engine: return "cpu"
         case .done: return "checkmark.circle"
         }
@@ -212,6 +215,8 @@ struct OnboardingFlowView: View {
         case .calendar:
             return viewModel.calendarPermissionGranted || viewModel.calendarSkipped
         case .hotkey:
+            return viewModel.step.rawValue > step.rawValue
+        case .aiAssistant:
             return viewModel.step.rawValue > step.rawValue
         case .engine:
             if case .ready = viewModel.engineState { return true }
@@ -370,6 +375,8 @@ struct OnboardingFlowView: View {
             calendarStep
         case .hotkey:
             hotkeyStep
+        case .aiAssistant:
+            aiAssistantStepBody
         case .engine:
             engineSetupView
                 .onAppear {
@@ -750,6 +757,14 @@ struct OnboardingFlowView: View {
         animationTask = nil
     }
 
+    // MARK: - AI Assistant Step
+
+    private var aiAssistantStepBody: some View {
+        AIAssistantOnboardingContainerView(viewModel: aiAssistantOnboardingViewModel) {
+            viewModel.goNext()
+        }
+    }
+
     // MARK: - Engine Setup
 
     private var engineSetupView: some View {
@@ -1056,6 +1071,7 @@ struct OnboardingFlowView: View {
         case .meetingRecording: return "Meeting Recording (Optional)"
         case .calendar: return "Calendar Meetings (Optional)"
         case .hotkey: return "Learn the Hotkey"
+        case .aiAssistant: return "Ask AI Assistant (Optional)"
         case .engine: return "Prepare Speech Model"
         case .done: return "All Set"
         }
@@ -1075,6 +1091,8 @@ struct OnboardingFlowView: View {
             return "Optional. Lets MacParakeet remind you before scheduled meetings and enable opt-in auto-start."
         case .hotkey:
             return "Two ways to dictate — pick whichever feels natural."
+        case .aiAssistant:
+            return "Set up an AI CLI (Claude Code, Codex, Gemini, or Ollama) to ask questions about selected text."
         case .engine:
             if let recommendation = viewModel.whisperRecommendation {
                 return "Preparing local Whisper for \(recommendation.languageName) so dictation works for your Mac language."
@@ -1093,6 +1111,7 @@ struct OnboardingFlowView: View {
         case .meetingRecording: return "Continue"
         case .calendar: return "Continue"
         case .hotkey: return "Continue"
+        case .aiAssistant: return "Continue"
         case .engine: return "Continue"
         case .done: return "Finish"
         }
@@ -1234,7 +1253,7 @@ struct OnboardingFlowView: View {
                 return "Preparing Whisper — this can take several minutes. Everything works offline after setup."
             }
             return "Downloading — this can take several minutes. Everything works offline after setup."
-        case .welcome, .hotkey, .done:
+        case .welcome, .hotkey, .aiAssistant, .done:
             return nil
         }
     }

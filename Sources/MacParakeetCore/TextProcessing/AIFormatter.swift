@@ -143,4 +143,24 @@ public enum AIFormatter {
 
         return normalized
     }
+
+    /// Strip chain-of-thought delimiters from model output. Hybrid-thinking
+    /// models (e.g. DeepSeek-R1, Qwen3 with think=true) wrap their reasoning
+    /// in `<think>…</think>` blocks. We surface only the answer portion.
+    static func stripThinkingDelimiters(_ output: String) -> String {
+        var text = output
+        while let open = text.range(of: "<think>"),
+              let close = text.range(of: "</think>", range: open.upperBound..<text.endIndex) {
+            // `close.upperBound` is the index one past the final `>` of `</think>`,
+            // so the half-open range `open.lowerBound..<close.upperBound` removes
+            // exactly the delimiters and their enclosed content without eating the
+            // character that immediately follows the closing tag.
+            text.removeSubrange(open.lowerBound..<close.upperBound)
+        }
+        // If an unclosed <think> block exists, strip from it to end of string.
+        if let open = text.range(of: "<think>") {
+            text.removeSubrange(open.lowerBound...)
+        }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 }

@@ -113,6 +113,7 @@ enum SettingsDictationHotkeyDisplay {
 struct SettingsView: View {
     @Bindable var viewModel: SettingsViewModel
     @Bindable var llmSettingsViewModel: LLMSettingsViewModel
+    @Bindable var aiAssistantSettingsViewModel: AIAssistantSettingsViewModel
     let transformHotkeys: [Prompt]
     let requestedTab: SettingsTab?
     let requestedTabRevision: Int
@@ -137,6 +138,7 @@ struct SettingsView: View {
     init(
         viewModel: SettingsViewModel,
         llmSettingsViewModel: LLMSettingsViewModel,
+        aiAssistantSettingsViewModel: AIAssistantSettingsViewModel,
         transformHotkeys: [Prompt] = [],
         requestedTab: SettingsTab? = nil,
         requestedTabRevision: Int = 0,
@@ -145,6 +147,7 @@ struct SettingsView: View {
     ) {
         self.viewModel = viewModel
         self.llmSettingsViewModel = llmSettingsViewModel
+        self.aiAssistantSettingsViewModel = aiAssistantSettingsViewModel
         self.transformHotkeys = transformHotkeys
         self.requestedTab = requestedTab
         self.requestedTabRevision = requestedTabRevision
@@ -382,6 +385,17 @@ struct SettingsView: View {
     private var aiTabContent: some View {
         scrollableTabBody {
             aiProviderCard.id("ai.provider")
+            aiAssistantCard.id("ai.assistant")
+        }
+    }
+
+    private var aiAssistantCard: some View {
+        SettingsCard(
+            title: "AI Assistant",
+            subtitle: "Hold a hotkey to invoke AI on selected text or your voice.",
+            icon: "sparkles"
+        ) {
+            AIAssistantSettingsView(viewModel: aiAssistantSettingsViewModel)
         }
     }
 

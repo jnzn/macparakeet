@@ -40,6 +40,8 @@ final class AppEnvironment {
     let llmService: LLMService
     let runtimePreferences: AppRuntimePreferencesProtocol
     let derivedFieldsBackfill: DerivedFieldsBackfillService
+    let aiAssistantConfigStore: AIAssistantConfigStore
+    let aiAssistantService: AIAssistantService
 
     init(databaseManager: DatabaseManager) throws {
         self.databaseManager = databaseManager
@@ -250,5 +252,12 @@ final class AppEnvironment {
 
         derivedFieldsBackfill = DerivedFieldsBackfillService(dbQueue: databaseManager.dbQueue)
         derivedFieldsBackfill.runInBackground()
+
+        // AI Assistant: config store + service (PDX feature)
+        let aiConfigStore = AIAssistantConfigStore()
+        self.aiAssistantConfigStore = aiConfigStore
+        self.aiAssistantService = AIAssistantService(
+            configProvider: { aiConfigStore.load() }
+        )
     }
 }

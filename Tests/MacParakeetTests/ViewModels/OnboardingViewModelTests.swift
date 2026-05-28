@@ -166,7 +166,7 @@ final class OnboardingViewModelTests: XCTestCase {
     func testMeetingRecordingStepOrdering() {
         XCTAssertEqual(
             OnboardingViewModel.Step.allCases,
-            [.welcome, .microphone, .accessibility, .meetingRecording, .calendar, .hotkey, .engine, .done]
+            [.welcome, .microphone, .accessibility, .meetingRecording, .calendar, .hotkey, .aiAssistant, .engine, .done]
         )
     }
 

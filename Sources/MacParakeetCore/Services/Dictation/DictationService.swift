@@ -110,12 +110,26 @@ public actor DictationService: DictationServiceProtocol {
     /// to prepend a context block to the paste-polish LLM prompt.
     private var activeAppContext: AppContext?
 
+    /// When true, skip all LLM polish paths for the current recording. Set via
+    /// `setSuppressLLMPolish(true)` before `startRecording` by the AI Assistant
+    /// flow coordinator, which consumes the raw Parakeet transcript directly —
+    /// the spoken input is an instruction TO Claude/Codex, not text that should
+    /// be rewritten by a per-app formatter prompt. Auto-reset in `confirmCancel`.
+    private var suppressLLMPolish: Bool = false
+
     public var state: DictationState {
         _state
     }
 
     public var audioLevel: Float {
         get async { await audioProcessor.audioLevel }
+    }
+
+    /// Called before `startRecording` by consumers (AI Assistant hotkey) that
+    /// want raw Parakeet output without profile-aware LLM polish. The flag
+    /// auto-clears in `confirmCancel`.
+    public func setSuppressLLMPolish(_ suppressed: Bool) {
+        self.suppressLLMPolish = suppressed
     }
 
     public init(
@@ -509,6 +523,7 @@ public actor DictationService: DictationServiceProtocol {
             device: device
         )
         recordingStartedAt = nil
+        suppressLLMPolish = false
         clearCurrentOperation()
         _state = .idle
     }
@@ -734,7 +749,7 @@ public actor DictationService: DictationServiceProtocol {
         _ text: String,
         runSource: LLMRunSource?
     ) async throws -> FormatterOutcome {
-        guard shouldUseAIFormatter(), let llmService else {
+        guard !suppressLLMPolish, shouldUseAIFormatter(), let llmService else {
             return .skipped
         }
 

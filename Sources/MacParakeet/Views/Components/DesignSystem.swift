@@ -205,18 +205,6 @@ struct ShadowStyle {
     }
 }
 
-// MARK: - Adaptive Color Helper
-
-extension Color {
-    /// Creates a color that adapts to light/dark mode.
-    init(light: Color, dark: Color) {
-        self.init(nsColor: NSColor(name: nil) { appearance in
-            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            return isDark ? NSColor(dark) : NSColor(light)
-        })
-    }
-}
-
 // MARK: - Shadow View Modifier
 
 extension View {
