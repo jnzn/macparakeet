@@ -34,6 +34,9 @@ final class AppEnvironmentConfigurer {
         /// the Hotkey" rehearsal, or a returning user whose taps are armed)
         /// can never start a real, model-less dictation.
         let isOnboardingVisible: () -> Bool
+        /// Number of meetings transcribing in the background changed — drives
+        /// the menu-bar "N processing" row and the processing icon state.
+        let onMeetingProcessingCountChanged: (Int) -> Void
     }
 
     private let transcriptionViewModel: TranscriptionViewModel
@@ -265,6 +268,30 @@ final class AppEnvironmentConfigurer {
         )
         coordinatorRefs.dictation = dictationCoordinator
 
+        let meetingBackgroundProcessor = MeetingBackgroundProcessor(
+            transcriptionService: env.transcriptionService,
+            meetingRecordingService: env.meetingRecordingService,
+            transcriptionRepo: env.transcriptionRepo,
+            conversationRepo: env.chatConversationRepo,
+            llmService: hasLLMConfig ? env.llmService : nil,
+            onTranscriptionReady: { [weak self] transcription in
+                guard let self else { return }
+                self.transcriptionViewModel.presentCompletedTranscription(transcription, autoSave: true)
+                self.libraryViewModel.loadTranscriptions()
+                // A backgrounded meeting can finish while the user is recording
+                // (or doing) something else. Don't yank focus to it — it just
+                // appears in the Library. Only navigate when nothing is active.
+                let recordingActive = coordinatorRefs.meeting?.isMeetingRecordingActive == true
+                if !recordingActive {
+                    self.mainWindowState.navigateToTranscription(from: .library)
+                    callbacks.onOpenMainWindow()
+                }
+            },
+            onProcessingCountChanged: { count in
+                callbacks.onMeetingProcessingCountChanged(count)
+            }
+        )
+
         let meetingCoordinator = MeetingRecordingFlowCoordinator(
             meetingRecordingService: env.meetingRecordingService,
             transcriptionService: env.transcriptionService,
@@ -276,15 +303,9 @@ final class AppEnvironmentConfigurer {
             sttManager: env.sttScheduler,
             meetingAudioSourceModeProvider: { env.runtimePreferences.meetingAudioSourceMode },
             llmService: hasLLMConfig ? env.llmService : nil,
+            backgroundProcessor: meetingBackgroundProcessor,
             pillViewModel: meetingPillViewModel,
             onMenuBarIconUpdate: { _ in callbacks.onMenuBarIconUpdate() },
-            onTranscriptionReady: { [weak self] transcription in
-                guard let self else { return }
-                self.transcriptionViewModel.presentCompletedTranscription(transcription, autoSave: true)
-                self.libraryViewModel.loadTranscriptions()
-                self.mainWindowState.navigateToTranscription(from: .library)
-                callbacks.onOpenMainWindow()
-            },
             onRecordingBegan: {
                 coordinatorRefs.dictation?.hideIdlePill()
             },

@@ -14,7 +14,7 @@ final class MeetingRecordingFlowCoordinator {
         switch stateMachine.state {
         case .idle, .finishing:
             return false
-        case .checkingPermissions, .starting, .recording, .stopping, .transcribing:
+        case .checkingPermissions, .starting, .recording, .stopping:
             return true
         }
     }
@@ -27,7 +27,7 @@ final class MeetingRecordingFlowCoordinator {
             return .starting
         case .recording:
             return .recording
-        case .stopping, .transcribing:
+        case .stopping:
             return .finishing
         }
     }
@@ -43,8 +43,8 @@ final class MeetingRecordingFlowCoordinator {
     private let sttManager: (any STTRuntimeManaging)?
     private let meetingAudioSourceModeProvider: @MainActor @Sendable () -> MeetingAudioSourceMode
     private var llmService: LLMServiceProtocol?
+    private let backgroundProcessor: MeetingBackgroundProcessor
     private let onMenuBarIconUpdate: (BreathWaveIcon.MenuBarState) -> Void
-    private let onTranscriptionReady: (Transcription) -> Void
     private let onRecordingBegan: () -> Void
     private let onFlowReturnedToIdle: () -> Void
 
@@ -64,7 +64,6 @@ final class MeetingRecordingFlowCoordinator {
     private var transcriptObservationTask: Task<Void, Never>?
     private var speechWarmUpObservationTask: Task<Void, Never>?
     private var activeFlowSettlementWaiters: [CheckedContinuation<Void, Never>] = []
-    private var completedTranscription: Transcription?
     private var currentMeetingOperationContext: ObservabilityOperationContext?
     private var currentMeetingTrigger: TelemetryMeetingRecordingTrigger?
     private var pendingAudioSourceMode: MeetingAudioSourceMode?
@@ -81,9 +80,9 @@ final class MeetingRecordingFlowCoordinator {
         sttManager: (any STTRuntimeManaging)? = nil,
         meetingAudioSourceModeProvider: @escaping @MainActor @Sendable () -> MeetingAudioSourceMode = { .microphoneAndSystem },
         llmService: LLMServiceProtocol?,
+        backgroundProcessor: MeetingBackgroundProcessor,
         pillViewModel: MeetingRecordingPillViewModel,
         onMenuBarIconUpdate: @escaping (BreathWaveIcon.MenuBarState) -> Void,
-        onTranscriptionReady: @escaping (Transcription) -> Void,
         onRecordingBegan: @escaping () -> Void = {},
         onFlowReturnedToIdle: @escaping () -> Void = {}
     ) {
@@ -98,9 +97,9 @@ final class MeetingRecordingFlowCoordinator {
         self.sttManager = sttManager
         self.meetingAudioSourceModeProvider = meetingAudioSourceModeProvider
         self.llmService = llmService
+        self.backgroundProcessor = backgroundProcessor
         self.pillViewModel = pillViewModel
         self.onMenuBarIconUpdate = onMenuBarIconUpdate
-        self.onTranscriptionReady = onTranscriptionReady
         self.onRecordingBegan = onRecordingBegan
         self.onFlowReturnedToIdle = onFlowReturnedToIdle
     }
@@ -109,6 +108,7 @@ final class MeetingRecordingFlowCoordinator {
     /// AppEnvironmentConfigurer.refreshLLMAvailability does for the singleton chat VM.
     func updateLLMService(_ service: LLMServiceProtocol?) {
         self.llmService = service
+        backgroundProcessor.updateLLMService(service)
         panelViewModel?.chatViewModel.updateLLMService(service)
     }
 
@@ -174,7 +174,7 @@ final class MeetingRecordingFlowCoordinator {
             sendEvent(.startRequested)
         case .recording, .starting, .stopping:
             sendEvent(.stopRequested)
-        case .checkingPermissions, .transcribing, .finishing:
+        case .checkingPermissions, .finishing:
             break
         }
     }
@@ -355,7 +355,7 @@ final class MeetingRecordingFlowCoordinator {
             panelVM.onMicrophoneMuteToggle = { [weak self] in self?.toggleMicrophoneMute() }
             panelVM.onClose = { [weak self] in self?.hideMeetingPanel() }
             // Configure live Ask: in-memory mode (no transcriptionId/conversationRepo).
-            // Promotion to a persisted ChatConversation happens in .navigateToTranscription.
+            // Promotion to a persisted ChatConversation happens in MeetingBackgroundProcessor.
             panelVM.chatViewModel.configure(
                 llmService: llmService,
                 transcriptText: panelVM.chatTranscript,
@@ -463,106 +463,68 @@ final class MeetingRecordingFlowCoordinator {
                 }
             }
 
-        case .showTranscribingState:
-            stopPillPolling()
-            stopTranscriptObservation()
-            stopSpeechWarmUpObservation()
-            pillViewModel.micLevel = 0
-            pillViewModel.systemLevel = 0
-            pillViewModel.state = .completing
-            pillViewModel.onCompletionAnimationFinished = { [weak self] in
-                guard let self, self.pillViewModel.state == .completing else { return }
-                // Flower collapsed — show merkaba spinner (or checkmark if already done)
-                if self.completedTranscription != nil {
-                    self.pillViewModel.state = .completed
-                    // Auto-dismiss was skipped during collapse — start it now
-                    self.autoDismissTask?.cancel()
-                    let gen = self.stateMachine.generation
-                    self.autoDismissTask = Task { @MainActor [weak self] in
-                        try? await Task.sleep(for: .seconds(2))
-                        guard !Task.isCancelled else { return }
-                        self?.sendEvent(.autoDismissExpired(generation: gen))
-                    }
-                } else {
-                    self.pillViewModel.state = .transcribing
-                }
-            }
-            panelViewModel?.state = .transcribing
-            panelViewModel?.micLevel = 0
-            panelViewModel?.systemLevel = 0
-            hideMeetingPanel()
-
-        case .stopRecordingAndTranscribe:
+        case .stopRecordingAndHandOff:
             let gen = stateMachine.generation
             let liveWordCount = panelViewModel?.wordCount ?? 0
             let liveTranscriptLagged = panelViewModel?.isTranscriptionLagging ?? false
             let notesVM = panelViewModel?.notesViewModel
+            // Snapshot the in-memory Ask-tab chat before the panel is torn
+            // down on handoff so the background job can promote it to a
+            // persisted conversation once the transcription exists.
+            let carriedChat = panelViewModel?.chatViewModel.liveChatHistorySnapshot() ?? []
             let operationContext = currentMeetingOperationContext ?? ObservabilityOperationContext()
             currentMeetingOperationContext = operationContext
+            let trigger = currentMeetingTrigger
+            // Manual / hotkey meetings have no preset title, so auto-title them.
+            // Calendar-driven meetings already carry the event title — keep it.
+            let shouldAutoGenerateTitle = trigger != .calendarAutoStart
+            stopPillPolling()
+            stopTranscriptObservation()
+            stopSpeechWarmUpObservation()
             actionTask = Task { @MainActor in
-                var stoppedOutput: MeetingRecordingOutput?
-                var transcriptionFinished = false
                 do {
-                    let transcription = try await Observability.withOperationContext(operationContext) {
-                        // Flush any keystrokes typed in the last < 250 ms so
-                        // they make it onto the lock file and into the saved
-                        // Transcription.userNotes (ADR-020 §8).
-                        await notesVM?.commit()
-                        let output = try await meetingRecordingService.stopRecording()
-                        stoppedOutput = output
-                        Telemetry.send(.meetingRecordingCompleted(
-                            durationSeconds: output.durationSeconds,
-                            liveWordCount: liveWordCount,
-                            liveTranscriptLagged: liveTranscriptLagged
-                        ))
-                        let transcription = try await transcriptionService.transcribeMeeting(recording: output, onProgress: nil)
-                        transcriptionFinished = true
-                        await meetingRecordingService.completeTranscription(for: output)
-                        return transcription
-                    }
-                    self.sendMeetingOperation(
-                        outcome: .success,
-                        output: stoppedOutput,
-                        stage: .completeTranscription,
+                    // Flush any keystrokes typed in the last < 250 ms so they
+                    // make it onto the lock file and into the saved
+                    // Transcription.userNotes (ADR-020 §8).
+                    await notesVM?.commit()
+                    let output = try await meetingRecordingService.stopRecording()
+                    Telemetry.send(.meetingRecordingCompleted(
+                        durationSeconds: output.durationSeconds,
                         liveWordCount: liveWordCount,
                         liveTranscriptLagged: liveTranscriptLagged
+                    ))
+                    // Hand the slow transcription off to the background
+                    // processor and return to idle immediately so a new
+                    // recording can start right away.
+                    self.backgroundProcessor.process(
+                        output: output,
+                        operationContext: operationContext,
+                        trigger: trigger,
+                        liveWordCount: liveWordCount,
+                        liveTranscriptLagged: liveTranscriptLagged,
+                        shouldAutoGenerateTitle: shouldAutoGenerateTitle,
+                        carriedChat: carriedChat
                     )
                     self.currentMeetingOperationContext = nil
                     self.currentMeetingTrigger = nil
-                    self.completedTranscription = transcription
-                    self.sendEvent(.transcriptionCompleted(generation: gen, transcriptionID: transcription.id))
+                    self.sendEvent(.handedOffToBackground(generation: gen))
                 } catch {
-                    if let stoppedOutput {
-                        await meetingRecordingService.finishTranscriptionAttempt(for: stoppedOutput)
-                    }
                     Telemetry.send(.meetingRecordingFailed(
                         errorType: TelemetryErrorClassifier.classify(error),
                         errorDetail: TelemetryErrorClassifier.errorDetail(error)
                     ))
                     self.sendMeetingOperation(
                         outcome: .failure,
-                        output: stoppedOutput,
-                        stage: stoppedOutput == nil ? .stopRecording : (transcriptionFinished ? .completeTranscription : .transcription),
+                        stage: .stopRecording,
                         liveWordCount: liveWordCount,
                         liveTranscriptLagged: liveTranscriptLagged,
                         errorType: TelemetryErrorClassifier.classify(error)
                     )
                     self.currentMeetingOperationContext = nil
                     self.currentMeetingTrigger = nil
-                    self.sendEvent(.transcriptionFailed(generation: gen, message: error.localizedDescription))
+                    self.sendEvent(.handoffFailed(generation: gen, message: error.localizedDescription))
                 }
             }
-
-        case .showCompleted:
-            stopPillPolling()
-            stopTranscriptObservation()
-            stopSpeechWarmUpObservation()
-            // If flower is still collapsing, the callback will check completedTranscription
-            // If spinner is showing, transition to checkmark now
-            if pillViewModel.state == .transcribing {
-                pillViewModel.state = .completed
-            }
-            panelViewModel?.state = .hidden
 
         case .cancelRecording:
             let durationSeconds = Double(panelViewModel?.elapsedSeconds ?? 0)
@@ -577,7 +539,7 @@ final class MeetingRecordingFlowCoordinator {
                 // session folder that cancelRecording is about to delete.
                 // The notes themselves are intentionally discarded with
                 // the rest of the cancelled recording — symmetric with
-                // .stopRecordingAndTranscribe's commit() call.
+                // .stopRecordingAndHandOff's commit() call.
                 await notesVM?.commit()
                 await meetingRecordingService.cancelRecording()
                 Telemetry.send(.meetingRecordingCancelled(durationSeconds: durationSeconds))
@@ -626,7 +588,6 @@ final class MeetingRecordingFlowCoordinator {
             panelController?.close()
             panelController = nil
             panelViewModel = nil
-            completedTranscription = nil
             onFlowReturnedToIdle()
 
         case .updateMenuBar(let state):
@@ -636,25 +597,6 @@ final class MeetingRecordingFlowCoordinator {
             case .processing: .processing
             }
             onMenuBarIconUpdate(iconState)
-
-        case .navigateToTranscription(let id):
-            guard completedTranscription?.id == id, let transcription = completedTranscription else { return }
-            // Cancel any in-flight assistant response BEFORE binding. If the panel
-            // chat VM is destroyed (.hidePill, ~2s after this) while a stream is
-            // still arriving, the streamingTask's [weak self] kills it mid-write
-            // and the response is lost in a non-deterministic spot. Cancelling now
-            // gives a clean state to persist; the user loses an unfinished reply
-            // but the data on disk is consistent.
-            panelViewModel?.chatViewModel.cancelStreaming()
-            // If the user chatted while recording, promote the in-memory thread to a
-            // real ChatConversation linked to the finalized transcription so the live
-            // conversation appears on TranscriptResultView's Chat tab unbroken.
-            panelViewModel?.chatViewModel.bindPersistedConversation(
-                transcriptionId: transcription.id,
-                transcriptionRepo: transcriptionRepo,
-                conversationRepo: conversationRepo
-            )
-            onTranscriptionReady(transcription)
 
         case .presentPermissionAlert(let reason):
             onFlowReturnedToIdle()
@@ -886,7 +828,7 @@ final class MeetingRecordingFlowCoordinator {
         switch stateMachine.state {
         case .starting, .recording:
             break
-        case .idle, .checkingPermissions, .stopping, .transcribing, .finishing:
+        case .idle, .checkingPermissions, .stopping, .finishing:
             return
         }
         panelController?.show()

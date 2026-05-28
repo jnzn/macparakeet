@@ -350,6 +350,14 @@ public final class TranscriptChatViewModel {
         removeStreamingAssistantMessage()
     }
 
+    /// Snapshot of the in-memory live chat history (model-level messages),
+    /// used to carry a mid-recording Ask-tab thread over to the background
+    /// transcription processor, which promotes it to a persisted conversation
+    /// once the transcription exists.
+    public func liveChatHistorySnapshot() -> [ChatMessage] {
+        chatHistory
+    }
+
     public func updateTranscript(_ text: String) {
         transcriptText = text
         clearHistory()
