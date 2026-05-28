@@ -63,7 +63,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
                          styleMask: [.titled, .closable, .miniaturizable],
                          backing: .buffered,
                          defer: false)
-        w.title = "Welcome to MacParakeet"
+        w.title = "Welcome to MacParakeet (PDX Edition)"
         w.isReleasedWhenClosed = false
         w.center()
         w.contentView = hosting

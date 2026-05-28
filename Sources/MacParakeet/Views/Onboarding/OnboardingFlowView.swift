@@ -98,7 +98,7 @@ struct OnboardingFlowView: View {
                     MeditativeMerkabaView(size: 28, revolutionDuration: 6.0, tintColor: DesignSystem.Colors.accent)
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("MacParakeet")
+                        Text("MacParakeet (PDX Edition)")
                             .font(DesignSystem.Typography.sectionTitle)
                         Text("First-time setup")
                             .font(DesignSystem.Typography.caption)
@@ -308,8 +308,7 @@ struct OnboardingFlowView: View {
                 Spacer()
 
                 if viewModel.step == .done {
-                    accentButton("Open MacParakeet", icon: "arrow.right", large: true, disabled: false, isDefault: true)
-                    {
+                    accentButton("Open MacParakeet (PDX Edition)", icon: "arrow.right", large: true, disabled: false, isDefault: true) {
                         _ = viewModel.markOnboardingCompleted()
                         onFinish()
                         onOpenMainApp()
@@ -960,7 +959,7 @@ struct OnboardingFlowView: View {
 
     private func titleForStep(_ step: OnboardingViewModel.Step) -> String {
         switch step {
-        case .welcome: return "Welcome to MacParakeet"
+        case .welcome: return "Welcome to MacParakeet (PDX Edition)"
         case .microphone: return "Enable Microphone Access"
         case .accessibility: return "Enable Accessibility"
         case .hotkey: return "Learn the Hotkey"
