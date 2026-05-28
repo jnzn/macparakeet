@@ -38,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let vocabularyBackupViewModel = VocabularyBackupViewModel()
     private let feedbackViewModel = FeedbackViewModel()
     private let libraryViewModel = TranscriptionLibraryViewModel()
+    private let meetingsLibraryViewModel = TranscriptionLibraryViewModel(scope: .meetings)
     private let llmSettingsViewModel = LLMSettingsViewModel()
     private let aiAssistantSettingsViewModel = AIAssistantSettingsViewModel()
     private let chatViewModel = TranscriptChatViewModel()
@@ -49,6 +50,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `MeetingRecordingFlowCoordinator` writes state into it; both the floating
     /// pill and the tile bind to the same instance.
     private let meetingPillViewModel = MeetingRecordingPillViewModel()
+    private lazy var meetingsWorkspaceViewModel = MeetingsWorkspaceViewModel(
+        recentMeetingsViewModel: meetingsLibraryViewModel,
+        meetingPillViewModel: meetingPillViewModel,
+        settingsViewModel: settingsViewModel,
+        llmSettingsViewModel: llmSettingsViewModel
+    )
     private let onboardingWindowController = OnboardingWindowController()
 
     private lazy var youtubeInputController = YouTubeInputPanelController(
@@ -67,6 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         textSnippetsViewModel: textSnippetsViewModel,
         vocabularyBackupViewModel: vocabularyBackupViewModel,
         libraryViewModel: libraryViewModel,
+        meetingsWorkspaceViewModel: meetingsWorkspaceViewModel,
         llmSettingsViewModel: llmSettingsViewModel,
         chatViewModel: chatViewModel,
         promptResultsViewModel: promptResultsViewModel,
@@ -129,6 +137,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         },
         settingsViewModel: settingsViewModel,
         libraryViewModel: libraryViewModel,
+        onRecoveredTranscriptionsChanged: { [weak self] in
+            self?.meetingsWorkspaceViewModel.refreshRecentMeetings()
+        },
         onPresentRecoveredTranscription: { [weak self] transcription in
             guard let self else { return }
             self.transcriptionViewModel.presentCompletedTranscription(transcription, autoSave: true)
@@ -153,9 +164,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         vocabularyBackupViewModel: vocabularyBackupViewModel,
         feedbackViewModel: feedbackViewModel,
         libraryViewModel: libraryViewModel,
+        meetingsWorkspaceViewModel: meetingsWorkspaceViewModel,
         meetingPillViewModel: meetingPillViewModel,
         onRecordMeeting: { [weak self] in
             self?.toggleMeetingRecording(originatesFromWindow: true)
+        },
+        onRecordMeetingFromWorkspace: { [weak self] in
+            self?.startMeetingRecordingFromWorkspace()
         },
         onPauseToggleMeeting: { [weak self] in
             self?.meetingRecordingFlowCoordinator?.togglePause()
@@ -677,6 +692,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         meetingRecordingFlowCoordinator?.toggleRecording(trigger: trigger)
+    }
+
+    private func startMeetingRecordingFromWorkspace() {
+        guard appEnvironment != nil else { return }
+
+        if meetingRecordingFlowCoordinator?.isMeetingRecordingActive == true {
+            meetingRecordingFlowCoordinator?.toggleRecording()
+            return
+        }
+
+        meetingRecordingFlowCoordinator?.startRecording(trigger: .manual)
     }
 
     private func presentActiveMeetingQuitAlert() -> NSApplication.TerminateReply {

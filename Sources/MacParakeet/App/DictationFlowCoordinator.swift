@@ -766,6 +766,9 @@ final class DictationFlowCoordinator {
             }
             onMenuBarIconUpdate(iconState)
 
+        case .syncHotkeyRecordingMode(let mode):
+            hotkeyManagers.forEach { $0.syncRecordingMode(mode) }
+
         case .resetHotkeyStateMachine:
             hotkeyManagers.forEach { $0.resetToIdle() }
 

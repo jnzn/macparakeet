@@ -20,8 +20,10 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
     private let vocabularyBackupViewModel: VocabularyBackupViewModel
     private let feedbackViewModel: FeedbackViewModel
     private let libraryViewModel: TranscriptionLibraryViewModel
+    private let meetingsWorkspaceViewModel: MeetingsWorkspaceViewModel
     private let meetingPillViewModel: MeetingRecordingPillViewModel
     private let onRecordMeeting: () -> Void
+    private let onRecordMeetingFromWorkspace: () -> Void
     private let onPauseToggleMeeting: (() -> Void)?
     private let onHotkeyRecordingStateChanged: (Bool) -> Void
     private let onQuit: () -> Void
@@ -45,8 +47,10 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
         vocabularyBackupViewModel: VocabularyBackupViewModel,
         feedbackViewModel: FeedbackViewModel,
         libraryViewModel: TranscriptionLibraryViewModel,
+        meetingsWorkspaceViewModel: MeetingsWorkspaceViewModel,
         meetingPillViewModel: MeetingRecordingPillViewModel,
         onRecordMeeting: @escaping () -> Void,
+        onRecordMeetingFromWorkspace: @escaping () -> Void,
         onPauseToggleMeeting: (() -> Void)? = nil,
         onHotkeyRecordingStateChanged: @escaping (Bool) -> Void,
         onQuit: @escaping () -> Void,
@@ -67,8 +71,10 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
         self.vocabularyBackupViewModel = vocabularyBackupViewModel
         self.feedbackViewModel = feedbackViewModel
         self.libraryViewModel = libraryViewModel
+        self.meetingsWorkspaceViewModel = meetingsWorkspaceViewModel
         self.meetingPillViewModel = meetingPillViewModel
         self.onRecordMeeting = onRecordMeeting
+        self.onRecordMeetingFromWorkspace = onRecordMeetingFromWorkspace
         self.onPauseToggleMeeting = onPauseToggleMeeting
         self.onHotkeyRecordingStateChanged = onHotkeyRecordingStateChanged
         self.onQuit = onQuit
@@ -176,8 +182,10 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
             vocabularyBackupViewModel: vocabularyBackupViewModel,
             feedbackViewModel: feedbackViewModel,
             libraryViewModel: libraryViewModel,
+            meetingsWorkspaceViewModel: meetingsWorkspaceViewModel,
             meetingPillViewModel: meetingPillViewModel,
             onRecordMeeting: onRecordMeeting,
+            onRecordMeetingFromWorkspace: onRecordMeetingFromWorkspace,
             onPauseToggleMeeting: onPauseToggleMeeting,
             onHotkeyRecordingStateChanged: onHotkeyRecordingStateChanged
         )

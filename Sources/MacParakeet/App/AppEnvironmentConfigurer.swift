@@ -46,6 +46,7 @@ final class AppEnvironmentConfigurer {
     private let textSnippetsViewModel: TextSnippetsViewModel
     private let vocabularyBackupViewModel: VocabularyBackupViewModel
     private let libraryViewModel: TranscriptionLibraryViewModel
+    private let meetingsWorkspaceViewModel: MeetingsWorkspaceViewModel
     private let llmSettingsViewModel: LLMSettingsViewModel
     private let chatViewModel: TranscriptChatViewModel
     private let promptResultsViewModel: PromptResultsViewModel
@@ -63,6 +64,7 @@ final class AppEnvironmentConfigurer {
         textSnippetsViewModel: TextSnippetsViewModel,
         vocabularyBackupViewModel: VocabularyBackupViewModel,
         libraryViewModel: TranscriptionLibraryViewModel,
+        meetingsWorkspaceViewModel: MeetingsWorkspaceViewModel,
         llmSettingsViewModel: LLMSettingsViewModel,
         chatViewModel: TranscriptChatViewModel,
         promptResultsViewModel: PromptResultsViewModel,
@@ -78,6 +80,7 @@ final class AppEnvironmentConfigurer {
         self.textSnippetsViewModel = textSnippetsViewModel
         self.vocabularyBackupViewModel = vocabularyBackupViewModel
         self.libraryViewModel = libraryViewModel
+        self.meetingsWorkspaceViewModel = meetingsWorkspaceViewModel
         self.llmSettingsViewModel = llmSettingsViewModel
         self.chatViewModel = chatViewModel
         self.promptResultsViewModel = promptResultsViewModel
@@ -111,6 +114,10 @@ final class AppEnvironmentConfigurer {
         libraryViewModel.configure(
             transcriptionRepo: env.transcriptionRepo,
             llmService: hasLLMConfig ? env.llmService : nil
+        )
+        meetingsWorkspaceViewModel.configure(
+            transcriptionRepo: env.transcriptionRepo,
+            quickPromptRepo: env.quickPromptRepo
         )
         settingsViewModel.configure(
             permissionService: env.permissionService,
@@ -278,6 +285,10 @@ final class AppEnvironmentConfigurer {
                 guard let self else { return }
                 self.transcriptionViewModel.presentCompletedTranscription(transcription, autoSave: true)
                 self.libraryViewModel.loadTranscriptions()
+                // Upstream's dedicated Meetings workspace (#378) keeps its own
+                // recent-meetings list; refresh it so a backgrounded meeting
+                // appears there too when its transcription completes.
+                self.meetingsWorkspaceViewModel.refreshRecentMeetings()
                 // A backgrounded meeting can finish while the user is recording
                 // (or doing) something else. Don't yank focus to it — it just
                 // appears in the Library. Only navigate when nothing is active.
