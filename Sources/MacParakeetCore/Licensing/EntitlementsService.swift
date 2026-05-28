@@ -31,19 +31,14 @@ public actor EntitlementsService: EntitlementsChecking {
 
     // MARK: - Bootstrapping
 
+    /// PDX Edition: no-op. The upstream implementation read/wrote five keychain
+    /// items (trialStartISO, installID, licenseKey, licenseInstanceID,
+    /// lastValidatedISO) whose ACLs were bound to the upstream binary signature.
+    /// On an ad-hoc-signed PDX bundle every item triggered a separate "wants to
+    /// use your keychain" prompt at launch. Since the app is free/GPL and always
+    /// unlocked, skipping this write drops ~5 prompts to ≤1.
     public func bootstrapTrialIfNeeded(now: Date = Date()) {
-        do {
-            if try store.getString(Keys.trialStartISO) == nil {
-                try store.setString(iso(now), forKey: Keys.trialStartISO)
-            }
-            if try store.getString(Keys.installID) == nil {
-                try store.setString(UUID().uuidString, forKey: Keys.installID)
-            }
-        } catch {
-            // Licensing should never prevent core features from running; current
-            // free/GPL builds remain unlocked even if legacy state cannot be written.
-            _ = error
-        }
+        // no-op for PDX Edition
     }
 
     // MARK: - Public API
@@ -110,43 +105,12 @@ public actor EntitlementsService: EntitlementsChecking {
         return await currentState(now: now)
     }
 
+    /// PDX Edition: no-op. Upstream validated a stored license against the
+    /// remote API on launch, reading the same keychain items that triggered
+    /// per-item prompts on an ad-hoc-signed bundle. PDX builds are free/GPL and
+    /// always unlocked, so there is nothing to validate.
     public func refreshValidationIfNeeded(now: Date = Date()) async {
-        do {
-            guard let licenseKey = try store.getString(Keys.licenseKey),
-                  let instanceID = try store.getString(Keys.licenseInstanceID)
-            else { return }
-
-            let lastValidatedAt = (try store.getString(Keys.lastValidatedISO)).flatMap(parseISO)
-            if let lastValidatedAt, now.timeIntervalSince(lastValidatedAt) < validationMinInterval {
-                return
-            }
-
-            let validation = try await api.validate(licenseKey: licenseKey, instanceID: instanceID)
-
-            if let expected = config.expectedVariantID,
-               let actual = validation.variantID,
-               expected != actual
-            {
-                try? store.delete(Keys.licenseKey)
-                try? store.delete(Keys.licenseInstanceID)
-                try? store.delete(Keys.lastValidatedISO)
-                return
-            }
-
-            if validation.valid {
-                try store.setString(iso(now), forKey: Keys.lastValidatedISO)
-            } else {
-                // License no longer valid. Clear legacy activation state; current
-                // free/GPL builds still remain unlocked.
-                try? store.delete(Keys.licenseKey)
-                try? store.delete(Keys.licenseInstanceID)
-                try? store.delete(Keys.lastValidatedISO)
-            }
-        } catch {
-            // Network failures shouldn't break an already-unlocked app. One-time purchase = yours
-            // forever, so validated licenses stay unlocked indefinitely.
-            _ = error
-        }
+        // no-op for PDX Edition
     }
 
     // MARK: - Private
