@@ -233,6 +233,122 @@ final class DictationFlowCoordinator {
         self.onHistoryReload = onHistoryReload
         self.onPresentEntitlementsAlert = onPresentEntitlementsAlert
         observeFormatterNotifications()
+        observeStreamingPartialNotifications()
+    }
+
+    // MARK: - Streaming partial transcript delivery (fork-only)
+
+    /// Observer token for `.macParakeetStreamingPartial` — retained for the
+    /// lifetime of the coordinator so live transcripts from the streaming
+    /// dictation pipeline flow into the overlay's text bubble.
+    private var streamingPartialObserver: NSObjectProtocol?
+    /// Debounce task for live LLM cleanup on the bubble. Cancelled + rescheduled
+    /// on every new partial; fires only if speech pauses long enough to "settle".
+    private var liveCleanupDebounceTask: Task<Void, Never>?
+    /// Last partial text we scheduled cleanup for. Used to drop stale cleanup
+    /// responses when new partials have arrived mid-request.
+    private var pendingCleanupSnapshot: String = ""
+    /// Most recently applied cleaned text — the "stable prefix" for the bubble.
+    private var stableCleanedText: String?
+    /// Raw partial text at the moment the current `stableCleanedText` landed.
+    private var rawAtStableCleanup: String?
+
+    private func observeStreamingPartialNotifications() {
+        streamingPartialObserver = NotificationCenter.default.addObserver(
+            forName: .macParakeetStreamingPartial,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let text = note.userInfo?["text"] as? String else { return }
+            Task { @MainActor [weak self] in
+                guard let self, let vm = self.overlayViewModel else { return }
+                switch vm.state {
+                case .recording:
+                    vm.streamingPartialText = self.composeDisplayText(for: text)
+                    self.scheduleLiveCleanup(for: text)
+                case .ready, .processing, .formatting, .cancelled, .success, .noSpeech, .error:
+                    break
+                }
+            }
+        }
+    }
+
+    /// Build what the bubble should show. Tries to preserve the stable cleaned
+    /// prefix and append only the new words from the latest raw partial.
+    private func composeDisplayText(for rawPartial: String) -> String {
+        guard let cleaned = stableCleanedText, let rawBaseline = rawAtStableCleanup else {
+            return rawPartial
+        }
+        let rawTrimmed = rawPartial.trimmingCharacters(in: .whitespaces)
+        let baselineTrimmed = rawBaseline.trimmingCharacters(in: .whitespaces)
+        if rawTrimmed.hasPrefix(baselineTrimmed) {
+            let tailStart = rawTrimmed.index(rawTrimmed.startIndex, offsetBy: baselineTrimmed.count)
+            let tail = String(rawTrimmed[tailStart...]).trimmingCharacters(in: .whitespaces)
+            return tail.isEmpty ? cleaned : cleaned + " " + tail
+        }
+        let rawWords = rawTrimmed.split(whereSeparator: \.isWhitespace)
+        let baselineWords = baselineTrimmed.split(whereSeparator: \.isWhitespace)
+        guard rawWords.count > baselineWords.count else { return cleaned }
+        let newTail = rawWords.suffix(rawWords.count - baselineWords.count).joined(separator: " ")
+        return newTail.isEmpty ? cleaned : cleaned + " " + newTail
+    }
+
+    private func resetStableCleanupState() {
+        stableCleanedText = nil
+        rawAtStableCleanup = nil
+    }
+
+    private func cancelLiveCleanup() {
+        liveCleanupDebounceTask?.cancel()
+        liveCleanupDebounceTask = nil
+        pendingCleanupSnapshot = ""
+    }
+
+    /// Debounce LLM cleanup: fires ~250 ms after speech pauses. Identical
+    /// snapshots extend the existing debounce rather than restarting it.
+    private func scheduleLiveCleanup(for text: String) {
+        guard settingsViewModel.liveBubbleCleanupEnabled else { return }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 3 else { return }
+        if trimmed == pendingCleanupSnapshot, liveCleanupDebounceTask != nil { return }
+        liveCleanupDebounceTask?.cancel()
+        pendingCleanupSnapshot = trimmed
+        dictationLog.info("live_cleanup_scheduled chars=\(trimmed.count, privacy: .public)")
+        liveCleanupDebounceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled, let self else { return }
+            self.liveCleanupDebounceTask = nil
+            await self.runLiveCleanup(snapshot: trimmed)
+        }
+    }
+
+    private func runLiveCleanup(snapshot: String) async {
+        guard pendingCleanupSnapshot == snapshot else {
+            dictationLog.info("live_cleanup_dropped reason=stale_snapshot")
+            return
+        }
+        guard let cleaned = await serviceSession.cleanupTextLive(snapshot),
+              !cleaned.isEmpty else {
+            dictationLog.info("live_cleanup_dropped reason=empty_response")
+            return
+        }
+        guard let vm = overlayViewModel else {
+            dictationLog.info("live_cleanup_dropped reason=no_vm")
+            return
+        }
+        guard pendingCleanupSnapshot == snapshot else {
+            dictationLog.info("live_cleanup_dropped reason=snapshot_changed_post_llm")
+            return
+        }
+        switch vm.state {
+        case .recording:
+            stableCleanedText = cleaned
+            rawAtStableCleanup = snapshot
+            vm.streamingPartialText = cleaned
+            dictationLog.info("live_cleanup_applied outChars=\(cleaned.count, privacy: .public)")
+        case .ready, .processing, .formatting, .cancelled, .success, .noSpeech, .error:
+            dictationLog.info("live_cleanup_dropped reason=terminal_state")
+        }
     }
 
     // MARK: - AI Formatter pill transitions
@@ -417,6 +533,9 @@ final class DictationFlowCoordinator {
             DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(readyPillDismissDelayMs), execute: timer)
 
         case .showRecordingOverlay(let mode):
+            // Reset streaming state for the new session
+            cancelLiveCleanup()
+            resetStableCleanupState()
             // Reuse existing overlay if it's in ready state (seamless transition)
             let vm: DictationOverlayViewModel
             if let existingVM = overlayViewModel, case .ready = existingVM.state {
@@ -445,6 +564,7 @@ final class DictationFlowCoordinator {
             overlayViewModel?.processingMessage = nil
             overlayViewModel?.busyProcessingMessage = nil
             overlayViewModel?.processingLoadCaption = nil
+            overlayViewModel?.streamingPartialText = ""
             overlayViewModel?.state = .processing
             armProcessingLoadCaption()
 
@@ -454,14 +574,17 @@ final class DictationFlowCoordinator {
         case .showCancelCountdown:
             overlayViewModel?.stopTimer()
             overlayViewModel?.cancelTimeRemaining = 5.0
+            overlayViewModel?.streamingPartialText = ""
             overlayViewModel?.state = .cancelled(timeRemaining: 5.0)
 
         case .showSuccess:
             dismissCaption(outcome: .success)
+            overlayViewModel?.streamingPartialText = ""
             overlayViewModel?.state = .success
 
         case .showNoSpeech:
             dismissCaption(outcome: .noSpeech)
+            overlayViewModel?.streamingPartialText = ""
             overlayViewModel?.state = .noSpeech
 
         case .showError(let message):

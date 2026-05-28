@@ -774,6 +774,26 @@ struct SettingsView: View {
                     detail: "Leaves the same text MacParakeet pastes on the clipboard, useful when remote desktops need a manual ⌘V.",
                     isOn: $viewModel.keepDictationOnClipboard
                 )
+
+                Divider()
+
+                settingsToggleRow(
+                    title: "Live streaming transcript bubble",
+                    detail: "Shows a live preview of your speech above the dictation pill as you speak.",
+                    isBeta: true,
+                    isOn: $viewModel.streamingOverlayEnabled
+                )
+
+                if viewModel.streamingOverlayEnabled {
+                    Divider()
+
+                    settingsToggleRow(
+                        title: "AI cleanup in bubble",
+                        detail: "Applies a fast AI polish pass to the live preview text as you speak.",
+                        isBeta: true,
+                        isOn: $viewModel.liveBubbleCleanupEnabled
+                    )
+                }
             }
         }
     }

@@ -222,6 +222,9 @@ final class DictationOverlayViewModel {
     var processingLoadCaption: ProcessingLoadCaption?
     var commandPromptText: String = "Speak your command..."
     var commandSelectedText: String = ""
+    /// Live streaming partial transcript shown in the bubble above the pill.
+    /// Empty when streaming is disabled or no speech detected yet.
+    var streamingPartialText: String = ""
 
     var onCancel: (() -> Void)?
     var onStop: (() -> Void)?

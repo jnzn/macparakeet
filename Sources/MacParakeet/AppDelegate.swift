@@ -474,10 +474,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func scheduleDeferredSpeechPreWarm(environment env: AppEnvironment) {
         guard speechPreWarmTask == nil else { return }
         let sttRuntime = env.sttRuntime
+        let streamingTranscriber = env.streamingDictationTranscriber
         let deferralMs = preWarmDeferralMs
         let onboardingCompletedKey = OnboardingViewModel.onboardingCompletedKey
 
-        speechPreWarmTask = Task(priority: .utility) { @MainActor [weak self, sttRuntime] in
+        speechPreWarmTask = Task(priority: .utility) { @MainActor [weak self, sttRuntime, streamingTranscriber] in
             defer {
                 self?.speechPreWarmTask = nil
             }
@@ -487,6 +488,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let onboardingDone = UserDefaults.standard.string(forKey: onboardingCompletedKey) != nil
             guard onboardingDone else { return }
             await sttRuntime.backgroundWarmUp()
+
+            // Fork-only: pre-warm the streaming EOU model so the first overlay
+            // session starts without a cold-load stall. Only runs when the user
+            // has the feature enabled (avoids allocating ~66 MB if unused).
+            let streamingEnabled = UserDefaults.standard.bool(
+                forKey: UserDefaultsAppRuntimePreferences.streamingOverlayEnabledKey
+            )
+            if streamingEnabled {
+                try? await streamingTranscriber.loadModels()
+            }
         }
     }
 

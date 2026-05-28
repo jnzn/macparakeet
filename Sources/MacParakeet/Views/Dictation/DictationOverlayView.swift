@@ -229,7 +229,12 @@ struct DictationOverlayView: View {
     }
 
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 6) {
+            // Streaming partial transcript bubble — grows upward from the pill
+            // as the streaming ASR pipeline emits text. Empty when streaming is
+            // disabled or before any speech is detected.
+            streamingBubble
+
             // Tooltip — changes per hovered element via NSTrackingArea
             tooltipLabel
                 .frame(maxWidth: .infinity, alignment: tooltipAlignment)
@@ -253,6 +258,95 @@ struct DictationOverlayView: View {
         .animation(.easeInOut(duration: 0.22), value: viewModel.processingLoadCaption)
         .onChange(of: viewModel.pillStateKey) { _, newKey in
             handlePillStateChange(to: newKey)
+        }
+    }
+
+    private var overlayGlassTintColor: Color {
+        Color(red: 0.05, green: 0.05, blue: 0.07).opacity(0.55)
+    }
+
+    private var overlayHighlightGradient: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color.white.opacity(0.15),
+                Color.white.opacity(0.05),
+                Color.clear,
+            ],
+            startPoint: .top,
+            endPoint: .center
+        )
+    }
+
+    private func glassCapsuleBackground(
+        strokeOpacity: Double = 0.12,
+        shadowOpacity: Double = 0.32,
+        shadowRadius: CGFloat = 18,
+        shadowY: CGFloat = 10
+    ) -> some View {
+        Capsule()
+            .fill(.ultraThinMaterial)
+            .overlay(Capsule().fill(overlayHighlightGradient))
+            .overlay(Capsule().fill(overlayGlassTintColor))
+            .overlay(
+                Capsule()
+                    .strokeBorder(Color.white.opacity(strokeOpacity), lineWidth: 0.6)
+            )
+            .shadow(color: .black.opacity(shadowOpacity), radius: shadowRadius, y: shadowY)
+    }
+
+    private func glassRoundedRectBackground(
+        cornerRadius: CGFloat,
+        strokeOpacity: Double = 0.12,
+        shadowOpacity: Double = 0.32,
+        shadowRadius: CGFloat = 18,
+        shadowY: CGFloat = 10
+    ) -> some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(.ultraThinMaterial)
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(overlayHighlightGradient)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(overlayGlassTintColor)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(Color.white.opacity(strokeOpacity), lineWidth: 0.6)
+            )
+            .shadow(color: .black.opacity(shadowOpacity), radius: shadowRadius, y: shadowY)
+    }
+
+    /// Black translucent bubble that appears above the dictation pill during
+    /// streaming dictation. Word-wraps up to 1/4 screen width; height grows
+    /// freely. Visible only while text is non-empty.
+    @ViewBuilder
+    private var streamingBubble: some View {
+        let text = viewModel.streamingPartialText
+        let maxWidth = (NSScreen.main?.visibleFrame.width ?? 1440) * 0.25
+
+        if !text.isEmpty {
+            Text(text)
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(.white.opacity(0.95))
+                .multilineTextAlignment(.leading)
+                .lineSpacing(2)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .frame(maxWidth: maxWidth, alignment: .leading)
+                .background(
+                    glassRoundedRectBackground(
+                        cornerRadius: 14,
+                        strokeOpacity: 0.1,
+                        shadowOpacity: 0.28,
+                        shadowRadius: 14,
+                        shadowY: 8
+                    )
+                )
+                .transition(.opacity)
+        } else {
+            Color.clear.frame(height: 0)
         }
     }
 

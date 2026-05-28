@@ -42,6 +42,8 @@ final class AppEnvironment {
     let derivedFieldsBackfill: DerivedFieldsBackfillService
     let aiAssistantConfigStore: AIAssistantConfigStore
     let aiAssistantService: AIAssistantService
+    /// Fork-only: live streaming partial transcript delivery to the overlay bubble.
+    let streamingDictationTranscriber: StreamingEouDictationTranscriber
 
     init(databaseManager: DatabaseManager) throws {
         self.databaseManager = databaseManager
@@ -182,6 +184,15 @@ final class AppEnvironment {
             )
         )
 
+        // Fork-only: streaming dictation transcriber + overlay closures.
+        // Constructed before DictationService so we can pass it in directly.
+        let streamingTranscriber = StreamingEouDictationTranscriber()
+        streamingDictationTranscriber = streamingTranscriber
+
+        let streamingOverlayEnabledClosure: @Sendable () -> Bool = { [runtimePreferences] in
+            runtimePreferences.streamingOverlayEnabled
+        }
+
         dictationService = DictationService(
             audioProcessor: audioProcessor,
             sttTranscriber: sttScheduler,
@@ -216,6 +227,16 @@ final class AppEnvironment {
             resolveAppContext: { [accessibilityService] in
                 let ctx = await AppContextService.captureContext(accessibility: accessibilityService)
                 return ctx.isEmpty ? nil : ctx
+            },
+            streamingBroadcaster: audioProcessor,
+            streamingTranscriber: streamingTranscriber,
+            streamingOverlayEnabled: streamingOverlayEnabledClosure,
+            streamingPartialHandler: { partial in
+                NotificationCenter.default.post(
+                    name: .macParakeetStreamingPartial,
+                    object: nil,
+                    userInfo: ["partial": partial]
+                )
             }
         )
 
@@ -259,5 +280,6 @@ final class AppEnvironment {
         self.aiAssistantService = AIAssistantService(
             configProvider: { aiConfigStore.load() }
         )
+
     }
 }

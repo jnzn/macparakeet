@@ -70,4 +70,11 @@ public final class DictationServiceSession {
     public func undoCancel() async throws -> DictationResult {
         try await service.undoCancel()
     }
+
+    /// Run a live LLM cleanup pass on `text`. Returns the cleaned string, or nil
+    /// when the formatter is unavailable, suppressed, or the LLM call fails.
+    /// Fork-only: used by the streaming overlay bubble debounce.
+    public func cleanupTextLive(_ text: String) async -> String? {
+        await service.cleanupTextLive(text)
+    }
 }
