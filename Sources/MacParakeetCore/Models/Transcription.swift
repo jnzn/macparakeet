@@ -195,7 +195,27 @@ extension Transcription: FetchableRecord, PersistableRecord {
         durationMs = try container.decodeIfPresent(Int.self, forKey: .durationMs)
         rawTranscript = try container.decodeIfPresent(String.self, forKey: .rawTranscript)
         cleanTranscript = try container.decodeIfPresent(String.self, forKey: .cleanTranscript)
-        wordTimestamps = try container.decodeIfPresent([WordTimestamp].self, forKey: .wordTimestamps)
+        // Resilient decode for JSON-array columns. Legacy rows may hold an
+        // older on-disk shape (e.g. a WordTimestamp/ChatMessage field renamed
+        // by an upstream merge). A malformed value must NOT throw and fail the
+        // whole row — that breaks the entire library "All" fetch (which decodes
+        // every row) while type-filtered tabs that exclude the bad row still
+        // work. Drop the field, log it, keep the row. Mirrors the `speakers`
+        // fallback below.
+        // Snapshot id into a local: nested funcs in init(from:) can't reference
+        // stored properties (self isn't fully initialized yet).
+        let recordIDForLog = id.uuidString
+        func resilientArray<T: Decodable>(_ type: T.Type, _ key: CodingKeys) -> T? {
+            if let value = try? container.decodeIfPresent(type, forKey: key) { return value }
+            let isNull = (try? container.decodeNil(forKey: key)) == true
+            if container.contains(key), !isNull {
+                transcriptionDecodeLogger.warning(
+                    "transcription_field_decode_failed field=\(key.stringValue, privacy: .public) id=\(recordIDForLog, privacy: .public)"
+                )
+            }
+            return nil
+        }
+        wordTimestamps = resilientArray([WordTimestamp].self, .wordTimestamps)
         language = try container.decodeIfPresent(String.self, forKey: .language)
         speakerCount = try container.decodeIfPresent(Int.self, forKey: .speakerCount)
 
@@ -221,9 +241,11 @@ extension Transcription: FetchableRecord, PersistableRecord {
             }
         }
 
-        diarizationSegments = try container.decodeIfPresent([DiarizationSegmentRecord].self, forKey: .diarizationSegments)
-        chatMessages = try container.decodeIfPresent([ChatMessage].self, forKey: .chatMessages)
-        status = try container.decode(TranscriptionStatus.self, forKey: .status)
+        diarizationSegments = resilientArray([DiarizationSegmentRecord].self, .diarizationSegments)
+        chatMessages = resilientArray([ChatMessage].self, .chatMessages)
+        // An unknown/legacy status value must not throw and break the row;
+        // a row that's in the library has, by definition, finished.
+        status = (try? container.decode(TranscriptionStatus.self, forKey: .status)) ?? .completed
         errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)
         exportPath = try container.decodeIfPresent(String.self, forKey: .exportPath)
         sourceURL = try container.decodeIfPresent(String.self, forKey: .sourceURL)

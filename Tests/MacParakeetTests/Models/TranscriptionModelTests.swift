@@ -129,6 +129,55 @@ final class TranscriptionModelTests: XCTestCase {
         XCTAssertEqual(t.speakers?[1].label, "Bob")
     }
 
+    func testDecodingMalformedJSONArrayFieldsDoesNotThrow() throws {
+        // Regression: a legacy row whose wordTimestamps/diarizationSegments/
+        // chatMessages JSON predates a struct-shape change must still decode
+        // (with those fields dropped) rather than throwing — a throw here broke
+        // the entire library "All" fetch, which decodes every row at once.
+        let json = """
+        {
+            "id": "00000000-0000-0000-0000-000000000099",
+            "createdAt": "2026-03-01T00:00:00Z",
+            "fileName": "legacy.mp3",
+            "status": "completed",
+            "rawTranscript": "hello world",
+            "wordTimestamps": [{"totally": "wrong", "shape": 1}],
+            "diarizationSegments": "not even an array",
+            "chatMessages": [{"bogus": true}],
+            "updatedAt": "2026-03-01T00:00:00Z"
+        }
+        """
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        // Must NOT throw — the row survives with the unparseable fields nil.
+        let t = try decoder.decode(Transcription.self, from: Data(json.utf8))
+
+        XCTAssertEqual(t.fileName, "legacy.mp3")
+        XCTAssertEqual(t.rawTranscript, "hello world")
+        XCTAssertEqual(t.status, .completed)
+        XCTAssertNil(t.wordTimestamps)
+        XCTAssertNil(t.diarizationSegments)
+        XCTAssertNil(t.chatMessages)
+    }
+
+    func testDecodingUnknownStatusFallsBackToCompleted() throws {
+        // A legacy/unknown status rawValue must not throw and break the row.
+        let json = """
+        {
+            "id": "00000000-0000-0000-0000-000000000098",
+            "createdAt": "2026-03-01T00:00:00Z",
+            "fileName": "legacy2.mp3",
+            "status": "some_removed_status",
+            "updatedAt": "2026-03-01T00:00:00Z"
+        }
+        """
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let t = try decoder.decode(Transcription.self, from: Data(json.utf8))
+        XCTAssertEqual(t.status, .completed)
+    }
+
     func testDecodingNewSpeakerInfoFormat() throws {
         let json = """
         {
