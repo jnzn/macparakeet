@@ -170,11 +170,87 @@ final class AccessibilityServiceTests: XCTestCase {
             XCTAssertEqual(error as? AccessibilityServiceError, .unsupportedElement)
         }
     }
+
+    // MARK: - captureFocusSnapshot
+
+    func testCaptureFocusSnapshotReturnsNilWhenNotTrusted() {
+        let backend = MockAccessibilityBackend(isTrusted: false)
+        let service = AccessibilityService(defaultMaxCharacters: 16000, backend: backend)
+
+        let snapshot = service.captureFocusSnapshot()
+        XCTAssertNil(snapshot.focusedFieldValue)
+        XCTAssertNil(snapshot.selectedText)
+    }
+
+    func testCaptureFocusSnapshotReturnsNilWhenNoFocusedElement() {
+        let backend = MockAccessibilityBackend(isTrusted: true, focusedElement: nil)
+        let service = AccessibilityService(defaultMaxCharacters: 16000, backend: backend)
+
+        let snapshot = service.captureFocusSnapshot()
+        XCTAssertNil(snapshot.focusedFieldValue)
+        XCTAssertNil(snapshot.selectedText)
+    }
+
+    func testCaptureFocusSnapshotSkipsSecureTextField() {
+        let backend = MockAccessibilityBackend(
+            isTrusted: true,
+            role: "AXSecureTextField",
+            selectedText: "s3cr3t",
+            fullValue: "s3cr3t"
+        )
+        let service = AccessibilityService(defaultMaxCharacters: 16000, backend: backend)
+
+        let snapshot = service.captureFocusSnapshot()
+        XCTAssertNil(snapshot.focusedFieldValue)
+        XCTAssertNil(snapshot.selectedText)
+    }
+
+    func testCaptureFocusSnapshotReturnsBothFieldAndSelection() {
+        let backend = MockAccessibilityBackend(
+            isTrusted: true,
+            selectedText: "world",
+            fullValue: "Hello world"
+        )
+        let service = AccessibilityService(defaultMaxCharacters: 16000, backend: backend)
+
+        let snapshot = service.captureFocusSnapshot()
+        XCTAssertEqual(snapshot.focusedFieldValue, "Hello world")
+        XCTAssertEqual(snapshot.selectedText, "world")
+    }
+
+    func testCaptureFocusSnapshotTruncatesLongValues() {
+        let long = String(repeating: "a", count: 2000)
+        let backend = MockAccessibilityBackend(
+            isTrusted: true,
+            selectedText: long,
+            fullValue: long
+        )
+        let service = AccessibilityService(defaultMaxCharacters: 16000, backend: backend)
+
+        let snapshot = service.captureFocusSnapshot(maxCharacters: 100)
+        XCTAssertTrue(snapshot.focusedFieldValue?.hasSuffix("…") ?? false)
+        XCTAssertTrue(snapshot.selectedText?.hasSuffix("…") ?? false)
+        XCTAssertLessThanOrEqual(snapshot.focusedFieldValue?.count ?? 0, 104) // 100 + "…"
+    }
+
+    func testCaptureFocusSnapshotReturnsNilForBlankValues() {
+        let backend = MockAccessibilityBackend(
+            isTrusted: true,
+            selectedText: "",
+            fullValue: "   "
+        )
+        let service = AccessibilityService(defaultMaxCharacters: 16000, backend: backend)
+
+        let snapshot = service.captureFocusSnapshot()
+        XCTAssertNil(snapshot.focusedFieldValue)
+        XCTAssertNil(snapshot.selectedText)
+    }
 }
 
 private struct MockAccessibilityBackend: AccessibilityBackend {
     let isTrustedValue: Bool
     let hasFocusedElement: Bool
+    let roleValue: String?
     let selectedTextValue: String?
     let selectedRangeValue: CFRange?
     let fullValueValue: String?
@@ -183,6 +259,7 @@ private struct MockAccessibilityBackend: AccessibilityBackend {
     init(
         isTrusted: Bool,
         focusedElement: AXUIElement? = AXUIElementCreateSystemWide(),
+        role: String? = nil,
         selectedText: String? = nil,
         selectedRange: CFRange? = nil,
         stringForRange: String? = nil,
@@ -190,6 +267,7 @@ private struct MockAccessibilityBackend: AccessibilityBackend {
     ) {
         self.isTrustedValue = isTrusted
         self.hasFocusedElement = focusedElement != nil
+        self.roleValue = role
         self.selectedTextValue = selectedText
         self.selectedRangeValue = selectedRange
         self.fullValueValue = fullValue
@@ -200,6 +278,7 @@ private struct MockAccessibilityBackend: AccessibilityBackend {
     func focusedElement() -> AXUIElement? {
         hasFocusedElement ? AXUIElementCreateSystemWide() : nil
     }
+    func role(of element: AXUIElement) -> String? { roleValue }
     func selectedText(of element: AXUIElement) -> String? { selectedTextValue }
     func selectedRange(of element: AXUIElement) -> CFRange? { selectedRangeValue }
     func fullValue(of element: AXUIElement) -> String? { fullValueValue }
