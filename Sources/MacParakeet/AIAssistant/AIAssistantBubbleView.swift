@@ -662,13 +662,9 @@ struct AIAssistantBubbleView: View {
         .background(
             bubbleShape.fill(backgroundColor)
         )
-        .overlay(
-            // Single soft stroke — previous double-stroke (light
-            // gradient + dark outer) read as a visible hairline
-            // across the bubble body because the two strokes
-            // anti-aliased into a distinct band.
-            bubbleShape.stroke(Color.primary.opacity(0.12), lineWidth: 0.6)
-        )
+        // PDX: edgeless design — the outline stroke that traced the bubble
+        // shape read as a hard edge against the glass. Removed so the bubble
+        // relies on the translucent material + shadow alone for definition.
         .overlay(alignment: .topTrailing) {
             closeButton
                 .padding(.top, bodyContentInsets.top + 10)
