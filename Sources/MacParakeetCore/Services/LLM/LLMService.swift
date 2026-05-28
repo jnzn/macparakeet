@@ -71,6 +71,17 @@ public extension LLMServiceProtocol {
     func summarizeDetailed(transcript: String, systemPrompt: String?) async throws -> LLMResult {
         try await generatePromptResultDetailed(transcript: transcript, systemPrompt: systemPrompt)
     }
+
+    /// Generate a concise title for a transcript using the configured provider.
+    /// Routes through `generatePromptResult` (which truncates long transcripts)
+    /// and sanitizes the model output into a single short line.
+    func generateTitle(transcript: String) async throws -> String {
+        let raw = try await generatePromptResult(
+            transcript: transcript,
+            systemPrompt: TitleSanitizer.titleSystemPrompt
+        )
+        return TitleSanitizer.sanitize(raw)
+    }
 }
 
 // MARK: - Implementation

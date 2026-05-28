@@ -104,7 +104,10 @@ final class AppEnvironmentConfigurer {
             promptResultsViewModel: promptResultsViewModel
         )
         historyViewModel.configure(dictationRepo: env.dictationRepo)
-        libraryViewModel.configure(transcriptionRepo: env.transcriptionRepo)
+        libraryViewModel.configure(
+            transcriptionRepo: env.transcriptionRepo,
+            llmService: hasLLMConfig ? env.llmService : nil
+        )
         settingsViewModel.configure(
             permissionService: env.permissionService,
             dictationRepo: env.dictationRepo,
@@ -369,6 +372,7 @@ final class AppEnvironmentConfigurer {
         let hasConfig = (try? env.llmConfigStore.loadConfig()) != nil
         let service: LLMService? = hasConfig ? env.llmService : nil
         transcriptionViewModel.updateLLMAvailability(hasConfig, llmService: service)
+        libraryViewModel.updateLLMAvailability(hasConfig, llmService: service)
         chatViewModel.updateLLMService(service)
         promptResultsViewModel.updateLLMService(service)
         transformsViewModel.setHasLLMProvider(hasConfig)
