@@ -286,6 +286,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // Resolve the user's full login-shell PATH off the launch path so
+        // any later `LocalCLIExecutor.resolve(binary:)` (AI Assistant
+        // onboarding, settings test connection, AI bubble ask) finds the
+        // cached value instead of stalling up to 10s on the shell probe.
+        Task.detached(priority: .background) {
+            LocalCLIExecutor.preWarmPATHCache()
+        }
+
         applyAppAppearance()
         startEnvironmentSetup()
         menuBarCoordinator.setupMainMenu()

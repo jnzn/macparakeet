@@ -213,10 +213,63 @@ public final class LocalCLIExecutor: Sendable {
         }
     }
 
-    private let cachedPATH: OSAllocatedUnfairLock<String?>
+    /// Process-wide cache of the resolved login-shell PATH. Promoted from
+    /// per-instance to class-level so a one-time launch-time pre-warm
+    /// (`preWarmPATHCache()`) populates it once and every later
+    /// `LocalCLIExecutor` instance — onboarding probe, settings test
+    /// connection, AI assistant ask — picks it up synchronously.
+    private static let sharedPATHCache = OSAllocatedUnfairLock<String?>(initialState: nil)
 
-    public init() {
-        self.cachedPATH = OSAllocatedUnfairLock(initialState: nil)
+    public init() {}
+
+    /// Kicks off a background Task that resolves the user's full
+    /// login-shell PATH and stores it in the process-wide cache.
+    /// Idempotent — extra calls are no-ops once the cache is filled.
+    /// Call once early in `applicationDidFinishLaunching` so any later
+    /// `resolve(binary:)` returns instantly instead of blocking up to
+    /// 10 seconds on the shell probe.
+    public static func preWarmPATHCache() {
+        if sharedPATHCache.withLock({ $0 }) != nil { return }
+        Task.detached(priority: .background) {
+            _ = LocalCLIExecutor().preferredPATH(
+                fallback: ProcessInfo.processInfo.environment["PATH"]
+            )
+        }
+    }
+
+    /// Resolves a CLI binary name (e.g. `"claude"`) to its absolute URL by
+    /// walking the user's login-shell PATH. Returns nil if the binary is not
+    /// on any PATH component. PATH is discovered via the same shell-probe
+    /// chain used for command execution, so Finder-launched apps still see
+    /// Homebrew, nvm, volta, asdf, and custom npm prefixes.
+    ///
+    /// - Parameters:
+    ///   - name: Bare binary name (`"claude"`). Inputs containing `/` are
+    ///     rejected — callers pass a name, not a path.
+    ///   - path: PATH string to scan. Defaults to the discovered login-shell
+    ///     PATH. Override for tests.
+    ///   - fileManager: File manager for executable-file checks. Override
+    ///     for tests.
+    /// - Returns: Absolute URL of the first executable match in PATH order,
+    ///   or nil if no match.
+    public func resolve(
+        binary name: String,
+        path: String? = nil,
+        fileManager: FileManager = .default
+    ) -> URL? {
+        guard !name.isEmpty, !name.contains("/") else { return nil }
+        let effectivePath = path ?? preferredPATH(
+            fallback: ProcessInfo.processInfo.environment["PATH"]
+        )
+        for component in effectivePath.split(separator: ":") {
+            let trimmed = String(component).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let candidate = URL(fileURLWithPath: trimmed).appendingPathComponent(name)
+            if fileManager.isExecutableFile(atPath: candidate.path) {
+                return candidate
+            }
+        }
+        return nil
     }
 
     /// Execute a CLI command with the given prompt components.
@@ -755,25 +808,58 @@ public final class LocalCLIExecutor: Sendable {
     private static let pathStartMarker = "__MACPARAKEET_PATH_START__"
     private static let pathEndMarker = "__MACPARAKEET_PATH_END__"
 
+    /// User-home install dirs that common package managers / language
+    /// toolchains drop binaries into. Added to the merged PATH whenever
+    /// they exist so we resolve installs that put bins outside the system
+    /// dirs (npm `--prefix=~/.npm-global`, pipx, cargo, Go, manual
+    /// downloads to `~/.local/bin`, etc.).
+    private static let userBinDirCandidates = [
+        ".local/bin",
+        ".cargo/bin",
+        ".npm-global/bin",
+        ".npm/bin",
+        ".bun/bin",
+        ".deno/bin",
+        ".volta/bin",
+        ".asdf/shims",
+        "go/bin",
+        ".local/share/pnpm",
+    ]
+
+    private static func userBinDirsPATH(fileManager: FileManager = .default) -> String? {
+        let home = NSHomeDirectory()
+        let existing = userBinDirCandidates
+            .map { "\(home)/\($0)" }
+            .filter { fileManager.fileExists(atPath: $0) }
+        return existing.isEmpty ? nil : existing.joined(separator: ":")
+    }
+
     /// Returns the user's full shell PATH. Apps launched from Finder/Dock
-    /// inherit a minimal PATH that lacks Homebrew, nvm, etc.
-    private func preferredPATH(fallback: String?) -> String {
-        if let cached = cachedPATH.withLock({ $0 }) {
+    /// inherit a minimal PATH that lacks Homebrew, nvm, user-home bin
+    /// dirs (~/.local/bin etc.).
+    func preferredPATH(fallback: String?) -> String {
+        if let cached = Self.sharedPATHCache.withLock({ $0 }) {
             return cached
         }
 
+        let userBins = Self.userBinDirsPATH()
+
         if let discovered = Self.discoverPATH() {
-            let merged = Self.mergedPATH([discovered, fallback, Self.defaultPATH]) ?? Self.defaultPATH
-            cachedPATH.withLock { $0 = merged }
+            let merged = Self.mergedPATH([discovered, userBins, fallback, Self.defaultPATH]) ?? Self.defaultPATH
+            Self.sharedPATHCache.withLock { $0 = merged }
             return merged
         }
 
-        return Self.mergedPATH([fallback, Self.defaultPATH]) ?? Self.defaultPATH
+        // Probe failed (timeout / no shell). Don't poison the cache —
+        // a later resolve might hit a faster shell.
+        return Self.mergedPATH([userBins, fallback, Self.defaultPATH]) ?? Self.defaultPATH
     }
 
     /// Probes the user's configured shell first, then widely used shells,
-    /// to recover a usable PATH for Finder-launched app processes.
-    static func discoverPATH(timeout: Double = 3) -> String? {
+    /// to recover a usable PATH for Finder-launched app processes. The
+    /// 10-second budget covers slow shell init scripts (NVM lazy-load,
+    /// conda init, asdf, large `~/.zshrc`).
+    static func discoverPATH(timeout: Double = 10) -> String? {
         let deadline = Date().addingTimeInterval(timeout)
         let script = """
         printf '%s\\n' '\(pathStartMarker)'

@@ -18,7 +18,7 @@ public struct LLMSettingsDraft: Equatable, Sendable {
             case .missingCustomModel:
                 return "Enter a custom model ID."
             case .invalidBaseURL:
-                return "Enter a valid base URL. Remote endpoints must use https."
+                return "Enter a valid HTTPS URL, or http:// for localhost, Tailscale (*.ts.net), .local, or private-network hosts."
             case .missingCommandTemplate:
                 return "Enter a CLI command."
             }
