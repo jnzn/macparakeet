@@ -410,14 +410,14 @@ final class AppEnvironmentConfigurer {
             ?? AIAssistantConfig.defaultHotkeyTrigger
         if !aiTrigger.isDisabled {
             let aiManager = GlobalShortcutManager(trigger: aiTrigger)
+            // Tap-to-toggle: every press fires onTrigger → handleHotkeyPress,
+            // which starts listening when idle and stops+submits when already
+            // listening. onDoubleTap is intentionally NOT wired — setting it
+            // would make GlobalShortcutManager suppress onTrigger for a fast
+            // second press (treating it as a double-tap), which would swallow
+            // the "tap again to stop" gesture.
             aiManager.onTrigger = {
                 Task { @MainActor in aiAssistantCoordinator.handleHotkeyPress() }
-            }
-            aiManager.onRelease = {
-                Task { @MainActor in aiAssistantCoordinator.handleHotkeyRelease() }
-            }
-            aiManager.onDoubleTap = {
-                Task { @MainActor in aiAssistantCoordinator.handleHotkeyDoubleTap() }
             }
             _ = aiManager.start()
         }

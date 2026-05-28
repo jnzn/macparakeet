@@ -358,8 +358,13 @@ final class AIAssistantFlowCoordinator {
         // short re-try after the first failure succeeds reliably. Matches the
         // behavior observed when a user invokes primary dictation first to
         // "warm up" and then uses the AI hotkey.
+        // Tap-to-toggle: a single tap of the hotkey starts listening and the
+        // bubble stays open; a second tap stops + submits. We enter `.locked`
+        // immediately (the state the press handler treats as "tap again to
+        // stop"), so there's no hold-to-talk and no double-tap requirement.
+        // Key-up (`handleHotkeyRelease`) is a no-op in this state.
         isCapturingVoice = true
-        mode = .holding
+        mode = .locked
         pressStartedAt = Date()
         pendingSubmitTask?.cancel()
         pendingSubmitTask = nil
