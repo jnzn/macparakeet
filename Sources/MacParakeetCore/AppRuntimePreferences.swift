@@ -201,7 +201,9 @@ public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProto
     }
 
     public var streamingOverlayEnabled: Bool {
-        defaults.object(forKey: Self.streamingOverlayEnabledKey) as? Bool ?? false
+        // PDX: default ON so the streaming dictation overlay is exercised
+        // out of the box (was opt-in default-off upstream).
+        defaults.object(forKey: Self.streamingOverlayEnabledKey) as? Bool ?? true
     }
 
     public var liveBubbleCleanupEnabled: Bool {

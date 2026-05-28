@@ -567,7 +567,7 @@ public final class SettingsViewModel {
         saveDictationHistory = defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveDictationHistoryKey) as? Bool ?? true
         saveAudioRecordings = defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveAudioRecordingsKey) as? Bool ?? true
         saveTranscriptionAudio = defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveTranscriptionAudioKey) as? Bool ?? true
-        streamingOverlayEnabled = defaults.object(forKey: UserDefaultsAppRuntimePreferences.streamingOverlayEnabledKey) as? Bool ?? false
+        streamingOverlayEnabled = defaults.object(forKey: UserDefaultsAppRuntimePreferences.streamingOverlayEnabledKey) as? Bool ?? true
         liveBubbleCleanupEnabled = defaults.object(forKey: UserDefaultsAppRuntimePreferences.liveBubbleCleanupEnabledKey) as? Bool ?? true
         youtubeAudioQuality = YouTubeAudioQuality.current(defaults: defaults)
         speakerDiarization = defaults.object(forKey: UserDefaultsAppRuntimePreferences.speakerDiarizationKey) as? Bool ?? false
