@@ -613,6 +613,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 },
                 isOnboardingVisible: { [weak self] in
                     self?.onboardingWindowController.isVisible ?? false
+                },
+                onMeetingProcessingCountChanged: { [weak self] count in
+                    self?.menuBarCoordinator.setProcessingCount(count)
                 }
             )
         )

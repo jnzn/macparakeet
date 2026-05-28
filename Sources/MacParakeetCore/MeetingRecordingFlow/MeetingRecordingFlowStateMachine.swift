@@ -10,12 +10,16 @@ public enum MeetingRecordingFlowState: Equatable, Sendable {
     case checkingPermissions
     case starting
     case recording
+    /// Brief wrap-up after a stop: notes are flushed and the audio writer is
+    /// finalized, then the recording is handed to the background processor and
+    /// the flow returns to `.idle`. Transcription no longer blocks this flow —
+    /// it runs detached so a new recording can start immediately.
     case stopping
-    /// The flow only ever finishes by surfacing an error (start/stop failure);
-    /// successful stops return to `.idle` once transcription is queued to the
-    /// background. The message is shown via the `.showError` effect — this
-    /// payload exists so the state stays distinct and equatable in tests.
-    case finishing(error: String)
+    case finishing(outcome: MeetingRecordingFlowFinishOutcome)
+}
+
+public enum MeetingRecordingFlowFinishOutcome: Equatable, Sendable {
+    case error(String)
 }
 
 public enum MeetingRecordingFlowEvent: Equatable, Sendable {
@@ -26,16 +30,19 @@ public enum MeetingRecordingFlowEvent: Equatable, Sendable {
     case startFailed(generation: Int, message: String)
     case stopRequested
     case cancelRequested
-    /// Emitted from `MeetingRecordingService`'s terminal capture-failure
-    /// signal when audio capture stops unexpectedly while the state machine
-    /// still believes a recording is in progress (e.g., a USB mic was
-    /// unplugged mid-meeting, `MeetingRecordingService.failCapture` ran).
-    /// Routes through the same stop+transcribe path as `.stopRequested` so
-    /// whatever audio was captured before the failure still becomes a saved
-    /// Transcription.
+    /// Emitted by the pill polling task when it detects that audio capture
+    /// has stopped unexpectedly while the state machine still believes a
+    /// recording is in progress (e.g., a USB mic was unplugged mid-meeting,
+    /// `MeetingRecordingService.failCapture` ran). Routes through the same
+    /// stop+handoff path as `.stopRequested` so whatever audio was captured
+    /// before the failure still becomes a saved Transcription in the background.
     case captureFailed(generation: Int)
-    case recordingQueued(generation: Int, transcriptionID: UUID)
-    case transcriptionFailed(generation: Int, message: String)
+    /// Audio finalized and the recording was handed to the background
+    /// processor; the foreground flow can return to idle.
+    case handedOffToBackground(generation: Int)
+    /// Stop / audio finalize failed before handoff (rare — disk full, writer
+    /// error). Surface an error pill rather than silently losing the recording.
+    case handoffFailed(generation: Int, message: String)
     case dismissRequested
     case autoDismissExpired(generation: Int)
 }
@@ -44,8 +51,9 @@ public enum MeetingRecordingFlowEffect: Equatable, Sendable {
     case checkPermissions
     case showRecordingPill
     case startRecording
-    case showTranscribingState
-    case stopRecordingAndTranscribe
+    /// Flush notes, finalize audio, hand the recording to the background
+    /// transcription processor, then emit `.handedOffToBackground`.
+    case stopRecordingAndHandOff
     case showError(String)
     case cancelRecording
     case hidePill
@@ -94,18 +102,24 @@ public struct MeetingRecordingFlowStateMachine: Equatable, Sendable {
 
         case (.starting, .startFailed(let gen, let message)):
             guard gen == generation else { return [] }
-            state = .finishing(error: message)
+            state = .finishing(outcome: .error(message))
             return [.showError(message), .updateMenuBar(.idle), .startAutoDismissTimer(seconds: 5)]
 
         case (.starting, .stopRequested):
+            // Stop arrived before the recording confirmed start. Defer the
+            // handoff until `.recordingStarted` so there is something to finalize.
             state = .stopping
-            return [.showTranscribingState, .updateMenuBar(.processing), .stopRecordingAndTranscribe]
+            return []
+
+        case (.starting, .cancelRequested):
+            state = .idle
+            return [.cancelRecording, .hidePill, .updateMenuBar(.idle)]
 
         case (.stopping, .recordingStarted(let gen)):
             guard gen == generation else { return [] }
-            // Stop already launched when the flow left `.starting`. A matching
-            // late start completion must not enqueue a second durable stop.
-            return []
+            // The deferred stop (above) now has a live recording to finalize.
+            state = .stopping
+            return [.stopRecordingAndHandOff]
 
         case (.stopping, .startFailed(let gen, _)):
             guard gen == generation else { return [] }
@@ -113,32 +127,34 @@ public struct MeetingRecordingFlowStateMachine: Equatable, Sendable {
             // authoritative; a stale start error must not cover that outcome.
             return []
 
-        case (.stopping, .recordingQueued(let gen, _)):
-            guard gen == generation else { return [] }
-            state = .idle
-            return [.showSavedCompletion, .updateMenuBar(.idle)]
-
-        case (.stopping, .transcriptionFailed(let gen, let message)):
-            guard gen == generation else { return [] }
-            state = .finishing(error: message)
-            return [.showError(message), .updateMenuBar(.idle), .startAutoDismissTimer(seconds: 5)]
-
         case (.recording, .cancelRequested):
-            state = .idle
-            return [.cancelRecording, .hidePill, .updateMenuBar(.idle)]
-
-        case (.starting, .cancelRequested):
             state = .idle
             return [.cancelRecording, .hidePill, .updateMenuBar(.idle)]
 
         case (.recording, .stopRequested):
             state = .stopping
-            return [.showTranscribingState, .updateMenuBar(.processing), .stopRecordingAndTranscribe]
+            return [.stopRecordingAndHandOff]
 
         case (.recording, .captureFailed(let gen)):
             guard gen == generation else { return [] }
             state = .stopping
-            return [.showTranscribingState, .updateMenuBar(.processing), .stopRecordingAndTranscribe]
+            return [.stopRecordingAndHandOff]
+
+        case (.stopping, .handedOffToBackground(let gen)):
+            guard gen == generation else { return [] }
+            // Audio is finalized and the background processor owns the
+            // transcription. The flow itself is idle so the user can record
+            // again immediately; the menu-bar badge reflects the in-flight job
+            // independently. The pill plays its own "meeting saved" bloom ->
+            // checkmark celebration and self-dismisses, instead of vanishing
+            // the instant queueing finishes.
+            state = .idle
+            return [.showSavedCompletion, .updateMenuBar(.idle)]
+
+        case (.stopping, .handoffFailed(let gen, let message)):
+            guard gen == generation else { return [] }
+            state = .finishing(outcome: .error(message))
+            return [.showError(message), .updateMenuBar(.idle), .startAutoDismissTimer(seconds: 5)]
 
         case (.finishing, .dismissRequested):
             state = .idle
@@ -150,9 +166,9 @@ public struct MeetingRecordingFlowStateMachine: Equatable, Sendable {
             return [.hidePill]
 
         case (.recording, .dismissRequested),
-            (.starting, .dismissRequested),
-            (.stopping, .dismissRequested),
-            (.checkingPermissions, .dismissRequested):
+             (.starting, .dismissRequested),
+             (.stopping, .dismissRequested),
+             (.checkingPermissions, .dismissRequested):
             return []
 
         default:

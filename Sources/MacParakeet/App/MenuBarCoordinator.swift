@@ -80,6 +80,14 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
         let openLiveMeetingPanelEnabled: Bool
     }
 
+    private var processingMenuItem: NSMenuItem?
+
+    /// Number of meetings transcribing in the background, and the flow's own
+    /// requested icon state. The displayed icon reconciles both:
+    /// recording > processing > flow state.
+    private var processingCount = 0
+    private var flowIconState: BreathWaveIcon.MenuBarState = .idle
+
     init(
         transcriptionViewModel: TranscriptionViewModel,
         youtubeInputController: YouTubeInputPanelController,
@@ -513,6 +521,12 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
         menu.addItem(cohereLanguageItem)
         cohereLanguageMenuItem = cohereLanguageItem
 
+        let processingItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        processingItem.isEnabled = false
+        processingItem.isHidden = true
+        menu.addItem(processingItem)
+        processingMenuItem = processingItem
+
         let hotkeyItem = NSMenuItem(
             title: hotkeyMenuTitleProvider(),
             action: nil,
@@ -614,8 +628,33 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
     }
 
     func updateIcon(state: BreathWaveIcon.MenuBarState) {
-        guard case .update(let visibleState) = statusItemState.updateIcon(state) else { return }
-        statusItem?.button?.image = BreathWaveIcon.menuBarIcon(pointSize: 18, state: visibleState)
+        flowIconState = state
+        guard case .update = statusItemState.updateIcon(state) else { return }
+        refreshDisplayedIcon()
+    }
+
+    /// Update the count of meetings transcribing in the background. Shows/hides
+    /// the "N processing" menu row and keeps the icon in `.processing` while
+    /// work is in flight (active recording still takes priority).
+    func setProcessingCount(_ count: Int) {
+        processingCount = max(0, count)
+        processingMenuItem?.isHidden = processingCount == 0
+        processingMenuItem?.title = processingCount == 1
+            ? "\u{27F3} 1 meeting processing\u{2026}"
+            : "\u{27F3} \(processingCount) meetings processing\u{2026}"
+        refreshDisplayedIcon()
+    }
+
+    private func refreshDisplayedIcon() {
+        let displayed: BreathWaveIcon.MenuBarState
+        if flowIconState == .recording {
+            displayed = .recording
+        } else if processingCount > 0 {
+            displayed = .processing
+        } else {
+            displayed = flowIconState
+        }
+        statusItem?.button?.image = BreathWaveIcon.menuBarIcon(pointSize: 18, state: displayed)
     }
 
     @objc private func showAboutPanel() {

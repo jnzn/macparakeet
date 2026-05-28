@@ -55,7 +55,7 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
         let output = makeRecordingOutput()
         let recordingService = MeetingRecordingServiceSpy(output: output)
         let transcriptionService = MockTranscriptionService()
-        await transcriptionService.holdMeetingFinalization()
+        await transcriptionService.holdTranscribeMeeting()
         let completedTranscription = Transcription(
             fileName: output.displayName,
             filePath: output.mixedAudioURL.path,
@@ -67,7 +67,6 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
         let settlementHarness = await makeSettlementHarness(transcriptionService: transcriptionService)
 
         var readyTranscriptions: [Transcription] = []
-        var readySelections: [Bool] = []
         let coordinator = MeetingRecordingFlowCoordinator(
             meetingRecordingService: recordingService,
             transcriptionService: transcriptionService,
@@ -77,42 +76,41 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
             quickPromptRepo: NoOpQuickPromptRepository(),
             configStore: NoOpLLMConfigStore(),
             llmService: nil,
+            backgroundProcessor: makeBackgroundProcessor(
+                transcriptionService: transcriptionService,
+                meetingRecordingSettlement: settlementHarness.settlement,
+                transcriptionRepo: settlementHarness.transcriptionRepo,
+                onTranscriptionReady: { transcription in
+                    readyTranscriptions.append(transcription)
+                }
+            ),
             pillViewModel: MeetingRecordingPillViewModel(),
             meetingRecordingSettlement: settlementHarness.settlement,
             onMenuBarIconUpdate: { _ in },
-            onTranscriptionReady: { transcription in
-                readyTranscriptions.append(transcription)
-            },
-            onQueuedTranscriptionReady: { transcription, selectTranscription in
-                readyTranscriptions.append(transcription)
-                readySelections.append(selectTranscription)
-            }
+            onTranscriptionReady: { _ in }
         )
         coordinator.testHook_enterRecording()
 
         XCTAssertTrue(coordinator.stopRecording(operationTrigger: .autoStop))
         await coordinator.testHook_waitForActionTask()
-        try await waitForMeetingFinalizeCall(on: transcriptionService)
 
+        // Handoff to background is immediate: the flow returns to idle before
+        // transcription completes, unlike the old queue-based flow.
         let recordingSnapshot = await recordingService.snapshot()
-        let transcriptionSnapshot = await transcriptionService.meetingFlowSnapshot()
         XCTAssertEqual(coordinator.testHook_state, .idle)
         XCTAssertFalse(coordinator.isMeetingRecordingActive)
         XCTAssertEqual(recordingSnapshot.stopCallCount, 1)
-        XCTAssertEqual(transcriptionSnapshot.prepareMeetingCallCount, 1)
-        XCTAssertEqual(transcriptionSnapshot.finalizeMeetingCallCount, 1)
-        XCTAssertEqual(transcriptionSnapshot.transcribeCallCount, 0)
-        XCTAssertEqual(transcriptionSnapshot.preparedMeetingRecordings, [output])
-        XCTAssertEqual(transcriptionSnapshot.finalizedMeetingRecordings, [output])
         XCTAssertTrue(readyTranscriptions.isEmpty)
+        XCTAssertTrue(settlementHarness.lockStore.deletes.isEmpty)
 
-        await transcriptionService.releaseMeetingFinalization()
-        await coordinator.testHook_waitForMeetingTranscriptionQueue()
+        await transcriptionService.releaseTranscribeMeeting()
+        await coordinator.testHook_waitForBackgroundProcessing()
 
-        let completedTranscriptionSnapshot = await transcriptionService.meetingFlowSnapshot()
-        XCTAssertEqual(readyTranscriptions.map(\.id), completedTranscriptionSnapshot.finalizedMeetingTranscriptionIDs)
+        let transcriptionSnapshot = await transcriptionService.meetingFlowSnapshot()
+        XCTAssertEqual(transcriptionSnapshot.transcribeCallCount, 1)
+        XCTAssertEqual(transcriptionSnapshot.prepareMeetingCallCount, 0)
+        XCTAssertEqual(transcriptionSnapshot.finalizeMeetingCallCount, 0)
         XCTAssertEqual(readyTranscriptions.map(\.filePath), [completedTranscription.filePath])
-        XCTAssertEqual(readySelections, [true])
         XCTAssertEqual(settlementHarness.lockStore.deletes, [output.folderURL])
 
         let operation = try XCTUnwrap(telemetry.snapshot().compactMap(\.meetingOperationPayload).last)
@@ -121,7 +119,6 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
         XCTAssertEqual(operation.durationSeconds, output.durationSeconds)
         XCTAssertEqual(operation.microphoneTrackPresent, true)
         XCTAssertEqual(operation.systemTrackPresent, true)
-        XCTAssertEqual(operation.captureStartCompleted, true)
     }
 
     func testFailedStopUsesSessionCaptureFactsWithoutOutput() async throws {
@@ -175,6 +172,7 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
             quickPromptRepo: NoOpQuickPromptRepository(),
             configStore: NoOpLLMConfigStore(),
             llmService: nil,
+            backgroundProcessor: makeBackgroundProcessor(),
             pillViewModel: MeetingRecordingPillViewModel(),
             meetingRecordingSettlement: settlementHarness.settlement,
             onMenuBarIconUpdate: { _ in },
@@ -187,19 +185,22 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(
             coordinator.testHook_state,
-            .finishing(error: "Meeting stop was cancelled")
+            .finishing(outcome: .error("Meeting stop was cancelled"))
         )
     }
 
-    func testQueuedFinalizationFailurePersistsRetryableRowAndPostsOneNotification() async throws {
+    /// Unlike the old queue-based flow, a background-processor failure is not
+    /// surfaced as a retryable row + in-app notification: the lock file is
+    /// deliberately left in place so crash recovery offers the recording
+    /// again on next launch (see `MeetingBackgroundProcessor.process`).
+    func testNormalStopTranscriptionFailureLeavesLockForCrashRecovery() async throws {
         let output = makeRecordingOutput()
         let recordingService = MeetingRecordingServiceSpy(output: output)
         let transcriptionService = MockTranscriptionService()
-        await transcriptionService.configureMeetingFinalization(error: FlowTestError.finalizationFailed)
+        await transcriptionService.configure(error: FlowTestError.finalizationFailed)
         let settlementHarness = await makeSettlementHarness(transcriptionService: transcriptionService)
 
-        var retryNotifications: [TranscriptionCompletionNotifier.Content] = []
-        var failedTranscriptionIDs: [UUID] = []
+        var readyTranscriptions: [Transcription] = []
         let coordinator = MeetingRecordingFlowCoordinator(
             meetingRecordingService: recordingService,
             transcriptionService: transcriptionService,
@@ -209,30 +210,32 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
             quickPromptRepo: NoOpQuickPromptRepository(),
             configStore: NoOpLLMConfigStore(),
             llmService: nil,
+            backgroundProcessor: makeBackgroundProcessor(
+                transcriptionService: transcriptionService,
+                meetingRecordingSettlement: settlementHarness.settlement,
+                transcriptionRepo: settlementHarness.transcriptionRepo,
+                onTranscriptionReady: { transcription in
+                    readyTranscriptions.append(transcription)
+                }
+            ),
             pillViewModel: MeetingRecordingPillViewModel(),
             meetingRecordingSettlement: settlementHarness.settlement,
             onMenuBarIconUpdate: { _ in },
-            onTranscriptionReady: { _ in },
-            onQueuedTranscriptionFailed: { transcriptionID, content in
-                failedTranscriptionIDs.append(transcriptionID)
-                retryNotifications.append(content)
-            }
+            onTranscriptionReady: { _ in }
         )
         coordinator.testHook_enterRecording()
 
         XCTAssertTrue(coordinator.stopRecording(operationTrigger: .manual))
         await coordinator.testHook_waitForActionTask()
-        await coordinator.testHook_waitForMeetingTranscriptionQueue()
+        await coordinator.testHook_waitForBackgroundProcessing()
 
         let rows = try settlementHarness.transcriptionRepo.fetchAll(limit: nil)
-        let row = try XCTUnwrap(rows.first)
-        XCTAssertEqual(rows.count, 1)
-        XCTAssertEqual(row.status, .error)
-        XCTAssertEqual(row.sourceType, .meeting)
-        XCTAssertEqual(row.errorMessage, FlowTestError.finalizationFailed.localizedDescription)
-        XCTAssertEqual(failedTranscriptionIDs, [row.id])
-        XCTAssertEqual(retryNotifications, [TranscriptionCompletionNotifier.meetingNeedsRetryContent()])
+        XCTAssertTrue(rows.isEmpty)
+        XCTAssertTrue(readyTranscriptions.isEmpty)
         XCTAssertTrue(settlementHarness.lockStore.deletes.isEmpty)
+
+        let operation = try XCTUnwrap(telemetry.snapshot().compactMap(\.meetingOperationPayload).last)
+        XCTAssertEqual(operation.outcome, .failure)
     }
 
     func testRetryMeetingFinalizationReusesPersistedRowAndAudioFolder() async throws {
@@ -263,6 +266,7 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
             quickPromptRepo: NoOpQuickPromptRepository(),
             configStore: NoOpLLMConfigStore(),
             llmService: nil,
+            backgroundProcessor: makeBackgroundProcessor(),
             pillViewModel: MeetingRecordingPillViewModel(),
             meetingRecordingSettlement: settlementHarness.settlement,
             finalizationOwnershipClaimer: ownershipClaimer,
@@ -325,6 +329,7 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
             quickPromptRepo: NoOpQuickPromptRepository(),
             configStore: NoOpLLMConfigStore(),
             llmService: nil,
+            backgroundProcessor: makeBackgroundProcessor(),
             pillViewModel: MeetingRecordingPillViewModel(),
             meetingRecordingSettlement: settlementHarness.settlement,
             finalizationOwnershipClaimer: ownershipClaimer,
@@ -365,6 +370,11 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
             quickPromptRepo: NoOpQuickPromptRepository(),
             configStore: NoOpLLMConfigStore(),
             llmService: nil,
+            backgroundProcessor: makeBackgroundProcessor(
+                transcriptionService: transcriptionService,
+                meetingRecordingSettlement: settlementHarness.settlement,
+                transcriptionRepo: settlementHarness.transcriptionRepo
+            ),
             pillViewModel: pillViewModel,
             meetingRecordingSettlement: settlementHarness.settlement,
             onMenuBarIconUpdate: { _ in },
@@ -377,12 +387,13 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
         await recordingService.emitCaptureFailure()
         await recordingService.emitCaptureFailure()
         try await waitForStopCall(on: recordingService, coordinator: coordinator)
+        await coordinator.testHook_waitForBackgroundProcessing()
 
         let recordingSnapshot = await recordingService.snapshot()
         let transcriptionSnapshot = await transcriptionService.meetingFlowSnapshot()
         XCTAssertEqual(coordinator.testHook_state, .idle)
         XCTAssertEqual(recordingSnapshot.stopCallCount, 1)
-        XCTAssertEqual(transcriptionSnapshot.prepareMeetingCallCount, 1)
+        XCTAssertEqual(transcriptionSnapshot.transcribeCallCount, 1)
     }
 
     func testSuspendedStartKeepsCaptureControlsInactiveUntilAcceptedSuccess() async throws {
@@ -446,6 +457,7 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
             startMeetingsMutedProvider: { true },
             shouldShowFloatingMeetingPill: { false },
             llmService: nil,
+            backgroundProcessor: makeBackgroundProcessor(),
             pillViewModel: pill,
             meetingRecordingSettlement: makeSettlement(),
             onMenuBarIconUpdate: { _ in },
@@ -478,6 +490,7 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
             startMeetingsMutedProvider: { true },
             shouldShowFloatingMeetingPill: { false },
             llmService: nil,
+            backgroundProcessor: makeBackgroundProcessor(),
             pillViewModel: MeetingRecordingPillViewModel(),
             meetingRecordingSettlement: makeSettlement(),
             onMenuBarIconUpdate: { _ in },
@@ -508,8 +521,14 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.quitState, .capturing)
         XCTAssertEqual(coordinator.testHook_state, .starting)
 
-        await coordinator.stopRecordingAndWaitForCompletion()
+        // A stop requested while still `.starting` defers until the pending
+        // start confirms (see MeetingRecordingFlowStateMachine's
+        // `(.starting, .stopRequested)` case), so `stopRecordingAndWaitForCompletion()`
+        // won't resolve until `releaseStart()` lets that start complete.
+        // Run them concurrently rather than sequentially.
+        async let stopCompletion: Void = coordinator.stopRecordingAndWaitForCompletion()
         await service.releaseStart()
+        await stopCompletion
         await pendingStart.value
 
         XCTAssertEqual(coordinator.testHook_state, .idle)
@@ -582,23 +601,36 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
         XCTAssertEqual(failure.captureStartCompleted, false)
     }
 
-    func testStopWhileServiceStartIsPendingSuppressesLateStartSideEffects() async throws {
+    /// A stop requested while still `.starting` defers (rather than firing
+    /// immediately and discarding the pending start): the flow lets the
+    /// in-flight start land normally — including its usual side effects, like
+    /// `.meetingRecordingStarted` telemetry — and then immediately hands off
+    /// to stop. This is a deliberate change from the old suppress-the-late-
+    /// start contract this test used to assert.
+    func testStopWhileStartingLetsPendingStartLandThenHandsOff() async throws {
         let recordingService = MeetingRecordingServiceSpy(
             output: makeRecordingOutput(),
             blocksStart: true
         )
+        let transcriptionService = MockTranscriptionService()
+        let settlementHarness = await makeSettlementHarness(transcriptionService: transcriptionService)
         let pill = MeetingRecordingPillViewModel()
         let coordinator = MeetingRecordingFlowCoordinator(
             meetingRecordingService: recordingService,
-            transcriptionService: MockTranscriptionService(),
+            transcriptionService: transcriptionService,
             permissionService: MockPermissionService(),
-            transcriptionRepo: MockTranscriptionRepository(),
+            transcriptionRepo: settlementHarness.transcriptionRepo,
             conversationRepo: MockChatConversationRepository(),
             quickPromptRepo: NoOpQuickPromptRepository(),
             configStore: NoOpLLMConfigStore(),
             llmService: nil,
+            backgroundProcessor: makeBackgroundProcessor(
+                transcriptionService: transcriptionService,
+                meetingRecordingSettlement: settlementHarness.settlement,
+                transcriptionRepo: settlementHarness.transcriptionRepo
+            ),
             pillViewModel: pill,
-            meetingRecordingSettlement: makeSettlement(),
+            meetingRecordingSettlement: settlementHarness.settlement,
             onMenuBarIconUpdate: { _ in },
             onTranscriptionReady: { _ in }
         )
@@ -612,15 +644,19 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
         XCTAssertFalse(pill.canTogglePause)
 
         XCTAssertTrue(coordinator.stopRecording(operationTrigger: .manual))
-        try await waitForStopCall(on: recordingService, coordinator: coordinator)
-        XCTAssertEqual(coordinator.testHook_state, .idle)
-
         await recordingService.releaseStart()
         await pendingStart.value
+        try await waitForStopCall(on: recordingService, coordinator: coordinator)
+        await coordinator.testHook_waitForBackgroundProcessing()
 
         let eventNames = telemetry.snapshot().map(\.name)
-        XCTAssertFalse(eventNames.contains(.meetingRecordingStarted))
-        XCTAssertFalse(eventNames.contains(.meetingRecordingFailed))
+        XCTAssertTrue(eventNames.contains(.meetingRecordingStarted))
+        // Check this test's own (most recent) operation outcome rather than a
+        // blanket "no failure event anywhere" — the global Telemetry sink
+        // means an unrelated earlier test's orphaned background job could
+        // otherwise leak a stray event into this snapshot.
+        let operation = try XCTUnwrap(telemetry.snapshot().compactMap(\.meetingOperationPayload).last)
+        XCTAssertEqual(operation.outcome, .success)
         XCTAssertEqual(coordinator.testHook_state, .idle)
         XCTAssertNotEqual(pill.state, .recording)
         XCTAssertFalse(pill.canTogglePause)
@@ -641,6 +677,11 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
             quickPromptRepo: NoOpQuickPromptRepository(),
             configStore: NoOpLLMConfigStore(),
             llmService: nil,
+            backgroundProcessor: makeBackgroundProcessor(
+                transcriptionService: transcriptionService,
+                meetingRecordingSettlement: settlementHarness.settlement,
+                transcriptionRepo: settlementHarness.transcriptionRepo
+            ),
             pillViewModel: pillViewModel,
             meetingRecordingSettlement: settlementHarness.settlement,
             onMenuBarIconUpdate: { _ in },
@@ -655,12 +696,13 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
 
         await recordingService.emitCaptureFailure()
         try await waitForStopCall(on: recordingService, coordinator: coordinator)
+        await coordinator.testHook_waitForBackgroundProcessing()
 
         let recordingSnapshot = await recordingService.snapshot()
         let transcriptionSnapshot = await transcriptionService.meetingFlowSnapshot()
         XCTAssertEqual(coordinator.testHook_state, .idle)
         XCTAssertEqual(recordingSnapshot.stopCallCount, 1)
-        XCTAssertEqual(transcriptionSnapshot.prepareMeetingCallCount, 1)
+        XCTAssertEqual(transcriptionSnapshot.transcribeCallCount, 1)
     }
 
     func testPollingSnapshotBeforePauseCannotRestoreRecordingState() async throws {
@@ -676,6 +718,7 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
             quickPromptRepo: NoOpQuickPromptRepository(),
             configStore: NoOpLLMConfigStore(),
             llmService: nil,
+            backgroundProcessor: makeBackgroundProcessor(),
             pillViewModel: pill,
             meetingRecordingSettlement: makeSettlement(),
             onMenuBarIconUpdate: { _ in },
@@ -711,6 +754,7 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
             quickPromptRepo: NoOpQuickPromptRepository(),
             configStore: NoOpLLMConfigStore(),
             llmService: nil,
+            backgroundProcessor: makeBackgroundProcessor(),
             pillViewModel: MeetingRecordingPillViewModel(),
             meetingRecordingSettlement: makeSettlement(),
             onMenuBarIconUpdate: { _ in },
@@ -732,11 +776,11 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
         let output = makeRecordingOutput()
         let recordingService = MeetingRecordingServiceSpy(output: output)
         let transcriptionService = MockTranscriptionService()
-        await transcriptionService.holdMeetingFinalization()
+        await transcriptionService.holdTranscribeMeeting()
         let settlementHarness = await makeSettlementHarness(transcriptionService: transcriptionService)
         let pillViewModel = MeetingRecordingPillViewModel()
 
-        var queuedSelections: [Bool] = []
+        var readyTranscriptions: [Transcription] = []
         let coordinator = MeetingRecordingFlowCoordinator(
             meetingRecordingService: recordingService,
             transcriptionService: transcriptionService,
@@ -746,13 +790,18 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
             quickPromptRepo: NoOpQuickPromptRepository(),
             configStore: NoOpLLMConfigStore(),
             llmService: nil,
+            backgroundProcessor: makeBackgroundProcessor(
+                transcriptionService: transcriptionService,
+                meetingRecordingSettlement: settlementHarness.settlement,
+                transcriptionRepo: settlementHarness.transcriptionRepo,
+                onTranscriptionReady: { transcription in
+                    readyTranscriptions.append(transcription)
+                }
+            ),
             pillViewModel: pillViewModel,
             meetingRecordingSettlement: settlementHarness.settlement,
             onMenuBarIconUpdate: { _ in },
-            onTranscriptionReady: { _ in },
-            onQueuedTranscriptionReady: { _, selectTranscription in
-                queuedSelections.append(selectTranscription)
-            }
+            onTranscriptionReady: { _ in }
         )
         coordinator.testHook_enterRecording()
 
@@ -768,24 +817,36 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.testHook_state, .recording)
         XCTAssertEqual(recordingSnapshot.startCallCount, 1)
 
-        await transcriptionService.releaseMeetingFinalization()
-        await coordinator.testHook_waitForMeetingTranscriptionQueue()
-        XCTAssertEqual(queuedSelections, [false])
+        await transcriptionService.releaseTranscribeMeeting()
+        await coordinator.testHook_waitForBackgroundProcessing()
+
+        // The core concurrency guarantee: the still-recording next meeting is
+        // undisturbed by the previous meeting's background completion.
+        XCTAssertEqual(readyTranscriptions.map(\.filePath), [output.mixedAudioURL.path])
         XCTAssertEqual(settlementHarness.lockStore.deletes, [output.folderURL])
         XCTAssertEqual(coordinator.testHook_state, .recording)
         XCTAssertEqual(pillViewModel.state, .recording)
     }
 
-    func testOlderCompletionCannotPresentAfterNewerMeetingHasStoppedAndQueued() async throws {
+    /// The old queue-based flow guarded against a *stale* (older)
+    /// transcription stealing UI focus once a newer meeting had already
+    /// stopped and queued. `MeetingBackgroundProcessor` has no equivalent
+    /// generation-ordering guard: each job independently calls
+    /// `onTranscriptionReady` when it finishes, with presentation left to the
+    /// caller (see `AppEnvironmentConfigurer`'s "navigate to library if not
+    /// recording" wiring). This test verifies only that both concurrently
+    /// in-flight meetings complete and settle correctly, not presentation
+    /// ordering — jobs run in parallel now, so completion order is not
+    /// guaranteed either.
+    func testBothConcurrentlyQueuedMeetingsCompleteAndSettle() async throws {
         let firstOutput = makeRecordingOutput()
         let secondOutput = makeRecordingOutput()
         let recordingService = MeetingRecordingServiceSpy(output: firstOutput)
         let transcriptionService = MockTranscriptionService()
-        await transcriptionService.holdMeetingFinalization()
+        await transcriptionService.holdTranscribeMeeting()
         let settlementHarness = await makeSettlementHarness(transcriptionService: transcriptionService)
         let pillViewModel = MeetingRecordingPillViewModel()
         var completedTranscriptions: [Transcription] = []
-        var queuedSelections: [Bool] = []
         let coordinator = MeetingRecordingFlowCoordinator(
             meetingRecordingService: recordingService,
             transcriptionService: transcriptionService,
@@ -795,19 +856,22 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
             quickPromptRepo: NoOpQuickPromptRepository(),
             configStore: NoOpLLMConfigStore(),
             llmService: nil,
+            backgroundProcessor: makeBackgroundProcessor(
+                transcriptionService: transcriptionService,
+                meetingRecordingSettlement: settlementHarness.settlement,
+                transcriptionRepo: settlementHarness.transcriptionRepo,
+                onTranscriptionReady: { transcription in
+                    completedTranscriptions.append(transcription)
+                }
+            ),
             pillViewModel: pillViewModel,
             meetingRecordingSettlement: settlementHarness.settlement,
             onMenuBarIconUpdate: { _ in },
-            onTranscriptionReady: { _ in },
-            onQueuedTranscriptionReady: { transcription, canPresent in
-                completedTranscriptions.append(transcription)
-                queuedSelections.append(canPresent)
-            }
+            onTranscriptionReady: { _ in }
         )
         coordinator.testHook_enterRecording()
         XCTAssertTrue(coordinator.stopRecording(operationTrigger: .manual))
         await coordinator.testHook_waitForActionTask()
-        try await waitForMeetingFinalizeCall(on: transcriptionService)
 
         await recordingService.setOutput(secondOutput)
         XCTAssertNotNil(coordinator.startRecording(trigger: .manual))
@@ -815,15 +879,13 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
         XCTAssertTrue(coordinator.stopRecording(operationTrigger: .manual))
         await coordinator.testHook_waitForActionTask()
         XCTAssertEqual(coordinator.testHook_state, .idle)
-        XCTAssertEqual(coordinator.queuedMeetingTranscriptionIDs.count, 2)
         XCTAssertTrue(completedTranscriptions.isEmpty)
 
-        await transcriptionService.releaseMeetingFinalization()
-        await coordinator.testHook_waitForMeetingTranscriptionQueue()
+        await transcriptionService.releaseTranscribeMeeting()
+        await coordinator.testHook_waitForBackgroundProcessing()
 
-        XCTAssertEqual(queuedSelections, [false, true])
         XCTAssertEqual(
-            completedTranscriptions.map(\.filePath),
+            Set(completedTranscriptions.map(\.filePath)),
             [firstOutput.mixedAudioURL.path, secondOutput.mixedAudioURL.path]
         )
         for transcription in completedTranscriptions {
@@ -833,7 +895,7 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
             )
         }
         XCTAssertEqual(
-            settlementHarness.lockStore.deletes,
+            Set(settlementHarness.lockStore.deletes),
             [firstOutput.folderURL, secondOutput.folderURL]
         )
     }
@@ -862,6 +924,7 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
             configStore: NoOpLLMConfigStore(),
             probableCalendarSnapshotProvider: { expectedSnapshot },
             llmService: nil,
+            backgroundProcessor: makeBackgroundProcessor(),
             pillViewModel: MeetingRecordingPillViewModel(),
             meetingRecordingSettlement: makeSettlement(),
             onMenuBarIconUpdate: { _ in },
@@ -900,6 +963,7 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
             configStore: NoOpLLMConfigStore(),
             probableCalendarSnapshotProvider: { holder.snapshot },
             llmService: nil,
+            backgroundProcessor: makeBackgroundProcessor(),
             pillViewModel: MeetingRecordingPillViewModel(),
             meetingRecordingSettlement: makeSettlement(),
             onMenuBarIconUpdate: { _ in },
@@ -935,6 +999,7 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
             configStore: NoOpLLMConfigStore(),
             probableCalendarSnapshotProvider: { nil },
             llmService: nil,
+            backgroundProcessor: makeBackgroundProcessor(),
             pillViewModel: MeetingRecordingPillViewModel(),
             meetingRecordingSettlement: makeSettlement(),
             onMenuBarIconUpdate: { _ in },
@@ -949,11 +1014,16 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
         XCTAssertEqual(snapshot.calendarEventSnapshots.first ?? nil, expectedSnapshot)
     }
 
-    func testLiveAskChatPersistsBeforeQueuedFinalizeTearsDownPanel() async throws {
+    /// The live chat is carried as an in-memory snapshot (captured just
+    /// before stop) and only persisted once background transcription
+    /// completes and a transcription id exists to attach it to — unlike the
+    /// old flow, which persisted the conversation immediately as part of the
+    /// synchronous stop. See `MeetingBackgroundProcessor.persistCarriedChat`.
+    func testLiveAskChatPersistsAfterBackgroundTranscriptionCompletes() async throws {
         let output = makeRecordingOutput()
         let recordingService = MeetingRecordingServiceSpy(output: output)
         let transcriptionService = MockTranscriptionService()
-        await transcriptionService.holdMeetingFinalization()
+        await transcriptionService.holdTranscribeMeeting()
         let completedTranscription = Transcription(
             fileName: output.displayName,
             filePath: output.mixedAudioURL.path,
@@ -976,6 +1046,12 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
             quickPromptRepo: NoOpQuickPromptRepository(),
             configStore: NoOpLLMConfigStore(),
             llmService: llmService,
+            backgroundProcessor: makeBackgroundProcessor(
+                transcriptionService: transcriptionService,
+                meetingRecordingSettlement: settlementHarness.settlement,
+                transcriptionRepo: settlementHarness.transcriptionRepo,
+                conversationRepo: conversationRepo
+            ),
             pillViewModel: MeetingRecordingPillViewModel(),
             meetingRecordingSettlement: settlementHarness.settlement,
             onMenuBarIconUpdate: { _ in },
@@ -1000,6 +1076,11 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(coordinator.testHook_state, .idle)
         XCTAssertNil(coordinator.testHook_panelChatViewModel)
+        XCTAssertTrue(conversationRepo.conversations.isEmpty)
+
+        await transcriptionService.releaseTranscribeMeeting()
+        await coordinator.testHook_waitForBackgroundProcessing()
+
         XCTAssertEqual(conversationRepo.conversations.count, 1)
         let savedConversation = try XCTUnwrap(conversationRepo.conversations.first)
         XCTAssertEqual(savedConversation.title, "What did I miss?")
@@ -1009,12 +1090,10 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
                 ChatMessage(role: .user, content: "What did I miss?"),
                 ChatMessage(role: .assistant, content: "Answer saved"),
             ])
-
-        await transcriptionService.releaseMeetingFinalization()
-        await coordinator.testHook_waitForMeetingTranscriptionQueue()
+        XCTAssertEqual(savedConversation.transcriptionId, completedTranscription.id)
 
         let transcriptionSnapshot = await transcriptionService.meetingFlowSnapshot()
-        XCTAssertEqual(transcriptionSnapshot.finalizedMeetingTranscriptionIDs, [savedConversation.transcriptionId])
+        XCTAssertEqual(transcriptionSnapshot.transcribeCallCount, 1)
         XCTAssertEqual(settlementHarness.lockStore.deletes, [output.folderURL])
     }
 
@@ -1100,6 +1179,7 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
             configStore: NoOpLLMConfigStore(),
             speechEngineSelectionProvider: { liveSelection },
             llmService: nil,
+            backgroundProcessor: makeBackgroundProcessor(),
             pillViewModel: MeetingRecordingPillViewModel(),
             meetingRecordingSettlement: makeSettlement(),
             onMenuBarIconUpdate: { _ in },
@@ -1148,6 +1228,7 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
             sttManager: stt,
             speechEngineSelectionProvider: { changedPreference },
             llmService: nil,
+            backgroundProcessor: makeBackgroundProcessor(),
             pillViewModel: MeetingRecordingPillViewModel(),
             meetingRecordingSettlement: makeSettlement(),
             onMenuBarIconUpdate: { _ in },
@@ -1193,6 +1274,7 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
                 sttManager: stt,
                 speechEngineSelectionProvider: { finalSelection },
                 llmService: nil,
+                backgroundProcessor: makeBackgroundProcessor(),
                 pillViewModel: MeetingRecordingPillViewModel(),
                 meetingRecordingSettlement: makeSettlement(),
                 onMenuBarIconUpdate: { _ in },
@@ -1246,6 +1328,7 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
             sttManager: stt,
             speechEngineSelectionProvider: { changedPreference },
             llmService: nil,
+            backgroundProcessor: makeBackgroundProcessor(),
             pillViewModel: MeetingRecordingPillViewModel(),
             meetingRecordingSettlement: makeSettlement(),
             onMenuBarIconUpdate: { _ in },
@@ -1434,6 +1517,7 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
             configStore: NoOpLLMConfigStore(),
             shouldShowFloatingMeetingPill: shouldShowFloatingMeetingPill,
             llmService: nil,
+            backgroundProcessor: makeBackgroundProcessor(),
             pillViewModel: pillViewModel ?? MeetingRecordingPillViewModel(),
             meetingRecordingSettlement: makeSettlement(),
             onMenuBarIconUpdate: onMenuBarIconUpdate,
@@ -1457,6 +1541,7 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
             meetingAudioSourceModeProvider: { sourceMode },
             frontmostApplicationProvider: StaticFrontmostApplicationProvider(frontmostApplication),
             llmService: nil,
+            backgroundProcessor: makeBackgroundProcessor(),
             pillViewModel: MeetingRecordingPillViewModel(),
             meetingRecordingSettlement: makeSettlement(),
             onMenuBarIconUpdate: { _ in },
@@ -1468,6 +1553,33 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
         MeetingRecordingSettlement(
             lockFileStore: FlowRecordingLockFileStore(),
             transcriptionRepo: MockTranscriptionRepository()
+        )
+    }
+
+    /// A `MeetingBackgroundProcessor` wired to fresh, independent mocks by
+    /// default — most coordinator tests only exercise the state machine's
+    /// stop/handoff transition, not the background job's own transcription
+    /// pipeline, so a disposable instance with no-op completion callbacks is
+    /// sufficient. Tests that DO care about background processing (hold/
+    /// release timing, `onTranscriptionReady`, lock deletion) pass the same
+    /// `transcriptionService`/`meetingRecordingSettlement`/`transcriptionRepo`
+    /// the rest of the test uses, so the job actually observes them.
+    private func makeBackgroundProcessor(
+        transcriptionService: TranscriptionServiceProtocol? = nil,
+        meetingRecordingSettlement: MeetingRecordingSettlement? = nil,
+        transcriptionRepo: TranscriptionRepositoryProtocol? = nil,
+        conversationRepo: ChatConversationRepositoryProtocol? = nil,
+        llmService: LLMServiceProtocol? = nil,
+        onTranscriptionReady: @escaping (Transcription) -> Void = { _ in }
+    ) -> MeetingBackgroundProcessor {
+        MeetingBackgroundProcessor(
+            transcriptionService: transcriptionService ?? MockTranscriptionService(),
+            meetingRecordingSettlement: meetingRecordingSettlement ?? makeSettlement(),
+            transcriptionRepo: transcriptionRepo ?? MockTranscriptionRepository(),
+            conversationRepo: conversationRepo ?? MockChatConversationRepository(),
+            llmService: llmService,
+            onTranscriptionReady: onTranscriptionReady,
+            onProcessingCountChanged: { _ in }
         )
     }
 
@@ -1535,24 +1647,6 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
         while pillViewModel.state != expectedState {
             if startedAt.duration(to: .now) > timeout {
                 XCTFail("Timed out waiting for pill state \(expectedState); latest state: \(pillViewModel.state)")
-                return
-            }
-            try await Task.sleep(for: .milliseconds(20))
-        }
-    }
-
-    private func waitForMeetingFinalizeCall(
-        on service: MockTranscriptionService,
-        expectedCount: Int = 1
-    ) async throws {
-        let startedAt = ContinuousClock.now
-        while true {
-            let snapshot = await service.meetingFlowSnapshot()
-            if snapshot.finalizeMeetingCallCount >= expectedCount {
-                return
-            }
-            if startedAt.duration(to: .now) > .seconds(1) {
-                XCTFail("Expected queued meeting finalization to start.")
                 return
             }
             try await Task.sleep(for: .milliseconds(20))

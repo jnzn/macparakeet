@@ -96,6 +96,7 @@ final class MeetingRecordingFlowCoordinator {
     private let frontmostApplicationProvider: any FrontmostApplicationProviding
     private let probableCalendarSnapshotProvider: @MainActor @Sendable () -> MeetingCalendarSnapshot?
     private var llmService: LLMServiceProtocol?
+    private let backgroundProcessor: MeetingBackgroundProcessor
     private let onMenuBarIconUpdate: (BreathWaveIcon.MenuBarState) -> Void
     private let onTranscriptionReady: (Transcription) -> Void
     private let onQueuedTranscriptionReady: (Transcription, Bool) -> Void
@@ -172,6 +173,7 @@ final class MeetingRecordingFlowCoordinator {
             nil
         },
         llmService: LLMServiceProtocol?,
+        backgroundProcessor: MeetingBackgroundProcessor,
         pillViewModel: MeetingRecordingPillViewModel,
         meetingRecordingSettlement: MeetingRecordingSettlement,
         finalizationOwnershipClaimer: any MeetingFinalizationOwnershipClaiming =
@@ -204,6 +206,7 @@ final class MeetingRecordingFlowCoordinator {
         self.frontmostApplicationProvider = frontmostApplicationProvider
         self.probableCalendarSnapshotProvider = probableCalendarSnapshotProvider
         self.llmService = llmService
+        self.backgroundProcessor = backgroundProcessor
         self.pillViewModel = pillViewModel
         self.meetingTranscriptionQueue =
             meetingTranscriptionQueue
@@ -238,6 +241,7 @@ final class MeetingRecordingFlowCoordinator {
     /// AppEnvironmentConfigurer.refreshLLMAvailability does for the singleton chat VM.
     func updateLLMService(_ service: LLMServiceProtocol?) {
         self.llmService = service
+        backgroundProcessor.updateLLMService(service)
         panelViewModel?.chatViewModel.updateLLMService(service)
     }
 
@@ -509,8 +513,22 @@ final class MeetingRecordingFlowCoordinator {
         resumeActiveFlowSettlementWaitersIfNeeded()
     }
 
+    /// `.stopping` is included alongside `.starting`: a stop requested while
+    /// still starting defers (state moves to `.stopping`) rather than firing
+    /// immediately, so this same generation's in-flight start must be allowed
+    /// to keep running to completion — that's what lets `.recordingStarted`
+    /// reach the state machine and trigger the deferred handoff. Only a
+    /// different generation, or this generation having already left both
+    /// states (e.g. `.cancelRequested` took it to `.idle`), means someone
+    /// else already handled it.
     private func ownsPendingStart(generation: Int) -> Bool {
-        stateMachine.generation == generation && stateMachine.state == .starting
+        guard stateMachine.generation == generation else { return false }
+        switch stateMachine.state {
+        case .starting, .stopping:
+            return true
+        case .idle, .checkingPermissions, .recording, .finishing:
+            return false
+        }
     }
 
     private func recordIgnoredStartResult(generation: Int, outcome: String) {
@@ -643,8 +661,7 @@ final class MeetingRecordingFlowCoordinator {
                 }
             )
             // Configure live Ask: in-memory mode (no transcriptionId/conversationRepo).
-            // Promotion to a persisted ChatConversation happens after stop-time
-            // stub creation, before the panel is torn down for queued finalize.
+            // Promotion to a persisted ChatConversation happens in MeetingBackgroundProcessor.
             panelVM.chatViewModel.configure(
                 llmService: llmService,
                 transcriptText: panelVM.chatTranscript,
@@ -846,213 +863,77 @@ final class MeetingRecordingFlowCoordinator {
                 }
             }
 
-        case .showTranscribingState:
+        case .stopRecordingAndHandOff:
             onRecordingStopping()
-            stopPillPolling()
-            stopTranscriptObservation()
-            stopSpeechWarmUpObservation()
-            // Begin a fresh saved-completion celebration.
-            cancelSavedCompletion()
-            pillViewModel.micLevel = 0
-            pillViewModel.systemLevel = 0
-            pillViewModel.captureHealth = .notRecording
-            beginPostStopPillCelebration()
-            panelViewModel?.state = .transcribing
-            panelViewModel?.canToggleMicrophoneMute = false
-            panelViewModel?.micLevel = 0
-            panelViewModel?.systemLevel = 0
-            panelViewModel?.captureHealth = .notRecording
-            hideMeetingPanel()
-
-        case .stopRecordingAndTranscribe:
             let gen = stateMachine.generation
             let liveWordCount = panelViewModel?.wordCount ?? 0
             let liveTranscriptLagged = panelViewModel?.isTranscriptionLagging ?? false
             let notesVM = panelViewModel?.notesViewModel
+            // Snapshot the in-memory Ask-tab chat before the panel is torn
+            // down on handoff so the background job can promote it to a
+            // persisted conversation once the transcription exists.
+            let carriedChat = panelViewModel?.chatViewModel.liveChatHistorySnapshot() ?? []
             let operationContext = currentMeetingOperationContext ?? ObservabilityOperationContext()
-            let operationTrigger = currentMeetingTrigger
             currentMeetingOperationContext = operationContext
+            let trigger = currentMeetingTrigger
+            // Manual / hotkey meetings have no preset title, so auto-title them.
+            // Calendar-driven meetings already carry the event title — keep it.
+            let shouldAutoGenerateTitle = trigger != .calendarAutoStart
+            stopPillPolling()
+            stopTranscriptObservation()
+            stopSpeechWarmUpObservation()
             actionTask = Task { @MainActor in
-                var stoppedOutput: MeetingRecordingOutput?
-                var captureDiagnostics: MeetingCaptureDiagnostics?
-                let queueingStartedAt = Date()
-                var queueingOutcome = "success"
-                var queueingFailureDetail: String?
-                var activeSessionID: UUID?
-                func elapsedMilliseconds(since startedAt: Date) -> Int {
-                    max(0, Int((Date().timeIntervalSince(startedAt) * 1_000).rounded()))
-                }
-                func appendStopStage(
-                    _ stage: String,
-                    sessionID: UUID?,
-                    startedAt: Date,
-                    outcome: String = "success",
-                    detail: String? = nil
-                ) {
-                    let sessionField = sessionID.map { " session=\($0.uuidString)" } ?? ""
-                    let suffix = detail.map { " \($0)" } ?? ""
-                    let fields = [
-                        "meeting_stop_stage\(sessionField)",
-                        "stage=\(stage)",
-                        "duration_ms=\(elapsedMilliseconds(since: startedAt))",
-                        "outcome=\(outcome)",
-                    ].joined(separator: " ")
-                    AudioCaptureDiagnostics.append(
-                        "\(fields)\(suffix)"
-                    )
-                }
-                defer {
-                    appendStopStage(
-                        "queued_total",
-                        sessionID: stoppedOutput?.sessionID ?? activeSessionID,
-                        startedAt: queueingStartedAt,
-                        outcome: queueingOutcome,
-                        detail: queueingFailureDetail
-                    )
-                }
-
+                let sessionID = await meetingRecordingService.activeSessionID
                 do {
-                    activeSessionID = await meetingRecordingService.activeSessionID
-                    let prepared = try await Observability.withOperationContext(operationContext) {
-                        // Flush any keystrokes typed in the last < 250 ms so
-                        // they make it onto the lock file and into the saved
-                        // Transcription.userNotes (ADR-020 §8).
-                        let notesCommitStartedAt = Date()
-                        await notesVM?.commit()
-                        appendStopStage(
-                            "notes_commit",
-                            sessionID: activeSessionID,
-                            startedAt: notesCommitStartedAt
-                        )
-                        let serviceStopStartedAt = Date()
-                        let output: MeetingRecordingOutput
-                        do {
-                            output = try await meetingRecordingService.stopRecording()
-                        } catch {
-                            if let activeSessionID {
-                                captureDiagnostics = await meetingRecordingService.captureDiagnostics(
-                                    for: activeSessionID)
-                            }
-                            appendStopStage(
-                                "service_stop",
-                                sessionID: activeSessionID,
-                                startedAt: serviceStopStartedAt,
-                                outcome: error is CancellationError ? "cancelled" : "failure",
-                                detail: "error_type=\(TelemetryErrorClassifier.classify(error))"
-                            )
-                            throw error
-                        }
-                        stoppedOutput = output
-                        captureDiagnostics = await meetingRecordingService.captureDiagnostics(for: output.sessionID)
-                        appendStopStage(
-                            "service_stop",
-                            sessionID: output.sessionID,
-                            startedAt: serviceStopStartedAt
-                        )
-                        Telemetry.send(
-                            .meetingRecordingCompleted(
-                                durationSeconds: output.durationSeconds,
-                                liveWordCount: liveWordCount,
-                                liveTranscriptLagged: liveTranscriptLagged
-                            ))
-                        let prepareRowStartedAt = Date()
-                        var prepared: Transcription
-                        do {
-                            prepared = try await transcriptionService.prepareMeetingTranscription(
-                                recording: output
-                            )
-                            // The user can refine the type while recording.
-                            // Snapshot it immediately before queueing so the
-                            // durable stub and auto-run routing agree.
-                            let meetingTypeID = output.meetingTypeId ?? self.meetingTypeIDProvider()
-                            try self.transcriptionRepo.updateMeetingType(
-                                id: prepared.id,
-                                meetingTypeId: meetingTypeID
-                            )
-                            prepared.meetingTypeId = meetingTypeID
-                        } catch {
-                            appendStopStage(
-                                "prepare_row",
-                                sessionID: output.sessionID,
-                                startedAt: prepareRowStartedAt,
-                                outcome: error is CancellationError ? "cancelled" : "failure",
-                                detail: "error_type=\(TelemetryErrorClassifier.classify(error))"
-                            )
-                            throw error
-                        }
-                        appendStopStage(
-                            "prepare_row",
-                            sessionID: output.sessionID,
-                            startedAt: prepareRowStartedAt
-                        )
-                        self.persistLiveAskConversationIfNeeded(transcriptionID: prepared.id)
-                        let enqueueStartedAt = Date()
-                        await meetingTranscriptionQueue.enqueue(
-                            MeetingTranscriptionQueue.Item(
-                                recording: output,
-                                transcriptionID: prepared.id,
-                                recordingGeneration: gen,
-                                operationContext: operationContext,
-                                trigger: operationTrigger,
-                                liveWordCount: liveWordCount,
-                                liveTranscriptLagged: liveTranscriptLagged
-                            ))
-                        appendStopStage(
-                            "queue_enqueue",
-                            sessionID: output.sessionID,
-                            startedAt: enqueueStartedAt
-                        )
-                        return prepared
-                    }
-                    self.clearMeetingOperationContext()
+                    // Flush any keystrokes typed in the last < 250 ms so they
+                    // make it onto the lock file and into the saved
+                    // Transcription.userNotes (ADR-020 §8).
+                    await notesVM?.commit()
+                    let output = try await meetingRecordingService.stopRecording()
+                    Telemetry.send(.meetingRecordingCompleted(
+                        durationSeconds: output.durationSeconds,
+                        liveWordCount: liveWordCount,
+                        liveTranscriptLagged: liveTranscriptLagged
+                    ))
+                    // Hand the slow transcription off to the background
+                    // processor and return to idle immediately so a new
+                    // recording can start right away.
+                    self.backgroundProcessor.process(
+                        output: output,
+                        operationContext: operationContext,
+                        trigger: trigger,
+                        liveWordCount: liveWordCount,
+                        liveTranscriptLagged: liveTranscriptLagged,
+                        shouldAutoGenerateTitle: shouldAutoGenerateTitle,
+                        carriedChat: carriedChat
+                    )
+                    self.currentMeetingOperationContext = nil
                     self.currentMeetingTrigger = nil
-                    self.sendEvent(.recordingQueued(generation: gen, transcriptionID: prepared.id))
+                    self.sendEvent(.handedOffToBackground(generation: gen))
                 } catch {
-                    // If stop already succeeded, the lock is already
-                    // awaitingTranscription. Leave it for recovery to retry.
-                    if error is CancellationError {
-                        queueingOutcome = "cancelled"
-                        queueingFailureDetail = "error_type=\(TelemetryErrorClassifier.classify(error))"
-                        self.sendMeetingOperation(
-                            outcome: .cancelled,
-                            output: stoppedOutput,
-                            stage: stoppedOutput == nil ? .stopRecording : .completeTranscription,
-                            captureDiagnostics: captureDiagnostics,
-                            liveWordCount: liveWordCount,
-                            liveTranscriptLagged: liveTranscriptLagged
-                        )
-                        let message =
-                            stoppedOutput == nil
-                            ? "Meeting stop was cancelled"
-                            : "Meeting processing was interrupted and will be retried automatically."
-                        self.sendEvent(
-                            .transcriptionFailed(
-                                generation: gen,
-                                message: message
-                            ))
-                        self.clearMeetingOperationContext()
-                        self.currentMeetingTrigger = nil
-                    } else {
-                        queueingOutcome = "failure"
-                        queueingFailureDetail = "error_type=\(TelemetryErrorClassifier.classify(error))"
-                        Telemetry.send(
-                            .meetingRecordingFailed(
-                                errorType: TelemetryErrorClassifier.classify(error),
-                                errorDetail: TelemetryErrorClassifier.errorDetail(error)
-                            ))
-                        self.sendMeetingOperation(
-                            outcome: .failure,
-                            output: stoppedOutput,
-                            stage: stoppedOutput == nil ? .stopRecording : .completeTranscription,
-                            captureDiagnostics: captureDiagnostics,
-                            liveWordCount: liveWordCount,
-                            liveTranscriptLagged: liveTranscriptLagged,
-                            errorType: TelemetryErrorClassifier.classify(error)
-                        )
-                        self.clearMeetingOperationContext()
-                        self.currentMeetingTrigger = nil
-                        self.sendEvent(.transcriptionFailed(generation: gen, message: error.localizedDescription))
+                    Telemetry.send(.meetingRecordingFailed(
+                        errorType: TelemetryErrorClassifier.classify(error),
+                        errorDetail: TelemetryErrorClassifier.errorDetail(error)
+                    ))
+                    var captureDiagnostics: MeetingCaptureDiagnostics?
+                    if let sessionID {
+                        captureDiagnostics = await meetingRecordingService.captureDiagnostics(for: sessionID)
                     }
+                    self.sendMeetingOperation(
+                        outcome: .failure,
+                        stage: .stopRecording,
+                        captureDiagnostics: captureDiagnostics,
+                        liveWordCount: liveWordCount,
+                        liveTranscriptLagged: liveTranscriptLagged,
+                        errorType: TelemetryErrorClassifier.classify(error)
+                    )
+                    self.currentMeetingOperationContext = nil
+                    self.currentMeetingTrigger = nil
+                    let message =
+                        error is CancellationError
+                        ? "Meeting stop was cancelled"
+                        : error.localizedDescription
+                    self.sendEvent(.handoffFailed(generation: gen, message: message))
                 }
             }
 
@@ -1072,7 +953,7 @@ final class MeetingRecordingFlowCoordinator {
                 // session folder that cancelRecording is about to delete.
                 // The notes themselves are intentionally discarded with
                 // the rest of the cancelled recording — symmetric with
-                // .stopRecordingAndTranscribe's commit() call.
+                // .stopRecordingAndHandOff's commit() call.
                 await notesVM?.commit()
                 await meetingRecordingService.cancelRecording()
                 Telemetry.send(.meetingRecordingCancelled(durationSeconds: durationSeconds))
@@ -1102,15 +983,16 @@ final class MeetingRecordingFlowCoordinator {
 
         case .showSavedCompletion:
             // Durably saved + queued. The expanded panel is already hidden and
-            // its live-Ask chat persisted (in .stopRecordingAndTranscribe), so
+            // its live-Ask chat persisted (in .stopRecordingAndHandOff), so
             // tear it down now; the floating pill alone carries the celebration.
             meetingDurablySaved = true
             pillViewModel.showAudioSavedConfirmation()
             teardownMeetingPanel()
-            // The Metatron resolves to the checkmark once its minimum bloom has
-            // also elapsed, then the pill self-dismisses. Interruptible: a
+            // Drives .completing -> .transcribing (Metatron bloom) -> .completed
+            // (checkmark) -> self-dismiss. The Metatron resolves to the checkmark
+            // once its minimum bloom has also elapsed. Interruptible: a
             // back-to-back start cancels it.
-            advanceToSavedCheckmarkIfReady()
+            beginPostStopPillCelebration()
 
         case .hidePill:
             cancelSavedCompletion()
@@ -1896,6 +1778,10 @@ extension MeetingRecordingFlowCoordinator {
 
     func testHook_waitForMeetingTranscriptionQueue() async {
         await meetingTranscriptionQueue.waitUntilIdle()
+    }
+
+    func testHook_waitForBackgroundProcessing() async {
+        await backgroundProcessor.testHook_waitForAllJobs()
     }
 
     var testHook_panelChatViewModel: TranscriptChatViewModel? {

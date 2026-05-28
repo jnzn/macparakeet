@@ -479,8 +479,11 @@ actor MockTranscriptionService: SpeakerConfiguredRetranscriptionService {
     var finalizedMeetingTranscriptionIDs: [UUID] = []
     private var preparedMeetingSaveHook: (@Sendable (Transcription) -> Void)?
     private var finalizedMeetingSaveHook: (@Sendable (Transcription) -> Void)?
+    private var transcribedMeetingSaveHook: (@Sendable (Transcription) -> Void)?
     private var meetingFinalizationHeld = false
     private var meetingFinalizationContinuations: [CheckedContinuation<Void, Never>] = []
+    private var transcribeMeetingHeld = false
+    private var transcribeMeetingContinuations: [CheckedContinuation<Void, Never>] = []
     /// Per-file overrides for batch tests, keyed by `fileURL.lastPathComponent`.
     /// `errorsByFileName` wins over `resultsByFileName`, which wins over the
     /// shared `transcribeError`/`transcribeResult`.
@@ -527,11 +530,18 @@ actor MockTranscriptionService: SpeakerConfiguredRetranscriptionService {
         meetingFinalizationHeld = true
     }
 
+    func holdTranscribeMeeting() {
+        transcribeMeetingHeld = true
+    }
+
     func persistFinalizedMeetings(to repository: any TranscriptionRepositoryProtocol) {
         preparedMeetingSaveHook = { transcription in
             try? repository.save(transcription)
         }
         finalizedMeetingSaveHook = { transcription in
+            try? repository.save(transcription)
+        }
+        transcribedMeetingSaveHook = { transcription in
             try? repository.save(transcription)
         }
     }
@@ -540,6 +550,15 @@ actor MockTranscriptionService: SpeakerConfiguredRetranscriptionService {
         meetingFinalizationHeld = false
         let continuations = meetingFinalizationContinuations
         meetingFinalizationContinuations = []
+        for continuation in continuations {
+            continuation.resume()
+        }
+    }
+
+    func releaseTranscribeMeeting() {
+        transcribeMeetingHeld = false
+        let continuations = transcribeMeetingContinuations
+        transcribeMeetingContinuations = []
         for continuation in continuations {
             continuation.resume()
         }
@@ -600,6 +619,12 @@ actor MockTranscriptionService: SpeakerConfiguredRetranscriptionService {
         lastMeetingRecording = recording
         lastSource = .meeting
 
+        if transcribeMeetingHeld {
+            await withCheckedContinuation { continuation in
+                transcribeMeetingContinuations.append(continuation)
+            }
+        }
+
         for phase in transcribeProgressPhases {
             onProgress?(phase)
         }
@@ -612,7 +637,8 @@ actor MockTranscriptionService: SpeakerConfiguredRetranscriptionService {
             throw error
         }
 
-        return transcribeResult
+        var result =
+            transcribeResult
             ?? Transcription(
                 fileName: recording.displayName,
                 filePath: recording.mixedAudioURL.path,
@@ -620,6 +646,11 @@ actor MockTranscriptionService: SpeakerConfiguredRetranscriptionService {
                 status: .completed,
                 sourceType: .meeting
             )
+        result.filePath = result.filePath ?? recording.mixedAudioURL.path
+        result.meetingArtifactFolderPath = result.meetingArtifactFolderPath ?? recording.folderURL.path
+        result.sourceType = .meeting
+        transcribedMeetingSaveHook?(result)
+        return result
     }
 
     func prepareMeetingTranscription(
