@@ -90,11 +90,16 @@ build_swiftpm_helper() {
     return 0
   fi
 
+  local build_path_args=()
+  if [[ -n "${SWIFT_CLI_BUILD_PATH:-}" ]]; then
+    build_path_args=(--build-path "$SWIFT_CLI_BUILD_PATH")
+  fi
+
   pushd "$ROOT_DIR" >/dev/null
   if [[ "$UNIVERSAL" == "1" ]]; then
-    swift build -c release --arch arm64 --arch x86_64 --product "$product"
+    swift build -c release --arch arm64 --arch x86_64 --product "$product" "${build_path_args[@]}"
   else
-    swift build -c release --product "$product"
+    swift build -c release --product "$product" "${build_path_args[@]}"
   fi
   popd >/dev/null
 }
@@ -197,11 +202,16 @@ copy_resource_bundles() {
 }
 
 swiftpm_release_bin_dir() {
+  local build_path_args=()
+  if [[ -n "${SWIFT_CLI_BUILD_PATH:-}" ]]; then
+    build_path_args=(--build-path "$SWIFT_CLI_BUILD_PATH")
+  fi
+
   pushd "$ROOT_DIR" >/dev/null
   if [[ "$UNIVERSAL" == "1" ]]; then
-    swift build -c release --arch arm64 --arch x86_64 --product "$1" --show-bin-path
+    swift build -c release --arch arm64 --arch x86_64 --product "$1" --show-bin-path "${build_path_args[@]}"
   else
-    swift build -c release --product "$1" --show-bin-path
+    swift build -c release --product "$1" --show-bin-path "${build_path_args[@]}"
   fi
   popd >/dev/null
 }
