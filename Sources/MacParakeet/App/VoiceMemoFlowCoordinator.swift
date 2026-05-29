@@ -134,8 +134,13 @@ final class VoiceMemoFlowCoordinator {
                 self.onTranscriptionReady(transcription)
             } catch {
                 self.logger.error("voice_memo stop/transcribe failed: \(error)")
-                self.pillViewModel?.state = .error("Transcription failed.")
-                self.scheduleAutoDismiss(after: 4)
+                // Surface the underlying reason so failures are diagnosable from
+                // the pill itself (e.g. "No meeting audio was captured", a
+                // convert/STT error) rather than a generic message that hides
+                // the failing stage. MeetingAudioError is LocalizedError, so
+                // localizedDescription already yields its human-readable text.
+                self.pillViewModel?.state = .error(error.localizedDescription)
+                self.scheduleAutoDismiss(after: 6)
             }
         }
     }
