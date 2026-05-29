@@ -765,7 +765,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // flag reaches the installed base, not just fresh installs. Kept
             // independent of the speech warm-up above: idempotent, silent-fail,
             // and the meeting path falls back to fixed chunking if it never
-            // succeeds. No-op when the flag is off.
+            // succeeds. No-op when the flag is off. (Fork: replaces the prior
+            // inline isModelReady/prepareModel with the upstream #394 helper.)
             guard !Task.isCancelled else { return }
             let prepOutcome = await MeetingVADLaunchPrep.run(
                 featureEnabled: AppFeatures.meetingVadLiveChunkingEnabled,
