@@ -11,6 +11,7 @@ final class AppSettingsObserverCoordinator {
     private let onHotkeyTriggerChanged: () -> Void
     private let onPushToTalkHotkeyTriggerChanged: () -> Void
     private let onMeetingHotkeyTriggerChanged: () -> Void
+    private let onVoiceMemoHotkeyTriggerChanged: () -> Void
     private let onFileTranscriptionHotkeyTriggerChanged: () -> Void
     private let onYouTubeTranscriptionHotkeyTriggerChanged: () -> Void
     private let onAppearanceModeChanged: () -> Void
@@ -22,6 +23,7 @@ final class AppSettingsObserverCoordinator {
     private var hotkeyTriggerObserver: Any?
     private var pushToTalkHotkeyTriggerObserver: Any?
     private var meetingHotkeyTriggerObserver: Any?
+    private var voiceMemoHotkeyTriggerObserver: Any?
     private var fileTranscriptionHotkeyTriggerObserver: Any?
     private var youtubeTranscriptionHotkeyTriggerObserver: Any?
     private var appearanceModeObserver: Any?
@@ -35,6 +37,7 @@ final class AppSettingsObserverCoordinator {
         onHotkeyTriggerChanged: @escaping () -> Void,
         onPushToTalkHotkeyTriggerChanged: @escaping () -> Void,
         onMeetingHotkeyTriggerChanged: @escaping () -> Void,
+        onVoiceMemoHotkeyTriggerChanged: @escaping () -> Void,
         onFileTranscriptionHotkeyTriggerChanged: @escaping () -> Void,
         onYouTubeTranscriptionHotkeyTriggerChanged: @escaping () -> Void,
         onAppearanceModeChanged: @escaping () -> Void,
@@ -47,6 +50,7 @@ final class AppSettingsObserverCoordinator {
         self.onHotkeyTriggerChanged = onHotkeyTriggerChanged
         self.onPushToTalkHotkeyTriggerChanged = onPushToTalkHotkeyTriggerChanged
         self.onMeetingHotkeyTriggerChanged = onMeetingHotkeyTriggerChanged
+        self.onVoiceMemoHotkeyTriggerChanged = onVoiceMemoHotkeyTriggerChanged
         self.onFileTranscriptionHotkeyTriggerChanged = onFileTranscriptionHotkeyTriggerChanged
         self.onYouTubeTranscriptionHotkeyTriggerChanged = onYouTubeTranscriptionHotkeyTriggerChanged
         self.onAppearanceModeChanged = onAppearanceModeChanged
@@ -105,6 +109,16 @@ final class AppSettingsObserverCoordinator {
         ) { [weak self] _ in
             Task { @MainActor in
                 self?.onMeetingHotkeyTriggerChanged()
+            }
+        }
+
+        voiceMemoHotkeyTriggerObserver = notificationCenter.addObserver(
+            forName: .macParakeetVoiceMemoHotkeyTriggerDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.onVoiceMemoHotkeyTriggerChanged()
             }
         }
 
@@ -186,6 +200,10 @@ final class AppSettingsObserverCoordinator {
         if let meetingHotkeyTriggerObserver {
             notificationCenter.removeObserver(meetingHotkeyTriggerObserver)
             self.meetingHotkeyTriggerObserver = nil
+        }
+        if let voiceMemoHotkeyTriggerObserver {
+            notificationCenter.removeObserver(voiceMemoHotkeyTriggerObserver)
+            self.voiceMemoHotkeyTriggerObserver = nil
         }
         if let fileTranscriptionHotkeyTriggerObserver {
             notificationCenter.removeObserver(fileTranscriptionHotkeyTriggerObserver)

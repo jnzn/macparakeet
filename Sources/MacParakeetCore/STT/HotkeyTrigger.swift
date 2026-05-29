@@ -363,6 +363,7 @@ public struct HotkeyTrigger: Sendable {
     public static let defaultDictation: HotkeyTrigger = .fn
     public static let defaultPushToTalk: HotkeyTrigger = .fn
     public static let defaultMeetingRecording: HotkeyTrigger = .chord(modifiers: ["command", "shift"], keyCode: 46)
+    public static let defaultVoiceMemo: HotkeyTrigger = .chord(modifiers: ["option", "shift"], keyCode: 46)
 
     public static func isDefaultDictationGesturePreset(
         handsFree: HotkeyTrigger,
@@ -673,6 +674,7 @@ public struct HotkeyTrigger: Sendable {
     public static let defaultsKey = "hotkeyTrigger"
     public static let pushToTalkDefaultsKey = "pushToTalkHotkeyTrigger"
     public static let meetingDefaultsKey = "meetingHotkeyTrigger"
+    public static let voiceMemoDefaultsKey = "voiceMemoHotkeyTrigger"
     public static let fileTranscriptionDefaultsKey = "fileTranscriptionHotkeyTrigger"
     public static let youtubeTranscriptionDefaultsKey = "youtubeTranscriptionHotkeyTrigger"
 

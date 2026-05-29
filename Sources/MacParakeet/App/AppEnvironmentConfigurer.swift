@@ -7,11 +7,13 @@ final class AppEnvironmentConfigurer {
     private final class CoordinatorRefs {
         weak var dictation: DictationFlowCoordinator?
         weak var meeting: MeetingRecordingFlowCoordinator?
+        weak var voiceMemo: VoiceMemoFlowCoordinator?
     }
 
     struct Runtime {
         let dictationFlowCoordinator: DictationFlowCoordinator
         let meetingRecordingFlowCoordinator: MeetingRecordingFlowCoordinator
+        let voiceMemoFlowCoordinator: VoiceMemoFlowCoordinator
         let hotkeyCoordinator: AppHotkeyCoordinator
         let meetingAutoStartCoordinator: MeetingAutoStartCoordinator?
         let aiAssistantFlowCoordinator: AIAssistantFlowCoordinator
@@ -264,6 +266,7 @@ final class AppEnvironmentConfigurer {
             mediaPauseCoordinator: mediaPauseCoordinator,
             shouldSuppressIdlePill: {
                 coordinatorRefs.meeting?.isMeetingRecordingActive == true
+                    || coordinatorRefs.voiceMemo?.isVoiceMemoActive == true
             },
             // Gate every dictation start (hotkey *and* idle-pill click) while
             // onboarding is up: the model isn't downloaded until a later step,
@@ -329,6 +332,32 @@ final class AppEnvironmentConfigurer {
         coordinatorRefs.meeting = meetingCoordinator
         liveMeetingCoordinator = meetingCoordinator
 
+        let voiceMemoCoordinator = VoiceMemoFlowCoordinator(
+            meetingRecordingService: env.meetingRecordingService,
+            transcriptionService: env.transcriptionService,
+            permissionService: env.permissionService,
+            libraryViewModel: libraryViewModel,
+            isMeetingRecordingActive: { [weak meetingCoordinator] in
+                meetingCoordinator?.isMeetingRecordingActive ?? false
+            },
+            onTranscriptionReady: { [weak self] transcription in
+                guard let self else { return }
+                self.transcriptionViewModel.presentCompletedTranscription(transcription, autoSave: true)
+                self.libraryViewModel.loadTranscriptions()
+                self.mainWindowState.navigateToTranscription(from: .library)
+                callbacks.onOpenMainWindow()
+            },
+            onRecordingBegan: {
+                coordinatorRefs.dictation?.hideIdlePill()
+            },
+            onFlowReturnedToIdle: {
+                callbacks.onMenuBarIconUpdate()
+                guard coordinatorRefs.dictation?.isDictationActive != true else { return }
+                coordinatorRefs.dictation?.showIdlePill()
+            }
+        )
+        coordinatorRefs.voiceMemo = voiceMemoCoordinator
+
         let hotkeyCoordinator = AppHotkeyCoordinator(
             settingsViewModel: settingsViewModel,
             onStartDictation: { mode in
@@ -350,6 +379,9 @@ final class AppEnvironmentConfigurer {
                 coordinatorRefs.dictation?.dismissOverlayIfError()
             },
             onToggleMeetingRecording: callbacks.onToggleMeetingRecordingFromHotkey,
+            onToggleVoiceMemo: { [weak voiceMemoCoordinator] in
+                voiceMemoCoordinator?.toggleRecording()
+            },
             onTriggerFileTranscription: callbacks.onTriggerFileTranscriptionFromHotkey,
             onTriggerYouTubeTranscription: callbacks.onTriggerYouTubeTranscriptionFromHotkey,
             onDictationHotkeyManagersChanged: { managers in
@@ -425,6 +457,7 @@ final class AppEnvironmentConfigurer {
         return Runtime(
             dictationFlowCoordinator: dictationCoordinator,
             meetingRecordingFlowCoordinator: meetingCoordinator,
+            voiceMemoFlowCoordinator: voiceMemoCoordinator,
             hotkeyCoordinator: hotkeyCoordinator,
             meetingAutoStartCoordinator: calendarCoordinator,
             aiAssistantFlowCoordinator: aiAssistantCoordinator

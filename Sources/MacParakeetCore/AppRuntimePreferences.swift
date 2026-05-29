@@ -72,9 +72,16 @@ public enum YouTubeAudioQuality: String, CaseIterable, Hashable, Sendable, Equat
 public enum MeetingAudioSourceMode: String, CaseIterable, Hashable, Sendable, Equatable {
     case microphoneAndSystem = "microphone_and_system"
     case systemOnly = "system_only"
+    /// Microphone-only capture used by Voice Memo. Does not start the system
+    /// audio tap, so Screen & System Audio Recording permission is not needed.
+    case microphoneOnly = "microphone_only"
 
     public var capturesMicrophone: Bool {
-        self == .microphoneAndSystem
+        self == .microphoneAndSystem || self == .microphoneOnly
+    }
+
+    public var capturesSystemAudio: Bool {
+        self == .microphoneAndSystem || self == .systemOnly
     }
 
     public var displayTitle: String {
@@ -83,6 +90,8 @@ public enum MeetingAudioSourceMode: String, CaseIterable, Hashable, Sendable, Eq
             return "Microphone + System Audio"
         case .systemOnly:
             return "System Audio Only"
+        case .microphoneOnly:
+            return "Microphone Only"
         }
     }
 
@@ -92,6 +101,8 @@ public enum MeetingAudioSourceMode: String, CaseIterable, Hashable, Sendable, Eq
             return "Capture your microphone and computer audio. Weak mic bleed is suppressed live."
         case .systemOnly:
             return "Capture computer audio for meetings. Your microphone is still used for dictation."
+        case .microphoneOnly:
+            return "Capture only your microphone. No system audio recording permission required."
         }
     }
 

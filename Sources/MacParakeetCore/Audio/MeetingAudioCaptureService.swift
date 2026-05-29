@@ -136,8 +136,13 @@ public actor MeetingAudioCaptureService {
             throw MeetingAudioError.alreadyRunning
         }
 
-        let systemCapture = try systemAudioCaptureFactory()
         let sourceMode = sourceModeOverride ?? sourceModeProvider()
+        // Only create a system-audio tap when the source mode actually needs it.
+        // For .microphoneOnly (Voice Memo), skip the tap factory entirely so no
+        // Screen & System Audio Recording permission prompt is triggered.
+        let systemCapture: (any MeetingSystemAudioCapturing)? = sourceMode.capturesSystemAudio
+            ? try systemAudioCaptureFactory()
+            : nil
         eventSink.setHandler(handler)
         var microphoneStartReport: MeetingMicrophoneCaptureStartReport?
         var attemptedMicrophoneStart = false
@@ -173,31 +178,33 @@ public actor MeetingAudioCaptureService {
                 )
             }
 
-            try await systemCapture.start(
-                handler: { [weak self] buffer, time in
-                    guard let copy = Self.deepCopyBuffer(buffer) else {
-                        Logger(subsystem: "com.macparakeet.core", category: "MeetingAudioCaptureService")
-                            .warning("deepCopyBuffer nil for system capture: format=\(buffer.format.commonFormat.rawValue) rate=\(buffer.format.sampleRate) ch=\(buffer.format.channelCount) interleaved=\(buffer.format.isInterleaved) frames=\(buffer.frameLength)")
-                        self?.eventSink.emit(
-                            systemAudioFailureEvent(
-                                .captureRuntimeFailure(
-                                    "system buffer copy failed (format=\(buffer.format.commonFormat.rawValue) rate=\(buffer.format.sampleRate) channels=\(buffer.format.channelCount))"
+            if let systemCapture {
+                try await systemCapture.start(
+                    handler: { [weak self] buffer, time in
+                        guard let copy = Self.deepCopyBuffer(buffer) else {
+                            Logger(subsystem: "com.macparakeet.core", category: "MeetingAudioCaptureService")
+                                .warning("deepCopyBuffer nil for system capture: format=\(buffer.format.commonFormat.rawValue) rate=\(buffer.format.sampleRate) ch=\(buffer.format.channelCount) interleaved=\(buffer.format.isInterleaved) frames=\(buffer.frameLength)")
+                            self?.eventSink.emit(
+                                systemAudioFailureEvent(
+                                    .captureRuntimeFailure(
+                                        "system buffer copy failed (format=\(buffer.format.commonFormat.rawValue) rate=\(buffer.format.sampleRate) channels=\(buffer.format.channelCount))"
+                                    )
                                 )
                             )
-                        )
-                        return
+                            return
+                        }
+                        self?.eventSink.emit(.systemBuffer(copy, time))
+                    },
+                    onStall: { [weak self] error in
+                        self?.eventSink.emit(systemAudioFailureEvent(error))
                     }
-                    self?.eventSink.emit(.systemBuffer(copy, time))
-                },
-                onStall: { [weak self] error in
-                    self?.eventSink.emit(systemAudioFailureEvent(error))
-                }
-            )
+                )
+            }
         } catch {
             if attemptedMicrophoneStart {
                 microphoneCapture.stop()
             }
-            await systemCapture.stop()
+            await systemCapture?.stop()
             finishEventStream()
             eventSink.setHandler(nil)
             throw error

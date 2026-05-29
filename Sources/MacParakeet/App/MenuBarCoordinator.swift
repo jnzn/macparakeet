@@ -13,6 +13,8 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
     private let fileTranscriptionHotkeyTriggerProvider: () -> HotkeyTrigger
     private let youtubeTranscriptionHotkeyTriggerProvider: () -> HotkeyTrigger
     private let meetingRecordingActiveProvider: () -> Bool
+    private let voiceMemoHotkeyTriggerProvider: () -> HotkeyTrigger
+    private let voiceMemoActiveProvider: () -> Bool
     private let dictationCaptureActiveProvider: () -> Bool
     private let onOpenMainWindow: () -> Void
     private let onOpenSettings: () -> Void
@@ -20,6 +22,7 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
     private let onNewTranscription: () -> Void
     private let onStartDictation: () -> Void
     private let onToggleMeetingRecording: () -> Void
+    private let onToggleVoiceMemo: () -> Void
     private let onCreateTransform: () -> Void
     private let onQuit: () -> Void
     private let onShowAboutPanel: () -> Void
@@ -33,6 +36,7 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
     private var pasteLastTransformMenuItem: NSMenuItem?
     private var recentTransformsMenuItem: NSMenuItem?
     private var recordMeetingMenuItems: [NSMenuItem] = []
+    private var recordVoiceMemoMenuItems: [NSMenuItem] = []
     private var transcribeFileMenuItems: [NSMenuItem] = []
     private var transcribeYouTubeMenuItems: [NSMenuItem] = []
     private var hotkeyMenuItem: NSMenuItem?
@@ -53,6 +57,8 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
         fileTranscriptionHotkeyTriggerProvider: @escaping () -> HotkeyTrigger,
         youtubeTranscriptionHotkeyTriggerProvider: @escaping () -> HotkeyTrigger,
         meetingRecordingActiveProvider: @escaping () -> Bool,
+        voiceMemoHotkeyTriggerProvider: @escaping () -> HotkeyTrigger,
+        voiceMemoActiveProvider: @escaping () -> Bool,
         dictationCaptureActiveProvider: @escaping () -> Bool,
         onOpenMainWindow: @escaping () -> Void,
         onOpenSettings: @escaping () -> Void,
@@ -60,6 +66,7 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
         onNewTranscription: @escaping () -> Void,
         onStartDictation: @escaping () -> Void,
         onToggleMeetingRecording: @escaping () -> Void,
+        onToggleVoiceMemo: @escaping () -> Void,
         onCreateTransform: @escaping () -> Void,
         onQuit: @escaping () -> Void,
         onShowAboutPanel: @escaping () -> Void
@@ -72,6 +79,8 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
         self.fileTranscriptionHotkeyTriggerProvider = fileTranscriptionHotkeyTriggerProvider
         self.youtubeTranscriptionHotkeyTriggerProvider = youtubeTranscriptionHotkeyTriggerProvider
         self.meetingRecordingActiveProvider = meetingRecordingActiveProvider
+        self.voiceMemoHotkeyTriggerProvider = voiceMemoHotkeyTriggerProvider
+        self.voiceMemoActiveProvider = voiceMemoActiveProvider
         self.dictationCaptureActiveProvider = dictationCaptureActiveProvider
         self.onOpenMainWindow = onOpenMainWindow
         self.onOpenSettings = onOpenSettings
@@ -79,6 +88,7 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
         self.onNewTranscription = onNewTranscription
         self.onStartDictation = onStartDictation
         self.onToggleMeetingRecording = onToggleMeetingRecording
+        self.onToggleVoiceMemo = onToggleVoiceMemo
         self.onCreateTransform = onCreateTransform
         self.onQuit = onQuit
         self.onShowAboutPanel = onShowAboutPanel
@@ -207,6 +217,14 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
             captureMenu.addItem(recordMeetingItem)
             recordMeetingMenuItems.append(recordMeetingItem)
         }
+        let recordVoiceMemoMainItem = makeMenuItem(
+            title: "Record Voice Memo",
+            action: #selector(toggleVoiceMemoFromMenu),
+            key: ""
+        )
+        applyChordShortcut(voiceMemoHotkeyTriggerProvider(), to: recordVoiceMemoMainItem)
+        captureMenu.addItem(recordVoiceMemoMainItem)
+        recordVoiceMemoMenuItems.append(recordVoiceMemoMainItem)
         if AppFeatures.transformsEnabled {
             captureMenu.addItem(NSMenuItem.separator())
             let createTransformItem = makeMenuItem(
@@ -392,6 +410,16 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
             menu.addItem(recordMeetingItem)
             recordMeetingMenuItems.append(recordMeetingItem)
         }
+
+        let recordVoiceMemoItem = NSMenuItem(
+            title: "Record Voice Memo",
+            action: #selector(toggleVoiceMemoFromMenu),
+            keyEquivalent: ""
+        )
+        recordVoiceMemoItem.target = self
+        applyChordShortcut(voiceMemoHotkeyTriggerProvider(), to: recordVoiceMemoItem)
+        menu.addItem(recordVoiceMemoItem)
+        recordVoiceMemoMenuItems.append(recordVoiceMemoItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -635,6 +663,14 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
         onToggleMeetingRecording()
     }
 
+    @objc private func toggleVoiceMemoFromMenu() {
+        onToggleVoiceMemo()
+    }
+
+    func refreshVoiceMemoHotkeyShortcut() {
+        recordVoiceMemoMenuItems.forEach { applyChordShortcut(voiceMemoHotkeyTriggerProvider(), to: $0) }
+    }
+
     func menuNeedsUpdate(_ menu: NSMenu) {
         let environmentReady = environmentProvider() != nil
         newTranscriptionMenuItem?.isEnabled = environmentReady
@@ -647,6 +683,12 @@ final class MenuBarCoordinator: NSObject, NSMenuDelegate {
             $0.title = meetingRecordingActiveProvider()
                 ? "Stop Recording"
                 : "Start Recording"
+        }
+        recordVoiceMemoMenuItems.forEach {
+            $0.isEnabled = environmentReady
+            $0.title = voiceMemoActiveProvider()
+                ? "Stop Voice Memo"
+                : "Record Voice Memo"
         }
 
         guard let env = environmentProvider() else {

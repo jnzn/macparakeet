@@ -29,6 +29,9 @@ public enum TranscriptionAssetCleanup {
             try removeYouTubeFile(at: URL(fileURLWithPath: filePath), fileManager: fileManager)
         case .meeting:
             try removeMeetingFolder(containing: URL(fileURLWithPath: filePath), fileManager: fileManager)
+        case .voiceMemo:
+            // Voice memos use the same session-folder layout as meetings.
+            try removeMeetingFolder(containing: URL(fileURLWithPath: filePath), fileManager: fileManager)
         case .file:
             return
         }
