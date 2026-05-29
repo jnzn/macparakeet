@@ -225,6 +225,8 @@ final class VoiceMemoFlowCoordinator {
         panelVM.isPaused = false
         panelVM.isMicrophoneMuted = false
         panelVM.canToggleMicrophoneMute = true
+        // Voice-memo header shows the red pulsing dot, not the meeting orb.
+        panelVM.usesVoiceMemoIndicator = true
         // Open straight to the live transcript — the reason a user taps the pill.
         panelVM.selectedTab = .transcript
         panelVM.updateLiveTranscriptStatus(.startingAudio)

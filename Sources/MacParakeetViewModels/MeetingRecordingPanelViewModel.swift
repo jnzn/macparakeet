@@ -46,6 +46,10 @@ public final class MeetingRecordingPanelViewModel {
     /// Meeting-local mic mute. Unlike pause, system audio keeps recording.
     public var isMicrophoneMuted: Bool = false
     public var canToggleMicrophoneMute: Bool = false
+    /// When true this panel is hosting a Voice Memo (mic-only) rather than a
+    /// meeting, so the header shows the voice-memo red pulsing dot instead of
+    /// the meeting dual-audio orb. Set by `VoiceMemoFlowCoordinator`.
+    public var usesVoiceMemoIndicator: Bool = false
     public var previewLines: [MeetingRecordingPreviewLine] = []
     public var isTranscriptionLagging: Bool = false
     public private(set) var liveTranscriptStatus: LiveTranscriptStatus = .listening
