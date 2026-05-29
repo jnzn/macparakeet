@@ -33,6 +33,7 @@ public struct MeetingVADModelPreparer: MeetingVADModelPreparing {
     }
 
     public func prepareModel(onProgress: (@Sendable (String) -> Void)?) async throws {
+        MeetingVADService.seedBundledModelIfNeeded()
         if MeetingVADService.isModelCached() {
             onProgress?("Voice-activity model ready")
             return

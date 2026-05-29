@@ -488,6 +488,19 @@ else
   exit 1
 fi
 
+# Bundle the Silero VAD model (~1 MB) so live meeting chunking works offline —
+# no HuggingFace download, no per-binary firewall (Little Snitch) prompt on first
+# use. Seeded into FluidAudio's cache at runtime by
+# MeetingVADService.seedBundledModelIfNeeded().
+SILERO_SRC="$ROOT_DIR/BundledModels/SileroVAD/silero-vad"
+if [[ -d "$SILERO_SRC" ]]; then
+  mkdir -p "$RESOURCES_DIR/SileroVAD"
+  cp -R "$SILERO_SRC" "$RESOURCES_DIR/SileroVAD/silero-vad"
+  echo "Bundled Silero VAD model: $RESOURCES_DIR/SileroVAD/silero-vad"
+else
+  echo "Warning: Silero VAD model not found at $SILERO_SRC; live chunking will download it on first use." >&2
+fi
+
 # Ship license/notice material with the app bundle so downloaded artifacts carry
 # the GPL and third-party notices for bundled/downloaded helper binaries.
 if [[ -f "$ROOT_DIR/LICENSE" ]]; then

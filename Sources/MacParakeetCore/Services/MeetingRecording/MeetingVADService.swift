@@ -87,6 +87,7 @@ actor MeetingVADService: MeetingVoiceActivityDetecting {
         computeUnits: MLComputeUnits = .cpuOnly
     ) async -> MeetingVADService? {
         let logger = Logger(subsystem: "com.macparakeet.core", category: "MeetingVADService")
+        seedBundledModelIfNeeded()
         guard isModelCached() else {
             logger.info("meeting_vad_model_uncached — falling back to fixed live chunking")
             return nil
@@ -123,6 +124,49 @@ actor MeetingVADService: MeetingVoiceActivityDetecting {
     /// cached-or-download decision internally.
     static func downloadModel(computeUnits: MLComputeUnits = .cpuOnly) async throws {
         _ = try await VadManager(config: VadConfig(computeUnits: computeUnits))
+    }
+
+    // MARK: - Bundled model seeding (PDX)
+
+    /// Copy a Silero VAD model bundled in the app into FluidAudio's model cache
+    /// so the runtime `makeIfModelCached` path succeeds with no network download
+    /// (and no per-binary firewall prompt). No-op when the model is already
+    /// cached or when no bundled copy is present (dev / `swift test` builds, where
+    /// callers fall back to `downloadModel`).
+    static func seedBundledModelIfNeeded() {
+        guard !isModelCached() else { return }
+        guard let source = bundledModelSourceURL() else { return }
+        let dest = MLModelConfigurationUtils.defaultModelsDirectory(for: .vad)
+        do {
+            try seedBundledModel(from: source, to: dest)
+        } catch {
+            Logger(subsystem: "com.macparakeet.core", category: "MeetingVADService")
+                .error("meeting_vad_seed_failed error=\(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// The bundled model directory shipped inside the app
+    /// (`Contents/Resources/SileroVAD/silero-vad`), or `nil` when not bundled
+    /// (e.g. `swift test` / `swift run`, where the app bundle is absent).
+    static func bundledModelSourceURL() -> URL? {
+        guard let resourcePath = Bundle.main.resourcePath else { return nil }
+        let url = URL(fileURLWithPath: resourcePath)
+            .appendingPathComponent("SileroVAD", isDirectory: true)
+            .appendingPathComponent("silero-vad", isDirectory: true)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    /// Copy the contents of a bundled model directory into the cache directory.
+    /// Existing files are preserved (never clobbered). Pure file I/O — no Bundle
+    /// or FluidAudio dependency — so it is unit-testable in isolation.
+    static func seedBundledModel(from sourceDir: URL, to destDir: URL) throws {
+        let fm = FileManager.default
+        try fm.createDirectory(at: destDir, withIntermediateDirectories: true)
+        for item in try fm.contentsOfDirectory(at: sourceDir, includingPropertiesForKeys: nil) {
+            let target = destDir.appendingPathComponent(item.lastPathComponent)
+            guard !fm.fileExists(atPath: target.path) else { continue }
+            try fm.copyItem(at: item, to: target)
+        }
     }
 
     func makeStreamState() async -> MeetingVADStreamState {

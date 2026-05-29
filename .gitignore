@@ -18,6 +18,12 @@ DerivedData/
 # Swift Package Manager
 .swiftpm/
 
+# PDX Edition — local-only, never commit
+scripts/dev/MacParakeetPDX.p12
+.worktrees/
+*.orig
+default.profraw
+
 # Python
 python/.venv/
 .venv/
