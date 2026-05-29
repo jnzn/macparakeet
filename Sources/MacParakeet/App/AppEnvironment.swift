@@ -235,7 +235,10 @@ final class AppEnvironment {
                 NotificationCenter.default.post(
                     name: .macParakeetStreamingPartial,
                     object: nil,
-                    userInfo: ["partial": partial]
+                    // Key MUST be "text" — both observers (DictationFlowCoordinator
+                    // and AIAssistantBubbleController) read userInfo["text"]. A
+                    // mismatch here silently drops every partial (no live preview).
+                    userInfo: ["text": partial]
                 )
             }
         )
