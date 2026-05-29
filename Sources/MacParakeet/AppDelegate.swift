@@ -511,10 +511,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard speechPreWarmTask == nil else { return }
         let sttRuntime = env.sttRuntime
         let streamingTranscriber = env.streamingDictationTranscriber
+        let vadPreparer = env.meetingVADModelPreparer
         let deferralMs = preWarmDeferralMs
         let onboardingCompletedKey = OnboardingViewModel.onboardingCompletedKey
 
-        speechPreWarmTask = Task(priority: .utility) { @MainActor [weak self, sttRuntime, streamingTranscriber] in
+        speechPreWarmTask = Task(priority: .utility) { @MainActor [weak self, sttRuntime, streamingTranscriber, vadPreparer] in
             defer {
                 self?.speechPreWarmTask = nil
             }
@@ -533,6 +534,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
             if streamingEnabled {
                 try? await streamingTranscriber.loadModels()
+            }
+
+            // Fork: prepare the Silero VAD model when VAD-guided live chunking
+            // is enabled, so already-onboarded users get speech-boundary
+            // chunking instead of silently falling back to fixed (the runtime
+            // VAD service is cached-only / never downloads). No-op when already
+            // cached or the flag is off.
+            guard !Task.isCancelled else { return }
+            if AppFeatures.meetingVadLiveChunkingEnabled,
+               await vadPreparer.isModelReady() == false {
+                try? await vadPreparer.prepareModel()
             }
         }
     }

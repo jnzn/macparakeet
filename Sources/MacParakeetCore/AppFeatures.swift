@@ -56,5 +56,11 @@ public enum AppFeatures {
     ///
     /// Default-off pending Phase 0 (compute-unit benchmark) and Phase 5
     /// (real-meeting threshold tuning) in the plan.
-    public static let meetingVadLiveChunkingEnabled: Bool = false
+    ///
+    /// PDX Edition: enabled. We run Parakeet by default and prefer speech-
+    /// boundary live previews over fixed 5s slices. Uses upstream's untuned
+    /// 2s/10s bounds (Phase 5 tuning not yet done); flip back to `false` to
+    /// revert to fixed chunking. Requires the Silero VAD model to be cached —
+    /// see `MeetingVADModelPreparer` (prepared at launch).
+    public static let meetingVadLiveChunkingEnabled: Bool = true
 }
