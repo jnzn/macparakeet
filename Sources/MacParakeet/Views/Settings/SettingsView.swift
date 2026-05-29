@@ -930,27 +930,9 @@ struct SettingsView: View {
                 onChooseFolder: { viewModel.chooseMeetingAutoSaveFolder(url: $0) },
                 onResetFolder: { viewModel.resetMeetingAutoSaveFolder() }
             )
-
-            if viewModel.meetingAutoSaveFormat == .md || viewModel.meetingAutoSaveFormat == .txt {
-                Divider()
-                settingsToggleRow(
-                    title: "Include timestamps",
-                    detail: "Prefix each segment with its time in the recording.",
-                    isOn: $viewModel.meetingAutoSaveIncludeTimestamps
-                )
-                Divider()
-                settingsToggleRow(
-                    title: "Include speaker labels",
-                    detail: "Show speaker names when speaker detection is enabled.",
-                    isOn: $viewModel.meetingAutoSaveIncludeSpeakers
-                )
-                Divider()
-                settingsToggleRow(
-                    title: "Include metadata header",
-                    detail: "Add duration, date, and source info at the top of the file.",
-                    isOn: $viewModel.meetingAutoSaveIncludeMetadata
-                )
-            }
+            // Auto-export is always raw transcript text — no content toggles
+            // here. Timestamps / speakers / metadata are chosen at manual-export
+            // time via the export sheet.
         }
     }
 

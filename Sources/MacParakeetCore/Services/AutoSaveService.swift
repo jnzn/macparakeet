@@ -48,26 +48,6 @@ public enum AutoSaveScope: String, Sendable {
         }
     }
 
-    public var includeTimestampsKey: String {
-        switch self {
-        case .transcription: return "autoSaveIncludeTimestamps"
-        case .meeting: return "meetingAutoSaveIncludeTimestamps"
-        }
-    }
-
-    public var includeSpeakersKey: String {
-        switch self {
-        case .transcription: return "autoSaveIncludeSpeakers"
-        case .meeting: return "meetingAutoSaveIncludeSpeakers"
-        }
-    }
-
-    public var includeMetadataKey: String {
-        switch self {
-        case .transcription: return "autoSaveIncludeMetadata"
-        case .meeting: return "meetingAutoSaveIncludeMetadata"
-        }
-    }
 }
 
 /// Automatically saves completed transcriptions to a user-chosen folder.
@@ -117,10 +97,14 @@ public final class AutoSaveService {
             // Ensure the folder still exists
             try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
 
+            // Auto-export is always RAW transcript text for every scope — no
+            // timestamps, speaker labels, or metadata header. Users who want
+            // those choose them at manual-export time (the export sheet has the
+            // toggles); auto-export to a watched folder stays clean.
             let contentOptions = TranscriptExportOptions(
-                includeTimestamps: defaults.object(forKey: scope.includeTimestampsKey) as? Bool ?? true,
-                includeSpeakerLabels: defaults.object(forKey: scope.includeSpeakersKey) as? Bool ?? true,
-                includeMetadata: defaults.object(forKey: scope.includeMetadataKey) as? Bool ?? true
+                includeTimestamps: false,
+                includeSpeakerLabels: false,
+                includeMetadata: false
             )
 
             switch format {
