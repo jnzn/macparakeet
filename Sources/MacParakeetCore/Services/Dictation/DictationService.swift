@@ -1487,7 +1487,8 @@ public actor DictationService: DictationServiceProtocol {
             customWords: words,
             snippets: snippets,
             insertionStyle: insertionStyle,
-            removeUmFiller: shouldRemoveUmFiller
+            removeUmFiller: shouldRemoveUmFiller,
+            profile: activeProfile
         )
         let cleanTranscript = refinement.text
         let expandedSnippetIDs = refinement.expandedSnippetIDs

@@ -3,18 +3,22 @@ import Foundation
 /// Deterministic 5-step text processing pipeline.
 /// Pure function: same input always produces same output.
 ///
-/// Steps: Filler Removal → Custom Words → Trailing Action Extraction → Snippet Expansion → Whitespace Cleanup
+/// Steps: Filler Removal → Custom Words → Terminal Symbol Expansion (terminal profiles only) → Trailing Action Extraction → Snippet Expansion → Whitespace Cleanup
 public struct TextProcessingPipeline: Sendable {
 
     public init() {}
 
     /// Process raw STT text through the full pipeline.
+    /// Pass `isTerminalProfile: true` when the frontmost app is a terminal emulator
+    /// so that spoken symbol words ("slash", "tilde", etc.) are converted to their
+    /// literal characters at paste time — without requiring an LLM API key.
     public func process(
         text: String,
         customWords: [CustomWord],
         snippets: [TextSnippet],
         insertionStyle: DictationInsertionStyle = .sentence,
-        removeUmFiller: Bool = true
+        removeUmFiller: Bool = true,
+        isTerminalProfile: Bool = false
     ) -> TextProcessingResult {
         guard !text.isEmpty else {
             return TextProcessingResult(text: "")
@@ -30,6 +34,11 @@ public struct TextProcessingPipeline: Sendable {
 
         // Step 2: Custom word replacements
         result = applyCustomWords(to: result, words: customWords)
+
+        // Step 2.5: Terminal symbol expansion (only for terminal app profiles)
+        if isTerminalProfile {
+            result = expandTerminalSymbols(in: result)
+        }
 
         // Step 3: Extract trailing action snippet (before expansion, so trigger isn't mangled)
         var actionIDs = Set<UUID>()
@@ -47,7 +56,7 @@ public struct TextProcessingPipeline: Sendable {
         let (expandedText, expandedIDs) = expandSnippets(in: result, snippets: textSnippets)
         result = expandedText
 
-        // Step 5: Whitespace cleanup
+        // Step 5: Whitespace cleanup — skip first-letter capitalisation for terminal
         let protectedLeadingTerms = protectedLeadingTerms(
             customWords: customWords,
             textSnippets: textSnippets,
@@ -56,7 +65,8 @@ public struct TextProcessingPipeline: Sendable {
         result = cleanWhitespace(
             in: result,
             insertionStyle: insertionStyle,
-            protectedLeadingTerms: protectedLeadingTerms
+            protectedLeadingTerms: protectedLeadingTerms,
+            capitalizeFirst: !isTerminalProfile
         )
 
         return TextProcessingResult(
@@ -229,7 +239,8 @@ public struct TextProcessingPipeline: Sendable {
     func cleanWhitespace(
         in text: String,
         insertionStyle: DictationInsertionStyle = .sentence,
-        protectedLeadingTerms: [String] = []
+        protectedLeadingTerms: [String] = [],
+        capitalizeFirst: Bool = true
     ) -> String {
         var result = text
 
@@ -268,18 +279,20 @@ public struct TextProcessingPipeline: Sendable {
         return applyInsertionStyle(
             to: result,
             insertionStyle: insertionStyle,
-            protectedLeadingTerms: protectedLeadingTerms
+            protectedLeadingTerms: protectedLeadingTerms,
+            capitalizeFirst: capitalizeFirst
         )
     }
 
     func applyInsertionStyle(
         to text: String,
         insertionStyle: DictationInsertionStyle,
-        protectedLeadingTerms: [String] = []
+        protectedLeadingTerms: [String] = [],
+        capitalizeFirst: Bool = true
     ) -> String {
         switch insertionStyle {
         case .sentence:
-            return capitalizeFirstLetter(in: text)
+            return capitalizeFirst ? capitalizeFirstLetter(in: text) : text
         case .inline:
             let withoutTerminalPunctuation = removeTerminalSentencePunctuation(from: text)
             return lowercaseLeadingSentenceCase(
@@ -360,4 +373,96 @@ public struct TextProcessingPipeline: Sendable {
     }
 
     private static let inlineTerminalPunctuation: Set<Character> = [".", "!", "?"]
+
+    // MARK: - Step 2.5: Terminal Symbol Expansion
+
+    private static let terminalSymbolMap: [(pattern: String, replacement: String)] = [
+        ("backslash", "\\"),
+        ("slash",     "/"),
+        ("tilde",     "~"),
+        ("underscore", "_"),
+        ("dollar sign", "$"),
+        ("dollar",    "$"),
+        ("at sign",   "@"),
+        ("at",        "@"),
+        ("hash",      "#"),
+        ("pound sign", "#"),
+        ("pound",     "#"),
+        ("asterisk",  "*"),
+        ("star",      "*"),
+        ("pipe",      "|"),
+        ("ampersand", "&"),
+        ("plus",      "+"),
+        ("equals sign", "="),
+        ("equals",    "="),
+        ("colon",     ":"),
+        ("semicolon", ";"),
+        ("question mark", "?"),
+        ("bang",      "!"),
+        ("exclamation mark", "!"),
+        ("exclamation", "!"),
+        ("backtick",  "`"),
+        ("open paren", "("),
+        ("close paren", ")"),
+        ("open bracket", "["),
+        ("close bracket", "]"),
+        ("open brace", "{"),
+        ("close brace", "}"),
+        ("less than", "<"),
+        ("left angle", "<"),
+        ("greater than", ">"),
+        ("right angle", ">"),
+        ("dash",      "-"),
+        ("hyphen",    "-"),
+        ("dot",       "."),
+        ("period",    "."),
+        ("percent",   "%"),
+        ("caret",     "^"),
+    ]
+
+    func expandTerminalSymbols(in text: String) -> String {
+        var result = text
+
+        for (spoken, literal) in Self.terminalSymbolMap {
+            let escaped = NSRegularExpression.escapedPattern(for: spoken)
+            let pattern = "(?i)\\b\(escaped)\\b"
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let literalEscaped = NSRegularExpression.escapedTemplate(for: literal)
+            result = regex.stringByReplacingMatches(
+                in: result,
+                range: NSRange(result.startIndex..., in: result),
+                withTemplate: literalEscaped
+            )
+        }
+
+        // Compact path-forming separators that sit between two word characters.
+        // "foo / bar" → "foo/bar", "readme . md" → "readme.md", "50 % done" → "50%done"
+        // Shell metacharacters (- * $ # | &) are left with their surrounding spaces
+        // because they carry meaning as flag prefixes, globs, or redirects.
+        let pathSeparators = #"[/\\._~@%]"#  // \\ = literal backslash in the char class
+        let pathCompact = #"(\w) (\#(pathSeparators)) (\w)"#
+        if let regex = try? NSRegularExpression(pattern: pathCompact) {
+            var keepGoing = true
+            while keepGoing {
+                let before = result
+                result = regex.stringByReplacingMatches(
+                    in: result,
+                    range: NSRange(result.startIndex..., in: result),
+                    withTemplate: "$1$2$3"
+                )
+                keepGoing = result != before
+            }
+        }
+
+        // Tilde home-dir prefix: "~ / dev" → "~/dev"
+        if let regex = try? NSRegularExpression(pattern: #"~\s+/\s*"#) {
+            result = regex.stringByReplacingMatches(
+                in: result,
+                range: NSRange(result.startIndex..., in: result),
+                withTemplate: "~/"
+            )
+        }
+
+        return result
+    }
 }
