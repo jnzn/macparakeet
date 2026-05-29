@@ -124,6 +124,10 @@ struct TranscriptTextView: NSViewRepresentable {
         let speakerFont = NSFont.systemFont(ofSize: 11, weight: .medium)
         let dotFont = NSFont.systemFont(ofSize: 10, weight: .medium)
         let timestampFont = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
+        // textPrimary / textTertiary are adaptive (dark near-black in light mode,
+        // white in dark mode) — readable on both the off-white panel and the dark overlay.
+        // PDX: ported from F12 transcript light-mode fix (658b4d2a); already correct here
+        // via DesignSystem tokens rather than raw NSColor(name:) dynamic blocks.
         let textColor = Self.nsColor(DesignSystem.Colors.textPrimary)
         let timestampColor = Self.nsColor(DesignSystem.Colors.textTertiary)
 
