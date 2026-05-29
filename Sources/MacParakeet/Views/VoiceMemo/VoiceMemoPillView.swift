@@ -86,13 +86,13 @@ struct VoiceMemoPillView: View {
         )
         .contentShape(Capsule())
         .onHover { hovering in isHovered = hovering }
-        .onTapGesture { viewModel.onStop?() }
+        .onTapGesture { viewModel.onTap?() }
         .scaleEffect(isHovered ? 1.03 : 1.0)
         .animation(DesignSystem.Animation.meetingPillHover, value: isHovered)
         .padding(DesignSystem.Spacing.sm)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Voice memo recording, \(viewModel.formattedElapsed) elapsed. Tap to stop.")
-        .accessibilityAction { viewModel.onStop?() }
+        .accessibilityLabel("Voice memo recording, \(viewModel.formattedElapsed) elapsed. Tap to open live transcript.")
+        .accessibilityAction { viewModel.onTap?() }
     }
 
     private func startPulse() {
