@@ -337,6 +337,9 @@ final class AppEnvironmentConfigurer {
             transcriptionService: env.transcriptionService,
             permissionService: env.permissionService,
             libraryViewModel: libraryViewModel,
+            quickPromptRepo: env.quickPromptRepo,
+            configStore: env.llmConfigStore,
+            llmService: env.llmService,
             isMeetingRecordingActive: { [weak meetingCoordinator] in
                 meetingCoordinator?.isMeetingRecordingActive ?? false
             },

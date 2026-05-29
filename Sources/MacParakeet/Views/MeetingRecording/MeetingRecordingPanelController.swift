@@ -14,9 +14,17 @@ final class MeetingRecordingPanelController {
     private var panel: NSPanel?
     private var windowDelegate: MeetingRecordingPanelWindowDelegate?
     private let viewModel: MeetingRecordingPanelViewModel
+    private let panelTitle: String
+    private let frameAutosaveName: String
 
-    init(viewModel: MeetingRecordingPanelViewModel) {
+    init(
+        viewModel: MeetingRecordingPanelViewModel,
+        title: String = "Meeting Recording",
+        frameAutosaveName: String = "MeetingRecordingPanel"
+    ) {
         self.viewModel = viewModel
+        self.panelTitle = title
+        self.frameAutosaveName = frameAutosaveName
     }
 
     var isVisible: Bool {
@@ -50,14 +58,14 @@ final class MeetingRecordingPanelController {
             backing: .buffered,
             defer: false
         )
-        panel.title = "Meeting Recording"
+        panel.title = panelTitle
         panel.titlebarAppearsTransparent = true
         panel.isMovableByWindowBackground = true
         panel.level = .floating
         panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         panel.isReleasedWhenClosed = false
         panel.minSize = NSSize(width: 360, height: 320)
-        panel.setFrameAutosaveName("MeetingRecordingPanel")
+        panel.setFrameAutosaveName(frameAutosaveName)
         panel.contentView = NSHostingView(rootView: MeetingRecordingPanelView(viewModel: viewModel))
 
         if panel.frame.origin == .zero, let screen = NSScreen.main {

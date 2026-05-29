@@ -14,6 +14,9 @@ public final class VoiceMemoPillViewModel {
     public var elapsedSeconds: Int = 0
     public var micLevel: Float = 0
     public var onStop: (() -> Void)?
+    /// Tapping the recording pill opens the live Voice Memo panel (live
+    /// transcript + Ask). Stop now lives in that panel, mirroring meetings.
+    public var onTap: (() -> Void)?
 
     public init() {}
 
