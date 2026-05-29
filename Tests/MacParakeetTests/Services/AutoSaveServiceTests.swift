@@ -105,7 +105,10 @@ final class AutoSaveServiceTests: XCTestCase {
         XCTAssertEqual(files.count, 1)
         XCTAssertTrue(files[0].hasSuffix(".md"))
         let content = try! String(contentsOf: tempDir.appendingPathComponent(files[0]), encoding: .utf8)
-        XCTAssertTrue(content.contains("# test-audio.mp3"))
+        // Auto-export is raw transcript text — the filename metadata header is
+        // intentionally omitted.
+        XCTAssertTrue(content.contains("Hello world"))
+        XCTAssertFalse(content.contains("# test-audio.mp3"), "raw auto-export omits the filename metadata header")
         XCTAssertEqual(result, .saved)
     }
 
@@ -119,6 +122,49 @@ final class AutoSaveServiceTests: XCTestCase {
         let files = try! FileManager.default.contentsOfDirectory(atPath: tempDir.path)
         XCTAssertEqual(files.count, 1)
         XCTAssertTrue(files[0].hasSuffix(".txt"))
+    }
+
+    /// Transcription auto-export must be RAW transcript text only — no metadata
+    /// header, no timestamps, no speaker labels — even when the include-* content
+    /// options are unset. (They previously defaulted to `true`, leaking the
+    /// filename/duration header and timestamp/speaker lines into the file.)
+    func testTranscriptionScopeExportsRawTextOnly() {
+        configureAutoSave(enabled: true, format: .txt)
+        // Deliberately do NOT set autoSaveIncludeTimestamps/Speakers/Metadata.
+        let transcription = makeTranscription(fileName: "secret-meeting.mp3", rawTranscript: "Hello world")
+        let service = makeService()
+
+        service.saveIfEnabled(transcription, scope: .transcription)
+
+        let files = try! FileManager.default.contentsOfDirectory(atPath: tempDir.path)
+        XCTAssertEqual(files.count, 1)
+        let content = try! String(contentsOf: tempDir.appendingPathComponent(files[0]), encoding: .utf8)
+
+        XCTAssertEqual(content, "Hello world", "transcription auto-export must be raw transcript text only")
+        XCTAssertFalse(content.contains("secret-meeting.mp3"), "must not leak filename metadata header")
+        XCTAssertFalse(content.contains("Duration:"), "must not include duration metadata")
+    }
+
+    /// Meeting auto-export is also RAW — no metadata header, timestamps, or
+    /// speaker labels. Users choose those at manual-export time, not here.
+    func testMeetingScopeAlsoExportsRawTextOnly() {
+        defaults.set(true, forKey: AutoSaveScope.meeting.enabledKey)
+        defaults.set(AutoSaveFormat.txt.rawValue, forKey: AutoSaveScope.meeting.formatKey)
+        let bookmarkData = try! tempDir.bookmarkData(
+            options: [], includingResourceValuesForKeys: nil, relativeTo: nil
+        )
+        defaults.set(bookmarkData, forKey: AutoSaveScope.meeting.folderBookmarkKey)
+        let transcription = makeTranscription(fileName: "team-sync.mp3", rawTranscript: "Hello world")
+        let service = makeService()
+
+        service.saveIfEnabled(transcription, scope: .meeting)
+
+        let files = try! FileManager.default.contentsOfDirectory(atPath: tempDir.path)
+        XCTAssertEqual(files.count, 1)
+        let content = try! String(contentsOf: tempDir.appendingPathComponent(files[0]), encoding: .utf8)
+
+        XCTAssertEqual(content, "Hello world", "meeting auto-export must be raw transcript text only")
+        XCTAssertFalse(content.contains("team-sync.mp3"), "must not leak filename metadata header")
     }
 
     func testSaveIfEnabledWritesSRTFile() {
@@ -289,8 +335,10 @@ final class AutoSaveServiceTests: XCTestCase {
         let files = try! FileManager.default.contentsOfDirectory(atPath: tempDir.path)
         XCTAssertEqual(files.count, 1)
         let content = try! String(contentsOf: tempDir.appendingPathComponent(files[0]), encoding: .utf8)
-        XCTAssertTrue(content.contains("my-interview"))
+        // Transcription auto-export is raw: the transcript text is written, but
+        // the metadata header (`# my-interview.mp3`) is intentionally omitted.
         XCTAssertTrue(content.contains("This is a test transcript"))
+        XCTAssertFalse(content.contains("# my-interview"), "raw transcription export omits the filename metadata header")
     }
 
     func testDeletedFolderReturnsUnavailable() {
@@ -392,7 +440,10 @@ final class AutoSaveServiceTests: XCTestCase {
         XCTAssertEqual(files.count, 1)
         XCTAssertTrue(files[0].hasSuffix(".md"))
         let content = try! String(contentsOf: tempDir.appendingPathComponent(files[0]), encoding: .utf8)
-        XCTAssertTrue(content.contains("# test-audio.mp3"))
+        // Auto-export is raw transcript text — the filename metadata header is
+        // intentionally omitted.
+        XCTAssertTrue(content.contains("Hello world"))
+        XCTAssertFalse(content.contains("# test-audio.mp3"), "raw auto-export omits the filename metadata header")
     }
 
     func testMeetingScopeWritesDAPTFile() {
@@ -409,9 +460,6 @@ final class AutoSaveServiceTests: XCTestCase {
 
     func testMeetingScopeAppliesPlainTextContentOptions() throws {
         configureMeetingAutoSave(enabled: true, format: .txt)
-        defaults.set(false, forKey: AutoSaveService.meetingIncludeTimestampsKey)
-        defaults.set(false, forKey: AutoSaveService.meetingIncludeSpeakerLabelsKey)
-        defaults.set(false, forKey: AutoSaveService.meetingIncludeMetadataKey)
         let transcription = Transcription(
             fileName: "Roadmap Sync",
             durationMs: 2_000,

@@ -52,26 +52,6 @@ public enum AutoSaveScope: String, Sendable {
         }
     }
 
-    public var includeTimestampsKey: String {
-        switch self {
-        case .transcription: return "autoSaveIncludeTimestamps"
-        case .meeting: return "meetingAutoSaveIncludeTimestamps"
-        }
-    }
-
-    public var includeSpeakersKey: String {
-        switch self {
-        case .transcription: return "autoSaveIncludeSpeakers"
-        case .meeting: return "meetingAutoSaveIncludeSpeakers"
-        }
-    }
-
-    public var includeMetadataKey: String {
-        switch self {
-        case .transcription: return "autoSaveIncludeMetadata"
-        case .meeting: return "meetingAutoSaveIncludeMetadata"
-        }
-    }
 }
 
 /// Outcome of attempting an automatic export.
@@ -95,9 +75,6 @@ public final class AutoSaveService {
     public static let enabledKey = AutoSaveScope.transcription.enabledKey
     public static let formatKey = AutoSaveScope.transcription.formatKey
     public static let folderBookmarkKey = AutoSaveScope.transcription.folderBookmarkKey
-    public static let meetingIncludeTimestampsKey = "meetingAutoSaveIncludeTimestamps"
-    public static let meetingIncludeSpeakerLabelsKey = "meetingAutoSaveIncludeSpeakerLabels"
-    public static let meetingIncludeMetadataKey = "meetingAutoSaveIncludeMetadata"
 
     public init(
         exportService: ExportServiceProtocol? = nil,
@@ -118,7 +95,6 @@ public final class AutoSaveService {
     ) -> AutoSaveResult {
         guard defaults.bool(forKey: scope.enabledKey) else { return .disabled }
         let format = AutoSaveFormat(rawValue: defaults.string(forKey: scope.formatKey) ?? "md") ?? .md
-        let textOptions = transcriptExportOptions(for: scope)
         let operationContext = Observability.childOperationContext()
         guard let folderURL = resolveFolder(scope: scope) else {
             logger.warning("Auto-save enabled but no valid folder configured for \(scope.rawValue).")
@@ -138,18 +114,28 @@ public final class AutoSaveService {
             // Ensure the folder still exists
             try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
 
+            // Auto-export is always RAW transcript text for every scope — no
+            // timestamps, speaker labels, or metadata header. Users who want
+            // those choose them at manual-export time (the export sheet has the
+            // toggles); auto-export to a watched folder stays clean.
+            let contentOptions = TranscriptExportOptions(
+                includeTimestamps: false,
+                includeSpeakerLabels: false,
+                includeMetadata: false
+            )
+
             switch format {
             case .txt:
                 try exportService.exportToTxt(
                     transcription: transcription,
                     url: fileURL,
-                    options: textOptions
+                    options: contentOptions
                 )
             case .md:
                 try exportService.exportToMarkdown(
                     transcription: transcription,
                     url: fileURL,
-                    options: textOptions
+                    options: contentOptions
                 )
             case .srt: try exportService.exportToSRT(transcription: transcription, url: fileURL)
             case .vtt: try exportService.exportToVTT(transcription: transcription, url: fileURL)
@@ -247,19 +233,6 @@ public final class AutoSaveService {
               let value = defaults.object(forKey: sourceKey)
         else { return }
         defaults.set(value, forKey: destinationKey)
-    }
-
-    private func transcriptExportOptions(for scope: AutoSaveScope) -> TranscriptExportOptions {
-        guard scope == .meeting else { return .default }
-        return TranscriptExportOptions(
-            includeTimestamps: bool(defaultingToTrueForKey: Self.meetingIncludeTimestampsKey),
-            includeSpeakerLabels: bool(defaultingToTrueForKey: Self.meetingIncludeSpeakerLabelsKey),
-            includeMetadata: bool(defaultingToTrueForKey: Self.meetingIncludeMetadataKey)
-        )
-    }
-
-    private func bool(defaultingToTrueForKey key: String) -> Bool {
-        defaults.object(forKey: key) as? Bool ?? true
     }
 
     private func sendAutoSaveOperation(

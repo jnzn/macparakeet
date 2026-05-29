@@ -721,30 +721,6 @@ public final class SettingsViewModel {
             defaults.set(meetingAutoSaveFormat.rawValue, forKey: AutoSaveScope.meeting.formatKey)
         }
     }
-    public var meetingAutoSaveIncludeTimestamps: Bool {
-        didSet {
-            defaults.set(
-                meetingAutoSaveIncludeTimestamps,
-                forKey: AutoSaveService.meetingIncludeTimestampsKey
-            )
-        }
-    }
-    public var meetingAutoSaveIncludeSpeakerLabels: Bool {
-        didSet {
-            defaults.set(
-                meetingAutoSaveIncludeSpeakerLabels,
-                forKey: AutoSaveService.meetingIncludeSpeakerLabelsKey
-            )
-        }
-    }
-    public var meetingAutoSaveIncludeMetadata: Bool {
-        didSet {
-            defaults.set(
-                meetingAutoSaveIncludeMetadata,
-                forKey: AutoSaveService.meetingIncludeMetadataKey
-            )
-        }
-    }
     public var meetingAutoSaveFolderPath: String?
     public private(set) var meetingAutoSaveFolderIsUsable = false
     public var meetingAutoSaveFolderWarning: String? {
@@ -1088,15 +1064,6 @@ public final class SettingsViewModel {
         autoSaveFolderPath = Self.resolveAutoSaveFolderPath(defaults: defaults, scope: .transcription)
         meetingAutoSave = defaults.bool(forKey: AutoSaveScope.meeting.enabledKey)
         meetingAutoSaveFormat = AutoSaveFormat(rawValue: defaults.string(forKey: AutoSaveScope.meeting.formatKey) ?? "md") ?? .md
-        meetingAutoSaveIncludeTimestamps = defaults.object(
-            forKey: AutoSaveService.meetingIncludeTimestampsKey
-        ) as? Bool ?? true
-        meetingAutoSaveIncludeSpeakerLabels = defaults.object(
-            forKey: AutoSaveService.meetingIncludeSpeakerLabelsKey
-        ) as? Bool ?? true
-        meetingAutoSaveIncludeMetadata = defaults.object(
-            forKey: AutoSaveService.meetingIncludeMetadataKey
-        ) as? Bool ?? true
         meetingAutoSaveFolderPath = Self.resolveAutoSaveFolderPath(defaults: defaults, scope: .meeting)
         calendarAutoStartMode = Self.resolveCalendarAutoStartMode(defaults: defaults)
         calendarReminderMinutes = Self.resolveCalendarReminderMinutes(defaults: defaults)
