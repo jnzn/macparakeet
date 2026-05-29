@@ -306,6 +306,25 @@ final class AIAssistantBubbleController {
         hosting.autoresizingMask = [.width, .height]
         self.hostingView = hosting
 
+        // Host the SwiftUI bubble plus a bottom-center AppKit drag grabber in a
+        // container. The grabber sits in the bubble's bottom padding strip (below
+        // the input field) and moves the panel via performDrag. It's AppKit, not
+        // SwiftUI, because hover/cursor don't fire on a non-activating panel.
+        let container = NSView(frame: hosting.frame)
+        container.autoresizesSubviews = true
+        hosting.frame = container.bounds
+        container.addSubview(hosting)
+        let handleWidth: CGFloat = 64
+        let handleHeight: CGFloat = 14
+        let handle = AIAssistantBubbleDragHandle(frame: NSRect(
+            x: (container.bounds.width - handleWidth) / 2,
+            y: 0,
+            width: handleWidth,
+            height: handleHeight
+        ))
+        handle.autoresizingMask = [.minXMargin, .maxXMargin, .maxYMargin]
+        container.addSubview(handle)
+
         // Non-activating panel: doesn't steal focus from the user's target
         // app, which keeps the text selection visible during the bubble
         // session and — critically — avoids an AVAudioEngine startup failure
@@ -328,7 +347,7 @@ final class AIAssistantBubbleController {
         newPanel.level = .floating
         newPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         newPanel.isReleasedWhenClosed = false
-        newPanel.contentView = hosting
+        newPanel.contentView = container
         newPanel.isMovableByWindowBackground = true
 
         // Initial position: screen center so the panel has somewhere safe
@@ -562,47 +581,37 @@ final class AIAssistantBubbleController {
         let screen = NSScreen.main ?? NSScreen.screens.first
         let visible = screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
 
+        // Tail retired (per design) — the bubble is always a plain rounded rect.
+        state.tailDirection = .none
+
         guard let anchor else {
-            // No usable anchor — center on the active screen, no tail.
+            // No usable anchor — center on the active screen.
             let origin = NSPoint(
                 x: visible.midX - panelSize.width / 2,
                 y: visible.midY - panelSize.height / 2
             )
             panel.setFrameOrigin(Self.clampOrigin(origin, size: panelSize, visible: visible))
-            state.tailDirection = .none
             return
         }
 
-        // Gap between the bubble's tail tip and the selection's nearest
-        // edge. 28pt reads as "comfortably above" for arrow-above-line
-        // style tails without the bubble hovering over adjacent text.
-        let gap: CGFloat = 28
+        // Reuse the smart above→below→right→left→center placement for the
+        // origin only; with no tail a small gap keeps the bubble near the
+        // selection without overlapping adjacent text. (The paired tail
+        // direction from the candidates is ignored.)
+        let gap: CGFloat = 12
         let candidates = Self.positioningCandidatesWithTail(
             anchor: anchor,
             panelSize: panelSize,
             visible: visible,
             gap: gap
         )
-        // Take the first candidate that fits within the visible frame
-        // without needing to be clamped. Falls back to the clamped version
-        // of the first candidate if none fit cleanly.
-        let picked: (origin: NSPoint, tail: BubbleTailDirection)
+        let origin: NSPoint
         if let hit = candidates.first(where: { Self.fits(origin: $0.origin, size: panelSize, visible: visible) }) {
-            picked = hit
+            origin = hit.origin
         } else {
-            picked = (Self.clampOrigin(candidates[0].origin, size: panelSize, visible: visible), candidates[0].tail)
+            origin = Self.clampOrigin(candidates[0].origin, size: panelSize, visible: visible)
         }
-        panel.setFrameOrigin(picked.origin)
-        state.tailDirection = picked.tail
-        state.tailOffsetFraction = Self.tailOffsetFraction(
-            for: picked.tail,
-            origin: picked.origin,
-            panelSize: panelSize,
-            anchor: anchor
-        )
-
-        // Bracket connector retired — SpeechBubbleShape now integrates
-        // the tail into the bubble body as one continuous cartoon shape.
+        panel.setFrameOrigin(origin)
     }
 
     /// Ordered placement candidates in Cocoa screen coords. Above the
