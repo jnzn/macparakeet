@@ -529,11 +529,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard speechPreWarmTask == nil else { return }
         let sttRuntime = env.sttRuntime
         let streamingTranscriber = env.streamingDictationTranscriber
-        let vadPreparer = env.meetingVADModelPreparer
+        let vadModelPreparer = env.meetingVADModelPreparer
         let deferralMs = preWarmDeferralMs
         let onboardingCompletedKey = OnboardingViewModel.onboardingCompletedKey
 
-        speechPreWarmTask = Task(priority: .utility) { @MainActor [weak self, sttRuntime, streamingTranscriber, vadPreparer] in
+        speechPreWarmTask = Task(priority: .utility) { @MainActor [weak self, sttRuntime, streamingTranscriber, vadModelPreparer] in
             defer {
                 self?.speechPreWarmTask = nil
             }
@@ -554,15 +554,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 try? await streamingTranscriber.loadModels()
             }
 
-            // Fork: prepare the Silero VAD model when VAD-guided live chunking
-            // is enabled, so already-onboarded users get speech-boundary
-            // chunking instead of silently falling back to fixed (the runtime
-            // VAD service is cached-only / never downloads). No-op when already
-            // cached or the flag is off.
+            // Universal VAD model availability (Phase 4.5,
+            // plans/active/2026-05-meeting-vad-guided-live-chunking.md §6).
+            // Runs every launch for every user so flipping the live-chunking
+            // flag reaches the installed base, not just fresh installs. Kept
+            // independent of the speech warm-up above: idempotent, silent-fail,
+            // and the meeting path falls back to fixed chunking if it never
+            // succeeds. No-op when the flag is off. (Fork: replaces the prior
+            // inline isModelReady/prepareModel with the upstream #394 helper.)
             guard !Task.isCancelled else { return }
-            if AppFeatures.meetingVadLiveChunkingEnabled,
-               await vadPreparer.isModelReady() == false {
-                try? await vadPreparer.prepareModel()
+            let prepOutcome = await MeetingVADLaunchPrep.run(
+                featureEnabled: AppFeatures.meetingVadLiveChunkingEnabled,
+                preparer: vadModelPreparer
+            )
+            // Only surface the transitions worth seeing. `alreadyCached`
+            // (steady state) and `disabled` are silent to avoid per-launch
+            // telemetry spam; `cancelled` (app quit mid-download) is dropped
+            // because `run` already treats cancellation as non-failure. No
+            // post-call `Task.isCancelled` guard here: once `run` has returned
+            // a terminal outcome the work genuinely completed, so a late
+            // cancellation shouldn't drop the one event we care about
+            // (`prepared` — proof the installed base acquired the model).
+            switch prepOutcome {
+            case .prepared:
+                Telemetry.send(.vadModelPrep(outcome: .prepared))
+            case .failed:
+                Telemetry.send(.vadModelPrep(outcome: .failed))
+            case .alreadyCached, .disabled, .cancelled:
+                break
             }
         }
     }
