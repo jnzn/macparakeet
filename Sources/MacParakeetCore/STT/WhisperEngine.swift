@@ -389,13 +389,55 @@ public actor WhisperEngine: STTTranscribing {
     }
 
     #if canImport(WhisperKit)
+    // Known Whisper hallucinations baked in from YouTube subtitle training data.
+    // Emitted on silent or near-silent audio (e.g. the opening seconds before speech).
+    // NOTE: noSpeechProb is hardcoded to 0.0 in WhisperKit 0.18.0 (TextDecoder TODO),
+    // so noSpeechThreshold cannot suppress these — this list is the reliable guard.
+    static let knownHallucinationPhrases: [String] = [
+        "Продолжение следует",           // Russian "to be continued" — most frequent
+        "Субтитры сделал DimaTorzok",    // Russian subtitle credit
+        "Субтитры создавала DimaTorzok",
+        "Thanks for watching",
+        "Thank you for watching",
+        "Subtitles by the Amara.org community",
+        "Captions by the Amara.org community",
+        "www.mooc.org",
+        "MBC 뉴스",                       // Korean MBC News credit
+    ]
+
+    /// Strips known Whisper hallucination phrases from transcription output.
+    /// Returns the filtered text and the word timings whose word text still
+    /// appears in the filtered result (keeps words in sync with text).
+    static func filterHallucinations(text: String, words: [TimestampedWord]) -> (String, [TimestampedWord]) {
+        var filteredText = text
+        for phrase in knownHallucinationPhrases {
+            filteredText = filteredText.replacingOccurrences(of: phrase, with: "", options: .caseInsensitive)
+        }
+        filteredText = filteredText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !filteredText.isEmpty else { return ("", []) }
+
+        let filteredWords = words.filter { word in
+            let w = word.word.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !w.isEmpty && filteredText.localizedCaseInsensitiveContains(w)
+        }
+        return (filteredText, filteredWords)
+    }
+
     static func makeDecodingOptions(language: String?) -> DecodingOptions {
         let resolvedLanguage = SpeechEnginePreference.normalizeLanguage(language)
         return DecodingOptions(
             language: resolvedLanguage,
             usePrefillPrompt: resolvedLanguage != nil,
+            // detectLanguage on silence can mis-lock onto Russian on the opening
+            // silent chunk — knownHallucinationPhrases is the reliable guard since
+            // noSpeechProb is always 0.0 in WhisperKit 0.18.0.
             detectLanguage: resolvedLanguage == nil,
-            wordTimestamps: true
+            wordTimestamps: true,
+            compressionRatioThreshold: 2.4,
+            logProbThreshold: -1.0,
+            firstTokenLogProbThreshold: -1.5,
+            noSpeechThreshold: 0.6   // non-functional until WK implements noSpeechProb
         )
     }
 
@@ -445,9 +487,11 @@ public actor WhisperEngine: STTTranscribing {
     }
 
     private static func makeResult(from merged: TranscriptionResult, modelVariant: String) -> STTResult {
-        STTResult(
-            text: merged.text,
-            words: Self.mapWordTimings(merged.allWords),
+        let rawWords = Self.mapWordTimings(merged.allWords)
+        let (text, words) = filterHallucinations(text: merged.text, words: rawWords)
+        return STTResult(
+            text: text,
+            words: words,
             language: merged.language,
             engine: .whisper,
             engineVariant: modelVariant
