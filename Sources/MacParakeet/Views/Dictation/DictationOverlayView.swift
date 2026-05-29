@@ -337,6 +337,7 @@ struct DictationOverlayView: View {
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.white.opacity(0.6))
                         .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .center)
                 }
                 if !text.isEmpty {
                     Text(text)
