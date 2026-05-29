@@ -24,6 +24,7 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
     private let meetingPillViewModel: MeetingRecordingPillViewModel
     private let onRecordMeeting: () -> Void
     private let onRecordMeetingFromWorkspace: () -> Void
+    private let onRecordVoiceMemo: () -> Void
     private let onPauseToggleMeeting: (() -> Void)?
     private let onHotkeyRecordingStateChanged: (Bool) -> Void
     private let onQuit: () -> Void
@@ -51,6 +52,7 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
         meetingPillViewModel: MeetingRecordingPillViewModel,
         onRecordMeeting: @escaping () -> Void,
         onRecordMeetingFromWorkspace: @escaping () -> Void,
+        onRecordVoiceMemo: @escaping () -> Void,
         onPauseToggleMeeting: (() -> Void)? = nil,
         onHotkeyRecordingStateChanged: @escaping (Bool) -> Void,
         onQuit: @escaping () -> Void,
@@ -75,6 +77,7 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
         self.meetingPillViewModel = meetingPillViewModel
         self.onRecordMeeting = onRecordMeeting
         self.onRecordMeetingFromWorkspace = onRecordMeetingFromWorkspace
+        self.onRecordVoiceMemo = onRecordVoiceMemo
         self.onPauseToggleMeeting = onPauseToggleMeeting
         self.onHotkeyRecordingStateChanged = onHotkeyRecordingStateChanged
         self.onQuit = onQuit
@@ -186,6 +189,7 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
             meetingPillViewModel: meetingPillViewModel,
             onRecordMeeting: onRecordMeeting,
             onRecordMeetingFromWorkspace: onRecordMeetingFromWorkspace,
+            onRecordVoiceMemo: onRecordVoiceMemo,
             onPauseToggleMeeting: onPauseToggleMeeting,
             onHotkeyRecordingStateChanged: onHotkeyRecordingStateChanged
         )

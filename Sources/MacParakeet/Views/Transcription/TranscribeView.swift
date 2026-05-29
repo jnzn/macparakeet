@@ -12,6 +12,7 @@ struct TranscribeView: View {
     var meetingPermissionState: MeetingRecordingTile.PermissionState = .ready(capturesMicrophone: true)
     @Binding var showingProgressDetail: Bool
     var onRecordMeeting: () -> Void
+    var onRecordVoiceMemo: (() -> Void)? = nil
     var onPauseToggleMeeting: (() -> Void)? = nil
     var onRefreshPermissions: () -> Void = {}
     @State private var showCancelConfirmation = false
@@ -135,6 +136,19 @@ struct TranscribeView: View {
                             onPauseToggle: onPauseToggleMeeting
                         )
                         .padding(.horizontal, DesignSystem.Spacing.xl)
+
+                        if let onRecordVoiceMemo {
+                            Button(action: onRecordVoiceMemo) {
+                                Label("Record a Voice Memo", systemImage: "mic.circle")
+                                    .font(DesignSystem.Typography.bodySmall.weight(.medium))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 8)
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(DesignSystem.Colors.accent)
+                            .padding(.horizontal, DesignSystem.Spacing.xl)
+                            .help("Capture a quick mic-only voice memo with live transcript + Ask")
+                        }
                     }
 
                     // Error banner

@@ -173,6 +173,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         onRecordMeetingFromWorkspace: { [weak self] in
             self?.startMeetingRecordingFromWorkspace()
         },
+        onRecordVoiceMemo: { [weak self] in
+            self?.voiceMemoFlowCoordinator?.toggleRecording()
+        },
         onPauseToggleMeeting: { [weak self] in
             self?.meetingRecordingFlowCoordinator?.togglePause()
         },
