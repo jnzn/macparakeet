@@ -108,70 +108,105 @@ struct TranscribeView: View {
     // MARK: - Drop Zone (Portal)
 
     private var dropZoneView: some View {
-        VStack(spacing: 0) {
-            // Centered two-card layout
-            VStack(spacing: 0) {
-                Spacer()
+        VStack(spacing: DesignSystem.Spacing.md) {
+            // Uniform 2×2 tile grid that fills the detail area and resizes with
+            // the window (no scrolling): YouTube + Drop File on top, Record a
+            // Meeting + Voice Memo below.
+            actionTileGrid
 
-                VStack(spacing: DesignSystem.Spacing.xl) {
-                    HStack(alignment: .top, spacing: DesignSystem.Spacing.lg) {
-                        youTubeCard
-                        PortalDropZone(
-                            isDragging: $viewModel.isDragging,
-                            onDrop: { providers in
-                                viewModel.handleFileDrop(providers: providers) {
-                                    SoundManager.shared.play(.fileDropped)
-                                }
-                            },
-                            onBrowse: { openFilePicker() }
-                        )
-                    }
-                    .padding(.horizontal, DesignSystem.Spacing.xl)
-
-                    if AppFeatures.meetingRecordingEnabled {
-                        MeetingRecordingTile(
-                            viewModel: meetingPillViewModel,
-                            permissionState: meetingPermissionState,
-                            onTap: onRecordMeeting,
-                            onPauseToggle: onPauseToggleMeeting
-                        )
-                        .padding(.horizontal, DesignSystem.Spacing.xl)
-
-                        if let onRecordVoiceMemo {
-                            Button(action: onRecordVoiceMemo) {
-                                Label("Record a Voice Memo", systemImage: "mic.circle")
-                                    .font(DesignSystem.Typography.bodySmall.weight(.medium))
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 8)
-                            }
-                            .buttonStyle(.bordered)
-                            .tint(DesignSystem.Colors.accent)
-                            .padding(.horizontal, DesignSystem.Spacing.xl)
-                            .help("Capture a quick mic-only voice memo with live transcript + Ask")
-                        }
-                    }
-
-                    // Error banner
-                    if let error = viewModel.errorMessage {
-                        errorBanner(error)
-                            .padding(.horizontal, DesignSystem.Spacing.xl)
-                    }
-
-                    Text(Self.inspirationQuote)
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundStyle(.tertiary)
-                        .multilineTextAlignment(.center)
-                }
-
-                Spacer()
+            if let error = viewModel.errorMessage {
+                errorBanner(error)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .onDrop(of: [.fileURL], isTargeted: $viewModel.isDragging) { providers in
-                viewModel.handleFileDrop(providers: providers) {
-                    SoundManager.shared.play(.fileDropped)
+
+            Text(Self.inspirationQuote)
+                .font(DesignSystem.Typography.caption)
+                .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(DesignSystem.Spacing.xl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onDrop(of: [.fileURL], isTargeted: $viewModel.isDragging) { providers in
+            viewModel.handleFileDrop(providers: providers) {
+                SoundManager.shared.play(.fileDropped)
+            }
+        }
+    }
+
+    private var actionTileGrid: some View {
+        Grid(horizontalSpacing: DesignSystem.Spacing.lg, verticalSpacing: DesignSystem.Spacing.lg) {
+            GridRow {
+                youTubeCard
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                PortalDropZone(
+                    isDragging: $viewModel.isDragging,
+                    onDrop: { providers in
+                        viewModel.handleFileDrop(providers: providers) {
+                            SoundManager.shared.play(.fileDropped)
+                        }
+                    },
+                    onBrowse: { openFilePicker() }
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+
+            if AppFeatures.meetingRecordingEnabled {
+                GridRow {
+                    MeetingRecordingTile(
+                        viewModel: meetingPillViewModel,
+                        permissionState: meetingPermissionState,
+                        onTap: onRecordMeeting,
+                        onPauseToggle: onPauseToggleMeeting,
+                        fillsAvailableHeight: true
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    if onRecordVoiceMemo != nil {
+                        voiceMemoTile
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Voice-memo action tile — vertical card matching the YouTube tile's chrome.
+    private var voiceMemoTile: some View {
+        Button {
+            onRecordVoiceMemo?()
+        } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: DesignSystem.Layout.dropZoneCornerRadius)
+                    .fill(DesignSystem.Colors.surfaceElevated)
+                    .cardShadow(DesignSystem.Shadows.cardRest)
+
+                VStack(spacing: DesignSystem.Spacing.md) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(DesignSystem.Colors.recordingRed.opacity(0.1))
+                            .frame(width: 56, height: 56)
+                        Image(systemName: "mic.circle.fill")
+                            .font(.system(size: 24, weight: .medium))
+                            .foregroundStyle(DesignSystem.Colors.recordingRed.opacity(0.75))
+                    }
+
+                    Text("Record a voice memo")
+                        .font(DesignSystem.Typography.pageTitle)
+
+                    Text("Mic-only quick capture — live transcript + Ask, privately on your Mac.")
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(.tertiary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, DesignSystem.Spacing.lg)
+                }
+                .padding(.vertical, DesignSystem.Spacing.xl)
+            }
+            .frame(minHeight: 200)
+        }
+        .buttonStyle(.plain)
+        .help("Capture a quick mic-only voice memo with live transcript + Ask")
+        .accessibilityLabel("Record a voice memo")
+        .accessibilityHint("Starts a mic-only voice memo with live transcript and Ask")
     }
 
     // MARK: - YouTube Card
