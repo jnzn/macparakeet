@@ -832,7 +832,8 @@ public actor DictationService: DictationServiceProtocol {
             rawText: result.text,
             mode: mode,
             customWords: words,
-            snippets: snippets
+            snippets: snippets,
+            profile: activeProfile
         )
         let cleanTranscript = refinement.text
         let expandedSnippetIDs = refinement.expandedSnippetIDs
