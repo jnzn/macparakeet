@@ -88,6 +88,29 @@ public final class AVAudioEngineMicrophonePlatform: MicrophoneEnginePlatform, @u
     private var configurationChangeObserver: NSObjectProtocol?
     private var defaultInputChangeObserver: AudioObjectPropertyListenerBlock?
 
+    // MARK: Stall recovery
+    //
+    // macOS AVAudioEngine input start is racy: `engine.start()` can return
+    // success and post a configuration change, yet the IO proc never begins
+    // pulling buffers — the tap stays silent for the whole session (observed as
+    // `dictation_capture_no_buffers_within_timeout` with input_buffers=0). It
+    // self-heals on a later start anywhere from seconds to ~30s later. When a
+    // configuration change is followed by no buffers within a short window, we
+    // re-prime the engine with the last good params and retry (bounded), which
+    // recovers the common quick-flake case within a few hundred ms.
+
+    /// Params from the last user-initiated `configureAndStart`, replayed during
+    /// stall recovery. Set on success, cleared on stop/teardown.
+    private var rememberedStart: (vpioEnabled: Bool, bufferSize: AVAudioFrameCount, tapHandler: @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void)?
+    /// Set true by the (wrapped) tap handler on the render thread; read on the
+    /// engine queue by the stall watchdog. Reset when a watchdog window opens.
+    private let sawBufferSinceCheck = OSAllocatedUnfairLock(initialState: false)
+    /// Recovery attempts since the last user-initiated start. Reset to 0 once a
+    /// buffer is confirmed flowing, or on the next `configureAndStart`.
+    private var stallRecoveryAttempts = 0
+    private static let maxStallRecoveryAttempts = 3
+    private static let stallCheckDelaySeconds: TimeInterval = 0.3
+
     public init(
         deviceAttemptsBuilder: DeviceAttemptsBuilder? = nil,
         inputDeviceSetter: @escaping InputDeviceSetter = { deviceID, engine in
@@ -155,6 +178,25 @@ public final class AVAudioEngineMicrophonePlatform: MicrophoneEnginePlatform, @u
         tapHandler: @escaping @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void
     ) throws {
         try queue.sync {
+            // User-initiated start: this is the authoritative param set the
+            // stall watchdog replays, and a fresh recovery budget.
+            rememberedStart = (vpioEnabled, bufferSize, tapHandler)
+            stallRecoveryAttempts = 0
+            try performConfigureAndStartLocked(
+                vpioEnabled: vpioEnabled,
+                bufferSize: bufferSize,
+                tapHandler: tapHandler
+            )
+        }
+    }
+
+    /// Queue-held body of `configureAndStart`. Also invoked (already on
+    /// `queue`) by the stall watchdog to re-prime after a silent start.
+    private func performConfigureAndStartLocked(
+        vpioEnabled: Bool,
+        bufferSize: AVAudioFrameCount,
+        tapHandler: @escaping @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void
+    ) throws {
             // VPIO toggle requires a stop → setVoiceProcessingEnabled → start
             // sequence; the engine cannot be reconfigured while running.
             if running {
@@ -222,15 +264,72 @@ public final class AVAudioEngineMicrophonePlatform: MicrophoneEnginePlatform, @u
             }
 
             throw lastError ?? AVAudioEngineMicrophonePlatformError.noDeviceAvailable
-        }
     }
 
     public func stopEngine() {
         queue.sync {
             guard running else { return }
             tearDownLocked()
+            // User-initiated stop: drop the replay params + recovery budget so a
+            // late stall watchdog can't re-prime a deliberately-stopped engine.
+            rememberedStart = nil
+            stallRecoveryAttempts = 0
             logger.info("shared_mic_engine_stopped")
             AudioCaptureDiagnostics.append("shared_mic_engine_stopped")
+        }
+    }
+
+    // MARK: - Stall recovery (queue-held)
+
+    /// Open a watchdog window after a configuration change: if no buffer is
+    /// observed within `stallCheckDelaySeconds`, the input start silently
+    /// stalled — re-prime with the remembered params and retry (bounded).
+    /// Called from the configuration-change observer (already on `queue`).
+    private func scheduleStallCheckLocked() {
+        guard running, rememberedStart != nil else { return }
+        sawBufferSinceCheck.withLock { $0 = false }
+        queue.asyncAfter(deadline: .now() + Self.stallCheckDelaySeconds) { [weak self] in
+            self?.evaluateStallLocked()
+        }
+    }
+
+    /// Queue-held. Either confirms buffers are flowing (resets the budget) or
+    /// re-primes the engine once, up to `maxStallRecoveryAttempts`.
+    private func evaluateStallLocked() {
+        guard running, let remembered = rememberedStart else { return }
+        if sawBufferSinceCheck.withLock({ $0 }) {
+            stallRecoveryAttempts = 0 // healthy — buffers are flowing
+            return
+        }
+        guard stallRecoveryAttempts < Self.maxStallRecoveryAttempts else {
+            logger.error("shared_mic_engine_stall_recovery_exhausted attempts=\(self.stallRecoveryAttempts, privacy: .public)")
+            AudioCaptureDiagnostics.append(
+                "shared_mic_engine_stall_recovery_exhausted attempts=\(stallRecoveryAttempts)"
+            )
+            return
+        }
+        stallRecoveryAttempts += 1
+        logger.info("shared_mic_engine_stall_recovery attempt=\(self.stallRecoveryAttempts, privacy: .public)")
+        AudioCaptureDiagnostics.append(
+            "shared_mic_engine_stall_recovery attempt=\(stallRecoveryAttempts)"
+        )
+        // Re-prime: tearDownLocked recreates the engine + removes the old
+        // observer; performConfigureAndStartLocked installs a fresh engine,
+        // tap, and config-change observer (which re-arms this watchdog).
+        tearDownLocked()
+        do {
+            try performConfigureAndStartLocked(
+                vpioEnabled: remembered.vpioEnabled,
+                bufferSize: remembered.bufferSize,
+                tapHandler: remembered.tapHandler
+            )
+        } catch {
+            logger.error(
+                "shared_mic_engine_stall_recovery_failed error_type=\(AudioCaptureDiagnostics.errorType(error), privacy: .public) error_detail=\(error.localizedDescription, privacy: .private)"
+            )
+            AudioCaptureDiagnostics.append(
+                "shared_mic_engine_stall_recovery_failed \(AudioCaptureDiagnostics.errorFields(error))"
+            )
         }
     }
 
@@ -315,7 +414,9 @@ public final class AVAudioEngineMicrophonePlatform: MicrophoneEnginePlatform, @u
                     onBus: 0,
                     bufferSize: bufferSize,
                     format: nil
-                ) { buffer, time in
+                ) { [weak self] buffer, time in
+                    // Record liveness for the stall watchdog before forwarding.
+                    self?.sawBufferSinceCheck.withLock { $0 = true }
                     tapHandler(buffer, time)
                 }
             }
@@ -431,6 +532,10 @@ public final class AVAudioEngineMicrophonePlatform: MicrophoneEnginePlatform, @u
                 self.logger.info(
                     "shared_mic_engine_configuration_changed sr=\(snapshot.sr, privacy: .public) ch=\(snapshot.ch, privacy: .public) isRunning=\(snapshot.isRunning, privacy: .public)"
                 )
+                // A config change is the documented trigger for the silent
+                // input-start stall; arm the watchdog to re-prime if no buffer
+                // arrives shortly after.
+                self.scheduleStallCheckLocked()
             }
         }
         configurationChangeObserver = token
