@@ -497,21 +497,13 @@ final class AppEnvironmentConfigurer {
             meetingRecordingService: env.meetingRecordingService,
             transcriptionService: env.transcriptionService,
             permissionService: env.permissionService,
-            transcriptionRepo: env.transcriptionRepo,
-            meetingRecordingSettlement: env.meetingRecordingSettlement,
             libraryViewModel: libraryViewModel,
             quickPromptRepo: env.quickPromptRepo,
             configStore: env.llmConfigStore,
             llmService: env.llmService,
+            backgroundProcessor: meetingBackgroundProcessor,
             isMeetingRecordingActive: { [weak meetingCoordinator] in
                 meetingCoordinator?.isMeetingRecordingActive ?? false
-            },
-            onTranscriptionReady: { [weak self] transcription in
-                guard let self else { return }
-                self.transcriptionViewModel.presentCompletedTranscription(transcription, autoSave: true)
-                self.libraryViewModel.loadTranscriptions()
-                self.mainWindowState.navigateToTranscription(from: .library)
-                callbacks.onOpenMainWindow()
             },
             onRecordingBegan: {
                 coordinatorRefs.dictation?.hideIdlePill()

@@ -60,7 +60,8 @@ final class MeetingBackgroundProcessor {
         liveWordCount: Int,
         liveTranscriptLagged: Bool,
         shouldAutoGenerateTitle: Bool,
-        carriedChat: [ChatMessage]
+        carriedChat: [ChatMessage],
+        sourceType: Transcription.SourceType = .meeting
     ) {
         let sessionID = output.sessionID
         adjustCount(by: 1)
@@ -72,7 +73,14 @@ final class MeetingBackgroundProcessor {
             }
             do {
                 var transcription = try await Observability.withOperationContext(operationContext) {
-                    let base = try await self.transcriptionService.transcribeMeeting(recording: output, onProgress: nil)
+                    var base = try await self.transcriptionService.transcribeMeeting(recording: output, onProgress: nil)
+                    if sourceType != base.sourceType {
+                        // transcribeMeeting has no notion of non-meeting callers
+                        // (e.g. voice memos) and always tags .meeting; retag and
+                        // persist before settlement so the row lands correctly.
+                        base.sourceType = sourceType
+                        try self.transcriptionRepo.save(base)
+                    }
                     try await self.meetingRecordingSettlement.settleCompletedTranscription(
                         folderURL: output.folderURL,
                         transcriptionID: base.id,
