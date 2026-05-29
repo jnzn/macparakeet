@@ -107,6 +107,8 @@ private final class PollingPermissionService: PermissionServiceProtocol, @unchec
 
     func openScreenRecordingSettings() {}
 
+    func openAccessibilitySettings() {}
+
     func checkAccessibilityPermission() -> Bool {
         true
     }
@@ -142,6 +144,8 @@ private final class DelayedMicrophonePermissionService: PermissionServiceProtoco
     func openMicrophoneSettings() {}
 
     func openScreenRecordingSettings() {}
+
+    func openAccessibilitySettings() {}
 
     func checkAccessibilityPermission() -> Bool {
         accessibilityPermission
