@@ -28,11 +28,30 @@ live chunking via `FixedMeetingLiveAudioChunker`, byte-identical to
   picks fixed vs speech-boundary per session (VAD only for cached-model Parakeet
   sessions; per-source fixed fallback otherwise), with `meeting_live_chunking_mode`
   diagnostics.
+- **Model prep** — `MeetingVADModelPreparer` + `MeetingVADService.downloadModel`
+  fetch the Silero VAD model during the onboarding speech-engine warm-up, **only
+  when `meetingVadLiveChunkingEnabled` is true** and on the Parakeet path (VAD is
+  gated to Parakeet sessions). Failure is logged + swallowed (warm-up still
+  completes; runtime falls back to fixed). This makes the flag meaningfully
+  flippable: flip → relaunch → model fetched → `makeIfModelCached()` starts
+  succeeding. (`.../Services/MeetingRecording/MeetingVADModelPreparer.swift`,
+  `OnboardingViewModel.prepareMeetingVADModelIfNeeded`)
+  - **Verified end-to-end (2026-05-28, headless):** `downloadModel()` fetches the
+    Silero model to `Models/silero-vad/` (the `repo.folderName` path the pinned
+    FluidAudio `VadManager` actually loads from — `isModelCached()` uses the same
+    path, so they agree; an older `silero-vad-coreml/` cache dir from a prior
+    FluidAudio version is unrelated) in ~1.7s, after which `isModelCached()`
+    flips true. Driving the **real** Silero model through
+    `SpeechBoundaryMeetingLiveAudioChunker` with synthesized speech (two
+    sentences split by a 1.5s pause) cut at the pause: 2 contiguous chunks, 1
+    speech-end, 0 force-emits, 0 VAD errors, no fallback. Confirms the live path
+    is correct against the real model, not just the fake-VAD unit tests.
 
 **Not yet done (need hardware / live meetings):**
 - **Phase 0** — `.cpuOnly` vs `.cpuAndNeuralEngine` benchmark + live-latency
-  measurement, and the cached-only-vs-prepare-during-onboarding decision. The
-  service currently defaults to `.cpuOnly`, cached-only.
+  measurement. The service currently defaults to `.cpuOnly`. (The
+  cached-only-vs-prepare-during-onboarding decision is now settled: prepare
+  during onboarding, flag-gated — see "Model prep" above.)
 - **Phase 5** — real-meeting threshold tuning and the default-on decision; only
   then update `spec/05-audio-pipeline.md` / `spec/09-testing.md`.
 
