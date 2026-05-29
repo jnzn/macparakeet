@@ -219,6 +219,38 @@ final class TranscriptionRepositoryTests: XCTestCase {
         XCTAssertEqual(try repo.fetchBySourceType(.meeting, idPrefix: "DDBBAAEE1111").map(\.id), [textID])
     }
 
+    /// Regression: a row with an unknown/legacy `sourceType` raw value must not
+    /// throw during decode and break the whole library "All" fetch. It should
+    /// decode resiliently (falling back via the sourceURL heuristic) so all
+    /// other rows remain visible. Mirrors the real bug where "All" failed with
+    /// "the data couldn't be read because it isn't in the correct format" while
+    /// type-filtered tabs still worked.
+    func testFetchAllSurvivesUnknownSourceType() throws {
+        let now = Date()
+        let goodID = UUID()
+        let badID = UUID(uuidString: "BAADF00D-1111-1111-1111-111111111111")!
+        let badYouTubeID = UUID(uuidString: "BAADF00D-2222-2222-2222-222222222222")!
+        try repo.save(Transcription(id: goodID, fileName: "Good", sourceType: .meeting))
+        try dbQueue.write { db in
+            // Unknown sourceType, no sourceURL -> should fall back to .file.
+            try db.execute(
+                sql: "INSERT INTO transcriptions (id, createdAt, fileName, updatedAt, sourceType) VALUES (?, ?, ?, ?, ?)",
+                arguments: [badID.uuidString, now, "Bad Type", now, "totally_unknown_kind"]
+            )
+            // Unknown sourceType but sourceURL present -> should fall back to .youtube.
+            try db.execute(
+                sql: "INSERT INTO transcriptions (id, createdAt, fileName, updatedAt, sourceType, sourceURL) VALUES (?, ?, ?, ?, ?, ?)",
+                arguments: [badYouTubeID.uuidString, now, "Bad YT", now, "future_case", "https://youtu.be/x"]
+            )
+        }
+
+        // The whole-library fetch must not throw and must include every row.
+        let all = try repo.fetchAll(limit: nil)
+        XCTAssertEqual(Set(all.map(\.id)), [goodID, badID, badYouTubeID])
+        XCTAssertEqual(all.first { $0.id == badID }?.sourceType, .file)
+        XCTAssertEqual(all.first { $0.id == badYouTubeID }?.sourceType, .youtube)
+    }
+
     func testFetchBySourceTypeAndFileNameIsCaseInsensitive() throws {
         let meeting = Transcription(fileName: "Design Review", sourceType: .meeting)
         let file = Transcription(fileName: "Design Review", sourceType: .file)
