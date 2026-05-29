@@ -11,6 +11,7 @@ final class AppSettingsObserverCoordinator {
     private let onHotkeyTriggerChanged: () -> Void
     private let onPushToTalkHotkeyTriggerChanged: () -> Void
     private let onMeetingHotkeyTriggerChanged: () -> Void
+    private let onVoiceMemoHotkeyTriggerChanged: () -> Void
     private let onFileTranscriptionHotkeyTriggerChanged: () -> Void
     private let onYouTubeTranscriptionHotkeyTriggerChanged: () -> Void
     private let onAppearanceModeChanged: () -> Void
@@ -30,6 +31,7 @@ final class AppSettingsObserverCoordinator {
             (.macParakeetHotkeyTriggerDidChange, { $0.onHotkeyTriggerChanged() }),
             (.macParakeetPushToTalkHotkeyTriggerDidChange, { $0.onPushToTalkHotkeyTriggerChanged() }),
             (.macParakeetMeetingHotkeyTriggerDidChange, { $0.onMeetingHotkeyTriggerChanged() }),
+            (.macParakeetVoiceMemoHotkeyTriggerDidChange, { $0.onVoiceMemoHotkeyTriggerChanged() }),
             (.macParakeetFileTranscriptionHotkeyTriggerDidChange, { $0.onFileTranscriptionHotkeyTriggerChanged() }),
             (.macParakeetYouTubeTranscriptionHotkeyTriggerDidChange, { $0.onYouTubeTranscriptionHotkeyTriggerChanged() }),
             (.macParakeetAppearanceModeDidChange, { $0.onAppearanceModeChanged() }),
@@ -49,6 +51,7 @@ final class AppSettingsObserverCoordinator {
         onHotkeyTriggerChanged: @escaping () -> Void,
         onPushToTalkHotkeyTriggerChanged: @escaping () -> Void,
         onMeetingHotkeyTriggerChanged: @escaping () -> Void,
+        onVoiceMemoHotkeyTriggerChanged: @escaping () -> Void,
         onFileTranscriptionHotkeyTriggerChanged: @escaping () -> Void,
         onYouTubeTranscriptionHotkeyTriggerChanged: @escaping () -> Void,
         onAppearanceModeChanged: @escaping () -> Void,
@@ -67,6 +70,7 @@ final class AppSettingsObserverCoordinator {
         self.onHotkeyTriggerChanged = onHotkeyTriggerChanged
         self.onPushToTalkHotkeyTriggerChanged = onPushToTalkHotkeyTriggerChanged
         self.onMeetingHotkeyTriggerChanged = onMeetingHotkeyTriggerChanged
+        self.onVoiceMemoHotkeyTriggerChanged = onVoiceMemoHotkeyTriggerChanged
         self.onFileTranscriptionHotkeyTriggerChanged = onFileTranscriptionHotkeyTriggerChanged
         self.onYouTubeTranscriptionHotkeyTriggerChanged = onYouTubeTranscriptionHotkeyTriggerChanged
         self.onAppearanceModeChanged = onAppearanceModeChanged

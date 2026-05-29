@@ -129,7 +129,7 @@ public enum ShareProjection {
     private static func source(for transcription: Transcription) -> ShareBundle.Source {
         let kind: ShareBundle.SourceKind
         switch transcription.sourceType {
-        case .meeting: kind = .meeting
+        case .meeting, .voiceMemo: kind = .meeting
         case .file: kind = .file
         case .youtube: kind = .web
         case .podcast: kind = .podcast

@@ -665,7 +665,7 @@ struct RetranscribeCommand: AsyncParsableCommand, CLITelemetryMetadataProviding 
             return .youtube
         case .podcast:
             return .podcast
-        case .meeting:
+        case .meeting, .voiceMemo:
             return .meeting
         }
     }

@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkeyCoordinator: AppHotkeyCoordinator?
     private var dictationFlowCoordinator: DictationFlowCoordinator?
     private var meetingRecordingFlowCoordinator: MeetingRecordingFlowCoordinator?
+    private var voiceMemoFlowCoordinator: VoiceMemoFlowCoordinator?
     private var meetingAutoStartCoordinator: MeetingAutoStartCoordinator?
     private var meetingAutoStopCoordinator: MeetingAutoStopCoordinator?
     /// Productized Transforms coordinator (ADR-022). Owns the process-wide
@@ -254,6 +255,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         liveMeetingPanelAvailableProvider: { [weak self] in
             self?.meetingRecordingFlowCoordinator?.canPresentLiveMeetingPanel == true
         },
+        voiceMemoHotkeyTriggerProvider: { [weak self] in
+            self?.settingsViewModel.voiceMemoHotkeyTrigger ?? .defaultVoiceMemo
+        },
+        voiceMemoActiveProvider: { [weak self] in
+            self?.voiceMemoFlowCoordinator?.isVoiceMemoActive == true
+        },
         dictationCaptureActiveProvider: { [weak self] in
             self?.dictationFlowCoordinator?.isCapturingAudio == true
         },
@@ -278,6 +285,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         },
         onOpenLiveMeetingPanel: { [weak self] in
             self?.meetingRecordingFlowCoordinator?.presentLiveMeetingPanel()
+        },
+        onToggleVoiceMemo: { [weak self] in
+            self?.voiceMemoFlowCoordinator?.toggleRecording()
         },
         onCreateTransform: { [weak self] in
             self?.mainWindowState.beginCreatingTransform()
@@ -306,6 +316,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         },
         onMeetingHotkeyTriggerChanged: { [weak self] in
             self?.handleMeetingHotkeyTriggerChange()
+        },
+        onVoiceMemoHotkeyTriggerChanged: { [weak self] in
+            self?.handleVoiceMemoHotkeyTriggerChange()
         },
         onFileTranscriptionHotkeyTriggerChanged: { [weak self] in
             self?.handleFileTranscriptionHotkeyTriggerChange()
@@ -622,6 +635,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         dictationFlowCoordinator = runtime.dictationFlowCoordinator
         meetingRecordingFlowCoordinator = runtime.meetingRecordingFlowCoordinator
+        voiceMemoFlowCoordinator = runtime.voiceMemoFlowCoordinator
         hotkeyCoordinator = runtime.hotkeyCoordinator
         meetingAutoStartCoordinator = runtime.meetingAutoStartCoordinator
         meetingAutoStopCoordinator = runtime.meetingAutoStopCoordinator
@@ -700,6 +714,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menuBarCoordinator.refreshHotkeyTitle()
         menuBarCoordinator.refreshMeetingHotkeyShortcut()
+        menuBarCoordinator.refreshVoiceMemoHotkeyShortcut()
         menuBarCoordinator.refreshTranscriptionHotkeyShortcuts()
         onboardingCoordinator.maybeShow(environment: env)
         scheduleDeferredSpeechPreWarm(environment: env)
@@ -830,6 +845,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshAuxiliaryHotkeys()
     }
 
+    private func handleVoiceMemoHotkeyTriggerChange() {
+        refreshAuxiliaryHotkeys()
+    }
+
     private func handleFileTranscriptionHotkeyTriggerChange() {
         refreshAuxiliaryHotkeys()
     }
@@ -844,9 +863,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func refreshAuxiliaryHotkeys() {
         hotkeyCoordinator?.refreshMeetingHotkey()
+        hotkeyCoordinator?.refreshVoiceMemoHotkey()
         hotkeyCoordinator?.refreshFileTranscriptionHotkey()
         hotkeyCoordinator?.refreshYouTubeTranscriptionHotkey()
         menuBarCoordinator.refreshMeetingHotkeyShortcut()
+        menuBarCoordinator.refreshVoiceMemoHotkeyShortcut()
         menuBarCoordinator.refreshTranscriptionHotkeyShortcuts()
         transformsCoordinator?.reloadBindings()
         voiceControlCoordinator?.installHotkey()

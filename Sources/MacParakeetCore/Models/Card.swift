@@ -223,7 +223,7 @@ public enum CardSource: String, Codable, Sendable, CaseIterable {
 
     public init(sourceType: Transcription.SourceType) {
         switch sourceType {
-        case .meeting: self = .meeting
+        case .meeting, .voiceMemo: self = .meeting
         case .file: self = .file
         case .youtube, .podcast: self = .url
         }

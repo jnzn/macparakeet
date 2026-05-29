@@ -135,7 +135,8 @@ public enum TranscriptionAssetCleanup {
             // app-managed downloads directory; the same prefix guard applies.
             guard let filePath = transcription.filePath, !filePath.isEmpty else { return }
             try removeDownloadedMediaFile(at: URL(fileURLWithPath: filePath), fileManager: fileManager)
-        case .meeting:
+        case .meeting, .voiceMemo:
+            // Voice memos use the same managed session-folder layout as meetings.
             _ = try removeOwnedMeetingAudioUnlocked(for: transcription, fileManager: fileManager)
         case .file:
             return

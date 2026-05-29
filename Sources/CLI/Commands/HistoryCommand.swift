@@ -629,7 +629,7 @@ struct RenameSubcommand: AsyncParsableCommand {
             let updated: Transcription
             let kind: String
             switch transcription.sourceType {
-            case .meeting:
+            case .meeting, .voiceMemo:
                 if transcription.fileName == trimmed {
                     updated = transcription
                 } else {
@@ -644,7 +644,7 @@ struct RenameSubcommand: AsyncParsableCommand {
                     )
                     updated = persisted
                 }
-                kind = "meeting"
+                kind = transcription.sourceType == .voiceMemo ? "voice_memo" : "meeting"
             case .file:
                 if transcription.effectiveDisplayTitle == trimmed {
                     updated = transcription

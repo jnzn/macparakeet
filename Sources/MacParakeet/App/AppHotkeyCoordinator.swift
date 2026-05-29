@@ -14,6 +14,7 @@ final class AppHotkeyCoordinator {
     private let onReadyForSecondTap: () -> Void
     private let onEscapeWhileIdle: () -> Void
     private let onToggleMeetingRecording: () -> Void
+    private let onToggleVoiceMemo: () -> Void
     private let onTriggerFileTranscription: () -> Void
     private let onTriggerYouTubeTranscription: () -> Void
     private let onDictationHotkeyManagersChanged: ([HotkeyManager]) -> Void
@@ -24,6 +25,7 @@ final class AppHotkeyCoordinator {
 
     private var dictationHotkeyManagers: [HotkeyManager] = []
     private var meetingHotkeyManager: GlobalShortcutManager?
+    private var voiceMemoHotkeyManager: GlobalShortcutManager?
     private var fileTranscriptionHotkeyManager: GlobalShortcutManager?
     private var youtubeTranscriptionHotkeyManager: GlobalShortcutManager?
     /// Count of active `HotkeyRecorderView` sessions that have asked for the
@@ -42,6 +44,7 @@ final class AppHotkeyCoordinator {
         onReadyForSecondTap: @escaping () -> Void,
         onEscapeWhileIdle: @escaping () -> Void,
         onToggleMeetingRecording: @escaping () -> Void,
+        onToggleVoiceMemo: @escaping () -> Void,
         onTriggerFileTranscription: @escaping () -> Void,
         onTriggerYouTubeTranscription: @escaping () -> Void,
         onDictationHotkeyManagersChanged: @escaping ([HotkeyManager]) -> Void,
@@ -58,6 +61,7 @@ final class AppHotkeyCoordinator {
         self.onReadyForSecondTap = onReadyForSecondTap
         self.onEscapeWhileIdle = onEscapeWhileIdle
         self.onToggleMeetingRecording = onToggleMeetingRecording
+        self.onToggleVoiceMemo = onToggleVoiceMemo
         self.onTriggerFileTranscription = onTriggerFileTranscription
         self.onTriggerYouTubeTranscription = onTriggerYouTubeTranscription
         self.onDictationHotkeyManagersChanged = onDictationHotkeyManagersChanged
@@ -316,9 +320,26 @@ final class AppHotkeyCoordinator {
                 .init(settingsViewModel.pushToTalkHotkeyTrigger, mode: .bareModifierDictation),
                 .init(settingsViewModel.fileTranscriptionHotkeyTrigger),
                 .init(settingsViewModel.youtubeTranscriptionHotkeyTrigger),
+                .init(settingsViewModel.voiceMemoHotkeyTrigger),
             ],
             onTrigger: { [weak self] in
                 self?.onToggleMeetingRecording()
+            }
+        )
+    }
+
+    func setupVoiceMemoHotkey() {
+        voiceMemoHotkeyManager = startAuxiliaryHotkey(
+            trigger: settingsViewModel.voiceMemoHotkeyTrigger,
+            conflicts: [
+                .init(settingsViewModel.hotkeyTrigger, mode: .bareModifierDictation),
+                .init(settingsViewModel.pushToTalkHotkeyTrigger, mode: .bareModifierDictation),
+                .init(settingsViewModel.meetingHotkeyTrigger),
+                .init(settingsViewModel.fileTranscriptionHotkeyTrigger),
+                .init(settingsViewModel.youtubeTranscriptionHotkeyTrigger),
+            ],
+            onTrigger: { [weak self] in
+                self?.onToggleVoiceMemo()
             }
         )
     }
@@ -430,6 +451,13 @@ final class AppHotkeyCoordinator {
         setupMeetingHotkey()
     }
 
+    func refreshVoiceMemoHotkey() {
+        guard suspendCount == 0 else { return }
+        voiceMemoHotkeyManager?.stop()
+        voiceMemoHotkeyManager = nil
+        setupVoiceMemoHotkey()
+    }
+
     func refreshFileTranscriptionHotkey() {
         guard suspendCount == 0 else { return }
         fileTranscriptionHotkeyManager?.stop()
@@ -474,6 +502,7 @@ final class AppHotkeyCoordinator {
         guard suspendCount == 0 else { return }
         setupDictationHotkeys()
         setupMeetingHotkey()
+        setupVoiceMemoHotkey()
         setupFileTranscriptionHotkey()
         setupYouTubeTranscriptionHotkey()
     }
@@ -485,9 +514,11 @@ final class AppHotkeyCoordinator {
     func stopAll() {
         stopDictationHotkeys()
         meetingHotkeyManager?.stop()
+        voiceMemoHotkeyManager?.stop()
         fileTranscriptionHotkeyManager?.stop()
         youtubeTranscriptionHotkeyManager?.stop()
         meetingHotkeyManager = nil
+        voiceMemoHotkeyManager = nil
         fileTranscriptionHotkeyManager = nil
         youtubeTranscriptionHotkeyManager = nil
     }

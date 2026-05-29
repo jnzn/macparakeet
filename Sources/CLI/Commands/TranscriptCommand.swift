@@ -89,7 +89,7 @@ private struct TranscriptSliceRecord: Encodable {
         recordedAt = transcription.createdAt
         source =
             switch transcription.sourceType {
-            case .meeting: .meeting
+            case .meeting, .voiceMemo: .meeting
             case .file: .file
             case .youtube, .podcast: .url
             }

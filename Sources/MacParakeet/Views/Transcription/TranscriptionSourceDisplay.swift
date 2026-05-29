@@ -3,6 +3,7 @@ import MacParakeetCore
 
 enum TranscriptionSourceDisplay: Equatable {
     case meeting
+    case voiceMemo
     case localFile
     case youtube
     case x
@@ -18,6 +19,8 @@ enum TranscriptionSourceDisplay: Equatable {
         switch transcription.sourceType {
         case .meeting:
             return .meeting
+        case .voiceMemo:
+            return .voiceMemo
         case .file:
             return .localFile
         case .podcast:
@@ -59,13 +62,14 @@ enum TranscriptionSourceDisplay: Equatable {
         case .facebook: return .facebook
         case .tiktok: return .tiktok
         case .instagram: return .instagram
-        case .meeting, .localFile, .podcast, .audioURL, .mediaURL: return nil
+        case .meeting, .voiceMemo, .localFile, .podcast, .audioURL, .mediaURL: return nil
         }
     }
 
     var collapsedText: String {
         switch self {
         case .meeting: return "Meeting"
+        case .voiceMemo: return "Voice Memo"
         case .localFile: return "Local"
         case .youtube: return "YouTube"
         case .x: return "X"
@@ -82,6 +86,7 @@ enum TranscriptionSourceDisplay: Equatable {
     var expandedText: String {
         switch self {
         case .meeting: return "Meeting recording"
+        case .voiceMemo: return "Voice memo"
         case .localFile: return "Local file"
         case .youtube: return "YouTube source"
         case .x: return "X source"
@@ -98,6 +103,7 @@ enum TranscriptionSourceDisplay: Equatable {
     var systemImage: String {
         switch self {
         case .meeting: return "record.circle.fill"
+        case .voiceMemo: return "mic.fill"
         case .localFile: return "waveform"
         case .youtube, .x, .vimeo, .facebook, .tiktok, .instagram, .mediaURL:
             return "play.rectangle.fill"
@@ -109,14 +115,14 @@ enum TranscriptionSourceDisplay: Equatable {
     var symbolText: String? {
         switch self {
         case .x: return "𝕏"
-        case .meeting, .localFile, .youtube, .vimeo, .facebook, .tiktok, .instagram, .podcast, .audioURL, .mediaURL:
+        case .meeting, .voiceMemo, .localFile, .youtube, .vimeo, .facebook, .tiktok, .instagram, .podcast, .audioURL, .mediaURL:
             return nil
         }
     }
 
     var tint: Color {
         switch self {
-        case .meeting, .localFile:
+        case .meeting, .voiceMemo, .localFile:
             return DesignSystem.Colors.accent
         case .youtube:
             return DesignSystem.Colors.youtubeRed

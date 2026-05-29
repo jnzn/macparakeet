@@ -1000,7 +1000,7 @@ public final class TranscriptionViewModel {
                 .youtube
             case .podcast:
                 .podcast
-            case .meeting:
+            case .meeting, .voiceMemo:
                 .meeting
             }
 

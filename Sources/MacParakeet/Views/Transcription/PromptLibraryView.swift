@@ -714,6 +714,7 @@ struct PromptLibraryView: View {
         case .youtube: return "Videos"
         case .podcast: return "Podcasts"
         case .meeting: return "Meetings"
+        case .voiceMemo: return "Voice Memos"
         }
     }
 
