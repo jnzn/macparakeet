@@ -407,7 +407,10 @@ extension Transcription: FetchableRecord, PersistableRecord {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
-        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        // `createdAt` is NOT NULL in schema, but a malformed date string must
+        // not throw and break the whole library "All" fetch. Fall back to
+        // distantPast (sorts a corrupt row to the end) and keep the row.
+        createdAt = (try? container.decode(Date.self, forKey: .createdAt)) ?? .distantPast
         audioRetentionStartedAt = try container.decodeIfPresent(Date.self, forKey: .audioRetentionStartedAt)
         fileName = try container.decode(String.self, forKey: .fileName)
         filePath = try container.decodeIfPresent(String.self, forKey: .filePath)
@@ -476,12 +479,25 @@ extension Transcription: FetchableRecord, PersistableRecord {
         channelName = try container.decodeIfPresent(String.self, forKey: .channelName)
         videoDescription = try container.decodeIfPresent(String.self, forKey: .videoDescription)
         isFavorite = try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
-        if let decodedSourceType = try container.decodeIfPresent(SourceType.self, forKey: .sourceType) {
-            sourceType = decodedSourceType
-        } else if sourceURL != nil {
-            sourceType = .youtube
+        // Resilient: an unknown/legacy `sourceType` raw value (e.g. a value
+        // written by a newer build, or a renamed case) makes `try decode` throw
+        // DataCorrupted ("data couldn't be read because it isn't in the correct
+        // format") — which would fail the entire "All" fetch while type-filtered
+        // tabs that exclude the row still work. Use `try?` and fall back to the
+        // sourceURL heuristic, logging the bad value so it stays observable.
+        let sourceTypeIsNull = (try? container.decodeNil(forKey: .sourceType)) == true
+        if container.contains(.sourceType), !sourceTypeIsNull {
+            if let decodedSourceType = try? container.decode(SourceType.self, forKey: .sourceType) {
+                sourceType = decodedSourceType
+            } else {
+                let rawSourceType = (try? container.decode(String.self, forKey: .sourceType)) ?? "<undecodable>"
+                transcriptionDecodeLogger.warning(
+                    "transcription_sourceType_decode_failed raw=\(rawSourceType, privacy: .public) id=\(recordIDForLog, privacy: .public)"
+                )
+                sourceType = sourceURL != nil ? .youtube : .file
+            }
         } else {
-            sourceType = .file
+            sourceType = sourceURL != nil ? .youtube : .file
         }
         meetingTypeId = try container.decodeIfPresent(UUID.self, forKey: .meetingTypeId)
         recoveredFromCrash = try container.decodeIfPresent(Bool.self, forKey: .recoveredFromCrash) ?? false
@@ -505,6 +521,8 @@ extension Transcription: FetchableRecord, PersistableRecord {
             MeetingSplitProvenance.self,
             forKey: .splitProvenance
         )
-        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        // Resilient (same rationale as createdAt): never let a malformed
+        // updatedAt nuke the "All" fetch. Fall back to createdAt.
+        updatedAt = (try? container.decode(Date.self, forKey: .updatedAt)) ?? createdAt
     }
 }
