@@ -79,6 +79,7 @@ struct MainWindowView: View {
     let shareManagementViewModel: ShareManagementViewModel?
     let onRecordMeeting: () -> Void
     let onRecordMeetingFromWorkspace: () -> Void
+    let onRecordVoiceMemo: () -> Void
     let onPauseToggleMeeting: (() -> Void)?
     /// Routed to `AppHotkeyCoordinator.suspend` / `resume` while a hotkey
     /// recorder is active. Passed through to `SettingsView`.
@@ -119,6 +120,7 @@ struct MainWindowView: View {
                             meetingPermissionState: meetingPermissionState,
                             showingProgressDetail: $state.showingProgressDetail,
                             onRecordMeeting: onRecordMeeting,
+                            onRecordVoiceMemo: onRecordVoiceMemo,
                             onPauseToggleMeeting: onPauseToggleMeeting,
                             onRefreshPermissions: settingsViewModel.refreshPermissions
                         )
