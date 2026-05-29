@@ -33,9 +33,18 @@ public protocol LLMServiceProtocol: Sendable {
         source: TelemetryFormatterSource,
         defaultPromptUsed: Bool
     ) async throws -> LLMFormatterResult
+
+    /// Returns a service that resolves all operations through `context` instead
+    /// of the app's global LLM config. Used by the live Ask surface to send a
+    /// single conversation through a user-picked provider without mutating the
+    /// global default. The default implementation is a no-op (returns self), so
+    /// existing conformers (mocks) need no changes.
+    func overriding(context: LLMExecutionContext) -> any LLMServiceProtocol
 }
 
 public extension LLMServiceProtocol {
+    func overriding(context: LLMExecutionContext) -> any LLMServiceProtocol { self }
+
     func generatePromptResult(transcript: String) async throws -> String {
         try await generatePromptResult(transcript: transcript, systemPrompt: nil)
     }
@@ -137,6 +146,16 @@ public final class LLMService: LLMServiceProtocol, Sendable {
                 configStore: configStore,
                 cliConfigStore: cliConfigStore
             )
+        )
+    }
+
+    /// Per-Ask provider override: a sibling service that shares this instance's
+    /// routing client but resolves every operation through the fixed `context`
+    /// (a static resolver) rather than the global stored config.
+    public func overriding(context: LLMExecutionContext) -> any LLMServiceProtocol {
+        LLMService(
+            client: client,
+            contextResolver: StaticLLMExecutionContextResolver(context: context)
         )
     }
 

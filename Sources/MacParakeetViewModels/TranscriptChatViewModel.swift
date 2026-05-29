@@ -46,6 +46,13 @@ public final class TranscriptChatViewModel {
     public var currentProviderID: LLMProviderID?
     public var availableModels: [String] = []
 
+    // Per-Ask provider override (PDX). Lets this one conversation run through a
+    // user-picked provider (Claude/Codex CLI, a cloud provider with a saved
+    // key, …) without changing the global default. "default" == global config.
+    public private(set) var askProviderOptions: [AskProviderOption] = []
+    public var selectedAskProviderID: String = "default"
+    private var askProvidersTask: Task<Void, Never>?
+
     private var llmService: LLMServiceProtocol?
     private var llmClient: LLMClientProtocol?
     private var configStore: LLMConfigStoreProtocol?
@@ -91,6 +98,44 @@ public final class TranscriptChatViewModel {
         return currentModelName
     }
 
+    /// Display name for the currently selected Ask provider (the picker label).
+    public var selectedAskProviderDisplayName: String {
+        if let match = askProviderOptions.first(where: { $0.id == selectedAskProviderID }) {
+            return match.displayName
+        }
+        return askProviderOptions.first(where: { $0.isDefault })?.displayName ?? "Default"
+    }
+
+    /// Override context for the active selection, or nil to use the global default.
+    private var selectedOverrideContext: LLMExecutionContext? {
+        guard selectedAskProviderID != "default" else { return nil }
+        return askProviderOptions.first(where: { $0.id == selectedAskProviderID })?.context
+    }
+
+    /// Rebuild the list of providers the user can pick for this Ask. Touches the
+    /// Keychain + probes PATH, so it runs off the main actor and caches.
+    public func refreshAskProviders() {
+        guard let configStore else {
+            askProviderOptions = []
+            return
+        }
+        askProvidersTask?.cancel()
+        askProvidersTask = Task { @MainActor [weak self] in
+            let catalog = AskProviderCatalog(
+                configStore: configStore,
+                cliResolver: { binary in LocalCLIExecutor().resolve(binary: binary) != nil }
+            )
+            let options = await Task.detached(priority: .utility) {
+                catalog.availableOptions()
+            }.value
+            guard !Task.isCancelled, let self else { return }
+            self.askProviderOptions = options
+            if !options.contains(where: { $0.id == self.selectedAskProviderID }) {
+                self.selectedAskProviderID = "default"
+            }
+        }
+    }
+
     public init() {}
 
     public func configure(
@@ -110,6 +155,7 @@ public final class TranscriptChatViewModel {
         self.conversationRepo = conversationRepo
         self.cliConfigStore = cliConfigStore
         refreshModelInfo()
+        refreshAskProviders()
     }
 
     public func refreshModelInfo() {
@@ -163,6 +209,7 @@ public final class TranscriptChatViewModel {
         cancelStreaming()
         self.llmService = service
         refreshModelInfo()
+        refreshAskProviders()
     }
 
     /// - Parameter richPrompt: Optional expanded prompt sent to the LLM in place of
@@ -258,6 +305,11 @@ public final class TranscriptChatViewModel {
     /// detach/cancel/error semantics in both code paths.
     private func startStreamingAssistant(question: String, historyForRequest: [ChatMessage]) {
         guard let llmService else { return }
+        // Route this send through the per-Ask provider override when one is
+        // selected; otherwise the global default. Override is a sibling service
+        // and never mutates the global config.
+        let effectiveService: any LLMServiceProtocol = selectedOverrideContext
+            .map { llmService.overriding(context: $0) } ?? llmService
 
         let assistantID = UUID()
         let assistantMessage = ChatDisplayMessage(id: assistantID, role: .assistant, content: "", isStreaming: true)
@@ -277,7 +329,7 @@ public final class TranscriptChatViewModel {
             guard let self else { return }
             var accumulated = ""
             do {
-                let stream = llmService.chatStream(
+                let stream = effectiveService.chatStream(
                     question: question,
                     transcript: transcript,
                     userNotes: userNotes,
