@@ -340,15 +340,9 @@ final class AppEnvironmentConfigurer {
             quickPromptRepo: env.quickPromptRepo,
             configStore: env.llmConfigStore,
             llmService: env.llmService,
+            backgroundProcessor: meetingBackgroundProcessor,
             isMeetingRecordingActive: { [weak meetingCoordinator] in
                 meetingCoordinator?.isMeetingRecordingActive ?? false
-            },
-            onTranscriptionReady: { [weak self] transcription in
-                guard let self else { return }
-                self.transcriptionViewModel.presentCompletedTranscription(transcription, autoSave: true)
-                self.libraryViewModel.loadTranscriptions()
-                self.mainWindowState.navigateToTranscription(from: .library)
-                callbacks.onOpenMainWindow()
             },
             onRecordingBegan: {
                 coordinatorRefs.dictation?.hideIdlePill()

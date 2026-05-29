@@ -22,8 +22,11 @@ final class VoiceMemoFlowCoordinator {
     private let quickPromptRepo: QuickPromptRepositoryProtocol
     private let configStore: LLMConfigStoreProtocol
     private let llmService: LLMServiceProtocol?
+    // Transcription is handed to the shared background processor on stop so the
+    // pill frees immediately and a new memo/meeting can start without waiting
+    // for the (potentially multi-minute) transcript.
+    private let backgroundProcessor: MeetingBackgroundProcessor
     private let isMeetingRecordingActive: @MainActor () -> Bool
-    private let onTranscriptionReady: (Transcription) -> Void
     private let onRecordingBegan: () -> Void
     private let onFlowReturnedToIdle: () -> Void
 
@@ -51,8 +54,8 @@ final class VoiceMemoFlowCoordinator {
         quickPromptRepo: QuickPromptRepositoryProtocol,
         configStore: LLMConfigStoreProtocol,
         llmService: LLMServiceProtocol?,
+        backgroundProcessor: MeetingBackgroundProcessor,
         isMeetingRecordingActive: @escaping @MainActor () -> Bool = { false },
-        onTranscriptionReady: @escaping (Transcription) -> Void,
         onRecordingBegan: @escaping () -> Void = {},
         onFlowReturnedToIdle: @escaping () -> Void = {}
     ) {
@@ -63,8 +66,8 @@ final class VoiceMemoFlowCoordinator {
         self.quickPromptRepo = quickPromptRepo
         self.configStore = configStore
         self.llmService = llmService
+        self.backgroundProcessor = backgroundProcessor
         self.isMeetingRecordingActive = isMeetingRecordingActive
-        self.onTranscriptionReady = onTranscriptionReady
         self.onRecordingBegan = onRecordingBegan
         self.onFlowReturnedToIdle = onFlowReturnedToIdle
     }
@@ -144,30 +147,35 @@ final class VoiceMemoFlowCoordinator {
         // mirrors the meeting flow (the panel is a live-recording surface).
         hidePanel()
 
-        // Capture the notes the user typed in the panel before it tears down so
+        // Capture notes + carried Ask-tab chat before the panel tears down so
         // they persist onto the transcription (same path as meetings).
         let notes = panelViewModel?.notesViewModel.notesText
+        let carriedChat = panelViewModel?.chatViewModel.liveChatHistorySnapshot() ?? []
+        let liveWordCount = panelViewModel?.wordCount ?? 0
 
         actionTask = Task { @MainActor in
             do {
                 if let notes { await self.meetingRecordingService.updateNotes(notes) }
+                // Finalize audio (fast — just mux/close files), then hand the
+                // transcription to the shared background processor and free the
+                // pill immediately. This lets the user start a new memo/meeting
+                // right away instead of waiting minutes for the transcript.
                 let output = try await self.meetingRecordingService.stopRecording()
-                let transcription = try await self.transcriptionService.transcribeMeeting(
-                    recording: output,
-                    onProgress: nil
+                self.backgroundProcessor.process(
+                    output: output,
+                    operationContext: ObservabilityOperationContext(),
+                    trigger: nil,
+                    liveWordCount: liveWordCount,
+                    liveTranscriptLagged: false,
+                    shouldAutoGenerateTitle: false,
+                    carriedChat: carriedChat
                 )
-                await self.meetingRecordingService.completeTranscription(for: output)
-                self.libraryViewModel.loadTranscriptions()
-                self.pillViewModel?.state = .completed
-                self.scheduleAutoDismiss(after: 2)
-                self.onTranscriptionReady(transcription)
+                self.returnToIdle()
             } catch {
-                self.logger.error("voice_memo stop/transcribe failed: \(error)")
-                // Surface the underlying reason so failures are diagnosable from
-                // the pill itself (e.g. "No meeting audio was captured.", a
-                // convert/STT error) rather than a generic message that hides
-                // the failing stage. MeetingAudioError is LocalizedError, so
-                // localizedDescription already yields its human-readable text.
+                self.logger.error("voice_memo stop/handoff failed: \(error)")
+                // Surface the underlying reason (e.g. "No meeting audio was
+                // captured.") rather than a generic message. MeetingAudioError
+                // is LocalizedError, so localizedDescription is human-readable.
                 self.pillViewModel?.state = .error(error.localizedDescription)
                 self.scheduleAutoDismiss(after: 6)
             }
