@@ -324,27 +324,41 @@ struct DictationOverlayView: View {
     @ViewBuilder
     private var streamingBubble: some View {
         let text = viewModel.streamingPartialText
+        let micName = viewModel.inputDeviceName
+        let isRecording: Bool = { if case .recording = viewModel.state { return true } else { return false } }()
         let maxWidth = (NSScreen.main?.visibleFrame.width ?? 1440) * 0.25
 
-        if !text.isEmpty {
-            Text(text)
-                .font(.system(size: 14, weight: .regular))
-                .foregroundStyle(.white.opacity(0.95))
-                .multilineTextAlignment(.leading)
-                .lineSpacing(2)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .frame(maxWidth: maxWidth, alignment: .leading)
-                .background(
-                    glassRoundedRectBackground(
-                        cornerRadius: 14,
-                        strokeOpacity: 0.1,
-                        shadowOpacity: 0.28,
-                        shadowRadius: 14,
-                        shadowY: 8
-                    )
+        // While recording, show the bubble with the active mic name as a header;
+        // the live streaming transcript fills in below it as the user speaks.
+        if isRecording, !micName.isEmpty || !text.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                if !micName.isEmpty {
+                    Label(micName, systemImage: "mic.fill")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .lineLimit(1)
+                }
+                if !text.isEmpty {
+                    Text(text)
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundStyle(.white.opacity(0.95))
+                        .multilineTextAlignment(.leading)
+                        .lineSpacing(2)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .frame(maxWidth: maxWidth, alignment: .leading)
+            .background(
+                glassRoundedRectBackground(
+                    cornerRadius: 14,
+                    strokeOpacity: 0.1,
+                    shadowOpacity: 0.28,
+                    shadowRadius: 14,
+                    shadowY: 8
                 )
-                .transition(.opacity)
+            )
+            .transition(.opacity)
         } else {
             Color.clear.frame(height: 0)
         }

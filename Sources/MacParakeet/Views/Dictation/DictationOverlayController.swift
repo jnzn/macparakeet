@@ -226,6 +226,11 @@ final class DictationOverlayViewModel {
     /// Empty when streaming is disabled or no speech detected yet.
     var streamingPartialText: String = ""
 
+    /// Name of the active microphone, shown in the overlay while recording so
+    /// the user can confirm which input is being captured. Empty until resolved
+    /// at record start.
+    var inputDeviceName: String = ""
+
     var onCancel: (() -> Void)?
     var onStop: (() -> Void)?
     var onUndo: (() -> Void)?

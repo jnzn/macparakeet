@@ -275,6 +275,18 @@ final class DictationFlowCoordinator {
 
     /// Build what the bubble should show. Tries to preserve the stable cleaned
     /// prefix and append only the new words from the latest raw partial.
+    /// Resolve the display name of the microphone that dictation will capture
+    /// from. A specific selection wins; otherwise fall back to the current
+    /// system-default input. Returns a friendly placeholder if enumeration
+    /// yields nothing (e.g. transient CoreAudio state).
+    private static func resolveInputDeviceName(selectedUID: String?) -> String {
+        if let selectedUID,
+           let match = AudioDeviceManager.inputDevices().first(where: { $0.uid == selectedUID }) {
+            return match.name
+        }
+        return AudioDeviceManager.defaultInputDeviceInfo()?.name ?? "Default microphone"
+    }
+
     private func composeDisplayText(for rawPartial: String) -> String {
         guard let cleaned = stableCleanedText, let rawBaseline = rawAtStableCleanup else {
             return rawPartial
@@ -557,6 +569,9 @@ final class DictationFlowCoordinator {
             vm.busyProcessingMessage = nil
             vm.processingLoadCaption = nil
             vm.state = .recording
+            vm.inputDeviceName = Self.resolveInputDeviceName(
+                selectedUID: runtimePreferences.selectedMicrophoneDeviceUID
+            )
             vm.startTimer()
 
         case .showProcessingState:
@@ -671,8 +686,9 @@ final class DictationFlowCoordinator {
             }
             let transcript = dictation.cleanTranscript ?? dictation.rawTranscript
             actionTask = Task { @MainActor in
-                // Brief pause so user sees the checkmark before paste
-                try? await Task.sleep(for: .milliseconds(200))
+                // Paste immediately once transcription is ready — no artificial
+                // delay. (Previously slept 200ms "so the user sees the checkmark";
+                // immediacy on release matters more.)
                 guard !Task.isCancelled else { return }
 
                 let action = self.pendingPostPasteAction
