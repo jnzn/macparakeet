@@ -76,6 +76,11 @@ struct MeetingRecordingTile: View {
     /// Optional pause/resume handler. When `nil` the tile renders no pause
     /// control — keeps existing call sites unchanged.
     var onPauseToggle: (() -> Void)?
+    /// When true the tile fills its container's height (centering its content)
+    /// instead of the fixed 96-pt banner — used by the Transcribe-tab 2×2 grid
+    /// so it matches the other (taller) tiles.
+    var fillsAvailableHeight: Bool = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         tileSurface
@@ -92,7 +97,8 @@ struct MeetingRecordingTile: View {
                 .padding(.vertical, DesignSystem.Spacing.md)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 96)
+        .frame(height: fillsAvailableHeight ? nil : 96)
+        .frame(maxHeight: fillsAvailableHeight ? .infinity : nil)
     }
 
     // MARK: - Background
