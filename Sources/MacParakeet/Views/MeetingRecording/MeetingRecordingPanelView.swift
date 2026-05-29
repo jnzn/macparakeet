@@ -212,7 +212,11 @@ struct MeetingRecordingPanelView: View {
     private var header: some View {
         VStack(spacing: DesignSystem.Spacing.xs) {
             HStack(alignment: .center, spacing: DesignSystem.Spacing.sm) {
-                if viewModel.showsAudioLevels {
+                if viewModel.usesVoiceMemoIndicator && viewModel.showsAudioLevels {
+                    // Voice Memo: red pulsing dot (matches the voice-memo pill),
+                    // not the meeting dual-audio orb.
+                    VoiceMemoRecordingDot()
+                } else if viewModel.showsAudioLevels {
                     LiveAudioOrb(viewModel: viewModel)
                 } else {
                     statusDot
@@ -418,6 +422,35 @@ private struct LiveAudioOrb: View {
             micLevel: viewModel.micLevel,
             systemLevel: viewModel.systemLevel
         )
+    }
+}
+
+/// Red pulsing recording dot for the Voice Memo panel header — mirrors the
+/// voice-memo pill's indicator (an outer pulse ring + solid inner dot) so the
+/// panel reads as a voice memo, not a meeting.
+private struct VoiceMemoRecordingDot: View {
+    @State private var pulseScale: CGFloat = 1.0
+    @State private var pulseOpacity: Double = 0.5
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(DesignSystem.Colors.recordingRed.opacity(pulseOpacity * 0.4))
+                .frame(width: 18, height: 18)
+                .scaleEffect(pulseScale)
+            Circle()
+                .fill(DesignSystem.Colors.recordingRed)
+                .frame(width: 8, height: 8)
+                .shadow(color: DesignSystem.Colors.recordingRed.opacity(0.6), radius: 3)
+        }
+        .frame(width: 18, height: 18)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+                pulseScale = 1.6
+                pulseOpacity = 0.0
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 

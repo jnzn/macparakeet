@@ -14,6 +14,7 @@ struct LiveAskPaneView: View {
     @FocusState private var inputFocused: Bool
     @State private var showingPromptMenu = false
     @State private var showingPromptsSheet = false
+    @State private var promptMenuContentHeight: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -77,10 +78,22 @@ struct LiveAskPaneView: View {
                 .onTapGesture { showingPromptMenu = false }
 
             VStack(spacing: 0) {
-                StarterPromptList(groups: quickPromptsViewModel.visiblePromptGroups) { entry in
-                    showingPromptMenu = false
-                    fire(entry, source: .menu)
+                // Scrollable so a long prompt library doesn't overflow the panel
+                // (and push "Edit prompts…" off-screen). Sizes to content, then
+                // caps at ~280pt and scrolls only when the list is taller.
+                ScrollView(.vertical, showsIndicators: true) {
+                    StarterPromptList(groups: quickPromptsViewModel.visiblePromptGroups) { entry in
+                        showingPromptMenu = false
+                        fire(entry, source: .menu)
+                    }
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear.preference(key: PromptMenuHeightKey.self, value: geo.size.height)
+                        }
+                    )
                 }
+                .frame(height: min(promptMenuContentHeight, 280))
+                .onPreferenceChange(PromptMenuHeightKey.self) { promptMenuContentHeight = $0 }
 
                 Divider()
                     .padding(.top, DesignSystem.Spacing.sm)
@@ -403,6 +416,15 @@ struct LiveAskPaneView: View {
 /// visually identical and behavior never drifts. Groups come from
 /// `QuickPromptsViewModel.visiblePromptGroups`, which preserves first-occurrence
 /// group order so users who reorder pills control how groups appear.
+/// Measures the prompt menu's natural content height so the surrounding
+/// ScrollView can size-to-content up to a cap (scrolling only past it).
+private struct PromptMenuHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 private struct StarterPromptList: View {
     let groups: [(label: String, prompts: [QuickPrompt])]
     let onSelect: (QuickPrompt) -> Void
