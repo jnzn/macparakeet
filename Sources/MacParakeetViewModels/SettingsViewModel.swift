@@ -261,6 +261,11 @@ public final class SettingsViewModel {
             Telemetry.send(.settingChanged(setting: .saveHistory))
         }
     }
+    public var normalizeNumbers: Bool {
+        didSet {
+            defaults.set(normalizeNumbers, forKey: UserDefaultsAppRuntimePreferences.normalizeNumbersKey)
+        }
+    }
     public var saveAudioRecordings: Bool {
         didSet {
             defaults.set(saveAudioRecordings, forKey: UserDefaultsAppRuntimePreferences.saveAudioRecordingsKey)
@@ -570,6 +575,7 @@ public final class SettingsViewModel {
         voiceReturnTrigger = defaults.string(forKey: UserDefaultsAppRuntimePreferences.voiceReturnTriggerKey) ?? "press return"
         processingMode = Self.normalizedProcessingMode(defaults.string(forKey: UserDefaultsAppRuntimePreferences.processingModeKey))
         saveDictationHistory = defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveDictationHistoryKey) as? Bool ?? true
+        normalizeNumbers = defaults.object(forKey: UserDefaultsAppRuntimePreferences.normalizeNumbersKey) as? Bool ?? true
         saveAudioRecordings = defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveAudioRecordingsKey) as? Bool ?? true
         saveTranscriptionAudio = defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveTranscriptionAudioKey) as? Bool ?? true
         streamingOverlayEnabled = defaults.object(forKey: UserDefaultsAppRuntimePreferences.streamingOverlayEnabledKey) as? Bool ?? true

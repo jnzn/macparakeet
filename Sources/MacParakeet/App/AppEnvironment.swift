@@ -202,6 +202,7 @@ final class AppEnvironment {
             dictationRepo: dictationRepo,
             shouldSaveAudio: { [runtimePreferences] in runtimePreferences.shouldSaveAudioRecordings },
             shouldSaveDictationHistory: { [runtimePreferences] in runtimePreferences.shouldSaveDictationHistory },
+            normalizeNumbers: { [runtimePreferences] in runtimePreferences.normalizeNumbers },
             entitlements: entitlementsService,
             customWordRepo: customWordRepo,
             snippetRepo: snippetRepo,

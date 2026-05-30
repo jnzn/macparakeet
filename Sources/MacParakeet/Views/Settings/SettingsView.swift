@@ -741,6 +741,14 @@ struct SettingsView: View {
                 Divider()
 
                 settingsToggleRow(
+                    title: "Convert spoken numbers to digits",
+                    detail: "Writes dictated numbers as digits — \"twenty five\" becomes \"25\".",
+                    isOn: $viewModel.normalizeNumbers
+                )
+
+                Divider()
+
+                settingsToggleRow(
                     title: "Auto-stop after silence",
                     detail: "Stops recording when speech pauses for the selected delay.",
                     isOn: $viewModel.silenceAutoStop

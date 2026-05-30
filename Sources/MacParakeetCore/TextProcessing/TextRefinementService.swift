@@ -32,7 +32,8 @@ public struct TextRefinementService: Sendable {
         mode: Dictation.ProcessingMode,
         customWords: [CustomWord],
         snippets: [TextSnippet],
-        profile: AppProfile? = nil
+        profile: AppProfile? = nil,
+        normalizeNumbers: Bool = false
     ) async -> TextRefinementResult {
         let isTerminalProfile = profile?.id == "terminal"
 
@@ -64,7 +65,8 @@ public struct TextRefinementService: Sendable {
             text: rawText,
             customWords: customWords,
             snippets: snippets,
-            isTerminalProfile: isTerminalProfile
+            isTerminalProfile: isTerminalProfile,
+            normalizeNumbers: normalizeNumbers
         )
 
         return TextRefinementResult(
