@@ -104,9 +104,9 @@ build_cli_swiftpm() {
 
   pushd "$ROOT_DIR" >/dev/null
   if [[ "$UNIVERSAL" == "1" ]]; then
-    swift build -c release --arch arm64 --arch x86_64 --product macparakeet-cli "${build_path_args[@]}"
+    swift build -c release --arch arm64 --arch x86_64 --product macparakeet-cli ${build_path_args[@]+"${build_path_args[@]}"}
   else
-    swift build -c release --product macparakeet-cli "${build_path_args[@]}"
+    swift build -c release --product macparakeet-cli ${build_path_args[@]+"${build_path_args[@]}"}
   fi
   popd >/dev/null
 }
@@ -183,9 +183,9 @@ swiftpm_release_bin_dir() {
 
   pushd "$ROOT_DIR" >/dev/null
   if [[ "$UNIVERSAL" == "1" ]]; then
-    swift build -c release --arch arm64 --arch x86_64 --product "$1" --show-bin-path "${build_path_args[@]}"
+    swift build -c release --arch arm64 --arch x86_64 --product "$1" --show-bin-path ${build_path_args[@]+"${build_path_args[@]}"}
   else
-    swift build -c release --product "$1" --show-bin-path "${build_path_args[@]}"
+    swift build -c release --product "$1" --show-bin-path ${build_path_args[@]+"${build_path_args[@]}"}
   fi
   popd >/dev/null
 }
