@@ -106,6 +106,7 @@ public actor DictationService: DictationServiceProtocol {
     private let shouldSaveAudio: (@Sendable () -> Bool)?
     private let shouldSaveDictationHistory: (@Sendable () -> Bool)?
     private let shouldPreserveDiscardedDictations: (@Sendable () -> Bool)?
+    private let normalizeNumbers: (@Sendable () -> Bool)?
     private let entitlements: EntitlementsChecking?
     private let customWordRepo: CustomWordRepositoryProtocol?
     private let snippetRepo: TextSnippetRepositoryProtocol?
@@ -197,6 +198,7 @@ public actor DictationService: DictationServiceProtocol {
         shouldSaveAudio: (@Sendable () -> Bool)? = nil,
         shouldSaveDictationHistory: (@Sendable () -> Bool)? = nil,
         shouldPreserveDiscardedDictations: (@Sendable () -> Bool)? = nil,
+        normalizeNumbers: (@Sendable () -> Bool)? = nil,
         entitlements: EntitlementsChecking? = nil,
         customWordRepo: CustomWordRepositoryProtocol? = nil,
         snippetRepo: TextSnippetRepositoryProtocol? = nil,
@@ -227,6 +229,7 @@ public actor DictationService: DictationServiceProtocol {
         self.shouldSaveAudio = shouldSaveAudio
         self.shouldSaveDictationHistory = shouldSaveDictationHistory
         self.shouldPreserveDiscardedDictations = shouldPreserveDiscardedDictations
+        self.normalizeNumbers = normalizeNumbers
         self.entitlements = entitlements
         self.customWordRepo = customWordRepo
         self.snippetRepo = snippetRepo
@@ -1488,7 +1491,8 @@ public actor DictationService: DictationServiceProtocol {
             snippets: snippets,
             insertionStyle: insertionStyle,
             removeUmFiller: shouldRemoveUmFiller,
-            profile: activeProfile
+            profile: activeProfile,
+            normalizeNumbers: normalizeNumbers?() ?? false
         )
         let cleanTranscript = refinement.text
         let expandedSnippetIDs = refinement.expandedSnippetIDs
