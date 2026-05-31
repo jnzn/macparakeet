@@ -882,41 +882,6 @@ by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
 - `models download parakeet-v2` / `parakeet-v3` (and bare `parakeet` for the
   selected build) pre-fetches a Parakeet build without selecting it, alongside
   the existing `whisper-*` download path.
-- `transcribe` now accepts **multiple inputs** and an **`--output-dir`**. Pass
-  several file paths, a folder (recursively expanded to its supported audio/
-  video files), and/or YouTube URLs, or a shell glob like `*.m4a`. With more
-  than one resolved input, or whenever `--output-dir` is set, the command runs
-  in batch mode: it transcribes each input in sequence and writes one transcript
-  per input to the output directory (`<source-name>.txt`, or `.json` for
-  `--format json`), defaulting to the current directory when `--output-dir` is
-  omitted. Existing files are never overwritten (a `-2`, `-3`, … suffix is
-  added).
-- Batch mode is **continue-on-error**: a failed input prints a `✗` line to
-  stderr and is counted; the run proceeds. The process exits non-zero with a
-  one-line summary (`N input(s) failed to transcribe (M succeeded).`) if any
-  input failed, and `0` when all succeed. With `--format json`, a batch run
-  that ends with failures also emits the standard `--json` failure envelope
-  on stdout once the run completes — per-input results still go to the
-  output directory, and stdout is otherwise unused in batch mode (this
-  follows the general failure-envelope rule above; clarified per AUDIT-080).
-
-### Unchanged (back-compat)
-
-- A **single input with no `--output-dir`** behaves exactly as before: the
-  transcript is written to stdout in the chosen `--format`, progress goes to
-  stderr, and the `--json` success/failure envelope contract is preserved. No
-  flags were renamed or removed; this is an additive minor release.
-
-### Changed
-
-- `models list` now returns **two** Parakeet rows (`parakeet-v3`, `parakeet-v2`)
-  instead of one. Callers that assumed a single Parakeet entry, or that read the
-  Parakeet id as the literal `"parakeet"`, should switch to selecting by the
-  `selected` flag / the new ids. The bare `parakeet` id still works in
-  `models select` (keeps the persisted build). JSON field names and types are
-  unchanged.
-- `models list` Parakeet `size` now reports the real ~465 MB per-build download
-  footprint (previously an inaccurate "6 GB" placeholder).
 
 ## [2.4.0] -- 2026-05-29
 
