@@ -1280,7 +1280,9 @@ final class PromptsCommandTests: XCTestCase {
 
         let updated = try XCTUnwrap(repo.fetch(id: prompt.id))
         XCTAssertTrue(updated.isAutoRun)
-        XCTAssertEqual(updated.appliesToSources, [.file, .youtube, .podcast])
+        // Fork adds a 4th source (voiceMemo) that upstream's version of this
+        // test predates; narrowing "all but meeting" must include it too.
+        XCTAssertEqual(updated.appliesToSources, [.file, .youtube, .podcast, .voiceMemo])
         XCTAssertFalse(updated.autoRuns(for: .meeting))
         XCTAssertTrue(updated.autoRuns(for: .file))
     }

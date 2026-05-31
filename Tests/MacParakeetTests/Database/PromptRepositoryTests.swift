@@ -383,14 +383,15 @@ final class PromptRepositoryTests: XCTestCase {
 
     func testSetAutoRunDisableFromAllNarrowsToOtherSources() throws {
         // Summary is auto-run + unscoped (all). Turning it off for meetings
-        // should keep it running for every other transcription source.
+        // should keep it running for every other transcription source
+        // (fork adds .voiceMemo on top of upstream's .podcast).
         let summary = try XCTUnwrap((try repo.fetchAll()).first(where: { $0.name == "Summary" }))
 
         try repo.setAutoRun(id: summary.id, source: .meeting, enabled: false)
 
         let reloaded = try XCTUnwrap(try repo.fetch(id: summary.id))
         XCTAssertTrue(reloaded.isAutoRun)
-        XCTAssertEqual(reloaded.appliesToSources, [.file, .youtube, .podcast])
+        XCTAssertEqual(reloaded.appliesToSources, [.file, .youtube, .podcast, .voiceMemo])
         XCTAssertFalse(reloaded.autoRuns(for: .meeting))
         XCTAssertTrue(reloaded.autoRuns(for: .youtube))
     }
@@ -415,7 +416,8 @@ final class PromptRepositoryTests: XCTestCase {
         let summary = try XCTUnwrap((try repo.fetchAll()).first(where: { $0.name == "Summary" }))
 
         try repo.setAutoRun(id: summary.id, source: .meeting, enabled: false)
-        XCTAssertEqual(try XCTUnwrap(repo.fetch(id: summary.id)).appliesToSources, [.file, .youtube, .podcast])
+        XCTAssertEqual(
+            try XCTUnwrap(repo.fetch(id: summary.id)).appliesToSources, [.file, .youtube, .podcast, .voiceMemo])
 
         try repo.setAutoRun(id: summary.id, source: .meeting, enabled: true)
         let reloaded = try XCTUnwrap(try repo.fetch(id: summary.id))
@@ -463,7 +465,7 @@ final class PromptRepositoryTests: XCTestCase {
         // Built-ins ship unscoped, so restore must clear appliesToSources —
         // otherwise Summary comes back "visible" but silently meeting-only.
         let summary = try XCTUnwrap((try repo.fetchAll()).first(where: { $0.name == "Summary" }))
-        try repo.setAutoRun(id: summary.id, source: .meeting, enabled: false)  // -> {file, youtube, podcast}
+        try repo.setAutoRun(id: summary.id, source: .meeting, enabled: false)  // -> {file, youtube, podcast, voiceMemo}
         XCTAssertNotNil(try XCTUnwrap(repo.fetch(id: summary.id)).appliesToSources)
 
         try repo.restoreDefaults()
@@ -484,14 +486,14 @@ final class PromptRepositoryTests: XCTestCase {
         let first = try DatabaseManager(path: dbPath)
         let firstRepo = PromptRepository(dbQueue: first.dbQueue)
         let summary = try XCTUnwrap((try firstRepo.fetchAll()).first(where: { $0.name == "Summary" }))
-        try firstRepo.setAutoRun(id: summary.id, source: .meeting, enabled: false)  // -> {file, youtube, podcast}
+        try firstRepo.setAutoRun(id: summary.id, source: .meeting, enabled: false)  // -> {file, youtube, podcast, voiceMemo}
 
         // Fresh boot re-runs the reconciler; the user's scoping must survive.
         let second = try DatabaseManager(path: dbPath)
         let secondRepo = PromptRepository(dbQueue: second.dbQueue)
         let reloaded = try XCTUnwrap(try secondRepo.fetch(id: summary.id))
         XCTAssertEqual(
-            reloaded.appliesToSources, [.file, .youtube, .podcast],
+            reloaded.appliesToSources, [.file, .youtube, .podcast, .voiceMemo],
             "Reconciler must preserve user source-scoping on built-ins.")
     }
 

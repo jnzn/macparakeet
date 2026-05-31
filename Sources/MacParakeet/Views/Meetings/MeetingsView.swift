@@ -541,9 +541,9 @@ struct MeetingsView: View {
                 Button {
                     showingPromptLibrary = true
                 } label: {
-                    Label("Prompts", systemImage: "text.badge.plus")
+                    Label("Manage", systemImage: "slider.horizontal.3")
                 }
-                .parakeetAction(.secondary)
+                .parakeetAction(.subtle)
             }
         }
         .padding(DesignSystem.Spacing.md)
