@@ -1006,7 +1006,7 @@ final class SettingsViewModelTests: XCTestCase {
             youtubeDownloadsDirPath: { [youtubeDownloadsTestDir] in
                 youtubeDownloadsTestDir?.path ?? AppPaths.youtubeDownloadsDir
             },
-            isSpeechModelCached: { false }
+            parakeetModelVariantCached: { _ in false }
         )
         let stt = MockSTTClient()
         await stt.setReady(false)
@@ -1030,7 +1030,7 @@ final class SettingsViewModelTests: XCTestCase {
             youtubeDownloadsDirPath: { [youtubeDownloadsTestDir] in
                 youtubeDownloadsTestDir?.path ?? AppPaths.youtubeDownloadsDir
             },
-            isSpeechModelCached: { true }
+            parakeetModelVariantCached: { _ in true }
         )
         let stt = MockSTTClient()
         await stt.setReady(true)
@@ -1055,7 +1055,7 @@ final class SettingsViewModelTests: XCTestCase {
             youtubeDownloadsDirPath: { [youtubeDownloadsTestDir] in
                 youtubeDownloadsTestDir?.path ?? AppPaths.youtubeDownloadsDir
             },
-            isSpeechModelCached: { true }
+            parakeetModelVariantCached: { _ in true }
         )
         let stt = MockSTTClient()
         await stt.setReady(false)
@@ -1115,6 +1115,73 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(SpeechEnginePreference.current(defaults: testDefaults), .whisper)
         XCTAssertFalse(viewModel.speechEngineSwitching)
         XCTAssertNil(viewModel.speechEngineError)
+    }
+
+    func testParakeetModelVariantChangeCallsSwitcherAndPersistsOnSuccess() async throws {
+        let switcher = MockSpeechEngineSwitcher()
+        viewModel.configure(
+            permissionService: mockPermissions,
+            dictationRepo: mockRepo,
+            entitlementsService: entitlements,
+            checkoutURL: nil,
+            speechEngineSwitcher: switcher
+        )
+
+        XCTAssertEqual(viewModel.parakeetModelVariant, .v3)
+        viewModel.parakeetModelVariant = .v2
+        try await waitForSpeechEngineSwitchingToFinish()
+
+        let variants = await switcher.parakeetVariants
+        XCTAssertEqual(variants, [.v2])
+        XCTAssertEqual(SpeechEnginePreference.parakeetModelVariant(defaults: testDefaults), .v2)
+        XCTAssertFalse(viewModel.speechEngineSwitching)
+        XCTAssertNil(viewModel.speechEngineError)
+    }
+
+    func testParakeetModelVariantChangeBlockedByAvailabilityRevertsWithoutPersisting() async throws {
+        let switcher = MockSpeechEngineSwitcher()
+        let provider = MockSpeechEngineSwitchAvailabilityProvider(.meetingActive)
+        viewModel.configure(
+            permissionService: mockPermissions,
+            dictationRepo: mockRepo,
+            entitlementsService: entitlements,
+            checkoutURL: nil,
+            speechEngineSwitcher: switcher,
+            speechEngineSwitchAvailabilityProvider: provider
+        )
+
+        viewModel.parakeetModelVariant = .v2
+        try await waitForSpeechEngineSwitchingToFinish()
+
+        XCTAssertEqual(viewModel.parakeetModelVariant, .v3)
+        XCTAssertEqual(SpeechEnginePreference.parakeetModelVariant(defaults: testDefaults), .v3)
+        XCTAssertEqual(viewModel.speechEngineError, "Stop the meeting recording to switch engines")
+        let variants = await switcher.parakeetVariants
+        XCTAssertTrue(variants.isEmpty)
+    }
+
+    func testParakeetModelVariantChangeRevertsWhenSwitcherFails() async throws {
+        let switcher = MockSpeechEngineSwitcher(error: STTError.engineBusy)
+        viewModel.configure(
+            permissionService: mockPermissions,
+            dictationRepo: mockRepo,
+            entitlementsService: entitlements,
+            checkoutURL: nil,
+            speechEngineSwitcher: switcher
+        )
+
+        viewModel.parakeetModelVariant = .v2
+        try await waitForSpeechEngineSwitchingToFinish()
+
+        // The switch was attempted but failed, so the choice is NOT persisted
+        // and the published value snaps back to the previous build.
+        let variants = await switcher.parakeetVariants
+        XCTAssertEqual(variants, [.v2])
+        XCTAssertEqual(viewModel.parakeetModelVariant, .v3)
+        XCTAssertEqual(SpeechEnginePreference.parakeetModelVariant(defaults: testDefaults), .v3)
+        XCTAssertEqual(viewModel.speechEngineError, STTError.engineBusy.localizedDescription)
+        XCTAssertFalse(viewModel.speechEngineSwitching)
+        XCTAssertFalse(viewModel.isParakeetVariantSwitch)
     }
 
     func testRefreshSpeechEngineSwitchAvailabilityStoresProviderResult() async {
@@ -1667,6 +1734,7 @@ private actor MockSpeechEngineSwitcher: SpeechEngineSwitching {
     private let error: Error?
     private let progressMessages: [String]
     private(set) var preferences: [SpeechEnginePreference] = []
+    private(set) var parakeetVariants: [ParakeetModelVariant] = []
     private var shouldBlockNextSwitch = false
     private var switchContinuation: CheckedContinuation<Void, Never>?
     private var releaseRequested = false
@@ -1685,6 +1753,30 @@ private actor MockSpeechEngineSwitcher: SpeechEngineSwitching {
         onProgress: (@Sendable (String) -> Void)?
     ) async throws {
         preferences.append(preference)
+        for message in progressMessages {
+            onProgress?(message)
+        }
+        if shouldBlockNextSwitch {
+            shouldBlockNextSwitch = false
+            await withCheckedContinuation { continuation in
+                if releaseRequested {
+                    releaseRequested = false
+                    continuation.resume()
+                } else {
+                    switchContinuation = continuation
+                }
+            }
+        }
+        if let error {
+            throw error
+        }
+    }
+
+    func setParakeetModelVariant(
+        _ variant: ParakeetModelVariant,
+        onProgress: (@Sendable (String) -> Void)?
+    ) async throws {
+        parakeetVariants.append(variant)
         for message in progressMessages {
             onProgress?(message)
         }

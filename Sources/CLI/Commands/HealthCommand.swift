@@ -125,7 +125,7 @@ struct HealthCommand: AsyncParsableCommand {
         }
 
         // 5. Local speech stack
-        let sttClient = STTClient()
+        let sttClient = makeParakeetSTTClient()
         var sttClientNeedsShutdown = true
         defer {
             if sttClientNeedsShutdown {

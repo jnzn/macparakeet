@@ -24,6 +24,8 @@ struct ConfigCommand: ParsableCommand {
           telemetry                 on|off                         default: on
           processing-mode           raw|clean                       default: raw
           speech-engine             parakeet|whisper                default: parakeet
+          parakeet-model            v3|v2 (v3=multilingual,         default: v3
+                                    v2=English-only)
           whisper-language          auto|<Whisper language code>    default: auto
           speaker-detection         on|off                          default: off
           save-transcription-audio  on|off                          default: on
@@ -46,6 +48,7 @@ struct ConfigCommand: ParsableCommand {
         "telemetry",
         "processing-mode",
         "speech-engine",
+        "parakeet-model",
         "whisper-language",
         "speaker-detection",
         "save-transcription-audio",
@@ -158,6 +161,8 @@ struct ConfigCommand: ParsableCommand {
             return (Dictation.ProcessingMode(rawValue: raw ?? Dictation.ProcessingMode.raw.rawValue) ?? .raw).rawValue
         case "speech-engine":
             return SpeechEnginePreference.current(defaults: store).rawValue
+        case "parakeet-model":
+            return SpeechEnginePreference.parakeetModelVariant(defaults: store).rawValue
         case "whisper-language":
             return SpeechEnginePreference.whisperDefaultLanguage(defaults: store) ?? WhisperLanguageCatalog.autoCode
         case "speaker-detection":
@@ -191,6 +196,10 @@ struct ConfigCommand: ParsableCommand {
             let engine = try parseSpeechEngine(value)
             engine.save(to: store)
             return engine.rawValue
+        case "parakeet-model":
+            let variant = try parseParakeetModelVariant(value)
+            SpeechEnginePreference.saveParakeetModelVariant(variant, defaults: store)
+            return variant.rawValue
         case "whisper-language":
             let language = try parseWhisperLanguage(value)
             SpeechEnginePreference.saveWhisperDefaultLanguage(language, defaults: store)
@@ -248,6 +257,22 @@ struct ConfigCommand: ParsableCommand {
             throw ValidationError("Invalid value for speech-engine: '\(value)'. Use parakeet or whisper.")
         }
         return engine
+    }
+
+    /// Accepts the canonical `v3`/`v2` ids plus the friendlier
+    /// `multilingual`/`english` aliases so users can express intent either way.
+    static func parseParakeetModelVariant(_ value: String) throws -> ParakeetModelVariant {
+        let raw = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "_", with: "-")
+        switch raw {
+        case "v3", "multilingual", "multi":
+            return .v3
+        case "v2", "english", "english-only", "en":
+            return .v2
+        default:
+            throw ValidationError("Invalid value for parakeet-model: '\(value)'. Use v3 (multilingual) or v2 (English-only).")
+        }
     }
 
     static func parseWhisperLanguage(_ value: String) throws -> String? {

@@ -82,6 +82,24 @@ by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
 
 ### Added
 
+- Parakeet now exposes both model builds: the multilingual `v3` (default) and
+  the English-only `v2`. v2 is a touch faster on English and never mis-detects
+  English speech as another language (the v3 auto-detect failure behind issues
+  #311 and #398).
+- `config set parakeet-model v3|v2` (also `multilingual`/`english` aliases) and
+  `config get parakeet-model` persist the shared GUI/CLI Parakeet build
+  preference. Listed in `config list`.
+- `transcribe --parakeet-model app-default|v3|v2` overrides the Parakeet build
+  for a single run; `app-default` follows the saved preference. Ignored for
+  Whisper.
+- `models list` now lists both Parakeet builds (`parakeet-v3`, `parakeet-v2`)
+  with their per-build install state and approximate size. `models select
+  parakeet-v2` (also `parakeet:v2` / `parakeet-english`) persists the build.
+  `models warm-up` / `repair` / `status` now operate on the selected build
+  instead of always defaulting to v3.
+- `models download parakeet-v2` / `parakeet-v3` (and bare `parakeet` for the
+  selected build) pre-fetches a Parakeet build without selecting it, alongside
+  the existing `whisper-*` download path.
 - `transcribe` now accepts **multiple inputs** and an **`--output-dir`**. Pass
   several file paths, a folder (recursively expanded to its supported audio/
   video files), and/or YouTube URLs, or a shell glob like `*.m4a`. With more

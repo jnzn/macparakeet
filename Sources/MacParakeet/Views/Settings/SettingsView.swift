@@ -365,15 +365,21 @@ struct SettingsView: View {
     /// so each surface owns one decision the user makes:
     ///
     /// 1. `engineSelectorCard` — which engine? (Parakeet vs Whisper)
-    /// 2. `engineLanguageCard` — which language? (Whisper only — Parakeet
+    /// 2. `engineParakeetModelCard` — which Parakeet build? (Parakeet only —
+    ///    multilingual `v3` vs English-only `v2`)
+    /// 3. `engineLanguageCard` — which language? (Whisper only — Parakeet
     ///    auto-detects from its 25 supported European languages)
-    /// 3. `enginesModelsCard` — what's the local model state?
+    /// 4. `enginesModelsCard` — what's the local model state?
+    ///
+    /// Cards 2 and 3 are mutually exclusive (one per engine), so exactly one
+    /// contextual config card sits between the selector and the models card.
     ///
     /// Sub-VM split (`EngineSettingsViewModel`) lands in a later commit;
     /// the cards keep reading from `viewModel` for now.
     private var engineTabContent: some View {
         scrollableTabBody {
             engineSelectorCard.id("engine.selector")
+            engineParakeetModelCard.id("engine.parakeetModel")
             engineLanguageCard.id("engine.language")
             enginesModelsCard.id("engine.models")
         }
@@ -1895,6 +1901,110 @@ struct SettingsView: View {
         }
     }
 
+    /// Parakeet build picker (multilingual `v3` vs English-only `v2`). Only
+    /// shown when Parakeet is the active engine — symmetric to the Whisper
+    /// Language card. English-only fixes the v3 auto-detect mis-firing English
+    /// as another language (issues #311, #398).
+    @ViewBuilder
+    private var engineParakeetModelCard: some View {
+        if viewModel.speechEnginePreference == .parakeet {
+            SettingsCard(
+                title: "Parakeet Model",
+                subtitle: "Pick how Parakeet handles language. English-only is a touch faster and never mistakes English for another language.",
+                icon: "character.book.closed"
+            ) {
+                VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
+                    parakeetModelOptionRow(.v3)
+                    Divider()
+                    parakeetModelOptionRow(.v2)
+                }
+            }
+            .transition(.opacity)
+        }
+    }
+
+    private func parakeetModelOptionRow(_ variant: ParakeetModelVariant) -> some View {
+        let isSelected = viewModel.parakeetModelVariant == variant
+        let isDownloaded = viewModel.downloadedParakeetVariants.contains(variant)
+        return Button {
+            selectParakeetModelVariant(variant)
+        } label: {
+            HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
+                Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
+                    .font(.system(size: 16, weight: .regular))
+                    .foregroundStyle(isSelected ? DesignSystem.Colors.accent : DesignSystem.Colors.textSecondary)
+                    .accessibilityHidden(true)
+                    .padding(.top, 1)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: DesignSystem.Spacing.sm) {
+                        Text(variant.displayName)
+                            .font(DesignSystem.Typography.body.weight(.medium))
+                            .foregroundStyle(DesignSystem.Colors.textPrimary)
+                        parakeetVariantStatusBadge(isDownloaded: isDownloaded, size: variant.approximateDownloadSize)
+                    }
+                    Text(variant.coverageSummary)
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(DesignSystem.Colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, DesignSystem.Spacing.xs)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(viewModel.speechEngineSwitching)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(variant.displayName). \(variant.coverageSummary)")
+        // `.combine` can drop the wrapping Button's role, so assert it explicitly
+        // alongside the selected state for VoiceOver.
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : [.isButton])
+    }
+
+    /// Compact trailing badge: green "Downloaded" when present, amber size hint
+    /// with a download glyph when the build hasn't been fetched yet.
+    @ViewBuilder
+    private func parakeetVariantStatusBadge(isDownloaded: Bool, size: String) -> some View {
+        if isDownloaded {
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(DesignSystem.Colors.successGreen)
+                    .frame(width: 6, height: 6)
+                Text("Downloaded")
+                    .font(DesignSystem.Typography.micro.weight(.medium))
+                    .foregroundStyle(DesignSystem.Colors.successGreen)
+            }
+        } else {
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.down.circle")
+                    .font(.system(size: 10, weight: .semibold))
+                Text("\(size) · downloads on first use")
+                    .font(DesignSystem.Typography.micro.weight(.medium))
+            }
+            .foregroundStyle(DesignSystem.Colors.warningAmber)
+        }
+    }
+
+    /// Mirrors `selectEngine`: pre-checks switch availability so the radio never
+    /// flips then reverts. The VM setter (`applyParakeetModelVariantChange`)
+    /// drives the actual reload + persistence.
+    private func selectParakeetModelVariant(_ variant: ParakeetModelVariant) {
+        guard viewModel.parakeetModelVariant != variant,
+              !viewModel.speechEngineSwitching else { return }
+        Task { @MainActor in
+            let availability = await viewModel.refreshSpeechEngineSwitchAvailabilityNow()
+            guard availability == .available else {
+                viewModel.speechEngineError = SettingsViewModel.speechEngineSwitchUnavailableMessage(for: availability)
+                return
+            }
+            withAnimation(DesignSystem.Animation.contentSwap) {
+                viewModel.parakeetModelVariant = variant
+            }
+        }
+    }
+
     @ViewBuilder
     private var engineLanguageCard: some View {
         if viewModel.speechEnginePreference == .whisper {
@@ -1956,9 +2066,7 @@ struct SettingsView: View {
 
     private var engineSelectorCardStatus: SettingsCardStatus? {
         if viewModel.speechEngineSwitching {
-            let target = currentSpeechEngineSwitchTarget
-            let label = target == .whisper ? "Preparing Whisper" : "Switching to \(target.displayName)"
-            return SettingsCardStatus(.recommended, label: label)
+            return SettingsCardStatus(.recommended, label: speechEngineSwitchTitle)
         }
         if viewModel.speechEngineError != nil {
             return SettingsCardStatus(.required, label: "Action needed")
@@ -1968,13 +2076,22 @@ struct SettingsView: View {
 
     private var speechEngineSwitchBannerState: (title: String, detail: String)? {
         guard viewModel.speechEngineSwitching else { return nil }
-        let target = currentSpeechEngineSwitchTarget
         let phase = viewModel.speechEngineSwitchDetail ?? "Preparing speech engine..."
-        let title = target == .whisper ? "Preparing Whisper" : "Switching to \(target.displayName)"
         return (
-            title,
+            speechEngineSwitchTitle,
             "\(phase) Dictation, file transcription, and meetings pause until this finishes."
         )
+    }
+
+    /// Title for the switch banner / status chip. A Parakeet *build* swap
+    /// (v3 ↔ v2) keeps the engine on Parakeet, so "Switching to Parakeet" would
+    /// be wrong — show "Updating Parakeet model" instead.
+    private var speechEngineSwitchTitle: String {
+        if viewModel.isParakeetVariantSwitch {
+            return "Updating Parakeet model"
+        }
+        let target = currentSpeechEngineSwitchTarget
+        return target == .whisper ? "Preparing Whisper" : "Switching to \(target.displayName)"
     }
 
     private var enginesModelsCardStatus: SettingsCardStatus? {

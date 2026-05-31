@@ -49,22 +49,32 @@ final class ModelLifecycleCommandTests: XCTestCase {
 
         let models = loadSelectableSpeechModels(
             defaults: defaults,
-            isParakeetModelCached: { false },
+            isParakeetModelCached: { $0 == .v3 },
             isWhisperModelDownloaded: { $0 == "large-v3-v20240930_turbo_632MB" }
         )
 
-        XCTAssertEqual(models.count, 2)
+        XCTAssertEqual(models.count, 3)
         XCTAssertEqual(models[0], SelectableSpeechModel(
-            id: "parakeet",
-            name: "Parakeet TDT 0.6B v3",
+            id: "parakeet-v3",
+            name: "Parakeet TDT 0.6B v3 (Multilingual)",
             engine: "parakeet",
-            variant: nil,
-            size: "6 GB",
-            installed: false,
+            variant: "v3",
+            size: "~465 MB",
+            installed: true,
             selected: false,
             language: nil
         ))
         XCTAssertEqual(models[1], SelectableSpeechModel(
+            id: "parakeet-v2",
+            name: "Parakeet TDT 0.6B v2 (English only)",
+            engine: "parakeet",
+            variant: "v2",
+            size: "~465 MB",
+            installed: false,
+            selected: false,
+            language: "en"
+        ))
+        XCTAssertEqual(models[2], SelectableSpeechModel(
             id: "whisper-large-v3-v20240930-turbo-632MB",
             name: "Whisper Large v3 Turbo",
             engine: "whisper",
@@ -74,6 +84,27 @@ final class ModelLifecycleCommandTests: XCTestCase {
             selected: true,
             language: "ko"
         ))
+    }
+
+    func testLoadSelectableSpeechModelsMarksSelectedParakeetVariant() throws {
+        let suiteName = "com.macparakeet.tests.cli.model-list-parakeet.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        SpeechEnginePreference.parakeet.save(to: defaults)
+        SpeechEnginePreference.saveParakeetModelVariant(.v2, defaults: defaults)
+
+        let models = loadSelectableSpeechModels(
+            defaults: defaults,
+            isParakeetModelCached: { _ in true },
+            isWhisperModelDownloaded: { _ in false }
+        )
+
+        let v3 = try XCTUnwrap(models.first { $0.id == "parakeet-v3" })
+        let v2 = try XCTUnwrap(models.first { $0.id == "parakeet-v2" })
+        XCTAssertFalse(v3.selected, "Multilingual build should not be marked selected")
+        XCTAssertTrue(v2.selected, "English-only build is the persisted Parakeet variant")
     }
 
     func testResolveSelectableSpeechModelAcceptsEngineAndWhisperIDs() throws {
@@ -88,7 +119,19 @@ final class ModelLifecycleCommandTests: XCTestCase {
 
         XCTAssertEqual(
             try resolveSelectableSpeechModel("parakeet", defaults: defaults),
-            SelectableSpeechModelSelection(engine: .parakeet, whisperVariant: nil)
+            SelectableSpeechModelSelection(engine: .parakeet, whisperVariant: nil, parakeetVariant: .v3)
+        )
+        XCTAssertEqual(
+            try resolveSelectableSpeechModel("parakeet-v2", defaults: defaults),
+            SelectableSpeechModelSelection(engine: .parakeet, whisperVariant: nil, parakeetVariant: .v2)
+        )
+        XCTAssertEqual(
+            try resolveSelectableSpeechModel("parakeet:v3", defaults: defaults),
+            SelectableSpeechModelSelection(engine: .parakeet, whisperVariant: nil, parakeetVariant: .v3)
+        )
+        XCTAssertEqual(
+            try resolveSelectableSpeechModel("parakeet-english", defaults: defaults),
+            SelectableSpeechModelSelection(engine: .parakeet, whisperVariant: nil, parakeetVariant: .v2)
         )
         XCTAssertEqual(
             try resolveSelectableSpeechModel("whisper", defaults: defaults),
@@ -118,6 +161,26 @@ final class ModelLifecycleCommandTests: XCTestCase {
                 whisperVariant: "large-v3-v20240930_turbo_632MB"
             )
         )
+    }
+
+    func testParakeetDownloadVariantRecognizesParakeetIDs() throws {
+        let suiteName = "com.macparakeet.tests.cli.parakeet-download.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        XCTAssertEqual(parakeetDownloadVariant(from: "parakeet-v2", defaults: defaults), .v2)
+        XCTAssertEqual(parakeetDownloadVariant(from: "parakeet:v3", defaults: defaults), .v3)
+        XCTAssertEqual(parakeetDownloadVariant(from: "parakeet-english", defaults: defaults), .v2)
+        // Underscore spellings normalize to hyphens, matching `config set`.
+        XCTAssertEqual(parakeetDownloadVariant(from: "parakeet_v2", defaults: defaults), .v2)
+        XCTAssertEqual(parakeetDownloadVariant(from: "parakeet_english", defaults: defaults), .v2)
+        // Bare "parakeet" resolves to the persisted build.
+        SpeechEnginePreference.saveParakeetModelVariant(.v2, defaults: defaults)
+        XCTAssertEqual(parakeetDownloadVariant(from: "parakeet", defaults: defaults), .v2)
+        // Non-Parakeet ids fall through (nil) so Whisper parsing runs.
+        XCTAssertNil(parakeetDownloadVariant(from: "whisper-large-v3", defaults: defaults))
+        XCTAssertNil(parakeetDownloadVariant(from: "tiny", defaults: defaults))
     }
 
     func testResolveSelectableSpeechModelRejectsUnknownID() {

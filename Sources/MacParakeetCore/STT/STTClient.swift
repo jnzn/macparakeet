@@ -76,6 +76,13 @@ public actor STTClient: STTManaging, SpeechEngineRoutedTranscribing, SpeechEngin
         try await scheduler.setSpeechEngine(preference, onProgress: onProgress)
     }
 
+    public func setParakeetModelVariant(
+        _ variant: ParakeetModelVariant,
+        onProgress: (@Sendable (String) -> Void)?
+    ) async throws {
+        try await scheduler.setParakeetModelVariant(variant, onProgress: onProgress)
+    }
+
     public func engineSwitchAvailability() async -> SpeechEngineSwitchAvailability {
         await scheduler.engineSwitchAvailability()
     }

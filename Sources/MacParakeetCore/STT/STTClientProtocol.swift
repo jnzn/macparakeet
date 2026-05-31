@@ -50,6 +50,14 @@ public protocol SpeechEngineSwitching: Sendable {
         _ preference: SpeechEnginePreference,
         onProgress: (@Sendable (String) -> Void)?
     ) async throws
+    /// Switches the active Parakeet build (multilingual `v3` ↔ English-only
+    /// `v2`). Like an engine switch, this may download the target and reloads
+    /// the runtime when Parakeet is active; see
+    /// ``STTRuntime/setParakeetModelVariant(_:onProgress:)``.
+    func setParakeetModelVariant(
+        _ variant: ParakeetModelVariant,
+        onProgress: (@Sendable (String) -> Void)?
+    ) async throws
 }
 
 public enum SpeechEngineSwitchAvailability: Sendable, Equatable {

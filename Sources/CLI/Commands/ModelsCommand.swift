@@ -68,6 +68,9 @@ extension ModelsCommand {
                 if let whisperVariant = selection.whisperVariant {
                     SpeechEnginePreference.saveWhisperModelVariant(whisperVariant, defaults: defaults)
                 }
+                if let parakeetVariant = selection.parakeetVariant {
+                    SpeechEnginePreference.saveParakeetModelVariant(parakeetVariant, defaults: defaults)
+                }
 
                 let selected = loadSelectableSpeechModels(defaults: defaults).first { $0.selected }
                     ?? SelectableSpeechModel(
@@ -100,7 +103,7 @@ extension ModelsCommand {
 
         func run() async throws {
             try await emitJSONOrRethrow(json: json) {
-                let sttClient = STTClient()
+                let sttClient = makeParakeetSTTClient()
                 var sttClientNeedsShutdown = true
                 defer {
                     if sttClientNeedsShutdown {
@@ -129,10 +132,26 @@ extension ModelsCommand {
             abstract: "Download a local speech model without starting a transcription."
         )
 
-        @Argument(help: "Model identifier. Use whisper-large-v3-v20240930-turbo-632MB for Whisper.")
+        @Argument(help: "Model identifier from `models list`, e.g. parakeet-v2, parakeet-v3, or whisper-large-v3-v20240930-turbo-632MB.")
         var variant: String
 
         func run() async throws {
+            let lowered = variant.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if let parakeetVariant = parakeetDownloadVariant(from: lowered) {
+                print("Parakeet: downloading \(parakeetVariant.modelName)...")
+                let lastMessage = OSAllocatedUnfairLock(initialState: "")
+                try await STTRuntime.downloadParakeetModel(version: parakeetVariant.asrModelVersion) { message in
+                    let shouldPrint = lastMessage.withLock { last in
+                        guard last != message else { return false }
+                        last = message
+                        return true
+                    }
+                    if shouldPrint { print("Parakeet: \(message)") }
+                }
+                print("Parakeet: ready (\(parakeetVariant.modelName))")
+                return
+            }
+
             let model = try resolveWhisperDownloadModel(variant)
             print("Whisper: downloading \(model)...")
             let lastPercent = OSAllocatedUnfairLock(initialState: -1)
@@ -163,7 +182,7 @@ extension ModelsCommand {
 
         func run() async throws {
             let attempts = try validatedAttempts(attempts)
-            let sttClient = STTClient()
+            let sttClient = makeParakeetSTTClient()
             var sttClientNeedsShutdown = true
             defer {
                 if sttClientNeedsShutdown {
@@ -193,7 +212,7 @@ extension ModelsCommand {
 
         func run() async throws {
             let attempts = try validatedAttempts(attempts)
-            let sttClient = STTClient()
+            let sttClient = makeParakeetSTTClient()
             var sttClientNeedsShutdown = true
             defer {
                 if sttClientNeedsShutdown {
@@ -219,7 +238,7 @@ extension ModelsCommand {
         )
 
         func run() async throws {
-            let sttClient = STTClient()
+            let sttClient = makeParakeetSTTClient()
             await sttClient.clearModelCache()
             DiarizationService.clearModelCache()
             try? FileManager.default.removeItem(atPath: AppPaths.whisperModelsDir)
@@ -228,13 +247,26 @@ extension ModelsCommand {
     }
 }
 
+/// Recognizes the Parakeet ids surfaced by `models list` (`parakeet-v3`,
+/// `parakeet-v2`), the bare `parakeet` (current build), and the `:`/alias
+/// spellings. Returns nil for non-Parakeet ids so Whisper parsing runs.
+func parakeetDownloadVariant(
+    from lowered: String,
+    defaults: UserDefaults = macParakeetAppDefaults()
+) -> ParakeetModelVariant? {
+    if lowered == SpeechEnginePreference.parakeet.rawValue {
+        return SpeechEnginePreference.parakeetModelVariant(defaults: defaults)
+    }
+    return parseParakeetSelectionVariant(lowered)
+}
+
 func resolveWhisperDownloadModel(_ variant: String) throws -> String {
     let normalizedInput = variant.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalizedInput.isEmpty else {
         throw ValidationError("Model variant cannot be empty.")
     }
     guard normalizedInput.hasPrefix("whisper-") else {
-        throw ValidationError("Only whisper-* model identifiers are supported by models download.")
+        throw ValidationError("Unsupported model identifier '\(variant)'. Use a parakeet-v2 / parakeet-v3 or whisper-* id from `models list`.")
     }
     return WhisperEngine.normalizeModelVariant(normalizedInput)
 }
@@ -291,10 +323,21 @@ func validatedAttempts(_ attempts: Int) throws -> Int {
     return attempts
 }
 
+/// Builds the CLI's Parakeet-engine STT client honoring the persisted variant
+/// (`config set parakeet-model v2`), so `warm-up`/`repair`/`status` operate on
+/// the build the user selected rather than always defaulting to v3.
+func makeParakeetSTTClient(defaults: UserDefaults = macParakeetAppDefaults()) -> STTClient {
+    STTClient(modelVersion: SpeechEnginePreference.parakeetModelVariant(defaults: defaults).asrModelVersion)
+}
+
 func loadSpeechStackStatus(
     sttClient: STTClientProtocol,
     diarizationService: DiarizationServiceProtocol,
-    isSpeechModelCached: @escaping @Sendable () -> Bool = { STTClient.isModelCached() },
+    isSpeechModelCached: @escaping @Sendable () -> Bool = {
+        STTClient.isModelCached(
+            version: SpeechEnginePreference.parakeetModelVariant(defaults: macParakeetAppDefaults()).asrModelVersion
+        )
+    },
     whisperModelVariant: String = SpeechEnginePreference.whisperModelVariant(defaults: macParakeetAppDefaults()),
     isWhisperModelDownloaded: @escaping @Sendable (String) -> Bool = { WhisperEngine.isModelDownloaded(model: $0) }
 ) async -> SpeechStackStatus {
@@ -339,28 +382,37 @@ struct SelectableSpeechModel: Encodable, Equatable {
 struct SelectableSpeechModelSelection: Equatable {
     let engine: SpeechEnginePreference
     let whisperVariant: String?
+    /// Set when the selection targets a specific Parakeet build; `nil` leaves
+    /// the persisted Parakeet variant untouched (e.g. a Whisper selection).
+    var parakeetVariant: ParakeetModelVariant? = nil
 }
 
 func loadSelectableSpeechModels(
     defaults: UserDefaults = macParakeetAppDefaults(),
-    isParakeetModelCached: @escaping () -> Bool = { STTClient.isModelCached() },
+    isParakeetModelCached: @escaping (ParakeetModelVariant) -> Bool = {
+        STTClient.isModelCached(version: $0.asrModelVersion)
+    },
     isWhisperModelDownloaded: @escaping (String) -> Bool = { WhisperEngine.isModelDownloaded(model: $0) }
 ) -> [SelectableSpeechModel] {
     let currentEngine = SpeechEnginePreference.current(defaults: defaults)
+    let currentParakeetVariant = SpeechEnginePreference.parakeetModelVariant(defaults: defaults)
     let whisperVariant = SpeechEnginePreference.whisperModelVariant(defaults: defaults)
     let whisperLanguage = SpeechEnginePreference.whisperDefaultLanguage(defaults: defaults)
 
-    return [
+    let parakeetModels = ParakeetModelVariant.allCases.map { variant in
         SelectableSpeechModel(
-            id: SpeechEnginePreference.parakeet.rawValue,
-            name: "Parakeet TDT 0.6B v3",
+            id: parakeetModelID(for: variant),
+            name: "\(variant.modelName) (\(variant.displayName))",
             engine: SpeechEnginePreference.parakeet.rawValue,
-            variant: nil,
-            size: "6 GB",
-            installed: isParakeetModelCached(),
-            selected: currentEngine == .parakeet,
-            language: nil
-        ),
+            variant: variant.rawValue,
+            size: variant.approximateDownloadSize,
+            installed: isParakeetModelCached(variant),
+            selected: currentEngine == .parakeet && currentParakeetVariant == variant,
+            language: variant.isEnglishOnly ? "en" : nil
+        )
+    }
+
+    return parakeetModels + [
         SelectableSpeechModel(
             id: whisperModelID(for: whisperVariant),
             name: "Whisper \(SpeechEnginePreference.friendlyVariantName(whisperVariant))",
@@ -384,8 +436,22 @@ func resolveSelectableSpeechModel(
         throw ValidationError("Model ID cannot be empty.")
     }
 
+    // Bare "parakeet" keeps the persisted variant; "parakeet-v2" / "parakeet:v3"
+    // / "parakeet-english" target a specific build.
     if lowered == SpeechEnginePreference.parakeet.rawValue {
-        return SelectableSpeechModelSelection(engine: .parakeet, whisperVariant: nil)
+        return SelectableSpeechModelSelection(
+            engine: .parakeet,
+            whisperVariant: nil,
+            parakeetVariant: SpeechEnginePreference.parakeetModelVariant(defaults: defaults)
+        )
+    }
+
+    if let parakeetVariant = parseParakeetSelectionVariant(lowered) {
+        return SelectableSpeechModelSelection(
+            engine: .parakeet,
+            whisperVariant: nil,
+            parakeetVariant: parakeetVariant
+        )
     }
 
     if lowered == "whisper" {
@@ -413,6 +479,37 @@ func resolveSelectableSpeechModel(
         engine: .whisper,
         whisperVariant: WhisperEngine.normalizeModelVariant(variantInput)
     )
+}
+
+/// Recognizes `parakeet-v2`, `parakeet:v3`, `parakeet-english`,
+/// `parakeet-multilingual`, etc. Returns `nil` when `id` isn't a Parakeet
+/// variant selector so the caller can fall through to Whisper parsing.
+private func parseParakeetSelectionVariant(_ lowered: String) -> ParakeetModelVariant? {
+    // Normalize underscores to hyphens so `parakeet_v2` / `parakeet_english`
+    // resolve the same as their hyphenated forms — matching how
+    // `ConfigCommand.parseParakeetModelVariant` canonicalizes the setting.
+    let normalized = lowered.replacingOccurrences(of: "_", with: "-")
+    let prefix = SpeechEnginePreference.parakeet.rawValue
+    let suffix: String
+    if normalized.hasPrefix("\(prefix):") {
+        suffix = String(normalized.dropFirst(prefix.count + 1))
+    } else if normalized.hasPrefix("\(prefix)-") {
+        suffix = String(normalized.dropFirst(prefix.count + 1))
+    } else {
+        return nil
+    }
+    switch suffix {
+    case "v3", "multilingual", "multi":
+        return .v3
+    case "v2", "english", "english-only", "en":
+        return .v2
+    default:
+        return nil
+    }
+}
+
+func parakeetModelID(for variant: ParakeetModelVariant) -> String {
+    "\(SpeechEnginePreference.parakeet.rawValue)-\(variant.rawValue)"
 }
 
 func whisperModelID(for variant: String) -> String {

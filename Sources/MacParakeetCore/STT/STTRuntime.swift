@@ -26,6 +26,10 @@ protocol STTRuntimeProtocol: Sendable {
         _ preference: SpeechEnginePreference,
         onProgress: (@Sendable (String) -> Void)?
     ) async throws
+    func setParakeetModelVariant(
+        _ variant: ParakeetModelVariant,
+        onProgress: (@Sendable (String) -> Void)?
+    ) async throws
     func currentSpeechEngineSelection() async -> SpeechEngineSelection
 }
 
@@ -54,7 +58,10 @@ public actor STTRuntime: STTRuntimeProtocol {
     private var initializationTask: Task<Void, Error>?
     private var initializationGeneration: UInt64 = 0
     private var warmUpProgressHandler: (@Sendable (String) -> Void)?
-    private let modelVersion: AsrModelVersion
+    /// The active Parakeet build. Mutable because the user can switch between
+    /// the multilingual `v3` and English-only `v2` variants at runtime
+    /// (`setParakeetModelVariant`); `ensureInitialized()` reads it when loading.
+    private var modelVersion: AsrModelVersion
     private var speechEngine: SpeechEnginePreference
     private var whisperEngine: WhisperEngine?
     private let whisperModelVariant: String
@@ -169,15 +176,19 @@ public actor STTRuntime: STTRuntimeProtocol {
             let result = try await manager.transcribe(audioURL, decoderState: &decoderState)
             let words = Self.mergeTokenTimingsIntoWords(result.tokenTimings)
             onProgress?(100, 100)
-            // MacParakeet exposes Parakeet TDT 0.6B-v3 as an English-only engine
-            // — there is no user-facing Parakeet language selector even though
-            // the model itself supports 25 European languages. Attributing
-            // "en" here lets the telemetry `language` field reflect what the
-            // engine actually produced in this app's configuration. If the
-            // app ever exposes Parakeet's multilingual modes, this attribution
-            // needs to consult the user's selection (or per-segment detection)
-            // instead of hard-coding the code.
-            return STTResult(text: result.text, words: words, language: "en", engine: .parakeet, engineVariant: nil)
+            // Telemetry `language` is attributed "en": MacParakeet positions
+            // Parakeet as English-first (v2 is English-only; v3 multilingual is
+            // not surfaced via a Parakeet language picker), so this reflects the
+            // app's configuration rather than per-segment detection. The
+            // `engineVariant` carries the active build (v2/v3) so adoption and
+            // impact can be measured without exposing transcript content.
+            return STTResult(
+                text: result.text,
+                words: words,
+                language: "en",
+                engine: .parakeet,
+                engineVariant: ParakeetModelVariant(asrModelVersion: modelVersion).rawValue
+            )
         } catch {
             throw try Self.mapTranscriptionError(error)
         }
@@ -454,6 +465,96 @@ public actor STTRuntime: STTRuntimeProtocol {
         onProgress?("\(preference.displayName) is ready")
     }
 
+    /// Switches the active Parakeet build between the multilingual `v3` and the
+    /// English-only `v2` variant. Symmetric to ``setSpeechEngine(_:onProgress:)``:
+    /// it downloads the target first (so the current model keeps serving until
+    /// the slow fetch finishes), then swaps the loaded managers in place. When
+    /// the target is already cached the download is a cheap no-op, so flipping
+    /// between two installed variants is near-instant.
+    ///
+    /// If Parakeet isn't the active engine there is nothing loaded to swap, so
+    /// the new version is simply recorded and takes effect the next time
+    /// Parakeet loads.
+    public func setParakeetModelVariant(
+        _ variant: ParakeetModelVariant,
+        onProgress: (@Sendable (String) -> Void)?
+    ) async throws {
+        let targetVersion = variant.asrModelVersion
+        guard targetVersion != modelVersion else { return }
+
+        guard initializationTask == nil, activeTranscriptionCount == 0 else {
+            throw STTError.engineBusy
+        }
+
+        let previousVersion = modelVersion
+        let startedAt = Date()
+        logger.notice("parakeet_variant_switch_start to=\(variant.rawValue, privacy: .public) engine=\(self.speechEngine.rawValue, privacy: .public)")
+        AudioCaptureDiagnostics.append(
+            "parakeet_variant_switch_start to=\(variant.rawValue) engine=\(self.speechEngine.rawValue)"
+        )
+
+        guard speechEngine == .parakeet else {
+            // Inactive engine: record the choice; it loads on the next Parakeet use.
+            modelVersion = targetVersion
+            logger.notice("parakeet_variant_switch_deferred to=\(variant.rawValue, privacy: .public) reason=engine_inactive")
+            AudioCaptureDiagnostics.append("parakeet_variant_switch_deferred to=\(variant.rawValue) reason=engine_inactive")
+            return
+        }
+
+        invalidateBackgroundWarmUp()
+        setBackgroundWarmUpState(.idle)
+
+        do {
+            onProgress?("Preparing \(variant.modelName)...")
+            try await downloadParakeetModels(version: targetVersion, onProgress: onProgress)
+
+            onProgress?("Loading \(variant.modelName) on Neural Engine...")
+            await unloadParakeet()
+            modelVersion = targetVersion
+            try await ensureInitialized()
+
+            onProgress?("\(variant.modelName) is ready")
+            let duration = Observability.durationSeconds(since: startedAt)
+            logger.notice("parakeet_variant_switch_complete to=\(variant.rawValue, privacy: .public) duration_s=\(duration, privacy: .public)")
+            AudioCaptureDiagnostics.append(
+                "parakeet_variant_switch_complete to=\(variant.rawValue) duration_s=\(Self.formatSeconds(duration))"
+            )
+        } catch {
+            // Restore the previous version so the in-memory runtime matches the
+            // persisted preference (the caller only saves on success); the next
+            // transcribe reloads `previousVersion` from cache.
+            modelVersion = previousVersion
+            let duration = Observability.durationSeconds(since: startedAt)
+            logger.error("parakeet_variant_switch_failed to=\(variant.rawValue, privacy: .public) duration_s=\(duration, privacy: .public) error_type=\(AudioCaptureDiagnostics.errorType(error), privacy: .public) error_detail=\(error.localizedDescription, privacy: .private)")
+            AudioCaptureDiagnostics.append(
+                "parakeet_variant_switch_failed to=\(variant.rawValue) duration_s=\(Self.formatSeconds(duration)) \(AudioCaptureDiagnostics.errorFields(error))"
+            )
+            throw error
+        }
+    }
+
+    /// Pre-fetches a Parakeet build to disk without loading it, reusing the
+    /// throttled progress→message bridge. Returns immediately when the model is
+    /// already cached (`AsrModels.download` validates and no-ops).
+    private func downloadParakeetModels(
+        version: AsrModelVersion,
+        onProgress: (@Sendable (String) -> Void)?
+    ) async throws {
+        try await Self.downloadParakeetModel(version: version, onProgress: onProgress)
+    }
+
+    /// Downloads a Parakeet build to its version-specific cache without loading
+    /// it (no runtime spin-up). Cached builds are a cheap validate-and-return.
+    /// Exposed for the CLI's `models download parakeet-v2|v3` path so a build can
+    /// be pre-fetched headlessly without selecting it.
+    public nonisolated static func downloadParakeetModel(
+        version: AsrModelVersion,
+        onProgress: (@Sendable (String) -> Void)? = nil
+    ) async throws {
+        let progressHandler = makeDownloadProgressHandler(onProgress)
+        _ = try await AsrModels.download(version: version, progressHandler: progressHandler)
+    }
+
     public func currentSpeechEngineSelection() async -> SpeechEngineSelection {
         SpeechEngineSelection(
             engine: speechEngine,
@@ -543,38 +644,9 @@ public actor STTRuntime: STTRuntimeProtocol {
         let version = modelVersion
         let warmUpProgressHandler = self.warmUpProgressHandler
         let task = Task {
-            let clock = ContinuousClock()
-            let lastProgressUpdate = OSAllocatedUnfairLock(initialState: clock.now - .seconds(1))
-            let lastProgressMessage = OSAllocatedUnfairLock(initialState: "")
             var interactiveManager: AsrManager?
             var backgroundManager: AsrManager?
-            let progressHandler: DownloadUtils.ProgressHandler?
-            if let warmUpProgressHandler {
-                let progressCallback: @Sendable (String) -> Void = warmUpProgressHandler
-                progressHandler = { progress in
-                    guard let message = Self.warmUpProgressMessage(from: progress) else { return }
-                    let now = clock.now
-                    let shouldEmit = lastProgressUpdate.withLock { lastUpdate in
-                        guard lastUpdate.duration(to: now) >= .milliseconds(250) else {
-                            return false
-                        }
-                        lastUpdate = now
-                        return true
-                    }
-                    guard shouldEmit else { return }
-
-                    let isNewMessage = lastProgressMessage.withLock { lastMessage in
-                        guard lastMessage != message else { return false }
-                        lastMessage = message
-                        return true
-                    }
-                    guard isNewMessage else { return }
-
-                    progressCallback(message)
-                }
-            } else {
-                progressHandler = nil
-            }
+            let progressHandler = Self.makeDownloadProgressHandler(warmUpProgressHandler)
 
             let downloadedModels = try await AsrModels.downloadAndLoad(
                 version: version,
@@ -699,7 +771,9 @@ public actor STTRuntime: STTRuntimeProtocol {
     private func telemetryEngineVariant(for engine: SpeechEnginePreference) -> String? {
         switch engine {
         case .parakeet:
-            nil
+            // Surface the active Parakeet build (v2/v3) so model-load telemetry
+            // can measure variant adoption and impact (issues #311, #398).
+            ParakeetModelVariant(asrModelVersion: modelVersion).rawValue
         case .whisper:
             whisperModelVariant
         }
@@ -766,6 +840,38 @@ public actor STTRuntime: STTRuntimeProtocol {
         }
 
         return nil
+    }
+
+    /// Builds a download progress handler that throttles to ≤1 update / 250 ms
+    /// and suppresses repeated identical messages, translating raw
+    /// `DownloadProgress` into a user-facing string. Shared by initial warm-up
+    /// loading and the Parakeet variant pre-download so both report identically.
+    private nonisolated static func makeDownloadProgressHandler(
+        _ onProgress: (@Sendable (String) -> Void)?
+    ) -> DownloadUtils.ProgressHandler? {
+        guard let onProgress else { return nil }
+        let clock = ContinuousClock()
+        let lastProgressUpdate = OSAllocatedUnfairLock(initialState: clock.now - .seconds(1))
+        let lastProgressMessage = OSAllocatedUnfairLock(initialState: "")
+        return { progress in
+            guard let message = Self.warmUpProgressMessage(from: progress) else { return }
+            let now = clock.now
+            let shouldEmit = lastProgressUpdate.withLock { lastUpdate in
+                guard lastUpdate.duration(to: now) >= .milliseconds(250) else { return false }
+                lastUpdate = now
+                return true
+            }
+            guard shouldEmit else { return }
+
+            let isNewMessage = lastProgressMessage.withLock { lastMessage in
+                guard lastMessage != message else { return false }
+                lastMessage = message
+                return true
+            }
+            guard isNewMessage else { return }
+
+            onProgress(message)
+        }
     }
 
     private nonisolated static func warmUpProgressMessage(from progress: DownloadUtils.DownloadProgress) -> String? {

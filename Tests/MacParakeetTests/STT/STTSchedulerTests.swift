@@ -184,6 +184,59 @@ final class STTSchedulerTests: XCTestCase {
         XCTAssertEqual(count, 1)
     }
 
+    func testSetParakeetModelVariantForwardsWhenIdle() async throws {
+        let runtime = MockSTTRuntime()
+        let scheduler = STTScheduler(runtimeProvider: runtime)
+        let progressMessages = LockedStringRecorder()
+
+        try await scheduler.setParakeetModelVariant(.v2) { message in
+            progressMessages.record(message)
+        }
+
+        let variants = await runtime.parakeetModelVariantSwitches
+        XCTAssertEqual(variants, [.v2])
+        XCTAssertEqual(progressMessages.values, ["Mock loading Parakeet TDT 0.6B v2"])
+    }
+
+    func testSetParakeetModelVariantFailsWhileJobIsRunning() async throws {
+        let runtime = MockSTTRuntime()
+        await runtime.block(path: "active")
+        let scheduler = STTScheduler(runtimeProvider: runtime)
+
+        let activeTask = Task {
+            try await scheduler.transcribe(audioPath: "active", job: .fileTranscription)
+        }
+        try await waitForStartedPaths(runtime: runtime, count: 1)
+
+        do {
+            try await scheduler.setParakeetModelVariant(.v2, onProgress: nil)
+            XCTFail("Expected variant switch to fail while STT job is running")
+        } catch let error as STTError {
+            XCTAssertEqual(error.localizedDescription, STTError.engineBusy.localizedDescription)
+        }
+
+        await runtime.release(path: "active")
+        _ = try await activeTask.value
+    }
+
+    func testSetParakeetModelVariantFailsWhileSessionLeaseIsActive() async throws {
+        let runtime = MockSTTRuntime()
+        let scheduler = STTScheduler(runtimeProvider: runtime)
+
+        let lease = await scheduler.beginSpeechEngineSession()
+        do {
+            try await scheduler.setParakeetModelVariant(.v2, onProgress: nil)
+            XCTFail("Expected variant switch to fail while a speech engine session is active")
+        } catch let error as STTError {
+            XCTAssertEqual(error.localizedDescription, STTError.engineBusy.localizedDescription)
+        }
+
+        await scheduler.endSpeechEngineSession(lease)
+        try await scheduler.setParakeetModelVariant(.v2, onProgress: nil)
+        let variants = await runtime.parakeetModelVariantSwitches
+        XCTAssertEqual(variants, [.v2])
+    }
+
     func testEngineSwitchAvailabilityReportsAvailableWhenIdle() async {
         let runtime = MockSTTRuntime()
         let scheduler = STTScheduler(runtimeProvider: runtime)
@@ -730,6 +783,7 @@ private actor MockSTTRuntime: STTRuntimeProtocol {
     private(set) var shutdownCallCount = 0
     private(set) var setSpeechEngineCallCount = 0
     private(set) var usedSpeechEngineProgressOverload = false
+    private(set) var parakeetModelVariantSwitches: [ParakeetModelVariant] = []
     private var selection = SpeechEngineSelection(engine: .parakeet)
     private var ready = false
     private var shouldBlockNextSpeechEngineSwitch = false
@@ -831,6 +885,26 @@ private actor MockSTTRuntime: STTRuntimeProtocol {
         usedSpeechEngineProgressOverload = true
         onProgress?("Mock loading \(preference.displayName)")
         try await setSpeechEngine(preference)
+    }
+
+    func setParakeetModelVariant(
+        _ variant: ParakeetModelVariant,
+        onProgress: (@Sendable (String) -> Void)?
+    ) async throws {
+        parakeetModelVariantSwitches.append(variant)
+        onProgress?("Mock loading \(variant.modelName)")
+        if shouldBlockNextSpeechEngineSwitch {
+            shouldBlockNextSpeechEngineSwitch = false
+            await withTaskCancellationHandler {
+                await withCheckedContinuation { continuation in
+                    speechEngineSwitchContinuation = continuation
+                }
+            } onCancel: {
+                Task { await self.releaseSpeechEngineSwitch() }
+            }
+            try Task.checkCancellation()
+        }
+        selection = SpeechEngineSelection(engine: .parakeet)
     }
 
     func currentSpeechEngineSelection() async -> SpeechEngineSelection {

@@ -17,11 +17,25 @@ MacParakeet's default speech engine is Parakeet TDT 0.6B-v3 via FluidAudio CoreM
 | Word Error Rate | ~2.5% (v3 multilingual) / ~2.1% (v2 English-only) |
 | Speed | ~155x realtime on Apple Silicon |
 | Peak working RAM | ~66 MB per active Parakeet inference slot (~130 MB with custom vocabulary boosting) |
-| Model download | ~6 GB CoreML bundle (one-time, during onboarding) |
+| Model download | ~465 MB CoreML bundle per build (one-time; v2 and v3 cache independently) |
 | Output | Word-level timestamps with per-word confidence scores |
 | Input format | 16kHz mono Float32 samples (FluidAudio's AudioConverter handles resampling) |
 | Languages | v3: 25 European languages; v2: English only |
 | Decoding | Optimized CTC/TDT decoding (FluidAudio implementation) |
+
+#### Parakeet model variant (v2 / v3)
+
+FluidAudio ships two peer Parakeet TDT 0.6B builds, both exposed to the user:
+
+| Variant | `ParakeetModelVariant` | Languages | Notes |
+|---------|------------------------|-----------|-------|
+| Multilingual (default) | `.v3` | English + 24 European | "Works for everyone"; the new-user default. |
+| English-only | `.v2` | English only | A touch faster on English; cannot mis-detect English as another language (issues #311, #398). |
+
+- **Preference:** persisted as a validated enum under `SpeechEnginePreference.parakeetModelVariantKey` (default `.v3`). The `ParakeetModelVariant → AsrModelVersion` bridge lives in `STT/ParakeetModelVariant+ASR.swift` so the preference type stays Foundation-only.
+- **Runtime switching:** `STTScheduler.setParakeetModelVariant(_:onProgress:)` reloads the active Parakeet model in place when Parakeet is selected — downloading the target build first so the current model keeps serving until the swap. It shares the engine-switch guard, so it is blocked while transcription, a meeting lease, or an engine switch is in flight. Both builds cache independently (`AsrModels.defaultCacheDirectory(for:)`), so flipping between two installed builds is near-instant.
+- **GUI:** the *Parakeet Model* card under Settings → Engine (shown only when Parakeet is the active engine, symmetric to the Whisper Language card).
+- **CLI:** `config set parakeet-model v3|v2` (aliases `multilingual`/`english`), `transcribe --parakeet-model app-default|v3|v2`, and the `parakeet-v3` / `parakeet-v2` ids in `models list` / `models select`.
 
 ### WhisperKit Optional Engine
 
@@ -237,7 +251,7 @@ The GUI uses the persisted `speechRecognitionEngine` preference; the CLI can ove
 
 - **Lazy init**: The shared runtime owner is not loaded at app launch; loaded on first STT request or warm-up
 - **Keep loaded**: Once initialized, the runtime keeps its currently loaded managers ready for subsequent requests
-- **Warm-up during onboarding**: Prepare Parakeet models (~6 GB) + CoreML compilation (~3.4s first time) on the default path; for Korean, Japanese, Chinese, or Cantonese macOS languages, onboarding prepares Whisper instead and stores the matching Whisper language hint locally
+- **Warm-up during onboarding**: Prepare the default Parakeet build (~465 MB) + CoreML compilation (~3.4s first time) on the default path; for Korean, Japanese, Chinese, or Cantonese macOS languages, onboarding prepares Whisper instead and stores the matching Whisper language hint locally
 - **Graceful shutdown**: The shared runtime is released when the app quits
 - **Single owner**: Warm-up, readiness, shutdown, and cache clear happen once at the runtime layer
 - **Cancellation-safe init**: Shutdown/cache clear cancel in-flight initialization and wait for loaded managers to clean themselves up before returning
@@ -320,17 +334,15 @@ Saved meeting retranscription from the library:
 
 ### Parakeet CoreML Model Bundle
 
-The CoreML model for `parakeet-tdt-0.6b-v3-coreml` is **~6 GB** on HuggingFace. Larger than the MLX weights (~2.5 GB) because CoreML stores pre-compiled, hardware-optimized model graphs for the ANE:
+The `parakeet-tdt-0.6b-*-coreml` HuggingFace repos host several precision/encoder variants, but MacParakeet only fetches the components it loads (the int8 encoder for v3), so the **actual download is ~465 MB per build**. v2 and v3 cache independently, so a user who installs both pays the ~465 MB once each:
 
 | Component | Format |
 |-----------|--------|
-| ParakeetEncoder_15s | `.mlmodelc` |
-| ParakeetDecoder | `.mlmodelc` |
-| RNNTJoint | `.mlmodelc` |
+| ParakeetEncoder (int8 for v3) | `.mlmodelc` |
+| Decoder | `.mlmodelc` |
+| JointDecision (v3: `JointDecisionv3`) | `.mlmodelc` |
 | Preprocessor | `.mlmodelc` |
-| Melspectrogram_15s | `.mlpackage` |
-| MelEncoder | `.mlmodelc` |
-| Vocab files | `.json` |
+| Vocab file (`parakeet_vocab.json`) | `.json` |
 
 ### Parakeet Download Mechanism
 
@@ -354,7 +366,7 @@ The normalized Whisper variant is stored without the leading `whisper-` prefix i
 During onboarding:
 
 1. Use local macOS preferred languages to choose the initial speech setup path.
-2. Default path: download Parakeet CoreML models (~6 GB) with progress indication.
+2. Default path: download the default Parakeet CoreML build (~465 MB) with progress indication.
 3. CJK path: download the default Whisper model (~632 MB), save the canonical Whisper language hint (`ko`, `ja`, `zh`, or `yue`), and switch the app default engine to Whisper through the scheduler.
 4. If speaker detection is enabled, prepare diarization assets (~130 MB) on the separate diarization service path.
 5. Warm the selected runtime path enough to verify the chosen engine works.

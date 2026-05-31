@@ -398,6 +398,7 @@ public enum TelemetrySettingName: String, Sendable, Equatable {
     case saveTranscriptionAudio = "save_transcription_audio"
     case youtubeAudioQuality = "youtube_audio_quality"
     case speakerDiarization = "speaker_diarization"
+    case parakeetModelVariant = "parakeet_model_variant"
     case whisperDefaultLanguage = "whisper_default_language"
     case autoSave = "auto_save"
     case meetingAutoSave = "meeting_auto_save"

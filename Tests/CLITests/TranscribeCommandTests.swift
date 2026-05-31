@@ -24,6 +24,28 @@ final class TranscribeCommandTests: XCTestCase {
         XCTAssertEqual(mode, .clean)
     }
 
+    func testResolveParakeetModelVariantFollowsStoredForAppDefault() {
+        XCTAssertEqual(
+            TranscribeCommand.resolveParakeetModelVariant(.appDefault, storedVariant: .v2),
+            .v2
+        )
+        XCTAssertEqual(
+            TranscribeCommand.resolveParakeetModelVariant(.appDefault, storedVariant: .v3),
+            .v3
+        )
+    }
+
+    func testResolveParakeetModelVariantRespectsExplicitOverride() {
+        XCTAssertEqual(
+            TranscribeCommand.resolveParakeetModelVariant(.v2, storedVariant: .v3),
+            .v2
+        )
+        XCTAssertEqual(
+            TranscribeCommand.resolveParakeetModelVariant(.v3, storedVariant: .v2),
+            .v3
+        )
+    }
+
     func testResolveYouTubeAudioQualityUsesM4AForAppDefaultWhenUnset() {
         let quality = TranscribeCommand.resolveYouTubeAudioQuality(.appDefault, storedQuality: nil)
         XCTAssertEqual(quality, .m4a)

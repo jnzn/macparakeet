@@ -5,8 +5,13 @@ public enum SpeechEnginePreference: String, CaseIterable, Codable, Sendable {
     case whisper
 
     public static let defaultsKey = "speechRecognitionEngine"
+    public static let parakeetModelVariantKey = "parakeetModelVariant"
     public static let whisperDefaultLanguageKey = "whisperDefaultLanguage"
     public static let whisperModelVariantKey = "whisperModelVariant"
+
+    /// New users stay on the multilingual `v3` build — it "works for everyone".
+    /// `v2` (English-only) is surfaced as a clearly-labeled opt-in.
+    public static let defaultParakeetModelVariant: ParakeetModelVariant = .v3
 
     /// Variants whose one-time CoreML compile/ANE specialization has already
     /// completed on this Mac. The first load of a Whisper variant pays a
@@ -71,6 +76,21 @@ public enum SpeechEnginePreference: String, CaseIterable, Codable, Sendable {
             return
         }
         defaults.set(normalized, forKey: whisperModelVariantKey)
+    }
+
+    /// The persisted Parakeet model variant, defaulting to multilingual `v3`.
+    /// Backed by a validated enum so the stored value can never drift to an
+    /// unsupported model id.
+    public static func parakeetModelVariant(defaults: UserDefaults = .standard) -> ParakeetModelVariant {
+        guard let raw = defaults.string(forKey: parakeetModelVariantKey),
+              let variant = ParakeetModelVariant(rawValue: raw) else {
+            return defaultParakeetModelVariant
+        }
+        return variant
+    }
+
+    public static func saveParakeetModelVariant(_ variant: ParakeetModelVariant, defaults: UserDefaults = .standard) {
+        defaults.set(variant.rawValue, forKey: parakeetModelVariantKey)
     }
 
     /// Whether `variant` has already paid its one-time on-device optimize, so
@@ -177,6 +197,62 @@ public enum SpeechEnginePreference: String, CaseIterable, Codable, Sendable {
         }
 
         return true
+    }
+}
+
+/// Which Parakeet TDT 0.6B build powers on-device transcription.
+///
+/// FluidAudio ships two peer Parakeet TDT 0.6B bundles. `v3` is multilingual
+/// (English + 24 other European languages) and is the default; `v2` is an
+/// English-only build that runs a touch faster on English and — crucially —
+/// cannot mis-detect English speech as another language, which `v3`'s
+/// auto-detection occasionally does (issues #311, #398).
+///
+/// The FluidAudio `AsrModelVersion` bridge lives in the STT layer
+/// (`ParakeetModelVariant+ASR.swift`) so this preference type stays
+/// Foundation-only and decoupled from CoreML.
+public enum ParakeetModelVariant: String, CaseIterable, Codable, Sendable {
+    case v3
+    case v2
+
+    /// Short label for the variant's language posture (Settings tile heading).
+    public var displayName: String {
+        switch self {
+        case .v3: "Multilingual"
+        case .v2: "English only"
+        }
+    }
+
+    /// Marketing-grade model identifier (Local Models row, `models list`).
+    public var modelName: String {
+        switch self {
+        case .v3: "Parakeet TDT 0.6B v3"
+        case .v2: "Parakeet TDT 0.6B v2"
+        }
+    }
+
+    /// One-line description of what the variant is best for.
+    public var coverageSummary: String {
+        switch self {
+        case .v3:
+            "English plus 24 European languages. Best for mixed or non-English speech."
+        case .v2:
+            "English only. A touch faster, and never mis-hears English as another language."
+        }
+    }
+
+    /// Approximate on-disk download footprint. Both builds land near ~465 MB
+    /// (v3 int8 encoder ≈ 461 MB measured; v2 ≈ 465 MB). Kept deliberately
+    /// rounded so the copy doesn't read as falsely precise.
+    public var approximateDownloadSize: String { "~465 MB" }
+
+    public var isEnglishOnly: Bool { self == .v2 }
+
+    public var alternative: ParakeetModelVariant {
+        switch self {
+        case .v3: .v2
+        case .v2: .v3
+        }
     }
 }
 

@@ -92,6 +92,7 @@ final class AppEnvironment {
         }
 
         sttRuntime = STTRuntime(
+            modelVersion: SpeechEnginePreference.parakeetModelVariant().asrModelVersion,
             speechEngine: SpeechEnginePreference.current(),
             whisperModelVariant: SpeechEnginePreference.whisperModelVariant()
         )

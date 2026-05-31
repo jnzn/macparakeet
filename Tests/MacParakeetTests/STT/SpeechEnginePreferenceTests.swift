@@ -79,6 +79,51 @@ final class SpeechEnginePreferenceTests: XCTestCase {
         XCTAssertFalse(SpeechEnginePreference.hasOptimizedWhisper(variant: "small", defaults: defaults))
     }
 
+    // MARK: - Parakeet model variant
+
+    func testParakeetModelVariantDefaultsToMultilingualV3() {
+        let (defaults, suite) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        XCTAssertEqual(SpeechEnginePreference.parakeetModelVariant(defaults: defaults), .v3)
+    }
+
+    func testParakeetModelVariantRoundTrips() {
+        let (defaults, suite) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        SpeechEnginePreference.saveParakeetModelVariant(.v2, defaults: defaults)
+        XCTAssertEqual(SpeechEnginePreference.parakeetModelVariant(defaults: defaults), .v2)
+
+        SpeechEnginePreference.saveParakeetModelVariant(.v3, defaults: defaults)
+        XCTAssertEqual(SpeechEnginePreference.parakeetModelVariant(defaults: defaults), .v3)
+    }
+
+    func testParakeetModelVariantFallsBackOnCorruptValue() {
+        let (defaults, suite) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        defaults.set("nonsense", forKey: SpeechEnginePreference.parakeetModelVariantKey)
+        XCTAssertEqual(SpeechEnginePreference.parakeetModelVariant(defaults: defaults), .v3)
+    }
+
+    func testParakeetModelVariantBridgesToAsrModelVersion() {
+        XCTAssertEqual(ParakeetModelVariant.v3.asrModelVersion, .v3)
+        XCTAssertEqual(ParakeetModelVariant.v2.asrModelVersion, .v2)
+        XCTAssertEqual(ParakeetModelVariant(asrModelVersion: .v2), .v2)
+        XCTAssertEqual(ParakeetModelVariant(asrModelVersion: .v3), .v3)
+        // Specialized CJK builds collapse to the multilingual default rather
+        // than crashing an exhaustive switch.
+        XCTAssertEqual(ParakeetModelVariant(asrModelVersion: .tdtJa), .v3)
+    }
+
+    func testParakeetModelVariantEnglishOnlyFlag() {
+        XCTAssertTrue(ParakeetModelVariant.v2.isEnglishOnly)
+        XCTAssertFalse(ParakeetModelVariant.v3.isEnglishOnly)
+        XCTAssertEqual(ParakeetModelVariant.v3.alternative, .v2)
+        XCTAssertEqual(ParakeetModelVariant.v2.alternative, .v3)
+    }
+
     func testColdSwitchOnlyAppliesToUnoptimizedActiveWhisperVariant() {
         let (defaults, suite) = makeIsolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }

@@ -207,6 +207,37 @@ public actor STTScheduler: STTManaging, SpeechEngineRoutedTranscribing, SpeechEn
         }
     }
 
+    public func setParakeetModelVariant(
+        _ variant: ParakeetModelVariant,
+        onProgress: (@Sendable (String) -> Void)?
+    ) async throws {
+        // Shares the engine-switch guard + task slot: a variant swap reloads the
+        // model and must not race transcription, meetings, or an engine switch.
+        guard acceptsNewJobs,
+              activeSpeechEngineSessionIDs.isEmpty,
+              !hasQueuedOrRunningJobs,
+              speechEngineSwitchTask == nil else {
+            throw STTError.engineBusy
+        }
+
+        acceptsNewJobs = false
+        let switchTask = Task {
+            try await runtime.setParakeetModelVariant(variant, onProgress: onProgress)
+        }
+        speechEngineSwitchTask = switchTask
+        defer {
+            speechEngineSwitchTask = nil
+            acceptsNewJobs = true
+        }
+        try await observingRuntimeTimeoutThrowing(reason: "set_parakeet_model_variant") {
+            try await withTaskCancellationHandler {
+                try await switchTask.value
+            } onCancel: {
+                switchTask.cancel()
+            }
+        }
+    }
+
     public func engineSwitchAvailability() async -> SpeechEngineSwitchAvailability {
         if speechEngineSwitchTask != nil {
             return .switchInProgress

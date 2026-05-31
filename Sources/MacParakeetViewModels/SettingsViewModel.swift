@@ -348,6 +348,15 @@ public final class SettingsViewModel {
             applySpeechEngineChange(speechEnginePreference)
         }
     }
+    /// Which Parakeet build (multilingual `v3` vs English-only `v2`) is active.
+    /// Changing it live-reloads the model when Parakeet is the selected engine
+    /// (downloading the target on first use); see `applyParakeetModelVariantChange`.
+    public var parakeetModelVariant: ParakeetModelVariant {
+        didSet {
+            guard !isApplyingParakeetVariantState else { return }
+            applyParakeetModelVariantChange(parakeetModelVariant)
+        }
+    }
     public var whisperDefaultLanguage: String {
         didSet {
             SpeechEnginePreference.saveWhisperDefaultLanguage(whisperDefaultLanguage, defaults: defaults)
@@ -357,6 +366,11 @@ public final class SettingsViewModel {
     public var speechEngineSwitching = false
     public var speechEngineSwitchTarget: SpeechEnginePreference?
     public var speechEngineSwitchDetail: String?
+    /// True while a Parakeet *build* swap (v3 ↔ v2) is in flight, as opposed to
+    /// an engine switch. Both set `speechEngineSwitchTarget = .parakeet`, so the
+    /// banner needs this to avoid the misleading "Switching to Parakeet" copy
+    /// when the user is already on Parakeet and only changing the build.
+    public var isParakeetVariantSwitch = false
     public var speechEngineSwitchAvailability: SpeechEngineSwitchAvailability = .available
     public var speechEngineError: String?
     public var whisperModelStatus: LocalModelStatus = .unknown
@@ -502,6 +516,10 @@ public final class SettingsViewModel {
     public var parakeetStatus: LocalModelStatus = .unknown
     public var parakeetStatusDetail: String = "Not checked yet."
     public var parakeetRepairing = false
+    /// Which Parakeet builds are present on disk. Drives the per-variant
+    /// download badges in the Parakeet Model card; refreshed in
+    /// `refreshModelStatus()`.
+    public var downloadedParakeetVariants: Set<ParakeetModelVariant> = []
 
     // Licensing / entitlements
     public var entitlementsSummary: String = ""
@@ -527,7 +545,7 @@ public final class SettingsViewModel {
     private var sharedMicStream: SharedMicrophoneStream?
     private let defaults: UserDefaults
     private let youtubeDownloadsDirPath: @Sendable () -> String
-    private let isSpeechModelCached: @Sendable () -> Bool
+    private let parakeetModelVariantCached: @Sendable (ParakeetModelVariant) -> Bool
     private let inputDevicesProvider: @Sendable () -> [AudioDeviceManager.InputDevice]
     private let defaultInputDeviceUIDProvider: @Sendable () -> String?
     private let permissionPollingInterval: Duration
@@ -535,6 +553,7 @@ public final class SettingsViewModel {
     private let callAppDisplayNameResolver: @MainActor (String) -> String?
     private var isApplyingLaunchAtLoginState = false
     private var isApplyingSpeechEngineState = false
+    private var isApplyingParakeetVariantState = false
     private var modelStatusRefreshGeneration = 0
     // `deinit` is nonisolated even though this type is `@MainActor`.
     // These handles are only mutated on the main actor during the view
@@ -557,7 +576,9 @@ public final class SettingsViewModel {
                 .first?.localizedName
         },
         youtubeDownloadsDirPath: @escaping @Sendable () -> String = { AppPaths.youtubeDownloadsDir },
-        isSpeechModelCached: @escaping @Sendable () -> Bool = { STTRuntime.isModelCached() },
+        parakeetModelVariantCached: @escaping @Sendable (ParakeetModelVariant) -> Bool = {
+            STTRuntime.isModelCached(version: $0.asrModelVersion)
+        },
         inputDevicesProvider: @escaping @Sendable () -> [AudioDeviceManager.InputDevice] = {
             AudioDeviceManager.inputDevices()
         },
@@ -571,7 +592,7 @@ public final class SettingsViewModel {
         self.capturingBundleIDsProvider = capturingBundleIDsProvider
         self.callAppDisplayNameResolver = callAppDisplayNameResolver
         self.youtubeDownloadsDirPath = youtubeDownloadsDirPath
-        self.isSpeechModelCached = isSpeechModelCached
+        self.parakeetModelVariantCached = parakeetModelVariantCached
         self.inputDevicesProvider = inputDevicesProvider
         self.defaultInputDeviceUIDProvider = defaultInputDeviceUIDProvider
         self.permissionPollingInterval = permissionPollingInterval
@@ -648,6 +669,7 @@ public final class SettingsViewModel {
         youtubeAudioQuality = YouTubeAudioQuality.current(defaults: defaults)
         speakerDiarization = defaults.object(forKey: UserDefaultsAppRuntimePreferences.speakerDiarizationKey) as? Bool ?? false
         speechEnginePreference = SpeechEnginePreference.current(defaults: defaults)
+        parakeetModelVariant = SpeechEnginePreference.parakeetModelVariant(defaults: defaults)
         whisperDefaultLanguage = SpeechEnginePreference.whisperDefaultLanguage(defaults: defaults) ?? "auto"
         // Ensure auto-save folders are configured before reading paths.
         // Idempotent: existing user-chosen folders are preserved; only
@@ -1221,19 +1243,25 @@ public final class SettingsViewModel {
         let refreshGeneration = modelStatusRefreshGeneration
         let whisperModelVariant = SpeechEnginePreference.whisperModelVariant(defaults: defaults)
 
+        let parakeetModelVariantCached = self.parakeetModelVariantCached
+
         guard let sttClient else {
             parakeetStatus = .unknown
             parakeetStatusDetail = "Unavailable in this runtime."
             whisperModelStatus = .checking
             whisperModelStatusDetail = "Checking model state..."
             Task { @MainActor [weak self] in
-                let whisperDownloaded = await Task.detached(priority: .userInitiated) {
-                    WhisperEngine.isModelDownloaded(model: whisperModelVariant)
+                let disk = await Task.detached(priority: .userInitiated) {
+                    (
+                        parakeetDownloaded: Set(ParakeetModelVariant.allCases.filter(parakeetModelVariantCached)),
+                        whisperDownloaded: WhisperEngine.isModelDownloaded(model: whisperModelVariant)
+                    )
                 }.value
                 guard let self, self.modelStatusRefreshGeneration == refreshGeneration else {
                     return
                 }
-                self.applyWhisperDownloadedStatus(whisperDownloaded)
+                self.downloadedParakeetVariants = disk.parakeetDownloaded
+                self.applyWhisperDownloadedStatus(disk.whisperDownloaded)
             }
             return
         }
@@ -1254,31 +1282,34 @@ public final class SettingsViewModel {
             // Snapshot the engine before the await so a mid-suspension toggle
             // can't pair the new preference with the old engine's readiness.
             let activeEngine = self.speechEnginePreference
-            let isSpeechModelCached = self.isSpeechModelCached
+            let activeVariant = self.parakeetModelVariant
 
             async let activeEngineLoaded = sttClient.isReady()
             async let diskState = Task.detached(priority: .userInitiated) {
                 (
-                    parakeetCached: isSpeechModelCached(),
+                    parakeetDownloaded: Set(ParakeetModelVariant.allCases.filter(parakeetModelVariantCached)),
                     whisperDownloaded: WhisperEngine.isModelDownloaded(model: whisperModelVariant)
                 )
             }.value
 
             let (activeEngineIsLoaded, modelDiskState) = await (activeEngineLoaded, diskState)
             guard self.modelStatusRefreshGeneration == refreshGeneration,
-                  self.speechEnginePreference == activeEngine else {
+                  self.speechEnginePreference == activeEngine,
+                  self.parakeetModelVariant == activeVariant else {
                 return
             }
 
+            self.downloadedParakeetVariants = modelDiskState.parakeetDownloaded
+            let parakeetName = activeVariant.modelName
             if activeEngine == .parakeet, activeEngineIsLoaded {
                 self.parakeetStatus = .ready
-                self.parakeetStatusDetail = "Parakeet TDT 0.6B v3 · Loaded on Neural Engine."
-            } else if modelDiskState.parakeetCached {
+                self.parakeetStatusDetail = "\(parakeetName) · Loaded on Neural Engine."
+            } else if modelDiskState.parakeetDownloaded.contains(activeVariant) {
                 self.parakeetStatus = .notLoaded
-                self.parakeetStatusDetail = "Parakeet TDT 0.6B v3 · Installed locally, loads when selected."
+                self.parakeetStatusDetail = "\(parakeetName) · Installed locally, loads when selected."
             } else {
                 self.parakeetStatus = .notDownloaded
-                self.parakeetStatusDetail = "Parakeet TDT 0.6B v3 · Needs model setup before use."
+                self.parakeetStatusDetail = "\(parakeetName) · Needs model setup before use."
             }
 
             if activeEngine == .whisper, activeEngineIsLoaded {
@@ -1553,6 +1584,66 @@ public final class SettingsViewModel {
                 self.isApplyingSpeechEngineState = false
             }
         }
+    }
+
+    /// Applies a Parakeet variant toggle (multilingual `v3` ↔ English-only
+    /// `v2`). Mirrors `applySpeechEngineChange`: validates switch availability,
+    /// drives the shared switch banner, persists only after the runtime reload
+    /// succeeds, and reverts the published value on block/cancel/failure.
+    private func applyParakeetModelVariantChange(_ variant: ParakeetModelVariant) {
+        speechEngineError = nil
+        let previousVariant = SpeechEnginePreference.parakeetModelVariant(defaults: defaults)
+        guard variant != previousVariant else { return }
+
+        guard let speechEngineSwitcher else {
+            // No runtime wired (previews/tests): just persist the choice.
+            SpeechEnginePreference.saveParakeetModelVariant(variant, defaults: defaults)
+            Telemetry.send(.settingChanged(setting: .parakeetModelVariant))
+            return
+        }
+
+        speechEngineSwitching = true
+        speechEngineSwitchTarget = .parakeet
+        isParakeetVariantSwitch = true
+        speechEngineSwitchDetail = "Preparing \(variant.modelName)..."
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                self.speechEngineSwitching = false
+                self.speechEngineSwitchTarget = nil
+                self.isParakeetVariantSwitch = false
+                self.speechEngineSwitchDetail = nil
+                self.refreshModelStatus()
+            }
+            let availability = await self.refreshSpeechEngineSwitchAvailabilityNow()
+            guard availability == .available else {
+                self.speechEngineError = Self.speechEngineSwitchUnavailableMessage(for: availability)
+                self.revertParakeetModelVariant()
+                return
+            }
+            do {
+                try await speechEngineSwitcher.setParakeetModelVariant(variant) { [weak self] message in
+                    Task { @MainActor [weak self] in
+                        self?.speechEngineSwitchDetail = message
+                    }
+                }
+                SpeechEnginePreference.saveParakeetModelVariant(variant, defaults: self.defaults)
+                Telemetry.send(.settingChanged(setting: .parakeetModelVariant))
+            } catch is CancellationError {
+                self.revertParakeetModelVariant()
+            } catch {
+                self.speechEngineError = error.localizedDescription
+                self.revertParakeetModelVariant()
+            }
+        }
+    }
+
+    /// Snaps the published variant back to the persisted value without
+    /// re-triggering a switch (the `isApplyingParakeetVariantState` guard).
+    private func revertParakeetModelVariant() {
+        isApplyingParakeetVariantState = true
+        parakeetModelVariant = SpeechEnginePreference.parakeetModelVariant(defaults: defaults)
+        isApplyingParakeetVariantState = false
     }
 
     public func repairParakeetModel() {

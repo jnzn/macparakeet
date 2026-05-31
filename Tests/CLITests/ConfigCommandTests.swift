@@ -30,6 +30,7 @@ final class ConfigCommandTests: XCTestCase {
             "telemetry",
             "processing-mode",
             "speech-engine",
+            "parakeet-model",
             "whisper-language",
             "speaker-detection",
             "save-transcription-audio",
@@ -58,6 +59,7 @@ final class ConfigCommandTests: XCTestCase {
     func testReadAgentDefaultsReflectGUIFallbacks() throws {
         XCTAssertEqual(try ConfigCommand.read(key: "processing-mode", defaults: defaults), "raw")
         XCTAssertEqual(try ConfigCommand.read(key: "speech-engine", defaults: defaults), "parakeet")
+        XCTAssertEqual(try ConfigCommand.read(key: "parakeet-model", defaults: defaults), "v3")
         XCTAssertEqual(try ConfigCommand.read(key: "whisper-language", defaults: defaults), "auto")
         XCTAssertEqual(try ConfigCommand.read(key: "speaker-detection", defaults: defaults), "off")
         XCTAssertEqual(try ConfigCommand.read(key: "save-transcription-audio", defaults: defaults), "on")
@@ -126,6 +128,26 @@ final class ConfigCommandTests: XCTestCase {
     func testWriteCanonicalizesUnderscoreKeys() throws {
         XCTAssertEqual(try ConfigCommand.write(key: "speaker_detection", value: "on", defaults: defaults), "on")
         XCTAssertEqual(defaults.object(forKey: UserDefaultsAppRuntimePreferences.speakerDiarizationKey) as? Bool, true)
+    }
+
+    func testWriteParakeetModelPersistsAndCanonicalizesAliases() throws {
+        XCTAssertEqual(try ConfigCommand.write(key: "parakeet-model", value: "v2", defaults: defaults), "v2")
+        XCTAssertEqual(SpeechEnginePreference.parakeetModelVariant(defaults: defaults), .v2)
+
+        // Friendly aliases canonicalize to the v3/v2 ids.
+        XCTAssertEqual(try ConfigCommand.write(key: "parakeet-model", value: "english", defaults: defaults), "v2")
+        XCTAssertEqual(try ConfigCommand.write(key: "parakeet-model", value: "multilingual", defaults: defaults), "v3")
+        XCTAssertEqual(SpeechEnginePreference.parakeetModelVariant(defaults: defaults), .v3)
+
+        // Underscore-aliased key resolves too.
+        XCTAssertEqual(try ConfigCommand.write(key: "parakeet_model", value: "v2", defaults: defaults), "v2")
+        XCTAssertEqual(try ConfigCommand.read(key: "parakeet-model", defaults: defaults), "v2")
+    }
+
+    func testWriteParakeetModelRejectsInvalidValue() {
+        XCTAssertThrowsError(try ConfigCommand.write(key: "parakeet-model", value: "v9", defaults: defaults)) { error in
+            XCTAssertTrue(error is ValidationError)
+        }
     }
 
     func testWriteWhisperLanguageAutoClearsStoredDefault() throws {

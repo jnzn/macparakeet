@@ -238,6 +238,21 @@ public enum SettingsSearchIndex {
             cardAnchor: "engine.selector"
         ),
         SettingsSearchEntry(
+            id: "engine.parakeetModel",
+            tab: .engine,
+            title: "Parakeet Model",
+            subtitle: "Available when Parakeet is the active engine.",
+            keywords: [
+                "parakeet", "v2", "v3", "english only", "english-only", "multilingual",
+                "faster parakeet", "speed", "low latency", "language", "model", "variant"
+            ],
+            // Anchored to the engine selector for the same reason as the
+            // Whisper Language entry: the Parakeet Model card only renders
+            // when Parakeet is active, so landing on the always-present
+            // selector keeps the search result from jumping to a hidden anchor.
+            cardAnchor: "engine.selector"
+        ),
+        SettingsSearchEntry(
             id: "engine.models",
             tab: .engine,
             title: "Local Models",

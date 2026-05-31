@@ -33,6 +33,12 @@ enum TranscribeSpeechEngine: String, ExpressibleByArgument, CaseIterable, Sendab
     case whisper
 }
 
+enum TranscribeParakeetModel: String, ExpressibleByArgument, CaseIterable, Sendable {
+    case appDefault = "app-default"
+    case v3
+    case v2
+}
+
 enum SpeakerDetectionOption: String, ExpressibleByArgument, CaseIterable, Sendable {
     case appDefault = "app-default"
     case on
@@ -72,6 +78,9 @@ struct TranscribeCommand: AsyncParsableCommand, CLITelemetryMetadataProviding {
 
     @Option(help: "Language hint for Whisper, as a Whisper code such as ko or en. Parakeet ignores this flag.")
     var language: String?
+
+    @Option(name: .long, help: "Parakeet build: app-default, v3 (multilingual), v2 (English-only). app-default follows the saved preference; ignored for Whisper.")
+    var parakeetModel: TranscribeParakeetModel = .appDefault
 
     @Option(help: "Downloaded YouTube audio retention: app-default, keep, delete.")
     var downloadedAudio: DownloadedAudioPolicy = .appDefault
@@ -163,6 +172,20 @@ struct TranscribeCommand: AsyncParsableCommand, CLITelemetryMetadataProviding {
         return SpeechEngineSelection(engine: preference, language: language)
     }
 
+    static func resolveParakeetModelVariant(
+        _ option: TranscribeParakeetModel,
+        storedVariant: ParakeetModelVariant
+    ) -> ParakeetModelVariant {
+        switch option {
+        case .appDefault:
+            return storedVariant
+        case .v3:
+            return .v3
+        case .v2:
+            return .v2
+        }
+    }
+
     static func resolveSpeakerDetection(
         _ option: SpeakerDetectionOption,
         storedEnabled: Bool?,
@@ -244,7 +267,11 @@ struct TranscribeCommand: AsyncParsableCommand, CLITelemetryMetadataProviding {
             let sttTranscriber: STTTranscribing
             switch speechEngine.engine {
             case .parakeet:
-                let createdSTTClient = STTClient()
+                let parakeetVariant = Self.resolveParakeetModelVariant(
+                    self.parakeetModel,
+                    storedVariant: SpeechEnginePreference.parakeetModelVariant(defaults: defaults)
+                )
+                let createdSTTClient = STTClient(modelVersion: parakeetVariant.asrModelVersion)
                 sttClient = createdSTTClient
                 sttTranscriber = createdSTTClient
             case .whisper:
