@@ -204,6 +204,52 @@ final class PromptsCommandTests: XCTestCase {
         )
     }
 
+    // MARK: - Set flag semantics (applyFlags)
+
+    func testSetAutoRunClearsPerSourceScope() {
+        // A prompt narrowed to meetings-only in the GUI must not stay scoped when
+        // the CLI enables global auto-run — otherwise it claims global-on while
+        // silently firing on meetings only.
+        var prompt = Prompt(name: "Summary", content: "x", category: .result)
+        prompt.isAutoRun = true
+        prompt.appliesToSources = [.meeting]
+
+        PromptsCommand.SetSubcommand.applyFlags(
+            to: &prompt, visible: false, hidden: false, autoRun: true, noAutoRun: false
+        )
+
+        XCTAssertTrue(prompt.isAutoRun)
+        XCTAssertTrue(prompt.isVisible)
+        XCTAssertNil(prompt.appliesToSources, "global --auto-run resets scope to all sources")
+    }
+
+    func testSetNoAutoRunClearsPerSourceScope() {
+        var prompt = Prompt(name: "Summary", content: "x", category: .result)
+        prompt.isAutoRun = true
+        prompt.appliesToSources = [.meeting]
+
+        PromptsCommand.SetSubcommand.applyFlags(
+            to: &prompt, visible: false, hidden: false, autoRun: false, noAutoRun: true
+        )
+
+        XCTAssertFalse(prompt.isAutoRun)
+        XCTAssertNil(prompt.appliesToSources, "disabling auto-run returns to a clean nil scope")
+    }
+
+    func testSetHiddenClearsAutoRunAndScope() {
+        var prompt = Prompt(name: "Summary", content: "x", category: .result)
+        prompt.isAutoRun = true
+        prompt.appliesToSources = [.meeting]
+
+        PromptsCommand.SetSubcommand.applyFlags(
+            to: &prompt, visible: false, hidden: true, autoRun: false, noAutoRun: false
+        )
+
+        XCTAssertFalse(prompt.isVisible)
+        XCTAssertFalse(prompt.isAutoRun)
+        XCTAssertNil(prompt.appliesToSources)
+    }
+
     // MARK: - Add validation
 
     func testAddRejectsContentAndFromFileTogether() {

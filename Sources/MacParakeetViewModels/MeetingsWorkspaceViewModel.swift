@@ -71,6 +71,7 @@ public final class MeetingsWorkspaceViewModel {
     public let settingsViewModel: SettingsViewModel
     public let llmSettingsViewModel: LLMSettingsViewModel
     public let quickPromptsViewModel: QuickPromptsViewModel
+    public let promptsViewModel: PromptsViewModel
 
     public private(set) var upcomingEvents: [CalendarEvent] = []
     public private(set) var isLoadingUpcomingEvents = false
@@ -89,6 +90,7 @@ public final class MeetingsWorkspaceViewModel {
         settingsViewModel: SettingsViewModel,
         llmSettingsViewModel: LLMSettingsViewModel,
         quickPromptsViewModel: QuickPromptsViewModel? = nil,
+        promptsViewModel: PromptsViewModel? = nil,
         calendarService: any CalendarServicing = CalendarService.shared
     ) {
         self.recentMeetingsViewModel = recentMeetingsViewModel
@@ -96,6 +98,7 @@ public final class MeetingsWorkspaceViewModel {
         self.settingsViewModel = settingsViewModel
         self.llmSettingsViewModel = llmSettingsViewModel
         self.quickPromptsViewModel = quickPromptsViewModel ?? QuickPromptsViewModel()
+        self.promptsViewModel = promptsViewModel ?? PromptsViewModel()
         self.calendarService = calendarService
     }
 
@@ -105,11 +108,15 @@ public final class MeetingsWorkspaceViewModel {
 
     public func configure(
         transcriptionRepo: TranscriptionRepositoryProtocol,
-        quickPromptRepo: QuickPromptRepositoryProtocol? = nil
+        quickPromptRepo: QuickPromptRepositoryProtocol? = nil,
+        promptRepo: PromptRepositoryProtocol? = nil
     ) {
         recentMeetingsViewModel.configure(transcriptionRepo: transcriptionRepo)
         if let quickPromptRepo {
             quickPromptsViewModel.configure(repo: quickPromptRepo)
+        }
+        if let promptRepo {
+            promptsViewModel.configure(repo: promptRepo)
         }
     }
 
@@ -118,6 +125,7 @@ public final class MeetingsWorkspaceViewModel {
         refreshRecentMeetings()
         refreshUpcomingEvents()
         refreshQuickPrompts()
+        refreshAutoNotes()
     }
 
     public func refreshIfNeeded() {
@@ -181,6 +189,54 @@ public final class MeetingsWorkspaceViewModel {
 
     public var liveAskPromptPreviewPrompts: [QuickPrompt] {
         Array(quickPromptsViewModel.visiblePinned.prefix(2))
+    }
+
+    // MARK: - After-each-meeting auto-notes
+
+    public func refreshAutoNotes() {
+        promptsViewModel.loadPrompts()
+    }
+
+    /// Visible result prompts the user can toggle as meeting auto-notes.
+    /// Hidden prompts can't auto-run, so they're excluded from the card.
+    /// (`promptsViewModel.prompts` is already `.result`-only.)
+    public var meetingAutoNotePrompts: [Prompt] {
+        promptsViewModel.prompts.filter { $0.isVisible }
+    }
+
+    /// Prompts that will actually auto-run after a meeting finishes.
+    public var meetingAutoNoteActivePrompts: [Prompt] {
+        meetingAutoNotePrompts.filter { $0.autoRuns(for: .meeting) }
+    }
+
+    public var meetingAutoNoteActiveCount: Int {
+        meetingAutoNoteActivePrompts.count
+    }
+
+    public func isMeetingAutoNote(_ prompt: Prompt) -> Bool {
+        prompt.autoRuns(for: .meeting)
+    }
+
+    public func setMeetingAutoNote(_ prompt: Prompt, enabled: Bool) {
+        promptsViewModel.setAutoRun(prompt, source: .meeting, enabled: enabled)
+    }
+
+    /// Auto-notes need a configured AI provider to generate. `false` only when
+    /// no provider is set up yet (the card shows a "Set up AI" prompt instead
+    /// of dead toggles); a chosen-but-unreachable provider still shows toggles.
+    public var isAutoNotesConfigured: Bool {
+        if case .setupNeeded = intelligenceStatus { return false }
+        return true
+    }
+
+    /// Display name of the configured provider, for the card's "Uses …" line.
+    public var autoNotesProviderName: String? {
+        switch intelligenceStatus {
+        case .ready(let displayName, _), .cannotConnect(let displayName, _):
+            return displayName
+        case .setupNeeded:
+            return nil
+        }
     }
 
     public var recordingStatus: RecordingStatus {

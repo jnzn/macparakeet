@@ -119,7 +119,8 @@ final class AppEnvironmentConfigurer {
         )
         meetingsWorkspaceViewModel.configure(
             transcriptionRepo: env.transcriptionRepo,
-            quickPromptRepo: env.quickPromptRepo
+            quickPromptRepo: env.quickPromptRepo,
+            promptRepo: env.promptRepo
         )
         settingsViewModel.configure(
             permissionService: env.permissionService,

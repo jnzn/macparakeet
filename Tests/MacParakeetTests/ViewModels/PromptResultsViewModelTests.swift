@@ -337,7 +337,8 @@ final class PromptResultsViewModelTests: XCTestCase {
 
         let queuedIDs = viewModel.autoGeneratePromptResults(
             transcript: "brief but important",
-            transcriptionId: UUID()
+            transcriptionId: UUID(),
+            sourceType: .meeting
         )
 
         XCTAssertFalse(queuedIDs.isEmpty)
@@ -355,7 +356,8 @@ final class PromptResultsViewModelTests: XCTestCase {
         for transcript in ["", "   \n\t  "] {
             let queuedIDs = viewModel.autoGeneratePromptResults(
                 transcript: transcript,
-                transcriptionId: UUID()
+                transcriptionId: UUID(),
+                sourceType: .meeting
             )
 
             XCTAssertTrue(queuedIDs.isEmpty)
@@ -402,12 +404,42 @@ final class PromptResultsViewModelTests: XCTestCase {
 
         let queuedIDs = viewModel.autoGeneratePromptResults(
             transcript: String(repeating: "Long transcript ", count: 50),
-            transcriptionId: UUID()
+            transcriptionId: UUID(),
+            sourceType: .meeting
         )
 
         XCTAssertTrue(queuedIDs.isEmpty)
         XCTAssertTrue(viewModel.pendingGenerations.isEmpty)
         XCTAssertEqual(llm.summarizeCallCount, 0)
+    }
+
+    func testAutoGeneratePromptResultsRespectsSourceScoping() {
+        // One unscoped (all sources) + one meeting-only auto-run prompt.
+        promptRepo.prompts = [
+            Prompt(name: "Summary", content: "c", category: .result, isVisible: true, isAutoRun: true, sortOrder: 0),
+            Prompt(name: "Action Items", content: "c", category: .result, isVisible: true, isAutoRun: true, sortOrder: 1, appliesToSources: [.meeting]),
+        ]
+        viewModel.configure(
+            llmService: llm,
+            promptRepo: promptRepo,
+            promptResultRepo: promptResultRepo
+        )
+
+        let transcript = String(repeating: "Long transcript ", count: 50)
+
+        let youtubeIDs = viewModel.autoGeneratePromptResults(
+            transcript: transcript,
+            transcriptionId: UUID(),
+            sourceType: .youtube
+        )
+        XCTAssertEqual(youtubeIDs.count, 1, "Meeting-only prompt must not auto-run on a YouTube transcription.")
+
+        let meetingIDs = viewModel.autoGeneratePromptResults(
+            transcript: transcript,
+            transcriptionId: UUID(),
+            sourceType: .meeting
+        )
+        XCTAssertEqual(meetingIDs.count, 2, "Both the unscoped and meeting-scoped prompts auto-run after a meeting.")
     }
 
     func testAutoGeneratePromptResultsSkipsWhenAutoRunPromptFetchFails() {
@@ -420,7 +452,8 @@ final class PromptResultsViewModelTests: XCTestCase {
 
         let queuedIDs = viewModel.autoGeneratePromptResults(
             transcript: String(repeating: "Long transcript ", count: 50),
-            transcriptionId: UUID()
+            transcriptionId: UUID(),
+            sourceType: .meeting
         )
 
         XCTAssertTrue(queuedIDs.isEmpty)

@@ -891,6 +891,21 @@ public final class DatabaseManager: Sendable {
             }
         }
 
+        // v0.20 — Source-scoped auto-run (ADR-020 2026-05 amendment). Adds one
+        // nullable JSON column to `prompts` so a `.result` prompt can restrict
+        // which transcription sources it auto-runs for (e.g. meeting-only
+        // auto-notes). NULL = all sources = the historical behavior, so every
+        // existing row keeps running exactly as before. Pre-check existence for
+        // re-run safety. No row inserts here — the seed stays in v0.7.
+        migrator.registerMigration("v0.20-prompt-applies-to-sources") { db in
+            let existingColumns = try db.columns(in: "prompts").map(\.name)
+            if !existingColumns.contains("appliesToSources") {
+                try db.alter(table: "prompts") { t in
+                    t.add(column: "appliesToSources", .text)
+                }
+            }
+        }
+
         try migrator.migrate(dbQueue)
         try reconcileBuiltInPrompts()
         try reconcileBuiltInQuickPrompts()

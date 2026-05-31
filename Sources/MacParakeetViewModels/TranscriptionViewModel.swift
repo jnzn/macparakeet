@@ -569,7 +569,11 @@ public final class TranscriptionViewModel {
         }
         guard runAutoPrompts else { return }
         let text = transcription.cleanTranscript ?? transcription.rawTranscript ?? ""
-        promptResultsViewModel?.autoGeneratePromptResults(transcript: text, transcriptionId: transcription.id)
+        promptResultsViewModel?.autoGeneratePromptResults(
+            transcript: text,
+            transcriptionId: transcription.id,
+            sourceType: transcription.sourceType
+        )
     }
 
     public func showInputPortal() {

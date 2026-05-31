@@ -24,6 +24,16 @@ public struct Prompt: Codable, Identifiable, Sendable {
     /// naturally, falling back to *Transforming…* for awkward names.
     public var runningLabel: String?
 
+    /// Which transcription sources this `.result` prompt auto-runs for, when
+    /// `isAutoRun` is true. `nil` means **all sources** — the historical
+    /// behavior, and what every existing/migrated row decodes to. A non-nil
+    /// set restricts auto-run to those sources: e.g. `[.meeting]` makes it a
+    /// meeting-only auto-note that won't fire on file/YouTube transcriptions.
+    /// Has no effect when `isAutoRun` is false, and is irrelevant to
+    /// `.transform` prompts. Stored as JSON (GRDB encodes the Set). See
+    /// ADR-020 (2026-05 amendment) and the Meetings "After each meeting" card.
+    public var appliesToSources: Set<Transcription.SourceType>?
+
     public enum Category: String, Codable, Sendable {
         // Keep the stored raw value as "summary" until the prompts table itself is migrated.
         case result = "summary"
@@ -42,7 +52,8 @@ public struct Prompt: Codable, Identifiable, Sendable {
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         keyboardShortcut: String? = nil,
-        runningLabel: String? = nil
+        runningLabel: String? = nil,
+        appliesToSources: Set<Transcription.SourceType>? = nil
     ) {
         self.id = id
         self.name = name
@@ -56,6 +67,16 @@ public struct Prompt: Codable, Identifiable, Sendable {
         self.updatedAt = updatedAt
         self.keyboardShortcut = keyboardShortcut
         self.runningLabel = runningLabel
+        self.appliesToSources = appliesToSources
+    }
+
+    /// Whether this prompt should auto-run after a transcription of `source`
+    /// completes. Centralizes the scoping rule: must be auto-run-enabled, and
+    /// either unscoped (`nil` = all sources) or explicitly include `source`.
+    public func autoRuns(for source: Transcription.SourceType) -> Bool {
+        guard isAutoRun else { return false }
+        guard let appliesToSources else { return true }
+        return appliesToSources.contains(source)
     }
 
     // MARK: - Transform convenience
@@ -400,6 +421,6 @@ extension Prompt: FetchableRecord, PersistableRecord {
     public enum Columns: String, ColumnExpression {
         case id, name, content, category, isBuiltIn, isVisible, isAutoRun
         case sortOrder, createdAt, updatedAt
-        case keyboardShortcut, runningLabel
+        case keyboardShortcut, runningLabel, appliesToSources
     }
 }

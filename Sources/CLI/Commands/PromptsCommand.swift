@@ -234,6 +234,27 @@ extension PromptsCommand {
             }
         }
 
+        /// Apply the set-flags to a prompt. Pure (no `updatedAt`/DB side effects)
+        /// so the flag semantics are unit-testable without the app database.
+        ///
+        /// The `--auto-run` / `--no-auto-run` flags are global ("all sources"),
+        /// mirroring `PromptRepository.toggleAutoRun`: clearing `appliesToSources`
+        /// so a prompt narrowed in the GUI (e.g. meeting-only) isn't left claiming
+        /// global-on while silently scoped, and a disabled prompt returns to a
+        /// clean `nil` scope.
+        static func applyFlags(
+            to prompt: inout Prompt,
+            visible: Bool,
+            hidden: Bool,
+            autoRun: Bool,
+            noAutoRun: Bool
+        ) {
+            if visible { prompt.isVisible = true }
+            if hidden  { prompt.isVisible = false; prompt.isAutoRun = false; prompt.appliesToSources = nil }
+            if autoRun { prompt.isAutoRun = true; prompt.isVisible = true; prompt.appliesToSources = nil }
+            if noAutoRun { prompt.isAutoRun = false; prompt.appliesToSources = nil }
+        }
+
         func run() throws {
             try AppPaths.ensureDirectories()
             let db = try DatabaseManager(path: resolvedDatabasePath(database))
@@ -241,10 +262,13 @@ extension PromptsCommand {
 
             var prompt = try findPrompt(idOrName: idOrName, repo: repo)
 
-            if visible { prompt.isVisible = true }
-            if hidden  { prompt.isVisible = false; prompt.isAutoRun = false }
-            if autoRun { prompt.isAutoRun = true; prompt.isVisible = true }
-            if noAutoRun { prompt.isAutoRun = false }
+            Self.applyFlags(
+                to: &prompt,
+                visible: visible,
+                hidden: hidden,
+                autoRun: autoRun,
+                noAutoRun: noAutoRun
+            )
 
             prompt.updatedAt = Date()
             try repo.save(prompt)

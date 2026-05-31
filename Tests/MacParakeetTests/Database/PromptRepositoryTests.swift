@@ -112,6 +112,160 @@ final class PromptRepositoryTests: XCTestCase {
         XCTAssertFalse(reloaded.isAutoRun)
     }
 
+    // MARK: - Source-scoped auto-run (ADR-020 2026-05 amendment)
+
+    func testAppliesToSourcesScopesAutoRunQueryBySource() throws {
+        // Summary ships auto-run + unscoped (nil = all sources). Round-trips
+        // through GRDB's JSON encoding of the Set column.
+        let summary = try XCTUnwrap((try repo.fetchAll()).first(where: { $0.name == "Summary" }))
+        XCTAssertTrue(summary.isAutoRun)
+        XCTAssertNil(summary.appliesToSources)
+
+        var actionItems = try XCTUnwrap(
+            (try repo.fetchAll()).first(where: { $0.name == "Action Items & Decisions" })
+        )
+        actionItems.isAutoRun = true
+        actionItems.appliesToSources = [.meeting]
+        try repo.save(actionItems)
+
+        XCTAssertEqual(
+            try XCTUnwrap(repo.fetch(id: actionItems.id)).appliesToSources,
+            [.meeting],
+            "Set<SourceType> must survive a GRDB save/fetch round-trip."
+        )
+
+        let meetingAuto = try repo.fetchAutoRunPrompts(for: .meeting).map(\.name)
+        let youtubeAuto = try repo.fetchAutoRunPrompts(for: .youtube).map(\.name)
+
+        XCTAssertTrue(meetingAuto.contains("Summary"))                 // unscoped → all
+        XCTAssertTrue(meetingAuto.contains("Action Items & Decisions")) // meeting-scoped
+        XCTAssertTrue(youtubeAuto.contains("Summary"))
+        XCTAssertFalse(youtubeAuto.contains("Action Items & Decisions")) // not on YouTube
+        // The source-agnostic query still returns every auto-run prompt.
+        XCTAssertTrue(try repo.fetchAutoRunPrompts().map(\.name).contains("Action Items & Decisions"))
+    }
+
+    func testSetAutoRunFromOffScopesToSingleSource() throws {
+        let chapter = try XCTUnwrap((try repo.fetchAll()).first(where: { $0.name == "Chapter Breakdown" }))
+        XCTAssertFalse(chapter.isAutoRun)
+
+        try repo.setAutoRun(id: chapter.id, source: .meeting, enabled: true)
+
+        let reloaded = try XCTUnwrap(try repo.fetch(id: chapter.id))
+        XCTAssertTrue(reloaded.isAutoRun)
+        XCTAssertTrue(reloaded.isVisible)
+        XCTAssertEqual(reloaded.appliesToSources, [.meeting], "Enabling from off must scope to just that source — no leak onto other types.")
+        XCTAssertFalse(try repo.fetchAutoRunPrompts(for: .file).contains(where: { $0.id == chapter.id }))
+    }
+
+    func testSetAutoRunDisableFromAllNarrowsToOtherSources() throws {
+        // Summary is auto-run + unscoped (all). Turning it off for meetings
+        // should keep it running for the other sources (PDX adds .voiceMemo).
+        let summary = try XCTUnwrap((try repo.fetchAll()).first(where: { $0.name == "Summary" }))
+
+        try repo.setAutoRun(id: summary.id, source: .meeting, enabled: false)
+
+        let reloaded = try XCTUnwrap(try repo.fetch(id: summary.id))
+        XCTAssertTrue(reloaded.isAutoRun)
+        XCTAssertEqual(reloaded.appliesToSources, [.file, .youtube, .voiceMemo])
+        XCTAssertFalse(reloaded.autoRuns(for: .meeting))
+        XCTAssertTrue(reloaded.autoRuns(for: .youtube))
+    }
+
+    func testSetAutoRunDisablingLastSourceTurnsAutoRunOff() throws {
+        var chapter = try XCTUnwrap((try repo.fetchAll()).first(where: { $0.name == "Chapter Breakdown" }))
+        chapter.isAutoRun = true
+        chapter.appliesToSources = [.meeting]
+        try repo.save(chapter)
+
+        try repo.setAutoRun(id: chapter.id, source: .meeting, enabled: false)
+
+        let reloaded = try XCTUnwrap(try repo.fetch(id: chapter.id))
+        XCTAssertFalse(reloaded.isAutoRun, "Removing the only scoped source must turn auto-run fully off.")
+        XCTAssertNil(reloaded.appliesToSources)
+    }
+
+    func testSetAutoRunReEnablingEverySourceNormalizesScopeToNil() throws {
+        // Summary ships unscoped (nil = all). Turn it off for meetings, then
+        // back on: the scope must collapse back to nil rather than an explicit
+        // full set, so a future SourceType case is auto-included.
+        let summary = try XCTUnwrap((try repo.fetchAll()).first(where: { $0.name == "Summary" }))
+
+        try repo.setAutoRun(id: summary.id, source: .meeting, enabled: false)
+        XCTAssertEqual(try XCTUnwrap(repo.fetch(id: summary.id)).appliesToSources, [.file, .youtube, .voiceMemo])
+
+        try repo.setAutoRun(id: summary.id, source: .meeting, enabled: true)
+        let reloaded = try XCTUnwrap(try repo.fetch(id: summary.id))
+        XCTAssertNil(reloaded.appliesToSources, "Re-enabling the last missing source must normalize back to nil (all sources).")
+        XCTAssertTrue(reloaded.isAutoRun)
+    }
+
+    func testGlobalToggleAutoRunResetsScopeToAllSources() throws {
+        var chapter = try XCTUnwrap((try repo.fetchAll()).first(where: { $0.name == "Chapter Breakdown" }))
+        chapter.isAutoRun = true
+        chapter.appliesToSources = [.meeting]
+        try repo.save(chapter)
+
+        try repo.toggleAutoRun(id: chapter.id) // off
+        XCTAssertFalse(try XCTUnwrap(repo.fetch(id: chapter.id)).isAutoRun)
+        try repo.toggleAutoRun(id: chapter.id) // on
+
+        let reloaded = try XCTUnwrap(try repo.fetch(id: chapter.id))
+        XCTAssertTrue(reloaded.isAutoRun)
+        XCTAssertNil(reloaded.appliesToSources, "The global Auto-Run toggle means all sources — re-enabling must clear per-source scoping.")
+    }
+
+    func testSetAutoRunAddsSourceToExistingPartialScope() throws {
+        // Already auto-run, scoped to file only. Enabling for meeting must union
+        // the sets rather than replace — and not normalize away the partial scope.
+        var chapter = try XCTUnwrap((try repo.fetchAll()).first(where: { $0.name == "Chapter Breakdown" }))
+        chapter.isAutoRun = true
+        chapter.appliesToSources = [.file]
+        try repo.save(chapter)
+
+        try repo.setAutoRun(id: chapter.id, source: .meeting, enabled: true)
+
+        let reloaded = try XCTUnwrap(try repo.fetch(id: chapter.id))
+        XCTAssertEqual(reloaded.appliesToSources, [.file, .meeting])
+        XCTAssertTrue(reloaded.autoRuns(for: .file))
+        XCTAssertTrue(reloaded.autoRuns(for: .meeting))
+        XCTAssertFalse(reloaded.autoRuns(for: .youtube))
+    }
+
+    func testRestoreDefaultsClearsSourceScoping() throws {
+        // A user scopes Summary to meetings only, then hits Restore Defaults.
+        // Built-ins ship unscoped, so restore must clear appliesToSources —
+        // otherwise Summary comes back "visible" but silently meeting-only.
+        let summary = try XCTUnwrap((try repo.fetchAll()).first(where: { $0.name == "Summary" }))
+        try repo.setAutoRun(id: summary.id, source: .meeting, enabled: false) // → {file, youtube}
+        XCTAssertNotNil(try XCTUnwrap(repo.fetch(id: summary.id)).appliesToSources)
+
+        try repo.restoreDefaults()
+
+        let reloaded = try XCTUnwrap(try repo.fetch(id: summary.id))
+        XCTAssertNil(reloaded.appliesToSources, "Restore Defaults must return built-ins to their shipped unscoped state.")
+        XCTAssertTrue(reloaded.isVisible)
+    }
+
+    func testReconcilerPreservesAppliesToSources() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("reconciler-applies-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let dbPath = tmpDir.appendingPathComponent("macparakeet.db").path
+
+        let first = try DatabaseManager(path: dbPath)
+        let firstRepo = PromptRepository(dbQueue: first.dbQueue)
+        let summary = try XCTUnwrap((try firstRepo.fetchAll()).first(where: { $0.name == "Summary" }))
+        try firstRepo.setAutoRun(id: summary.id, source: .meeting, enabled: false) // → {file, youtube, voiceMemo}
+
+        // Fresh boot re-runs the reconciler; the user's scoping must survive.
+        let second = try DatabaseManager(path: dbPath)
+        let secondRepo = PromptRepository(dbQueue: second.dbQueue)
+        let reloaded = try XCTUnwrap(try secondRepo.fetch(id: summary.id))
+        XCTAssertEqual(reloaded.appliesToSources, [.file, .youtube, .voiceMemo], "Reconciler must preserve user source-scoping on built-ins.")
+    }
+
     func testReconcilerPreservesUserCustomizedBuiltInTransformFields() throws {
         // User customizes Polish. A subsequent app
         // launch (simulated by re-running the reconciler via a fresh

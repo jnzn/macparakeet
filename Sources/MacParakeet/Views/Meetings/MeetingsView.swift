@@ -15,6 +15,7 @@ struct MeetingsView: View {
 
     @State private var audioSaveErrorMessage: String?
     @State private var showingAskPromptsSheet = false
+    @State private var showingPromptLibrary = false
 
     var body: some View {
         ScrollView {
@@ -68,6 +69,12 @@ struct MeetingsView: View {
         }) {
             AskPromptsSheet(viewModel: viewModel.quickPromptsViewModel)
         }
+        .sheet(isPresented: $showingPromptLibrary, onDismiss: {
+            viewModel.promptsViewModel.editingPrompt = nil
+            viewModel.refreshAutoNotes()
+        }) {
+            PromptLibraryView(viewModel: viewModel.promptsViewModel)
+        }
     }
 
     private var header: some View {
@@ -114,6 +121,7 @@ struct MeetingsView: View {
                 VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
                     attentionSection
                     intelligenceSection
+                    autoNotesSection
                     meetingPromptsSection
                 }
                 .frame(minWidth: 280, maxWidth: 340, alignment: .topLeading)
@@ -123,6 +131,7 @@ struct MeetingsView: View {
                 upcomingSection
                 attentionSection
                 intelligenceSection
+                autoNotesSection
                 meetingPromptsSection
                 recentMeetingsSection
             }
@@ -256,6 +265,78 @@ struct MeetingsView: View {
                 )
             }
         }
+    }
+
+    @ViewBuilder
+    private var autoNotesSection: some View {
+        MeetingsSection(title: "After Each Meeting", icon: "wand.and.stars") {
+            if viewModel.isAutoNotesConfigured {
+                autoNotesContent
+            } else {
+                MeetingsInlineState(
+                    icon: "sparkles",
+                    title: "Set up AI for auto-notes",
+                    detail: "Choose an AI provider and MacParakeet will write notes for you automatically when a meeting ends.",
+                    actionTitle: "Set Up AI",
+                    actionIcon: "gearshape",
+                    action: onOpenAISettings
+                )
+            }
+        }
+    }
+
+    private var autoNotesContent: some View {
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+            HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
+                Image(systemName: "wand.and.stars")
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(DesignSystem.Colors.accent)
+                    .frame(width: 22)
+
+                Text("Written automatically when a meeting ends. Click a note to turn it on or off.")
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(DesignSystem.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Spacer(minLength: DesignSystem.Spacing.sm)
+            }
+
+            if viewModel.meetingAutoNotePrompts.isEmpty {
+                Text("No note types yet. Add one in Manage.")
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(DesignSystem.Colors.textTertiary)
+            } else {
+                FlowLayout(spacing: 6) {
+                    ForEach(viewModel.meetingAutoNotePrompts) { prompt in
+                        let isOn = viewModel.isMeetingAutoNote(prompt)
+                        AutoNoteChip(title: prompt.name, isOn: isOn) {
+                            viewModel.setMeetingAutoNote(prompt, enabled: !isOn)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            HStack(spacing: DesignSystem.Spacing.sm) {
+                if let provider = viewModel.autoNotesProviderName {
+                    Label("Uses \(provider)", systemImage: "sparkles")
+                        .font(DesignSystem.Typography.micro.weight(.medium))
+                        .foregroundStyle(DesignSystem.Colors.textTertiary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+
+                Button {
+                    showingPromptLibrary = true
+                } label: {
+                    Label("Manage", systemImage: "slider.horizontal.3")
+                }
+                .parakeetAction(.subtle)
+            }
+        }
+        .padding(DesignSystem.Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var meetingPromptsSection: some View {
@@ -888,5 +969,49 @@ private struct MeetingsHairline: View {
             .fill(DesignSystem.Colors.divider.opacity(0.7))
             .frame(height: 0.5)
             .padding(.horizontal, DesignSystem.Spacing.md)
+    }
+}
+
+/// Toggle chip for a single meeting auto-note. Tapping flips whether the
+/// prompt auto-runs after a meeting finishes. On = filled accent; off =
+/// neutral outline.
+private struct AutoNoteChip: View {
+    let title: String
+    let isOn: Bool
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 11, weight: .semibold))
+                Text(title)
+                    .font(DesignSystem.Typography.micro.weight(.medium))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(isOn ? DesignSystem.Colors.accent : DesignSystem.Colors.textSecondary)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .fill(isOn
+                          ? DesignSystem.Colors.accent.opacity(0.12)
+                          : DesignSystem.Colors.surfaceElevated.opacity(0.72))
+            )
+            .overlay(
+                Capsule()
+                    .strokeBorder(
+                        isOn
+                            ? DesignSystem.Colors.accent.opacity(0.4)
+                            : DesignSystem.Colors.border.opacity(0.5),
+                        lineWidth: 0.5
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(title) auto-note")
+        .accessibilityValue(isOn ? "On" : "Off")
+        .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
+        .help(isOn ? "Generated automatically after meetings — click to turn off" : "Click to generate this automatically after meetings")
     }
 }

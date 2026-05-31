@@ -168,11 +168,54 @@ final class MeetingsWorkspaceViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.quickPromptsViewModel.pinnedCount, 0)
     }
 
+    func testMeetingAutoNotesListVisibleResultPromptsAndReflectScope() throws {
+        let promptRepo = MockPromptRepository()
+        promptRepo.prompts = [
+            // Unscoped auto-run (nil = all sources) → counts as on for meetings.
+            makeResultPrompt(name: "Summary", isAutoRun: true, sortOrder: 0),
+            // Off by default.
+            makeResultPrompt(name: "Action Items", isAutoRun: false, sortOrder: 1),
+            // Auto-run but scoped to YouTube only → not a meeting auto-note.
+            makeResultPrompt(name: "Blog Post", isAutoRun: true, sortOrder: 2, appliesToSources: [.youtube]),
+            // Hidden → excluded from the card entirely.
+            makeResultPrompt(name: "Hidden", isVisible: false, sortOrder: 3),
+        ]
+        let promptsVM = PromptsViewModel()
+        promptsVM.configure(repo: promptRepo)
+
+        let viewModel = makeViewModel(promptsViewModel: promptsVM)
+
+        XCTAssertEqual(viewModel.meetingAutoNotePrompts.map(\.name), ["Summary", "Action Items", "Blog Post"])
+        XCTAssertEqual(viewModel.meetingAutoNoteActivePrompts.map(\.name), ["Summary"])
+        XCTAssertEqual(viewModel.meetingAutoNoteActiveCount, 1)
+    }
+
+    func testSetMeetingAutoNoteScopesToMeetingOnly() throws {
+        let promptRepo = MockPromptRepository()
+        promptRepo.prompts = [
+            makeResultPrompt(name: "Action Items", isAutoRun: false, sortOrder: 0),
+        ]
+        let promptsVM = PromptsViewModel()
+        promptsVM.configure(repo: promptRepo)
+        let viewModel = makeViewModel(promptsViewModel: promptsVM)
+
+        let actionItems = try XCTUnwrap(viewModel.meetingAutoNotePrompts.first)
+        XCTAssertFalse(viewModel.isMeetingAutoNote(actionItems))
+
+        viewModel.setMeetingAutoNote(actionItems, enabled: true)
+
+        let toggled = try XCTUnwrap(viewModel.meetingAutoNotePrompts.first)
+        XCTAssertTrue(viewModel.isMeetingAutoNote(toggled))
+        XCTAssertEqual(toggled.appliesToSources, [.meeting], "Enabling from the Meetings card must scope to meetings only.")
+        XCTAssertEqual(viewModel.meetingAutoNoteActiveCount, 1)
+    }
+
     private func makeViewModel(
         calendarMode: CalendarAutoStartMode = .off,
         triggerFilter: MeetingTriggerFilter = .withLink,
         excludedCalendarIds: Set<String> = [],
         meetingPillViewModel: MeetingRecordingPillViewModel? = nil,
+        promptsViewModel: PromptsViewModel? = nil,
         calendarService: MockCalendarService = MockCalendarService()
     ) -> MeetingsWorkspaceViewModel {
         defaults.set(calendarMode.rawValue, forKey: CalendarAutoStartPreferences.modeKey)
@@ -186,7 +229,31 @@ final class MeetingsWorkspaceViewModelTests: XCTestCase {
             meetingPillViewModel: meetingPillViewModel ?? MeetingRecordingPillViewModel(),
             settingsViewModel: settingsViewModel,
             llmSettingsViewModel: llmSettingsViewModel,
+            promptsViewModel: promptsViewModel,
             calendarService: calendarService
+        )
+    }
+
+    private func makeResultPrompt(
+        name: String,
+        isVisible: Bool = true,
+        isAutoRun: Bool = false,
+        sortOrder: Int,
+        appliesToSources: Set<Transcription.SourceType>? = nil
+    ) -> Prompt {
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        return Prompt(
+            id: UUID(),
+            name: name,
+            content: "content for \(name)",
+            category: .result,
+            isBuiltIn: true,
+            isVisible: isVisible,
+            isAutoRun: isAutoRun,
+            sortOrder: sortOrder,
+            createdAt: date,
+            updatedAt: date,
+            appliesToSources: appliesToSources
         )
     }
 

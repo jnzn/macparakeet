@@ -8,7 +8,7 @@ private let transcriptionDecodeLogger = Logger(
 )
 
 public struct Transcription: Codable, Identifiable, Sendable {
-    public enum SourceType: String, Codable, Sendable {
+    public enum SourceType: String, Codable, Sendable, CaseIterable {
         case file
         case youtube
         case meeting

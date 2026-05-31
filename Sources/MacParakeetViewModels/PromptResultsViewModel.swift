@@ -325,12 +325,16 @@ public final class PromptResultsViewModel {
     }
 
     @discardableResult
-    public func autoGeneratePromptResults(transcript: String, transcriptionId: UUID) -> [UUID] {
+    public func autoGeneratePromptResults(
+        transcript: String,
+        transcriptionId: UUID,
+        sourceType: Transcription.SourceType
+    ) -> [UUID] {
         guard transcript.contains(where: { !$0.isWhitespace }) else { return [] }
 
         let autoPrompts: [Prompt]
         do {
-            autoPrompts = try promptRepo?.fetchAutoRunPrompts() ?? []
+            autoPrompts = try promptRepo?.fetchAutoRunPrompts(for: sourceType) ?? []
         } catch {
             logger.warning("Skipping auto-run prompts because preferences could not be loaded: \(error.localizedDescription, privacy: .private)")
             return []

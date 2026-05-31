@@ -130,6 +130,20 @@ public final class PromptsViewModel {
         }
     }
 
+    /// Enable/disable auto-run of a result prompt for a single transcription
+    /// source (e.g. the Meetings "After each meeting" card scopes `.meeting`),
+    /// without affecting whether it auto-runs for other sources.
+    public func setAutoRun(_ prompt: Prompt, source: Transcription.SourceType, enabled: Bool) {
+        guard let repo else { return }
+        do {
+            try repo.setAutoRun(id: prompt.id, source: source, enabled: enabled)
+            errorMessage = nil
+            loadPrompts()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     public func confirmDelete() {
         guard let prompt = pendingDeletePrompt else { return }
         pendingDeletePrompt = nil

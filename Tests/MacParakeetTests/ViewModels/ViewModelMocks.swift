@@ -799,6 +799,10 @@ final class MockPromptRepository: PromptRepositoryProtocol, @unchecked Sendable 
         }
     }
 
+    func fetchAutoRunPrompts(for sourceType: Transcription.SourceType) throws -> [Prompt] {
+        try fetchAutoRunPrompts().filter { $0.autoRuns(for: sourceType) }
+    }
+
     func delete(id: UUID) throws -> Bool {
         let before = prompts.count
         prompts.removeAll { $0.id == id }
@@ -820,6 +824,35 @@ final class MockPromptRepository: PromptRepositoryProtocol, @unchecked Sendable 
         prompts[index].isAutoRun.toggle()
         if prompts[index].isAutoRun {
             prompts[index].isVisible = true
+            prompts[index].appliesToSources = nil
+        }
+        prompts[index].updatedAt = Date()
+    }
+
+    func setAutoRun(id: UUID, source: Transcription.SourceType, enabled: Bool) throws {
+        guard let index = prompts.firstIndex(where: { $0.id == id }) else { return }
+        guard prompts[index].category == .result else { return }
+        if enabled {
+            prompts[index].isVisible = true
+            if !prompts[index].isAutoRun {
+                prompts[index].isAutoRun = true
+                prompts[index].appliesToSources = [source]
+            } else if prompts[index].appliesToSources != nil {
+                prompts[index].appliesToSources?.insert(source)
+            }
+            if prompts[index].appliesToSources == Set(Transcription.SourceType.allCases) {
+                prompts[index].appliesToSources = nil
+            }
+        } else {
+            if prompts[index].appliesToSources == nil {
+                prompts[index].appliesToSources = Set(Transcription.SourceType.allCases).subtracting([source])
+            } else {
+                prompts[index].appliesToSources?.remove(source)
+            }
+            if prompts[index].appliesToSources?.isEmpty == true {
+                prompts[index].isAutoRun = false
+                prompts[index].appliesToSources = nil
+            }
         }
         prompts[index].updatedAt = Date()
     }

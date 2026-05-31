@@ -258,7 +258,8 @@ CREATE TABLE prompts (
     createdAt TEXT NOT NULL,                              -- ISO 8601 timestamp
     updatedAt TEXT NOT NULL,                              -- ISO 8601 timestamp
     keyboardShortcut TEXT,                                -- v0.13 Transform shortcut (encoded KeyboardShortcut)
-    runningLabel TEXT                                     -- v0.13 Transform progress label override
+    runningLabel TEXT,                                    -- v0.13 Transform progress label override
+    appliesToSources TEXT                                 -- v0.20 JSON Set<SourceType> for auto-run scoping; NULL = all sources
 );
 
 CREATE UNIQUE INDEX idx_prompts_name ON prompts(name COLLATE NOCASE);
@@ -271,6 +272,7 @@ CREATE UNIQUE INDEX idx_prompts_name ON prompts(name COLLATE NOCASE);
 - `category` currently stores the raw value `"summary"` for compatibility, while the Swift enum case is `Prompt.Category.result`.
 - Built-ins currently come from `Prompt.builtInPrompts()` in Swift. "Summary" is the lone auto-run built-in for users who have not disabled every auto-run prompt. ("Memo-Steered Notes" was a second auto-run built-in introduced in ADR-020 and reverted on 2026-05-02 — see ADR-020 amendment.)
 - `category = "transform"` rows use `keyboardShortcut` for global Transform bindings and `runningLabel` for the floating progress label. Summary/result prompts leave both fields `NULL`.
+- `appliesToSources` (v0.20) scopes auto-run to specific transcription sources (JSON-encoded `Set<Transcription.SourceType>`). `NULL` means "all sources" — the canonical unscoped form. The Meetings "After each meeting" card sets `[.meeting]`; the global Prompt Library toggle and CLI `--auto-run` reset it to `NULL`. `restoreDefaults()` also clears it. A set covering every source is normalized back to `NULL` so future `SourceType` cases are auto-included. Only consulted when `isAutoRun = true` (see `Prompt.autoRuns(for:)`).
 
 ---
 
@@ -657,6 +659,7 @@ struct Prompt: Codable, Identifiable, Sendable {
     var sortOrder: Int
     var keyboardShortcut: String?
     var runningLabel: String?
+    var appliesToSources: Set<Transcription.SourceType>?  // v0.20 auto-run scoping; nil = all sources
     var createdAt: Date
     var updatedAt: Date
 
@@ -985,6 +988,8 @@ migrator.registerMigration("v0.7-prompts-and-summaries") { db in
 // v0.16 — drop abandoned Transform Workbench tables
 // v0.17 — recreate transform_history (workbench tables stay dropped)
 // v0.18 — llm_runs metadata ledger
+// v0.19 — dictations.language
+// v0.20 — prompts.appliesToSources (auto-run source scoping; NULL = all sources)
 ```
 
 ### Migration Rules
