@@ -147,6 +147,9 @@ public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProto
     public static let meetingAutoStopEnabledKey = "meetingAutoStopEnabled"
     public static let meetingAutoStopDelaySecondsKey = "meetingAutoStopDelaySeconds"
     public static let meetingAutoStopCallAppsKey = "meetingAutoStopCallApps"
+    /// Play a chime (and, when backgrounded, post a banner) when a file/URL
+    /// transcription or a batch finishes. Default on; opt-out in Settings.
+    public static let notifyOnTranscriptionCompleteKey = "notifyOnTranscriptionComplete"
 
     private let defaults: UserDefaults
 
