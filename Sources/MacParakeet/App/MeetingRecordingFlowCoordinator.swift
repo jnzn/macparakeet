@@ -69,6 +69,7 @@ final class MeetingRecordingFlowCoordinator {
     private var microphoneMuteToggleTask: Task<Void, Never>?
     private var autoDismissTask: Task<Void, Never>?
     private var pillPollingTask: Task<Void, Never>?
+    private var callActivityMonitor: MeetingCallActivityMonitor?
     private var transcriptObservationTask: Task<Void, Never>?
     private var speechWarmUpObservationTask: Task<Void, Never>?
     private var activeFlowSettlementWaiters: [CheckedContinuation<Void, Never>] = []
@@ -424,6 +425,7 @@ final class MeetingRecordingFlowCoordinator {
             pillController?.show()
             startSpeechWarmUpObservation()
             startPillPolling()
+            startCallActivityMonitorIfEnabled()
             startTranscriptObservation()
 
         case .startRecording:
@@ -498,6 +500,7 @@ final class MeetingRecordingFlowCoordinator {
             // Calendar-driven meetings already carry the event title — keep it.
             let shouldAutoGenerateTitle = trigger != .calendarAutoStart
             stopPillPolling()
+            stopCallActivityMonitor()
             stopTranscriptObservation()
             stopSpeechWarmUpObservation()
             actionTask = Task { @MainActor in
@@ -574,6 +577,7 @@ final class MeetingRecordingFlowCoordinator {
 
         case .showError(let message):
             stopPillPolling()
+            stopCallActivityMonitor()
             stopTranscriptObservation()
             stopSpeechWarmUpObservation()
             panelViewModel?.state = .error(message)
@@ -585,6 +589,7 @@ final class MeetingRecordingFlowCoordinator {
 
         case .hidePill:
             stopPillPolling()
+            stopCallActivityMonitor()
             stopTranscriptObservation()
             stopSpeechWarmUpObservation()
             pauseToggleTask?.cancel()
@@ -743,6 +748,27 @@ final class MeetingRecordingFlowCoordinator {
     private func stopPillPolling() {
         pillPollingTask?.cancel()
         pillPollingTask = nil
+    }
+
+    private func startCallActivityMonitorIfEnabled() {
+        let prefs = UserDefaultsAppRuntimePreferences(defaults: .standard)
+        guard prefs.meetingAutoStopEnabled else { return }
+        callActivityMonitor?.stop()
+        let monitor = MeetingCallActivityMonitor(
+            delaySeconds: prefs.meetingAutoStopDelaySeconds,
+            onAutoStop: { [weak self] in
+                guard let self else { return }
+                guard self.stateMachine.state == .recording else { return }
+                self.sendEvent(.stopRequested)
+            }
+        )
+        callActivityMonitor = monitor
+        monitor.start()
+    }
+
+    private func stopCallActivityMonitor() {
+        callActivityMonitor?.stop()
+        callActivityMonitor = nil
     }
 
     private func startTranscriptObservation() {
