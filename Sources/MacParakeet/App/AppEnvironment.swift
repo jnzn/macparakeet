@@ -47,6 +47,10 @@ final class AppEnvironment {
     let aiAssistantService: AIAssistantService
     /// Fork-only: live streaming partial transcript delivery to the overlay bubble.
     let streamingDictationTranscriber: StreamingEouDictationTranscriber
+    /// Per-app dictation profile store. Seeded on first launch from the bundled
+    /// local seed (gitignored) or generic samples. Exposed for the App Profiles
+    /// editor view (Task 10+).
+    let appProfileStore: AppProfileStore
 
     init(databaseManager: DatabaseManager) throws {
         self.databaseManager = databaseManager
@@ -62,6 +66,16 @@ final class AppEnvironment {
         llmRunRepo = LLMRunRepository(dbQueue: databaseManager.dbQueue)
         transformHistoryRepo = TransformHistoryRepository(dbQueue: databaseManager.dbQueue)
         quickPromptRepo = QuickPromptRepository(dbQueue: databaseManager.dbQueue)
+
+        // App Profile store — seeded on first launch
+        let appProfileRepository = AppProfileRepository(dbQueue: databaseManager.dbQueue)
+        let bundledProfileSeedURL = Bundle.main.url(
+            forResource: "app-profiles", withExtension: "json", subdirectory: "ProfileSeeds"
+        )
+        try? AppProfileSeeder.seedIfEmpty(repository: appProfileRepository, bundledSeedURL: bundledProfileSeedURL)
+        let appProfileStore = AppProfileStore(repository: appProfileRepository)
+        appProfileStore.load()
+        self.appProfileStore = appProfileStore
 
         // Services
         let runtimePreferences = UserDefaultsAppRuntimePreferences()
@@ -225,8 +239,8 @@ final class AppEnvironment {
                     activationWindow: TelemetryActivationWindow(secondsSinceOnboarding: secondsSinceOnboarding)
                 ))
             },
-            resolveActiveProfile: {
-                AppProfile.resolve(bundleID: AppContextService.frontmostBundleID())
+            resolveActiveProfile: { [snapshot = appProfileStore.snapshot] in
+                snapshot.resolve(bundleID: AppContextService.frontmostBundleID())
             },
             resolveAppContext: { [accessibilityService] in
                 let ctx = await AppContextService.captureContext(accessibility: accessibilityService)
