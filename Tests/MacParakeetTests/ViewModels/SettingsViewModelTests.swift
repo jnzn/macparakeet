@@ -1636,6 +1636,15 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertFalse(vm2.saveTranscriptionAudio)
         XCTAssertTrue(vm2.speakerDiarization)
     }
+
+    func testMeetingAutoStopPropertiesPersist() {
+        let d = UserDefaults(suiteName: "svm-\(UUID().uuidString)")!
+        let vm = SettingsViewModel(defaults: d)
+        vm.meetingAutoStopEnabled = true
+        vm.meetingAutoStopDelaySeconds = 15
+        XCTAssertTrue(d.bool(forKey: UserDefaultsAppRuntimePreferences.meetingAutoStopEnabledKey))
+        XCTAssertEqual(d.integer(forKey: UserDefaultsAppRuntimePreferences.meetingAutoStopDelaySecondsKey), 15)
+    }
 }
 
 private actor MockSpeechEngineSwitchAvailabilityProvider: SpeechEngineSwitchAvailabilityProviding {

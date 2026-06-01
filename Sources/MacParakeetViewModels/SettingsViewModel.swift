@@ -152,6 +152,12 @@ public final class SettingsViewModel {
     public var silenceDelay: Double {
         didSet { defaults.set(silenceDelay, forKey: UserDefaultsAppRuntimePreferences.silenceDelayKey) }
     }
+    public var meetingAutoStopEnabled: Bool {
+        didSet { defaults.set(meetingAutoStopEnabled, forKey: UserDefaultsAppRuntimePreferences.meetingAutoStopEnabledKey) }
+    }
+    public var meetingAutoStopDelaySeconds: Int {
+        didSet { defaults.set(meetingAutoStopDelaySeconds, forKey: UserDefaultsAppRuntimePreferences.meetingAutoStopDelaySecondsKey) }
+    }
     public var keepDictationOnClipboard: Bool {
         didSet {
             defaults.set(
@@ -561,6 +567,9 @@ public final class SettingsViewModel {
         silenceAutoStop = defaults.bool(forKey: UserDefaultsAppRuntimePreferences.silenceAutoStopKey)
         let delay = defaults.double(forKey: UserDefaultsAppRuntimePreferences.silenceDelayKey)
         silenceDelay = delay == 0 ? 2.0 : delay
+        meetingAutoStopEnabled = defaults.object(forKey: UserDefaultsAppRuntimePreferences.meetingAutoStopEnabledKey) as? Bool ?? false
+        let autoStopDelay = defaults.object(forKey: UserDefaultsAppRuntimePreferences.meetingAutoStopDelaySecondsKey) as? Int ?? 5
+        meetingAutoStopDelaySeconds = min(max(autoStopDelay, 2), 120)
         keepDictationOnClipboard = defaults.bool(
             forKey: UserDefaultsAppRuntimePreferences.keepDictationOnClipboardKey
         )

@@ -886,6 +886,35 @@ struct SettingsView: View {
                     meetingAutoSaveOptionsView
                 }
 
+                Divider()
+
+                settingsToggleRow(
+                    title: "Auto-stop recording when the call ends",
+                    detail: "Stops & saves automatically a few seconds after the meeting app (Zoom, Teams, Meet…) releases the microphone.",
+                    isOn: $viewModel.meetingAutoStopEnabled
+                )
+
+                if viewModel.meetingAutoStopEnabled {
+                    Divider()
+                    HStack(alignment: .center) {
+                        rowText(
+                            title: "Auto-stop delay",
+                            detail: "Seconds of no call audio before the recording stops."
+                        )
+                        Spacer(minLength: DesignSystem.Spacing.md)
+                        HStack(spacing: 4) {
+                            TextField("", value: $viewModel.meetingAutoStopDelaySeconds, format: .number)
+                                .frame(width: 44)
+                                .multilineTextAlignment(.trailing)
+                                .textFieldStyle(.roundedBorder)
+                            Text("sec")
+                                .foregroundStyle(.secondary)
+                            Stepper("", value: $viewModel.meetingAutoStopDelaySeconds, in: 2...120)
+                                .labelsHidden()
+                        }
+                    }
+                }
+
                 if AppFeatures.calendarEnabled {
                     Divider()
 
