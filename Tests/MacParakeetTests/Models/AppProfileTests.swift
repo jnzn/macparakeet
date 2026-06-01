@@ -2,6 +2,31 @@ import XCTest
 @testable import MacParakeetCore
 
 final class AppProfileTests: XCTestCase {
+    // MARK: - Task 1: sortOrder + Codable
+
+    func testResolveReturnsFirstEnabledMatchBySortOrder() {
+        let a = AppProfile(id: "a", displayName: "A", bundleIDs: ["com.x"], promptOverride: "PA", enabled: true, sortOrder: 0)
+        let b = AppProfile(id: "b", displayName: "B", bundleIDs: ["com.x"], promptOverride: "PB", enabled: true, sortOrder: 1)
+        let resolved = AppProfile.resolve(bundleID: "com.x", from: [a, b])
+        XCTAssertEqual(resolved?.id, "a")
+    }
+
+    func testResolveSkipsDisabled() {
+        let a = AppProfile(id: "a", displayName: "A", bundleIDs: ["com.x"], promptOverride: "PA", enabled: false, sortOrder: 0)
+        let b = AppProfile(id: "b", displayName: "B", bundleIDs: ["com.x"], promptOverride: "PB", enabled: true, sortOrder: 1)
+        XCTAssertEqual(AppProfile.resolve(bundleID: "com.x", from: [a, b])?.id, "b")
+    }
+
+    func testCodableRoundTripPreservesBundleIDs() throws {
+        let p = AppProfile(id: "email", displayName: "Email", bundleIDs: ["com.apple.mail", "com.microsoft.Outlook"], promptOverride: "X {{TRANSCRIPT}}", enabled: true, sortOrder: 3)
+        let data = try JSONEncoder().encode(p)
+        let back = try JSONDecoder().decode(AppProfile.self, from: data)
+        XCTAssertEqual(back, p)
+        XCTAssertEqual(back.bundleIDs, ["com.apple.mail", "com.microsoft.Outlook"])
+    }
+
+    // MARK: - Existing tests
+
     func testResolveReturnsMatchingProfile() {
         let profiles: [AppProfile] = [
             AppProfile(id: "mail", displayName: "Mail", bundleIDs: ["com.apple.mail"], promptOverride: "mail prompt"),
