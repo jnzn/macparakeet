@@ -906,6 +906,17 @@ public final class DatabaseManager: Sendable {
             }
         }
 
+        migrator.registerMigration("v0.21-app-profiles") { db in
+            try db.create(table: "app_profile", ifNotExists: true) { t in
+                t.column("id", .text).primaryKey()
+                t.column("displayName", .text).notNull()
+                t.column("bundleIDs", .text).notNull()       // JSON array
+                t.column("promptOverride", .text)            // nullable
+                t.column("enabled", .boolean).notNull().defaults(to: true)
+                t.column("sortOrder", .integer).notNull().defaults(to: 0)
+            }
+        }
+
         try migrator.migrate(dbQueue)
         try reconcileBuiltInPrompts()
         try reconcileBuiltInQuickPrompts()
