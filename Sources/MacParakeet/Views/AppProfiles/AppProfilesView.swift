@@ -61,15 +61,11 @@ struct AppProfilesView: View {
 
     @ViewBuilder
     private var editor: some View {
-        if var currentDraft = viewModel.draft {
+        if viewModel.draft != nil {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
                 TextField("Script name", text: Binding(
                     get: { viewModel.draft?.displayName ?? "" },
-                    set: { newValue in
-                        currentDraft.displayName = newValue
-                        viewModel.draft = currentDraft
-                        viewModel.save()
-                    }
+                    set: { viewModel.draft?.displayName = $0; viewModel.save() }
                 ))
                 .textFieldStyle(.roundedBorder)
 
@@ -79,11 +75,7 @@ struct AppProfilesView: View {
                     .font(DesignSystem.Typography.bodySmall).foregroundStyle(.secondary)
                 TextEditor(text: Binding(
                     get: { viewModel.draft?.promptOverride ?? "" },
-                    set: { newValue in
-                        currentDraft.promptOverride = newValue.isEmpty ? nil : newValue
-                        viewModel.draft = currentDraft
-                        viewModel.save()
-                    }
+                    set: { viewModel.draft?.promptOverride = $0.isEmpty ? nil : $0; viewModel.save() }
                 ))
                 .font(.system(.body, design: .monospaced))
                 .frame(minHeight: 160)
@@ -98,11 +90,7 @@ struct AppProfilesView: View {
                 HStack {
                     Toggle("Enabled", isOn: Binding(
                         get: { viewModel.draft?.enabled ?? true },
-                        set: { newValue in
-                            currentDraft.enabled = newValue
-                            viewModel.draft = currentDraft
-                            viewModel.save()
-                        }
+                        set: { viewModel.draft?.enabled = $0; viewModel.save() }
                     ))
                     Spacer()
                     Button(role: .destructive) {
@@ -110,7 +98,7 @@ struct AppProfilesView: View {
                     } label: { Text("Delete script") }
                 }
                 .confirmationDialog(
-                    "Delete \"\(viewModel.draft?.displayName.isEmpty == false ? viewModel.draft!.displayName : "Untitled")\"?",
+                    "Delete \"\(viewModel.draft.map { $0.displayName.isEmpty ? "Untitled" : $0.displayName } ?? "Untitled")\"?",
                     isPresented: $showDeleteConfirm,
                     titleVisibility: .visible
                 ) {

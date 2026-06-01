@@ -68,10 +68,13 @@ public final class AppProfilesViewModel {
     }
 
     public func deleteSelected() {
-        guard let id = selectedID else { return }
+        guard let id = selectedID,
+              let idx = store.profiles.firstIndex(where: { $0.id == id }) else { return }
         store.delete(id: id)
-        selectedID = store.profiles.first?.id
-        draft = store.profiles.first
+        let next = idx < store.profiles.count ? store.profiles[idx]
+                 : (store.profiles.indices.contains(idx - 1) ? store.profiles[idx - 1] : nil)
+        selectedID = next?.id
+        draft = next
     }
 
     /// Bundle IDs in the draft that also appear in another script (resolution is
@@ -87,15 +90,18 @@ public final class AppProfilesViewModel {
             previewError = "Add a prompt to test."
             return
         }
-        isPreviewing = true
-        previewError = nil
-        previewOutput = nil
-        defer { isPreviewing = false }
+        let requestedID = selectedID
+        isPreviewing = true; previewError = nil; previewOutput = nil
+        defer { if selectedID == requestedID { isPreviewing = false } }
         do {
-            previewOutput = try await runPreviewClosure(sample, template)
+            let out = try await runPreviewClosure(sample, template)
+            guard selectedID == requestedID else { return }
+            previewOutput = out
         } catch LLMError.notConfigured {
+            guard selectedID == requestedID else { return }
             previewError = "Configure AI in Settings to test."
         } catch {
+            guard selectedID == requestedID else { return }
             previewError = error.localizedDescription
         }
     }

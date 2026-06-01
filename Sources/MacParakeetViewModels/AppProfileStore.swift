@@ -7,7 +7,7 @@ import MacParakeetCore
 public final class AppProfileSnapshot: @unchecked Sendable {
     private let lock = OSAllocatedUnfairLock(initialState: [AppProfile]())
 
-    func set(_ profiles: [AppProfile]) {
+    fileprivate func set(_ profiles: [AppProfile]) {
         lock.withLock { $0 = profiles }
     }
 

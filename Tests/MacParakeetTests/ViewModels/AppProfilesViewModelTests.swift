@@ -51,6 +51,20 @@ final class AppProfilesViewModelTests: XCTestCase {
         XCTAssertNil(vm.selectedID)
     }
 
+    func testDeleteMiddleSelectsAdjacentNotFirst() throws {
+        let repo = AppProfileRepository(dbQueue: try DatabaseManager(path: ":memory:").dbQueue)
+        try repo.save(AppProfile(id: "p1", displayName: "P1", bundleIDs: [], promptOverride: nil, enabled: true, sortOrder: 0))
+        try repo.save(AppProfile(id: "p2", displayName: "P2", bundleIDs: [], promptOverride: nil, enabled: true, sortOrder: 1))
+        try repo.save(AppProfile(id: "p3", displayName: "P3", bundleIDs: [], promptOverride: nil, enabled: true, sortOrder: 2))
+        let store = AppProfileStore(repository: repo)
+        store.load()
+        let vm = AppProfilesViewModel(store: store, runPreview: { _, _ in "OUT" })
+        vm.select(id: "p2")  // select middle
+        vm.deleteSelected()
+        // After deleting p2 (was at index 1), p3 slides to index 1 — should be selected.
+        XCTAssertEqual(vm.selectedID, "p3")
+    }
+
     func testRunPreviewSetsOutput() async throws {
         let vm = try makeVM(preview: { _, _ in "Hi — can you send me the deck?" })
         vm.select(id: "a")
