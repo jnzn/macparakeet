@@ -28,6 +28,8 @@ public protocol AppRuntimePreferencesProtocol: Sendable {
     /// When AI Formatter is on, also clean the overlay bubble mid-dictation
     /// (on pauses). Toggle off to get only the final end-of-dictation cleanup.
     var liveBubbleCleanupEnabled: Bool { get }
+    var meetingAutoStopEnabled: Bool { get }
+    var meetingAutoStopDelaySeconds: Int { get }
 }
 
 public enum YouTubeAudioQuality: String, CaseIterable, Hashable, Sendable, Equatable {
@@ -138,6 +140,8 @@ public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProto
     public static let hasCompletedFirstDictationKey = "hasCompletedFirstDictation"
     public static let streamingOverlayEnabledKey = "streamingOverlayEnabled"
     public static let liveBubbleCleanupEnabledKey = "liveBubbleCleanupEnabled"
+    public static let meetingAutoStopEnabledKey = "meetingAutoStopEnabled"
+    public static let meetingAutoStopDelaySecondsKey = "meetingAutoStopDelaySeconds"
 
     private let defaults: UserDefaults
 
@@ -225,5 +229,14 @@ public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProto
 
     public var liveBubbleCleanupEnabled: Bool {
         defaults.object(forKey: Self.liveBubbleCleanupEnabledKey) as? Bool ?? true
+    }
+
+    public var meetingAutoStopEnabled: Bool {
+        defaults.object(forKey: Self.meetingAutoStopEnabledKey) as? Bool ?? false
+    }
+
+    public var meetingAutoStopDelaySeconds: Int {
+        let v = defaults.object(forKey: Self.meetingAutoStopDelaySecondsKey) as? Int ?? 5
+        return min(max(v, 2), 120)   // clamp to sane bounds
     }
 }

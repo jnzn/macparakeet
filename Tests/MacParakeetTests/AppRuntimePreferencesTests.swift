@@ -87,3 +87,23 @@ final class AppRuntimePreferencesTests: XCTestCase {
         XCTAssertTrue(UserDefaultsAppRuntimePreferences(defaults: defaults).pauseMediaDuringDictation)
     }
 }
+
+final class AppRuntimePreferencesAutoStopTests: XCTestCase {
+    private func defaults() -> UserDefaults {
+        let s = "prefs-\(UUID().uuidString)"; let d = UserDefaults(suiteName: s)!
+        d.removePersistentDomain(forName: s); return d
+    }
+    func testDefaults() {
+        let p = UserDefaultsAppRuntimePreferences(defaults: defaults())
+        XCTAssertFalse(p.meetingAutoStopEnabled)
+        XCTAssertEqual(p.meetingAutoStopDelaySeconds, 5)
+    }
+    func testOverrides() {
+        let d = defaults()
+        d.set(true, forKey: UserDefaultsAppRuntimePreferences.meetingAutoStopEnabledKey)
+        d.set(12, forKey: UserDefaultsAppRuntimePreferences.meetingAutoStopDelaySecondsKey)
+        let p = UserDefaultsAppRuntimePreferences(defaults: d)
+        XCTAssertTrue(p.meetingAutoStopEnabled)
+        XCTAssertEqual(p.meetingAutoStopDelaySeconds, 12)
+    }
+}
