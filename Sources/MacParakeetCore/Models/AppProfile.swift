@@ -6,28 +6,32 @@ import Foundation
 ///
 /// MVP: hardcoded `defaults` only. A later iteration will persist user-editable
 /// profiles to GRDB + a Settings editor.
-public struct AppProfile: Equatable, Sendable, Identifiable {
+public struct AppProfile: Equatable, Sendable, Identifiable, Codable {
     public let id: String
-    public let displayName: String
+    public var displayName: String
     /// Bundle identifiers this profile applies to. First profile with a match wins.
-    public let bundleIDs: [String]
+    public var bundleIDs: [String]
     /// Full LLM prompt template (uses `{{TRANSCRIPT}}` placeholder) to use instead
     /// of the user-configured default. Nil falls back to the default formatter prompt.
-    public let promptOverride: String?
-    public let enabled: Bool
+    public var promptOverride: String?
+    public var enabled: Bool
+    /// Stable ordering for the editor tab strip and first-match resolution.
+    public var sortOrder: Int
 
     public init(
         id: String,
         displayName: String,
         bundleIDs: [String],
         promptOverride: String?,
-        enabled: Bool = true
+        enabled: Bool = true,
+        sortOrder: Int = 0
     ) {
         self.id = id
         self.displayName = displayName
         self.bundleIDs = bundleIDs
         self.promptOverride = promptOverride
         self.enabled = enabled
+        self.sortOrder = sortOrder
     }
 
     /// First enabled profile in `profiles` whose `bundleIDs` contains `bundleID`,
@@ -365,4 +369,16 @@ extension AppProfile {
                 """
         ),
     ]
+}
+
+// MARK: - GRDB
+
+import GRDB
+
+extension AppProfile: FetchableRecord, PersistableRecord {
+    public static let databaseTableName = "app_profile"
+
+    public enum Columns: String, ColumnExpression {
+        case id, displayName, bundleIDs, promptOverride, enabled, sortOrder
+    }
 }
