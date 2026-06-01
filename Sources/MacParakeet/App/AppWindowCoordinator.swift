@@ -19,9 +19,21 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
     private let textSnippetsViewModel: TextSnippetsViewModel
     private let vocabularyBackupViewModel: VocabularyBackupViewModel
     private let feedbackViewModel: FeedbackViewModel
-    /// Set by AppDelegate.setupEnvironment before openMainWindow() can be called.
-    /// Always non-nil when createMainWindow() executes; force-unwrap there is safe.
-    var appProfilesViewModel: AppProfilesViewModel?  // non-nil invariant held by AppDelegate
+    /// Set by AppDelegate.setupEnvironment once the async environment bootstrap
+    /// finishes (it depends on the bootstrapped store + LLM service). The menu
+    /// bar is live before that, so a launch-race open is deferred via
+    /// `pendingMainWindowOpen` and replayed here once the VM lands.
+    var appProfilesViewModel: AppProfilesViewModel? {
+        didSet {
+            if appProfilesViewModel != nil, pendingMainWindowOpen {
+                pendingMainWindowOpen = false
+                openMainWindow()
+            }
+        }
+    }
+    /// True when openMainWindow() was requested before the environment finished
+    /// bootstrapping (appProfilesViewModel still nil). Replayed from the didSet.
+    private var pendingMainWindowOpen = false
     private let libraryViewModel: TranscriptionLibraryViewModel
     private let meetingsWorkspaceViewModel: MeetingsWorkspaceViewModel
     private let meetingPillViewModel: MeetingRecordingPillViewModel
@@ -92,6 +104,13 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
     }
 
     func openMainWindow() {
+        guard appProfilesViewModel != nil else {
+            // Environment still bootstrapping (rare launch-race: the menu bar is
+            // live before setupEnvironment sets appProfilesViewModel). Defer the
+            // open; it replays from appProfilesViewModel.didSet once the VM lands.
+            pendingMainWindowOpen = true
+            return
+        }
         if mainWindow == nil {
             createMainWindow()
         }
@@ -172,10 +191,9 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
     }
 
     private func createMainWindow() {
-        // AppDelegate.setupEnvironment sets appProfilesViewModel before any user
-        // action can trigger openMainWindow(). Force-unwrap is intentional: a nil
-        // here would mean a programming error in startup sequencing, and we want a
-        // loud crash rather than a silent in-memory no-op fallback reaching the view.
+        // openMainWindow() guards on appProfilesViewModel != nil and defers the
+        // open until it lands, so this is only reached once the VM is set — the
+        // real (seeded-store-backed) VM always reaches the view, never an empty one.
         let resolvedAppProfilesViewModel = appProfilesViewModel!
         let contentView = MainWindowView(
             state: mainWindowState,
