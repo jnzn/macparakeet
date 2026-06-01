@@ -20,6 +20,9 @@ DerivedData/
 
 # PDX Edition — local-only, never commit
 scripts/dev/MacParakeetPDX.p12
+
+# Local-only profile seed (user's real per-app prompts; bundled at build, never committed)
+seeds/*.local.json
 .worktrees/
 *.orig
 default.profraw
