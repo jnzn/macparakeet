@@ -12,6 +12,32 @@ final class MeetingRecordingFlowStateMachineTests: XCTestCase {
         XCTAssertEqual(effects, [.checkPermissions])
     }
 
+    func testIsCapturingIsFalseOnceStoppingSoMenuOffersStart() {
+        // Regression: the menu-bar "Start/Stop Recording" label tracks active
+        // capture. Once the user stops, the flow enters `.stopping` (audio
+        // finalize) then `.idle` (background transcription) — in both the menu
+        // must read "Start Recording", not "Stop". Bug: it read "Stop" during
+        // the post-stop processing window because `isMeetingRecordingActive`
+        // (used for the label) counted `.stopping` as active.
+        var machine = MeetingRecordingFlowStateMachine()
+        XCTAssertFalse(machine.state.isCapturing)  // idle
+
+        _ = machine.handle(.startRequested)        // checkingPermissions
+        XCTAssertTrue(machine.state.isCapturing)
+        _ = machine.handle(.permissionsGranted(generation: machine.generation))  // starting
+        XCTAssertTrue(machine.state.isCapturing)
+        _ = machine.handle(.recordingStarted(generation: machine.generation))    // recording
+        XCTAssertTrue(machine.state.isCapturing)
+
+        _ = machine.handle(.stopRequested)         // stopping (audio finalize)
+        XCTAssertEqual(machine.state, .stopping)
+        XCTAssertFalse(machine.state.isCapturing, "menu must offer Start during post-capture finalize")
+
+        _ = machine.handle(.handedOffToBackground(generation: machine.generation))  // idle (transcribing)
+        XCTAssertEqual(machine.state, .idle)
+        XCTAssertFalse(machine.state.isCapturing)
+    }
+
     func testStopRequestedWhileIdleIsNoOp() {
         // Invariant: `.stopRequested` from `.idle` must be a no-op — a stop
         // must NEVER start a recording. (Privacy fix: a blind toggle would
