@@ -2192,18 +2192,31 @@ public actor TranscriptionService: SpeakerConfiguredRetranscriptionService, Audi
             removeUmFiller: appliesCleanPipeline && removeUmFiller()
         )
         let baseText = refinement.text ?? rawText
-        let transcriptFormatter = TranscriptFormatter(
-            llmService: llmService,
-            shouldUseAIFormatter: shouldUseAIFormatter,
-            logger: logger
-        )
-        let promptTemplateProvider = aiFormatterPromptTemplate
-        let formatterOutcome = try await transcriptFormatter.format(
-            baseText,
-            runSource: persistResult ? LLMRunSource(transcriptionId: transcription.id) : nil,
-            lane: .transcription,
-            resolvePrompt: { (promptTemplateProvider(), nil) }
-        )
+        // Meetings & voice memos (telemetry `source == .meeting`; voiceMemo has
+        // no separate telemetry bucket, see the appliesCleanPipeline gate
+        // above) keep the verbatim transcript. The AI Formatter is a short-
+        // dictation cleanup pass; on a long meeting it rewrites/summarizes,
+        // and its output was landing in cleanTranscript — which both the
+        // transcript view and auto-export read, so the meeting "transcript"
+        // came out as a summary. Meeting summaries come from the separate
+        // auto-notes / prompt-results feature, not here.
+        let formatterOutcome: FormatterOutcome
+        if source == .meeting {
+            formatterOutcome = .skipped
+        } else {
+            let transcriptFormatter = TranscriptFormatter(
+                llmService: llmService,
+                shouldUseAIFormatter: shouldUseAIFormatter,
+                logger: logger
+            )
+            let promptTemplateProvider = aiFormatterPromptTemplate
+            formatterOutcome = try await transcriptFormatter.format(
+                baseText,
+                runSource: persistResult ? LLMRunSource(transcriptionId: transcription.id) : nil,
+                lane: .transcription,
+                resolvePrompt: { (promptTemplateProvider(), nil) }
+            )
+        }
         let formattedTranscript = formatterOutcome.text
         transcription.cleanTranscript = formattedTranscript ?? refinement.text
 
