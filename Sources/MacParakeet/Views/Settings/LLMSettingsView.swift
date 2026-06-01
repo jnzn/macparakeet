@@ -408,6 +408,10 @@ struct LLMSettingsView: View {
                     .disabled(!viewModel.canResetAIFormatterPrompt)
                 }
             }
+
+            Text("Per-app dictation scripts live in the App Profiles section (sidebar).")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
