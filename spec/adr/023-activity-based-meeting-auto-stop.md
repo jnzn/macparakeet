@@ -1,6 +1,6 @@
 # ADR-023: Activity-Based Meeting Auto-Stop
 
-> Status: **PROPOSAL** — not implemented. Realizes the "activity/audio-based auto-stop" that ADR-017's 2026-05-22 amendment deferred to a future ADR after withdrawing calendar-driven auto-stop.
+> Status: **ACCEPTED** — Phase 0 (spike) done 2026-06-01; Phase 1 implemented: hard auto-stop after a configurable delay (default 5s), opt-in Settings toggle (default off), detection excludes MacParakeet + com.apple.avconferenced. Phase 2 (VAD corroboration / soft-confirm) remains proposed.
 > Date: 2026-05-29
 > Related: ADR-014 (meeting recording), ADR-015 (concurrent dictation/meeting), ADR-017 (calendar auto-start; auto-stop withdrawn), ADR-019 (crash-resilient recording)
 
@@ -39,8 +39,8 @@ Expose one toggle in Settings → Meetings: **"Auto-stop recording when the call
 ## Open Questions / Risks
 - **Mute behavior:** confirm each target app keeps the OS mic "in use" while muted (Teams/Zoom/Meet generally do — mute is app-level). If an app releases on mute, debounce + VAD corroboration covers it.
 - **Browser multi-tab mic:** if another tab also holds the mic, the browser won't release until both end. Rare; debounce + VAD corroboration mitigates.
-- **Core Audio per-process input API:** verify `kAudioProcessPropertyIsRunningInput` reliably reflects per-process input capture across the supported macOS range — build a small spike before committing.
-- **Self-exclusion:** MacParakeet's own capture must be excluded from detection.
+- **Core Audio per-process input API:** verified by the `mic-processes` spike (2026-06-01) — Teams acquire/release clean; `com.apple.avconferenced` holds the mic persistently on some Macs and is excluded. `kAudioProcessPropertyIsRunningInput` reliably reflects per-process input capture on macOS 14.2+.
+- **Self-exclusion:** MacParakeet's own capture (`com.macparakeet` prefix) is excluded from detection via `MeetingCallActivity.excludedPrefixes`.
 
 ## Phased Rollout (proposed)
 1. **Spike** — confirm Core Audio per-process input detection works and the meeting process can be identified at record-start.
