@@ -470,6 +470,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // is on (see `AppFeatures.transformsSpikeEnabled`). Always-created so
         // we can `stop()` it cleanly during termination even if the flag
         // flipped after launch.
+        // Build the App Profiles VM now that the environment (store + llmService) is ready,
+        // and hand it to the window coordinator before the main window is first created.
+        let appProfilesViewModel = AppProfilesViewModel(
+            store: env.appProfileStore,
+            runPreview: { [llmService = env.llmService] sample, template in
+                try await llmService.formatTranscript(
+                    transcript: sample,
+                    promptTemplate: template,
+                    source: .dictation,
+                    defaultPromptUsed: false
+                )
+            }
+        )
+        windowCoordinator.appProfilesViewModel = appProfilesViewModel
+
         let configStore = env.llmConfigStore
         let llmService = env.llmService
         let llmServiceProvider: () -> LLMServiceProtocol? = { [weak configStore, llmService] in

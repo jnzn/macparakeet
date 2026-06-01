@@ -9,6 +9,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
     case meetings = "Meetings"
     case transforms = "Transforms"
     case vocabulary = "Vocabulary"
+    case appProfiles = "App Profiles"
     case feedback = "Feedback"
     case settings = "Settings"
 
@@ -22,6 +23,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         case .dictations: return "clock.arrow.circlepath"
         case .transforms: return "wand.and.stars"
         case .vocabulary: return "book.fill"
+        case .appProfiles: return "person.crop.rectangle.stack"
         case .feedback: return "bubble.left.and.text.bubble.right"
         case .settings: return "gearshape"
         }
@@ -41,7 +43,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
     /// Configuration and support items. Transforms (ADR-022) is inserted
     /// here at runtime when `AppFeatures.transformsEnabled == true`.
     static var configItems: [SidebarItem] {
-        var items: [SidebarItem] = [.vocabulary, .feedback, .settings]
+        var items: [SidebarItem] = [.vocabulary, .appProfiles, .feedback, .settings]
         if AppFeatures.transformsEnabled {
             items.insert(.transforms, at: 0)
         }
@@ -65,6 +67,7 @@ struct MainWindowView: View {
     let textSnippetsViewModel: TextSnippetsViewModel
     let vocabularyBackupViewModel: VocabularyBackupViewModel
     let feedbackViewModel: FeedbackViewModel
+    let appProfilesViewModel: AppProfilesViewModel
     let libraryViewModel: TranscriptionLibraryViewModel
     let meetingsWorkspaceViewModel: MeetingsWorkspaceViewModel
     let meetingPillViewModel: MeetingRecordingPillViewModel
@@ -237,6 +240,8 @@ struct MainWindowView: View {
                             textSnippetsViewModel: textSnippetsViewModel,
                             backupViewModel: vocabularyBackupViewModel
                         )
+                    case .appProfiles:
+                        AppProfilesView(viewModel: appProfilesViewModel)
                     case .feedback:
                         FeedbackView(viewModel: feedbackViewModel)
                     case .settings:
