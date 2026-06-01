@@ -501,6 +501,18 @@ else
   echo "Warning: Silero VAD model not found at $SILERO_SRC; live chunking will download it on first use." >&2
 fi
 
+# Bundle the local-only per-app profile seed (the user's real prompts) when
+# present. Gitignored (seeds/*.local.json), so public/CI builds ship nothing
+# here and the app falls back to the 3 generic AppProfile.defaults.
+PROFILE_SEED_SRC="$ROOT_DIR/seeds/app-profiles.local.json"
+if [[ -f "$PROFILE_SEED_SRC" ]]; then
+  mkdir -p "$RESOURCES_DIR/ProfileSeeds"
+  cp "$PROFILE_SEED_SRC" "$RESOURCES_DIR/ProfileSeeds/app-profiles.json"
+  echo "Bundled app-profile seed: $RESOURCES_DIR/ProfileSeeds/app-profiles.json"
+else
+  echo "No local app-profile seed ($PROFILE_SEED_SRC); shipping generic samples only."
+fi
+
 # Ship license/notice material with the app bundle so downloaded artifacts carry
 # the GPL and third-party notices for bundled/downloaded helper binaries.
 if [[ -f "$ROOT_DIR/LICENSE" ]]; then
