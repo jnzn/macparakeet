@@ -40,9 +40,11 @@ public enum MicInputProbe {
     private static func stringProperty(_ object: AudioObjectID, _ selector: AudioObjectPropertySelector) -> String? {
         var address = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         guard AudioObjectHasProperty(object, &address) else { return nil }
-        var cfString: CFString?
-        var size = UInt32(MemoryLayout<CFString?>.size)
+        // CoreAudio returns a +1 retained CFStringRef; take ownership via
+        // Unmanaged so ARC releases it (matches AudioDeviceManager's pattern).
+        var cfString: Unmanaged<CFString>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
         guard AudioObjectGetPropertyData(object, &address, 0, nil, &size, &cfString) == noErr else { return nil }
-        return cfString as String?
+        return cfString?.takeRetainedValue() as String?
     }
 }

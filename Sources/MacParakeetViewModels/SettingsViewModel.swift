@@ -156,7 +156,17 @@ public final class SettingsViewModel {
         didSet { defaults.set(meetingAutoStopEnabled, forKey: UserDefaultsAppRuntimePreferences.meetingAutoStopEnabledKey) }
     }
     public var meetingAutoStopDelaySeconds: Int {
-        didSet { defaults.set(meetingAutoStopDelaySeconds, forKey: UserDefaultsAppRuntimePreferences.meetingAutoStopDelaySecondsKey) }
+        didSet {
+            // Clamp on write too (the TextField allows direct entry of any int);
+            // the prefs accessor also clamps on read, but this keeps the persisted
+            // + displayed value in range.
+            let clamped = min(max(meetingAutoStopDelaySeconds, 2), 120)
+            if clamped != meetingAutoStopDelaySeconds {
+                meetingAutoStopDelaySeconds = clamped
+                return
+            }
+            defaults.set(meetingAutoStopDelaySeconds, forKey: UserDefaultsAppRuntimePreferences.meetingAutoStopDelaySecondsKey)
+        }
     }
     public var keepDictationOnClipboard: Bool {
         didSet {
