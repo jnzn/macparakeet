@@ -85,16 +85,15 @@ final class AppProfileTests: XCTestCase {
     }
 
     func testShippedDefaultsCoverExpectedApps() {
-        // Sanity: the hardcoded defaults have entries for the apps the MVP targets.
+        // Sanity: the 3 generic committed samples cover their bundle IDs.
+        // (The user's real per-app prompts are in the gitignored local seed.)
         let expectedBundleIDs = [
             "com.apple.mail",
             "com.microsoft.Outlook",
             "md.obsidian",
-            "com.microsoft.teams2",
+            "com.apple.Notes",
+            "com.tinyspeck.slackmacgap",
             "com.apple.MobileSMS",
-            "com.apple.Terminal",
-            "com.googlecode.iterm2",
-            "com.apple.dt.Xcode",
         ]
 
         for bundleID in expectedBundleIDs {
@@ -105,16 +104,11 @@ final class AppProfileTests: XCTestCase {
         }
     }
 
-    func testTerminalAndIDEAreSeparateProfiles() {
-        // Terminal apps get a heavy-weight transliteration prompt; code
-        // editors get a lighter prompt that avoids mangling prose comments.
-        // They must NOT resolve to the same profile ID.
-        let terminalID = AppProfile.resolve(bundleID: "com.apple.Terminal")?.id
-        let xcodeID = AppProfile.resolve(bundleID: "com.apple.dt.Xcode")?.id
-
-        XCTAssertEqual(terminalID, "terminal")
-        XCTAssertEqual(xcodeID, "ide")
-        XCTAssertNotEqual(terminalID, xcodeID)
+    func testGenericDefaultsHaveThreeSamples() {
+        // The committed repo ships exactly 3 generic starter samples.
+        // Real per-app prompts live in the gitignored local seed.
+        XCTAssertEqual(AppProfile.defaults.count, 3)
+        XCTAssertTrue(AppProfile.defaults.allSatisfy { $0.id.hasPrefix("sample-") })
     }
 
     func testShippedDefaultsHaveUniqueIDs() {
