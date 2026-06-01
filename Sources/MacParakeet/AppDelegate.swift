@@ -220,7 +220,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.settingsViewModel.youtubeTranscriptionHotkeyTrigger ?? .disabled
         },
         meetingRecordingActiveProvider: { [weak self] in
-            self?.meetingRecordingFlowCoordinator?.isMeetingRecordingActive == true
+            // Menu label tracks active capture only — stays "Start Recording"
+            // during the post-stop finalize/transcription so the user can start
+            // the next meeting (the prior one finishes in the background).
+            self?.meetingRecordingFlowCoordinator?.isMeetingCaptureActive == true
         },
         voiceMemoHotkeyTriggerProvider: { [weak self] in
             self?.settingsViewModel.voiceMemoHotkeyTrigger ?? .defaultVoiceMemo

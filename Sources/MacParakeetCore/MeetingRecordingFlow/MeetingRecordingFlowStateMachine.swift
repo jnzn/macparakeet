@@ -16,6 +16,22 @@ public enum MeetingRecordingFlowState: Equatable, Sendable {
     /// it runs detached so a new recording can start immediately.
     case stopping
     case finishing(outcome: MeetingRecordingFlowFinishOutcome)
+
+    /// Whether microphone/system capture is actively running (or spinning up).
+    /// Drives the menu-bar Start/Stop label: it is **false** during `.stopping`
+    /// (post-capture audio finalize/handoff) and `.finishing`, so once the user
+    /// has stopped, the menu offers "Start Recording" again — the just-ended
+    /// meeting finalizes and transcribes in the background. Distinct from the
+    /// broader `MeetingRecordingFlowCoordinator.isMeetingRecordingActive`, which
+    /// also covers `.stopping` for internal gating.
+    public var isCapturing: Bool {
+        switch self {
+        case .checkingPermissions, .starting, .recording:
+            return true
+        case .idle, .stopping, .finishing:
+            return false
+        }
+    }
 }
 
 public enum MeetingRecordingFlowFinishOutcome: Equatable, Sendable {

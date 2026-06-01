@@ -19,6 +19,14 @@ final class MeetingRecordingFlowCoordinator {
         }
     }
 
+    /// Active capture only — for the menu-bar Start/Stop label. False during
+    /// `.stopping` (post-capture audio finalize/handoff), so once the user stops,
+    /// the menu offers "Start Recording" while the just-ended meeting finalizes
+    /// and transcribes in the background (the "N processing" badge tracks that).
+    var isMeetingCaptureActive: Bool {
+        stateMachine.state.isCapturing
+    }
+
     var quitState: MeetingRecordingQuitState? {
         switch stateMachine.state {
         case .idle, .finishing:
