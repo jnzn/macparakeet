@@ -1338,10 +1338,21 @@ public actor TranscriptionService: SpeechEngineOverrideTranscriptionService {
             snippets: snippets
         )
         let baseText = refinement.text ?? rawText
-        let formatterOutcome = try await formatTranscriptIfNeeded(
-            baseText,
-            runSource: persistResult ? LLMRunSource(transcriptionId: transcription.id) : nil
-        )
+        // Meetings & voice memos (sourceType == .meeting) keep the verbatim
+        // transcript. The AI Formatter is a short-dictation cleanup pass; on a
+        // long meeting it rewrites/summarizes, and its output was landing in
+        // cleanTranscript — which both the transcript view and auto-export read,
+        // so the meeting "transcript" came out as a summary. Meeting summaries
+        // come from the separate auto-notes / prompt-results feature, not here.
+        let formatterOutcome: FormatterOutcome
+        if transcription.sourceType == .meeting {
+            formatterOutcome = .skipped
+        } else {
+            formatterOutcome = try await formatTranscriptIfNeeded(
+                baseText,
+                runSource: persistResult ? LLMRunSource(transcriptionId: transcription.id) : nil
+            )
+        }
         let formattedTranscript = formatterOutcome.text
         transcription.cleanTranscript = formattedTranscript ?? refinement.text
 

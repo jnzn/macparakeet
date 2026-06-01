@@ -953,6 +953,66 @@ final class TranscriptionServiceTests: XCTestCase {
         XCTAssertFalse(diarizationApplied)
     }
 
+    func testMeetingTranscriptIsNotRunThroughAIFormatter() async throws {
+        // Regression: meetings (and voice memos, sourceType == .meeting) must keep
+        // the verbatim transcript. The AI Formatter is a short-dictation cleanup
+        // pass; on a long meeting it rewrites/summarizes, and its output was landing
+        // in cleanTranscript — which the transcript view and auto-export both read.
+        let recordingFolder = URL(fileURLWithPath: AppPaths.tempDir)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: recordingFolder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: recordingFolder) }
+
+        let mixedURL = recordingFolder.appendingPathComponent("meeting.m4a")
+        let microphoneURL = recordingFolder.appendingPathComponent("microphone.m4a")
+        let systemURL = recordingFolder.appendingPathComponent("system.m4a")
+        XCTAssertTrue(FileManager.default.createFile(atPath: mixedURL.path, contents: Data("mixed".utf8)))
+        XCTAssertTrue(FileManager.default.createFile(atPath: microphoneURL.path, contents: Data("microphone".utf8)))
+        XCTAssertTrue(FileManager.default.createFile(atPath: systemURL.path, contents: Data("system".utf8)))
+
+        await mockSTT.configureSequence(results: [
+            STTResult(text: "the full verbatim"),
+            STTResult(text: "meeting transcript"),
+        ])
+
+        let mockLLMService = MockLLMService()
+        mockLLMService.formatTranscriptResult = "A one-line summary."  // would-be summary
+
+        let service = TranscriptionService(
+            audioProcessor: mockAudio,
+            sttTranscriber: mockSTT,
+            transcriptionRepo: transcriptionRepo,
+            llmService: mockLLMService,
+            llmRunRepo: llmRunRepo,
+            shouldUseAIFormatter: { true },
+            aiFormatterPromptTemplate: { AIFormatter.defaultPromptTemplate }
+        )
+
+        let recording = MeetingRecordingOutput(
+            sessionID: UUID(),
+            displayName: "Meeting Demo",
+            folderURL: recordingFolder,
+            mixedAudioURL: mixedURL,
+            microphoneAudioURL: microphoneURL,
+            systemAudioURL: systemURL,
+            durationSeconds: 1.0,
+            sourceAlignment: MeetingSourceAlignment(
+                meetingOriginHostTime: nil,
+                microphone: .init(firstHostTime: nil, lastHostTime: nil, startOffsetMs: 0, writtenFrameCount: 24_000, sampleRate: 48_000),
+                system: .init(firstHostTime: nil, lastHostTime: nil, startOffsetMs: 900, writtenFrameCount: 24_000, sampleRate: 48_000)
+            )
+        )
+
+        let result = try await service.transcribeMeeting(recording: recording)
+
+        let expectedTranscript = "the full verbatim\n\nmeeting transcript"
+        XCTAssertEqual(mockLLMService.formatTranscriptCallCount, 0, "AI formatter must not run on meetings")
+        XCTAssertNotEqual(result.cleanTranscript, "A one-line summary.")
+        XCTAssertEqual(result.rawTranscript, expectedTranscript)
+        // What the transcript view + auto-export read must be the full transcript.
+        XCTAssertEqual(result.cleanTranscript ?? result.rawTranscript, expectedTranscript)
+    }
+
     func testTranscribeMeetingUsesCapturedSpeechEngineSelection() async throws {
         let recordingFolder = URL(fileURLWithPath: AppPaths.tempDir)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
