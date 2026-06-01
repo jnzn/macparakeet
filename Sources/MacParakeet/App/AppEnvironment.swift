@@ -73,6 +73,7 @@ final class AppEnvironment {
             forResource: "app-profiles", withExtension: "json", subdirectory: "ProfileSeeds"
         )
         try? AppProfileSeeder.seedIfEmpty(repository: appProfileRepository, bundledSeedURL: bundledProfileSeedURL)
+        try? AppProfileSeeder.reseedIfVersionOutdated(repository: appProfileRepository, bundledSeedURL: bundledProfileSeedURL)
         let appProfileStore = AppProfileStore(repository: appProfileRepository)
         appProfileStore.load()
         self.appProfileStore = appProfileStore
