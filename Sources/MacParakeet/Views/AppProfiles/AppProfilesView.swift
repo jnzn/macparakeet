@@ -5,6 +5,7 @@ import MacParakeetViewModels
 struct AppProfilesView: View {
     @Bindable var viewModel: AppProfilesViewModel
     @State private var manualBundleID = ""
+    @State private var showDeleteConfirm = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
@@ -105,8 +106,18 @@ struct AppProfilesView: View {
                     ))
                     Spacer()
                     Button(role: .destructive) {
-                        viewModel.deleteSelected()
+                        showDeleteConfirm = true
                     } label: { Text("Delete script") }
+                }
+                .confirmationDialog(
+                    "Delete \"\(viewModel.draft?.displayName.isEmpty == false ? viewModel.draft!.displayName : "Untitled")\"?",
+                    isPresented: $showDeleteConfirm,
+                    titleVisibility: .visible
+                ) {
+                    Button("Delete", role: .destructive) {
+                        viewModel.deleteSelected()
+                    }
+                    Button("Cancel", role: .cancel) {}
                 }
             }
         }

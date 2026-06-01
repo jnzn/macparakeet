@@ -93,6 +93,8 @@ public final class AppProfilesViewModel {
         defer { isPreviewing = false }
         do {
             previewOutput = try await runPreviewClosure(sample, template)
+        } catch LLMError.notConfigured {
+            previewError = "Configure AI in Settings to test."
         } catch {
             previewError = error.localizedDescription
         }

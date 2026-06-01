@@ -19,8 +19,9 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
     private let textSnippetsViewModel: TextSnippetsViewModel
     private let vocabularyBackupViewModel: VocabularyBackupViewModel
     private let feedbackViewModel: FeedbackViewModel
-    /// Set by AppDelegate once the environment is ready (after lazy init of the coordinator).
-    var appProfilesViewModel: AppProfilesViewModel?
+    /// Set by AppDelegate.setupEnvironment before openMainWindow() can be called.
+    /// Always non-nil when createMainWindow() executes; force-unwrap there is safe.
+    var appProfilesViewModel: AppProfilesViewModel?  // non-nil invariant held by AppDelegate
     private let libraryViewModel: TranscriptionLibraryViewModel
     private let meetingsWorkspaceViewModel: MeetingsWorkspaceViewModel
     private let meetingPillViewModel: MeetingRecordingPillViewModel
@@ -171,16 +172,11 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
     }
 
     private func createMainWindow() {
-        // AppProfilesViewModel is set after the coordinator is created (environment
-        // is available after lazy init). Provide a no-op fallback so the window
-        // still opens correctly in edge cases (e.g. very fast user who opens the
-        // window before the environment finishes bootstrapping).
-        let resolvedAppProfilesViewModel = appProfilesViewModel ?? AppProfilesViewModel(
-            store: AppProfileStore(repository: AppProfileRepository(
-                dbQueue: (try? DatabaseManager(path: ":memory:"))!.dbQueue
-            )),
-            runPreview: { _, _ in "" }
-        )
+        // AppDelegate.setupEnvironment sets appProfilesViewModel before any user
+        // action can trigger openMainWindow(). Force-unwrap is intentional: a nil
+        // here would mean a programming error in startup sequencing, and we want a
+        // loud crash rather than a silent in-memory no-op fallback reaching the view.
+        let resolvedAppProfilesViewModel = appProfilesViewModel!
         let contentView = MainWindowView(
             state: mainWindowState,
             transcriptionViewModel: transcriptionViewModel,

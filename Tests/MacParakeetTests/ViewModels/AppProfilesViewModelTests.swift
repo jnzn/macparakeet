@@ -74,4 +74,12 @@ final class AppProfilesViewModelTests: XCTestCase {
         vm.addApp(bundleID: "com.x")                // already owned by "a"
         XCTAssertTrue(vm.duplicateBundleIDs.contains("com.x"))
     }
+
+    func testRunPreviewNotConfiguredShowsSettingsMessage() async throws {
+        let vm = try makeVM(preview: { _, _ in throw LLMError.notConfigured })
+        vm.select(id: "a")
+        await vm.runPreview(sample: "x")
+        XCTAssertNil(vm.previewOutput)
+        XCTAssertEqual(vm.previewError, "Configure AI in Settings to test.")
+    }
 }
