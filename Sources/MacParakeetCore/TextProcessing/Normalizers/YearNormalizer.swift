@@ -3,6 +3,9 @@ import Foundation
 /// Spoken two-part years → digits ("twenty twenty six" → 2026). Must run
 /// BEFORE NumberNormalizer, which would otherwise merge-mangle these into
 /// "20 20 6". Guard: result must land in 1900–2099.
+///
+/// Input contract: space-separated word tokens without inline punctuation
+/// (raw ASR output). Punctuation-attached words ("six.") will not match.
 public enum YearNormalizer {
     private static let centuries: [String: Int] = ["nineteen": 19, "twenty": 20]
     private static let tens: [String: Int] = [
