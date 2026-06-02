@@ -23,15 +23,19 @@ static functions, no dependencies, no state) applied at the existing Step 2.4
 slot of `TextProcessingPipeline`, in dependency order:
 
 ```
-cardinals/decimals → years → ordinals → currency → percent/units →
+years → ordinals → cardinals/decimals → currency → percent/units →
 dates → times → phone runs → email/URL → symbols → punctuation (guarded)
 ```
 
 Ordering rationale:
 - Years ("twenty twenty six" → 2026) must be recognized **before** general
   cardinal merging would mangle them into "20 20 6".
+- Ordinals ("twenty fifth" → 25th) must also run **before** cardinals, or the
+  cardinal pass turns "twenty fifth" into "20 fifth".
 - Currency/percent/units/dates/times operate on digits, so they run **after**
   the number stages ("twenty five dollars" → "25 dollars" → "$25").
+- Dates run before symbols so a date's spoken "hyphen"/"dash" separators are
+  consumed by the ISO pattern, not converted standalone.
 - Symbols and punctuation run last, on otherwise-final text.
 
 One configuration toggle — **"Smart formatting"** in Vocabulary — controls the
