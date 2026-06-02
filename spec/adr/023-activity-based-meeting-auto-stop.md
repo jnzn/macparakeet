@@ -1,6 +1,6 @@
 # ADR-023: Activity-Based Meeting Auto-Stop
 
-> Status: **ACCEPTED** — Phase 0 (spike) done 2026-06-01; Phase 1 implemented: hard auto-stop after a configurable delay (default 5s), opt-in Settings toggle (default off), detection excludes MacParakeet + com.apple.avconferenced. Phase 2 (VAD corroboration / soft-confirm) remains proposed.
+> Status: **ACCEPTED** — Phase 0 (spike) done 2026-06-01; Phase 1 implemented (hard auto-stop, opt-in, default off); Phase 1.5 implemented 2026-06-02: detection is now allowlist-based (`MeetingCallApp`) — only user-configured call apps (pre-seeded: Teams, Zoom, FaceTime, Slack, Safari, Chrome) arm or release the detector. Phase 2 (VAD corroboration / soft-confirm) remains proposed.
 > Date: 2026-05-29
 > Related: ADR-014 (meeting recording), ADR-015 (concurrent dictation/meeting), ADR-017 (calendar auto-start; auto-stop withdrawn), ADR-019 (crash-resilient recording)
 
@@ -46,3 +46,27 @@ Expose one toggle in Settings → Meetings: **"Auto-stop recording when the call
 1. **Spike** — confirm Core Audio per-process input detection works and the meeting process can be identified at record-start.
 2. **Phase 1** — detection + Settings toggle (default off) + soft-confirm prompt on sustained mic release.
 3. **Phase 2** — VAD corroboration; optional hard auto-stop once proven reliable.
+
+## Amendment: Phase 1.5 — Call-App Allowlist (2026-06-02)
+
+Phase 1 treated any non-excluded mic-capturing process as "the call", which
+meant any app touching the mic could arm auto-stop, and any app holding the
+mic could block it forever. Phase 1.5 inverts the model:
+
+- **Allowlist, not denylist.** A call is active iff a capturing process's
+  bundle ID starts with a prefix in the user's call-app list
+  (`MeetingCallApp`, persisted as JSON in UserDefaults, pre-seeded with
+  Teams / Zoom / FaceTime / Slack / Safari / Chrome).
+- **Prefix matching** covers browser helper processes (`com.apple.WebKit.*`,
+  `com.google.Chrome.helper`).
+- **Settings UI** lists the call apps under the auto-stop toggle; new apps are
+  added by picking from a live "apps using the mic" view (MicInputProbe).
+- **Empty list → auto-stop inert** (detector never arms).
+- **Pause fix:** a dropped auto-stop delivery (recording paused) resets the
+  detector so it can re-arm, instead of killing auto-stop for the recording.
+- Accepted trade-off: with browsers allowlisted, any mic-using tab counts as a
+  call. Scoped 2026-06-02: a false trigger requires recording + no real call +
+  a tab acquiring then releasing the mic.
+
+See `plans/completed/2026-06-meeting-auto-stop-call-app-allowlist.md` for the
+full design.

@@ -1,6 +1,6 @@
 # Meeting Auto-Stop: Call-App Allowlist
 
-> Status: **PROPOSAL** — design approved in conversation 2026-06-02; implementation pending.
+> Status: **IMPLEMENTED** — 2026-06-02. Core + ViewModel + Settings UI complete; owner real-world verification (Safari/Chrome bundle-ID check, Teams end-to-end) pending.
 > Related: ADR-023 (activity-based meeting auto-stop), `MeetingCallActivity`, `MeetingCallActivityMonitor`, `MicInputProbe`.
 
 ## Problem
