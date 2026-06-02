@@ -18,4 +18,26 @@ public enum MeetingCallActivity {
             return true
         }
     }
+
+    // MARK: - Allowlist detection (ADR-023 Phase 1.5)
+
+    /// A call is active iff any capturing process's bundle ID starts with any
+    /// allowlisted prefix. Empty allowlist → never a call (auto-stop stays
+    /// disarmed; the Settings UI warns about this state).
+    public static func isCall(capturingBundleIDs: [String?], allowedPrefixes: [String]) -> Bool {
+        !matchingBundleIDs(capturingBundleIDs: capturingBundleIDs,
+                           allowedPrefixes: allowedPrefixes).isEmpty
+    }
+
+    /// The capturing bundle IDs that match the allowlist — used by the monitor
+    /// to log which app is keeping the detector armed.
+    public static func matchingBundleIDs(
+        capturingBundleIDs: [String?],
+        allowedPrefixes: [String]
+    ) -> [String] {
+        capturingBundleIDs.compactMap { bundleID in
+            guard let bundleID, !bundleID.isEmpty else { return nil }
+            return allowedPrefixes.contains(where: { bundleID.hasPrefix($0) }) ? bundleID : nil
+        }
+    }
 }
