@@ -13,8 +13,15 @@ mode.
 
 ## What's here
 
-- `TextProcessingPipeline.swift` — the deterministic pipeline. Five
-  steps in fixed order; details below.
+- `TextProcessingPipeline.swift` — the deterministic pipeline. Fixed
+  step order; details below.
+- `SpokenTextFormatter.swift` — the smart-formatting chain (opt-in
+  pipeline Step 2.4): years, ordinals, cardinals, currency, units,
+  dates, times, phone runs, email/URL, symbols, guarded punctuation.
+- `Normalizers/` — one pure-function normalizer per concern, composed
+  by `SpokenTextFormatter`. Chain order is load-bearing (see below).
+- `NumberNormalizer.swift` — spoken cardinals/decimals → digits. Part
+  of the chain; also kept standalone for direct callers.
 - `TextProcessingResult.swift` — value type returned by the pipeline.
   Carries the cleaned text, the set of expanded-snippet IDs, and an
   optional `postPasteAction` for trailing-action snippets.
@@ -66,6 +73,29 @@ substring. Action extraction before snippet expansion prevents a
 plain-text snippet from consuming the action trigger. Don't reorder
 without writing a test that exercises every adjacent-step
 interaction.
+
+**Smart formatting (Step 2.4, opt-in via `smartFormatting:`).** When
+enabled, `SpokenTextFormatter.format` runs between custom words and
+terminal symbol expansion. Its internal chain order is also
+load-bearing:
+
+```
+years → ordinals → cardinals/decimals → currency → units →
+dates → times → phone runs → email/URL → symbols → punctuation
+```
+
+- Years and ordinals must run **before** cardinal merging ("twenty
+  twenty six" → 2026, "twenty fifth" → 25th — cardinals would mangle
+  both).
+- Currency/units/dates/times operate on digits, so they run **after**
+  the number stages.
+- Dates run before symbols so a date's spoken "hyphen"/"dash"
+  separators are consumed by the ISO pattern, not converted standalone.
+- Every normalizer is conservative: when its guard isn't met, text
+  passes through unchanged. Each has a pass-through test.
+- Never reorder the chain without updating
+  `plans/completed/2026-06-spoken-text-smart-formatting.md` and the
+  `SpokenTextFormatterTests` integration tests.
 
 **The pipeline is a pure function.** No I/O, no side effects, no
 state. This makes it trivial to test exhaustively (see
