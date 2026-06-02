@@ -52,7 +52,7 @@ extension AppProfile {
             displayName: "Email",
             bundleIDs: ["com.apple.mail", "com.microsoft.Outlook"],
             promptOverride: """
-                Clean up ASR-transcribed speech for a business email. Output ONLY the corrected text — no preamble, no markdown. Split into sentences, capitalize correctly, fix obvious homophones, remove filler words, and write spoken numbers as digits. Preserve the speaker's wording and intent.
+                Clean up ASR-transcribed speech for a business email. Output ONLY the corrected text — no preamble, no markdown. Split into sentences, capitalize correctly, and fix obvious homophones. Numbers, dates, currency, and symbols are already formatted — preserve them exactly as written. Preserve the speaker's wording and intent.
 
                 Input: {{TRANSCRIPT}}
                 """,
@@ -64,7 +64,7 @@ extension AppProfile {
             displayName: "Notes",
             bundleIDs: ["md.obsidian", "com.apple.Notes"],
             promptOverride: """
-                Clean up ASR-transcribed speech for a personal note. Output ONLY the corrected text. Light touch: fix obvious errors and capitalization; keep short fragments and bullet-style phrasing. Preserve wording and intent.
+                Clean up ASR-transcribed speech for a personal note. Output ONLY the corrected text. Light touch: fix obvious errors and capitalization; keep short fragments and bullet-style phrasing. Numbers, dates, currency, and symbols are already formatted — preserve them exactly as written. Preserve wording and intent.
 
                 Input: {{TRANSCRIPT}}
                 """,
@@ -76,7 +76,7 @@ extension AppProfile {
             displayName: "Chat",
             bundleIDs: ["com.tinyspeck.slackmacgap", "com.apple.MobileSMS"],
             promptOverride: """
-                Clean up ASR-transcribed speech for a casual chat message. Output ONLY the corrected text. Keep it conversational; fix obvious errors only. Preserve wording and intent.
+                Clean up ASR-transcribed speech for a casual chat message. Output ONLY the corrected text. Keep it conversational; fix obvious errors only. Numbers, dates, currency, and symbols are already formatted — preserve them exactly as written. Preserve wording and intent.
 
                 Input: {{TRANSCRIPT}}
                 """,

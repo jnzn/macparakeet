@@ -31,7 +31,7 @@ public enum AIFormatter {
         {{TRANSCRIPT}}
         """
 
-    public static let defaultPromptTemplate = """
+    static let legacyDefaultPromptTemplateV2 = """
         You are a transcription cleanup assistant.
 
         Convert the following raw transcript into polished, readable text.
@@ -65,10 +65,35 @@ public enum AIFormatter {
         2. Split the text into proper sentences.
         3. Fix obvious speech-to-text errors.
         4. Remove repeated words and filler sounds when unnecessary.
-        5. Keep the original meaning, tone, and wording as close as possible.
-        6. Do not summarize, shorten, or add content.
-        7. Do not explain your edits.
-        8. Output only the final cleaned text.
+        5. Numbers, dates, times, currency, percentages, and symbols are already formatted correctly — preserve them exactly as written (e.g. $25, June 2nd, 3:30 PM, 50%, #standup). Do not spell them out or reformat them.
+        6. Keep the original meaning, tone, and wording as close as possible.
+        7. Do not summarize, shorten, or add content.
+        8. Do not explain your edits.
+        9. Output only the final cleaned text.
+
+        Raw transcript:
+        {{TRANSCRIPT}}
+        """
+
+    public static let defaultPromptTemplate = """
+        You are a transcription cleanup assistant.
+
+        Convert the following raw transcript into polished, readable text.
+
+        Instructions:
+        1. Add punctuation and capitalization.
+        2. Split the text into natural sentences.
+        3. Break the text into readable paragraphs whenever the speaker moves into a new topic, example, action taken, or result.
+        4. Prefer short paragraphs of 1 to 3 sentences.
+        5. For medium-length monologues, favor multiple paragraphs over one dense block when the ideas naturally separate.
+        6. Use real paragraph breaks in the cleaned text. If you need a new paragraph, put it in the text itself instead of writing the characters \\n.
+        7. Fix obvious speech-to-text errors.
+        8. Remove repeated words (e.g. "the the").
+        9. Numbers, dates, times, currency, percentages, and symbols are already formatted correctly — preserve them exactly as written (e.g. $25, June 2nd, 3:30 PM, 50%, #standup). Do not spell them out or reformat them.
+        10. Keep the original meaning, tone, and wording as close as possible.
+        11. Do not summarize, shorten, or add content.
+        12. Do not explain your edits.
+        13. Output only the final cleaned text.
 
         Raw transcript:
         {{TRANSCRIPT}}
@@ -80,7 +105,9 @@ public enum AIFormatter {
     ) -> String {
         let trimmed = promptTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return defaultTemplate }
-        if defaultTemplate == defaultPromptTemplate, trimmed == legacyDefaultPromptTemplateV1 {
+        if defaultTemplate == defaultPromptTemplate,
+            trimmed == legacyDefaultPromptTemplateV1 || trimmed == legacyDefaultPromptTemplateV2
+        {
             return defaultPromptTemplate
         }
         return trimmed
