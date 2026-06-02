@@ -48,10 +48,12 @@ final class MeetingCallActivityAllowlistTests: XCTestCase {
             allowedPrefixes: teamsAndBrowsers))
     }
 
-    func testMacParakeetIsNotACallEvenIfSomehowListed() {
-        // Self-capture can never arm the detector via the picker (the picker
-        // hides MacParakeet), but even raw capture of our own bundle ID with a
-        // normal allowlist must not count.
+    func testMacParakeetCaptureDoesNotCountWithNormalAllowlist() {
+        // The new API is a pure allowlist gate — it has no built-in MacParakeet
+        // exclusion. Self-capture safety is by construction: the pre-seeded
+        // defaults never include a com.macparakeet prefix, and the Settings
+        // picker hides MacParakeet so the user can't add it. This test pins the
+        // by-construction behavior; enforcement is the caller's responsibility.
         XCTAssertFalse(MeetingCallActivity.isCall(
             capturingBundleIDs: ["com.macparakeet.pdx"],
             allowedPrefixes: teamsAndBrowsers))
