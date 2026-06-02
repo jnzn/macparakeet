@@ -134,6 +134,7 @@ struct SettingsView: View {
     /// a tab swap, which mounts a new ScrollView.
     @State private var pendingScrollTarget: String?
     @State private var copiedBuildIdentity = false
+    @State private var isAddingCallApp = false
 
     init(
         viewModel: SettingsViewModel,
@@ -913,6 +914,8 @@ struct SettingsView: View {
                                 .labelsHidden()
                         }
                     }
+                    Divider()
+                    meetingCallAppsSection
                 }
 
                 if AppFeatures.calendarEnabled {
@@ -971,6 +974,99 @@ struct SettingsView: View {
             // here. Timestamps / speakers / metadata are chosen at manual-export
             // time via the export sheet.
         }
+    }
+
+    /// ADR-023 Phase 1.5: the call apps auto-stop watches. Only these apps
+    /// arm the detector; recording stops when they all release the mic.
+    private var meetingCallAppsSection: some View {
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+            HStack(alignment: .center) {
+                rowText(
+                    title: "Call apps",
+                    detail: "Auto-stop only watches these apps. Recording stops when they all release the microphone."
+                )
+                Spacer(minLength: DesignSystem.Spacing.md)
+                Button(isAddingCallApp ? "Done" : "Add app…") {
+                    isAddingCallApp.toggle()
+                    if isAddingCallApp {
+                        viewModel.startMicCandidatePolling()
+                    } else {
+                        viewModel.stopMicCandidatePolling()
+                    }
+                }
+                .parakeetAction(.secondary)
+            }
+
+            if viewModel.meetingCallApps.isEmpty {
+                Text("Auto-stop needs at least one call app to watch — it will never trigger with an empty list.")
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(.orange)
+            }
+
+            ForEach(viewModel.meetingCallApps) { app in
+                HStack(spacing: DesignSystem.Spacing.md) {
+                    Text(app.displayName)
+                        .font(DesignSystem.Typography.body)
+                    Text(app.bundleIDPrefixes.joined(separator: ", "))
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer()
+                    Button {
+                        viewModel.removeCallApp(app)
+                    } label: {
+                        Image(systemName: "minus.circle")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Remove \(app.displayName)")
+                }
+            }
+
+            if isAddingCallApp {
+                callAppPicker
+            }
+        }
+        .onDisappear {
+            isAddingCallApp = false
+            viewModel.stopMicCandidatePolling()
+        }
+    }
+
+    /// Live "apps using the mic right now" picker (polls MicInputProbe via the
+    /// view model while visible).
+    private var callAppPicker: some View {
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+            if viewModel.micCaptureCandidates.isEmpty {
+                Text("No apps are using the microphone right now. Join a call, then add it from here.")
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(viewModel.micCaptureCandidates) { candidate in
+                    HStack(spacing: DesignSystem.Spacing.md) {
+                        Text(candidate.displayName)
+                            .font(DesignSystem.Typography.body)
+                        Text(candidate.bundleID)
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
+                        Button("Add") {
+                            viewModel.addCallApp(bundleID: candidate.bundleID,
+                                                 displayName: candidate.displayName)
+                        }
+                        .parakeetAction(.secondary)
+                    }
+                }
+            }
+        }
+        .padding(DesignSystem.Spacing.md)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color.secondary.opacity(0.06))
+        )
     }
 
     private var transcriptionCard: some View {
