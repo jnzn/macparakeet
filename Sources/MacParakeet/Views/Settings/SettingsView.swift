@@ -742,8 +742,8 @@ struct SettingsView: View {
                 Divider()
 
                 settingsToggleRow(
-                    title: "Convert spoken numbers to digits",
-                    detail: "Writes dictated numbers as digits — \"twenty five\" becomes \"25\".",
+                    title: "Smart formatting",
+                    detail: "Convert spoken numbers, currency, dates, times, symbols, and punctuation commands to their written form — instantly, on every dictation. ($25, June 2nd, 3:30 PM, 50%, #standup)",
                     isOn: $viewModel.smartFormattingEnabled
                 )
 
