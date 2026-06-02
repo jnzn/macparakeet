@@ -3,7 +3,7 @@ import Foundation
 
 /// Read-only Core Audio probe (macOS 14.2+): bundle IDs of processes currently
 /// capturing microphone input. Validated by the ADR-023 Phase 0 `mic-processes`
-/// spike. Pair with `MeetingCallActivity.isCall(capturingBundleIDs:)`.
+/// spike. Pair with `MeetingCallActivity.isCall(capturingBundleIDs:allowedPrefixes:)`.
 public enum MicInputProbe {
     /// Bundle IDs of every process currently running audio input (incl. nil for
     /// processes without a bundle id). No filtering — callers apply exclusions.
