@@ -1,23 +1,18 @@
 import Foundation
 
-/// Decides whether any *non-MacParakeet, non-system-daemon* process is capturing
-/// the microphone — i.e. "we appear to be in a call." The `avconferenced`
-/// exclusion came from the ADR-023 Phase 0 spike (it holds the mic persistently
-/// on some Macs and would otherwise never release).
+/// Allowlist-based call detection for meeting auto-stop (ADR-023 Phase 1.5).
+/// A call is "active" iff a mic-capturing process matches the user's call-app
+/// allowlist (`MeetingCallApp`). The picker-hidden lists below are NOT part of
+/// detection — they only hide MacParakeet's own capture and system daemons
+/// from the Settings "apps using the mic" picker.
 public enum MeetingCallActivity {
-    /// System audio daemons that hold the mic but do not represent a user call.
-    public static let excludedBundleIDs: Set<String> = ["com.apple.avconferenced"]
-    /// MacParakeet's own meeting capture (varies by edition/bundle id).
-    public static let excludedPrefixes: [String] = ["com.macparakeet"]
-
-    public static func isCall(capturingBundleIDs: [String?]) -> Bool {
-        capturingBundleIDs.contains { bundleID in
-            guard let bundleID, !bundleID.isEmpty else { return false }  // unknown → ignore
-            if excludedBundleIDs.contains(bundleID) { return false }
-            if excludedPrefixes.contains(where: { bundleID.hasPrefix($0) }) { return false }
-            return true
-        }
-    }
+    /// Hidden from the Settings mic picker: system daemons that hold the mic
+    /// but never represent a user call (`avconferenced` holds it persistently
+    /// on some Macs — ADR-023 Phase 0 spike).
+    public static let pickerHiddenBundleIDs: Set<String> = ["com.apple.avconferenced"]
+    /// Hidden from the Settings mic picker: MacParakeet's own capture
+    /// (any edition — pdx / dev / stable bundle IDs share this prefix).
+    public static let pickerHiddenPrefixes: [String] = ["com.macparakeet"]
 
     // MARK: - Allowlist detection (ADR-023 Phase 1.5)
 

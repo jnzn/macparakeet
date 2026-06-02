@@ -40,10 +40,22 @@ struct MicProcessesCommand: ParsableCommand {
             print("[\(stamp)] (no process is capturing mic input)")
             return
         }
+        // Label against the pre-seeded call-app defaults. The app's live
+        // allowlist lives in the GUI app's defaults domain, which this CLI
+        // process can't read — defaults are close enough for a dev probe.
+        let defaultPrefixes = MeetingCallApp.defaults.flatMap(\.bundleIDPrefixes)
         print("[\(stamp)] capturing mic input:")
         for id in ids.map({ $0 ?? "(unknown)" }).sorted() {
-            let tag = (id.hasPrefix("com.macparakeet")) ? "  <- MacParakeet (excluded)"
-                : MeetingCallActivity.excludedBundleIDs.contains(id) ? "  <- system daemon (excluded)" : ""
+            let tag: String
+            if MeetingCallActivity.pickerHiddenPrefixes.contains(where: { id.hasPrefix($0) }) {
+                tag = "  <- MacParakeet (never counts as a call)"
+            } else if MeetingCallActivity.pickerHiddenBundleIDs.contains(id) {
+                tag = "  <- system daemon (never counts as a call)"
+            } else if defaultPrefixes.contains(where: { id.hasPrefix($0) }) {
+                tag = "  <- call app (in default allowlist)"
+            } else {
+                tag = "  <- not allowlisted (won't arm auto-stop unless added in Settings)"
+            }
             print("    bundle=\(id)\(tag)")
         }
     }
