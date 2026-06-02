@@ -168,6 +168,13 @@ public final class SettingsViewModel {
             defaults.set(meetingAutoStopDelaySeconds, forKey: UserDefaultsAppRuntimePreferences.meetingAutoStopDelaySecondsKey)
         }
     }
+    /// Call apps the auto-stop detector watches (ADR-023 Phase 1.5).
+    public var meetingCallApps: [MeetingCallApp] {
+        didSet {
+            guard let data = try? JSONEncoder().encode(meetingCallApps) else { return }
+            defaults.set(data, forKey: UserDefaultsAppRuntimePreferences.meetingAutoStopCallAppsKey)
+        }
+    }
     public var keepDictationOnClipboard: Bool {
         didSet {
             defaults.set(
@@ -513,6 +520,8 @@ public final class SettingsViewModel {
     private let inputDevicesProvider: @Sendable () -> [AudioDeviceManager.InputDevice]
     private let defaultInputDeviceUIDProvider: @Sendable () -> String?
     private let permissionPollingInterval: Duration
+    private let capturingBundleIDsProvider: @MainActor () -> [String?]
+    private let callAppDisplayNameResolver: @MainActor (String) -> String?
     private var isApplyingLaunchAtLoginState = false
     private var isApplyingSpeechEngineState = false
     private var modelStatusRefreshGeneration = 0
@@ -529,6 +538,13 @@ public final class SettingsViewModel {
 
     public init(
         defaults: UserDefaults = .standard,
+        capturingBundleIDsProvider: @escaping @MainActor () -> [String?] = {
+            MicInputProbe.capturingInputBundleIDs()
+        },
+        callAppDisplayNameResolver: @escaping @MainActor (String) -> String? = { bundleID in
+            NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+                .first?.localizedName
+        },
         youtubeDownloadsDirPath: @escaping @Sendable () -> String = { AppPaths.youtubeDownloadsDir },
         isSpeechModelCached: @escaping @Sendable () -> Bool = { STTRuntime.isModelCached() },
         inputDevicesProvider: @escaping @Sendable () -> [AudioDeviceManager.InputDevice] = {
@@ -541,6 +557,8 @@ public final class SettingsViewModel {
     ) {
         AutoSaveService.migrateLegacyMeetingSettingsIfNeeded(defaults: defaults)
         self.defaults = defaults
+        self.capturingBundleIDsProvider = capturingBundleIDsProvider
+        self.callAppDisplayNameResolver = callAppDisplayNameResolver
         self.youtubeDownloadsDirPath = youtubeDownloadsDirPath
         self.isSpeechModelCached = isSpeechModelCached
         self.inputDevicesProvider = inputDevicesProvider
@@ -580,6 +598,12 @@ public final class SettingsViewModel {
         meetingAutoStopEnabled = defaults.object(forKey: UserDefaultsAppRuntimePreferences.meetingAutoStopEnabledKey) as? Bool ?? false
         let autoStopDelay = defaults.object(forKey: UserDefaultsAppRuntimePreferences.meetingAutoStopDelaySecondsKey) as? Int ?? 5
         meetingAutoStopDelaySeconds = min(max(autoStopDelay, 2), 120)
+        if let data = defaults.data(forKey: UserDefaultsAppRuntimePreferences.meetingAutoStopCallAppsKey),
+           let apps = try? JSONDecoder().decode([MeetingCallApp].self, from: data) {
+            meetingCallApps = apps
+        } else {
+            meetingCallApps = MeetingCallApp.defaults
+        }
         keepDictationOnClipboard = defaults.bool(
             forKey: UserDefaultsAppRuntimePreferences.keepDictationOnClipboardKey
         )
@@ -1859,6 +1883,70 @@ public final class SettingsViewModel {
         }
 
         throw lastError ?? STTError.engineStartFailed("Model setup failed.")
+    }
+
+    // MARK: - Meeting auto-stop call apps (ADR-023 Phase 1.5)
+
+    /// One row in the "apps using the mic right now" picker.
+    public struct MicCaptureCandidate: Equatable, Identifiable, Sendable {
+        public let bundleID: String
+        public let displayName: String
+        public var id: String { bundleID }
+    }
+
+    public private(set) var micCaptureCandidates: [MicCaptureCandidate] = []
+    @ObservationIgnored nonisolated(unsafe) private var micCandidatePollingTask: Task<Void, Never>?
+
+    public func addCallApp(bundleID: String, displayName: String) {
+        // Ignore exact duplicates and anything already covered by a prefix.
+        guard !meetingCallApps.contains(where: { app in
+            app.bundleIDPrefixes.contains(where: { bundleID.hasPrefix($0) })
+        }) else { return }
+        meetingCallApps.append(MeetingCallApp(displayName: displayName,
+                                              bundleIDPrefixes: [bundleID]))
+    }
+
+    public func removeCallApp(_ app: MeetingCallApp) {
+        meetingCallApps.removeAll { $0 == app }
+    }
+
+    /// Begin polling for mic-capturing apps (used while the "Add app" picker
+    /// is open). Stop with `stopMicCandidatePolling()`.
+    public func startMicCandidatePolling() {
+        stopMicCandidatePolling()
+        refreshMicCandidatesNow()
+        micCandidatePollingTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1.5))
+                guard !Task.isCancelled else { return }
+                self?.refreshMicCandidatesNow()
+            }
+        }
+    }
+
+    public func stopMicCandidatePolling() {
+        micCandidatePollingTask?.cancel()
+        micCandidatePollingTask = nil
+        micCaptureCandidates = []
+    }
+
+    /// Single synchronous refresh — public so tests can drive it without
+    /// timing dependencies.
+    public func refreshMicCandidatesNow() {
+        let alreadyCovered = meetingCallApps.flatMap(\.bundleIDPrefixes)
+        var seen = Set<String>()
+        micCaptureCandidates = capturingBundleIDsProvider()
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .filter { id in !MeetingCallActivity.pickerHiddenPrefixes.contains(where: { id.hasPrefix($0) }) }
+            .filter { id in !MeetingCallActivity.pickerHiddenBundleIDs.contains(id) }
+            .filter { id in !alreadyCovered.contains(where: { id.hasPrefix($0) }) }
+            .filter { seen.insert($0).inserted }
+            .map { id in
+                MicCaptureCandidate(bundleID: id,
+                                    displayName: callAppDisplayNameResolver(id) ?? id)
+            }
+            .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
     }
 }
 
