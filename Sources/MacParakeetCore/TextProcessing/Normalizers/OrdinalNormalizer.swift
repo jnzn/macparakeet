@@ -5,6 +5,9 @@ import Foundation
 /// words) so "first of all" / "wait a second" never break. Date contexts for
 /// first–ninth are handled later by DateNormalizer. Runs BEFORE
 /// NumberNormalizer so "twenty fifth" isn't split into "20 fifth".
+///
+/// Input contract: space-separated word tokens without inline punctuation
+/// (raw ASR output). Punctuation-attached words will not match.
 public enum OrdinalNormalizer {
     static let simpleOrdinals: [String: Int] = [
         "first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5,
