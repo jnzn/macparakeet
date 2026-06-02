@@ -756,10 +756,12 @@ final class MeetingRecordingFlowCoordinator {
         callActivityMonitor?.stop()
         let monitor = MeetingCallActivityMonitor(
             delaySeconds: prefs.meetingAutoStopDelaySeconds,
+            allowedPrefixes: prefs.meetingAutoStopCallApps.flatMap(\.bundleIDPrefixes),
             onAutoStop: { [weak self] in
-                guard let self else { return }
-                guard self.stateMachine.state == .recording else { return }
+                guard let self else { return false }
+                guard self.stateMachine.state == .recording else { return false }
                 self.sendEvent(.stopRequested)
+                return true
             }
         )
         callActivityMonitor = monitor
