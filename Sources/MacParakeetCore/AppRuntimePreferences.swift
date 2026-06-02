@@ -30,6 +30,9 @@ public protocol AppRuntimePreferencesProtocol: Sendable {
     var liveBubbleCleanupEnabled: Bool { get }
     var meetingAutoStopEnabled: Bool { get }
     var meetingAutoStopDelaySeconds: Int { get }
+    /// Call apps the auto-stop detector watches (ADR-023 Phase 1.5).
+    /// Pre-seeded defaults when the user has never edited the list.
+    var meetingAutoStopCallApps: [MeetingCallApp] { get }
 }
 
 public enum YouTubeAudioQuality: String, CaseIterable, Hashable, Sendable, Equatable {
@@ -142,6 +145,7 @@ public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProto
     public static let liveBubbleCleanupEnabledKey = "liveBubbleCleanupEnabled"
     public static let meetingAutoStopEnabledKey = "meetingAutoStopEnabled"
     public static let meetingAutoStopDelaySecondsKey = "meetingAutoStopDelaySeconds"
+    public static let meetingAutoStopCallAppsKey = "meetingAutoStopCallApps"
 
     private let defaults: UserDefaults
 
@@ -238,5 +242,13 @@ public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProto
     public var meetingAutoStopDelaySeconds: Int {
         let v = defaults.object(forKey: Self.meetingAutoStopDelaySecondsKey) as? Int ?? 5
         return min(max(v, 2), 120)   // clamp to sane bounds
+    }
+
+    public var meetingAutoStopCallApps: [MeetingCallApp] {
+        guard let data = defaults.data(forKey: Self.meetingAutoStopCallAppsKey),
+              let apps = try? JSONDecoder().decode([MeetingCallApp].self, from: data) else {
+            return MeetingCallApp.defaults
+        }
+        return apps
     }
 }
