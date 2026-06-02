@@ -669,6 +669,7 @@ public final class SettingsViewModel {
     deinit {
         permissionPollingTask?.cancel()
         microphoneTestTask?.cancel()
+        micCandidatePollingTask?.cancel()
         if let calendarSettingsObserver {
             NotificationCenter.default.removeObserver(calendarSettingsObserver)
         }
