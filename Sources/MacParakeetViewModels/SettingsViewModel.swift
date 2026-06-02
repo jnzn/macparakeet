@@ -284,9 +284,9 @@ public final class SettingsViewModel {
             Telemetry.send(.settingChanged(setting: .saveHistory))
         }
     }
-    public var normalizeNumbers: Bool {
+    public var smartFormattingEnabled: Bool {
         didSet {
-            defaults.set(normalizeNumbers, forKey: UserDefaultsAppRuntimePreferences.normalizeNumbersKey)
+            defaults.set(smartFormattingEnabled, forKey: UserDefaultsAppRuntimePreferences.smartFormattingEnabledKey)
         }
     }
     public var saveAudioRecordings: Bool {
@@ -618,7 +618,15 @@ public final class SettingsViewModel {
         voiceReturnTrigger = defaults.string(forKey: UserDefaultsAppRuntimePreferences.voiceReturnTriggerKey) ?? "press return"
         processingMode = Self.normalizedProcessingMode(defaults.string(forKey: UserDefaultsAppRuntimePreferences.processingModeKey))
         saveDictationHistory = defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveDictationHistoryKey) as? Bool ?? true
-        normalizeNumbers = defaults.object(forKey: UserDefaultsAppRuntimePreferences.normalizeNumbersKey) as? Bool ?? true
+        smartFormattingEnabled = {
+            if let explicit = defaults.object(forKey: UserDefaultsAppRuntimePreferences.smartFormattingEnabledKey) as? Bool {
+                return explicit
+            }
+            if let legacy = defaults.object(forKey: UserDefaultsAppRuntimePreferences.normalizeNumbersKey) as? Bool, legacy == false {
+                return false
+            }
+            return true
+        }()
         saveAudioRecordings = defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveAudioRecordingsKey) as? Bool ?? true
         saveTranscriptionAudio = defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveTranscriptionAudioKey) as? Bool ?? true
         streamingOverlayEnabled = defaults.object(forKey: UserDefaultsAppRuntimePreferences.streamingOverlayEnabledKey) as? Bool ?? true

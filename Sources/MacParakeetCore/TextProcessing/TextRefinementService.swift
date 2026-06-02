@@ -33,7 +33,7 @@ public struct TextRefinementService: Sendable {
         customWords: [CustomWord],
         snippets: [TextSnippet],
         profile: AppProfile? = nil,
-        normalizeNumbers: Bool = false
+        smartFormatting: Bool = false
     ) async -> TextRefinementResult {
         let isTerminalProfile = profile?.id == "terminal"
 
@@ -66,7 +66,7 @@ public struct TextRefinementService: Sendable {
             customWords: customWords,
             snippets: snippets,
             isTerminalProfile: isTerminalProfile,
-            normalizeNumbers: normalizeNumbers
+            smartFormatting: smartFormatting
         )
 
         return TextRefinementResult(
