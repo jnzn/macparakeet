@@ -263,9 +263,48 @@ Sources/MacParakeetCore/TextProcessing/
   `normalizeNumbers` is removed from the protocol (single-user edition; no
   external compat concern).
 
+## AI Formatter Prompt Cleanup
+
+The LLM formatter runs **after** the deterministic pipeline
+(`DictationService.swift`: `refine(...)` then `formatTranscriptIfNeeded(...)`),
+so it receives already-formatted text (`$25`, `June 2nd`, `50%`). Prompts must
+stop instructing the LLM to do work the chain now owns — and must explicitly
+tell it to preserve the chain's output.
+
+### Shipped default template (`AIFormatter.defaultPromptTemplate` → v3)
+
+- Remove "and filler sounds" from the repeated-words rule (fillers are
+  deterministic in Clean mode; keep "remove repeated words" — that is still
+  LLM work).
+- Add a new rule:
+  > Numbers, dates, times, currency, percentages, and symbols are already
+  > formatted correctly — preserve them exactly as written (e.g. $25,
+  > June 2nd, 3:30 PM, 50%, #standup). Do not spell them out or reformat them.
+- Fold the v2 template into v3 via `normalizedPromptTemplate` (same mechanism
+  as the existing legacy-v1 fold) so users on the old default get v3
+  automatically.
+
+### Sample per-app profiles (`AppProfile.defaults`)
+
+- Email sample: remove "remove filler words" and "write spoken numbers as
+  digits"; add the preserve-formatting rule.
+- Notes / Chat samples: add the preserve-formatting rule (no overlapping
+  rules to remove).
+
+### Owner's stored prompts (user data — rollout steps, not code)
+
+- Custom `aiFormatterPrompt` (UserDefaults): no overlapping rules found; add
+  the preserve-formatting rule (or reset to the new default).
+- Seeded per-app profiles (GRDB, from the gitignored local seed): review each
+  prompt in the profile editor; remove number/filler instructions; add the
+  preserve-formatting rule. Also update the local seed file so future
+  reinstalls stay clean.
+
 ## Testing
 
 - One XCTest class per normalizer; every table row above is a test case.
+- `AIFormatter.normalizedPromptTemplate` folds the v2 default into v3 (same
+  test pattern as the existing legacy-v1 fold test).
 - Chain-order integration tests in `SpokenTextFormatterTests`:
   - "twenty five dollars on june second" → `$25 on June 2nd`
   - "fifty percent by three thirty pm period" → `50% by 3:30 PM.`
@@ -279,4 +318,7 @@ Sources/MacParakeetCore/TextProcessing/
 1. Vocabulary → Processing mode → **Clean**
 2. Vocabulary → **Smart formatting** → on (default)
 3. Settings → **AI Formatter** → off (or keep with a small fast model for prose polish)
-4. Result: every dictation pastes in ~1 second with all formatting rules applied
+4. If keeping the AI Formatter: update the custom prompt and seeded per-app
+   profiles per §AI Formatter Prompt Cleanup (remove number/filler rules, add
+   the preserve-formatting rule)
+5. Result: every dictation pastes in ~1 second with all formatting rules applied
