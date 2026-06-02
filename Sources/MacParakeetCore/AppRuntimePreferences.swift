@@ -8,7 +8,7 @@ public protocol AppRuntimePreferencesProtocol: Sendable {
     var voiceReturnTrigger: String? { get }
     var shouldSaveAudioRecordings: Bool { get }
     var shouldSaveDictationHistory: Bool { get }
-    var normalizeNumbers: Bool { get }
+    var smartFormattingEnabled: Bool { get }
     var shouldSaveTranscriptionAudio: Bool { get }
     var meetingAudioRetention: MeetingAudioRetention { get }
     var shouldSaveMeetingAudio: Bool { get }
@@ -514,6 +514,7 @@ public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProto
     public static let removeUmFillerKey = "removeUmFiller"
     public static let defaultRemoveUmFiller = true
     public static let normalizeNumbersKey = "normalizeNumbers"
+    public static let smartFormattingEnabledKey = "smartFormattingEnabled"
     public static let saveDictationHistoryKey = "saveDictationHistory"
     public static let saveAudioRecordingsKey = "saveAudioRecordings"
     public static let saveTranscriptionAudioKey = "saveTranscriptionAudio"
@@ -687,8 +688,15 @@ public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProto
         defaults.object(forKey: Self.saveDictationHistoryKey) as? Bool ?? true
     }
 
-    public var normalizeNumbers: Bool {
-        defaults.object(forKey: Self.normalizeNumbersKey) as? Bool ?? true
+    public var smartFormattingEnabled: Bool {
+        if let explicit = defaults.object(forKey: Self.smartFormattingEnabledKey) as? Bool {
+            return explicit
+        }
+        // Migration: respect a prior explicit opt-out of the old numbers-only toggle.
+        if let legacy = defaults.object(forKey: Self.normalizeNumbersKey) as? Bool, legacy == false {
+            return false
+        }
+        return true
     }
 
     public var shouldSaveTranscriptionAudio: Bool {

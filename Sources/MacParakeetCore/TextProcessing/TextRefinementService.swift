@@ -35,7 +35,7 @@ public struct TextRefinementService: Sendable {
         insertionStyle: DictationInsertionStyle = .sentence,
         removeUmFiller: Bool = true,
         profile: AppProfile? = nil,
-        normalizeNumbers: Bool = false
+        smartFormatting: Bool = false
     ) async -> TextRefinementResult {
         let isTerminalProfile = profile?.id == "terminal"
 
@@ -70,7 +70,7 @@ public struct TextRefinementService: Sendable {
             insertionStyle: insertionStyle,
             removeUmFiller: removeUmFiller,
             isTerminalProfile: isTerminalProfile,
-            normalizeNumbers: normalizeNumbers
+            smartFormatting: smartFormatting
         )
 
         return TextRefinementResult(

@@ -555,9 +555,9 @@ public final class SettingsViewModel {
             Telemetry.send(.settingChanged(setting: .saveHistory, value: Self.settingValue(saveDictationHistory)))
         }
     }
-    public var normalizeNumbers: Bool {
+    public var smartFormattingEnabled: Bool {
         didSet {
-            defaults.set(normalizeNumbers, forKey: UserDefaultsAppRuntimePreferences.normalizeNumbersKey)
+            defaults.set(smartFormattingEnabled, forKey: UserDefaultsAppRuntimePreferences.smartFormattingEnabledKey)
         }
     }
     public var saveAudioRecordings: Bool {
@@ -1040,7 +1040,15 @@ public final class SettingsViewModel {
         dictationInsertionStyle = DictationInsertionStyle.current(defaults: defaults)
         removeUmFiller = UserDefaultsAppRuntimePreferences.removeUmFiller(defaults: defaults)
         saveDictationHistory = defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveDictationHistoryKey) as? Bool ?? true
-        normalizeNumbers = defaults.object(forKey: UserDefaultsAppRuntimePreferences.normalizeNumbersKey) as? Bool ?? true
+        smartFormattingEnabled = {
+            if let explicit = defaults.object(forKey: UserDefaultsAppRuntimePreferences.smartFormattingEnabledKey) as? Bool {
+                return explicit
+            }
+            if let legacy = defaults.object(forKey: UserDefaultsAppRuntimePreferences.normalizeNumbersKey) as? Bool, legacy == false {
+                return false
+            }
+            return true
+        }()
         saveAudioRecordings = defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveAudioRecordingsKey) as? Bool ?? true
         saveTranscriptionAudio = defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveTranscriptionAudioKey) as? Bool ?? true
         meetingAudioRetention = UserDefaultsAppRuntimePreferences.meetingAudioRetention(defaults: defaults)

@@ -390,7 +390,7 @@ final class AppEnvironment {
             shouldPreserveDiscardedDictations: { [runtimePreferences] in
                 runtimePreferences.preserveDiscardedDictations
             },
-            normalizeNumbers: { [runtimePreferences] in runtimePreferences.normalizeNumbers },
+            smartFormatting: { [runtimePreferences] in runtimePreferences.smartFormattingEnabled },
             entitlements: entitlementsService,
             customWordRepo: customWordRepo,
             snippetRepo: snippetRepo,

@@ -19,7 +19,7 @@ public struct TextProcessingPipeline: Sendable {
         insertionStyle: DictationInsertionStyle = .sentence,
         removeUmFiller: Bool = true,
         isTerminalProfile: Bool = false,
-        normalizeNumbers: Bool = false
+        smartFormatting: Bool = false
     ) -> TextProcessingResult {
         guard !text.isEmpty else {
             return TextProcessingResult(text: "")
@@ -36,11 +36,11 @@ public struct TextProcessingPipeline: Sendable {
         // Step 2: Custom word replacements
         result = applyCustomWords(to: result, words: customWords)
 
-        // Step 2.4: Spoken number → digit normalization (opt-in). Runs after
-        // custom words so user replacements aren't disturbed, and before symbol
-        // expansion so digits are present when terminal profiles format.
-        if normalizeNumbers {
-            result = NumberNormalizer.normalize(result)
+        // Step 2.4: Smart formatting chain (opt-in). Runs after custom words so
+        // user replacements aren't disturbed, and before symbol expansion so
+        // digits/symbols are present when terminal profiles format.
+        if smartFormatting {
+            result = SpokenTextFormatter.format(result)
         }
 
         // Step 2.5: Terminal symbol expansion (only for terminal app profiles)
