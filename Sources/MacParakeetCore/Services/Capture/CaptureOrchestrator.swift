@@ -21,6 +21,11 @@ actor CaptureOrchestrator {
     private var pairJoiner = MeetingAudioPairJoiner()
     private var microphoneChunker: any MeetingLiveAudioChunking = FixedMeetingLiveAudioChunker()
     private var systemChunker: any MeetingLiveAudioChunking = FixedMeetingLiveAudioChunker()
+    private var referenceAligner: EchoReferenceAligner
+
+    init(referenceAligner: EchoReferenceAligner = EchoReferenceAligner()) {
+        self.referenceAligner = referenceAligner
+    }
 
     /// Swap in the per-source chunkers for the next recording. Sources are
     /// independent so one can use VAD while the other falls back to fixed.
@@ -35,6 +40,7 @@ actor CaptureOrchestrator {
 
     func reset() async {
         pairJoiner.reset()
+        referenceAligner.reset()
         await microphoneChunker.reset()
         await systemChunker.reset()
     }
@@ -83,13 +89,24 @@ actor CaptureOrchestrator {
             // `totalSamplesProcessed` freezes while the active source's
             // tracks wallclock — producing future-dated chunks (e.g.
             // "Me 17:24" inside a 9:20 recording).
+            // Time-align the far-end reference with the echo in the mic before
+            // suppression — the echo arrives a device-dependent delay after the
+            // system audio is captured, so the same-instant reference cannot
+            // cancel. Run on every pair (including silent/solo ones) so the
+            // delay line stays in step with the system timeline: lingering echo
+            // after the far-end stops still needs its delayed reference.
+            let reference = referenceAligner.alignedReference(
+                microphone: pair.microphoneSamples,
+                system: pair.systemSamples
+            )
+
             var processedMicrophoneRms: Float?
             let micSamples: [Float]
             if pair.hasMicrophoneSignal {
                 let processedMic = micConditioner.condition(
                     microphone: pair.microphoneSamples,
-                    speaker: pair.systemSamples,
-                    hasSpeakerReference: pair.hasSystemSignal
+                    speaker: reference,
+                    hasSpeakerReference: reference.contains { $0 != 0 }
                 )
                 processedMicrophoneRms = chunkRms(for: processedMic)
                 micSamples = processedMic

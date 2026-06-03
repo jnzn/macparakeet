@@ -28,8 +28,6 @@ struct MeetingTranscriptNoiseFilter {
     private static let runGapMs = 1_200
     private static let duplicateTimingToleranceMs = 600
     private static let duplicateMaxWords = 10
-    private static let duplicateLowConfidenceThreshold = 0.65
-    private static let duplicateShortConfidenceThreshold = 0.80
     private static let allowedTokenCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "'"))
 
     static func cleanFinalMicrophoneWords(
@@ -106,11 +104,15 @@ struct MeetingTranscriptNoiseFilter {
             return false
         }
 
-        let averageConfidence = microphoneRun.reduce(0.0) { $0 + $1.confidence } / Double(microphoneRun.count)
-        let confidenceAllowsDrop = averageConfidence <= duplicateLowConfidenceThreshold
-            || (micTokens.count <= 2 && averageConfidence <= duplicateShortConfidenceThreshold)
-        guard confidenceAllowsDrop else { return false }
-
+        // An exact token-sequence match that overlaps a system run in time is
+        // an acoustic echo of the far-end — the speakers leak into the raw,
+        // un-cancelled mic — not genuine simultaneous speech (two people
+        // independently uttering the same word sequence at the same instant is
+        // implausible). Drop it regardless of confidence: a loud, clean
+        // laptop-speaker echo is transcribed at HIGH confidence, so confidence
+        // cannot distinguish echo from real speech. Mic speech that differs
+        // from the far-end (real double-talk) has no matching system run and is
+        // preserved by the `elementsEqual` check below.
         for startIndex in 0...(systemTokenWords.count - micTokens.count) {
             let candidate = systemTokenWords[startIndex..<(startIndex + micTokens.count)].lazy.map(\.token)
             guard candidate.elementsEqual(micTokens) else { continue }

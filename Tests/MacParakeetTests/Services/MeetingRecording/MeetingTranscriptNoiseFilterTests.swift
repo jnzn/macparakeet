@@ -66,7 +66,12 @@ final class MeetingTranscriptNoiseFilterTests: XCTestCase {
         XCTAssertEqual(finalized.rawTranscript, "account information")
     }
 
-    func testFinalizePreservesHighConfidenceOverlappingMicSpeech() {
+    // A loud, clean MacBook-speaker echo is transcribed at HIGH confidence, so
+    // the old confidence gate preserved it and the far-end appeared twice
+    // ("Can Can you you hear hear me me"). An exact token-sequence match that
+    // overlaps a system run in time is an echo regardless of confidence, so the
+    // mic run is dropped and only the clean system copy remains.
+    func testFinalizeDropsHighConfidenceEchoMatchingSystemRun() {
         let finalized = MeetingTranscriptFinalizer.finalize(sourceTranscripts: [
             .init(
                 source: .microphone,
@@ -96,9 +101,43 @@ final class MeetingTranscriptNoiseFilterTests: XCTestCase {
             ),
         ])
 
-        XCTAssertEqual(
-            finalized.words.map(\.speakerId),
-            ["system", "microphone", "system", "system", "microphone", "microphone", "system", "microphone"]
-        )
+        XCTAssertEqual(finalized.words.map(\.speakerId), ["system", "system", "system", "system"])
+        XCTAssertEqual(finalized.rawTranscript, "Can you hear me")
+    }
+
+    // Genuine double-talk: the local speaker says something DIFFERENT while the
+    // far-end talks. Those mic words do not match the system run, so they must
+    // be preserved (we only strip exact echoes, not all overlapping speech).
+    func testFinalizePreservesOverlappingMicSpeechThatDiffersFromSystem() {
+        let finalized = MeetingTranscriptFinalizer.finalize(sourceTranscripts: [
+            .init(
+                source: .microphone,
+                result: STTResult(
+                    text: "yes exactly",
+                    words: [
+                        TimestampedWord(word: "yes", startMs: 120, endMs: 260, confidence: 0.90),
+                        TimestampedWord(word: "exactly", startMs: 300, endMs: 540, confidence: 0.90),
+                    ]
+                ),
+                startOffsetMs: 0
+            ),
+            .init(
+                source: .system,
+                result: STTResult(
+                    text: "Can you hear me",
+                    words: [
+                        TimestampedWord(word: "Can", startMs: 0, endMs: 100, confidence: 0.90),
+                        TimestampedWord(word: "you", startMs: 120, endMs: 200, confidence: 0.90),
+                        TimestampedWord(word: "hear", startMs: 220, endMs: 330, confidence: 0.90),
+                        TimestampedWord(word: "me", startMs: 350, endMs: 420, confidence: 0.90),
+                    ]
+                ),
+                startOffsetMs: 0
+            ),
+        ])
+
+        XCTAssertEqual(Set(finalized.words.map(\.word)), ["yes", "exactly", "Can", "you", "hear", "me"])
+        XCTAssertTrue(finalized.words.contains { $0.word == "yes" && $0.speakerId == "microphone" })
+        XCTAssertTrue(finalized.words.contains { $0.word == "exactly" && $0.speakerId == "microphone" })
     }
 }

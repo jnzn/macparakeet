@@ -42,6 +42,14 @@ public struct MeetingRealtimeTranscript: Sendable, Equatable {
 struct MeetingTranscriptAssembler {
     private static let orderedSources: [AudioSource] = [.microphone, .system]
 
+    /// Time window (ms) for matching a microphone word to a system word when
+    /// stripping acoustic echo. The far-end plays through the speakers and
+    /// leaks into the raw (un-cancelled) mic a short, variable delay later, so
+    /// the echo's transcribed timestamp sits close to — but slightly after —
+    /// the clean system copy. Wide enough to absorb the acoustic round-trip and
+    /// chunk-boundary jitter, narrow enough to spare genuine repeated words.
+    private static let crossSourceEchoWindowMs = 500
+
     private var wordsBySource: [AudioSource: [WordTimestamp]] = [:]
     private var lastCommittedEndMs: [AudioSource: Int] = [:]
 
@@ -99,7 +107,7 @@ struct MeetingTranscriptAssembler {
     }
 
     private func mergedWords() -> [WordTimestamp] {
-        Self.orderedSources
+        let merged = Self.orderedSources
             .flatMap { wordsBySource[$0] ?? [] }
             .sorted {
                 if $0.startMs == $1.startMs {
@@ -107,6 +115,45 @@ struct MeetingTranscriptAssembler {
                 }
                 return $0.startMs < $1.startMs
             }
+        return dropMicrophoneEchoes(from: merged)
+    }
+
+    /// Removes microphone words that are acoustic echoes of far-end (system)
+    /// speech. With no/weak echo cancellation the far-end is transcribed from
+    /// both the system stream (clean) and the raw mic (echo), then interleaved
+    /// by timestamp into doubled output (e.g. "Hey Hey Jensen Jensen"). The
+    /// system stream is the authoritative copy of the far-end, so when a mic
+    /// word matches a nearby system word we keep the system one and drop the
+    /// mic echo. Mic words with no matching system word (the local speaker) are
+    /// always preserved.
+    private func dropMicrophoneEchoes(from words: [WordTimestamp]) -> [WordTimestamp] {
+        let systemStartsByToken = systemWordStartsByToken()
+        guard !systemStartsByToken.isEmpty else { return words }
+
+        return words.filter { word in
+            guard word.speakerId == AudioSource.microphone.rawValue else { return true }
+            let token = Self.normalizedToken(word.word)
+            guard !token.isEmpty, let systemStarts = systemStartsByToken[token] else { return true }
+            return !systemStarts.contains { abs($0 - word.startMs) <= Self.crossSourceEchoWindowMs }
+        }
+    }
+
+    private func systemWordStartsByToken() -> [String: [Int]] {
+        var result: [String: [Int]] = [:]
+        for word in wordsBySource[.system] ?? [] {
+            let token = Self.normalizedToken(word.word)
+            guard !token.isEmpty else { continue }
+            result[token, default: []].append(word.startMs)
+        }
+        return result
+    }
+
+    /// Lower-cased, edge-punctuation-stripped form used to match the "same"
+    /// word across sources ("Jensen," and "jensen" match). Keeps Unicode
+    /// letters/digits so non-Latin transcripts (Korean, Japanese, Chinese)
+    /// still match.
+    private static func normalizedToken(_ raw: String) -> String {
+        raw.lowercased().trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
     }
 
     private func normalizedWords() -> [WordTimestamp] {

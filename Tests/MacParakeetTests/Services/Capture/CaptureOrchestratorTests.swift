@@ -220,7 +220,68 @@ final class CaptureOrchestratorTests: XCTestCase {
         XCTAssertEqual(conditioner.callCount, cyclesForOneChunk)
     }
 
+    /// Once the echo delay is locked, the reference handed to the conditioner is
+    /// the system stream time-shifted by the estimated delay — not the
+    /// same-instant system samples — so the suppressor finally sees the far-end
+    /// aligned with the echo in the mic.
+    func testConditionerReferenceIsDelayAlignedOnceLocked() async {
+        let aligner = EchoReferenceAligner(
+            sampleRate: 16_000,
+            maxDelayMs: 50,
+            correlationWindow: 1_000,
+            minConfidence: 0.5
+        )
+        let orchestrator = CaptureOrchestrator(referenceAligner: aligner)
+        let conditioner = RecordingMicConditioner()
+
+        let delay = 320
+        let blockSize = 2_048
+        let blocks = 6
+        let total = blockSize * blocks
+        let system = whiteNoise(count: total, seed: 7)
+        var microphone = [Float](repeating: 0, count: total)
+        for index in delay..<total {
+            microphone[index] = 0.5 * system[index - delay]
+        }
+
+        for block in 0..<blocks {
+            let lower = block * blockSize
+            let upper = lower + blockSize
+            _ = await orchestrator.ingest(
+                samples: Array(microphone[lower..<upper]),
+                source: .microphone,
+                hostTime: nil,
+                micConditioner: conditioner
+            )
+            _ = await orchestrator.ingest(
+                samples: Array(system[lower..<upper]),
+                source: .system,
+                hostTime: nil,
+                micConditioner: conditioner
+            )
+        }
+
+        XCTAssertFalse(conditioner.references.isEmpty, "conditioner should be called for paired drains")
+        XCTAssertNotEqual(
+            conditioner.references.last,
+            Array(system[(total - blockSize)..<total]),
+            "reference must be delay-aligned, not the same-instant system block"
+        )
+    }
+
     // MARK: - helpers
+
+    private func whiteNoise(count: Int, seed: UInt64) -> [Float] {
+        var state = seed &+ 0x9E3779B97F4A7C15
+        var out = [Float]()
+        out.reserveCapacity(count)
+        for _ in 0..<count {
+            state = state &* 6364136223846793005 &+ 1442695040888963407
+            let bits = UInt32(truncatingIfNeeded: state >> 32)
+            out.append(Float(bits) / Float(UInt32.max) * 2 - 1)
+        }
+        return out
+    }
 
     /// Push `cycles` paired 8 k-sample batches through the orchestrator so the
     /// chunkers see steady paired drains. Each cycle stamps a fresh hostTime
@@ -282,6 +343,21 @@ private final class ConstantMicConditioner: MicConditioning, @unchecked Sendable
 
     func reset() {
         callCount = 0
+        diagnostics = MeetingEchoSuppressionDiagnostics.passthrough()
+    }
+}
+
+private final class RecordingMicConditioner: MicConditioning, @unchecked Sendable {
+    private(set) var references: [[Float]] = []
+    private(set) var diagnostics = MeetingEchoSuppressionDiagnostics.passthrough()
+
+    func condition(microphone: [Float], speaker: [Float], hasSpeakerReference: Bool) -> [Float] {
+        references.append(speaker)
+        return microphone
+    }
+
+    func reset() {
+        references.removeAll()
         diagnostics = MeetingEchoSuppressionDiagnostics.passthrough()
     }
 }
