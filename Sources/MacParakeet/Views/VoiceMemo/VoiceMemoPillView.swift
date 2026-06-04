@@ -3,8 +3,6 @@ import SwiftUI
 
 struct VoiceMemoPillView: View {
     @Bindable var viewModel: VoiceMemoPillViewModel
-    @State private var pulseScale: CGFloat = 1.0
-    @State private var pulseOpacity: Double = 0.5
     @State private var isHovered = false
 
     var body: some View {
@@ -45,21 +43,7 @@ struct VoiceMemoPillView: View {
 
     private var recordingPill: some View {
         HStack(spacing: 10) {
-            ZStack {
-                // Outer pulse ring — visually distinct from meeting pill's solid dot
-                Circle()
-                    .fill(DesignSystem.Colors.recordingRed.opacity(pulseOpacity * 0.4))
-                    .frame(width: 22, height: 22)
-                    .scaleEffect(pulseScale)
-
-                // Inner solid dot
-                Circle()
-                    .fill(DesignSystem.Colors.recordingRed)
-                    .frame(width: 10, height: 10)
-                    .shadow(color: DesignSystem.Colors.recordingRed.opacity(0.6), radius: 4)
-            }
-            .frame(width: 22, height: 22)
-            .onAppear { startPulse() }
+            RecordDotPillIcon(audioLevel: viewModel.micLevel)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text("Recording")
@@ -93,16 +77,6 @@ struct VoiceMemoPillView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Voice memo recording, \(viewModel.formattedElapsed) elapsed. Tap to open live transcript.")
         .accessibilityAction { viewModel.onTap?() }
-    }
-
-    private func startPulse() {
-        withAnimation(
-            .easeInOut(duration: 1.1)
-            .repeatForever(autoreverses: true)
-        ) {
-            pulseScale = 1.6
-            pulseOpacity = 0.0
-        }
     }
 
     private func iconPill<Content: View>(@ViewBuilder content: () -> Content) -> some View {

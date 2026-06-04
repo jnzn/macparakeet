@@ -1,11 +1,15 @@
 import MacParakeetViewModels
 import SwiftUI
 
-/// Compact "countdown halo" toast for meeting automation. The
-/// sacred-geometry rosette (shared with the recording pill via
-/// `MerkabaPillIcon`) sits inside a coral ring that sweeps over the countdown —
-/// the ring *is* the timer, so there's no separate progress bar. Lives top-right
-/// (ADR-017 / ADR-020 §10, reused by ADR-023).
+/// Compact "countdown halo" toast for calendar-driven **auto-start**. The
+/// recording mark (`ParakeetPillIcon`, shared with the recording pill) sits
+/// inside a coral ring that sweeps over the countdown —
+/// the ring *is* the timer, so there's no separate progress bar. Minimal text:
+/// the meeting title plus one status line. Lives top-right (ADR-017 / ADR-020 §10).
+///
+/// `✕` cancels this auto-start; `↵` starts now. If left alone, the ring fills
+/// and recording starts automatically. (Auto-*stop* was removed — see the
+/// ADR-017 amendment — so there is no stop variant of this toast.)
 struct MeetingCountdownToastView: View {
     @Bindable var viewModel: MeetingCountdownToastViewModel
     /// Dismissive action — Cancel. Bound to `.escape`.
@@ -90,12 +94,11 @@ struct MeetingCountdownToastView: View {
                 .stroke(DesignSystem.Colors.accent, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
                 .rotationEffect(.degrees(-90))
 
-            MerkabaPillIcon(
+            ParakeetPillIcon(
                 isAnimating: !reduceMotion,
-                audioLevel: 0,
-                showStem: false
+                audioLevel: 0
             )
-            .frame(width: 30, height: 30)
+            .frame(width: 28, height: 28)
         }
         .frame(width: 46, height: 46)
     }
