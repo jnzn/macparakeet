@@ -1279,7 +1279,13 @@ final class TranscriptionServiceTests: XCTestCase {
         ])
     }
 
-    func testTranscribeMeetingPreservesOverlappingMicrophoneAndSystemSpeech() async throws {
+    // The microphone captured the far-end ("Can you hear me") echoing back
+    // through the speakers ~120 ms later — identical words, a short delay behind
+    // the clean system copy. That is acoustic echo, not double-talk, so offline
+    // meeting transcription drops the mic copy and keeps only the clean far-end.
+    // (Genuinely *different* overlapping speech is preserved — see the
+    // MeetingTranscriptFinalizer / assembler / classifier suites.)
+    func testTranscribeMeetingStripsMicrophoneEchoOfSystemSpeech() async throws {
         let recordingFolder = URL(fileURLWithPath: AppPaths.tempDir)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: recordingFolder, withIntermediateDirectories: true)
@@ -1330,12 +1336,11 @@ final class TranscriptionServiceTests: XCTestCase {
 
         let result = try await service.transcribeMeeting(recording: recording)
 
-        XCTAssertEqual(result.rawTranscript, "Can Can you hear you hear me me")
+        XCTAssertEqual(result.rawTranscript, "Can you hear me")
         XCTAssertEqual(result.wordTimestamps?.map(\.speakerId), [
-            "system", "microphone", "system", "system", "microphone", "microphone", "system", "microphone",
+            "system", "system", "system", "system",
         ])
         XCTAssertEqual(result.speakers, [
-            SpeakerInfo(id: "microphone", label: "Me"),
             SpeakerInfo(id: "system", label: "Others"),
         ])
     }

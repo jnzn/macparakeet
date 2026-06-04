@@ -17,14 +17,28 @@ struct CaptureOrchestratorOutput: Sendable {
     var pairMetadata: [CaptureOrchestratorPairMetadata] = []
 }
 
+/// Observability snapshot for the echo-removal stages, surfaced in the meeting
+/// recording's finalize diagnostics so the aligner and gate are no longer
+/// invisible: did the echo delay lock, and how many mic windows were muted.
+struct CaptureOrchestratorEchoDiagnostics: Sendable, Equatable {
+    let alignerLockedDelaySamples: Int?
+    let gateInspectedWindows: Int
+    let gateMutedWindows: Int
+}
+
 actor CaptureOrchestrator {
     private var pairJoiner = MeetingAudioPairJoiner()
     private var microphoneChunker: any MeetingLiveAudioChunking = FixedMeetingLiveAudioChunker()
     private var systemChunker: any MeetingLiveAudioChunking = FixedMeetingLiveAudioChunker()
     private var referenceAligner: EchoReferenceAligner
+    private var microphoneEchoGate: MicrophoneEchoGate
 
-    init(referenceAligner: EchoReferenceAligner = EchoReferenceAligner()) {
+    init(
+        referenceAligner: EchoReferenceAligner = EchoReferenceAligner(),
+        microphoneEchoGate: MicrophoneEchoGate = MicrophoneEchoGate()
+    ) {
         self.referenceAligner = referenceAligner
+        self.microphoneEchoGate = microphoneEchoGate
     }
 
     /// Swap in the per-source chunkers for the next recording. Sources are
@@ -41,8 +55,18 @@ actor CaptureOrchestrator {
     func reset() async {
         pairJoiner.reset()
         referenceAligner.reset()
+        microphoneEchoGate.reset()
         await microphoneChunker.reset()
         await systemChunker.reset()
+    }
+
+    /// Snapshot of the echo-removal stages for finalize-time diagnostics.
+    func echoDiagnostics() -> CaptureOrchestratorEchoDiagnostics {
+        CaptureOrchestratorEchoDiagnostics(
+            alignerLockedDelaySamples: referenceAligner.lockedDelaySamples,
+            gateInspectedWindows: microphoneEchoGate.inspectedWindows,
+            gateMutedWindows: microphoneEchoGate.gatedWindows
+        )
     }
 
     func ingest(
@@ -108,8 +132,18 @@ actor CaptureOrchestrator {
                     speaker: reference,
                     hasSpeakerReference: reference.contains { $0 != 0 }
                 )
-                processedMicrophoneRms = chunkRms(for: processedMic)
-                micSamples = processedMic
+                // Mute windows that are overwhelmingly far-end echo before they
+                // reach STT, but only once the delay is locked so the reference
+                // is genuinely aligned with the echo. The far-end's words still
+                // survive on the clean system stream, and the on-disk recording
+                // keeps the raw mic — only the STT-bound copy is gated.
+                let gatedMic = microphoneEchoGate.process(
+                    microphone: processedMic,
+                    reference: reference,
+                    aligned: referenceAligner.lockedDelaySamples != nil
+                )
+                processedMicrophoneRms = chunkRms(for: gatedMic)
+                micSamples = gatedMic
             } else {
                 micSamples = pair.microphoneSamples
             }

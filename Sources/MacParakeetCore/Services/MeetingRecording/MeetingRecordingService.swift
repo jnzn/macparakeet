@@ -640,8 +640,9 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
                 captureFailed: captureFailed
             )
         )
+        let orchestratorEchoDiagnostics = await captureOrchestrator.echoDiagnostics()
         AudioCaptureDiagnostics.append(
-            echoSuppressionSummaryLine(session: session)
+            echoSuppressionSummaryLine(session: session, orchestrator: orchestratorEchoDiagnostics)
         )
         cleanupState()
         return output
@@ -1298,8 +1299,18 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         ].joined(separator: " ")
     }
 
-    private func echoSuppressionSummaryLine(session: Session) -> String {
+    private func echoSuppressionSummaryLine(
+        session: Session,
+        orchestrator: CaptureOrchestratorEchoDiagnostics
+    ) -> String {
         let diagnostics = micConditioner.diagnostics
+        let lockState: String
+        if let delaySamples = orchestrator.alignerLockedDelaySamples {
+            // Aligner runs at 16 kHz, so 16 samples per millisecond.
+            lockState = "aligner_locked_delay_ms=\(delaySamples / 16)"
+        } else {
+            lockState = "aligner_locked=false"
+        }
         return [
             "meeting_echo_suppression_summary",
             "session=\(session.id.uuidString)",
@@ -1312,6 +1323,9 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             "partial_reference_frames=\(diagnostics.partialReferenceFrames)",
             "missing_reference_frames=\(diagnostics.missingReferenceFrames)",
             "processing_failures=\(diagnostics.processingFailures)",
+            lockState,
+            "gate_muted_windows=\(orchestrator.gateMutedWindows)",
+            "gate_inspected_windows=\(orchestrator.gateInspectedWindows)",
         ].joined(separator: " ")
     }
 

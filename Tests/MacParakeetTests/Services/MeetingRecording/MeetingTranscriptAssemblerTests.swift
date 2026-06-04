@@ -89,6 +89,49 @@ final class MeetingTranscriptAssemblerTests: XCTestCase {
         XCTAssertEqual(transcript?.speakerCount, 1)
     }
 
+    // Degraded echo transcribes a couple of words differently from the clean
+    // system copy ("morning" -> "mornin", "joining" -> "joinin"). The old
+    // per-word exact matcher dropped only the words that matched verbatim and
+    // left the divergent ones behind, doubling the far-end in the live preview.
+    // A mic run that mostly tracks the far-end is echo and must drop in full.
+    func testDropsDivergentMicrophoneEchoRun() {
+        var assembler = MeetingTranscriptAssembler()
+        let chunk = AudioChunker.AudioChunk(samples: [0], startMs: 0, endMs: 5_000)
+
+        _ = assembler.apply(
+            result: STTResult(text: "good morning everyone thanks for joining", words: [
+                TimestampedWord(word: "good", startMs: 1_000, endMs: 1_150, confidence: 0.95),
+                TimestampedWord(word: "morning", startMs: 1_170, endMs: 1_450, confidence: 0.95),
+                TimestampedWord(word: "everyone", startMs: 1_470, endMs: 1_750, confidence: 0.95),
+                TimestampedWord(word: "thanks", startMs: 1_770, endMs: 1_950, confidence: 0.95),
+                TimestampedWord(word: "for", startMs: 1_970, endMs: 2_050, confidence: 0.95),
+                TimestampedWord(word: "joining", startMs: 2_070, endMs: 2_400, confidence: 0.95),
+            ]),
+            chunk: chunk,
+            source: .system
+        )
+
+        _ = assembler.apply(
+            result: STTResult(text: "good mornin everyone thanks for joinin", words: [
+                TimestampedWord(word: "good", startMs: 1_120, endMs: 1_270, confidence: 0.55),
+                TimestampedWord(word: "mornin", startMs: 1_290, endMs: 1_560, confidence: 0.5),
+                TimestampedWord(word: "everyone", startMs: 1_590, endMs: 1_870, confidence: 0.55),
+                TimestampedWord(word: "thanks", startMs: 1_890, endMs: 2_070, confidence: 0.55),
+                TimestampedWord(word: "for", startMs: 2_090, endMs: 2_170, confidence: 0.55),
+                TimestampedWord(word: "joinin", startMs: 2_190, endMs: 2_520, confidence: 0.5),
+            ]),
+            chunk: chunk,
+            source: .microphone
+        )
+
+        let transcript = assembler.finalizedTranscript(durationMs: 3_000)
+
+        XCTAssertEqual(transcript?.words.map(\.speakerId), Array(repeating: "system", count: 6))
+        XCTAssertEqual(transcript?.rawTranscript, "good morning everyone thanks for joining")
+        XCTAssertFalse(transcript?.words.contains { $0.word == "mornin" } ?? false)
+        XCTAssertFalse(transcript?.words.contains { $0.word == "joinin" } ?? false)
+    }
+
     func testKeepsMicrophoneWordsWithoutMatchingSystemEcho() {
         var assembler = MeetingTranscriptAssembler()
 

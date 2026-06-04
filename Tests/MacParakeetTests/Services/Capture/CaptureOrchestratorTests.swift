@@ -200,7 +200,12 @@ final class CaptureOrchestratorTests: XCTestCase {
     }
 
     func testProcessedMicrophoneSamplesFeedMicrophoneChunker() async {
-        let orchestrator = CaptureOrchestrator()
+        // Disable the echo gate (no coherence can reach a threshold above 1) so
+        // this test isolates the conditioner→chunker plumbing; the degenerate
+        // constant signals it drives would otherwise read as pure echo and mute.
+        let orchestrator = CaptureOrchestrator(
+            microphoneEchoGate: MicrophoneEchoGate(echoDominanceThreshold: 2)
+        )
         let conditioner = ConstantMicConditioner(sampleValue: 0.125)
 
         let chunks = await driveCycles(
@@ -269,7 +274,112 @@ final class CaptureOrchestratorTests: XCTestCase {
         )
     }
 
+    /// Once the delay is locked, microphone windows that are just the far-end
+    /// echoing back are muted before they reach the chunker — so the mic chunk
+    /// shipped to STT is far quieter than the system chunk, even though the raw
+    /// mic was a loud copy of the system.
+    func testGatesEchoOutOfMicrophoneChunkOnceLocked() async {
+        let aligner = EchoReferenceAligner(
+            sampleRate: 16_000,
+            maxDelayMs: 50,
+            correlationWindow: 1_000,
+            minConfidence: 0.5
+        )
+        let orchestrator = CaptureOrchestrator(referenceAligner: aligner)
+        let conditioner = PassthroughMicConditioner()
+
+        let delay = 320
+        let blockSize = 2_048
+        let blocks = 45 // > 80 000 samples, so at least one 5 s chunk is emitted
+        let total = blockSize * blocks
+        let system = whiteNoise(count: total, seed: 7)
+        var microphone = [Float](repeating: 0, count: total)
+        for index in delay..<total {
+            microphone[index] = 0.5 * system[index - delay] // pure acoustic echo
+        }
+
+        var chunks: [CaptureOrchestratorChunk] = []
+        for block in 0..<blocks {
+            let lower = block * blockSize
+            let upper = lower + blockSize
+            let outMic = await orchestrator.ingest(
+                samples: Array(microphone[lower..<upper]),
+                source: .microphone, hostTime: nil, micConditioner: conditioner
+            )
+            let outSystem = await orchestrator.ingest(
+                samples: Array(system[lower..<upper]),
+                source: .system, hostTime: nil, micConditioner: conditioner
+            )
+            chunks.append(contentsOf: outMic.chunks)
+            chunks.append(contentsOf: outSystem.chunks)
+        }
+
+        guard let micChunk = chunks.first(where: { $0.source == .microphone })?.chunk,
+              let systemChunk = chunks.first(where: { $0.source == .system })?.chunk else {
+            XCTFail("expected at least one chunk per source")
+            return
+        }
+
+        let micRms = rms(micChunk.samples)
+        let systemRms = rms(systemChunk.samples)
+        XCTAssertGreaterThan(systemRms, 0.01, "system chunk should carry the far-end signal")
+        XCTAssertLessThan(
+            micRms,
+            systemRms * 0.2,
+            "echo should be gated out of the mic chunk (micRms=\(micRms), systemRms=\(systemRms))"
+        )
+    }
+
+    /// The finalize diagnostics must be able to see whether the echo delay
+    /// locked and how many mic windows the gate muted — otherwise the audio-side
+    /// echo removal is invisible when a recording still has problems.
+    func testEchoDiagnosticsReportLockAndGateActivity() async {
+        let aligner = EchoReferenceAligner(
+            sampleRate: 16_000,
+            maxDelayMs: 50,
+            correlationWindow: 1_000,
+            minConfidence: 0.5
+        )
+        let orchestrator = CaptureOrchestrator(referenceAligner: aligner)
+        let conditioner = PassthroughMicConditioner()
+
+        let delay = 320
+        let blockSize = 2_048
+        let blocks = 6
+        let total = blockSize * blocks
+        let system = whiteNoise(count: total, seed: 7)
+        var microphone = [Float](repeating: 0, count: total)
+        for index in delay..<total {
+            microphone[index] = 0.5 * system[index - delay]
+        }
+
+        for block in 0..<blocks {
+            let lower = block * blockSize
+            let upper = lower + blockSize
+            _ = await orchestrator.ingest(
+                samples: Array(microphone[lower..<upper]),
+                source: .microphone, hostTime: nil, micConditioner: conditioner
+            )
+            _ = await orchestrator.ingest(
+                samples: Array(system[lower..<upper]),
+                source: .system, hostTime: nil, micConditioner: conditioner
+            )
+        }
+
+        let diagnostics = await orchestrator.echoDiagnostics()
+        XCTAssertNotNil(diagnostics.alignerLockedDelaySamples, "aligner should have locked on the synthetic echo")
+        XCTAssertGreaterThan(diagnostics.gateMutedWindows, 0, "gate should have muted echo windows after lock")
+        XCTAssertGreaterThanOrEqual(diagnostics.gateInspectedWindows, diagnostics.gateMutedWindows)
+    }
+
     // MARK: - helpers
+
+    private func rms(_ samples: [Float]) -> Float {
+        guard !samples.isEmpty else { return 0 }
+        var sum: Float = 0
+        for sample in samples { sum += sample * sample }
+        return (sum / Float(samples.count)).squareRoot()
+    }
 
     private func whiteNoise(count: Int, seed: UInt64) -> [Float] {
         var state = seed &+ 0x9E3779B97F4A7C15

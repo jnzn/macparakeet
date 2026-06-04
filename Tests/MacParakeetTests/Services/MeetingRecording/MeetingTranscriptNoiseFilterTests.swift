@@ -105,6 +105,55 @@ final class MeetingTranscriptNoiseFilterTests: XCTestCase {
         XCTAssertEqual(finalized.rawTranscript, "Can you hear me")
     }
 
+    // The real-world failure: acoustic echo is degraded audio, so the second
+    // (mic) transcription DIVERGES from the clean system copy on a word or two
+    // ("Hey team" -> "Hey Tim", "morning" survives). The old exact-token-
+    // SEQUENCE matcher required the WHOLE run to match, so a single divergent
+    // word ("Tim") saved the entire run from being dropped, and the far-end
+    // doubled across the transcript ("Hey Hey Tim team good good morning
+    // morning"). A run that mostly tracks an overlapping system run is echo and
+    // must be dropped in full, divergent words included.
+    func testFinalizeDropsDivergentEchoRunThatMostlyMatchesSystem() {
+        let finalized = MeetingTranscriptFinalizer.finalize(sourceTranscripts: [
+            .init(
+                source: .microphone,
+                result: STTResult(
+                    text: "Hey Tim good morning how are you",
+                    words: [
+                        TimestampedWord(word: "Hey", startMs: 140, endMs: 240, confidence: 0.91),
+                        TimestampedWord(word: "Tim", startMs: 260, endMs: 360, confidence: 0.88),
+                        TimestampedWord(word: "good", startMs: 380, endMs: 470, confidence: 0.92),
+                        TimestampedWord(word: "morning", startMs: 490, endMs: 700, confidence: 0.93),
+                        TimestampedWord(word: "how", startMs: 720, endMs: 800, confidence: 0.90),
+                        TimestampedWord(word: "are", startMs: 820, endMs: 900, confidence: 0.90),
+                        TimestampedWord(word: "you", startMs: 920, endMs: 1010, confidence: 0.90),
+                    ]
+                ),
+                startOffsetMs: 0
+            ),
+            .init(
+                source: .system,
+                result: STTResult(
+                    text: "Hey team good morning how are you",
+                    words: [
+                        TimestampedWord(word: "Hey", startMs: 0, endMs: 100, confidence: 0.95),
+                        TimestampedWord(word: "team", startMs: 120, endMs: 220, confidence: 0.95),
+                        TimestampedWord(word: "good", startMs: 240, endMs: 330, confidence: 0.95),
+                        TimestampedWord(word: "morning", startMs: 350, endMs: 560, confidence: 0.95),
+                        TimestampedWord(word: "how", startMs: 580, endMs: 660, confidence: 0.95),
+                        TimestampedWord(word: "are", startMs: 680, endMs: 760, confidence: 0.95),
+                        TimestampedWord(word: "you", startMs: 780, endMs: 870, confidence: 0.95),
+                    ]
+                ),
+                startOffsetMs: 0
+            ),
+        ])
+
+        XCTAssertEqual(finalized.words.map(\.speakerId), Array(repeating: "system", count: 7))
+        XCTAssertEqual(finalized.rawTranscript, "Hey team good morning how are you")
+        XCTAssertFalse(finalized.words.contains { $0.word == "Tim" })
+    }
+
     // Genuine double-talk: the local speaker says something DIFFERENT while the
     // far-end talks. Those mic words do not match the system run, so they must
     // be preserved (we only strip exact echoes, not all overlapping speech).
