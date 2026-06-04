@@ -151,6 +151,10 @@ public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProto
     /// transcription or a batch finishes. Default on; opt-out in Settings.
     public static let notifyOnTranscriptionCompleteKey = "notifyOnTranscriptionComplete"
 
+    /// When set, recording deletes skip the confirmation dialog and go straight
+    /// to the Trash. Toggled on by the dialog's "Don't ask again" checkbox.
+    public static let skipRecordingDeleteConfirmationKey = "skipRecordingDeleteConfirmation"
+
     private let defaults: UserDefaults
 
     public init(defaults: UserDefaults = .standard) {

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import MacParakeetCore
 import MacParakeetViewModels
@@ -12,8 +13,32 @@ struct TranscriptionLibraryView: View {
     var emptyMessage: String = "Transcribe a file or YouTube video to get started."
     var onSelect: (Transcription) -> Void
 
-    @State private var pendingDelete: Transcription?
+    @AppStorage(UserDefaultsAppRuntimePreferences.skipRecordingDeleteConfirmationKey)
+    private var skipDeleteConfirmation = false
     @State private var audioSaveErrorMessage: String?
+
+    /// Confirms a recording delete unless the user has ticked "Don't ask again".
+    /// Deletes move the recording to the Trash (recoverable), so the prompt is a
+    /// courtesy rather than a last chance — suppressing it is safe.
+    private func requestDelete(_ transcription: Transcription) {
+        guard !skipDeleteConfirmation else {
+            viewModel.deleteTranscription(transcription)
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "Delete “\(transcription.fileName)”?"
+        alert.informativeText = "It will be moved to the Trash, where you can recover it."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        alert.showsSuppressionButton = true
+        alert.suppressionButton?.title = "Don’t ask again"
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        if alert.suppressionButton?.state == .on {
+            skipDeleteConfirmation = true
+        }
+        viewModel.deleteTranscription(transcription)
+    }
 
     private var visibleLibraryFilters: [LibraryFilter] {
         LibraryFilter.allCases.filter { filter in
@@ -80,27 +105,6 @@ struct TranscriptionLibraryView: View {
         .searchable(text: $viewModel.searchText, prompt: "Search transcriptions")
         .onAppear {
             viewModel.loadTranscriptions()
-        }
-        .alert(
-            "Delete Transcription?",
-            isPresented: Binding(
-                get: { pendingDelete != nil },
-                set: { if !$0 { pendingDelete = nil } }
-            )
-        ) {
-            Button("Cancel", role: .cancel) {
-                pendingDelete = nil
-            }
-            Button("Delete", role: .destructive) {
-                if let transcription = pendingDelete {
-                    viewModel.deleteTranscription(transcription)
-                    pendingDelete = nil
-                }
-            }
-        } message: {
-            if let pending = pendingDelete {
-                Text("\"\(pending.fileName)\" will be permanently deleted.")
-            }
         }
         .alert(
             "Save Failed",
@@ -228,7 +232,7 @@ struct TranscriptionLibraryView: View {
         Divider()
 
         Button(role: .destructive) {
-            pendingDelete = transcription
+            requestDelete(transcription)
         } label: {
             Label("Delete", systemImage: "trash")
         }
