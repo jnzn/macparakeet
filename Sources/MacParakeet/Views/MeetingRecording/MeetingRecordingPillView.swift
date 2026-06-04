@@ -157,20 +157,19 @@ struct MeetingRecordingPillView: View {
 
     private var sacredRecordingPill: some View {
         let isPaused = viewModel.isPaused
-        return VStack(spacing: 0) {
+        return HStack(spacing: 10) {
             ZStack {
-                MerkabaPillIcon(
+                ParakeetHeadPillIcon(
                     isAnimating: !isPaused && !reduceMotion,
                     audioLevel: isPaused ? 0 : max(viewModel.micLevel, viewModel.systemLevel)
                 )
+                .frame(width: 30, height: 30)
                 .opacity(isPaused ? 0.45 : 1.0)
                 .animation(.easeInOut(duration: 0.25), value: isPaused)
 
                 if isPaused {
-                    // Two parallel bars in the rosette center — the universal
-                    // "paused" affordance. Doesn't replace the rosette
-                    // (continuity with recording state) but signals "frozen"
-                    // on top of the dimmed mark.
+                    // Pause bars over the dimmed bird — the "frozen" signal,
+                    // matching the amber pause language across meeting surfaces.
                     HStack(spacing: 3) {
                         Capsule()
                             .fill(DesignSystem.Colors.meetingPillText)
@@ -182,9 +181,20 @@ struct MeetingRecordingPillView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.8)))
                 }
             }
+            .frame(width: 30, height: 30)
+
+            // Elapsed time inline, matching the voice-memo pill.
+            VStack(alignment: .leading, spacing: 1) {
+                Text(isPaused ? "Paused" : "Recording")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.92))
+                Text(viewModel.formattedElapsed)
+                    .font(.system(size: 11, weight: .regular).monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.6))
+            }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
         .background(
             Capsule()
                 .fill(isHovered ? DesignSystem.Colors.meetingPillBackgroundHover : DesignSystem.Colors.meetingPillBackground)
@@ -204,50 +214,9 @@ struct MeetingRecordingPillView: View {
         .onTapGesture {
             onTap?()
         }
-        .scaleEffect(isHovered ? 1.05 : 1.0)
+        .scaleEffect(isHovered ? 1.03 : 1.0)
         .animation(DesignSystem.Animation.meetingPillHover, value: isHovered)
         .padding(DesignSystem.Spacing.sm)
-        .overlay(alignment: .top) {
-            if isHovered && viewModel.elapsedSeconds > 0 {
-                HStack(spacing: 5) {
-                    if isPaused {
-                        // Amber pause glyph — same color the panel status
-                        // dot, pause button hover, and tile hover all use,
-                        // so paused state reads as one consistent signal
-                        // across every meeting surface.
-                        Image(systemName: "pause.fill")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(DesignSystem.Colors.warningAmber)
-                            .shadow(color: DesignSystem.Colors.warningAmber.opacity(0.5), radius: 3)
-                    } else {
-                        Circle()
-                            .fill(DesignSystem.Colors.recordingRed)
-                            .frame(width: 5, height: 5)
-                            .shadow(color: .red.opacity(0.5), radius: 3)
-                    }
-
-                    Text(viewModel.formattedElapsed)
-                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(.white.opacity(0.92))
-                        .lineLimit(1)
-                }
-                .fixedSize(horizontal: true, vertical: false)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(
-                    Capsule()
-                        .fill(.ultraThinMaterial)
-                        .environment(\.colorScheme, .dark)
-                )
-                .overlay(
-                    Capsule()
-                        .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5)
-                )
-                .shadow(color: .black.opacity(0.25), radius: 6, y: 2)
-                .offset(y: -24)
-                .transition(.opacity.combined(with: .scale(scale: 0.8)))
-            }
-        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             isPaused

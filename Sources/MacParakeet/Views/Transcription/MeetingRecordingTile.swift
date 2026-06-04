@@ -139,28 +139,58 @@ struct MeetingRecordingTile: View {
         }
     }
 
+    @ViewBuilder
     private var idleContent: some View {
-        HStack(spacing: DesignSystem.Spacing.md) {
-            if permissionState.isReady {
-                SacredFlowerTile(isAnimating: false, audioLevel: 0)
-            } else {
-                permissionIcon
-                    .frame(width: 64)
+        if fillsAvailableHeight {
+            // Transcribe tab: centered vertical card that matches the voice-memo
+            // tile beside it — parakeet above the label, the whole card taps to
+            // start, and there's no separate Start pill.
+            Button(action: onTap) {
+                VStack(spacing: DesignSystem.Spacing.md) {
+                    idleLeadingIcon
+                    Text(permissionState.title)
+                        .font(DesignSystem.Typography.pageTitle)
+                        .foregroundStyle(DesignSystem.Colors.textPrimary)
+                    Text(permissionState.detail)
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(.tertiary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .padding(.horizontal, DesignSystem.Spacing.lg)
+                }
+                .frame(maxWidth: .infinity)
             }
+            .buttonStyle(.plain)
+        } else {
+            // Meetings tab: row layout — parakeet at the left, Start pill at the
+            // right.
+            HStack(spacing: DesignSystem.Spacing.md) {
+                idleLeadingIcon
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(permissionState.title)
+                        .font(DesignSystem.Typography.sectionTitle)
+                        .foregroundStyle(DesignSystem.Colors.textPrimary)
+                    Text(permissionState.detail)
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(DesignSystem.Colors.textSecondary)
+                        .lineLimit(2)
+                }
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(permissionState.title)
-                    .font(DesignSystem.Typography.sectionTitle)
-                    .foregroundStyle(DesignSystem.Colors.textPrimary)
-                Text(permissionState.detail)
-                    .font(DesignSystem.Typography.caption)
-                    .foregroundStyle(DesignSystem.Colors.textSecondary)
-                    .lineLimit(2)
+                Spacer()
+
+                StartRecordingButton(permissionState: permissionState, onTap: onTap)
             }
+        }
+    }
 
-            Spacer()
-
-            StartRecordingButton(permissionState: permissionState, onTap: onTap)
+    @ViewBuilder
+    private var idleLeadingIcon: some View {
+        if permissionState.isReady {
+            ParakeetPillIcon(isAnimating: !reduceMotion, audioLevel: 0)
+                .frame(width: 64, height: 64)
+        } else {
+            permissionIcon
+                .frame(width: 64)
         }
     }
 
@@ -168,10 +198,11 @@ struct MeetingRecordingTile: View {
         let isPaused = viewModel.isPaused
         return HStack(spacing: DesignSystem.Spacing.md) {
             ZStack {
-                SacredFlowerTile(
+                ParakeetPillIcon(
                     isAnimating: !isPaused && !reduceMotion,
                     audioLevel: isPaused ? 0 : max(viewModel.micLevel, viewModel.systemLevel)
                 )
+                .frame(width: 64, height: 64)
                 .opacity(isPaused ? 0.45 : 1.0)
                 .animation(.easeInOut(duration: 0.25), value: isPaused)
 
@@ -574,153 +605,6 @@ private struct StopConfirmCapsule: View {
 
 // MARK: - Sacred Flower Glyph (tile-scale)
 
-/// Larger, light-surface variant of the flower-of-life rosette + stem + leaves
-/// motif used by the floating recording pill. Sized for the Transcribe tile
-/// (50pt head + short stem). Greens-on-light replaces the pill's white-on-black.
-private struct SacredFlowerTile: View {
-    var isAnimating: Bool
-    var audioLevel: Float
-
-    @State private var rotation: Double = 0
-    @State private var sway: Double = -1
-    @State private var idleBreath: Double = 0
-
-    private let headSize: CGFloat = 50
-    private let stemHeight: CGFloat = 18
-
-    private var glowOpacity: Double {
-        let base: Double = isAnimating ? 0.55 : (0.22 + idleBreath * 0.10)
-        let audioBoost = Double(audioLevel) * 0.45
-        return min(0.85, base + audioBoost)
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            flowerHead
-                .frame(width: headSize, height: headSize)
-            stemAndLeaves
-                .frame(width: headSize * 0.55, height: stemHeight)
-                .padding(.top, -2)
-        }
-        .frame(width: 64)
-        .onChange(of: isAnimating) { _, animating in
-            if animating { startActive() } else { stopActive() }
-        }
-        .onAppear {
-            if isAnimating {
-                startActive()
-            } else {
-                startIdleBreath()
-            }
-        }
-    }
-
-    private var flowerHead: some View {
-        ZStack {
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [
-                            DesignSystem.Colors.sacredGlow.opacity(glowOpacity),
-                            DesignSystem.Colors.sacredGlow.opacity(glowOpacity * 0.30),
-                            .clear,
-                        ],
-                        center: .center,
-                        startRadius: 0,
-                        endRadius: headSize * 0.55
-                    )
-                )
-                .frame(width: headSize * 0.86, height: headSize * 0.86)
-                .animation(.easeOut(duration: 0.12), value: audioLevel)
-
-            ZStack {
-                Circle()
-                    .stroke(DesignSystem.Colors.sacredStem.opacity(0.65), lineWidth: 1.0)
-                    .frame(width: headSize * 0.46, height: headSize * 0.46)
-
-                ForEach(0..<6, id: \.self) { index in
-                    let angle = Double(index) * 60
-                    let radians = angle * .pi / 180
-                    let radius: CGFloat = headSize * 0.23
-
-                    Circle()
-                        .stroke(DesignSystem.Colors.sacredStem.opacity(0.50), lineWidth: 1.0)
-                        .frame(width: headSize * 0.46, height: headSize * 0.46)
-                        .offset(
-                            x: radius * CGFloat(cos(radians)),
-                            y: radius * CGFloat(sin(radians))
-                        )
-                }
-            }
-            .rotationEffect(.degrees(rotation))
-        }
-    }
-
-    private var stemAndLeaves: some View {
-        let stemColor = DesignSystem.Colors.sacredStem
-        let swayOffset = CGFloat(sway) * 1.8
-
-        return ZStack {
-            TileStemShape(swayOffset: swayOffset)
-                .stroke(stemColor.opacity(0.75), lineWidth: 1.4)
-
-            TileLeafShape(
-                basePoint: CGPoint(x: 0.5, y: 0.40),
-                direction: .left,
-                size: 11,
-                swayOffset: swayOffset
-            )
-            .fill(stemColor.opacity(0.50))
-            TileLeafShape(
-                basePoint: CGPoint(x: 0.5, y: 0.40),
-                direction: .left,
-                size: 11,
-                swayOffset: swayOffset
-            )
-            .stroke(stemColor.opacity(0.62), lineWidth: 0.6)
-
-            TileLeafShape(
-                basePoint: CGPoint(x: 0.5, y: 0.68),
-                direction: .right,
-                size: 12,
-                swayOffset: swayOffset
-            )
-            .fill(stemColor.opacity(0.50))
-            TileLeafShape(
-                basePoint: CGPoint(x: 0.5, y: 0.68),
-                direction: .right,
-                size: 12,
-                swayOffset: swayOffset
-            )
-            .stroke(stemColor.opacity(0.62), lineWidth: 0.6)
-        }
-    }
-
-    private func startActive() {
-        // Match the pill's 12s rotation for visual continuity.
-        withAnimation(.linear(duration: 12).repeatForever(autoreverses: false)) {
-            rotation = 360
-        }
-        withAnimation(.easeInOut(duration: 3).repeatForever(autoreverses: true)) {
-            sway = 1
-        }
-    }
-
-    private func stopActive() {
-        withAnimation(.easeOut(duration: 0.5)) {
-            rotation = 0
-            sway = 0
-        }
-        startIdleBreath()
-    }
-
-    private func startIdleBreath() {
-        // Subtle 4s breathing on the glow when idle — present, not nagging.
-        withAnimation(.easeInOut(duration: 4).repeatForever(autoreverses: true)) {
-            idleBreath = 1
-        }
-    }
-}
 
 // MARK: - Recording dot (gentle breathing)
 
@@ -741,58 +625,3 @@ private struct BreathingDot: View {
     }
 }
 
-// MARK: - Stem and Leaf Shapes (tile-scale variants)
-
-private struct TileStemShape: Shape {
-    var swayOffset: CGFloat
-
-    var animatableData: CGFloat {
-        get { swayOffset }
-        set { swayOffset = newValue }
-    }
-
-    func path(in rect: CGRect) -> Path {
-        let midX = rect.midX
-        var path = Path()
-        path.move(to: CGPoint(x: midX, y: 0))
-        path.addQuadCurve(
-            to: CGPoint(x: midX + swayOffset * 0.35, y: rect.height),
-            control: CGPoint(x: midX + swayOffset, y: rect.height * 0.5)
-        )
-        return path
-    }
-}
-
-private struct TileLeafShape: Shape {
-    enum Direction { case left, right }
-
-    let basePoint: CGPoint
-    let direction: Direction
-    let size: CGFloat
-    var swayOffset: CGFloat = 0
-
-    var animatableData: CGFloat {
-        get { swayOffset }
-        set { swayOffset = newValue }
-    }
-
-    func path(in rect: CGRect) -> Path {
-        let base = CGPoint(
-            x: rect.width * basePoint.x + swayOffset * basePoint.y,
-            y: rect.height * basePoint.y
-        )
-        let sign: CGFloat = direction == .left ? -1 : 1
-
-        var path = Path()
-        path.move(to: base)
-        path.addQuadCurve(
-            to: CGPoint(x: base.x + sign * size, y: base.y - 4),
-            control: CGPoint(x: base.x + sign * size * 0.6, y: base.y - 6)
-        )
-        path.addQuadCurve(
-            to: base,
-            control: CGPoint(x: base.x + sign * size * 0.6, y: base.y + 3)
-        )
-        return path
-    }
-}
