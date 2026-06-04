@@ -98,11 +98,9 @@ struct MeetingsView: View {
             Spacer(minLength: DesignSystem.Spacing.lg)
 
             if viewModel.recordingStatus != .ready {
-                MeetingsStatusChip(
-                    icon: headerStatusIcon,
-                    title: headerStatusTitle,
-                    tint: headerStatusTint
-                )
+                // Per-second timer ticks re-render only this leaf chip, not the
+                // whole MeetingsView body. See MeetingsLiveStatusChip (#396).
+                MeetingsLiveStatusChip(viewModel: viewModel)
             }
         }
     }
@@ -514,51 +512,6 @@ struct MeetingsView: View {
         )
     }
 
-    private var headerStatusIcon: String {
-        switch viewModel.recordingStatus {
-        case .recording:
-            return "record.circle.fill"
-        case .paused:
-            return "pause.fill"
-        case .finishing, .transcribing:
-            return "waveform"
-        case .error:
-            return "exclamationmark.triangle"
-        case .ready:
-            return "checkmark.circle"
-        }
-    }
-
-    private var headerStatusTitle: String {
-        switch viewModel.recordingStatus {
-        case .ready:
-            return "Ready"
-        case .recording:
-            return "Recording \(viewModel.meetingPillViewModel.formattedElapsed)"
-        case .paused:
-            return "Paused \(viewModel.meetingPillViewModel.formattedElapsed)"
-        case .finishing:
-            return "Finishing"
-        case .transcribing:
-            return "Transcribing"
-        case .error:
-            return "Needs Attention"
-        }
-    }
-
-    private var headerStatusTint: Color {
-        switch viewModel.recordingStatus {
-        case .recording:
-            return DesignSystem.Colors.recordingRed
-        case .paused, .finishing, .transcribing:
-            return DesignSystem.Colors.warningAmber
-        case .error:
-            return DesignSystem.Colors.errorRed
-        case .ready:
-            return DesignSystem.Colors.successGreen
-        }
-    }
-
     private var recentMeetingsSearchText: String {
         viewModel.recentMeetingsViewModel.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -690,6 +643,64 @@ private struct MeetingsStatusChip: View {
                     .strokeBorder(tint.opacity(0.25), lineWidth: 0.6)
             )
             .lineLimit(1)
+    }
+}
+
+/// Smart wrapper that owns the per-second `formattedElapsed` read for the header
+/// status chip. Isolating that read here means the recording timer's 1 Hz ticks
+/// re-render only this small chip — not the whole `MeetingsView` body (header,
+/// recording surface, meeting list, intelligence rail). Ports the relayout
+/// isolation from upstream #396.
+private struct MeetingsLiveStatusChip: View {
+    let viewModel: MeetingsWorkspaceViewModel
+
+    var body: some View {
+        MeetingsStatusChip(icon: icon, title: title, tint: tint)
+    }
+
+    private var icon: String {
+        switch viewModel.recordingStatus {
+        case .recording:
+            return "record.circle.fill"
+        case .paused:
+            return "pause.fill"
+        case .finishing, .transcribing:
+            return "waveform"
+        case .error:
+            return "exclamationmark.triangle"
+        case .ready:
+            return "checkmark.circle"
+        }
+    }
+
+    private var title: String {
+        switch viewModel.recordingStatus {
+        case .ready:
+            return "Ready"
+        case .recording:
+            return "Recording \(viewModel.meetingPillViewModel.formattedElapsed)"
+        case .paused:
+            return "Paused \(viewModel.meetingPillViewModel.formattedElapsed)"
+        case .finishing:
+            return "Finishing"
+        case .transcribing:
+            return "Transcribing"
+        case .error:
+            return "Needs Attention"
+        }
+    }
+
+    private var tint: Color {
+        switch viewModel.recordingStatus {
+        case .recording:
+            return DesignSystem.Colors.recordingRed
+        case .paused, .finishing, .transcribing:
+            return DesignSystem.Colors.warningAmber
+        case .error:
+            return DesignSystem.Colors.errorRed
+        case .ready:
+            return DesignSystem.Colors.successGreen
+        }
     }
 }
 
