@@ -82,6 +82,11 @@ by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
 
 ### Added
 
+- `transcribe` now accepts per-run speaker-count constraints for diarization:
+  `--speaker-count <n>` for an exact known count and `--speaker-min <n>` /
+  `--speaker-max <n>` for a range. These flags imply speaker detection when
+  `--speaker-detection` is left at `app-default`, and they are rejected with
+  `--speaker-detection off` or `--no-diarize`.
 - Parakeet now exposes both model builds: the multilingual `v3` (default) and
   the English-only `v2`. v2 is a touch faster on English and never mis-detects
   English speech as another language (the v3 auto-detect failure behind issues
