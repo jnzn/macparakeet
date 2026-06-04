@@ -4,6 +4,10 @@ MEMORY.md
 # Private journal (telemetry analyses, postmortems, field notes — agent-only)
 journal/
 
+# Local-only upstream-sync working ledger — which moona3k commits we have
+# ported / skipped / deferred. For us, not the repo.
+docs/upstream-sync.md
+
 # Claude Code
 .claude/
 
