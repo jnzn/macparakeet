@@ -344,7 +344,7 @@ public enum TranscriptionAssetCleanup {
             return
         }
 
-        try removeItem(at: targetURL, fileManager: fileManager)
+        try moveToTrash(at: targetURL, fileManager: fileManager)
     }
 
     @discardableResult
@@ -360,7 +360,7 @@ public enum TranscriptionAssetCleanup {
             fileManager: fileManager,
             message: "Refusing to remove locked meeting folder"
         )
-        try removeItem(at: folderURL, fileManager: fileManager)
+        try moveToTrash(at: folderURL, fileManager: fileManager)
         return true
     }
 
@@ -425,6 +425,24 @@ public enum TranscriptionAssetCleanup {
         } catch {
             logger.warning(
                 "Failed to remove transcription asset at \(url.path, privacy: .private): \(String(describing: error), privacy: .private)"
+            )
+            throw TranscriptionAssetCleanupError.removalFailed(
+                path: url.path,
+                reason: error.localizedDescription
+            )
+        }
+    }
+
+    /// Moves the app-owned asset to the user's Trash rather than deleting it
+    /// outright, so a deleted recording can be recovered from the Trash. Honors
+    /// "never lose user data": a delete is recoverable, not destructive.
+    private static func moveToTrash(at url: URL, fileManager: FileManager) throws {
+        guard fileManager.fileExists(atPath: url.path) else { return }
+        do {
+            try fileManager.trashItem(at: url, resultingItemURL: nil)
+        } catch {
+            logger.warning(
+                "Failed to trash transcription asset at \(url.path, privacy: .private): \(String(describing: error), privacy: .private)"
             )
             throw TranscriptionAssetCleanupError.removalFailed(
                 path: url.path,

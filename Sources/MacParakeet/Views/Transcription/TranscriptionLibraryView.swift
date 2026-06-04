@@ -26,6 +26,8 @@ struct TranscriptionLibraryView: View {
     @State private var pendingDeleteAudio: Transcription?
     @State private var splitTarget: Transcription?
     @State private var splitOperationId: UUID?
+    @AppStorage(UserDefaultsAppRuntimePreferences.skipRecordingDeleteConfirmationKey)
+    private var skipDeleteConfirmation = false
     @State private var audioSaveErrorMessage: String?
     @State private var showingBulkExportOptions = false
     @AppStorage("com.macparakeet.libraryBulkExportFormat")
@@ -45,6 +47,29 @@ struct TranscriptionLibraryView: View {
     @State private var bulkExportWorkerTask: Task<BulkTranscriptExportResult, Error>?
     @State private var bulkExportRunID = UUID()
     @FocusState private var selectionKeyboardFocused: Bool
+
+    /// Confirms a recording delete unless the user has ticked "Don't ask again".
+    /// Deletes move the recording to the Trash (recoverable), so the prompt is a
+    /// courtesy rather than a last chance — suppressing it is safe.
+    private func requestDelete(_ transcription: Transcription) {
+        guard !skipDeleteConfirmation else {
+            viewModel.deleteTranscription(transcription)
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "Delete “\(transcription.fileName)”?"
+        alert.informativeText = "It will be moved to the Trash, where you can recover it."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        alert.showsSuppressionButton = true
+        alert.suppressionButton?.title = "Don’t ask again"
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        if alert.suppressionButton?.state == .on {
+            skipDeleteConfirmation = true
+        }
+        viewModel.deleteTranscription(transcription)
+    }
 
     private var visibleLibraryFilters: [LibraryFilter] {
         LibraryFilter.allCases.filter { filter in
@@ -562,7 +587,7 @@ struct TranscriptionLibraryView: View {
         Divider()
 
         Button(role: .destructive) {
-            pendingDelete = transcription
+            requestDelete(transcription)
         } label: {
             Label(
                 transcription.sourceType == .meeting ? MeetingDeletionCopy.fullDeleteMenuTitle : "Delete",
