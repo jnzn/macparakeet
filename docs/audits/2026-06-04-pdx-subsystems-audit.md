@@ -271,6 +271,57 @@ the code:
 
 ---
 
+## Autonomous fix pass (2026-06-04)
+
+Ran while the owner was away, with standing instruction to ship safe fixes one at
+a time (TDD, commit each) and "trust your judgement, document the options" on
+ambiguous calls. Committed locally on `feature/pdx-next` (not pushed — local
+checkpoints satisfy "know where to restart"; pushing is the owner's call).
+
+**Shipped — each its own commit, fix's tests green, app builds:**
+- PDX-001 / PDX-002 — bounded live-ingest queue + drop metric.
+- PDX-014 — cancellable auto-stop countdown.
+- PDX-012 — `llm_runs` retention cap.
+- PDX-016 — precomputed Rhodonea base curve.
+
+("All tests green" was read as: the fix's tests pass + clean `swift build` + no
+*new* failures in relevant suites. The full suite can't run green headlessly — the
+`MeetingRecordingServiceTests` backpressure test hangs without mic hardware and 3
+VAD tests fail on synthetic buffers, both pre-existing.)
+
+**Deferred — and why.** After analysis, none of the remaining P2s was a clean,
+low-risk, *headlessly-verifiable* autonomous win. Grouped by blocker:
+
+- **Blocked on the closed-source native binary.** PDX-005 — the dylib is re-signed
+  every build, so its hash isn't pinnable; only the `.gguf` model hash is stable
+  (a partial fix). PDX-009 — needs a `localvqe_abi_version` symbol the binary
+  doesn't export.
+- **Needs runtime/hardware validation I can't do headlessly (regression risk).**
+  PDX-006 — a wrong assumption about the dylib's reported sample rate would
+  *silently disable* echo suppression (it falls back to passthrough on a throw);
+  must be confirmed against the real dylib. PDX-003 — reusing the audio hot-path
+  scratch buffer needs profiling + a live recording to prove no corruption.
+  PDX-017 — global `CGEventTap` keystroke handling, and on analysis the audit's
+  suggested fix is *wrong*: keyUp events carry different modifier bits than
+  keyDown, so the keyCode must still be cleared by bare code — tracking the full
+  `KeyMatch` would break clearing and make it worse. A correct fix needs real-tap
+  validation.
+- **Native lifecycle — low-risk but untestable + marginal; bundle with PDX-006
+  when building against the dylib.** PDX-007 (latent, not currently triggerable),
+  PDX-008 (guards a `processFrame`/`free` race that ARC already makes impossible —
+  `deinit` only fires once the last reference is gone).
+- **Needs an owner product/security decision.** PDX-010 / PDX-011 — consolidating
+  `LLMSettingsDraft` onto `OllamaURLValidator` regresses the #118 `0.0.0.0`
+  support and changes user-facing validation (it would reject public-`http` local
+  configs), whose security value ATS already nullifies. PDX-004 — gating the echo
+  env-var overrides needs a reliable release-build signal and a call on whether to
+  keep them at all.
+- **Dormant / lowest value.** PDX-013 — `DiscoverThoughtsService` has no callers
+  (not active). PDX-018 — cosmetic double-`fail()`; the coordinator is hard to test
+  and dropping the redundant fire risks losing the fail UI on an uncovered path.
+- **Owner-declined.** PDX-015 — frontmost-arming gate (declined in favour of the
+  PDX-014 countdown).
+
 ## Changelog
 
 - **2026-06-04 Pass 1** — Four parallel Explore agents over the post-2026-04-26 delta
