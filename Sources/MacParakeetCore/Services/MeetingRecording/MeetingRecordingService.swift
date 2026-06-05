@@ -469,11 +469,14 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
     }
 
     private func cleanupFailedStart(folderURL: URL) async {
-        processingTask?.cancel()
-        processingTask = nil
-        liveIngestQueue?.finishInput()
-        liveIngestQueue?.cancelDrain()
-        liveIngestQueue = nil
+        // Stop capture so the events stream finishes (idempotent — a superseded
+        // start may already have stopped it), then drain the processing + ingest
+        // tasks BEFORE cleanupState() drops the echo conditioner (whose deinit
+        // frees the native context). Mirrors the stop/cancel paths; without the
+        // drain, a future throwing `await` added after the processing task is
+        // created could free the conditioner with a frame still in flight (PDX-007).
+        await audioCaptureService.stop()
+        await drainProcessingTaskAfterCaptureStop()
         await liveChunkTranscriber.finishSession()
         let writer = self.writer
         self.writer = nil
