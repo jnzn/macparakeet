@@ -156,6 +156,36 @@ public enum Observability {
         text.split(whereSeparator: \.isWhitespace).count
     }
 
+    /// Coarsen an exact word count into a range label before it leaves the device.
+    /// Exact counts are highly identifying on a small cohort (audit AUDIT-022);
+    /// the bucket keeps the distribution analytically useful without the fingerprint.
+    public static func wordCountBucket(_ count: Int) -> String {
+        switch count {
+        case ..<1: return "none"
+        case 1...9: return "1_9"
+        case 10...49: return "10_49"
+        case 50...99: return "50_99"
+        case 100...249: return "100_249"
+        case 250...499: return "250_499"
+        case 500...999: return "500_999"
+        default: return "gte_1000"
+        }
+    }
+
+    /// Coarsen an exact processing/elapsed time (seconds) into a range label, for
+    /// the same fingerprinting reason as `wordCountBucket` (audit AUDIT-022).
+    public static func processingSecondsBucket(_ seconds: Double) -> String {
+        switch seconds {
+        case ..<1: return "lt_1s"
+        case 1..<5: return "1_5s"
+        case 5..<15: return "5_15s"
+        case 15..<30: return "15_30s"
+        case 30..<60: return "30_60s"
+        case 60..<120: return "60_120s"
+        default: return "gte_120s"
+        }
+    }
+
     private static let audioExtensions: Set<String> = [
         "aac", "aif", "aiff", "caf", "flac", "m4a", "mp3", "ogg", "opus", "wav", "wma"
     ]

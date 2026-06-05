@@ -937,7 +937,7 @@ extension TelemetryEventSpec {
         ):
             return Self.mergeDevice(Self.compactProps(
                 ("duration_seconds", Self.format(durationSeconds)),
-                ("word_count", "\(wordCount)"),
+                ("word_count", Observability.wordCountBucket(wordCount)),
                 ("mode", mode?.rawValue),
                 ("speech_engine", speechEngine),
                 ("engine_variant", Self.safeEngineVariant(engineVariant)),
@@ -983,7 +983,7 @@ extension TelemetryEventSpec {
                 ("trigger", trigger?.rawValue),
                 ("mode", mode?.rawValue),
                 ("duration_seconds", durationSeconds.map(Self.format)),
-                ("word_count", wordCount.map(String.init)),
+                ("word_count", wordCount.map(Observability.wordCountBucket)),
                 ("speech_engine", speechEngine),
                 ("engine_variant", Self.safeEngineVariant(engineVariant)),
                 ("language", Self.safeLanguageCode(language)),
@@ -1018,8 +1018,8 @@ extension TelemetryEventSpec {
             return Self.compactProps(
                 ("source", source.rawValue),
                 ("audio_duration_seconds", audioDurationSeconds.map(Self.format)),
-                ("processing_seconds", processingSeconds.map(Self.format)),
-                ("word_count", "\(wordCount)"),
+                ("processing_seconds", processingSeconds.map(Observability.processingSecondsBucket)),
+                ("word_count", Observability.wordCountBucket(wordCount)),
                 ("speaker_count", speakerCount.map(String.init)),
                 ("diarization_requested", Self.boolString(diarizationRequested)),
                 ("diarization_applied", Self.boolString(diarizationApplied)),
@@ -1071,8 +1071,8 @@ extension TelemetryEventSpec {
                 ("stage", stage?.rawValue),
                 ("duration_seconds", Self.format(durationSeconds)),
                 ("audio_duration_seconds", audioDurationSeconds.map(Self.format)),
-                ("processing_seconds", processingSeconds.map(Self.format)),
-                ("word_count", wordCount.map(String.init)),
+                ("processing_seconds", processingSeconds.map(Observability.processingSecondsBucket)),
+                ("word_count", wordCount.map(Observability.wordCountBucket)),
                 ("speaker_count", speakerCount.map(String.init)),
                 ("diarization_requested", Self.boolString(diarizationRequested)),
                 ("diarization_applied", Self.boolString(diarizationApplied)),
@@ -1371,7 +1371,7 @@ extension TelemetryEventSpec {
         case .meetingRecordingCompleted(let durationSeconds, let liveWordCount, let liveTranscriptLagged):
             return [
                 "duration_seconds": Self.format(durationSeconds),
-                "live_word_count": "\(liveWordCount)",
+                "live_word_count": Observability.wordCountBucket(liveWordCount),
                 "live_transcript_lagged": Self.boolString(liveTranscriptLagged),
             ]
         case .meetingRecordingCancelled(let durationSeconds):
@@ -1403,7 +1403,7 @@ extension TelemetryEventSpec {
                 ("trigger", trigger?.rawValue),
                 ("stage", stage?.rawValue),
                 ("duration_seconds", durationSeconds.map(Self.format)),
-                ("live_word_count", liveWordCount.map(String.init)),
+                ("live_word_count", liveWordCount.map(Observability.wordCountBucket)),
                 ("live_transcript_lagged", liveTranscriptLagged.map(Self.boolString)),
                 ("microphone_track_present", microphoneTrackPresent.map(Self.boolString)),
                 ("system_track_present", systemTrackPresent.map(Self.boolString)),

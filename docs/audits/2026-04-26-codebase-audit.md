@@ -129,7 +129,7 @@ Status legend: **FIXED** (commit referenced) · **REFUTED** (with reason) ·
 | ID | Title | Status | Note |
 |---|---|---|---|
 | AUDIT-011 | Telemetry sanitization at call sites, not boundary | FIXED | `b6cb2344` + `cdc7970c` (#149). `errorOccurred` now runs `errorDetail()` regardless of caller. |
-| AUDIT-022 | `wordCount` / `processingSeconds` unbucketed | DEFERRED | P2 fingerprintability concern. |
+| AUDIT-022 | `wordCount` / `processingSeconds` unbucketed | FIXED | `2026-06-05`. Coarsened at the telemetry payload boundary via new `Observability.wordCountBucket` / `processingSecondsBucket` (matching the existing `fileSizeBucket`/`textLengthBucket` style), applied to `word_count` / `live_word_count` / `processing_seconds` across the dictation, transcription, and meeting events. Bucket boundaries unit-tested; telemetry suite green. |
 
 ### Hotkey + global input
 
