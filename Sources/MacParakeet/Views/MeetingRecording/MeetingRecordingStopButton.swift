@@ -256,3 +256,67 @@ struct PauseResumeButton: View {
         }
     }
 }
+
+// MARK: - Auto-stop countdown pill
+
+/// Shown in the recording panel header in place of the live status while ADR-023
+/// activity auto-stop counts down to end the recording (audit PDX-014). Mirrors
+/// `StopRecordingButton`'s confirm pill: a capsule with a red/pink slider fill
+/// that depletes over `duration`. The whole pill cancels the auto-stop ("Keep
+/// recording"); if the slider runs out, the coordinator stops the recording.
+struct AutoStopCountdownPill: View {
+    let duration: TimeInterval
+    var onKeepRecording: () -> Void
+
+    @State private var countdownProgress: CGFloat = 1.0
+    @State private var isHovered = false
+
+    // Match the other header controls' vertical box so the row doesn't reflow.
+    private static let trackHeight: CGFloat = 31
+
+    var body: some View {
+        Button(action: onKeepRecording) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(DesignSystem.Colors.errorRed)
+                    .frame(width: 7, height: 7)
+                Text("Keep recording")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundStyle(DesignSystem.Colors.errorRed)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .fill(DesignSystem.Colors.surfaceElevated)
+                    .overlay(
+                        GeometryReader { geo in
+                            Capsule()
+                                .fill(DesignSystem.Colors.errorRed.opacity(isHovered ? 0.28 : 0.2))
+                                .frame(width: geo.size.width * countdownProgress)
+                        }
+                        .clipShape(Capsule())
+                    )
+                    .overlay(
+                        Capsule()
+                            .stroke(
+                                DesignSystem.Colors.errorRed.opacity(isHovered ? 0.5 : 0.3),
+                                lineWidth: 0.5
+                            )
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .frame(height: Self.trackHeight)
+        .onHover { isHovered = $0 }
+        .help("Auto-stop is about to end this recording — click to keep recording")
+        .accessibilityLabel("Keep recording — cancel auto-stop")
+        .transition(.scale(scale: 0.85).combined(with: .opacity))
+        .onAppear {
+            countdownProgress = 1.0
+            withAnimation(.linear(duration: duration)) {
+                countdownProgress = 0
+            }
+        }
+    }
+}

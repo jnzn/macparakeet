@@ -204,27 +204,35 @@ struct MeetingRecordingPanelView: View {
     private var header: some View {
         VStack(spacing: DesignSystem.Spacing.xs) {
             HStack(alignment: .center, spacing: DesignSystem.Spacing.sm) {
-                if viewModel.usesVoiceMemoIndicator && viewModel.showsAudioLevels {
-                    // Voice Memo: red pulsing dot (matches the voice-memo pill),
-                    // not the meeting dual-audio orb.
-                    VoiceMemoRecordingDot()
-                } else if viewModel.showsAudioLevels {
-                    DualAudioOrbView(
-                        micLevel: viewModel.micLevel,
-                        systemLevel: viewModel.systemLevel
-                    )
+                if let autoStopDuration = viewModel.autoStopCountdownDuration {
+                    // PDX-014: activity auto-stop is counting down. Swap the live
+                    // status cluster for a cancellable red/pink countdown pill.
+                    AutoStopCountdownPill(duration: autoStopDuration) {
+                        viewModel.onCancelAutoStop?()
+                    }
                 } else {
-                    statusDot
-                }
+                    if viewModel.usesVoiceMemoIndicator && viewModel.showsAudioLevels {
+                        // Voice Memo: red pulsing dot (matches the voice-memo pill),
+                        // not the meeting dual-audio orb.
+                        VoiceMemoRecordingDot()
+                    } else if viewModel.showsAudioLevels {
+                        DualAudioOrbView(
+                            micLevel: viewModel.micLevel,
+                            systemLevel: viewModel.systemLevel
+                        )
+                    } else {
+                        statusDot
+                    }
 
-                Text(viewModel.statusTitle)
-                    .font(DesignSystem.Typography.bodySmall.weight(.semibold))
-                    .foregroundStyle(DesignSystem.Colors.textSecondary)
+                    Text(viewModel.statusTitle)
+                        .font(DesignSystem.Typography.bodySmall.weight(.semibold))
+                        .foregroundStyle(DesignSystem.Colors.textSecondary)
 
-                if viewModel.showsElapsedTime {
-                    Text(viewModel.formattedElapsed)
-                        .font(DesignSystem.Typography.timestamp.monospacedDigit())
-                        .foregroundStyle(DesignSystem.Colors.textTertiary)
+                    if viewModel.showsElapsedTime {
+                        Text(viewModel.formattedElapsed)
+                            .font(DesignSystem.Typography.timestamp.monospacedDigit())
+                            .foregroundStyle(DesignSystem.Colors.textTertiary)
+                    }
                 }
 
                 Spacer(minLength: 0)

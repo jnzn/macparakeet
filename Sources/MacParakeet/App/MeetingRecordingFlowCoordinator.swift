@@ -70,6 +70,9 @@ final class MeetingRecordingFlowCoordinator {
     private var autoDismissTask: Task<Void, Never>?
     private var pillPollingTask: Task<Void, Never>?
     private var callActivityMonitor: MeetingCallActivityMonitor?
+    /// Cancellable grace countdown shown before activity auto-stop ends the
+    /// recording (audit PDX-014). Started by `beginAutoStopCountdown`.
+    private let autoStopCountdown = MeetingAutoStopCountdown()
     private var transcriptObservationTask: Task<Void, Never>?
     private var speechWarmUpObservationTask: Task<Void, Never>?
     private var activeFlowSettlementWaiters: [CheckedContinuation<Void, Never>] = []
@@ -501,6 +504,7 @@ final class MeetingRecordingFlowCoordinator {
             let shouldAutoGenerateTitle = trigger != .calendarAutoStart
             stopPillPolling()
             stopCallActivityMonitor()
+            cancelAutoStopCountdown()
             stopTranscriptObservation()
             stopSpeechWarmUpObservation()
             actionTask = Task { @MainActor in
@@ -578,6 +582,7 @@ final class MeetingRecordingFlowCoordinator {
         case .showError(let message):
             stopPillPolling()
             stopCallActivityMonitor()
+            cancelAutoStopCountdown()
             stopTranscriptObservation()
             stopSpeechWarmUpObservation()
             panelViewModel?.state = .error(message)
@@ -590,6 +595,7 @@ final class MeetingRecordingFlowCoordinator {
         case .hidePill:
             stopPillPolling()
             stopCallActivityMonitor()
+            cancelAutoStopCountdown()
             stopTranscriptObservation()
             stopSpeechWarmUpObservation()
             pauseToggleTask?.cancel()
@@ -760,7 +766,9 @@ final class MeetingRecordingFlowCoordinator {
             onAutoStop: { [weak self] in
                 guard let self else { return false }
                 guard self.stateMachine.state == .recording else { return false }
-                self.sendEvent(.stopRequested)
+                // PDX-014: don't stop immediately — give the user a visible,
+                // cancellable countdown first.
+                self.beginAutoStopCountdown()
                 return true
             }
         )
@@ -771,6 +779,34 @@ final class MeetingRecordingFlowCoordinator {
     private func stopCallActivityMonitor() {
         callActivityMonitor?.stop()
         callActivityMonitor = nil
+    }
+
+    /// Auto-stop fired: instead of ending the recording, tear the monitor down
+    /// (it has done its job) and run a visible, cancellable countdown. If it
+    /// elapses uninterrupted the recording stops; the user can cancel it from the
+    /// header pill to keep recording (audit PDX-014).
+    private func beginAutoStopCountdown() {
+        stopCallActivityMonitor()
+        let seconds = TimeInterval(
+            UserDefaultsAppRuntimePreferences(defaults: .standard).meetingAutoStopDelaySeconds
+        )
+        panelViewModel?.autoStopCountdownDuration = seconds
+        panelViewModel?.onCancelAutoStop = { [weak self] in self?.cancelAutoStopCountdown() }
+        autoStopCountdown.start(seconds: seconds) { [weak self] in
+            guard let self else { return }
+            self.panelViewModel?.autoStopCountdownDuration = nil
+            self.panelViewModel?.onCancelAutoStop = nil
+            guard self.stateMachine.state == .recording else { return }
+            self.sendEvent(.stopRequested)
+        }
+    }
+
+    /// User clicked "Keep recording" (or the recording ended another way): stop
+    /// the countdown without auto-stopping and clear the header pill.
+    private func cancelAutoStopCountdown() {
+        autoStopCountdown.cancel()
+        panelViewModel?.autoStopCountdownDuration = nil
+        panelViewModel?.onCancelAutoStop = nil
     }
 
     private func startTranscriptObservation() {

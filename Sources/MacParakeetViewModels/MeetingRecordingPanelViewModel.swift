@@ -64,6 +64,12 @@ public final class MeetingRecordingPanelViewModel {
     public var onPauseToggle: (() -> Void)?
     public var onMicrophoneMuteToggle: (() -> Void)?
     public var onClose: (() -> Void)?
+    /// Non-nil while ADR-023 activity auto-stop is counting down to end the
+    /// recording (audit PDX-014). The value is the countdown's total duration so
+    /// the header pill can animate its slider 1→0 over it. The whole pill is the
+    /// cancel affordance; tapping it calls `onCancelAutoStop` ("Keep recording").
+    public var autoStopCountdownDuration: TimeInterval?
+    public var onCancelAutoStop: (() -> Void)?
 
     private var copiedResetTask: Task<Void, Never>?
     private var previewLineWordCounts: [Int] = []
