@@ -232,6 +232,23 @@ enum MeetingEchoSuppressionFactory {
                 sampleRate: configuration.sampleRate,
                 frameSize: configuration.frameSize
             )
+            // PDX-006: the capture pipeline resamples to `configuration.sampleRate`
+            // (16 kHz) upstream. If the loaded library reports a different rate
+            // we'd push mismatched frames through it and emit corrupted audio into
+            // the STT-bound copy, so fall back to passthrough instead. The reported
+            // rate is logged either way so the real value is visible in the unified
+            // log (subsystem com.macparakeet.core / category MeetingEchoSuppression).
+            guard processor.sampleRate == configuration.sampleRate else {
+                logger.warning(
+                    "meeting_echo_sample_rate_mismatch reported=\(processor.sampleRate, privacy: .public) expected=\(configuration.sampleRate, privacy: .public) frame_size=\(processor.frameSize, privacy: .public)"
+                )
+                return unavailableDynamicConditioner(reason: "sample_rate_mismatch")
+            }
+            // `.notice` (not `.info`) so it persists to the on-disk unified log and
+            // can be queried with `log show` after a meeting, not just live-streamed.
+            logger.notice(
+                "meeting_echo_loaded reported_sample_rate=\(processor.sampleRate, privacy: .public) frame_size=\(processor.frameSize, privacy: .public)"
+            )
             return StreamingMeetingEchoSuppressor(processor: processor)
         } catch {
             return unavailableDynamicConditioner(reason: "load_failed", error: error)
