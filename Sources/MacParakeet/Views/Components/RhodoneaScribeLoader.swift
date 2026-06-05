@@ -21,13 +21,28 @@ struct RhodoneaScribeLoader: View {
         .accessibilityLabel(accessibilityLabel)
     }
 
+    /// Sample count along the static base curve.
+    static let baseSamples = 240
+
+    /// The full rose curve sampled once in unit space (centered on the origin,
+    /// lobes reaching radius 1). The base curve is identical every frame — only
+    /// its on-screen scale changes — so precomputing it avoids re-running ~240
+    /// sin/cos evaluations per frame at 60 Hz (audit PDX-016). Per frame we only
+    /// scale these points to `size`; the animated trail still samples
+    /// `point(phase:size:)` because its phase tracks the animation clock `t`.
+    static let baseUnitPoints: [CGPoint] = (0...baseSamples).map { index in
+        unitPoint(phase: Double(index) / Double(baseSamples))
+    }
+
     private static func draw(in ctx: GraphicsContext, size: CGSize, t: Double, tint: Color) {
+        let centerX = size.width / 2
+        let centerY = size.height / 2
+        let radius = min(size.width, size.height) * 0.44
+
         var basePath = Path()
-        let baseSamples = 240
-        for i in 0...baseSamples {
-            let phase = Double(i) / Double(baseSamples)
-            let p = point(phase: phase, size: size)
-            if i == 0 {
+        for (index, unit) in baseUnitPoints.enumerated() {
+            let p = CGPoint(x: centerX + radius * unit.x, y: centerY + radius * unit.y)
+            if index == 0 {
                 basePath.move(to: p)
             } else {
                 basePath.addLine(to: p)
@@ -72,15 +87,21 @@ struct RhodoneaScribeLoader: View {
         ctx.fill(Path(ellipseIn: dotRect), with: .color(tint))
     }
 
-    private static func point(phase: Double, size: CGSize) -> CGPoint {
+    /// A point on the rose curve in unit space: centered on the origin with the
+    /// lobes reaching radius 1. `point(phase:size:)` maps this onto the canvas.
+    static func unitPoint(phase: Double) -> CGPoint {
         let theta = phase * 2 * .pi
-        let cx = size.width / 2
-        let cy = size.height / 2
-        let radius = min(size.width, size.height) * 0.44
         let s = sin(2.5 * theta)
-        let r = radius * s * s
-        let x = cx + r * cos(theta)
-        let y = cy + r * sin(theta)
-        return CGPoint(x: x, y: y)
+        let r = s * s
+        return CGPoint(x: r * cos(theta), y: r * sin(theta))
+    }
+
+    /// The on-screen point for `phase`, scaling `unitPoint` into `size`. Used for
+    /// the animated trail + head, whose phase tracks the clock and so cannot be
+    /// precomputed like the static base curve.
+    static func point(phase: Double, size: CGSize) -> CGPoint {
+        let radius = min(size.width, size.height) * 0.44
+        let unit = unitPoint(phase: phase)
+        return CGPoint(x: size.width / 2 + radius * unit.x, y: size.height / 2 + radius * unit.y)
     }
 }
