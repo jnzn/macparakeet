@@ -54,6 +54,32 @@ final class LLMRunRepositoryTests: XCTestCase {
         XCTAssertEqual(runs.first?.errorType, "rate_limit")
     }
 
+    func testSaveEnforcesRetentionLimitDroppingOldestRows() async throws {
+        let cappedRepo = LLMRunRepository(dbQueue: manager.dbQueue, retentionLimit: 3)
+        let dictation = Dictation(durationMs: 1000, rawTranscript: "x")
+        try dictationRepo.save(dictation)
+
+        var ids: [UUID] = []
+        for index in 0..<5 {
+            let run = LLMRun(
+                feature: .formatterDictation,
+                status: .succeeded,
+                source: LLMRunSource(dictationId: dictation.id),
+                provider: "ollama",
+                model: "m",
+                inputChars: 1,
+                createdAt: Date(timeIntervalSince1970: TimeInterval(index)),
+                updatedAt: Date(timeIntervalSince1970: TimeInterval(index))
+            )
+            ids.append(run.id)
+            try await cappedRepo.save(run)
+        }
+
+        XCTAssertEqual(try cappedRepo.count(), 3)
+        let remaining = Set(try cappedRepo.fetchRecent(limit: 10).map(\.id))
+        XCTAssertEqual(remaining, Set(ids.suffix(3)), "newest 3 runs are kept, oldest 2 pruned")
+    }
+
     func testSaveWithoutSourceFailsIntegrityCheck() async throws {
         let run = LLMRun(
             feature: .chat,
