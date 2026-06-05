@@ -224,15 +224,14 @@ final class TransformsCoordinator {
                     try await executor.run(
                         prompt: promptBody,
                         replacementMode: .pasteIntoCurrentFocus,
-                        onProgress: { [weak self] progress in
-                            if case .failed = progress {
-                                Task { @MainActor [weak self, runID] in
-                                    guard self?.activeRunID == runID else { return }
-                                    if case .failed(let message) = progress {
-                                        self?.panelController?.fail(message: message)
-                                    }
-                                }
-                            }
+                        onProgress: { _ in
+                            // Terminal panel state (done / fail / close) is driven by
+                            // this Task's do/catch below. Every executor `.failed` is
+                            // paired with a throw the catch already handles, so reacting
+                            // to `.failed` here fired the fail pill twice — and wrongly
+                            // for cancelled / llm-not-configured, where the catch
+                            // intentionally closes or shows provider setup. Non-terminal
+                            // progress isn't surfaced by this coordinator. (audit PDX-018)
                         }
                     )
                 }
