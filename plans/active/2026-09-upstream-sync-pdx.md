@@ -464,6 +464,95 @@ ADR-023 replacement, (2) the App Profiles "Try it" preview + privacy-split
 seed follow-ups, (3) the streaming-dictation mic-name + gated-live-cleanup
 follow-ups — all previously deferred, none started.
 
+## Progress log (2026-09-22, session 4)
+
+Resumed at commit 119/152 per the prior checkpoint; user chose "keep going
+now" when asked. Resolved through commit 139/152 (`55f48391`, PDX-001/002
+live-ingest queue). Notable finds along the way:
+
+- `f5cb5464`/`44c1d50f` (Parakeet v2 model selection + review feedback):
+  confirmed this whole feature is already-superseded — upstream/HEAD
+  already ships Parakeet v2/Unified plus Nemotron/Cohere via a dedicated
+  `EngineSettingsViewModel` (`SettingsViewModel.engine`), not the flat
+  properties PDX's old commits assumed. Took HEAD wholesale for
+  `SettingsViewModel.swift`, `SettingsView.swift`, `spec/06-stt-engine.md`,
+  `spec/02-features.md`, `spec/03-architecture.md`, `AGENTS.md`, `CLAUDE.md`
+  (all HEAD-superset "diff3 misaligned against a doc that moved on"
+  cases). Fixed several more duplicate-declaration leftovers from earlier
+  sessions along the way (`TranscribeCommand.swift`'s duplicate
+  `TranscribeParakeetModel`, `ConfigCommandTests.swift`'s duplicate
+  `testWriteParakeetModelPersistsAndCanonicalizesAliases`/
+  `testWriteParakeetModelRejectsInvalidValue`, `ModelLifecycleCommandTests.swift`'s
+  duplicate `testParakeetDownloadVariantRecognizesParakeetIDs` — a case where
+  the duplicate was split across ~180 lines rather than adjacent, found only
+  by grepping for repeated function names file-wide,
+  `SpeechEnginePreferenceTests.swift`'s duplicate Parakeet-variant test
+  block, `MockSTTClient.swift`'s duplicate `setParakeetModelVariant`,
+  `SettingsViewModelTests.swift`'s duplicate `testParakeetModelVariantChange*`
+  trio still calling the stale flat `viewModel.parakeetModelVariant` API).
+  **Lesson reinforced:** after resolving a commit's marked conflicts, grep
+  the touched files for repeated `func`/`struct` names before trusting
+  `swift build` alone to catch it — several of these duplicates were far
+  enough apart that a quick skim wouldn't surface them.
+- `045f03e3` (CLI speaker diarization constraints): mechanical, HEAD
+  superset throughout.
+- `c2055c4b` (Trash-move on delete): real merge needed in
+  `TranscriptionAssetCleanup.swift` — PDX's diff silently orphaned the
+  `removeItem` helper (renamed to `moveToTrash` by the patch, but one caller
+  added later by HEAD, `removeMeetingAudioFiles`, wasn't in PDX's diff and
+  still called the old name). Restored `removeItem` as a distinct
+  permanent-delete helper alongside the new `moveToTrash`, and switched
+  `removeMeetingFolder`'s whole-folder removal to `moveToTrash` (keeping
+  HEAD's `assertMeetingFolderUnlocked` safety check) to match this commit's
+  intent.
+- `e1d3c354` (flower → parakeet motif): **near-miss.** The sync ledger says
+  this fork commit supersedes upstream's animation half of `80aeb9e3`, so
+  I initially `git rm`'d the modify/delete conflict on `MerkabaPillIcon.swift`
+  without reading HEAD's side first. HEAD's version turned out to be an
+  unrelated, actively-wired-up 1021-line CALayer reimplementation (still
+  flower-themed) that the *floating pill window* actually renders in
+  production (`MeetingRecordingPillController` → `MeetingRecordingFlowCoordinator`).
+  The SwiftUI `MeetingRecordingPillView` PDX's commit touches is dead in
+  production — only kept alive by `MeetingRecordingTileTests` unit-testing
+  its `visibleSourceHealthWarning` logic. Restored the file via
+  `git checkout HEAD --`; ledger's "supersedes" framing is about the
+  *isolation-slice* half of `80aeb9e3` only, not this CALayer file. Applied
+  the parakeet-icon swap only to the two files that are actually live:
+  `MeetingRecordingTile.swift` (Transcribe/Meetings tab card — live) and
+  `MeetingRecordingPillView.swift` (dead in UI, kept compiling for its
+  tested logic). Also found and fixed a duplicate `MeetingsLiveStatusChip`
+  in `MeetingsView.swift` (stale copy missing the `.starting` case).
+- `55f48391` (PDX-001/002 live-ingest queue): wired the missing
+  `liveIngestQueue = LiveIngestQueue(...)` instantiation into
+  `startRecording` (HEAD's drain/cleanup helpers already referenced the
+  queue but nothing ever created one). **Found a pre-existing, latent bug
+  this exposes for the first time:** `testAsymmetricSourceCadenceDoesNotInflateSystemChunkTimeline`
+  fails because `updateProcessedMicrophoneRms`'s EMA
+  (`recentProcessedMicRms`, alpha 0.3) only gets one update for the entire
+  test (one long-buffered mic segment vs. 500 tiny system buffers), so it
+  never converges away from its `0` cold-start baseline while
+  `recentSystemRms` converges almost immediately from hundreds of updates —
+  `shouldSuppressMicrophoneChunkTranscription()`'s dominance ratio then
+  false-positives and silently drops every microphone chunk for the rest of
+  the recording. Traced with temporary `FileHandle.standardError` tracing
+  (removed before committing) down to `MeetingRecordingService.swift`'s
+  `updateProcessedMicrophoneRms`/`shouldSuppressMicrophoneChunkTranscription`;
+  did not fix it — the fix needs a decision (bypass EMA on the first sample?
+  track "has ever been set" separately? something in `CaptureOrchestrator`'s
+  pairing instead?) that's outside this rebase's scope. **This is the one
+  known-red test at commit 139/152** (124 run, 1 failure, otherwise green).
+  Needs a dedicated follow-up before this branch ships.
+
+**To resume:** `git status` should show branch `pdx-next-upstream-sync`,
+mid-rebase, at commit 140/152. 13 commits remain (see
+`.git/rebase-merge/git-rebase-todo`); none of their titles suggest they
+touch the RMS-dominance code, so the known-red test above will very likely
+still be red when the rebase finishes — do not assume a later commit fixes
+it. After the mechanical rebase finishes, in addition to the three
+follow-ups listed in the prior session's resume note: (4) fix or
+knowingly-accept the `testAsymmetricSourceCadenceDoesNotInflateSystemChunkTimeline`
+regression documented above.
+
 ## Non-goals (this pass)
 
 - Deciding the final ADR-023 / echo-AEC reconciliation design — separate

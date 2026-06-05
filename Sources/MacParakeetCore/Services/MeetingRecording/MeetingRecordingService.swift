@@ -177,6 +177,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         var systemLowSignalDrops = 0
         var microphoneSystemDominantDrops = 0
         var backpressureDrops = 0
+        var ingestQueueDrops = 0
         var transcriptionFailures = 0
         // Highest per-buffer level seen on each source while recording, on the
         // same 0...1 scale as `AVAudioPCMBuffer.rmsLevel`. A system peak of zero
@@ -310,6 +311,9 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
     private var sourceStartupStates: [AudioSource: MeetingAudioCaptureSourceStartupState] = [:]
     private var writer: MeetingAudioStorageWriter?
     private var processingTask: Task<Void, Never>?
+    /// Bounded queue decoupling the real-time capture-event drain from the slower
+    /// live STT/VAD ingest so the capture consumer never blocks (audit PDX-001/002).
+    private var liveIngestQueue: LiveIngestQueue?
     private var captureOrchestrator = CaptureOrchestrator()
     private var micConditioner: any MicConditioning = PassthroughMicConditioner()
     /// Reused across meetings so the Silero VAD model (CoreML) is loaded at most
@@ -356,6 +360,12 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
     private static let syncLagLogBucketMs: Int = 20
     private static let syncLagWarningThresholdMs: Double = 120
     private static let completedHostTimeRangeLimit = 512
+    /// Bounded depth of the decoupled live STT/VAD ingest queue (audit PDX-001).
+    /// ~40s of mic+system buffer backlog; beyond this the OLDEST queued samples are
+    /// dropped (counted in `captureHealthMetrics.ingestQueueDrops`) so memory stays
+    /// bounded across a multi-hour meeting. Recorded audio is unaffected — it is
+    /// written to disk upstream of this queue.
+    private static let liveIngestQueueDepth = 512
 
     private static func currentAudioHostTime() -> UInt64 {
         AVAudioTime.hostTime(forSeconds: ProcessInfo.processInfo.systemUptime)
@@ -770,6 +780,9 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
 
             // The writer and lock already exist. Consume each source immediately,
             // independently of another native source's startup settlement.
+            liveIngestQueue = LiveIngestQueue(depth: Self.liveIngestQueueDepth) { [weak self] packet in
+                await self?.ingestResampledSamples(packet.samples, source: packet.source, hostTime: packet.hostTime)
+            }
             processingTask = Task { [weak self] in
                 guard let self else { return }
                 for await event in events {
@@ -1470,10 +1483,37 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
     }
 
     private func drainProcessingTaskAfterCaptureStop(timeout: Duration = .seconds(2)) async {
-        guard let task = processingTask else { return }
+        if let task = processingTask {
+            let drainFlag = ProcessingDrainFlag()
+            let waiter = Task {
+                await task.value
+                drainFlag.markDrained()
+            }
+
+            let startedAt = clock.now
+            while !drainFlag.drained && startedAt.duration(to: clock.now) < timeout {
+                try? await Task.sleep(for: .milliseconds(10))
+            }
+
+            if !drainFlag.drained {
+                logger.error("meeting_capture_processing_drain_timed_out")
+                task.cancel()
+                await task.value
+            }
+            await waiter.value
+            processingTask = nil
+        }
+        // Flush the decoupled live STT/VAD ingest queue only after the capture-event
+        // drain has stopped, so every buffered packet has been enqueued first.
+        await drainLiveIngestQueueAfterCaptureStop(timeout: timeout)
+    }
+
+    private func drainLiveIngestQueueAfterCaptureStop(timeout: Duration) async {
+        guard let queue = liveIngestQueue else { return }
+        queue.finishInput()
         let drainFlag = ProcessingDrainFlag()
         let waiter = Task {
-            await task.value
+            await queue.awaitDrain()
             drainFlag.markDrained()
         }
 
@@ -1483,12 +1523,15 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         }
 
         if !drainFlag.drained {
-            logger.error("meeting_capture_processing_drain_timed_out")
-            task.cancel()
-            await task.value
+            // Input is already finished, so the cancelled drain ends after its
+            // in-flight packet. Remaining buffered live-transcription chunks are
+            // abandoned; the full audio is on disk for re-transcription.
+            logger.error("meeting_capture_ingest_drain_timed_out")
+            queue.cancelDrain()
         }
         await waiter.value
-        processingTask = nil
+        captureHealthMetrics.ingestQueueDrops = queue.droppedCount
+        liveIngestQueue = nil
     }
 
     private func handleCaptureEvent(_ event: MeetingAudioCaptureEvent, sessionID: UUID) async {
@@ -1548,10 +1591,12 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
                     latestLevels.microphone = microphoneLevel
                     updateMicrophoneRms(with: latestLevels.microphone)
                     if let samples = AudioChunker.extractAndResample(from: recordingBuffer) {
-                        await ingestResampledSamples(
-                            samples,
-                            source: .microphone,
-                            hostTime: time.isHostTimeValid ? time.hostTime : nil
+                        liveIngestQueue?.enqueue(
+                            LiveIngestQueue.Packet(
+                                samples: samples,
+                                source: .microphone,
+                                hostTime: time.isHostTimeValid ? time.hostTime : nil
+                            )
                         )
                     }
                 }
@@ -1577,10 +1622,12 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
                     latestLevels.system = buffer.rmsLevel
                     updateSystemRms(with: latestLevels.system)
                     if let samples = AudioChunker.extractAndResample(from: buffer) {
-                        await ingestResampledSamples(
-                            samples,
-                            source: .system,
-                            hostTime: time.isHostTimeValid ? time.hostTime : nil
+                        liveIngestQueue?.enqueue(
+                            LiveIngestQueue.Packet(
+                                samples: samples,
+                                source: .system,
+                                hostTime: time.isHostTimeValid ? time.hostTime : nil
+                            )
                         )
                     }
                 }
@@ -2248,6 +2295,7 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
             "system_peak_level=\(levelLabel(captureHealthMetrics.systemPeakLevel))",
             "system_signal=\(systemAudioSignalVerdict.rawValue)",
             "backpressure_drops=\(captureHealthMetrics.backpressureDrops)",
+            "ingest_queue_drops=\(captureHealthMetrics.ingestQueueDrops)",
             "transcription_failures=\(captureHealthMetrics.transcriptionFailures)",
             "interrupted_sources=\(interruptedSourceLabel.isEmpty ? "none" : interruptedSourceLabel)",
             "capture_failed=\(captureFailed)",
@@ -2445,6 +2493,8 @@ public actor MeetingRecordingService: MeetingRecordingServiceProtocol {
         transcriptContinuation?.finish()
         transcriptContinuation = nil
         cachedTranscriptUpdates = nil
+        liveIngestQueue?.cancelDrain()
+        liveIngestQueue = nil
         if let finishedSessionID {
             finishCaptureFailureSignal(for: finishedSessionID)
         }
