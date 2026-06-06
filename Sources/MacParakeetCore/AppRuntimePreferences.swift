@@ -6,6 +6,9 @@ public protocol AppRuntimePreferencesProtocol: Sendable {
     var removeUmFiller: Bool { get }
     var voiceReturnTriggers: [String] { get }
     var voiceReturnTrigger: String? { get }
+    /// Whether the Voice Return trigger phrase *sends* (default: do nothing,
+    /// phrase submits) or *holds* (default: auto-submit, phrase suppresses it).
+    var voiceReturnMode: VoiceReturnMode { get }
     var shouldSaveAudioRecordings: Bool { get }
     var shouldSaveDictationHistory: Bool { get }
     var smartFormattingEnabled: Bool { get }
@@ -328,6 +331,12 @@ public enum TranscriptAIContextMode: String, CaseIterable, Codable, Identifiable
     }
 }
 
+public extension AppRuntimePreferencesProtocol {
+    /// Safe default for conformers that predate Voice Return modes: behave like
+    /// the original "say the phrase to send" mode.
+    var voiceReturnMode: VoiceReturnMode { .send }
+}
+
 public enum YouTubeAudioQuality: String, CaseIterable, Hashable, Sendable, Equatable {
     case m4a
     case bestAvailable = "best_available"
@@ -507,6 +516,7 @@ public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProto
     public static let voiceReturnEnabledKey = "voiceReturnEnabled"
     public static let voiceReturnTriggerKey = "voiceReturnTrigger"
     public static let voiceReturnTriggersKey = "voiceReturnTriggers"
+    public static let voiceReturnModeKey = "voiceReturnMode"
     public static let processingModeKey = "processingMode"
     public static let dictationInsertionStyleKey = "dictationInsertionStyle"
     /// Clean processing strips standalone English hesitation `um` (default on).
@@ -682,6 +692,10 @@ public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProto
 
     public var voiceReturnTrigger: String? {
         voiceReturnTriggers.first
+    }
+
+    public var voiceReturnMode: VoiceReturnMode {
+        VoiceReturnMode.current(defaults: defaults)
     }
 
     public var shouldSaveAudioRecordings: Bool {

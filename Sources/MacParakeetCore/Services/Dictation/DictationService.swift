@@ -111,6 +111,7 @@ public actor DictationService: DictationServiceProtocol {
     private let customWordRepo: CustomWordRepositoryProtocol?
     private let snippetRepo: TextSnippetRepositoryProtocol?
     private let voiceReturnTriggers: @Sendable () -> [String]
+    private let voiceReturnMode: @Sendable () -> VoiceReturnMode
     private let processingMode: @Sendable () -> Dictation.ProcessingMode
     private let dictationInsertionStyle: @Sendable () -> DictationInsertionStyle
     private let removeUmFiller: @Sendable () -> Bool
@@ -204,6 +205,7 @@ public actor DictationService: DictationServiceProtocol {
         snippetRepo: TextSnippetRepositoryProtocol? = nil,
         voiceReturnTriggers: (@Sendable () -> [String])? = nil,
         voiceReturnTrigger: (@Sendable () -> String?)? = nil,
+        voiceReturnMode: (@Sendable () -> VoiceReturnMode)? = nil,
         processingMode: (@Sendable () -> Dictation.ProcessingMode)? = nil,
         dictationInsertionStyle: (@Sendable () -> DictationInsertionStyle)? = nil,
         removeUmFiller: (@Sendable () -> Bool)? = nil,
@@ -243,6 +245,7 @@ public actor DictationService: DictationServiceProtocol {
         } else {
             self.voiceReturnTriggers = { [] }
         }
+        self.voiceReturnMode = voiceReturnMode ?? { .send }
         self.processingMode = processingMode ?? { .raw }
         self.dictationInsertionStyle = dictationInsertionStyle ?? { .sentence }
         self.removeUmFiller = removeUmFiller ?? { true }
@@ -1474,9 +1477,14 @@ public actor DictationService: DictationServiceProtocol {
             }
         }
 
-        // Voice Return: inject synthetic action snippet regardless of mode
-        // (raw mode extracts trailing action without running the full pipeline)
-        for trigger in VoiceReturnTriggerPhrases.normalized(voiceReturnTriggers()) {
+        // Voice Return: inject a synthetic action snippet regardless of processing
+        // mode (raw mode extracts the trailing action without running the full
+        // pipeline). Each normalized trigger phrase matches at the END of the
+        // dictation and is stripped. Whether a match means "submit" (.send) or
+        // "hold" (.hold) is resolved after refinement by resolveVoiceReturnAction.
+        let normalizedVoiceReturnTriggers = VoiceReturnTriggerPhrases.normalized(voiceReturnTriggers())
+        let voiceReturnActive = !normalizedVoiceReturnTriggers.isEmpty
+        for trigger in normalizedVoiceReturnTriggers {
             snippets.append(
                 TextSnippet(
                     trigger: trigger,
@@ -1598,10 +1606,15 @@ public actor DictationService: DictationServiceProtocol {
             try? snippetRepo?.incrementUseCount(ids: refinement.expandedSnippetIDs)
         }
 
+        let postPasteAction = Self.resolveVoiceReturnAction(
+            refinedAction: refinement.postPasteAction,
+            mode: voiceReturnMode(),
+            voiceReturnActive: voiceReturnActive
+        )
         return DictationResult(
             dictation: dictation,
             insertionStyle: insertionStyle,
-            postPasteAction: refinement.postPasteAction,
+            postPasteAction: postPasteAction,
             captureMs: captureMs,
             transcribeMs: Self.elapsedMilliseconds(since: transcribeStartedAt),
             operationID: currentOperationID
@@ -1684,6 +1697,34 @@ public actor DictationService: DictationServiceProtocol {
             return nil
         }
         return size
+    }
+
+    /// Resolve the effective post-paste action for Voice Return, honoring the mode.
+    ///
+    /// The refinement engine sets `refinedAction == .returnKey` exactly when the
+    /// trigger phrase was spoken at the end of the dictation (and has already
+    /// stripped it from the text); otherwise it is `nil`. `KeyAction` has only
+    /// `.returnKey`, so this signal is strictly nil-or-return.
+    ///
+    /// - `.send`: pass the signal through — phrase spoken ⇒ submit, else nothing.
+    ///   This is the original behavior.
+    /// - `.hold`: invert it — phrase spoken ⇒ hold (`nil`), else auto-submit
+    ///   (`.returnKey`).
+    ///
+    /// When Voice Return is inactive (feature off / empty phrase) the signal is
+    /// passed through unchanged so a disabled feature never auto-submits.
+    static func resolveVoiceReturnAction(
+        refinedAction: KeyAction?,
+        mode: VoiceReturnMode,
+        voiceReturnActive: Bool
+    ) -> KeyAction? {
+        guard voiceReturnActive else { return refinedAction }
+        switch mode {
+        case .send:
+            return refinedAction
+        case .hold:
+            return refinedAction == .returnKey ? nil : .returnKey
+        }
     }
 
     private func debugStateLabel(_ state: DictationState) -> String {

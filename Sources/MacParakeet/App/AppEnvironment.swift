@@ -309,6 +309,10 @@ final class AppEnvironment {
             runtimePreferences.voiceReturnTriggers
         }
 
+        let voiceReturnModeClosure: @Sendable () -> VoiceReturnMode = { [runtimePreferences] in
+            runtimePreferences.voiceReturnMode
+        }
+
         // File/meeting transcripts gate the AI Formatter on BOTH the
         // availability switch and the transcripts-specific switch, mirroring
         // the dictation gate below. Before #493 transcripts followed provider
@@ -395,6 +399,7 @@ final class AppEnvironment {
             customWordRepo: customWordRepo,
             snippetRepo: snippetRepo,
             voiceReturnTriggers: voiceReturnTriggersClosure,
+            voiceReturnMode: voiceReturnModeClosure,
             processingMode: processingModeClosure,
             dictationInsertionStyle: dictationInsertionStyleClosure,
             removeUmFiller: removeUmFillerClosure,

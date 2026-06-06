@@ -499,6 +499,12 @@ public final class SettingsViewModel {
         defaults.set(normalized, forKey: UserDefaultsAppRuntimePreferences.voiceReturnTriggersKey)
         defaults.set(normalized.first, forKey: UserDefaultsAppRuntimePreferences.voiceReturnTriggerKey)
     }
+    public var voiceReturnMode: VoiceReturnMode {
+        didSet {
+            defaults.set(voiceReturnMode.rawValue, forKey: UserDefaultsAppRuntimePreferences.voiceReturnModeKey)
+            Telemetry.send(.settingChanged(setting: .voiceReturn))
+        }
+    }
 
     // Processing
     public var processingMode: String {
@@ -1036,6 +1042,7 @@ public final class SettingsViewModel {
         dictationUndoCountdown = DictationUndoCountdown.current(defaults: defaults)
         voiceReturnEnabled = defaults.bool(forKey: UserDefaultsAppRuntimePreferences.voiceReturnEnabledKey)
         voiceReturnTriggers = UserDefaultsAppRuntimePreferences.voiceReturnTriggerList(defaults: defaults)
+        voiceReturnMode = VoiceReturnMode.current(defaults: defaults)
         processingMode = Self.normalizedProcessingMode(defaults.string(forKey: UserDefaultsAppRuntimePreferences.processingModeKey))
         dictationInsertionStyle = DictationInsertionStyle.current(defaults: defaults)
         removeUmFiller = UserDefaultsAppRuntimePreferences.removeUmFiller(defaults: defaults)
