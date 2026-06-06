@@ -188,6 +188,10 @@ final class AppEnvironment {
             runtimePreferences.voiceReturnTrigger
         }
 
+        let voiceReturnModeClosure: @Sendable () -> VoiceReturnMode = { [runtimePreferences] in
+            runtimePreferences.voiceReturnMode
+        }
+
         let aiFormatterEnabledClosure: @Sendable () -> Bool = { [runtimePreferences] in
             runtimePreferences.aiFormatterEnabled
         }
@@ -226,6 +230,7 @@ final class AppEnvironment {
             customWordRepo: customWordRepo,
             snippetRepo: snippetRepo,
             voiceReturnTrigger: voiceReturnTriggerClosure,
+            voiceReturnMode: voiceReturnModeClosure,
             processingMode: processingModeClosure,
             llmService: llmService,
             llmRunRepo: llmRunRepo,

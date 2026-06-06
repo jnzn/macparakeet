@@ -3,6 +3,9 @@ import Foundation
 public protocol AppRuntimePreferencesProtocol: Sendable {
     var processingMode: Dictation.ProcessingMode { get }
     var voiceReturnTrigger: String? { get }
+    /// Whether the Voice Return trigger phrase *sends* (default: do nothing,
+    /// phrase submits) or *holds* (default: auto-submit, phrase suppresses it).
+    var voiceReturnMode: VoiceReturnMode { get }
     var shouldSaveAudioRecordings: Bool { get }
     var shouldSaveDictationHistory: Bool { get }
     var smartFormattingEnabled: Bool { get }
@@ -33,6 +36,12 @@ public protocol AppRuntimePreferencesProtocol: Sendable {
     /// Call apps the auto-stop detector watches (ADR-023 Phase 1.5).
     /// Pre-seeded defaults when the user has never edited the list.
     var meetingAutoStopCallApps: [MeetingCallApp] { get }
+}
+
+public extension AppRuntimePreferencesProtocol {
+    /// Safe default for conformers that predate Voice Return modes: behave like
+    /// the original "say the phrase to send" mode.
+    var voiceReturnMode: VoiceReturnMode { .send }
 }
 
 public enum YouTubeAudioQuality: String, CaseIterable, Hashable, Sendable, Equatable {
@@ -127,6 +136,7 @@ public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProto
     public static let silenceDelayKey = "silenceDelay"
     public static let voiceReturnEnabledKey = "voiceReturnEnabled"
     public static let voiceReturnTriggerKey = "voiceReturnTrigger"
+    public static let voiceReturnModeKey = "voiceReturnMode"
     public static let processingModeKey = "processingMode"
     public static let normalizeNumbersKey = "normalizeNumbers"
     public static let smartFormattingEnabledKey = "smartFormattingEnabled"
@@ -171,6 +181,10 @@ public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProto
         let trigger = (defaults.string(forKey: Self.voiceReturnTriggerKey) ?? "press return")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return trigger.isEmpty ? nil : trigger
+    }
+
+    public var voiceReturnMode: VoiceReturnMode {
+        VoiceReturnMode.current(defaults: defaults)
     }
 
     public var shouldSaveAudioRecordings: Bool {

@@ -269,6 +269,12 @@ public final class SettingsViewModel {
     public var voiceReturnTrigger: String {
         didSet { defaults.set(voiceReturnTrigger, forKey: UserDefaultsAppRuntimePreferences.voiceReturnTriggerKey) }
     }
+    public var voiceReturnMode: VoiceReturnMode {
+        didSet {
+            defaults.set(voiceReturnMode.rawValue, forKey: UserDefaultsAppRuntimePreferences.voiceReturnModeKey)
+            Telemetry.send(.settingChanged(setting: .voiceReturn))
+        }
+    }
 
     // Processing
     public var processingMode: String {
@@ -651,6 +657,7 @@ public final class SettingsViewModel {
         ) as? Bool ?? false
         voiceReturnEnabled = defaults.bool(forKey: UserDefaultsAppRuntimePreferences.voiceReturnEnabledKey)
         voiceReturnTrigger = defaults.string(forKey: UserDefaultsAppRuntimePreferences.voiceReturnTriggerKey) ?? "press return"
+        voiceReturnMode = VoiceReturnMode.current(defaults: defaults)
         processingMode = Self.normalizedProcessingMode(defaults.string(forKey: UserDefaultsAppRuntimePreferences.processingModeKey))
         saveDictationHistory = defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveDictationHistoryKey) as? Bool ?? true
         smartFormattingEnabled = {

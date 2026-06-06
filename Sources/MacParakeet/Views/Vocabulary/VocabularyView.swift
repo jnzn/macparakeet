@@ -192,22 +192,48 @@ struct VocabularyView: View {
                         }
                     }
 
+                    VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
+                        Text("Trigger phrase action")
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(.secondary)
+                        Picker("Trigger phrase action", selection: $settingsViewModel.voiceReturnMode) {
+                            ForEach(VoiceReturnMode.allCases, id: \.self) { mode in
+                                Text(mode.displayTitle).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .frame(maxWidth: 250)
+                        Text(settingsViewModel.voiceReturnMode.detail)
+                            .font(DesignSystem.Typography.micro)
+                            .foregroundStyle(.secondary)
+                    }
+
                     VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
                         HStack(alignment: .top, spacing: DesignSystem.Spacing.sm) {
                             Image(systemName: "info.circle")
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(.secondary)
-                            Text("Say your exact trigger phrase at the end of a dictation to simulate a Return keypress. The trigger must be the last words spoken — if it appears mid-sentence, it's pasted as normal text.")
+                            Text(settingsViewModel.voiceReturnMode == .hold
+                                ? "Every dictation presses Return automatically. Say your exact trigger phrase at the end to hold it for review instead. The trigger must be the last words spoken — if it appears mid-sentence, it's pasted as normal text."
+                                : "Say your exact trigger phrase at the end of a dictation to simulate a Return keypress. The trigger must be the last words spoken — if it appears mid-sentence, it's pasted as normal text.")
                                 .font(DesignSystem.Typography.caption)
                                 .foregroundStyle(.secondary)
                         }
 
                         let trigger = settingsViewModel.voiceReturnTrigger.isEmpty ? "press return" : settingsViewModel.voiceReturnTrigger
                         VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
-                            exampleRow(input: "git status \(trigger)", result: "Pastes \"git status\" + presses ⏎", fires: true)
-                            exampleRow(input: "\(trigger)", result: "Just presses ⏎ (nothing to paste)", fires: true)
-                            exampleRow(input: "the \(trigger) was broken", result: "Pastes as-is — trigger is mid-sentence", fires: false)
-                            exampleRow(input: "git status", result: "Pastes as-is — no trigger spoken", fires: false)
+                            if settingsViewModel.voiceReturnMode == .hold {
+                                exampleRow(input: "git status", result: "Pastes \"git status\" + presses ⏎ automatically", fires: true)
+                                exampleRow(input: "git status \(trigger)", result: "Pastes \"git status\" — held for review, no ⏎", fires: false)
+                                exampleRow(input: "the \(trigger) was broken", result: "Pastes as-is + presses ⏎ — trigger is mid-sentence", fires: true)
+                                exampleRow(input: "\(trigger)", result: "Held for review (nothing to paste, no ⏎)", fires: false)
+                            } else {
+                                exampleRow(input: "git status \(trigger)", result: "Pastes \"git status\" + presses ⏎", fires: true)
+                                exampleRow(input: "\(trigger)", result: "Just presses ⏎ (nothing to paste)", fires: true)
+                                exampleRow(input: "the \(trigger) was broken", result: "Pastes as-is — trigger is mid-sentence", fires: false)
+                                exampleRow(input: "git status", result: "Pastes as-is — no trigger spoken", fires: false)
+                            }
                         }
                         .padding(.leading, DesignSystem.Spacing.lg)
                     }
