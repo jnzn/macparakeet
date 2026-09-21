@@ -1,6 +1,6 @@
 # Spoken-Text Smart Formatting (Deterministic Normalizer Chain)
 
-> Status: **PROPOSAL** — design approved in conversation 2026-06-02; implementation pending.
+> Status: **IMPLEMENTED** — 2026-06-02. All implementation tasks complete (chain, pipeline integration, Vocabulary toggle, AI Formatter v3). Owner rollout: switch Vocabulary to Clean mode + keep Smart formatting on + AI Formatter off.
 > Related: ADR-004 (deterministic text processing), `NumberNormalizer`, `TextProcessingPipeline`, `TextRefinementService`.
 
 ## Problem
