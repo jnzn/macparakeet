@@ -415,6 +415,11 @@ public enum PromptInferenceCapabilityResolver {
             return []
         case .inProcessLocal:
             return [.temperature, .maxTokens]
+        case .appleOnDevice:
+            // FoundationModelsLLMClient does not yet wire generation options
+            // (temperature/maxTokens) through to LanguageModelSession — keep
+            // the Settings UI from offering controls that have no effect.
+            return []
         }
     }
 

@@ -217,4 +217,36 @@ public enum AppFeatures {
                 arguments: arguments
             )
     }
+
+    /// Apple on-device LLM provider (Foundation Models framework,
+    /// `FoundationModelsLLMClient`), macOS 26+. Unlike Local MLX, no model is
+    /// bundled or downloaded — the OS owns the model. Gated `false` by
+    /// default anyway: it needs macOS 26+ (a large jump past the app's
+    /// macOS 14.2+ floor, so most users can't see it regardless), and its
+    /// output quality has only been checked with ad-hoc manual testing so
+    /// far, not the systematic bar ADR-011 sets before recommending a local
+    /// option. Same developer-override affordance as Local MLX.
+    public static let appleOnDeviceLLMEnabled: Bool = false
+
+    public static let appleOnDeviceLLMDeveloperDefaultsKey = "MacParakeetEnableAppleOnDeviceLLM"
+    public static let appleOnDeviceLLMDeveloperLaunchArgument = "--enable-apple-on-device-ai"
+
+    public static func appleOnDeviceLLMDeveloperOverrideEnabled(
+        defaults: UserDefaults = .standard,
+        arguments: [String] = ProcessInfo.processInfo.arguments
+    ) -> Bool {
+        defaults.bool(forKey: appleOnDeviceLLMDeveloperDefaultsKey)
+            || arguments.contains(appleOnDeviceLLMDeveloperLaunchArgument)
+    }
+
+    public static func isAppleOnDeviceLLMVisible(
+        defaults: UserDefaults = .standard,
+        arguments: [String] = ProcessInfo.processInfo.arguments
+    ) -> Bool {
+        appleOnDeviceLLMEnabled
+            || appleOnDeviceLLMDeveloperOverrideEnabled(
+                defaults: defaults,
+                arguments: arguments
+            )
+    }
 }

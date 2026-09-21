@@ -259,6 +259,8 @@ public final class LLMClient: LLMClientProtocol, Sendable {
             throw LLMError.connectionFailed("HTTP LLM client does not support Local CLI provider.")
         case .inProcessLocal:
             throw LLMError.connectionFailed("HTTP LLM client does not support Local MLX provider.")
+        case .appleOnDevice:
+            throw LLMError.connectionFailed("HTTP LLM client does not support Apple On-Device AI provider.")
         }
     }
 }

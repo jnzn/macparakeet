@@ -195,6 +195,10 @@ public struct LLMSettingsDraft: Equatable, Sendable {
             return .inProcessLocal(model: effectiveModelName)
         }
 
+        if providerID == .appleOnDevice {
+            return .appleOnDevice()
+        }
+
         let baseURL: URL
         if !trimmedBaseURLOverride.isEmpty {
             guard let override = URL(string: trimmedBaseURLOverride) else {

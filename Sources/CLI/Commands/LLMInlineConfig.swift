@@ -264,6 +264,8 @@ struct LLMInlineOptions: ParsableArguments {
             )
         case .inProcessLocal:
             throw ValidationError("The in-process local provider is not exposed through inline CLI configuration yet.")
+        case .appleOnDevice:
+            throw ValidationError("The Apple on-device provider is not exposed through inline CLI configuration yet.")
         }
 
         if local && !providerConfig.isLocal {

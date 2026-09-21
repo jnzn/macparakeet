@@ -2,20 +2,24 @@ import Foundation
 
 /// Routes LLM requests to the appropriate client based on provider ID.
 /// HTTP-based providers go to `LLMClient`; `.localCLI` goes to
-/// `LocalCLILLMClient`; `.inProcessLocal` goes to `InProcessLLMClient`.
+/// `LocalCLILLMClient`; `.inProcessLocal` goes to `InProcessLLMClient`;
+/// `.appleOnDevice` goes to `FoundationModelsLLMClient`.
 public final class RoutingLLMClient: LLMClientProtocol, Sendable {
     private let httpClient: any LLMClientProtocol
     private let cliClient: any LLMClientProtocol
     private let inProcessClient: any LLMClientProtocol
+    private let appleOnDeviceClient: any LLMClientProtocol
 
     public init(
         httpClient: any LLMClientProtocol = LLMClient(),
         cliClient: any LLMClientProtocol = LocalCLILLMClient(),
-        inProcessClient: any LLMClientProtocol = InProcessLLMClient()
+        inProcessClient: any LLMClientProtocol = InProcessLLMClient(),
+        appleOnDeviceClient: any LLMClientProtocol = FoundationModelsLLMClient()
     ) {
         self.httpClient = httpClient
         self.cliClient = cliClient
         self.inProcessClient = inProcessClient
+        self.appleOnDeviceClient = appleOnDeviceClient
     }
 
     public var supportsInProcessLocalLLM: Bool {
@@ -74,6 +78,8 @@ public final class RoutingLLMClient: LLMClientProtocol, Sendable {
             return cliClient
         case .inProcessLocal:
             return inProcessClient
+        case .appleOnDevice:
+            return appleOnDeviceClient
         case .anthropic, .openai, .openaiCompatible, .gemini, .openrouter, .moonshot, .deepseek, .qwen, .zai, .minimax,
             .ollama, .lmstudio:
             return httpClient

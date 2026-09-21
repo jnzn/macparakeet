@@ -229,7 +229,7 @@ public final class LLMSettingsViewModel {
             return "Z.AI API key"
         case .minimax:
             return "MiniMax API key"
-        case .ollama, .localCLI, .inProcessLocal, nil:
+        case .ollama, .localCLI, .inProcessLocal, .appleOnDevice, nil:
             return ""
         }
     }
@@ -366,7 +366,8 @@ public final class LLMSettingsViewModel {
 
     public var selectableProviderIDs: [LLMProviderID] {
         LLMProviderID.userSelectableProviderIDs(
-            inProcessLocalLLMVisible: shouldShowInProcessLocalSetup
+            inProcessLocalLLMVisible: shouldShowInProcessLocalSetup,
+            appleOnDeviceLLMVisible: AppFeatures.isAppleOnDeviceLLMVisible(defaults: defaults)
         )
     }
 

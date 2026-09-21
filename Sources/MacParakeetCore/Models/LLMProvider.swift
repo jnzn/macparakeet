@@ -45,6 +45,7 @@ public enum LLMProviderID: String, Codable, Sendable, CaseIterable {
     case lmstudio
     case localCLI
     case inProcessLocal
+    case appleOnDevice
 
     public var descriptor: LLMProviderDescriptor {
         switch self {
@@ -307,6 +308,19 @@ public enum LLMProviderID: String, Codable, Sendable, CaseIterable {
                     "mlx-community/Qwen3-4B-Instruct-2507-DDWQ"
                 ]
             )
+        case .appleOnDevice:
+            return LLMProviderDescriptor(
+                id: self,
+                displayName: "Apple On-Device AI",
+                defaultBaseURL: "inprocess://apple-foundation-models",
+                isLocal: true,
+                supportsAPIKey: false,
+                requiresAPIKey: false,
+                requiresCustomEndpoint: false,
+                modelListEndpoint: .none,
+                defaultModelName: FoundationModelsLLMClient.modelIdentifier,
+                fallbackModels: [FoundationModelsLLMClient.modelIdentifier]
+            )
         }
     }
 
@@ -315,7 +329,8 @@ public enum LLMProviderID: String, Codable, Sendable, CaseIterable {
     }
 
     public static func userSelectableProviderIDs(
-        inProcessLocalLLMVisible: Bool = AppFeatures.isInProcessLocalLLMVisible()
+        inProcessLocalLLMVisible: Bool = AppFeatures.isInProcessLocalLLMVisible(),
+        appleOnDeviceLLMVisible: Bool = AppFeatures.isAppleOnDeviceLLMVisible()
     ) -> [LLMProviderID] {
         [
             .lmstudio,
@@ -332,6 +347,7 @@ public enum LLMProviderID: String, Codable, Sendable, CaseIterable {
             .openaiCompatible,
             .localCLI,
         ] + (inProcessLocalLLMVisible ? [.inProcessLocal] : [])
+            + (appleOnDeviceLLMVisible ? [.appleOnDevice] : [])
     }
 
     public var displayName: String {
@@ -384,7 +400,7 @@ public enum LLMProviderID: String, Codable, Sendable, CaseIterable {
         switch self {
         case .openai, .openaiCompatible, .gemini, .openrouter, .moonshot, .deepseek, .qwen, .zai, .minimax, .lmstudio:
             return true
-        case .anthropic, .ollama, .localCLI, .inProcessLocal:
+        case .anthropic, .ollama, .localCLI, .inProcessLocal, .appleOnDevice:
             return false
         }
     }
@@ -395,7 +411,7 @@ public enum LLMProviderID: String, Codable, Sendable, CaseIterable {
         case .moonshot, .deepseek, .qwen, .zai, .minimax:
             return true
         case .anthropic, .openai, .openaiCompatible, .gemini, .openrouter, .ollama, .lmstudio, .localCLI,
-            .inProcessLocal:
+            .inProcessLocal, .appleOnDevice:
             return false
         }
     }
@@ -607,6 +623,18 @@ public struct LLMProviderConfig: Codable, Sendable, Equatable {
         )
     }
 
+    /// Apple on-device provider (Foundation Models framework) — a single
+    /// fixed OS-owned model, no API key, no custom endpoint.
+    public static func appleOnDevice() -> LLMProviderConfig {
+        LLMProviderConfig(
+            id: .appleOnDevice,
+            baseURL: URL(string: LLMProviderID.appleOnDevice.defaultBaseURL)!,
+            apiKey: nil,
+            modelName: FoundationModelsLLMClient.modelIdentifier,
+            isLocal: true
+        )
+    }
+
     public static func isLoopbackEndpoint(_ url: URL) -> Bool {
         guard let host = url.host?.lowercased() else { return false }
         return host == "localhost" || host == "::1" || host.hasPrefix("127.")
@@ -667,7 +695,7 @@ public extension LLMProviderConfig {
             let components = model.split(separator: "/", omittingEmptySubsequences: false)
             return components.count == 2 && components.allSatisfy { !$0.isEmpty }
         case .openai, .openaiCompatible, .moonshot, .deepseek, .qwen, .zai, .minimax, .ollama, .lmstudio, .localCLI,
-            .inProcessLocal:
+            .inProcessLocal, .appleOnDevice:
             return true
         }
     }
