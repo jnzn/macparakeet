@@ -1,49 +1,85 @@
 import AppKit
 import SwiftUI
 
-/// Sacred geometry flower icon ported from Oatmeal's meeting recording pill.
-///
-/// This is AppKit/Core Animation backed instead of a pure SwiftUI
-/// `repeatForever` animation. Sampling showed continuous SwiftUI animation
-/// hosted in always-resident windows does per-frame work on the main thread
-/// (re-eval `body` → rebuild the display list → CA commit, every refresh).
-/// Driving the same motion through `CALayer` + `CABasicAnimation` interpolates
-/// on the render server at ~0 app CPU, so the mark can be *rich* — a live
-/// audio-responsive glow plus the full recording lifecycle (collapse →
-/// processing spinner → completion checkmark) — without the render churn.
-struct MerkabaPillIcon: NSViewRepresentable {
+/// Observable state driving `ParakeetRosetteContent`, updated imperatively by
+/// `MerkabaPillIconView` (an `NSHostingView`'s rootView is normally replaced
+/// wholesale on update; routing through `@Observable` instead means only the
+/// properties that actually changed trigger a re-render — important for
+/// `setLiveGlow`, which is driven from a ~30 fps audio-level channel).
+@Observable
+final class ParakeetRosetteState {
     var isAnimating: Bool = false
     var audioLevel: Float = 0
-    /// When `false`, render only the Flower-of-Life head (no stem/leaves) -
-    /// used where the rosette is a compact standalone mark, e.g. inside the
-    /// calendar countdown halo. Defaults to `true` so the recording pill keeps
-    /// the full flower.
-    var showStem: Bool = true
+    /// True while the stop-recording "flies off" transition should be
+    /// playing. `ParakeetRosetteContent` observes this and self-drives the
+    /// animation; flipping it back to `false` (recording re-entry before the
+    /// transition finished) snaps back to normal with no animation, so a
+    /// back-to-back recording never gets stuck mid-flight.
+    var isLeaving: Bool = false
+}
 
-    func makeNSView(context: Context) -> MerkabaPillIconView {
-        let view = MerkabaPillIconView()
-        view.configure(showStem: showStem)
-        view.update(isAnimating: isAnimating, audioLevel: audioLevel)
-        return view
-    }
+/// Parakeet rendering for the recording pill's "rosette" state (recording /
+/// paused) and its stop-recording transition. Reuses `ParakeetHeadPillIcon`'s
+/// existing bob/chirp motion — already render-server-only (`.offset`/
+/// `.rotationEffect`/`.scaleEffect` + `.animation`, no `TimelineView`), the
+/// same ~0-app-CPU goal the original CALayer flower port had — so hosting it
+/// via `NSHostingView` doesn't reintroduce the per-frame cost that port was
+/// written to avoid.
+///
+/// Stop transition ("flies off"): a brief pre-flight head dip, then the mark
+/// banks, shrinks, drifts up and away, and fades. Reduce Motion gets a quiet
+/// fade instead, matching the rest of this view's reduce-motion handling.
+struct ParakeetRosetteContent: View {
+    var state: ParakeetRosetteState
+    var reduceMotion: Bool
 
-    func updateNSView(_ nsView: MerkabaPillIconView, context: Context) {
-        nsView.configure(showStem: showStem)
-        nsView.update(isAnimating: isAnimating, audioLevel: audioLevel)
-    }
+    @State private var dipping = false
+    @State private var flying = false
 
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: MerkabaPillIconView, context: Context) -> CGSize? {
-        CGSize(width: showStem ? 30 : 35, height: showStem ? 74 : 35)
+    var body: some View {
+        ParakeetHeadPillIcon(isAnimating: state.isAnimating, audioLevel: state.audioLevel)
+            .rotationEffect(.degrees(dipping ? 10 : 0))
+            .scaleEffect(flying ? 0.5 : 1)
+            .offset(x: flying ? 16 : 0, y: flying ? -18 : 0)
+            .rotationEffect(.degrees(flying ? -20 : 0))
+            .opacity(flying ? 0 : 1)
+            .onChange(of: state.isLeaving) { _, leaving in
+                guard leaving else {
+                    // Re-entry: a new recording started before the previous
+                    // transition finished. Snap back instantly — animating
+                    // back in from "flying away" would read as a glitch, not
+                    // an arrival.
+                    dipping = false
+                    flying = false
+                    return
+                }
+                guard !reduceMotion else {
+                    withAnimation(.easeOut(duration: 0.3)) { flying = true }
+                    return
+                }
+                withAnimation(.easeIn(duration: 0.14)) { dipping = true }
+                withAnimation(.easeIn(duration: 0.5).delay(0.12)) { flying = true }
+            }
     }
 }
 
+enum MerkabaPillIcon {
+    /// Total duration of the "flies off" stop transition (dip + bank/shrink/
+    /// fade). `MerkabaPillIconView.playCompletion` schedules its `onFinished`
+    /// callback after this, matching how the old flower collapse timed its own
+    /// completion. Reduce Motion uses its own shorter fade duration instead.
+    static let leavingAnimationDuration: TimeInterval = 0.62
+    static let leavingReducedMotionDuration: TimeInterval = 0.3
+}
+
 final class MerkabaPillIconView: NSView {
-    /// Which lifecycle mark is currently shown. The flower-of-life rosette
-    /// (recording / paused / collapse), the Metatron's-Cube bloom (the "meeting
-    /// saved" celebration + saving/loading state), and the draw-on checkmark
-    /// (completed) live as layer groups in one view so transitions read as the
-    /// *same* mark transforming in place. The counter-rotating merkaba spinner
-    /// is retained for reference but no longer driven by the live flow.
+    /// Which lifecycle mark is currently shown. The parakeet (recording /
+    /// paused / leaving), the Metatron's-Cube bloom (the "meeting saved"
+    /// celebration + saving/loading state), and the draw-on checkmark
+    /// (completed) live as layer groups (or, for the parakeet, a hosted
+    /// SwiftUI view) in one view so transitions read as the *same* mark
+    /// transforming in place. The counter-rotating merkaba spinner is
+    /// retained for reference but no longer driven by the live flow.
     private enum Face {
         case rosette
         case spinner
@@ -51,14 +87,15 @@ final class MerkabaPillIconView: NSView {
         case checkmark
     }
 
-    // MARK: Rosette (recording / paused / collapse)
-    private let glowLayer = CAShapeLayer()
-    private let flowerLayer = CALayer()
-    private let stemLayer = CAShapeLayer()
-    private let leftLeafFillLayer = CAShapeLayer()
-    private let leftLeafStrokeLayer = CAShapeLayer()
-    private let rightLeafFillLayer = CAShapeLayer()
-    private let rightLeafStrokeLayer = CAShapeLayer()
+    // MARK: Parakeet (recording / paused / leaving)
+    private let parakeetState = ParakeetRosetteState()
+    private lazy var parakeetHostView: NSHostingView<ParakeetRosetteContent> = {
+        let view = NSHostingView(
+            rootView: ParakeetRosetteContent(state: parakeetState, reduceMotion: false)
+        )
+        view.translatesAutoresizingMaskIntoConstraints = true
+        return view
+    }()
 
     // MARK: Spinner (transcribing) — two counter-rotating triangles + nexus
     private let spinnerLayer = CALayer()
@@ -84,44 +121,12 @@ final class MerkabaPillIconView: NSView {
     private let checkRingLayer = CAShapeLayer()
     private let checkMarkLayer = CAShapeLayer()
 
-    private var rosetteLayers: [CALayer] {
-        [
-            glowLayer, flowerLayer, stemLayer,
-            leftLeafFillLayer, leftLeafStrokeLayer, rightLeafFillLayer, rightLeafStrokeLayer,
-        ]
+    var testHook_isLeaving: Bool {
+        parakeetState.isLeaving
     }
 
-    private var rosetteCompletionAnimationKeys: [String] {
-        let layers: [(String, CALayer)] = [
-            ("glow", glowLayer),
-            ("flower", flowerLayer),
-            ("stem", stemLayer),
-            ("leftLeafFill", leftLeafFillLayer),
-            ("leftLeafStroke", leftLeafStrokeLayer),
-            ("rightLeafFill", rightLeafFillLayer),
-            ("rightLeafStroke", rightLeafStrokeLayer),
-        ]
-        return layers.flatMap { name, layer in
-            (layer.animationKeys() ?? [])
-                .filter { $0.hasPrefix("completion") }
-                .map { "\(name).\($0)" }
-        }.sorted()
-    }
-
-    private var hasRecordingRotationAnimation: Bool {
-        flowerLayer.animation(forKey: "recordingRotation") != nil
-    }
-
-    var testHook_rosetteCompletionAnimationKeys: [String] {
-        rosetteCompletionAnimationKeys
-    }
-
-    var testHook_hasRecordingRotationAnimation: Bool {
-        hasRecordingRotationAnimation
-    }
-
-    func testHook_removeRecordingRotationAnimation() {
-        flowerLayer.removeAnimation(forKey: "recordingRotation")
+    var testHook_isAnimating: Bool {
+        parakeetState.isAnimating
     }
 
     private var didBuildLayers = false
@@ -130,14 +135,9 @@ final class MerkabaPillIconView: NSView {
     private var currentAudioLevel: Float = -1
     private var currentFace: Face = .rosette
     private var completionDelayTask: Task<Void, Never>?
-    private var smoothedGlow: Float = -1
-
-    /// Resting glow before audio lifts it: brighter while actively listening,
-    /// dim when paused/idle so the mark reads as "quiet".
-    private var glowBase: Float { currentAnimating ? 0.4 : 0.1 }
+    private var currentReduceMotion = false
 
     private let successGreen = NSColor(red: 0.20, green: 0.66, blue: 0.33, alpha: 1)
-    private let completionGold = NSColor(red: 1.0, green: 0.85, blue: 0.4, alpha: 1)
     /// Metatron palette: living green during the build, ripening to sacred gold
     /// at full bloom (the "halo" peak), before resolving to the green checkmark.
     private let metatronGreen = NSColor(red: 0.42, green: 0.86, blue: 0.48, alpha: 1)
@@ -176,124 +176,44 @@ final class MerkabaPillIconView: NSView {
 
     func update(isAnimating: Bool, audioLevel: Float) {
         buildLayersIfNeeded()
-        let shouldResetRosette = currentFace != .rosette || !rosetteCompletionAnimationKeys.isEmpty
         setFace(.rosette)
-        if shouldResetRosette {
-            resetRosetteAfterCompletion()
-        }
-
-        let shouldRestartRecordingAnimation = isAnimating && currentAnimating && !hasRecordingRotationAnimation
-        if currentAnimating != isAnimating || shouldRestartRecordingAnimation {
-            currentAnimating = isAnimating
-            isAnimating ? startAnimations() : stopAnimations()
-        }
-
-        let clampedAudio = min(1, max(0, audioLevel))
-        if currentAudioLevel != clampedAudio {
-            currentAudioLevel = clampedAudio
-            applyGlow(target: glowBase + clampedAudio * 0.5, smoothing: false)
-        }
+        // Recording re-entry: cancel any in-flight "flying off" transition so
+        // a back-to-back recording shows the parakeet cleanly instead of
+        // stranding it mid-exit.
+        parakeetState.isLeaving = false
+        parakeetState.isAnimating = isAnimating
+        parakeetState.audioLevel = min(1, max(0, audioLevel))
+        currentAnimating = isAnimating
     }
 
-    /// Live audio-responsive glow, driven from a fast (~30 fps) pill-local
-    /// channel rather than the 1 s state poll, so the "internal light" tracks
-    /// speech in near-real-time like the original SwiftUI pill. Touches only
-    /// `glowLayer.opacity` (a compositor-only property on a static path), so it
-    /// costs ~nothing — no body re-eval, no relayout, no display-list rebuild.
-    /// Lightly smoothed so jittery audio meters read as organic breathing.
+    /// Live audio-responsive chirp, driven from a fast (~30 fps) pill-local
+    /// channel rather than the 1 s state poll, so the mark tracks speech in
+    /// near-real-time like the original SwiftUI pill. Routed through
+    /// `@Observable` so only the audio level re-renders, not the whole view.
     func setLiveGlow(level: Float) {
         buildLayersIfNeeded()
         guard currentFace == .rosette else { return }
-        let clamped = min(1, max(0, level))
-        currentAudioLevel = clamped
-        applyGlow(target: glowBase + clamped * 0.5, smoothing: true)
-    }
-
-    private func applyGlow(target: Float, smoothing: Bool) {
-        let capped = min(0.9, max(0, target))
-        let value: Float
-        if smoothing, smoothedGlow >= 0 {
-            // Exponential moving average — chases the audio without the
-            // jitter of raw meter values or the lag of a long implicit fade.
-            value = smoothedGlow + (capped - smoothedGlow) * 0.35
-        } else {
-            value = capped
-        }
-        smoothedGlow = value
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        glowLayer.opacity = value
-        CATransaction.commit()
+        parakeetState.audioLevel = min(1, max(0, level))
     }
 
     // MARK: - Lifecycle faces
 
-    /// Recording stopped: the Flower of Life accelerates, petals collapse, the
-    /// glow warms green → gold, leaves detach and drift, the stem retracts, then
-    /// everything fades — handing off to the processing spinner. CA port of
-    /// `FlowerCompletionView`. `onFinished` fires when the collapse is done.
+    /// Recording stopped: the parakeet dips its head, then banks, shrinks,
+    /// drifts up and away, and fades — handing off to the processing spinner.
+    /// `onFinished` fires when the transition is done.
     func playCompletion(reduceMotion: Bool, onFinished: @escaping @MainActor () -> Void) {
         buildLayersIfNeeded()
         setFace(.rosette)
-        stopAnimations()
         currentAnimating = false
+        currentReduceMotion = reduceMotion
+        parakeetHostView.rootView = ParakeetRosetteContent(state: parakeetState, reduceMotion: reduceMotion)
+        parakeetState.isAnimating = false
+        parakeetState.isLeaving = true
 
-        guard !reduceMotion else {
-            // Vestibular-safe: a quiet fade instead of the spinning collapse.
-            let fade = CABasicAnimation(keyPath: "opacity")
-            fade.fromValue = 1.0
-            fade.toValue = 0.0
-            fade.duration = 0.4
-            fade.fillMode = .forwards
-            fade.isRemovedOnCompletion = false
-            for layer in rosetteLayers where !layer.isHidden { layer.add(fade, forKey: "completionFade") }
-            scheduleCompletion(after: 0.4, onFinished)
-            return
-        }
-
-        // Phase 1a (0–0.8s): flower head spins up and collapses inward.
-        flowerLayer.add(
-            rampAnimation(keyPath: "transform.rotation.z", from: 0, to: CGFloat.pi * 3, duration: 0.8, timing: .easeIn),
-            forKey: "completionSpin")
-        flowerLayer.add(
-            rampAnimation(keyPath: "transform.scale", from: 1.0, to: 0.12, duration: 0.8, timing: .easeIn),
-            forKey: "completionScale")
-
-        // Glow warms green → gold, then exhales out at the end.
-        let warm = CABasicAnimation(keyPath: "fillColor")
-        warm.fromValue = glowLayer.fillColor
-        warm.toValue = completionGold.cgColor
-        warm.duration = 0.8
-        warm.fillMode = .forwards
-        warm.isRemovedOnCompletion = false
-        warm.timingFunction = CAMediaTimingFunction(name: .easeIn)
-        glowLayer.add(warm, forKey: "completionWarm")
-
-        // Phase 1b (0.1–0.7s): leaves detach and drift down + away.
-        addLeafDrift(
-            fill: leftLeafFillLayer, stroke: leftLeafStrokeLayer, dx: -10, dy: 14, rotation: -.pi / 6, delay: 0.1)
-        addLeafDrift(
-            fill: rightLeafFillLayer, stroke: rightLeafStrokeLayer, dx: 10, dy: 12, rotation: .pi * 25 / 180,
-            delay: 0.15)
-
-        // Phase 1c (0.3–0.7s): stem retracts.
-        let retract = rampAnimation(keyPath: "strokeEnd", from: 1.0, to: 0.0, duration: 0.4, timing: .easeInEaseOut)
-        retract.beginTime = CACurrentMediaTime() + 0.3
-        stemLayer.add(retract, forKey: "completionRetract")
-        let stemFade = rampAnimation(keyPath: "opacity", from: 1.0, to: 0.0, duration: 0.4, timing: .easeInEaseOut)
-        stemFade.beginTime = CACurrentMediaTime() + 0.3
-        stemLayer.add(stemFade, forKey: "completionStemFade")
-
-        // Phase 1d (0.8–1.0s): flower head + glow fade out.
-        let headFade = rampAnimation(keyPath: "opacity", from: 1.0, to: 0.0, duration: 0.2, timing: .easeOut)
-        headFade.beginTime = CACurrentMediaTime() + 0.8
-        flowerLayer.add(headFade, forKey: "completionHeadFade")
-        let glowFade = rampAnimation(
-            keyPath: "opacity", from: CGFloat(glowLayer.opacity), to: 0.0, duration: 0.2, timing: .easeOut)
-        glowFade.beginTime = CACurrentMediaTime() + 0.8
-        glowLayer.add(glowFade, forKey: "completionGlowFade")
-
-        scheduleCompletion(after: 1.0, onFinished)
+        let duration = reduceMotion
+            ? MerkabaPillIcon.leavingReducedMotionDuration
+            : MerkabaPillIcon.leavingAnimationDuration
+        scheduleCompletion(after: duration, onFinished)
     }
 
     /// Fire the collapse-finished callback after `delay`, on the main actor.
@@ -486,16 +406,10 @@ final class MerkabaPillIconView: NSView {
         applyVisibility()
     }
 
-    /// Single source of truth for layer visibility, driven by the current face
-    /// and `showStem`. Re-applied on every layout so a `configure(showStem:)`
-    /// change (which keeps the face) still hides/shows the stem + leaves.
+    /// Single source of truth for layer/view visibility, driven by the
+    /// current face. Re-applied on every layout.
     private func applyVisibility() {
-        let rosette = (currentFace == .rosette)
-        glowLayer.isHidden = !rosette
-        flowerLayer.isHidden = !rosette
-        for layer in [stemLayer, leftLeafFillLayer, leftLeafStrokeLayer, rightLeafFillLayer, rightLeafStrokeLayer] {
-            layer.isHidden = !rosette || !currentShowStem
-        }
+        parakeetHostView.isHidden = (currentFace != .rosette)
         spinnerLayer.isHidden = (currentFace != .spinner)
         let metatron = (currentFace == .metatron)
         metatronLayer.isHidden = !metatron
@@ -510,35 +424,11 @@ final class MerkabaPillIconView: NSView {
         didBuildLayers = true
 
         rootLayer.masksToBounds = false
-        rootLayer.addSublayer(glowLayer)
-
-        flowerLayer.masksToBounds = false
-        rootLayer.addSublayer(flowerLayer)
-        addFlowerCircles()
-
-        for leafLayer in [leftLeafFillLayer, rightLeafFillLayer] {
-            leafLayer.strokeColor = nil
-        }
-        for leafLayer in [leftLeafStrokeLayer, rightLeafStrokeLayer] {
-            leafLayer.fillColor = NSColor.clear.cgColor
-            leafLayer.lineWidth = 0.5
-        }
-
-        stemLayer.fillColor = NSColor.clear.cgColor
-        stemLayer.lineWidth = 1.2
-        stemLayer.lineCap = .round
-
-        rootLayer.addSublayer(stemLayer)
-        rootLayer.addSublayer(leftLeafFillLayer)
-        rootLayer.addSublayer(leftLeafStrokeLayer)
-        rootLayer.addSublayer(rightLeafFillLayer)
-        rootLayer.addSublayer(rightLeafStrokeLayer)
+        addSubview(parakeetHostView)
 
         buildSpinnerLayers(in: rootLayer)
         buildMetatronLayers(in: rootLayer)
         buildCheckmarkLayers(in: rootLayer)
-
-        applyRosetteColors()
     }
 
     private func buildMetatronLayers(in root: CALayer) {
@@ -574,57 +464,6 @@ final class MerkabaPillIconView: NSView {
         metatronLayer.addSublayer(metatronLinesLayer)
         metatronLayer.addSublayer(metatronNodesLayer)
         root.addSublayer(metatronLayer)
-    }
-
-    /// Brand greens for the glow + stem/leaves, matching the shipped SwiftUI
-    /// pill and the Transcribe-tab tile (`DesignSystem.Colors.sacredGlow` /
-    /// `.sacredStem`) rather than the generic `systemGreen` the first CA port
-    /// landed on. Resolved against the view's current appearance and re-applied
-    /// from `viewDidChangeEffectiveAppearance`, since `CGColor` snapshots a
-    /// dynamic `Color` at assignment time (so a Light↔Dark switch mid-recording
-    /// would otherwise leave the rosette tinted for the old appearance).
-    private func applyRosetteColors() {
-        effectiveAppearance.performAsCurrentDrawingAppearance { [self] in
-            glowLayer.fillColor =
-                NSColor(DesignSystem.Colors.sacredGlow)
-                .withAlphaComponent(0.35).cgColor
-            let stem = NSColor(DesignSystem.Colors.sacredStem)
-            for leafLayer in [leftLeafFillLayer, rightLeafFillLayer] {
-                leafLayer.fillColor = stem.withAlphaComponent(0.45).cgColor
-            }
-            for leafLayer in [leftLeafStrokeLayer, rightLeafStrokeLayer] {
-                leafLayer.strokeColor = stem.withAlphaComponent(0.55).cgColor
-            }
-            stemLayer.strokeColor = stem.withAlphaComponent(0.7).cgColor
-        }
-    }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        guard didBuildLayers else { return }
-        applyRosetteColors()
-    }
-
-    private func addFlowerCircles() {
-        let strokeColors: [(CGFloat, CGFloat)] = [(0.55, 0.75)] + Array(repeating: (0.40, 0.75), count: 6)
-        for (index, stroke) in strokeColors.enumerated() {
-            let circle = CAShapeLayer()
-            circle.fillColor = NSColor.clear.cgColor
-            circle.strokeColor = NSColor.white.withAlphaComponent(stroke.0).cgColor
-            circle.lineWidth = stroke.1
-            circle.path = CGPath(ellipseIn: CGRect(x: -6.5, y: -6.5, width: 13, height: 13), transform: nil)
-
-            if index == 0 {
-                circle.position = CGPoint(x: 15, y: 15)
-            } else {
-                let angle = CGFloat(index - 1) * 60 * .pi / 180
-                circle.position = CGPoint(
-                    x: 15 + cos(angle) * 6.5,
-                    y: 15 + sin(angle) * 6.5
-                )
-            }
-            flowerLayer.addSublayer(circle)
-        }
     }
 
     private func buildSpinnerLayers(in root: CALayer) {
@@ -674,32 +513,13 @@ final class MerkabaPillIconView: NSView {
     private func layoutLayers() {
         let markSize = activeMarkSize
         let headY: CGFloat = currentShowStem ? 6 : 0
-        glowLayer.path = CGPath(
-            ellipseIn: CGRect(
-                x: markSize * 0.1,
-                y: headY + markSize * 0.1,
-                width: markSize * 0.8,
-                height: markSize * 0.8
-            ),
-            transform: nil
-        )
 
-        flowerLayer.frame = CGRect(x: 0, y: headY, width: markSize, height: markSize)
-        flowerLayer.position = CGPoint(x: markSize / 2, y: headY + markSize / 2)
-        flowerLayer.bounds = CGRect(x: 0, y: 0, width: 30, height: 30)
-
-        let stemFrame = CGRect(x: 0, y: headY + 30, width: 30, height: 34)
-        for layer in [stemLayer, leftLeafFillLayer, leftLeafStrokeLayer, rightLeafFillLayer, rightLeafStrokeLayer] {
-            layer.frame = stemFrame
-        }
-
-        stemLayer.path = stemPath(in: stemFrame.size)
-        let leftPath = leafPath(in: stemFrame.size, basePoint: CGPoint(x: 0.5, y: 0.38), direction: -1, size: 8)
-        let rightPath = leafPath(in: stemFrame.size, basePoint: CGPoint(x: 0.5, y: 0.62), direction: 1, size: 9)
-        leftLeafFillLayer.path = leftPath
-        leftLeafStrokeLayer.path = leftPath
-        rightLeafFillLayer.path = rightPath
-        rightLeafStrokeLayer.path = rightPath
+        // The parakeet occupies exactly where the old flower head sat; when
+        // `showStem` is true the extra space below (formerly stem + leaves)
+        // is simply left empty — matching the already-shipped in-app pill
+        // (`MeetingRecordingPillView`), which shows the head alone with no
+        // stem concept at all.
+        parakeetHostView.frame = CGRect(x: 0, y: headY, width: markSize, height: markSize)
 
         layoutSpinnerAndCheck(headY: headY, size: markSize)
         applyVisibility()
@@ -834,32 +654,6 @@ final class MerkabaPillIconView: NSView {
 
     // MARK: - Paths
 
-    private func stemPath(in size: CGSize) -> CGPath {
-        let path = CGMutablePath()
-        let midX = size.width / 2
-        path.move(to: CGPoint(x: midX, y: 0))
-        path.addQuadCurve(
-            to: CGPoint(x: midX, y: size.height),
-            control: CGPoint(x: midX, y: size.height * 0.5)
-        )
-        return path
-    }
-
-    private func leafPath(in rectSize: CGSize, basePoint: CGPoint, direction: CGFloat, size: CGFloat) -> CGPath {
-        let base = CGPoint(x: rectSize.width * basePoint.x, y: rectSize.height * basePoint.y)
-        let path = CGMutablePath()
-        path.move(to: base)
-        path.addQuadCurve(
-            to: CGPoint(x: base.x + direction * size, y: base.y - 3),
-            control: CGPoint(x: base.x + direction * size * 0.6, y: base.y - 5)
-        )
-        path.addQuadCurve(
-            to: base,
-            control: CGPoint(x: base.x + direction * size * 0.6, y: base.y + 2)
-        )
-        return path
-    }
-
     private func trianglePath(center: CGPoint, radius: CGFloat, rotation: CGFloat) -> CGPath {
         let path = CGMutablePath()
         for i in 0..<3 {
@@ -885,68 +679,9 @@ final class MerkabaPillIconView: NSView {
         return path
     }
 
-    // MARK: - Recording rosette animations
-
-    private func resetRosetteAfterCompletion() {
-        completionDelayTask?.cancel()
-        completionDelayTask = nil
-
-        flowerLayer.removeAnimation(forKey: "completionSpin")
-        flowerLayer.removeAnimation(forKey: "completionScale")
-        flowerLayer.removeAnimation(forKey: "completionHeadFade")
-        glowLayer.removeAnimation(forKey: "completionWarm")
-        glowLayer.removeAnimation(forKey: "completionGlowFade")
-        stemLayer.removeAnimation(forKey: "completionRetract")
-        stemLayer.removeAnimation(forKey: "completionStemFade")
-        for layer in rosetteLayers {
-            layer.removeAnimation(forKey: "completionFade")
-        }
-        for layer in [leftLeafFillLayer, leftLeafStrokeLayer, rightLeafFillLayer, rightLeafStrokeLayer] {
-            layer.removeAnimation(forKey: "completionDrift")
-        }
-
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        flowerLayer.opacity = 1
-        flowerLayer.transform = CATransform3DIdentity
-        glowLayer.opacity = glowBase
-        stemLayer.opacity = 1
-        stemLayer.strokeEnd = 1
-        stemLayer.transform = CATransform3DIdentity
-        for layer in [leftLeafFillLayer, leftLeafStrokeLayer, rightLeafFillLayer, rightLeafStrokeLayer] {
-            layer.opacity = 1
-            layer.transform = CATransform3DIdentity
-        }
-        applyRosetteColors()
-        CATransaction.commit()
-
-        currentAudioLevel = -1
-        smoothedGlow = -1
-    }
-
-    private func startAnimations() {
-        guard !hasRecordingRotationAnimation else { return }
-
-        let rotation = spinAnimation(to: CGFloat.pi * 2, duration: 12)
-        flowerLayer.add(rotation, forKey: "recordingRotation")
-
-        for layer in [stemLayer, leftLeafFillLayer, leftLeafStrokeLayer, rightLeafFillLayer, rightLeafStrokeLayer] {
-            let sway = CABasicAnimation(keyPath: "transform.translation.x")
-            sway.fromValue = -1.5
-            sway.toValue = 1.5
-            sway.duration = 3
-            sway.autoreverses = true
-            sway.repeatCount = .infinity
-            sway.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            layer.add(sway, forKey: "recordingSway")
-        }
-    }
+    // MARK: - Animation builders
 
     private func stopAnimations() {
-        flowerLayer.removeAnimation(forKey: "recordingRotation")
-        for layer in [stemLayer, leftLeafFillLayer, leftLeafStrokeLayer, rightLeafFillLayer, rightLeafStrokeLayer] {
-            layer.removeAnimation(forKey: "recordingSway")
-        }
         spinnerTriCWLayer.removeAnimation(forKey: "spin")
         spinnerTriCCWLayer.removeAnimation(forKey: "spin")
         spinnerCenterLayer.removeAnimation(forKey: "pulse")
@@ -958,8 +693,6 @@ final class MerkabaPillIconView: NSView {
         metatronNodesLayer.removeAllAnimations()
         metatronGlowLayer.removeAllAnimations()
     }
-
-    // MARK: - Animation builders
 
     private func spinAnimation(to value: CGFloat, duration: CFTimeInterval) -> CABasicAnimation {
         let animation = CABasicAnimation(keyPath: "transform.rotation.z")
@@ -993,29 +726,5 @@ final class MerkabaPillIconView: NSView {
         animation.isRemovedOnCompletion = false
         animation.timingFunction = CAMediaTimingFunction(name: timing)
         return animation
-    }
-
-    private func addLeafDrift(
-        fill: CAShapeLayer, stroke: CAShapeLayer, dx: CGFloat, dy: CGFloat, rotation: CGFloat, delay: CFTimeInterval
-    ) {
-        for layer in [fill, stroke] {
-            let group = CAAnimationGroup()
-            let move = CABasicAnimation(keyPath: "transform.translation")
-            move.fromValue = NSValue(point: .zero)
-            move.toValue = NSValue(point: NSPoint(x: dx, y: dy))
-            let rotate = CABasicAnimation(keyPath: "transform.rotation.z")
-            rotate.fromValue = 0
-            rotate.toValue = rotation
-            let fade = CABasicAnimation(keyPath: "opacity")
-            fade.fromValue = 1.0
-            fade.toValue = 0.0
-            group.animations = [move, rotate, fade]
-            group.duration = 0.6
-            group.beginTime = CACurrentMediaTime() + delay
-            group.fillMode = .forwards
-            group.isRemovedOnCompletion = false
-            group.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            layer.add(group, forKey: "completionDrift")
-        }
     }
 }
