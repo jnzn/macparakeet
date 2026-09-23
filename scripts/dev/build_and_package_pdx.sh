@@ -40,7 +40,7 @@ for h in ffmpeg yt-dlp node; do
 done
 
 # --- 2. Validate echo seed assets are present.
-for f in liblocalvqe.dylib localvqe-v1.2-1.3M-f32.gguf; do
+for f in liblocalvqe.dylib localvqe-v1.4-aec-200K-f32.gguf; do
   if [[ ! -f "$ECHO_SEED/$f" ]]; then
     echo "Error: missing meeting echo seed asset: $ECHO_SEED/$f" >&2
     exit 1
@@ -54,7 +54,7 @@ build_env=(
   "VERSION=$VERSION"
   "XCODE_DERIVED_DATA=$DERIVED"
   "MACPARAKEET_MEETING_ECHO_LIBRARY=$ECHO_SEED/liblocalvqe.dylib"
-  "MACPARAKEET_MEETING_ECHO_MODEL=$ECHO_SEED/localvqe-v1.2-1.3M-f32.gguf"
+  "MACPARAKEET_MEETING_ECHO_MODEL=$ECHO_SEED/localvqe-v1.4-aec-200K-f32.gguf"
   "MACPARAKEET_MEETING_ECHO_DYLIB_DIR=$ECHO_SEED"
   "REQUIRE_MEETING_ECHO_ASSETS=1"
 )
