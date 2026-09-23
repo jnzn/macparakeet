@@ -124,7 +124,40 @@ final class AskProviderCatalogTests: XCTestCase {
 
         XCTAssertNotNil(apple)
         XCTAssertEqual(apple?.context?.providerConfig.id, .appleOnDevice)
-        XCTAssertFalse(apple?.isDefault == true, "Apple On-Device is an override option, not the global default row")
+    }
+
+    /// When Apple On-Device is offered, it's the practical default for
+    /// Ask/chat surfaces (see TranscriptChatViewModel's auto-select) — the
+    /// "(default)" label and isDefault flag move to it, off the global
+    /// config row, which no longer claims to be the default it isn't.
+    func testAppleOnDeviceIsLabeledDefaultWhenAvailable() {
+        let store = StubConfigStore()
+        store.global = .ollama()
+        let catalog = makeCatalog(store: store, appleOnDeviceAvailable: { true })
+
+        let options = catalog.availableOptions()
+        let apple = options.first(where: { $0.id == LLMProviderID.appleOnDevice.rawValue })
+        let global = options.first(where: { $0.id == "default" })
+
+        XCTAssertTrue(apple?.isDefault == true)
+        XCTAssertTrue(apple?.displayName.contains("(default)") == true)
+        XCTAssertFalse(global?.isDefault == true)
+        XCTAssertFalse(global?.displayName.contains("(default)") == true)
+        XCTAssertTrue(global?.displayName.contains("Ollama") == true, "still shows the plain provider name")
+    }
+
+    /// Without Apple On-Device, the global config is genuinely the default
+    /// used everywhere — the "(default)" label stays on it.
+    func testGlobalConfigIsLabeledDefaultWhenAppleUnavailable() {
+        let store = StubConfigStore()
+        store.global = .ollama()
+        let catalog = makeCatalog(store: store, appleOnDeviceAvailable: { false })
+
+        let options = catalog.availableOptions()
+        let global = options.first(where: { $0.id == "default" })
+
+        XCTAssertTrue(global?.isDefault == true)
+        XCTAssertTrue(global?.displayName.contains("(default)") == true)
     }
 
     func testAppleOnDeviceExcludedWhenUnavailable() {

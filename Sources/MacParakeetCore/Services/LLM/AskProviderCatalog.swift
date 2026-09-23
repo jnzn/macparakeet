@@ -1,9 +1,10 @@
 import Foundation
 
-/// A selectable LLM provider for the live Ask surface. `context == nil` means
-/// "use the app's global default provider"; a non-nil context is a per-Ask
-/// override that does NOT touch the global config (dictation cleanup, other
-/// chat surfaces stay on the global provider).
+/// A selectable LLM provider for an Ask/chat surface (live meeting Ask or
+/// post-meeting transcript chat in the Library). `context == nil` means "use
+/// the app's global default provider"; a non-nil context is a per-conversation
+/// override that does NOT touch the global config (Transforms, summaries, and
+/// dictation cleanup stay on the global provider regardless).
 public struct AskProviderOption: Identifiable, Sendable, Equatable {
     public let id: String
     public let displayName: String
@@ -55,14 +56,21 @@ public struct AskProviderCatalog: Sendable {
         var options: [AskProviderOption] = []
         let globalConfig = try? configStore.loadConfig()
         let globalID = globalConfig?.id
+        // Apple On-Device is the practical default for Ask/chat surfaces when
+        // it's offered (see TranscriptChatViewModel's auto-select) — the
+        // "(default)" label belongs on whichever row is actually auto-picked,
+        // not unconditionally on the global config.
+        let appleIsPracticalDefault = appleOnDeviceAvailable()
 
-        // 1. Global default — always present, no override context.
+        // 1. Global default — always present, no override context. Still the
+        // real fallback (and still labeled "(default)") when Apple isn't
+        // offered.
         let defaultName = globalConfig.map { Self.displayName(for: $0.id) } ?? "Default"
         options.append(AskProviderOption(
             id: "default",
-            displayName: "\(defaultName) (default)",
+            displayName: appleIsPracticalDefault ? defaultName : "\(defaultName) (default)",
             context: nil,
-            isDefault: true
+            isDefault: !appleIsPracticalDefault
         ))
 
         // 2. Cloud providers with a saved API key (skip the active default).
@@ -99,12 +107,12 @@ public struct AskProviderCatalog: Sendable {
         // feature is visible (AppFeatures) and the OS actually has a model
         // ready (SystemLanguageModel), so the option never appears somewhere
         // it would just fail.
-        if appleOnDeviceAvailable() {
+        if appleIsPracticalDefault {
             options.append(AskProviderOption(
                 id: LLMProviderID.appleOnDevice.rawValue,
-                displayName: LLMProviderID.appleOnDevice.displayName,
+                displayName: "\(LLMProviderID.appleOnDevice.displayName) (default)",
                 context: LLMExecutionContext(providerConfig: .appleOnDevice()),
-                isDefault: false
+                isDefault: true
             ))
         }
 

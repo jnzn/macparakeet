@@ -1451,11 +1451,13 @@ final class TranscriptChatViewModelTests: XCTestCase {
         XCTAssertEqual(mockService.lastChatSource, .meetingAsk)
     }
 
-    // MARK: - Meeting Ask default provider
+    // MARK: - Ask/chat surface default provider
 
     /// Meeting Ask should default to Apple On-Device AI (when available)
     /// the first time providers load — a surface-scoped default that does
-    /// not touch the global config used by transcript chat/Transforms/etc.
+    /// not touch the global config used by Transforms/summaries/dictation
+    /// cleanup. Library transcript chat gets the same default; see
+    /// testTranscriptChatAlsoDefaultsToAppleOnDeviceWhenAvailable below.
     func testMeetingAskDefaultsToAppleOnDeviceWhenAvailable() async throws {
         let meetingVM = TranscriptChatViewModel()
         meetingVM.markAsMeetingAskSurface()
@@ -1475,7 +1477,11 @@ final class TranscriptChatViewModelTests: XCTestCase {
     /// Transcript chat (post-transcription) is unaffected — it stays on the
     /// global default even when Apple On-Device is available, since the
     /// auto-default only applies to the meeting-Ask surface.
-    func testTranscriptChatStaysOnGlobalDefaultEvenWhenAppleOnDeviceAvailable() async throws {
+    /// Library transcript chat (post-meeting, chatSource == .transcriptChat)
+    /// gets the same Apple On-Device auto-default as live meeting Ask — the
+    /// "choose a model" picker on a saved meeting/transcription was missed
+    /// when this first landed.
+    func testTranscriptChatAlsoDefaultsToAppleOnDeviceWhenAvailable() async throws {
         let configStore = MockLLMConfigStore()
         configStore.config = .ollama()
         viewModel.configure(
@@ -1483,6 +1489,25 @@ final class TranscriptChatViewModelTests: XCTestCase {
             transcriptText: "Test transcript",
             configStore: configStore,
             appleOnDeviceAvailable: { true }
+        )
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertEqual(viewModel.selectedAskProviderID, LLMProviderID.appleOnDevice.rawValue)
+    }
+
+    /// Transforms/summaries/dictation cleanup never go through
+    /// TranscriptChatViewModel at all, so this auto-default can't reach
+    /// them — only the global LLMConfigStore config (unchanged, still
+    /// Ollama) applies there. Nothing to assert here beyond documenting the
+    /// boundary; see AskProviderCatalog's doc comment.
+    func testTranscriptChatStaysOnGlobalDefaultWhenAppleUnavailable() async throws {
+        let configStore = MockLLMConfigStore()
+        configStore.config = .ollama()
+        viewModel.configure(
+            llmService: mockService,
+            transcriptText: "Test transcript",
+            configStore: configStore,
+            appleOnDeviceAvailable: { false }
         )
         try await Task.sleep(nanoseconds: 200_000_000)
 
