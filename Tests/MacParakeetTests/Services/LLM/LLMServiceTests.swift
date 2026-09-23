@@ -410,6 +410,34 @@ final class LLMServiceTests: XCTestCase {
         XCTAssertEqual(mockClient.capturedMessages[1].content, "What was discussed?")
     }
 
+    /// Apple's on-device model holds ~4K tokens (prompt + reply). The generic
+    /// local budget (80K chars) overflowed it: "Exceeded model context window size".
+    func testChatWithAppleOnDeviceFitsTheOnDeviceWindow() async throws {
+        mockConfigStore.config = .appleOnDevice()
+        let transcript = String(repeating: "Sam: the billing migration slips two weeks. ", count: 2_000)  // ~88K chars
+
+        _ = try await service.chat(
+            question: "Summarize", transcript: transcript, userNotes: nil, history: [],
+            source: .transcriptChat, conversationID: UUID())
+
+        let system = mockClient.capturedMessages[0].content
+        XCTAssertLessThanOrEqual(system.count, LLMService.appleOnDeviceContextBudget)
+        XCTAssertTrue(system.contains("[... content truncated ...]"))
+        XCTAssertEqual(mockClient.capturedMessages.last?.content, "Summarize")
+    }
+
+    func testChatWithACloudProviderKeepsItsLargeBudget() async throws {
+        let transcript = String(repeating: "Sam: the billing migration slips two weeks. ", count: 2_000)  // ~88K chars
+
+        _ = try await service.chat(
+            question: "Summarize", transcript: transcript, userNotes: nil, history: [],
+            source: .transcriptChat, conversationID: UUID())
+
+        let system = mockClient.capturedMessages[0].content
+        XCTAssertGreaterThan(system.count, LLMService.appleOnDeviceContextBudget * 4)
+        XCTAssertFalse(system.contains("[... content truncated ...]"))
+    }
+
     func testChatIncludesHistory() async throws {
         let history = [
             ChatMessage(role: .user, content: "Who spoke?"),

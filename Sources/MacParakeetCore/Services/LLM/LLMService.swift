@@ -1516,7 +1516,22 @@ public final class LLMService: LLMServiceProtocol, Sendable {
         }
     }
 
+    /// Apple's on-device model holds only ~4K tokens per session (prompt and
+    /// reply together) — a fraction of what the other local providers assume —
+    /// so it gets its own tight budget: the window less the reply reserve, at
+    /// the same conservative 3.5 chars/token as the other budgets. Measured on
+    /// English meeting text the real ratio is ~3.9, so this leaves headroom.
+    internal static var appleOnDeviceContextBudget: Int {
+        let promptTokens = max(
+            512,
+            FoundationModelsLLMClient.contextWindowTokens - FoundationModelsLLMClient.responseReserveTokens)
+        return promptTokens * 7 / 2
+    }
+
     private func contextBudget(for config: LLMProviderConfig) -> Int {
+        if config.id == .appleOnDevice {
+            return Self.appleOnDeviceContextBudget
+        }
         if config.id == .lmstudio {
             return Self.lmStudioContextBudget
         }
