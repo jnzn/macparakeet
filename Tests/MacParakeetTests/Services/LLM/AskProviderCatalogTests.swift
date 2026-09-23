@@ -17,10 +17,26 @@ final class AskProviderCatalogTests: XCTestCase {
         func updateModelName(_ modelName: String) throws {}
     }
 
+    /// All existing tests pin Apple On-Device availability to `false` so
+    /// they stay deterministic regardless of the running machine's actual
+    /// OS version / Apple Intelligence state (see testAppleOnDevice* below
+    /// for that behavior specifically).
+    private func makeCatalog(
+        store: StubConfigStore,
+        cliResolver: @escaping @Sendable (String) -> Bool = { _ in false },
+        appleOnDeviceAvailable: @escaping @Sendable () -> Bool = { false }
+    ) -> AskProviderCatalog {
+        AskProviderCatalog(
+            configStore: store,
+            cliResolver: cliResolver,
+            appleOnDeviceAvailable: appleOnDeviceAvailable
+        )
+    }
+
     func testDefaultOptionAlwaysFirst() {
         let store = StubConfigStore()
         store.global = .ollama()
-        let catalog = AskProviderCatalog(configStore: store, cliResolver: { _ in false })
+        let catalog = makeCatalog(store: store)
 
         let options = catalog.availableOptions()
 
@@ -34,7 +50,7 @@ final class AskProviderCatalogTests: XCTestCase {
         let store = StubConfigStore()
         store.global = .ollama()
         store.keys[.anthropic] = "sk-test"
-        let catalog = AskProviderCatalog(configStore: store, cliResolver: { _ in false })
+        let catalog = makeCatalog(store: store)
 
         let options = catalog.availableOptions()
         let anthropic = options.first(where: { $0.id == LLMProviderID.anthropic.rawValue })
@@ -48,7 +64,7 @@ final class AskProviderCatalogTests: XCTestCase {
         let store = StubConfigStore()
         store.global = .anthropic(apiKey: "sk-test")
         store.keys[.anthropic] = "sk-test"
-        let catalog = AskProviderCatalog(configStore: store, cliResolver: { _ in false })
+        let catalog = makeCatalog(store: store)
 
         let options = catalog.availableOptions()
         let anthropicOverrides = options.filter { $0.id == LLMProviderID.anthropic.rawValue }
@@ -61,7 +77,7 @@ final class AskProviderCatalogTests: XCTestCase {
         let store = StubConfigStore()
         store.global = .ollama()
         // No keys saved for any cloud provider.
-        let catalog = AskProviderCatalog(configStore: store, cliResolver: { _ in false })
+        let catalog = makeCatalog(store: store)
 
         let options = catalog.availableOptions()
 
@@ -73,7 +89,7 @@ final class AskProviderCatalogTests: XCTestCase {
         let store = StubConfigStore()
         store.global = .ollama()
         // Resolver claims both claude and codex are installed.
-        let catalog = AskProviderCatalog(configStore: store, cliResolver: { _ in true })
+        let catalog = makeCatalog(store: store, cliResolver: { _ in true })
 
         let options = catalog.availableOptions()
         let claude = options.first(where: { $0.id == "cli_\(LocalCLITemplate.claudeCode.rawValue)" })
@@ -90,11 +106,34 @@ final class AskProviderCatalogTests: XCTestCase {
         let store = StubConfigStore()
         store.global = .ollama()
         // Only "claude" resolves; "codex" does not.
-        let catalog = AskProviderCatalog(configStore: store, cliResolver: { $0 == "claude" })
+        let catalog = makeCatalog(store: store, cliResolver: { $0 == "claude" })
 
         let options = catalog.availableOptions()
 
         XCTAssertNotNil(options.first(where: { $0.id == "cli_\(LocalCLITemplate.claudeCode.rawValue)" }))
         XCTAssertNil(options.first(where: { $0.id == "cli_\(LocalCLITemplate.codex.rawValue)" }))
+    }
+
+    func testAppleOnDeviceOfferedWhenAvailable() {
+        let store = StubConfigStore()
+        store.global = .ollama()
+        let catalog = makeCatalog(store: store, appleOnDeviceAvailable: { true })
+
+        let options = catalog.availableOptions()
+        let apple = options.first(where: { $0.id == LLMProviderID.appleOnDevice.rawValue })
+
+        XCTAssertNotNil(apple)
+        XCTAssertEqual(apple?.context?.providerConfig.id, .appleOnDevice)
+        XCTAssertFalse(apple?.isDefault == true, "Apple On-Device is an override option, not the global default row")
+    }
+
+    func testAppleOnDeviceExcludedWhenUnavailable() {
+        let store = StubConfigStore()
+        store.global = .ollama()
+        let catalog = makeCatalog(store: store, appleOnDeviceAvailable: { false })
+
+        let options = catalog.availableOptions()
+
+        XCTAssertNil(options.first(where: { $0.id == LLMProviderID.appleOnDevice.rawValue }))
     }
 }

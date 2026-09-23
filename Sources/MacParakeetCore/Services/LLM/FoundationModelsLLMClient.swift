@@ -73,6 +73,22 @@ public final class FoundationModelsLLMClient: LLMClientProtocol, Sendable {
         [Self.modelIdentifier]
     }
 
+    /// Synchronous, non-throwing availability check for callers (e.g.
+    /// `AskProviderCatalog`) that need to decide whether to *offer* this
+    /// provider before any conversation starts. Mirrors `ensureAvailable()`'s
+    /// logic without the throw.
+    public static var isAvailable: Bool {
+        #if canImport(FoundationModels)
+        guard #available(macOS 26.0, *) else { return false }
+        switch SystemLanguageModel.default.availability {
+        case .available: return true
+        default: return false
+        }
+        #else
+        return false
+        #endif
+    }
+
     // MARK: - Private
 
     static let modelIdentifier = "apple-on-device"

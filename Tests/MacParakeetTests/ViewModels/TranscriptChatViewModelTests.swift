@@ -1450,6 +1450,68 @@ final class TranscriptChatViewModelTests: XCTestCase {
 
         XCTAssertEqual(mockService.lastChatSource, .meetingAsk)
     }
+
+    // MARK: - Meeting Ask default provider
+
+    /// Meeting Ask should default to Apple On-Device AI (when available)
+    /// the first time providers load — a surface-scoped default that does
+    /// not touch the global config used by transcript chat/Transforms/etc.
+    func testMeetingAskDefaultsToAppleOnDeviceWhenAvailable() async throws {
+        let meetingVM = TranscriptChatViewModel()
+        meetingVM.markAsMeetingAskSurface()
+        let configStore = MockLLMConfigStore()
+        configStore.config = .ollama()
+        meetingVM.configure(
+            llmService: mockService,
+            transcriptText: "Test transcript",
+            configStore: configStore,
+            appleOnDeviceAvailable: { true }
+        )
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertEqual(meetingVM.selectedAskProviderID, LLMProviderID.appleOnDevice.rawValue)
+    }
+
+    /// Transcript chat (post-transcription) is unaffected — it stays on the
+    /// global default even when Apple On-Device is available, since the
+    /// auto-default only applies to the meeting-Ask surface.
+    func testTranscriptChatStaysOnGlobalDefaultEvenWhenAppleOnDeviceAvailable() async throws {
+        let configStore = MockLLMConfigStore()
+        configStore.config = .ollama()
+        viewModel.configure(
+            llmService: mockService,
+            transcriptText: "Test transcript",
+            configStore: configStore,
+            appleOnDeviceAvailable: { true }
+        )
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertEqual(viewModel.selectedAskProviderID, "default")
+    }
+
+    /// A user who explicitly switches back to "Default" after the
+    /// auto-default fired is not fought back to Apple On-Device on a
+    /// subsequent refresh (e.g. after the CLI/keychain probe re-runs).
+    func testManualReselectionOfDefaultIsNotOverriddenByLaterRefresh() async throws {
+        let meetingVM = TranscriptChatViewModel()
+        meetingVM.markAsMeetingAskSurface()
+        let configStore = MockLLMConfigStore()
+        configStore.config = .ollama()
+        meetingVM.configure(
+            llmService: mockService,
+            transcriptText: "Test transcript",
+            configStore: configStore,
+            appleOnDeviceAvailable: { true }
+        )
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(meetingVM.selectedAskProviderID, LLMProviderID.appleOnDevice.rawValue)
+
+        meetingVM.selectedAskProviderID = "default"
+        meetingVM.refreshAskProviders()
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertEqual(meetingVM.selectedAskProviderID, "default")
+    }
 }
 
 private actor ControlledRichContextBuilder {

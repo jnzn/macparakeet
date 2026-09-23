@@ -220,13 +220,16 @@ public enum AppFeatures {
 
     /// Apple on-device LLM provider (Foundation Models framework,
     /// `FoundationModelsLLMClient`), macOS 26+. Unlike Local MLX, no model is
-    /// bundled or downloaded — the OS owns the model. Gated `false` by
-    /// default anyway: it needs macOS 26+ (a large jump past the app's
-    /// macOS 14.2+ floor, so most users can't see it regardless), and its
-    /// output quality has only been checked with ad-hoc manual testing so
-    /// far, not the systematic bar ADR-011 sets before recommending a local
-    /// option. Same developer-override affordance as Local MLX.
-    public static let appleOnDeviceLLMEnabled: Bool = false
+    /// bundled or downloaded — the OS owns the model. It needs macOS 26+ (a
+    /// large jump past the app's macOS 14.2+ floor, so most users can't see
+    /// it regardless of this flag), and its output quality has only been
+    /// checked with ad-hoc manual testing so far, not the systematic bar
+    /// ADR-011 sets before recommending a local option generally — but the
+    /// owner has verified it directly on this machine and wants it live for
+    /// the live-meeting-Ask surface specifically (see AskProviderCatalog).
+    /// Same developer-override affordance as Local MLX, now redundant with
+    /// this but left in place.
+    public static let appleOnDeviceLLMEnabled: Bool = true
 
     public static let appleOnDeviceLLMDeveloperDefaultsKey = "MacParakeetEnableAppleOnDeviceLLM"
     public static let appleOnDeviceLLMDeveloperLaunchArgument = "--enable-apple-on-device-ai"

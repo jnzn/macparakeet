@@ -54,6 +54,16 @@ public final class TranscriptChatViewModel {
     public private(set) var askProviderOptions: [AskProviderOption] = []
     public var selectedAskProviderID: String = "default"
     private var askProvidersTask: Task<Void, Never>?
+    /// Meeting Ask defaults to Apple On-Device AI (when the catalog offers
+    /// it) the first time providers load, instead of the global default
+    /// (Ollama) — a surface-scoped default, not a global config change; see
+    /// AskProviderCatalog. Runs once so it never fights a later manual pick,
+    /// including the user explicitly re-selecting "Default".
+    private var hasAppliedMeetingAskDefault = false
+    /// Test seam for the catalog's real-availability check (see
+    /// `AskProviderCatalog.appleOnDeviceAvailable`); nil in production uses
+    /// the real check.
+    private var appleOnDeviceAvailableOverride: (@Sendable () -> Bool)?
 
     private var llmService: LLMServiceProtocol?
     private var llmClient: LLMClientProtocol?
@@ -121,11 +131,15 @@ public final class TranscriptChatViewModel {
             askProviderOptions = []
             return
         }
+        let appleOnDeviceAvailable = appleOnDeviceAvailableOverride
         askProvidersTask?.cancel()
         askProvidersTask = Task { @MainActor [weak self] in
             let catalog = AskProviderCatalog(
                 configStore: configStore,
-                cliResolver: { binary in LocalCLIExecutor().resolve(binary: binary) != nil }
+                cliResolver: { binary in LocalCLIExecutor().resolve(binary: binary) != nil },
+                appleOnDeviceAvailable: appleOnDeviceAvailable ?? {
+                    AppFeatures.isAppleOnDeviceLLMVisible() && FoundationModelsLLMClient.isAvailable
+                }
             )
             let options = await Task.detached(priority: .utility) {
                 catalog.availableOptions()
@@ -134,6 +148,14 @@ public final class TranscriptChatViewModel {
             self.askProviderOptions = options
             if !options.contains(where: { $0.id == self.selectedAskProviderID }) {
                 self.selectedAskProviderID = "default"
+            }
+            if !self.hasAppliedMeetingAskDefault {
+                self.hasAppliedMeetingAskDefault = true
+                if self.chatSource == .meetingAsk, self.selectedAskProviderID == "default",
+                    let appleOption = options.first(where: { $0.id == LLMProviderID.appleOnDevice.rawValue })
+                {
+                    self.selectedAskProviderID = appleOption.id
+                }
             }
         }
     }
@@ -147,7 +169,8 @@ public final class TranscriptChatViewModel {
         configStore: LLMConfigStoreProtocol? = nil,
         llmClient: LLMClientProtocol? = nil,
         conversationRepo: ChatConversationRepositoryProtocol? = nil,
-        cliConfigStore: LocalCLIConfigStore = LocalCLIConfigStore()
+        cliConfigStore: LocalCLIConfigStore = LocalCLIConfigStore(),
+        appleOnDeviceAvailable: (@Sendable () -> Bool)? = nil
     ) {
         self.llmService = llmService
         self.llmClient = llmClient
@@ -156,6 +179,7 @@ public final class TranscriptChatViewModel {
         self.configStore = configStore
         self.conversationRepo = conversationRepo
         self.cliConfigStore = cliConfigStore
+        self.appleOnDeviceAvailableOverride = appleOnDeviceAvailable
         refreshModelInfo()
         refreshAskProviders()
     }

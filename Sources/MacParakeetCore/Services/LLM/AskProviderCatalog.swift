@@ -30,16 +30,25 @@ public struct AskProviderCatalog: Sendable {
     private let configStore: LLMConfigStoreProtocol
     /// Returns true if a bare binary name (e.g. "claude") resolves on PATH.
     private let cliResolver: @Sendable (String) -> Bool
+    /// Returns true if Apple On-Device AI is visible (AppFeatures) and the OS
+    /// actually has a model ready. Injectable so tests get a deterministic
+    /// answer instead of depending on the running machine's OS version /
+    /// Apple Intelligence state.
+    private let appleOnDeviceAvailable: @Sendable () -> Bool
 
     /// Cloud providers eligible for an Ask override when they have a saved key.
     private static let cloudProviders: [LLMProviderID] = [.anthropic, .openai, .gemini, .openrouter]
 
     public init(
         configStore: LLMConfigStoreProtocol,
-        cliResolver: @escaping @Sendable (String) -> Bool
+        cliResolver: @escaping @Sendable (String) -> Bool,
+        appleOnDeviceAvailable: @escaping @Sendable () -> Bool = {
+            AppFeatures.isAppleOnDeviceLLMVisible() && FoundationModelsLLMClient.isAvailable
+        }
     ) {
         self.configStore = configStore
         self.cliResolver = cliResolver
+        self.appleOnDeviceAvailable = appleOnDeviceAvailable
     }
 
     public func availableOptions() -> [AskProviderOption] {
@@ -82,6 +91,19 @@ public struct AskProviderCatalog: Sendable {
                 id: "cli_\(template.rawValue)",
                 displayName: template.displayName,
                 context: context,
+                isDefault: false
+            ))
+        }
+
+        // 4. Apple on-device (Foundation Models) — only offered when the
+        // feature is visible (AppFeatures) and the OS actually has a model
+        // ready (SystemLanguageModel), so the option never appears somewhere
+        // it would just fail.
+        if appleOnDeviceAvailable() {
+            options.append(AskProviderOption(
+                id: LLMProviderID.appleOnDevice.rawValue,
+                displayName: LLMProviderID.appleOnDevice.displayName,
+                context: LLMExecutionContext(providerConfig: .appleOnDevice()),
                 isDefault: false
             ))
         }

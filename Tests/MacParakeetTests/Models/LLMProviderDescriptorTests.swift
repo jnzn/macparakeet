@@ -100,8 +100,14 @@ final class LLMProviderDescriptorTests: XCTestCase {
 
     func testInProcessLocalProviderIsHiddenWhileFeatureFlagIsOff() {
         XCTAssertFalse(AppFeatures.inProcessLocalLLMEnabled)
+        // Pin the orthogonal Apple On-Device flag explicitly so this stays
+        // scoped to the in-process-local gate regardless of that flag's
+        // own default.
         XCTAssertEqual(
-            LLMProviderID.userSelectableProviderIDs(inProcessLocalLLMVisible: false),
+            LLMProviderID.userSelectableProviderIDs(
+                inProcessLocalLLMVisible: false,
+                appleOnDeviceLLMVisible: false
+            ),
             [
                 .lmstudio,
                 .ollama,
