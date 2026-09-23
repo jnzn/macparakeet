@@ -12,13 +12,13 @@
 # with the self-signed "MacParakeet PDX" identity — no hardened runtime, local
 # distribution only.
 #
-# Override the version with: VERSION=0.8.2-pdx scripts/dev/build_and_package_pdx.sh
+# Override the version with: VERSION=0.9.1-pdx scripts/dev/build_and_package_pdx.sh
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
 ROOT="$(pwd)"
 
-VERSION="${VERSION:-0.8.1-pdx}"
+VERSION="${VERSION:-0.9.0-pdx}"
 APP_NAME="MacParakeet (PDX Edition)"
 BUNDLE_ID="com.macparakeet.pdx"
 IDENTITY="MacParakeet PDX"
