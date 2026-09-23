@@ -101,8 +101,8 @@ final class MeetingRecordingPillController {
             }
         )
 
-        let panelWidth: CGFloat = 118
-        let panelHeight: CGFloat = 150
+        let panelWidth = MeetingRecordingAppKitPillView.panelSize.width
+        let panelHeight = MeetingRecordingAppKitPillView.panelSize.height
 
         // Content view with right-click support
         let contentView = PillContentView(frame: NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight))
@@ -158,7 +158,7 @@ final class MeetingRecordingPillController {
     }
 
     /// Forwards the coordinator's fast (~30 fps) audio level to the pill so the
-    /// rosette glow tracks speech live. No-op once the pill is hidden.
+    /// parakeet's head bop tracks speech live. No-op once the pill is hidden.
     func updateLiveAudioLevel(_ level: Float) {
         pillView?.updateLiveAudioLevel(level)
     }
@@ -320,7 +320,7 @@ final class MeetingRecordingPillController {
         menu.addItem(.separator())
 
         let openItem = NSMenuItem(
-            title: "Open MacParakeet", action: #selector(PillMenuDelegate.menuAction(_:)), keyEquivalent: "")
+            title: "Open PDX Edition", action: #selector(PillMenuDelegate.menuAction(_:)), keyEquivalent: "")
         openItem.representedObject = "open"
         openItem.target = delegate
         openItem.isEnabled = true
@@ -365,7 +365,7 @@ final class MeetingRecordingPillController {
         menu.addItem(.separator())
 
         let openItem = NSMenuItem(
-            title: "Open MacParakeet", action: #selector(PillMenuDelegate.menuAction(_:)), keyEquivalent: "")
+            title: "Open PDX Edition", action: #selector(PillMenuDelegate.menuAction(_:)), keyEquivalent: "")
         openItem.representedObject = "open"
         openItem.target = delegate
         openItem.isEnabled = true
@@ -386,14 +386,12 @@ private final class MeetingRecordingAppKitPillView: NSView {
     private let iconView = MerkabaPillIconView()
     private let backgroundLayer = CAShapeLayer()
     private let pauseLayer = CALayer()
-    // Hover-revealed elapsed-time badge (red/amber dot + timer) above the
-    // capsule — restores the prior SwiftUI pill's hover affordance that the
-    // CALayer migration dropped.
-    private let timeBadgeLayer = CAShapeLayer()
-    private let timeDotLayer = CAShapeLayer()
-    private let timeTextLayer = CATextLayer()
-    private let badgeFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
-    /// 1 s ticker for the elapsed-time badge. A `@MainActor` `Task` rather than a
+    // Inline "Recording" / "Paused" title + running timer to the right of the
+    // parakeet — the PDX horizontal pill (`MeetingRecordingPillView`'s
+    // `sacredRecordingPill`), always visible rather than hover-only.
+    private let titleLayer = CATextLayer()
+    private let timerLayer = CATextLayer()
+    /// 1 s ticker for the elapsed timer. A `@MainActor` `Task` rather than a
     /// `Timer` so (a) its body runs in-isolation (no nonisolated `@Sendable`
     /// hop to call `updateFromViewModel`) and (b) `Task` is `Sendable`, so the
     /// nonisolated `deinit` can cancel it — both Swift 6 language-mode clean.
@@ -404,16 +402,43 @@ private final class MeetingRecordingAppKitPillView: NSView {
     private var renderedState: MeetingRecordingPillViewModel.PillState?
     private var renderedHover: Bool?
     private var renderedReduceMotion: Bool?
-    private var compactIcon = false
-    /// The recording capsule is tall to host the rosette + stem; the stem-less
-    /// states (transcribing/completed) shrink it to a circle that hugs the
-    /// compact mark — matching the prior SwiftUI pill's separate `iconPill`. The
-    /// circle keeps the capsule's top edge and rises from the bottom, so the
-    /// collapse reads as the stem being absorbed into the head.
+    /// Side of the centered mark inside the circular surface (starting head,
+    /// spinner/Metatron/check). `nil` = the mark sits in the capsule's leading
+    /// slot next to the title + timer.
+    private var compactIconSide: CGFloat?
+    /// Recording/paused draw a wide horizontal capsule (mark + title + timer);
+    /// the states without a label (starting, saving, saved) use a circle that
+    /// hugs the mark — matching the prior SwiftUI pill's separate `iconPill`.
+    /// The circle keeps the capsule's leading edge, so the collapse reads as the
+    /// title and timer being absorbed into the parakeet.
     private var compactContainer = false
-    private let pillWidth: CGFloat = 54
-    private let pillTallHeight: CGFloat = 86
-    private let compactIconSize: CGFloat = 35
+
+    private static let titleFont = NSFont.systemFont(ofSize: 12, weight: .semibold)
+    private static let timerFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+    private static let pillHeight: CGFloat = 50
+    private static let edgeMargin: CGFloat = 20
+    private static let horizontalPadding: CGFloat = 14
+    private static let markSize: CGFloat = 30
+    private static let markTextGap: CGFloat = 10
+    private static let textLineGap: CGFloat = 1
+    /// Centered mark sizes inside the circular surface.
+    private static let compactIconSize: CGFloat = 35
+    private static let headIconSize: CGFloat = 26
+    private static let titleLineHeight = ceil(("Recording" as NSString).size(withAttributes: [.font: titleFont]).height)
+    private static let timerLineHeight = ceil(("0:00" as NSString).size(withAttributes: [.font: timerFont]).height)
+    /// Fixed text column so the capsule doesn't resize as the timer ticks or the
+    /// title flips between "Recording" and "Paused". "000:00" leaves room for a
+    /// meeting past 99 minutes (`formattedElapsed` doesn't roll into hours).
+    private static let textColumnWidth: CGFloat = {
+        let title = ("Recording" as NSString).size(withAttributes: [.font: titleFont]).width
+        let timer = ("000:00" as NSString).size(withAttributes: [.font: timerFont]).width
+        return ceil(max(title, timer))
+    }()
+    private static let wideWidth = horizontalPadding * 2 + markSize + markTextGap + textColumnWidth
+
+    /// Size of the floating panel that hosts this view: the capsule, its margin
+    /// from the screen edge, and a little slack so the hover stroke never clips.
+    static let panelSize = CGSize(width: wideWidth + edgeMargin + 8, height: pillHeight + 16)
 
     /// System Settings → Accessibility → Display → Reduce Motion. The pill
     /// still shows (and tracks recording state via color/timer), it just stops
@@ -479,7 +504,9 @@ private final class MeetingRecordingAppKitPillView: NSView {
 
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
-        timeTextLayer.contentsScale = window?.backingScaleFactor ?? 2
+        let scale = window?.backingScaleFactor ?? 2
+        titleLayer.contentsScale = scale
+        timerLayer.contentsScale = scale
     }
 
     override func updateTrackingAreas() {
@@ -500,13 +527,11 @@ private final class MeetingRecordingAppKitPillView: NSView {
     override func mouseEntered(with event: NSEvent) {
         isHovered = true
         updateBackground()
-        updateTimeBadge()
     }
 
     override func mouseExited(with event: NSEvent) {
         isHovered = false
         updateBackground()
-        updateTimeBadge()
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -521,7 +546,9 @@ private final class MeetingRecordingAppKitPillView: NSView {
         backgroundLayer.lineWidth = 0.5
         layer.addSublayer(backgroundLayer)
 
-        iconView.configure(showStem: true)
+        // Head-only mark: the horizontal pill has no stem, so the icon view lays
+        // the parakeet out in a square of `min(width, height)`.
+        iconView.configure(showStem: false)
         addSubview(iconView)
 
         let leftBar = pauseBar()
@@ -533,32 +560,25 @@ private final class MeetingRecordingAppKitPillView: NSView {
         pauseLayer.isHidden = true
         layer.addSublayer(pauseLayer)
 
-        setupTimeBadge(in: layer)
+        setupLabels(in: layer)
     }
 
-    private func setupTimeBadge(in root: CALayer) {
+    private func setupLabels(in root: CALayer) {
         let scale = window?.backingScaleFactor ?? 2
-        timeBadgeLayer.fillColor = NSColor.black.withAlphaComponent(0.72).cgColor
-        timeBadgeLayer.strokeColor = NSColor.white.withAlphaComponent(0.10).cgColor
-        timeBadgeLayer.lineWidth = 0.5
-        timeBadgeLayer.shadowColor = NSColor.black.cgColor
-        timeBadgeLayer.shadowOpacity = 0.25
-        timeBadgeLayer.shadowRadius = 6
-        timeBadgeLayer.shadowOffset = CGSize(width: 0, height: -2)
-        timeBadgeLayer.opacity = 0
-
-        timeDotLayer.fillColor = NSColor.systemRed.cgColor
-
-        timeTextLayer.font = badgeFont
-        timeTextLayer.fontSize = badgeFont.pointSize
-        timeTextLayer.foregroundColor = NSColor.white.withAlphaComponent(0.92).cgColor
-        timeTextLayer.alignmentMode = .left
-        timeTextLayer.contentsScale = scale
-        timeTextLayer.isWrapped = false
-
-        timeBadgeLayer.addSublayer(timeDotLayer)
-        timeBadgeLayer.addSublayer(timeTextLayer)
-        root.addSublayer(timeBadgeLayer)
+        for (textLayer, font, alpha) in [
+            (titleLayer, Self.titleFont, 0.92),
+            (timerLayer, Self.timerFont, 0.6),
+        ] {
+            textLayer.font = font
+            textLayer.fontSize = font.pointSize
+            textLayer.foregroundColor = NSColor.white.withAlphaComponent(alpha).cgColor
+            textLayer.alignmentMode = .left
+            textLayer.contentsScale = scale
+            textLayer.isWrapped = false
+            // Hidden until a recording/paused state supplies the text.
+            textLayer.opacity = 0
+            root.addSublayer(textLayer)
+        }
     }
 
     private func pauseBar() -> CALayer {
@@ -570,48 +590,73 @@ private final class MeetingRecordingAppKitPillView: NSView {
     }
 
     private func layoutLayers() {
-        // The icon + pause-bars are positioned from the *tall* rect so the mark
-        // stays put across the recording/completing cycle. Stem-less compact
-        // states center a larger mark inside the circular surface.
-        let tallRect = containerRect(compact: false)
+        // The mark, pause bars and labels are positioned from the *wide* rect so
+        // they stay put across the recording/completing cycle. Label-less compact
+        // states center their mark inside the circular surface instead.
+        let wideRect = containerRect(compact: false)
         let compactRect = containerRect(compact: true)
         backgroundLayer.path = backgroundPath(compact: compactContainer)
-        if compactIcon {
+
+        let leadingMark = CGRect(
+            x: wideRect.minX + Self.horizontalPadding,
+            y: wideRect.midY - Self.markSize / 2,
+            width: Self.markSize,
+            height: Self.markSize
+        )
+        if let side = compactIconSide {
             iconView.frame = CGRect(
-                x: compactRect.midX - compactIconSize / 2,
-                y: compactRect.midY - compactIconSize / 2,
-                width: compactIconSize,
-                height: compactIconSize
+                x: compactRect.midX - side / 2,
+                y: compactRect.midY - side / 2,
+                width: side,
+                height: side
             )
         } else {
-            iconView.frame = CGRect(x: tallRect.midX - 15, y: tallRect.midY - 37, width: 30, height: 74)
+            iconView.frame = leadingMark
         }
-        pauseLayer.frame = CGRect(x: tallRect.midX - 5, y: tallRect.midY - 5.5, width: 10, height: 11)
+        pauseLayer.frame = CGRect(x: leadingMark.midX - 5, y: leadingMark.midY - 5.5, width: 10, height: 11)
+
+        // Two-line stack (title over timer), vertically centered beside the mark.
+        let textX = leadingMark.maxX + Self.markTextGap
+        let stackHeight = Self.titleLineHeight + Self.textLineGap + Self.timerLineHeight
+        let stackTop = wideRect.midY - stackHeight / 2
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        titleLayer.frame = CGRect(
+            x: textX, y: stackTop, width: Self.textColumnWidth + 1, height: Self.titleLineHeight)
+        timerLayer.frame = CGRect(
+            x: textX, y: stackTop + Self.titleLineHeight + Self.textLineGap,
+            width: Self.textColumnWidth + 1, height: Self.timerLineHeight)
+        CATransaction.commit()
     }
 
-    /// The capsule rect for a given state. Both shapes share the same top edge
-    /// (`midY − tallHeight/2`); the compact circle just stops at `pillWidth`
-    /// tall, so the bottom rises toward the head.
+    /// The capsule rect for a given state. Both shapes share the same leading
+    /// edge and vertical center; the compact circle just stops at `pillHeight`
+    /// wide, so the trailing end pulls in toward the parakeet.
     private func containerRect(compact: Bool) -> CGRect {
-        let top = bounds.midY - pillTallHeight / 2
-        let height = compact ? pillWidth : pillTallHeight
-        return CGRect(x: bounds.maxX - 74, y: top, width: pillWidth, height: height)
+        let width = compact ? Self.pillHeight : Self.wideWidth
+        return CGRect(
+            x: bounds.maxX - Self.edgeMargin - Self.wideWidth,
+            y: bounds.midY - Self.pillHeight / 2,
+            width: width,
+            height: Self.pillHeight
+        )
     }
 
     private func backgroundPath(compact: Bool) -> CGPath {
-        // cornerRadius = pillWidth/2 → stadium when tall, perfect circle when compact.
+        // cornerRadius = pillHeight/2 → stadium when wide, perfect circle when compact.
         CGPath(
             roundedRect: containerRect(compact: compact),
-            cornerWidth: pillWidth / 2,
-            cornerHeight: pillWidth / 2,
+            cornerWidth: Self.pillHeight / 2,
+            cornerHeight: Self.pillHeight / 2,
             transform: nil
         )
     }
 
-    /// Switch the capsule between tall and circular. When `animated` (the
-    /// stop → collapse transition), the path interpolates from its current
-    /// presentation so the capsule visibly absorbs the stem as the flower
-    /// collapses; otherwise it snaps (recording re-entry, fresh layout).
+    /// Switch the capsule between wide and circular. When `animated`, the path
+    /// interpolates from its current presentation — slowly on the stop →
+    /// collapse (the title and timer are absorbed as the parakeet flies off),
+    /// quickly on starting → recording (the capsule grows out to make room for
+    /// them); otherwise it snaps (fresh layout).
     private func applyContainer(compact: Bool, animated: Bool) {
         compactContainer = compact
         let newPath = backgroundPath(compact: compact)
@@ -619,102 +664,69 @@ private final class MeetingRecordingAppKitPillView: NSView {
             let resize = CABasicAnimation(keyPath: "path")
             resize.fromValue = backgroundLayer.presentation()?.path ?? backgroundLayer.path
             resize.toValue = newPath
-            resize.duration = reduceMotion ? 0.4 : 0.85
+            if compact {
+                resize.duration = reduceMotion ? 0.4 : 0.85
+            } else {
+                resize.duration = reduceMotion ? 0.15 : 0.3
+            }
             resize.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             backgroundLayer.add(resize, forKey: "containerResize")
         } else {
             // Snap: drop any in-flight collapse resize so a back-to-back
             // recording that starts mid-collapse doesn't keep shrinking to a
-            // circle before settling on the oval.
+            // circle before settling on the capsule.
             backgroundLayer.removeAnimation(forKey: "containerResize")
         }
         backgroundLayer.path = newPath
     }
 
-    /// Hover-revealed elapsed-time badge: red dot (amber when paused) + the live
-    /// timer, in a dark capsule centered above the pill. Shown only while
-    /// hovering an active recording; the timer text refreshes each second.
-    private func updateTimeBadge() {
-        let state = viewModel.state
-        let active: Bool
-        switch state {
-        case .recording, .paused:
-            active = isHovered && viewModel.elapsedSeconds > 0
-        default:
-            active = false
+    /// Inline title + running timer beside the parakeet. Visible for recording
+    /// and paused; every other state fades them out. The timer text refreshes
+    /// on the 1 s tick.
+    private func updateLabels() {
+        let title: String?
+        switch viewModel.state {
+        case .recording: title = "Recording"
+        case .paused: title = "Paused"
+        default: title = nil
         }
 
-        guard active else {
-            if timeBadgeLayer.opacity != 0 {
-                timeBadgeLayer.opacity = 0
+        if let title {
+            // Update the text without implicit animation so digits change crisply;
+            // the fade in/out below is driven separately by opacity.
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            if (titleLayer.string as? String) != title {
+                titleLayer.string = title
             }
-            return
+            let elapsed = viewModel.formattedElapsed
+            if (timerLayer.string as? String) != elapsed {
+                timerLayer.string = elapsed
+            }
+            CATransaction.commit()
         }
 
-        let text = viewModel.formattedElapsed
-        let isPaused = (state == .paused)
-
-        // Disable implicit animations for the per-second text/relayout so the
-        // digits update crisply; the fade-in is driven separately by opacity.
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        timeDotLayer.fillColor = (isPaused ? NSColor.systemOrange : NSColor.systemRed).cgColor
-        if (timeTextLayer.string as? String) != text {
-            timeTextLayer.string = text
-        }
-        layoutTimeBadge(text: text)
-        CATransaction.commit()
-
-        if timeBadgeLayer.opacity != 1 {
-            timeBadgeLayer.opacity = 1
+        let target: Float = title == nil ? 0 : 1
+        if titleLayer.opacity != target {
+            titleLayer.opacity = target
+            timerLayer.opacity = target
         }
     }
 
-    private func layoutTimeBadge(text: String) {
-        let textSize = (text as NSString).size(withAttributes: [.font: badgeFont])
-        let dot: CGFloat = 5
-        let gap: CGFloat = 5
-        let hPad: CGFloat = 10
-        let vPad: CGFloat = 5
-        let badgeH = ceil(textSize.height) + vPad * 2
-        let badgeW = dot + gap + ceil(textSize.width) + hPad * 2
-
-        let capsuleMidX = bounds.maxX - 74 + 27
-        let capsuleTop = bounds.midY - 43
-        let badgeX = capsuleMidX - badgeW / 2
-        let badgeY = capsuleTop - badgeH - 4
-
-        timeBadgeLayer.frame = CGRect(x: badgeX, y: badgeY, width: badgeW, height: badgeH)
-        timeBadgeLayer.path = CGPath(
-            roundedRect: CGRect(x: 0, y: 0, width: badgeW, height: badgeH),
-            cornerWidth: badgeH / 2,
-            cornerHeight: badgeH / 2,
-            transform: nil
-        )
-
-        let centerY = badgeH / 2
-        timeDotLayer.frame = CGRect(x: hPad, y: centerY - dot / 2, width: dot, height: dot)
-        timeDotLayer.path = CGPath(ellipseIn: CGRect(x: 0, y: 0, width: dot, height: dot), transform: nil)
-        timeTextLayer.frame = CGRect(
-            x: hPad + dot + gap,
-            y: centerY - ceil(textSize.height) / 2,
-            width: ceil(textSize.width) + 1,
-            height: ceil(textSize.height)
-        )
-    }
-
-    /// Live audio level pushed from the coordinator's fast (~30 fps) glow
-    /// channel. Drives only the rosette glow opacity (CALayer) — never an
-    /// `@Observable` write — so the "internal light" tracks speech without the
-    /// per-tick SwiftUI relayout that the 1 s state poll would cause.
+    /// Live audio level pushed from the coordinator's fast (~30 fps) channel.
+    /// Drives only the parakeet's head bop/chirp (routed through the icon's own
+    /// `@Observable` state, so only the mark re-renders) — never the pill view
+    /// model — so the head tracks speech without the per-tick relayout that the
+    /// 1 s state poll would cause.
     func updateLiveAudioLevel(_ level: Float) {
         iconView.setLiveGlow(level: level)
     }
 
-    private func setCompactIcon(_ compact: Bool) {
-        guard compactIcon != compact else { return }
-        compactIcon = compact
-        iconView.configure(showStem: !compact)
+    /// Place the mark: `nil` = the capsule's leading slot beside the title and
+    /// timer; a side length = centered in the circular surface at that size.
+    private func setCompactIconSide(_ side: CGFloat?) {
+        guard compactIconSide != side else { return }
+        compactIconSide = side
         needsLayout = true
         layoutSubtreeIfNeeded()
     }
@@ -724,8 +736,8 @@ private final class MeetingRecordingAppKitPillView: NSView {
         let reduceMotion = self.reduceMotion
 
         // The elapsed time ticks every second even when state is unchanged
-        // (e.g. silence), so refresh the hover badge before the render-skip.
-        updateTimeBadge()
+        // (e.g. silence), so refresh the timer before the render-skip.
+        updateLabels()
 
         if renderedState == state, renderedReduceMotion == reduceMotion {
             updateBackgroundIfNeeded()
@@ -741,8 +753,8 @@ private final class MeetingRecordingAppKitPillView: NSView {
             completionCallbackScheduled = false
             pauseLayer.isHidden = true
             iconView.alphaValue = 0.45
-            setCompactIcon(false)
-            applyContainer(compact: false, animated: false)
+            setCompactIconSide(Self.headIconSize)
+            applyContainer(compact: true, animated: false)
             iconView.update(isAnimating: false, audioLevel: 0)
         case .recording:
             // Re-arm the one-shot collapse callback for a fresh recording cycle.
@@ -753,28 +765,30 @@ private final class MeetingRecordingAppKitPillView: NSView {
             completionCallbackScheduled = false
             pauseLayer.isHidden = true
             iconView.alphaValue = 1.0
-            setCompactIcon(false)
-            applyContainer(compact: false, animated: false)
-            // Glow is driven live by updateLiveAudioLevel; this sets the
-            // resting base + starts the rosette rotation.
+            setCompactIconSide(nil)
+            // Grow out of the starting circle (or a collapse a back-to-back
+            // meeting interrupted); a fresh view already draws the capsule.
+            applyContainer(compact: false, animated: compactContainer && backgroundLayer.path != nil)
+            // The bob/chirp is driven live by updateLiveAudioLevel; this sets the
+            // resting base + starts the idle bob.
             iconView.update(isAnimating: !reduceMotion, audioLevel: 0)
         case .paused:
             pauseLayer.isHidden = false
             iconView.alphaValue = 0.45
-            setCompactIcon(false)
+            setCompactIconSide(nil)
             applyContainer(compact: false, animated: false)
             iconView.update(isAnimating: false, audioLevel: 0)
         case .completing:
             pauseLayer.isHidden = true
             iconView.alphaValue = 1.0
-            setCompactIcon(false)
-            // Shrink the capsule to a circle in sync with the collapsing flower.
+            setCompactIconSide(nil)
+            // Pull the capsule in to a circle as the parakeet flies off.
             applyContainer(compact: true, animated: true)
             playCompletionIfNeeded(reduceMotion: reduceMotion)
         case .transcribing:
             pauseLayer.isHidden = true
             iconView.alphaValue = 1.0
-            setCompactIcon(true)
+            setCompactIconSide(Self.compactIconSize)
             applyContainer(compact: true, animated: false)
             // The post-collapse "saving" state: the Metatron's Cube blooms and
             // holds (CA-driven) until the recording is durably queued, when the
@@ -783,14 +797,14 @@ private final class MeetingRecordingAppKitPillView: NSView {
         case .completed:
             pauseLayer.isHidden = true
             iconView.alphaValue = 1.0
-            setCompactIcon(true)
+            setCompactIconSide(Self.compactIconSize)
             applyContainer(compact: true, animated: false)
             iconView.showCheckmark(animated: !reduceMotion)
         case .idle, .error:
             pauseLayer.isHidden = true
             iconView.alphaValue = 1.0
-            setCompactIcon(false)
-            applyContainer(compact: false, animated: false)
+            setCompactIconSide(Self.headIconSize)
+            applyContainer(compact: true, animated: false)
             iconView.update(isAnimating: false, audioLevel: 0)
         }
         updateBackgroundIfNeeded()
