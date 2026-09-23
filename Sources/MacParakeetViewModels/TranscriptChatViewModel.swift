@@ -54,13 +54,6 @@ public final class TranscriptChatViewModel {
     public private(set) var askProviderOptions: [AskProviderOption] = []
     public var selectedAskProviderID: String = "default"
     private var askProvidersTask: Task<Void, Never>?
-    /// Every Ask/chat surface (live meeting Ask and post-meeting Library
-    /// transcript chat) defaults to Apple On-Device AI (when the catalog
-    /// offers it) the first time providers load, instead of the global
-    /// default (Ollama) — a surface-scoped default, not a global config
-    /// change; see AskProviderCatalog. Runs once so it never fights a later
-    /// manual pick, including the user explicitly re-selecting "Default".
-    private var hasAppliedChatSurfaceDefault = false
     /// Test seam for the catalog's real-availability check (see
     /// `AskProviderCatalog.appleOnDeviceAvailable`); nil in production uses
     /// the real check.
@@ -159,14 +152,6 @@ public final class TranscriptChatViewModel {
             self.askProviderOptions = options
             if !options.contains(where: { $0.id == self.selectedAskProviderID }) {
                 self.selectedAskProviderID = "default"
-            }
-            if !self.hasAppliedChatSurfaceDefault {
-                self.hasAppliedChatSurfaceDefault = true
-                if self.selectedAskProviderID == "default",
-                    let appleOption = options.first(where: { $0.id == LLMProviderID.appleOnDevice.rawValue })
-                {
-                    self.selectedAskProviderID = appleOption.id
-                }
             }
         }
     }

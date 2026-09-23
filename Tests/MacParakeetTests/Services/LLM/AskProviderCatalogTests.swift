@@ -126,11 +126,10 @@ final class AskProviderCatalogTests: XCTestCase {
         XCTAssertEqual(apple?.context?.providerConfig.id, .appleOnDevice)
     }
 
-    /// When Apple On-Device is offered, it's the practical default for
-    /// Ask/chat surfaces (see TranscriptChatViewModel's auto-select) — the
-    /// "(default)" label and isDefault flag move to it, off the global
-    /// config row, which no longer claims to be the default it isn't.
-    func testAppleOnDeviceIsLabeledDefaultWhenAvailable() {
+    /// Apple On-Device is a choice, never the default: its ~4K-token window
+    /// can't hold a long transcript, so the global config keeps the
+    /// "(default)" label and flag whether or not Apple is offered.
+    func testGlobalConfigStaysTheLabeledDefaultWhenAppleIsOffered() {
         let store = StubConfigStore()
         store.global = .ollama()
         let catalog = makeCatalog(store: store, appleOnDeviceAvailable: { true })
@@ -139,15 +138,13 @@ final class AskProviderCatalogTests: XCTestCase {
         let apple = options.first(where: { $0.id == LLMProviderID.appleOnDevice.rawValue })
         let global = options.first(where: { $0.id == "default" })
 
-        XCTAssertTrue(apple?.isDefault == true)
-        XCTAssertTrue(apple?.displayName.contains("(default)") == true)
-        XCTAssertFalse(global?.isDefault == true)
-        XCTAssertFalse(global?.displayName.contains("(default)") == true)
-        XCTAssertTrue(global?.displayName.contains("Ollama") == true, "still shows the plain provider name")
+        XCTAssertTrue(global?.isDefault == true)
+        XCTAssertEqual(global?.displayName, "Ollama (default)")
+        XCTAssertNotNil(apple)
+        XCTAssertFalse(apple?.isDefault == true)
+        XCTAssertFalse(apple?.displayName.contains("(default)") == true)
     }
 
-    /// Without Apple On-Device, the global config is genuinely the default
-    /// used everywhere — the "(default)" label stays on it.
     func testGlobalConfigIsLabeledDefaultWhenAppleUnavailable() {
         let store = StubConfigStore()
         store.global = .ollama()
@@ -158,6 +155,19 @@ final class AskProviderCatalogTests: XCTestCase {
 
         XCTAssertTrue(global?.isDefault == true)
         XCTAssertTrue(global?.displayName.contains("(default)") == true)
+    }
+
+    /// If Apple *is* the global provider, the default row already is Apple;
+    /// listing it a second time would be a duplicate.
+    func testAppleIsNotListedTwiceWhenItIsTheGlobalProvider() {
+        let store = StubConfigStore()
+        store.global = .appleOnDevice()
+        let catalog = makeCatalog(store: store, appleOnDeviceAvailable: { true })
+
+        let options = catalog.availableOptions()
+
+        XCTAssertEqual(options.filter { $0.displayName.contains("Apple") }.count, 1)
+        XCTAssertNil(options.first(where: { $0.id == LLMProviderID.appleOnDevice.rawValue }))
     }
 
     func testAppleOnDeviceExcludedWhenUnavailable() {

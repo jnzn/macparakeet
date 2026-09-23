@@ -8,8 +8,9 @@ import SwiftUI
 ///
 /// Shared by the live meeting Ask pane and the Library transcript chat so both
 /// surfaces show the same provider picker, and so the label always reflects the
-/// provider that is actually answering (Apple On-Device by default when
-/// available), rather than the persisted global provider's model list.
+/// provider that is actually answering (the global default until the user picks
+/// another, e.g. Apple On-Device for a short transcript), rather than the
+/// persisted global provider's model list.
 struct AskProviderPickerMenu: View {
     @Bindable var viewModel: TranscriptChatViewModel
 

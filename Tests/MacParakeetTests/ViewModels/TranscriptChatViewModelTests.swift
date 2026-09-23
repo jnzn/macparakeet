@@ -1451,14 +1451,15 @@ final class TranscriptChatViewModelTests: XCTestCase {
         XCTAssertEqual(mockService.lastChatSource, .meetingAsk)
     }
 
-    // MARK: - Ask/chat surface default provider
+    // MARK: - Ask provider default
 
-    /// Meeting Ask should default to Apple On-Device AI (when available)
-    /// the first time providers load — a surface-scoped default that does
-    /// not touch the global config used by Transforms/summaries/dictation
-    /// cleanup. Library transcript chat gets the same default; see
-    /// testTranscriptChatAlsoDefaultsToAppleOnDeviceWhenAvailable below.
-    func testMeetingAskDefaultsToAppleOnDeviceWhenAvailable() async throws {
+    // Ask/chat surfaces (live meeting Ask and Library transcript chat) answer
+    // with the global default provider until the user picks something else.
+    // Apple On-Device AI is offered in the picker but never chosen for them:
+    // its ~4K-token window can't hold a long transcript, so making it the
+    // silent default failed users mid-conversation.
+
+    func testMeetingAskStaysOnGlobalDefaultEvenWhenAppleIsAvailable() async throws {
         let meetingVM = TranscriptChatViewModel()
         meetingVM.markAsMeetingAskSurface()
         let configStore = MockLLMConfigStore()
@@ -1471,17 +1472,11 @@ final class TranscriptChatViewModelTests: XCTestCase {
         )
         try await Task.sleep(nanoseconds: 200_000_000)
 
-        XCTAssertEqual(meetingVM.selectedAskProviderID, LLMProviderID.appleOnDevice.rawValue)
+        XCTAssertEqual(meetingVM.selectedAskProviderID, "default")
+        XCTAssertFalse(meetingVM.hasActiveAskOverride)
     }
 
-    /// Transcript chat (post-transcription) is unaffected — it stays on the
-    /// global default even when Apple On-Device is available, since the
-    /// auto-default only applies to the meeting-Ask surface.
-    /// Library transcript chat (post-meeting, chatSource == .transcriptChat)
-    /// gets the same Apple On-Device auto-default as live meeting Ask — the
-    /// "choose a model" picker on a saved meeting/transcription was missed
-    /// when this first landed.
-    func testTranscriptChatAlsoDefaultsToAppleOnDeviceWhenAvailable() async throws {
+    func testTranscriptChatStaysOnGlobalDefaultEvenWhenAppleIsAvailable() async throws {
         let configStore = MockLLMConfigStore()
         configStore.config = .ollama()
         viewModel.configure(
@@ -1492,13 +1487,29 @@ final class TranscriptChatViewModelTests: XCTestCase {
         )
         try await Task.sleep(nanoseconds: 200_000_000)
 
-        XCTAssertEqual(viewModel.selectedAskProviderID, LLMProviderID.appleOnDevice.rawValue)
+        XCTAssertEqual(viewModel.selectedAskProviderID, "default")
+        XCTAssertFalse(viewModel.hasActiveAskOverride)
+    }
+
+    func testAppleIsOfferedInThePickerButNotSelected() async throws {
+        let configStore = MockLLMConfigStore()
+        configStore.config = .ollama()
+        viewModel.configure(
+            llmService: mockService,
+            transcriptText: "Test transcript",
+            configStore: configStore,
+            appleOnDeviceAvailable: { true }
+        )
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertNotNil(viewModel.askProviderOptions.first { $0.id == LLMProviderID.appleOnDevice.rawValue })
+        XCTAssertEqual(viewModel.selectedAskProviderID, "default")
     }
 
     /// The Library's model-name selector describes the persisted global
     /// provider, so it must be hidden (via hasActiveAskOverride) whenever an
     /// override like Apple On-Device is what's actually answering — and
-    /// visible again if the user picks the global default.
+    /// visible again when the user goes back to the global default.
     func testHasActiveAskOverrideTracksSelection() async throws {
         let configStore = MockLLMConfigStore()
         configStore.config = .ollama()
@@ -1508,13 +1519,14 @@ final class TranscriptChatViewModelTests: XCTestCase {
             configStore: configStore,
             appleOnDeviceAvailable: { true }
         )
-        XCTAssertFalse(viewModel.hasActiveAskOverride, "no override until providers load")
         try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertFalse(viewModel.hasActiveAskOverride, "the global default is not an override")
 
-        XCTAssertTrue(viewModel.hasActiveAskOverride, "Apple auto-default is an override")
+        viewModel.selectedAskProviderID = LLMProviderID.appleOnDevice.rawValue
+        XCTAssertTrue(viewModel.hasActiveAskOverride, "an explicit Apple pick is an override")
 
         viewModel.selectedAskProviderID = "default"
-        XCTAssertFalse(viewModel.hasActiveAskOverride, "global default is not an override")
+        XCTAssertFalse(viewModel.hasActiveAskOverride)
     }
 
     func testHasActiveAskOverrideFalseWhenAppleUnavailable() async throws {
@@ -1528,17 +1540,45 @@ final class TranscriptChatViewModelTests: XCTestCase {
         )
         try await Task.sleep(nanoseconds: 200_000_000)
 
+        XCTAssertNil(viewModel.askProviderOptions.first { $0.id == LLMProviderID.appleOnDevice.rawValue })
         XCTAssertFalse(viewModel.hasActiveAskOverride)
     }
 
-    /// Transforms/summaries/dictation cleanup never go through
-    /// TranscriptChatViewModel at all, so this auto-default can't reach
-    /// them — only the global LLMConfigStore config (unchanged, still
-    /// Ollama) applies there. Nothing to assert here beyond documenting the
-    /// boundary; see AskProviderCatalog's doc comment.
-    func testTranscriptChatStaysOnGlobalDefaultWhenAppleUnavailable() async throws {
+    /// A user's explicit Apple pick is not fought back to the default when the
+    /// provider list refreshes (e.g. after the CLI/keychain probe re-runs).
+    func testExplicitApplePickSurvivesARefresh() async throws {
         let configStore = MockLLMConfigStore()
         configStore.config = .ollama()
+        viewModel.configure(
+            llmService: mockService,
+            transcriptText: "Test transcript",
+            configStore: configStore,
+            appleOnDeviceAvailable: { true }
+        )
+        try await Task.sleep(nanoseconds: 200_000_000)
+        viewModel.selectedAskProviderID = LLMProviderID.appleOnDevice.rawValue
+
+        viewModel.refreshAskProviders()
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertEqual(viewModel.selectedAskProviderID, LLMProviderID.appleOnDevice.rawValue)
+    }
+
+    /// If the picked provider stops being offered (Apple Intelligence turned
+    /// off), the selection falls back to the global default rather than
+    /// pointing at a provider that would just fail.
+    func testSelectionFallsBackToDefaultWhenAppleStopsBeingOffered() async throws {
+        let configStore = MockLLMConfigStore()
+        configStore.config = .ollama()
+        viewModel.configure(
+            llmService: mockService,
+            transcriptText: "Test transcript",
+            configStore: configStore,
+            appleOnDeviceAvailable: { true }
+        )
+        try await Task.sleep(nanoseconds: 200_000_000)
+        viewModel.selectedAskProviderID = LLMProviderID.appleOnDevice.rawValue
+
         viewModel.configure(
             llmService: mockService,
             transcriptText: "Test transcript",
@@ -1548,30 +1588,6 @@ final class TranscriptChatViewModelTests: XCTestCase {
         try await Task.sleep(nanoseconds: 200_000_000)
 
         XCTAssertEqual(viewModel.selectedAskProviderID, "default")
-    }
-
-    /// A user who explicitly switches back to "Default" after the
-    /// auto-default fired is not fought back to Apple On-Device on a
-    /// subsequent refresh (e.g. after the CLI/keychain probe re-runs).
-    func testManualReselectionOfDefaultIsNotOverriddenByLaterRefresh() async throws {
-        let meetingVM = TranscriptChatViewModel()
-        meetingVM.markAsMeetingAskSurface()
-        let configStore = MockLLMConfigStore()
-        configStore.config = .ollama()
-        meetingVM.configure(
-            llmService: mockService,
-            transcriptText: "Test transcript",
-            configStore: configStore,
-            appleOnDeviceAvailable: { true }
-        )
-        try await Task.sleep(nanoseconds: 200_000_000)
-        XCTAssertEqual(meetingVM.selectedAskProviderID, LLMProviderID.appleOnDevice.rawValue)
-
-        meetingVM.selectedAskProviderID = "default"
-        meetingVM.refreshAskProviders()
-        try await Task.sleep(nanoseconds: 200_000_000)
-
-        XCTAssertEqual(meetingVM.selectedAskProviderID, "default")
     }
 }
 

@@ -56,21 +56,17 @@ public struct AskProviderCatalog: Sendable {
         var options: [AskProviderOption] = []
         let globalConfig = try? configStore.loadConfig()
         let globalID = globalConfig?.id
-        // Apple On-Device is the practical default for Ask/chat surfaces when
-        // it's offered (see TranscriptChatViewModel's auto-select) — the
-        // "(default)" label belongs on whichever row is actually auto-picked,
-        // not unconditionally on the global config.
-        let appleIsPracticalDefault = appleOnDeviceAvailable()
-
-        // 1. Global default — always present, no override context. Still the
-        // real fallback (and still labeled "(default)") when Apple isn't
-        // offered.
+        // 1. Global default — always present, no override context, and always
+        // what an Ask/chat surface uses until the user picks something else.
+        // Apple On-Device is offered below as a choice, never chosen for them:
+        // its ~4K-token window can't hold a long transcript, so it must not be
+        // the surface's silent default.
         let defaultName = globalConfig.map { Self.displayName(for: $0.id) } ?? "Default"
         options.append(AskProviderOption(
             id: "default",
-            displayName: appleIsPracticalDefault ? defaultName : "\(defaultName) (default)",
+            displayName: "\(defaultName) (default)",
             context: nil,
-            isDefault: !appleIsPracticalDefault
+            isDefault: true
         ))
 
         // 2. Cloud providers with a saved API key (skip the active default).
@@ -106,13 +102,14 @@ public struct AskProviderCatalog: Sendable {
         // 4. Apple on-device (Foundation Models) — only offered when the
         // feature is visible (AppFeatures) and the OS actually has a model
         // ready (SystemLanguageModel), so the option never appears somewhere
-        // it would just fail.
-        if appleIsPracticalDefault {
+        // it would just fail. Skipped when it already *is* the global default,
+        // which would otherwise list it twice.
+        if globalID != .appleOnDevice, appleOnDeviceAvailable() {
             options.append(AskProviderOption(
                 id: LLMProviderID.appleOnDevice.rawValue,
-                displayName: "\(LLMProviderID.appleOnDevice.displayName) (default)",
+                displayName: LLMProviderID.appleOnDevice.displayName,
                 context: LLMExecutionContext(providerConfig: .appleOnDevice()),
-                isDefault: true
+                isDefault: false
             ))
         }
 
