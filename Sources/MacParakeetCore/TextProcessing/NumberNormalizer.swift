@@ -144,11 +144,16 @@ public enum NumberNormalizer {
         // convert a lone unit when it sits next to another spoken number word
         // (a digit sequence like "one two three", or a decimal digit, which
         // is handled above and never reaches here with `lastConsumed ==
-        // start`). Compounds ("twenty five"), scales ("one hundred"), and a
-        // teen/ten standing alone ("twenty") are unaffected — they don't
-        // carry this ambiguity the way a bare unit does.
+        // start`), or immediately precedes a downstream normalizer's anchor
+        // noun ("three dollars", "one half", "nine a m") — those normalizers
+        // match on digits, so leaving the unit as a word would silently drop
+        // the amount/fraction/time instead of just reading oddly. Compounds
+        // ("twenty five"), scales ("one hundred"), and a teen/ten standing
+        // alone ("twenty") are unaffected — they don't carry this ambiguity
+        // the way a bare unit does.
         if lastConsumed == start, case .word(let raw) = tokens[start], units[raw.lowercased()] != nil,
-            !isAdjacentToNumberWord(tokens, at: start)
+            !isAdjacentToNumberWord(tokens, at: start),
+            !isAdjacentToNumericAnchorWord(tokens, at: start)
         {
             return nil
         }
@@ -243,6 +248,36 @@ public enum NumberNormalizer {
     private static func isAdjacentToNumberWord(_ tokens: [Token], at index: Int) -> Bool {
         if let next = nextWord(tokens, after: index), isNumberWord(next) { return true }
         if let prev = previousWord(tokens, before: index), isNumberWord(prev) { return true }
+        return false
+    }
+
+    /// Nouns that downstream normalizers (Currency/Unit) match on directly
+    /// after a digit — e.g. `CurrencyNormalizer`'s "X dollars and Y cents" /
+    /// "X euros" / "X won" / "X yen", and `UnitNormalizer`'s "1 half" /
+    /// "3 quarters" / "N percent". A lone unit immediately before one of
+    /// these reads unambiguously as a number ("three dollars", "one half"),
+    /// unlike a bare unit in ordinary prose.
+    private static let numericAnchorNouns: Set<String> = [
+        "dollars", "dollar", "bucks", "buck", "cents", "cent",
+        "euros", "euro", "won", "yen", "percent",
+        "half", "quarter", "quarters",
+    ]
+
+    /// True when the lone unit at `index` immediately precedes a numeric
+    /// anchor noun (see `numericAnchorNouns`), or the spaced clock-time
+    /// marker "a m" / "p m" that `TimeNormalizer` matches on.
+    private static func isAdjacentToNumericAnchorWord(_ tokens: [Token], at index: Int) -> Bool {
+        guard let nextIndex = nextWordIndex(tokens, after: index), case .word(let raw) = tokens[nextIndex] else {
+            return false
+        }
+        let next = raw.lowercased()
+        if numericAnchorNouns.contains(next) { return true }
+        if next == "a" || next == "p",
+            let afterIndex = nextWordIndex(tokens, after: nextIndex),
+            case .word(let afterRaw) = tokens[afterIndex], afterRaw.lowercased() == "m"
+        {
+            return true
+        }
         return false
     }
 }

@@ -69,6 +69,25 @@ final class NumberNormalizerTests: XCTestCase {
         check("give me a minute, just one", "give me a minute, just one")
     }
 
+    func test_bareUnitConvertsBeforeCurrencyFractionOrClockAnchor() {
+        // A lone unit reads unambiguously as a number when it precedes a
+        // downstream normalizer's anchor noun, unlike ordinary prose
+        // ("that one", "call me at four") — see test_isolatedUnitsStayWords.
+        check("three dollars", "3 dollars")
+        check("one dollar", "1 dollar")
+        check("five cents", "5 cents")
+        check("two euros", "2 euros")
+        check("one won", "1 won")
+        check("one yen", "1 yen")
+        check("one percent", "1 percent")
+        check("one half", "1 half")
+        check("three quarters", "3 quarters")
+        check("nine a m", "9 a m")
+        check("nine p m", "9 p m")
+        // "a" alone (not followed by "m") is still just the article.
+        check("give me a minute", "give me a minute")
+    }
+
     func test_passthrough() {
         check("no numbers here", "no numbers here")
         check("", "")
