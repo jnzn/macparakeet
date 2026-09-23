@@ -467,6 +467,12 @@ public actor DiarizationService: DiarizationServiceProtocol {
 
     /// Bump on any FluidAudio upgrade that could move the clustering centroid,
     /// even when the embedding model is untouched.
+    ///
+    /// Deliberately still 0.15.7 on the 0.17.1 pin: the offline pipeline
+    /// (segmentation, embedding extraction, clustering) is untouched between the
+    /// two and the diarization weights are the same 2025-10-20 upload (0.17's
+    /// revision pinning only re-downloads them once). Bumping would orphan every
+    /// stored voiceprint. See ADR-010, 2026-09-23 amendment.
     private nonisolated static let pipelineRevision = "fluidaudio-0.15.7"
 
     /// Identity of the representation the shipping configuration produces.

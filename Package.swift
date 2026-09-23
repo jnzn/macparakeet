@@ -25,14 +25,16 @@ let streamingMarkdownPackageDependencies: [Package.Dependency] = skipStreamingMa
 let packageDependencies: [Package.Dependency] = [
     // GRDB for SQLite (dictation history + transcription records)
     .package(url: "https://github.com/groue/GRDB.swift", from: "7.0.0"),
-    // FluidAudio for Parakeet, Nemotron, and Cohere STT plus offline speaker
-    // diarization on CoreML/ANE. Pinned exact: the STT engines depend on the
-    // registry's model file names and the ModelHub download API, and the
-    // diarizer's clustering semantics changed between minor releases
-    // (0.15.5 / 0.15.6 clustering, 0.15.7 speaker-cap dual-census / FluidAudio
-    // #891; see ADR-010). Bump deliberately with an STT regression pass and a
-    // diarization before/after comparison.
-    .package(url: "https://github.com/FluidInference/FluidAudio", exact: "0.15.7"),
+    // FluidAudio for Parakeet, Nemotron, and Cohere STT plus speaker
+    // diarization (offline pipeline + opt-in Nemotron 3) on CoreML/ANE. Pinned
+    // exact: the STT engines depend on the registry's model file names and the
+    // ModelHub download API, and the diarizer's clustering semantics changed
+    // between minor releases (0.15.5 / 0.15.6 clustering, 0.15.7 speaker-cap
+    // dual-census / FluidAudio #891; see ADR-010). Bump deliberately with an STT
+    // regression pass and a diarization before/after comparison. 0.17.0 added
+    // Nemotron 3 Diarization; 0.17.1 is podspec metadata only. 0.15.7 to 0.17.1
+    // left the offline diarizer untouched (ADR-010, 2026-09-23 amendment).
+    .package(url: "https://github.com/FluidInference/FluidAudio", exact: "0.17.1"),
     // ArgumentParser for CLI
     .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0"),
     // FluidAudio's Swift module exposes yyjson under current Xcode/Swift.
