@@ -57,7 +57,7 @@ final class AppEnvironment {
     let dictationService: DictationService
     let transcriptionService: TranscriptionService
     let youtubeDownloader: YouTubeDownloader
-    let diarizationService: DiarizationService
+    let diarizationService: any DiarizationServiceProtocol
     /// Stateless; fetches the Silero VAD model for VAD-guided meeting live
     /// chunking. Consumed by `AppDelegate.scheduleDeferredSpeechPreWarm` on every
     /// launch (gated on `AppFeatures.meetingVadLiveChunkingEnabled`) so the
@@ -303,7 +303,13 @@ final class AppEnvironment {
         Task.detached(priority: .utility) {
             await binaryBootstrap.autoUpdateYtDlpIfNeeded()
         }
-        diarizationService = DiarizationService()
+        // The standard engine is the default; Settings can opt into Nemotron 3.
+        // The choice is read per call, so it applies to the next run.
+        diarizationService = EngineSelectingDiarizationService(
+            standard: DiarizationService(),
+            nemotron3: Nemotron3DiarizationService(),
+            selectedEngine: { UserDefaultsAppRuntimePreferences.speakerDiarizationEngine() }
+        )
 
         let voiceReturnTriggersClosure: @Sendable () -> [String] = { [runtimePreferences] in
             runtimePreferences.voiceReturnTriggers

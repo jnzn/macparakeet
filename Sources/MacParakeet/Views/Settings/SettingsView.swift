@@ -1599,6 +1599,25 @@ struct SettingsView: View {
 
                 Divider()
 
+                HStack(alignment: .center) {
+                    rowText(
+                        title: "Speaker detection engine",
+                        detail: viewModel.speakerDiarizationEngine.summary
+                            + " Applies to meetings and file transcriptions."
+                    )
+                    Spacer(minLength: DesignSystem.Spacing.md)
+                    Picker("Speaker detection engine", selection: $viewModel.speakerDiarizationEngine) {
+                        ForEach(SpeakerDiarizationEngine.allCases) { engine in
+                            Text(engine.displayName).tag(engine)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(minWidth: 170, idealWidth: 230, maxWidth: 280)
+                }
+
+                Divider()
+
                 settingsToggleRow(
                     title: "Notify when transcription finishes",
                     detail: "Play a sound when a file, YouTube, or batch transcription completes — plus a notification banner when MacParakeet is in the background.",

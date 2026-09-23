@@ -2,7 +2,7 @@
 
 > Status: **Accepted**
 > Date: 2026-03-04
-> Current scope (2026-09-15): offline file/URL transcription and optional isolated system-track meeting refinement. The original comparison tables and performance rationale below are historical; the 2026-09-06 amendment governs the high-accuracy preset, the 2026-09-13 amendment records the FluidAudio 0.15.7 pin, and the 2026-09-15 amendment records conservative word-assignment smoothing (#1046).
+> Current scope (2026-09-15): offline file/URL transcription and optional isolated system-track meeting refinement. The original comparison tables and performance rationale below are historical; the 2026-09-06 amendment governs the high-accuracy preset, the 2026-09-13 amendment records the FluidAudio 0.15.7 pin, the 2026-09-15 amendment records conservative word-assignment smoothing (#1046), and the 2026-09-23 amendment adds the opt-in Nemotron 3 engine and the 0.17.1 pin.
 
 ## Context
 
@@ -269,6 +269,57 @@ Skip diarization for: dictation (single speaker by design), or when the correspo
 > `benchmarks/diarization/2026-09-13-fluidaudio-0.15.7-eval.md`. This does not
 > close Auto 1:1 over-splits (#944); `MeetingSpeakerPrior` is still
 > `max = n + 1`.
+
+> **Amendment (2026-09-23, PDX Edition):** Adds NVIDIA **Nemotron 3
+> Diarization** as an opt-in second engine (Settings → Transcription → Speaker
+> detection engine; default stays Standard) and moves the pin to
+> `exact: "0.17.1"`. FluidAudio 0.17.0 added the model (`Nemotron3Diarizer`,
+> PR #883); 0.17.1 is podspec metadata only. NVIDIA published the general-access
+> checkpoint under OpenMDW-1.1 the same day, which removed the license blocker
+> the 2026-09-06 research recorded (gated, evaluation-only).
+>
+> - **What it is.** An 8-speaker streaming Sortformer that emits per-frame
+>   speaker *activity*, not embeddings. `Nemotron3DiarizationService` runs the
+>   `fast128` preset (card: 9.36 DER on AMI MHM, 16/16 meetings counted, ~546x
+>   real time on M5 Pro; ~190 MB, cached under
+>   `FluidAudio/Models/nemotron-3-diarization`). The card's DER is AMI *mixed
+>   headset*, the easy condition; it is not comparable to the far-field figures
+>   elsewhere in this ADR.
+> - **Why it is not the default.** No embeddings means no voiceprints: speakers
+>   keep their segments and labels but cannot be matched across meetings or
+>   enrolled (`speakerEmbeddings` is empty, a shape the voiceprint code already
+>   tolerates). It also takes no speaker count, so a run with an explicit
+>   exact/range constraint (CLI `--speaker-*`, retranscription with a count) is
+>   built on the Standard service by `DiarizationServiceFactory` and never
+>   reaches it, and the soft attendee cap hint is ignored.
+> - **Segments stay exclusive.** FluidAudio's `Nemotron3Diarizer.segments`
+>   thresholds each slot independently, which overlaps speakers; the app's
+>   contract (and every speech-time sum built on it) is exclusive.
+>   `Nemotron3SegmentBuilder` gives each frame to its strongest speaker, drops
+>   turns under 200 ms and merges a speaker's turns across gaps under 300 ms.
+> - **It cannot break speaker detection.** `EngineSelectingDiarizationService`
+>   reads the preference per call and, if Nemotron fails to load (first use while
+>   offline) or run, logs `nemotron3_diarization_fallback` and answers with the
+>   Standard engine. Cancellation propagates.
+> - **Standard pipeline unchanged.** The 0.15.7 to 0.17.1 diff touches nothing
+>   under `Diarizer/Offline`, `Clustering`, `Segmentation` or `Extraction`; the
+>   diarizer changes are additions under `Diarizer/Nemotron3`. So
+>   `DiarizationService.pipelineRevision` intentionally stays
+>   `fluidaudio-0.15.7`: bumping it would orphan every stored voiceprint for no
+>   reason. One side effect: 0.17's immutable-revision pinning (#927) invalidates
+>   an existing `speaker-diarization` cache once (no `.fluidaudio-revision`
+>   marker), so the first diarization after upgrading re-downloads ~130 MB and
+>   needs the network; diarization is non-fatal, so offline it degrades to no
+>   speaker labels for that run. The pinned revision (`df2625ac`) is the HF
+>   `main` head, whose only newer commit over the 2025-10-20 upload is
+>   provenance documentation, so the weights are the ones previously cached.
+> - **Measured** (synthetic three-voice conversation, `say` voices, known
+>   ground truth, this build, Apple Silicon): Standard found 4 speakers (one a
+>   20 ms flicker at the tail), 97.2% speech-frame accuracy, 3.3 s for 48 s of
+>   audio; Nemotron 3 found 3, 96.8%, 0.4 s, 8 segments, none overlapping. Two
+>   acoustically similar synthetic voices were merged by both engines. This is
+>   an easy case that validates the integration; it is not a quality claim on
+>   real meetings. Not yet compared on real recordings.
 
 > **Amendment (2026-09-15, issue #1046):** `SpeakerMerger` now collapses
 > a singleton word (or an unlabeled run) when both neighboring runs share

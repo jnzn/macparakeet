@@ -615,6 +615,11 @@ public final class SettingsViewModel {
             Telemetry.send(.settingChanged(setting: .speakerDiarization, value: Self.settingValue(speakerDiarization)))
         }
     }
+    public var speakerDiarizationEngine: SpeakerDiarizationEngine {
+        didSet {
+            defaults.set(speakerDiarizationEngine.rawValue, forKey: UserDefaultsAppRuntimePreferences.speakerDiarizationEngineKey)
+        }
+    }
     public var meetingSpeakerDiarization: Bool {
         didSet {
             defaults.set(meetingSpeakerDiarization, forKey: UserDefaultsAppRuntimePreferences.meetingSpeakerDiarizationKey)
@@ -1061,6 +1066,7 @@ public final class SettingsViewModel {
         meetingAudioRetention = UserDefaultsAppRuntimePreferences.meetingAudioRetention(defaults: defaults)
         youtubeAudioQuality = YouTubeAudioQuality.current(defaults: defaults)
         speakerDiarization = UserDefaultsAppRuntimePreferences.speakerDiarizationEnabled(defaults: defaults)
+        speakerDiarizationEngine = UserDefaultsAppRuntimePreferences.speakerDiarizationEngine(defaults: defaults)
         meetingSpeakerDiarization = UserDefaultsAppRuntimePreferences.meetingSpeakerDiarizationEnabled(defaults: defaults)
         meetingLiveTranscriptionEnabled = UserDefaultsAppRuntimePreferences.meetingLiveTranscriptionEnabled(
             defaults: defaults

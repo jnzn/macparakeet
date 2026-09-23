@@ -245,6 +245,14 @@ public enum SettingsSearchIndex {
             cardAnchor: "transcription"
         ),
         SettingsSearchEntry(
+            id: "transcription.diarization.engine",
+            tab: .capture,
+            title: "Speaker detection engine",
+            subtitle: "in Transcription",
+            keywords: ["speaker", "diarization", "engine", "nvidia", "nemotron", "sortformer", "pyannote", "experimental"],
+            cardAnchor: "transcription"
+        ),
+        SettingsSearchEntry(
             id: "transcription.completion.notification",
             tab: .capture,
             title: "Notify when transcription finishes",

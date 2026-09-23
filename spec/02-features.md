@@ -1498,7 +1498,8 @@ are unaffected.
 **Technical notes:**
 - Uses FluidAudio's offline diarization pipeline (separate from ASR, see ADR-010)
 - Three-stage pipeline: pyannote community-1 (segmentation) + WeSpeaker v2 (embeddings) + VBx (clustering)
-- Current source pins FluidAudio 0.15.7 and uses `DiarizationService.highAccuracyConfig`. Older DER figures predate clustering fixes and are not a quality measurement of this build; see ADR-010.
+- Current source pins FluidAudio 0.17.1 and uses `DiarizationService.highAccuracyConfig`. Older DER figures predate clustering fixes and are not a quality measurement of this build; see ADR-010.
+- Optional second engine (Settings → Transcription → Speaker detection engine, default Standard): NVIDIA Nemotron 3 Diarization, an 8-speaker activity model that downloads ~190 MB on first use. It has no voice vectors (no voiceprint matching), ignores speaker-count hints, and falls back to Standard if it cannot load. See ADR-010, 2026-09-23 amendment.
 - ~130 MB additional model download (one-time, cached alongside ASR models)
 - Runs after ASR completes and merges speaker segments with word-level timestamps by time overlap. Isolated one-word flips and unlabeled gaps inherit a speaker only when both neighboring runs agree (ADR-010 2026-09-15).
 - Diarization is non-fatal — if it fails, ASR result is still persisted without speaker data

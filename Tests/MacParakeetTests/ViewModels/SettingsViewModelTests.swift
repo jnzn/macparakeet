@@ -1217,6 +1217,23 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertNil(testDefaults.object(forKey: UserDefaultsAppRuntimePreferences.meetingSpeakerDiarizationKey))
     }
 
+    func testSpeakerDiarizationEngineDefaultsToStandardWithoutWritingADefault() {
+        XCTAssertEqual(viewModel.speakerDiarizationEngine, .standard)
+        XCTAssertNil(testDefaults.object(forKey: UserDefaultsAppRuntimePreferences.speakerDiarizationEngineKey))
+    }
+
+    func testSettingSpeakerDiarizationEnginePersistsAndTouchesNoOtherDiarizationSetting() {
+        viewModel.speakerDiarizationEngine = .nemotron3
+
+        XCTAssertEqual(
+            testDefaults.string(forKey: UserDefaultsAppRuntimePreferences.speakerDiarizationEngineKey),
+            "nemotron3"
+        )
+        XCTAssertEqual(UserDefaultsAppRuntimePreferences.speakerDiarizationEngine(defaults: testDefaults), .nemotron3)
+        XCTAssertNil(testDefaults.object(forKey: UserDefaultsAppRuntimePreferences.speakerDiarizationKey))
+        XCTAssertNil(testDefaults.object(forKey: UserDefaultsAppRuntimePreferences.meetingSpeakerDiarizationKey))
+    }
+
     func testSettingMeetingSpeakerDiarizationPersistsExplicitFalse() {
         viewModel.meetingSpeakerDiarization = false
 

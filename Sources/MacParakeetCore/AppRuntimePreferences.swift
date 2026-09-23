@@ -536,6 +536,9 @@ public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProto
     public static let youtubeAudioQualityKey = "youtubeAudioQuality"
     public static let speakerDiarizationKey = "speakerDiarization"
     public static let defaultSpeakerDiarizationEnabled = true
+    /// Which model does speaker detection (`SpeakerDiarizationEngine`); applies to
+    /// meetings and file/URL transcription alike.
+    public static let speakerDiarizationEngineKey = "speakerDiarizationEngine"
     public static let meetingSpeakerDiarizationKey = "meetingSpeakerDiarization"
     public static let defaultMeetingSpeakerDiarizationEnabled = true
     /// Runs the live STT pass during meeting recording (default on). Off
@@ -622,6 +625,11 @@ public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProto
 
     public static func speakerDiarizationEnabled(defaults: UserDefaults = .standard) -> Bool {
         defaults.object(forKey: speakerDiarizationKey) as? Bool ?? defaultSpeakerDiarizationEnabled
+    }
+
+    public static func speakerDiarizationEngine(defaults: UserDefaults = .standard) -> SpeakerDiarizationEngine {
+        defaults.string(forKey: speakerDiarizationEngineKey).flatMap(SpeakerDiarizationEngine.init(rawValue:))
+            ?? SpeakerDiarizationEngine.default
     }
 
     public static func meetingSpeakerDiarizationEnabled(defaults: UserDefaults = .standard) -> Bool {
