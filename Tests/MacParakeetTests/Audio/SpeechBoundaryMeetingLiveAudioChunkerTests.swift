@@ -6,7 +6,7 @@ import XCTest
 final class SpeechBoundaryMeetingLiveAudioChunkerTests: XCTestCase {
     private let window = 4_096
     private let minChunkSamples = 32_000   // 2.0s
-    private let maxChunkSamples = 160_000  // 10.0s
+    private let maxChunkSamples = 64_000   // 4.0s
     private let flushMinSamples = 8_000    // 0.5s
 
     // MARK: - speech-end emits
@@ -81,7 +81,7 @@ final class SpeechBoundaryMeetingLiveAudioChunkerTests: XCTestCase {
         let vad = FakeMeetingVAD()  // never reports speech
         let chunker = SpeechBoundaryMeetingLiveAudioChunker(vad: vad)
 
-        // 45 windows = 184 320 samples, well past the 160 000 max.
+        // 45 windows = 184 320 samples, well past the 64 000 max.
         let chunks = await feed(chunker, windows: 45)
 
         XCTAssertTrue(chunks.isEmpty, "silence must never be emitted as a chunk")
@@ -97,13 +97,13 @@ final class SpeechBoundaryMeetingLiveAudioChunkerTests: XCTestCase {
         let vad = FakeMeetingVAD(events: [1: .speechStart])
         let chunker = SpeechBoundaryMeetingLiveAudioChunker(vad: vad)
 
-        // 40 windows = 163 840 samples; force-emit fires once buffer ≥ 160 000.
-        let chunks = await feed(chunker, windows: 40)
+        // 16 windows = 65 536 samples; force-emit fires once buffer ≥ 64 000.
+        let chunks = await feed(chunker, windows: 16)
 
         XCTAssertEqual(chunks.count, 1)
         XCTAssertEqual(chunks[0].samples.count, maxChunkSamples)
         XCTAssertEqual(chunks[0].startMs, 0)
-        XCTAssertEqual(chunks[0].endMs, 10_000)
+        XCTAssertEqual(chunks[0].endMs, 4_000)
 
         let diag = await chunker.diagnostics
         XCTAssertEqual(diag.forceEmits, 1)
@@ -111,9 +111,9 @@ final class SpeechBoundaryMeetingLiveAudioChunkerTests: XCTestCase {
         // The retained 250ms tail means the next chunk re-includes it: feed
         // another long stretch and confirm the next chunk starts before the
         // previous end (deliberate overlap the assembler dedups).
-        let more = await feed(chunker, windows: 40)
+        let more = await feed(chunker, windows: 16)
         if let next = more.first {
-            XCTAssertLessThan(next.startMs, 10_000, "force-emit tail overlap should re-feed audio")
+            XCTAssertLessThan(next.startMs, chunks[0].endMs, "force-emit tail overlap should re-feed audio")
             XCTAssertEqual(next.startMs, (maxChunkSamples - 4_000) * 1000 / 16_000)
         } else {
             XCTFail("expected a second force-emit after another long stretch")
@@ -220,41 +220,41 @@ final class SpeechBoundaryMeetingLiveAudioChunkerTests: XCTestCase {
     // MARK: - lockstep buffering (regression: large ingest must not drop unexamined speech)
 
     func testLargeSingleIngestDropsLeadingSilenceButKeepsLaterSpeech() async {
-        // One giant ingest (45 windows) where VAD only detects speech at window
-        // 41. Because the emittable buffer only ever holds VAD-examined audio,
-        // the leading silence (windows 1–39) is dropped, window 40 is retained as
-        // context, and the speech (windows 41–45) is preserved — never discarded
+        // One giant ingest (21 windows) where VAD only detects speech at window
+        // 17. Because the emittable buffer only ever holds VAD-examined audio,
+        // the leading silence (windows 1–15) is dropped, window 16 is retained as
+        // context, and the speech (windows 17–21) is preserved — never discarded
         // ahead of the VAD read head.
-        let vad = FakeMeetingVAD(events: [41: .speechStart])
+        let vad = FakeMeetingVAD(events: [17: .speechStart])
         let chunker = SpeechBoundaryMeetingLiveAudioChunker(vad: vad)
 
-        let emitted = await chunker.addSamples([Float](repeating: 0.1, count: 45 * window))
+        let emitted = await chunker.addSamples([Float](repeating: 0.1, count: 21 * window))
         XCTAssertTrue(emitted.isEmpty, "speech only just started; nothing to emit yet")
 
         let tail = await chunker.flush()
         XCTAssertEqual(tail?.samples.count, 24_576, "speech audio must survive the silence drop")
-        XCTAssertEqual(tail?.startMs, 9_984, "leading silence (windows 1–39) should be dropped")
-        XCTAssertEqual(tail?.endMs, 11_520)
+        XCTAssertEqual(tail?.startMs, 3_840, "leading silence (windows 1–15) should be dropped")
+        XCTAssertEqual(tail?.endMs, 5_376)
 
         let diag = await chunker.diagnostics
         XCTAssertGreaterThanOrEqual(diag.droppedSilenceWindows, 1)
     }
 
     func testStaleRetroactiveSpeechEndDropsTrailingSilenceInsteadOfForcing() async {
-        // speechStart, continuous speech to a 10s force-emit (window 40), then a
-        // speechEnd whose retroactive index (150 000) lands BEFORE the
-        // post-force-emit lastEmittedSample (156 000). The stale cut must clear
+        // speechStart, continuous speech to a 4s force-emit (window 16), then a
+        // speechEnd whose retroactive index (55 000) lands BEFORE the
+        // post-force-emit lastEmittedSample (60 000). The stale cut must clear
         // the speech flag so the trailing silence is DROPPED — not force-emitted
-        // as a silence chunk every 10s.
+        // as a silence chunk every 4s.
         let vad = FakeMeetingVAD(events: [
             1: .speechStart,
-            41: .speechEnd(sampleIndex: 150_000),
+            17: .speechEnd(sampleIndex: 55_000),
         ])
         let chunker = SpeechBoundaryMeetingLiveAudioChunker(vad: vad)
 
-        // 40 windows force-emit once; window 41 delivers the stale end; the rest
-        // is silence that should reach the max cap (~window 78) and be dropped.
-        let chunks = await feed(chunker, windows: 78)
+        // 16 windows force-emit once; window 17 delivers the stale end; the rest
+        // is silence that should reach the max cap (~window 31) and be dropped.
+        let chunks = await feed(chunker, windows: 31)
 
         XCTAssertEqual(chunks.count, 1, "only the single force-emit should be emitted")
         let diag = await chunker.diagnostics

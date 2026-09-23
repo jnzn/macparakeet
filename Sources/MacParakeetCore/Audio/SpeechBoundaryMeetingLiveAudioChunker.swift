@@ -59,7 +59,13 @@ actor SpeechBoundaryMeetingLiveAudioChunker: MeetingLiveAudioChunking {
     /// timeline aligned.
     private static let vadWindow = 4_096
     private static let minChunkSamples = 2 * sampleRate          // 2.0s
-    private static let maxChunkSamples = 10 * sampleRate         // 10.0s
+    // Live-feel tuning (2026-09-23): lowered from 10.0s. The design doc left
+    // the max-duration an open question ("8s, 10s, or 14s?"); 10s read as
+    // laggy for a continuous talker with no natural pause, since force-emit
+    // is the only cut mechanism in that case. 4.0s keeps the same margin
+    // above the 2.0s natural-pause minimum that 10.0s had, just compressed.
+    private static let maxChunkSamples = 4 * sampleRate          // 4.0s
+
     private static let forceEmitTailOverlap = sampleRate / 4     // 0.25s
     private static let flushMinSamples = sampleRate / 2          // 0.5s
     /// Degraded-fallback fixed cadence, identical to `AudioChunker`.
