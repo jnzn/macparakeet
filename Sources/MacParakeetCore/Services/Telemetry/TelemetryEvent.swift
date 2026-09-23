@@ -402,6 +402,7 @@ public enum TelemetryMeetingOperationTrigger: String, Sendable, Equatable {
 public enum TelemetryMeetingAutoStopReason: String, Sendable, Equatable {
     case meetingAppClosed = "meeting_app_closed"
     case prolongedSilence = "prolonged_silence"
+    case callEnded = "call_ended"
 }
 
 public enum TelemetryMicStallSignature: String, Sendable, Equatable {

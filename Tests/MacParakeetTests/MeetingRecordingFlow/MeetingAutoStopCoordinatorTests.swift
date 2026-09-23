@@ -14,6 +14,10 @@ final class MeetingAutoStopCoordinatorTests: XCTestCase {
     private var paused = false
     private var runningApps: Set<String> = ["us.zoom.xos"]
     private var levels = MeetingAudioLevels(microphone: 0.5, system: 0.5)
+    /// No process capturing the mic by default — keeps `.callEnded` inert for
+    /// every existing app-quit/silence test unless a test deliberately drives
+    /// it. Avoids the production default (`MicInputProbe`, real CoreAudio).
+    private var capturingBundleIDs: [String?] = []
     private var shownReasons: [StopReason] = []
     private var closeCount = 0
     private var stoppedReasons: [StopReason] = []
@@ -32,6 +36,7 @@ final class MeetingAutoStopCoordinatorTests: XCTestCase {
         paused = false
         runningApps = ["us.zoom.xos"]
         levels = MeetingAudioLevels(microphone: 0.5, system: 0.5)
+        capturingBundleIDs = []
         shownReasons = []
         closeCount = 0
         stoppedReasons = []
@@ -52,6 +57,8 @@ final class MeetingAutoStopCoordinatorTests: XCTestCase {
     private func makeCoordinator(
         appQuitGrace: TimeInterval = 15,
         silenceGrace: TimeInterval = 240,
+        callEndedGrace: TimeInterval = 5,
+        callEndedEnabled: Bool = true,
         isPausedProvider: (@MainActor () async -> Bool)? = nil,
         audioLevelsProvider: (@MainActor () async -> MeetingAudioLevels)? = nil,
         onAutoStopConfirmed: (@MainActor (StopReason) -> Bool)? = nil
@@ -72,6 +79,8 @@ final class MeetingAutoStopCoordinatorTests: XCTestCase {
                 }
                 return self?.levels ?? MeetingAudioLevels()
             },
+            capturingMicBundleIDsProvider: { [weak self] in self?.capturingBundleIDs ?? [] },
+            callAppBundleIDPrefixes: MeetingCallApp.defaults.flatMap(\.bundleIDPrefixes),
             onAutoStopConfirmed: { [weak self] reason in
                 if let onAutoStopConfirmed {
                     return onAutoStopConfirmed(reason)
@@ -90,8 +99,10 @@ final class MeetingAutoStopCoordinatorTests: XCTestCase {
             config: MeetingAutoStopPolicy.Config(
                 appQuitEnabled: true,
                 silenceEnabled: true,
+                callEndedEnabled: callEndedEnabled,
                 appQuitGraceSeconds: appQuitGrace,
-                silenceGraceSeconds: silenceGrace
+                silenceGraceSeconds: silenceGrace,
+                callEndedGraceSeconds: callEndedGrace
             ),
             pollInterval: 60
         )
@@ -172,6 +183,93 @@ final class MeetingAutoStopCoordinatorTests: XCTestCase {
 
         await coordinator.testHook_forceEvaluate(now: now.addingTimeInterval(60))
         XCTAssertEqual(shownReasons, [reason])
+
+        coordinator.stop()
+    }
+
+    func testCallEndedShowsCountdownAtGraceAfterCallWasActive() async {
+        let now = Date()
+        let coordinator = makeCoordinator(callEndedGrace: 5)
+        runningApps = []
+        coordinator.recordingDidStart(now: now)
+
+        // Call active at start — arms callSeenActive for this session.
+        capturingBundleIDs = ["us.zoom.xos"]
+        await coordinator.testHook_forceEvaluate(now: now)
+
+        // Call ends: this tick starts the inactive-duration clock at t=1.
+        capturingBundleIDs = []
+        await coordinator.testHook_forceEvaluate(now: now.addingTimeInterval(1))
+        XCTAssertTrue(shownReasons.isEmpty)
+
+        await coordinator.testHook_forceEvaluate(now: now.addingTimeInterval(1 + 4.9))
+        XCTAssertTrue(shownReasons.isEmpty, "must not fire before the 5s grace elapses")
+
+        await coordinator.testHook_forceEvaluate(now: now.addingTimeInterval(1 + 5))
+        XCTAssertEqual(shownReasons, [.callEnded])
+
+        coordinator.stop()
+    }
+
+    func testCallResumingBeforeGraceCancelsCallEndedSignal() async {
+        let now = Date()
+        let coordinator = makeCoordinator(callEndedGrace: 5)
+        runningApps = []
+        coordinator.recordingDidStart(now: now)
+
+        capturingBundleIDs = ["us.zoom.xos"]
+        await coordinator.testHook_forceEvaluate(now: now)
+
+        capturingBundleIDs = []
+        await coordinator.testHook_forceEvaluate(now: now.addingTimeInterval(1))
+        await coordinator.testHook_forceEvaluate(now: now.addingTimeInterval(4))
+
+        // Call resumes before the grace elapses — resets the inactive clock.
+        capturingBundleIDs = ["us.zoom.xos"]
+        await coordinator.testHook_forceEvaluate(now: now.addingTimeInterval(4.5))
+        capturingBundleIDs = []
+        await coordinator.testHook_forceEvaluate(now: now.addingTimeInterval(5))
+        XCTAssertTrue(shownReasons.isEmpty, "resumed call should reset the inactive-duration clock")
+
+        await coordinator.testHook_forceEvaluate(now: now.addingTimeInterval(10))
+        XCTAssertEqual(shownReasons, [.callEnded], "grace measured from the resumed call's own end")
+
+        coordinator.stop()
+    }
+
+    func testCallNeverActiveNeverProposesCallEnded() async {
+        // In-person recording: capturingBundleIDs stays empty the whole time,
+        // so callSeenActive never arms. Must never fire even well past grace.
+        let now = Date()
+        let coordinator = makeCoordinator(callEndedGrace: 5)
+        runningApps = []
+        coordinator.recordingDidStart(now: now)
+
+        await coordinator.testHook_forceEvaluate(now: now)
+        await coordinator.testHook_forceEvaluate(now: now.addingTimeInterval(60))
+
+        XCTAssertTrue(shownReasons.isEmpty)
+        coordinator.stop()
+    }
+
+    func testVetoSuppressesCallEndedForSession() async {
+        let now = Date()
+        let reason = StopReason.callEnded
+        let coordinator = makeCoordinator(callEndedGrace: 0)
+        runningApps = []
+        coordinator.recordingDidStart(now: now)
+
+        capturingBundleIDs = ["us.zoom.xos"]
+        await coordinator.testHook_forceEvaluate(now: now)
+        capturingBundleIDs = []
+        await coordinator.testHook_forceEvaluate(now: now.addingTimeInterval(1))
+        XCTAssertEqual(shownReasons, [reason])
+
+        countdownCallbacks[reason]?(.userDismissed)
+        XCTAssertEqual(coordinator.testHook_vetoedReasons, [reason])
+
+        await coordinator.testHook_forceEvaluate(now: now.addingTimeInterval(60))
+        XCTAssertEqual(shownReasons, [reason], "vetoed call-ended must not re-propose for the rest of the session")
 
         coordinator.stop()
     }

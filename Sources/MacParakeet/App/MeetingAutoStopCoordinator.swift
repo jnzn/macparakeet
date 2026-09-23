@@ -15,6 +15,10 @@ final class MeetingAutoStopCoordinator {
     private let isPaused: @MainActor () async -> Bool
     private let runningMeetingAppsProvider: @MainActor () -> Set<String>
     private let audioLevelsProvider: @MainActor () async -> MeetingAudioLevels
+    /// ADR-023 Phase 1.5 restore: bundle IDs of processes currently capturing
+    /// mic input (CoreAudio via `MicInputProbe`). Injectable for testing.
+    private let capturingMicBundleIDsProvider: @MainActor () -> [String?]
+    private let callAppBundleIDPrefixes: [String]
     private let onAutoStopConfirmed: @MainActor (StopReason) -> Bool
     private let showCountdown: @MainActor (_ reason: StopReason, _ onOutcome: @escaping (MeetingCountdownToastOutcome) -> Void) -> Void
     private let closeCountdown: @MainActor () -> Void
@@ -26,6 +30,7 @@ final class MeetingAutoStopCoordinator {
 
     private var context: MeetingAutoStopPolicy.MeetingContext?
     private var silenceStartedAt: Date?
+    private var callInactiveStartedAt: Date?
     private var signalFirstSeenAt: [StopReason: Date] = [:]
     private var vetoedReasons: Set<StopReason> = []
     private var countdownReason: StopReason?
@@ -50,6 +55,10 @@ final class MeetingAutoStopCoordinator {
             })
         },
         audioLevelsProvider: @escaping @MainActor () async -> MeetingAudioLevels,
+        capturingMicBundleIDsProvider: @escaping @MainActor () -> [String?] = {
+            MicInputProbe.capturingInputBundleIDs()
+        },
+        callAppBundleIDPrefixes: [String] = MeetingCallApp.defaults.flatMap(\.bundleIDPrefixes),
         onAutoStopConfirmed: @escaping @MainActor (StopReason) -> Bool,
         toastController: MeetingCountdownToastController? = nil,
         showCountdown: (@MainActor (_ reason: StopReason, _ onOutcome: @escaping (MeetingCountdownToastOutcome) -> Void) -> Void)? = nil,
@@ -65,6 +74,8 @@ final class MeetingAutoStopCoordinator {
         self.isPaused = isPaused
         self.runningMeetingAppsProvider = runningMeetingAppsProvider
         self.audioLevelsProvider = audioLevelsProvider
+        self.capturingMicBundleIDsProvider = capturingMicBundleIDsProvider
+        self.callAppBundleIDPrefixes = callAppBundleIDPrefixes
         self.onAutoStopConfirmed = onAutoStopConfirmed
         let toastController = toastController ?? MeetingCountdownToastController()
         self.showCountdown = showCountdown ?? { reason, onOutcome in
@@ -172,6 +183,7 @@ final class MeetingAutoStopCoordinator {
             startedAt: now
         )
         silenceStartedAt = nil
+        callInactiveStartedAt = nil
         signalFirstSeenAt = [:]
         vetoedReasons = []
         countdownReason = nil
@@ -200,6 +212,7 @@ final class MeetingAutoStopCoordinator {
         closeCountdown()
         countdownReason = nil
         silenceStartedAt = nil
+        callInactiveStartedAt = nil
         signalFirstSeenAt = [:]
         if clearSession {
             context = nil
@@ -242,6 +255,20 @@ final class MeetingAutoStopCoordinator {
             isPaused: paused
         )
 
+        let isCallActive = MeetingCallActivity.isCall(
+            capturingBundleIDs: capturingMicBundleIDsProvider(),
+            allowedPrefixes: callAppBundleIDPrefixes
+        )
+        if isCallActive {
+            activeContext.callSeenActive = true
+        }
+        let continuousCallInactiveSeconds = updateCallInactiveDuration(
+            now: now,
+            isCallActive: isCallActive,
+            isPaused: paused
+        )
+        context = activeContext
+
         let decision = MeetingAutoStopPolicy.evaluate(
             context: activeContext,
             observation: MeetingAutoStopPolicy.Observation(
@@ -249,7 +276,9 @@ final class MeetingAutoStopCoordinator {
                 isRecording: true,
                 isPaused: paused,
                 runningMeetingAppBundleIDs: running,
-                continuousSilenceSeconds: continuousSilenceSeconds
+                continuousSilenceSeconds: continuousSilenceSeconds,
+                isCallActive: isCallActive,
+                continuousCallInactiveSeconds: continuousCallInactiveSeconds
             ),
             config: config
         )
@@ -289,6 +318,24 @@ final class MeetingAutoStopCoordinator {
         return max(0, now.timeIntervalSince(startedAt))
     }
 
+    private func updateCallInactiveDuration(
+        now: Date,
+        isCallActive: Bool,
+        isPaused: Bool
+    ) -> TimeInterval {
+        guard !isPaused, !isCallActive else {
+            callInactiveStartedAt = nil
+            return 0
+        }
+
+        guard let startedAt = callInactiveStartedAt else {
+            callInactiveStartedAt = now
+            return 0
+        }
+
+        return max(0, now.timeIntervalSince(startedAt))
+    }
+
     private func handle(decision: MeetingAutoStopPolicy.Decision, now: Date) {
         switch decision {
         case .keepRecording:
@@ -320,7 +367,7 @@ final class MeetingAutoStopCoordinator {
         let grace: TimeInterval = switch reason {
         case .meetingAppClosed:
             config.appQuitGraceSeconds
-        case .prolongedSilence:
+        case .prolongedSilence, .callEnded:
             0
         }
         guard grace > 0 else { return true }
@@ -371,7 +418,7 @@ final class MeetingAutoStopCoordinator {
         switch reason {
         case .meetingAppClosed(let bundleID):
             context?.observedMeetingAppBundleIDs.remove(bundleID)
-        case .prolongedSilence:
+        case .prolongedSilence, .callEnded:
             break
         }
     }
@@ -382,6 +429,8 @@ final class MeetingAutoStopCoordinator {
             return "Meeting app closed"
         case .prolongedSilence:
             return "This meeting looks finished"
+        case .callEnded:
+            return "Call ended"
         }
     }
 }

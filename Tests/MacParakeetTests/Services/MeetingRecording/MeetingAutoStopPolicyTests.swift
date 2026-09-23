@@ -5,11 +5,13 @@ final class MeetingAutoStopPolicyTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_750_000_000)
 
     private func context(
-        observed: Set<String> = ["us.zoom.xos"]
+        observed: Set<String> = ["us.zoom.xos"],
+        callSeenActive: Bool = false
     ) -> MeetingAutoStopPolicy.MeetingContext {
         MeetingAutoStopPolicy.MeetingContext(
             observedMeetingAppBundleIDs: observed,
-            startedAt: now.addingTimeInterval(-60)
+            startedAt: now.addingTimeInterval(-60),
+            callSeenActive: callSeenActive
         )
     }
 
@@ -17,27 +19,35 @@ final class MeetingAutoStopPolicyTests: XCTestCase {
         isRecording: Bool = true,
         isPaused: Bool = false,
         running: Set<String> = ["us.zoom.xos"],
-        silenceSeconds: TimeInterval = 0
+        silenceSeconds: TimeInterval = 0,
+        isCallActive: Bool = false,
+        callInactiveSeconds: TimeInterval = 0
     ) -> MeetingAutoStopPolicy.Observation {
         MeetingAutoStopPolicy.Observation(
             now: now,
             isRecording: isRecording,
             isPaused: isPaused,
             runningMeetingAppBundleIDs: running,
-            continuousSilenceSeconds: silenceSeconds
+            continuousSilenceSeconds: silenceSeconds,
+            isCallActive: isCallActive,
+            continuousCallInactiveSeconds: callInactiveSeconds
         )
     }
 
     private func config(
         appQuitEnabled: Bool = true,
         silenceEnabled: Bool = true,
-        silenceGrace: TimeInterval = 240
+        callEndedEnabled: Bool = true,
+        silenceGrace: TimeInterval = 240,
+        callEndedGrace: TimeInterval = 5
     ) -> MeetingAutoStopPolicy.Config {
         MeetingAutoStopPolicy.Config(
             appQuitEnabled: appQuitEnabled,
             silenceEnabled: silenceEnabled,
+            callEndedEnabled: callEndedEnabled,
             appQuitGraceSeconds: 15,
-            silenceGraceSeconds: silenceGrace
+            silenceGraceSeconds: silenceGrace,
+            callEndedGraceSeconds: callEndedGrace
         )
     }
 
@@ -119,6 +129,71 @@ final class MeetingAutoStopPolicyTests: XCTestCase {
         )
 
         XCTAssertEqual(decision, .keepRecording)
+    }
+
+    func testCallEndedAtGraceProposesStop() {
+        let decision = MeetingAutoStopPolicy.evaluate(
+            context: context(observed: [], callSeenActive: true),
+            observation: observation(running: [], callInactiveSeconds: 5),
+            config: config(callEndedGrace: 5)
+        )
+
+        XCTAssertEqual(decision, .proposeStop(reason: .callEnded))
+    }
+
+    func testCallEndedBelowGraceKeepsRecording() {
+        let decision = MeetingAutoStopPolicy.evaluate(
+            context: context(observed: [], callSeenActive: true),
+            observation: observation(running: [], callInactiveSeconds: 4.9),
+            config: config(callEndedGrace: 5)
+        )
+
+        XCTAssertEqual(decision, .keepRecording)
+    }
+
+    func testCallNeverSeenActiveNeverFiresCallEnded() {
+        // In-person recording: no call app ever captured the mic. Must never
+        // fire even if continuousCallInactiveSeconds happens to be large.
+        let decision = MeetingAutoStopPolicy.evaluate(
+            context: context(observed: [], callSeenActive: false),
+            observation: observation(running: [], callInactiveSeconds: 300),
+            config: config(callEndedGrace: 5)
+        )
+
+        XCTAssertEqual(decision, .keepRecording)
+    }
+
+    func testCallEndedDisabledKeepsRecording() {
+        let decision = MeetingAutoStopPolicy.evaluate(
+            context: context(observed: [], callSeenActive: true),
+            observation: observation(running: [], callInactiveSeconds: 300),
+            config: config(callEndedEnabled: false, callEndedGrace: 5)
+        )
+
+        XCTAssertEqual(decision, .keepRecording)
+    }
+
+    func testAppQuitWinsOverCallEndedWhenBothEligible() {
+        // App-quit is checked first: it's the most explicit signal available.
+        let decision = MeetingAutoStopPolicy.evaluate(
+            context: context(observed: ["us.zoom.xos"], callSeenActive: true),
+            observation: observation(running: [], callInactiveSeconds: 300),
+            config: config(callEndedGrace: 5)
+        )
+
+        XCTAssertEqual(decision, .proposeStop(reason: .meetingAppClosed(bundleID: "us.zoom.xos")))
+    }
+
+    func testCallEndedWinsOverProlongedSilenceWhenBothEligible() {
+        // Call-ended is checked before silence: it's a precise signal (the
+        // call app released the mic), not a heuristic over ambient audio.
+        let decision = MeetingAutoStopPolicy.evaluate(
+            context: context(observed: [], callSeenActive: true),
+            observation: observation(running: [], silenceSeconds: 300, callInactiveSeconds: 5),
+            config: config(silenceGrace: 240, callEndedGrace: 5)
+        )
+
+        XCTAssertEqual(decision, .proposeStop(reason: .callEnded))
     }
 
     func testAppQuitDisabledKeepsRecordingForClosedApp() {
