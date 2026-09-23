@@ -125,6 +125,16 @@ public final class TranscriptChatViewModel {
         return askProviderOptions.first(where: { $0.id == selectedAskProviderID })?.context
     }
 
+    /// True when a per-conversation provider override (Apple On-Device, a
+    /// cloud key, a CLI tool…) is what's actually answering. The persisted
+    /// global provider's model list (`availableModels`/`currentModelName`,
+    /// which `selectModel` writes back to `LLMConfigStore`) doesn't describe
+    /// the active provider then, so the model-name selector must not be
+    /// shown — it would list, and could rewrite, the wrong provider's model.
+    public var hasActiveAskOverride: Bool {
+        selectedOverrideContext != nil
+    }
+
     /// Rebuild the list of providers the user can pick for this Ask. Touches the
     /// Keychain + probes PATH, so it runs off the main actor and caches.
     public func refreshAskProviders() {

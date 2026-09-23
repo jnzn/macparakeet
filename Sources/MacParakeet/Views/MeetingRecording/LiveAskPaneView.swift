@@ -376,43 +376,10 @@ struct LiveAskPaneView: View {
         .padding(.vertical, DesignSystem.Spacing.sm)
     }
 
-    /// Compact menu to pick which LLM answers *this* Ask conversation. Hidden
-    /// unless the user has more than one provider set up. Selecting one only
-    /// overrides this conversation — the global default (dictation cleanup,
-    /// other surfaces) is untouched.
-    @ViewBuilder
+    /// Compact menu to pick which LLM answers *this* Ask conversation (shared
+    /// with the Library transcript chat).
     private var providerMenu: some View {
-        if viewModel.askProviderOptions.count > 1 {
-            Menu {
-                ForEach(viewModel.askProviderOptions) { option in
-                    Button {
-                        viewModel.selectedAskProviderID = option.id
-                    } label: {
-                        if option.id == viewModel.selectedAskProviderID {
-                            Label(option.displayName, systemImage: "checkmark")
-                        } else {
-                            Text(option.displayName)
-                        }
-                    }
-                }
-            } label: {
-                HStack(spacing: 3) {
-                    Image(systemName: "cpu")
-                        .font(.system(size: 10, weight: .medium))
-                    Text(viewModel.selectedAskProviderDisplayName)
-                        .font(.system(size: 11, weight: .medium))
-                        .lineLimit(1)
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 7, weight: .semibold))
-                }
-                .foregroundStyle(DesignSystem.Colors.textTertiary)
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .frame(maxWidth: 150)
-            .help("Choose which AI answers this conversation")
-        }
+        AskProviderPickerMenu(viewModel: viewModel)
     }
 
     @ViewBuilder

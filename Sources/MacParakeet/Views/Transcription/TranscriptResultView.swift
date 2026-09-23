@@ -3679,7 +3679,21 @@ struct TranscriptResultView: View {
                         }
 
                         HStack(spacing: DesignSystem.Spacing.sm) {
-                            if chatVM.canSendMessage && !chatVM.availableModels.isEmpty {
+                            // Which provider answers this conversation (Apple
+                            // On-Device by default when available). Same picker
+                            // as the live meeting Ask pane.
+                            if chatVM.canSendMessage {
+                                AskProviderPickerMenu(viewModel: chatVM)
+                            }
+
+                            // Model-name picker for the persisted global
+                            // provider — only meaningful while that provider is
+                            // the one answering. With an override active it
+                            // would list (and `selectModel` would rewrite) the
+                            // wrong provider's model.
+                            if chatVM.canSendMessage && !chatVM.availableModels.isEmpty
+                                && !chatVM.hasActiveAskOverride
+                            {
                                 ModelSelectorView(
                                     currentModel: chatVM.currentModelName,
                                     displayName: chatVM.modelDisplayName,

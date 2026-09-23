@@ -1495,6 +1495,42 @@ final class TranscriptChatViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.selectedAskProviderID, LLMProviderID.appleOnDevice.rawValue)
     }
 
+    /// The Library's model-name selector describes the persisted global
+    /// provider, so it must be hidden (via hasActiveAskOverride) whenever an
+    /// override like Apple On-Device is what's actually answering — and
+    /// visible again if the user picks the global default.
+    func testHasActiveAskOverrideTracksSelection() async throws {
+        let configStore = MockLLMConfigStore()
+        configStore.config = .ollama()
+        viewModel.configure(
+            llmService: mockService,
+            transcriptText: "Test transcript",
+            configStore: configStore,
+            appleOnDeviceAvailable: { true }
+        )
+        XCTAssertFalse(viewModel.hasActiveAskOverride, "no override until providers load")
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertTrue(viewModel.hasActiveAskOverride, "Apple auto-default is an override")
+
+        viewModel.selectedAskProviderID = "default"
+        XCTAssertFalse(viewModel.hasActiveAskOverride, "global default is not an override")
+    }
+
+    func testHasActiveAskOverrideFalseWhenAppleUnavailable() async throws {
+        let configStore = MockLLMConfigStore()
+        configStore.config = .ollama()
+        viewModel.configure(
+            llmService: mockService,
+            transcriptText: "Test transcript",
+            configStore: configStore,
+            appleOnDeviceAvailable: { false }
+        )
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertFalse(viewModel.hasActiveAskOverride)
+    }
+
     /// Transforms/summaries/dictation cleanup never go through
     /// TranscriptChatViewModel at all, so this auto-default can't reach
     /// them — only the global LLMConfigStore config (unchanged, still
