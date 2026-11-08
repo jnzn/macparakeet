@@ -55,6 +55,7 @@ public final class MediaPlayerViewModel {
     public var playbackMode: PlaybackMode = .none
     /// Seconds elapsed since loading started (for UX feedback)
     public var loadingElapsed: TimeInterval = 0
+    public private(set) var videoPreparationStage: VideoPreparationStage = .extracting
     /// Whether subtitle overlay is visible on the video player
     public var showSubtitles: Bool = false
     /// Current subtitle text to display (nil when between cues or subtitles disabled)
@@ -80,14 +81,16 @@ public final class MediaPlayerViewModel {
     private var loadingTask: Task<Void, Never>?
     private var loadingTimerTask: Task<Void, Never>?
     private var playbackConversionTask: Task<Void, Never>?
-    private let videoStreamService: VideoStreamService
+    private var videoResource: VideoPlaybackResource?
+    private var videoPreparationTranscription: Transcription?
+    private let videoStreamService: any VideoStreamProviding
     private let playbackConverter: YouTubeAudioPlaybackConverting
     private let playbackRateDefaults: UserDefaults?
     private let logger = Logger(subsystem: "com.macparakeet", category: "MediaPlayer")
     private static let playbackRateDefaultsKey = "MediaPlayerViewModel.playbackRate"
 
     public init(
-        videoStreamService: VideoStreamService = VideoStreamService(),
+        videoStreamService: any VideoStreamProviding = VideoStreamService(),
         playbackConverter: YouTubeAudioPlaybackConverting = YouTubeAudioPlaybackConverter(),
         playbackRateDefaults: UserDefaults? = .standard
     ) {
@@ -104,6 +107,12 @@ public final class MediaPlayerViewModel {
     /// This avoids unnecessary yt-dlp calls that trigger YouTube rate limiting.
     public func prepare(for transcription: Transcription) async {
         loadingTask?.cancel()
+        loadingTask = nil
+        videoPreparationTranscription = nil
+        stopLoadingTimer()
+        clearLoadedPlayer()
+        needsVideoStreamLoad = false
+        videoPreparationStage = .extracting
         // Cancel any in-flight transcode from a previous transcription so
         // it doesn't complete after we've switched to a new row and clobber
         // the active player with the old file's audio.
@@ -124,7 +133,19 @@ public final class MediaPlayerViewModel {
             return
         }
 
-        // YouTube: load local audio file for scrubber bar, defer video stream
+        prepareRetainedYouTubeAudio(for: transcription)
+    }
+
+    private var hasVideoPreparationToCancel: Bool {
+        switch playerState {
+        case .loading: return loadingTask != nil
+        case .error: return videoPreparationTranscription != nil
+        case .idle, .ready, .unavailableOffline: return false
+        }
+    }
+
+    private func prepareRetainedYouTubeAudio(for transcription: Transcription) {
+        // Also used when Hide Video interrupts a direct load after navigation.
         needsVideoStreamLoad = true
 
         // Set duration from transcription metadata so the scrubber shows the correct
@@ -214,6 +235,7 @@ public final class MediaPlayerViewModel {
                 // `removeItem` here in parallel with `persist`, which was a
                 // race with the persist's own internal task.
                 try await persist(transcriptionId, newPath, inputPath)
+                guard !Task.isCancelled else { return }
                 // Only swap the active player if we're still presenting
                 // the audio-scrubber state for this transcription. If the
                 // user clicked Show Video in the meantime, `needsVideoStreamLoad`
@@ -237,6 +259,8 @@ public final class MediaPlayerViewModel {
     /// Cancels any in-flight load to prevent race conditions on rapid navigation.
     public func load(for transcription: Transcription) async {
         loadingTask?.cancel()
+        videoPreparationTranscription =
+            transcription.sourceType == .youtube && transcription.sourceURL != nil ? transcription : nil
         // Cancel any in-flight lazy m4a transcode too — switching modes
         // (e.g., user clicked Show Video) makes its eventual `loadLocalFile`
         // unwanted. The `needsVideoStreamLoad` guard inside the conversion
@@ -247,6 +271,8 @@ public final class MediaPlayerViewModel {
         playbackMode = mode
 
         guard mode != .none else {
+            stopLoadingTimer()
+            clearLoadedPlayer()
             playerState = .idle
             return
         }
@@ -258,6 +284,7 @@ public final class MediaPlayerViewModel {
 
         playerState = .loading
         loadingElapsed = 0
+        videoPreparationStage = .extracting
         startLoadingTimer()
         logger.info("Loading media: mode=\(String(describing: mode), privacy: .public), sourceType=\(transcription.sourceType.rawValue, privacy: .public)")
 
@@ -271,10 +298,30 @@ public final class MediaPlayerViewModel {
                 self.playbackMode = .none
                 self.playerState = .idle
             }
-            self.stopLoadingTimer()
+            // A superseded download must not stop the new load's timer.
+            if !Task.isCancelled {
+                self.stopLoadingTimer()
+            }
         }
         loadingTask = task
         await task.value
+    }
+
+    /// Stop an unfinished or failed Show Video request while keeping retained audio usable.
+    public func cancelVideoPreparation() {
+        guard hasVideoPreparationToCancel else { return }
+        loadingTask?.cancel()
+        loadingTask = nil
+        let transcription = videoPreparationTranscription
+        videoPreparationTranscription = nil
+        stopLoadingTimer()
+        videoPreparationStage = .extracting
+        needsVideoStreamLoad = true
+        if player == nil, let transcription {
+            prepareRetainedYouTubeAudio(for: transcription)
+        } else {
+            playerState = player == nil ? .idle : .ready
+        }
     }
 
     public func seek(toMs ms: Int) {
@@ -328,27 +375,15 @@ public final class MediaPlayerViewModel {
     public func cleanup() {
         loadingTask?.cancel()
         loadingTask = nil
+        videoPreparationTranscription = nil
         playbackConversionTask?.cancel()
         playbackConversionTask = nil
         stopLoadingTimer()
-        if let timeObserver, let player {
-            player.removeTimeObserver(timeObserver)
-        }
-        timeObserver = nil
-        statusObserver?.invalidate()
-        statusObserver = nil
-        if let endOfTrackObserver {
-            NotificationCenter.default.removeObserver(endOfTrackObserver)
-        }
-        endOfTrackObserver = nil
-        player?.pause()
-        player = nil
-        isPlaying = false
-        currentTimeMs = 0
-        durationMs = 0
+        clearLoadedPlayer()
         playerState = .idle
         playbackMode = .none
         needsVideoStreamLoad = false
+        videoPreparationStage = .extracting
         subtitleCues = []
         lastCueIndex = -1
         currentSubtitleText = nil
@@ -373,19 +408,20 @@ public final class MediaPlayerViewModel {
     // MARK: - Private
 
     private func loadYouTubeStream(_ sourceURL: String) async {
-        // Preserve playback position from local audio preload (if any)
-        let savedTimeMs = currentTimeMs
-        let wasPlaying = isPlaying
-
         let start = ContinuousClock.now
         do {
-            logger.info("Extracting stream URL via yt-dlp")
-            let streamURL = try await videoStreamService.streamURL(for: sourceURL)
+            logger.info("Preparing YouTube playback via yt-dlp")
+            let resource = try await videoStreamService.playbackResource(for: sourceURL) { [weak self] stage in
+                await self?.updateVideoPreparationStage(stage)
+            }
             let extractionTime = ContinuousClock.now - start
-            logger.info("Stream URL extracted in \(extractionTime)")
+            logger.info("YouTube playback prepared in \(extractionTime)")
             guard !Task.isCancelled else { return }
-            let playerItem = AVPlayerItem(url: streamURL)
-            setupPlayer(with: playerItem)
+            // Audio can keep playing or be scrubbed while video is prepared.
+            let savedTimeMs = currentTimeMs
+            let wasPlaying = isPlaying
+            let playerItem = AVPlayerItem(url: resource.url)
+            setupPlayer(with: playerItem, videoResource: resource)
             needsVideoStreamLoad = false
             playerState = .ready
             // Restore playback position from local audio
@@ -412,6 +448,11 @@ public final class MediaPlayerViewModel {
         playerState = .ready
     }
 
+    private func updateVideoPreparationStage(_ stage: VideoPreparationStage) {
+        guard !Task.isCancelled else { return }
+        videoPreparationStage = stage
+    }
+
     private func clearLoadedPlayer() {
         if let timeObserver, let player {
             player.removeTimeObserver(timeObserver)
@@ -424,13 +465,15 @@ public final class MediaPlayerViewModel {
         }
         endOfTrackObserver = nil
         player?.pause()
+        player?.replaceCurrentItem(with: nil)
         player = nil
+        videoResource = nil
         isPlaying = false
         currentTimeMs = 0
         durationMs = 0
     }
 
-    private func setupPlayer(with item: AVPlayerItem) {
+    private func setupPlayer(with item: AVPlayerItem, videoResource: VideoPlaybackResource? = nil) {
         // Tear down previous observers
         if let timeObserver, let player {
             player.removeTimeObserver(timeObserver)
@@ -439,11 +482,14 @@ public final class MediaPlayerViewModel {
         if let endOfTrackObserver {
             NotificationCenter.default.removeObserver(endOfTrackObserver)
         }
+        player?.pause()
+        player?.replaceCurrentItem(with: nil)
 
         item.audioTimePitchAlgorithm = .timeDomain
         let avPlayer = AVPlayer(playerItem: item)
         avPlayer.defaultRate = playbackRate
         self.player = avPlayer
+        self.videoResource = videoResource
 
         // Observe playback time at 10Hz for smooth transcript sync + subtitle updates
         let interval = CMTime(seconds: 0.1, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
@@ -476,11 +522,16 @@ public final class MediaPlayerViewModel {
         // Observe duration once available
         Task { @MainActor [weak self] in
             guard let self, self.player === avPlayer else { return }
-            if let duration = try? await item.asset.load(.duration),
-               duration.isNumeric {
-                self.durationMs = Int(duration.seconds * 1000)
+            if let duration = try? await item.asset.load(.duration) {
+                self.applyLoadedDuration(duration, for: avPlayer)
             }
         }
+    }
+
+    /// Commit async metadata only while its player still owns the current media.
+    func applyLoadedDuration(_ duration: CMTime, for loadedPlayer: AVPlayer) {
+        guard player === loadedPlayer, duration.isNumeric else { return }
+        durationMs = Int(duration.seconds * 1000)
     }
 
     private func startLoadingTimer() {

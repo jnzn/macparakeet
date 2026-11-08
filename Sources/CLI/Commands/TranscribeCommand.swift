@@ -43,6 +43,7 @@ enum TranscribeParakeetModel: String, ExpressibleByArgument, CaseIterable, Senda
     case v3
     case v2
     case unified
+    case orukeet
 }
 
 enum TranscribeNemotronModel: String, ExpressibleByArgument, CaseIterable, Sendable {
@@ -110,7 +111,7 @@ struct TranscribeCommand: AsyncParsableCommand, CLITelemetryMetadataProviding {
     @Option(help: "Language hint for Nemotron, Whisper, or Cohere, such as ko, en, or en-US. Cohere requires a supported language; Parakeet and the English-only Nemotron build ignore this flag.")
     var language: String?
 
-    @Option(name: .long, help: "Parakeet build: app-default, v3 (English + supported European languages), v2 (English word timestamps), unified (readable English with word timestamps). app-default follows the saved preference; ignored for Nemotron, Cohere, and Whisper.")
+    @Option(name: .long, help: "Parakeet build: app-default, v3 (English + supported European languages), v2 (English word timestamps), unified (readable English with word timestamps), orukeet (multilingual preview). app-default follows the saved preference; ignored for Nemotron, Cohere, and Whisper.")
     var parakeetModel: TranscribeParakeetModel = .appDefault
 
     @Option(name: .long, help: "Nemotron Beta build: app-default, multilingual-1120ms, english-1120ms. app-default follows the saved preference; ignored for Parakeet, Cohere, and Whisper. The English build ignores --language.")
@@ -128,7 +129,7 @@ struct TranscribeCommand: AsyncParsableCommand, CLITelemetryMetadataProviding {
     @Option(help: "Path to SQLite database file (defaults to the app database).")
     var database: String?
 
-    @Option(name: .long, help: "Speaker detection: app-default, on, off. Default: app-default, which follows the saved GUI/CLI preference.")
+    @Option(name: .long, help: "Speaker detection: app-default, on, off. Default: app-default, which follows the saved GUI/CLI preference. Automatic detection supports up to eight speakers; use count constraints for larger groups.")
     var speakerDetection: SpeakerDetectionOption = .appDefault
 
     @Option(name: .long, help: "Exact speaker count for this run. Mutually exclusive with --speaker-min/--speaker-max; implies speaker detection for app-default.")
@@ -329,6 +330,8 @@ struct TranscribeCommand: AsyncParsableCommand, CLITelemetryMetadataProviding {
             return .v2
         case .unified:
             return .unified
+        case .orukeet:
+            return .orukeet
         }
     }
 
@@ -440,12 +443,9 @@ struct TranscribeCommand: AsyncParsableCommand, CLITelemetryMetadataProviding {
 
     static func makeDiarizationService(
         for speakerDetection: ResolvedSpeakerDetection
-    ) -> DiarizationService? {
+    ) -> (any DiarizationServiceProtocol)? {
         guard speakerDetection.enabled else { return nil }
-        guard let constraint = speakerDetection.constraint else {
-            return DiarizationService()
-        }
-        return DiarizationService(speakerConstraint: constraint)
+        return DiarizationServiceFactory.live.make(speakerConstraint: speakerDetection.constraint)
     }
 
     static func localFileURL(for input: String) -> URL {

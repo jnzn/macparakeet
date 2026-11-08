@@ -3,6 +3,19 @@ import ApplicationServices
 @testable import MacParakeetCore
 
 final class NativeVoiceControlAdapterTests: XCTestCase {
+    func testAwaitingReturnsBeforeASlowTaskFinishes() async {
+        let task = Task {
+            try? await Task.sleep(for: .seconds(2))
+            return "late"
+        }
+        let started = ContinuousClock.now
+        let value = await NativeVoiceControlAdapter.awaiting(task, budget: .milliseconds(40))
+        let elapsed = started.duration(to: .now)
+        XCTAssertNil(value)
+        XCTAssertLessThan(elapsed, .milliseconds(500))
+        task.cancel()
+    }
+
     func testPressableStaticTextUsesVisibleValueAsItsName() {
         XCTAssertEqual(NativeVoiceControlAdapter.actionLabel("", value: "One way", role: kAXStaticTextRole, pressable: true), "One way")
         XCTAssertEqual(NativeVoiceControlAdapter.actionLabel("Ticket type", value: "One way", role: kAXStaticTextRole, pressable: true), "Ticket type")
@@ -58,5 +71,18 @@ final class NativeVoiceControlAdapterTests: XCTestCase {
         XCTAssertTrue(
             NativeVoiceControlAdapter.keepOfferedControl(
                 isBrowser: false, inWebArea: false, hasWebContent: false, label: "New Note", role: kAXButtonRole))
+    }
+}
+
+extension NativeVoiceControlAdapterTests {
+    func testClocksAndCountersAreNotTransitionEvidence() {
+        for text in ["7:42", "28:54 / 1:12:03", "45%", "12 / 340"] {
+            XCTAssertTrue(NativeVoiceControlAdapter.isVolatileText(text), text)
+        }
+        for text in ["Inbox", "Sent 3", "Page 2 of 7", "", " 3 ", "1,024", "/"] {
+            XCTAssertFalse(NativeVoiceControlAdapter.isVolatileText(text), text)
+        }
+        XCTAssertEqual(NativeVoiceControlAdapter.milliseconds(.milliseconds(1_999)), 1_999)
+        XCTAssertEqual(NativeVoiceControlAdapter.milliseconds(.seconds(2)), 2_000)
     }
 }

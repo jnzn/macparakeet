@@ -130,9 +130,7 @@ public struct MeetingRecordingLockFile: Codable, Sendable, Equatable {
         // of the audio metadata still succeeds; only the typed notes are lost.
         notes = (try? container.decodeIfPresent(String.self, forKey: .notes)) ?? nil
         meetingTypeId = (try? container.decodeIfPresent(UUID.self, forKey: .meetingTypeId)) ?? nil
-        audioRetentionStartedAt = (
-            try? container.decodeIfPresent(Date.self, forKey: .audioRetentionStartedAt)
-        ) ?? nil
+        audioRetentionStartedAt = (try? container.decodeIfPresent(Date.self, forKey: .audioRetentionStartedAt)) ?? nil
         titleOverride = Transcription.normalizedTitleOverride(
             from: (try? container.decodeIfPresent(String.self, forKey: .titleOverride)) ?? nil
         )
@@ -420,6 +418,28 @@ public final class MeetingRecordingLockFileStore:
         return false
     }
 
+    /// A settled capture that could not enter the queue has no remaining owner.
+    /// Make it discoverable in this process as well as after a restart. Never
+    /// revoke a queue/recovery lease or an active recording's ownership.
+    @discardableResult
+    public func relinquishUnqueuedCapture(
+        folderURL: URL, sessionID: UUID,
+        beforeRelinquishing: () throws -> Void = {}
+    ) throws -> Bool {
+        try Self.withFinalizationOwnershipMutex(folderURL: folderURL) {
+            guard let lock = try read(folderURL: folderURL),
+                lock.sessionId == sessionID, lock.pid == processID,
+                lock.state == .awaitingTranscription, lock.finalizationLeaseId == nil,
+                !MeetingAudioWriterFinalizationRegistry.contains(folderURL: folderURL)
+            else { return false }
+            // Publish any row failure while recovery admission is excluded.
+            // Once PID 0 is visible, this owner must never mutate that row again.
+            try beforeRelinquishing()
+            try write(lock.withFinalizationOwner(pid: 0, leaseID: UUID()), folderURL: folderURL)
+            return true
+        }
+    }
+
     public func claimFinalizationOwnership(
         folderURL: URL
     ) throws -> MeetingFinalizationOwnershipLease {
@@ -427,7 +447,7 @@ public final class MeetingRecordingLockFileStore:
             throw MeetingFinalizationOwnershipError.missingLock
         }
         return try Self.withFinalizationOwnershipMutex(folderURL: folderURL) {
-            guard let currentLock = try readableOrUnreadablePresentLock(folderURL: folderURL)
+            guard let currentLock = try readFinalizationCandidate(folderURL: folderURL)
             else {
                 throw MeetingFinalizationOwnershipError.missingLock
             }
@@ -600,7 +620,10 @@ public final class MeetingRecordingLockFileStore:
     ///
     /// A newer schema is different: if its peeked PID is still alive, claim
     /// must refuse rather than overwrite a lock this build cannot interpret.
-    private func readableOrUnreadablePresentLock(
+    /// Capture reconstruction uses the same read-only fallback before queue
+    /// admission. This does not claim ownership; the queue must still acquire
+    /// its lease before preparing playback or starting any derived writer.
+    func readFinalizationCandidate(
         folderURL: URL
     ) throws -> MeetingRecordingLockFile? {
         if let readableLock = try read(folderURL: folderURL) {

@@ -155,7 +155,11 @@ struct SettingsView: View {
             Group {
                 if rootViewModel.isSearching {
                     SettingsSearchResultsList(
-                        results: SettingsSearchIndex.matches(rootViewModel.searchQuery),
+                        results: SettingsSearchIndex.matches(
+                            rootViewModel.searchQuery,
+                            hasEnrolledVoices: voiceProfilesViewModel.hasEnrolledVoices,
+                            speakerDetectionEnabled: viewModel.meetingSpeakerDiarization
+                        ),
                         onSelect: handleSearchResultTap
                     )
                 } else {
@@ -175,6 +179,11 @@ struct SettingsView: View {
         }
         .background(DesignSystem.Colors.background)
         .background(focusSearchHotkey)
+        .task {
+            // Search can open before the Meeting Recording card ever mounts.
+            // Its management destination must reflect existing voices then too.
+            await voiceProfilesViewModel.load()
+        }
         .onAppear {
             viewModel.refreshLaunchAtLoginStatus()
             viewModel.startPermissionPolling()
@@ -215,24 +224,16 @@ struct SettingsView: View {
 
     // MARK: - Tabbed Shell
 
-    /// Top-of-panel header: tab bar on the left, search field on the right.
     /// Tab badges roll up the worst per-card status the user can act on.
     /// `.ok` / `.info` are intentionally silent on the badges — a
     /// permanent green dot would just be visual debt.
     private var settingsHeaderShell: some View {
-        HStack(spacing: DesignSystem.Spacing.md) {
+        SettingsHeaderLayout {
             SettingsTabBar(
                 activeTab: tabBindingExitingSearch,
                 tabBadges: tabBadges
             )
 
-            // The search field reserves a clickable width first; the tab bar —
-            // whose per-button `.fixedSize` already keeps its labels from
-            // wrapping — fills whatever remains. The previous arrangement gave
-            // the *tab bar* layout priority, so its `maxWidth: .infinity`
-            // segments ate the entire row even in wide windows, collapsing the
-            // search field to an icon-only stub with no hittable text area.
-            // Reserving the field's width keeps it usable at every size.
             SettingsSearchField(
                 query: $rootViewModel.searchQuery,
                 isFocused: $searchFieldFocused
@@ -280,7 +281,7 @@ struct SettingsView: View {
 
         if let badge = Self.attentionBadge(for: [
             engineSelectorCardStatus,
-            enginesModelsCardStatus
+            enginesModelsCardStatus,
         ]) {
             badges[.engine] = badge
         }
@@ -748,36 +749,10 @@ struct SettingsView: View {
 
     private var captureMicrophoneStrip: some View {
         VStack(spacing: DesignSystem.Spacing.md) {
-            HStack(alignment: .center, spacing: DesignSystem.Spacing.md) {
-                Image(systemName: "mic")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(DesignSystem.Colors.accent)
-                    .frame(width: 30, height: 30)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(DesignSystem.Colors.accent.opacity(0.12))
-                    )
-                    .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: DesignSystem.Spacing.sm) {
-                        Text("Microphone")
-                            .font(DesignSystem.Typography.body.weight(.semibold))
-                        SettingsStatusChip(
-                            status: viewModel.microphoneGranted ? .ok : .required,
-                            label: viewModel.microphoneGranted ? "Granted" : "Permission required"
-                        )
-                    }
-                    Text(viewModel.selectedMicrophoneStatusText)
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-                .layoutPriority(1)
-
-                Spacer(minLength: DesignSystem.Spacing.md)
-
+            SettingsMicrophoneHeader(
+                microphoneGranted: viewModel.microphoneGranted,
+                statusText: viewModel.selectedMicrophoneStatusText
+            ) {
                 HStack(spacing: DesignSystem.Spacing.sm) {
                     if !viewModel.microphoneGranted {
                         microphonePermissionActionButton
@@ -970,7 +945,7 @@ struct SettingsView: View {
     private var startupCard: some View {
         settingsCard(
             title: "Startup",
-            subtitle: "How MacParakeet shows up on your Mac at sign-in.",
+            subtitle: "How MacParakeet starts and where it appears on your Mac.",
             icon: "power"
         ) {
             VStack(spacing: DesignSystem.Spacing.md) {
@@ -1029,7 +1004,7 @@ struct SettingsView: View {
             return "Cohere is batch-only, so preview stays off until transcription finishes."
         }
 
-        return "Shows a running transcript above the dictation pill as you speak. Parakeet and Nemotron support preview; Whisper is final-transcription only."
+        return "Shows a running transcript above the dictation pill as you speak. Parakeet and Nemotron support preview; Whisper shows text only when you finish."
     }
 
     private var dictationCard: some View {
@@ -1088,7 +1063,54 @@ struct SettingsView: View {
                     }
                 }
 
-                if !viewModel.hotkeyTrigger.isDisabled || !viewModel.pushToTalkHotkeyTrigger.isDisabled {
+                Divider()
+
+                DisclosureGroup {
+                    VStack(spacing: DesignSystem.Spacing.md) {
+                        Text("Both shortcuts stay active, so you can switch keyboards without changing settings.")
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        transcriptionHotkeyRow(
+                            title: "Push to talk",
+                            detail: "Hold to dictate, release to stop.",
+                            surface: .alternatePushToTalk,
+                            trigger: $viewModel.alternatePushToTalkHotkeyTrigger
+                        )
+                        Divider()
+                        transcriptionHotkeyRow(
+                            title: "Hands-free mode",
+                            detail: HotkeyTrigger.isSharedDictationGesture(
+                                handsFree: viewModel.alternateHandsFreeHotkeyTrigger,
+                                pushToTalk: viewModel.alternatePushToTalkHotkeyTrigger
+                            )
+                                ? "Double-tap to start; tap a configured hands-free shortcut to stop."
+                                : "Tap to start; tap a configured hands-free shortcut to stop.",
+                            surface: .alternateHandsFree,
+                            trigger: $viewModel.alternateHandsFreeHotkeyTrigger
+                        )
+                    }
+                    .padding(.top, DesignSystem.Spacing.sm)
+                } label: {
+                    rowText(title: "Additional shortcuts", detail: additionalShortcutsDetail)
+                }
+
+                Divider()
+
+                transcriptionHotkeyRow(
+                    title: "AI-polished dictation",
+                    detail: aiPolishHotkeyDetail,
+                    surface: .dictationAIPolish,
+                    trigger: $viewModel.dictationAIPolishHotkeyTrigger,
+                    setupAction: llmSettingsViewModel.isAIFormatterAvailable
+                        ? nil
+                        : ("Set up AI", { openRequestedSettingsDestination(tab: .ai, anchor: "ai.provider") })
+                )
+
+                if !viewModel.hotkeyTrigger.isDisabled
+                    || !viewModel.pushToTalkHotkeyTrigger.isDisabled
+                    || !viewModel.dictationAIPolishHotkeyTrigger.isDisabled
+                {
                     Divider()
 
                     dictationModeGuide
@@ -1108,6 +1130,24 @@ struct SettingsView: View {
 
                 Divider()
 
+                HStack(alignment: .center) {
+                    rowText(
+                        title: "Pill position",
+                        detail: "Screen edge for the dictation pill and live preview."
+                    )
+                    Spacer(minLength: DesignSystem.Spacing.md)
+                    Picker("Pill position", selection: $viewModel.dictationOverlayPlacement) {
+                        ForEach(DictationOverlayPlacement.allCases, id: \.self) { placement in
+                            Text(placement.displayTitle).tag(placement)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .fixedSize()
+                }
+
+                Divider()
+
                 settingsToggleRow(
                     title: "Live transcript preview",
                     detail: liveDictationPreviewDetail,
@@ -1123,7 +1163,7 @@ struct SettingsView: View {
                     HStack(alignment: .center) {
                         rowText(
                             title: "Preview text size",
-                            detail: "Text size for the live preview above the dictation pill."
+                            detail: "Text size for the live transcript preview."
                         )
                         Spacer(minLength: DesignSystem.Spacing.md)
                         Picker("Preview text size", selection: $viewModel.dictationPreviewTextSize) {
@@ -1133,7 +1173,7 @@ struct SettingsView: View {
                         }
                         .labelsHidden()
                         .pickerStyle(.segmented)
-                        .frame(width: 200)
+                        .fixedSize()
                     }
                 }
 
@@ -1151,14 +1191,22 @@ struct SettingsView: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
-                    .frame(width: 200)
+                    .fixedSize()
                 }
 
                 Divider()
 
                 settingsToggleRow(
+                    title: "Escape cancels dictation",
+                    detail: "Press Escape to cancel a dictation in progress. Turn this off if another app needs Escape while you dictate.",
+                    isOn: $viewModel.escapeCancelsDictation
+                )
+
+                Divider()
+
+                settingsToggleRow(
                     title: "Preserve discarded dictations",
-                    detail: "When you cancel or the undo window expires, keep the transcript in History instead of deleting it. Audio follows Save audio recordings. Off by default. Requires Save dictation history. Nothing is pasted.",
+                    detail: "Keeps canceled dictations in History instead of deleting them. They are never pasted. Needs Save dictation history; audio is kept only when Save audio recordings is on.",
                     isOn: $viewModel.preserveDiscardedDictations
                 )
 
@@ -1203,7 +1251,7 @@ struct SettingsView: View {
 
                 settingsToggleRow(
                     title: "Instant dictation",
-                    detail: "Keeps the mic ready so dictation starts faster and catches your first words; macOS shows the mic indicator while it's on. Pauses for Bluetooth mics like AirPods to protect playback quality.",
+                    detail: "Keeps the mic ready so dictation starts faster and catches your first words. macOS shows the mic indicator while this is on. Paused for Bluetooth mics such as AirPods to protect playback quality.",
                     isBeta: true,
                     isOn: $viewModel.instantDictationEnabled
                 )
@@ -1212,7 +1260,7 @@ struct SettingsView: View {
 
                 settingsToggleRow(
                     title: "Pause media while dictating",
-                    detail: "Pauses playing media during dictation and resumes it when capture stops. On speakers, a moment of media sound can reach the mic before the pause lands — speak as you press, or use headphones.",
+                    detail: "Pauses playing media while you dictate and resumes it when you stop. On speakers, a moment of audio can reach the mic before the pause takes effect; headphones avoid this.",
                     isBeta: true,
                     isOn: $viewModel.pauseMediaDuringDictation
                 )
@@ -1220,8 +1268,35 @@ struct SettingsView: View {
                 Divider()
 
                 settingsToggleRow(
+                    title: "Play sounds when dictation starts and stops",
+                    detail: "Plays a short cue when the mic opens and another when it closes, so you know when to speak. Follows the macOS sound effects setting. On speakers, the mic can pick up the cues; use headphones to keep them out of saved audio.",
+                    isOn: Binding(
+                        get: { viewModel.playDictationCaptureSounds },
+                        set: { isOn in
+                            viewModel.playDictationCaptureSounds = isOn
+                            if isOn { SoundManager.shared.play(.recordStart) }
+                        }
+                    )
+                )
+
+                Divider()
+
+                if viewModel.playDictationCaptureSounds {
+                    DictationSoundSettingsSection(controller: SoundManager.shared.dictationSounds)
+                    Divider()
+                }
+
+                settingsToggleRow(
+                    title: "Allow dictation control from links",
+                    detail: "Let links start, stop, or toggle dictation. Any app or website can send these links while enabled. Only enable this for automations you trust.",
+                    isOn: $viewModel.dictationURLControlEnabled
+                )
+
+                Divider()
+
+                settingsToggleRow(
                     title: "Keep dictation on clipboard",
-                    detail: "Leaves the same text MacParakeet pastes on the clipboard, useful when remote desktops need a manual ⌘V.",
+                    detail: "Leaves a copy of the pasted text on the clipboard, which helps when a remote desktop needs a manual ⌘V.",
                     isOn: $viewModel.keepDictationOnClipboard
                 )
 
@@ -1229,7 +1304,7 @@ struct SettingsView: View {
 
                 settingsToggleRow(
                     title: "Streaming cursor",
-                    detail: "Types the finished transcript into the app with a fast caret. Off keeps instant paste. Reduce Motion always pastes. ⌘Z may undo in pieces. Multi-line results still paste.",
+                    detail: "Types the finished transcript into the app instead of pasting it all at once. Multi-line results still paste, and so does everything when Reduce Motion is on. Undo (⌘Z) may remove typed text in several steps.",
                     isOn: $viewModel.dictationStreamingCursorEnabled
                 )
             }
@@ -1288,7 +1363,7 @@ struct SettingsView: View {
 
                 settingsToggleRow(
                     title: "Notify when transcript is ready",
-                    detail: "Plays a chime and shows a notification when a meeting finishes transcribing in the background. Applies when the app isn't set to open automatically.",
+                    detail: "Plays a chime and shows a notification when a meeting finishes transcribing in the background. Applies only when Open app when meeting ends is off.",
                     isOn: $viewModel.notifyOnMeetingEnd
                 )
                 .disabled(viewModel.openAppAfterMeetingEnd)
@@ -1314,6 +1389,14 @@ struct SettingsView: View {
                 Divider()
 
                 settingsToggleRow(
+                    title: "Allow recording control from links",
+                    detail: "Let links start, stop, pause, or resume meetings. Any app or website can send these links while enabled. Only enable this for automations you trust.",
+                    isOn: $viewModel.meetingURLControlEnabled
+                )
+
+                Divider()
+
+                settingsToggleRow(
                     title: "Start meetings muted",
                     detail: "Begin recording with your microphone off. Unmute from the meeting panel when you want to speak. System-audio-only capture ignores this. Changes apply to your next recording.",
                     isOn: $viewModel.startMeetingsMuted
@@ -1333,7 +1416,10 @@ struct SettingsView: View {
 
                 settingsToggleRow(
                     title: "Speaker detection",
-                    detail: "Split captured system audio into other speakers after recording when audio is clear.",
+                    detail: AppFeatures.isVoiceProfilesAvailable()
+                        ? "Split captured system audio into other speakers after recording when audio is clear."
+                        : "Automatically label up to eight other speakers in system audio after recording. "
+                            + "Your microphone stays labeled Me.",
                     isOn: $viewModel.meetingSpeakerDiarization
                 )
 
@@ -1361,7 +1447,7 @@ struct SettingsView: View {
 
                 settingsToggleRow(
                     title: "Also save meetings to a folder",
-                    detail: "MacParakeet keeps the complete meeting in its managed storage. Turn this on to also save the selected format to a folder you choose.",
+                    detail: "MacParakeet always keeps the complete meeting in its library. Turn this on to also save a copy, in the format you choose, to a folder.",
                     isOn: $viewModel.meetingAutoSave
                 )
 
@@ -1369,10 +1455,11 @@ struct SettingsView: View {
                     meetingAutoSaveOptionsView
                 }
 
-                // Start (calendar) and stop (activity) automation are grouped
-                // under one subsection so they read as the two ends of the
-                // recording lifecycle. Either flag alone still shows the group.
-                if AppFeatures.calendarEnabled || AppFeatures.meetingAutoStopEnabled {
+                // Recording reminders, calendar start, and activity stop share
+                // a subsection. Each feature flag independently exposes it.
+                if AppFeatures.calendarEnabled || AppFeatures.meetingAutoStopEnabled
+                    || AppFeatures.meetingActivityDetectionEnabled
+                {
                     Divider()
 
                     meetingAutomationSection
@@ -1397,12 +1484,6 @@ struct SettingsView: View {
                 }
             }
         }
-        // On the card, never on the row above: that row is conditional on what
-        // this load finds, so loading from there would leave it hidden forever
-        // for exactly the people it exists to serve.
-        .task {
-            await voiceProfilesViewModel.load()
-        }
     }
 
     /// Header status chip for the Meeting Recording card. Surfaces the
@@ -1416,37 +1497,47 @@ struct SettingsView: View {
         )
     }
 
-    /// Automatic-recording controls grouped under one subsection: the
-    /// calendar-driven "Start recording automatically" half (ADR-017) and the
-    /// activity-driven "Stop recording automatically" half (ADR-023). They read
-    /// as the two ends of the recording lifecycle but use different signals on
-    /// purpose — calendar *start* times are reliable, *end* times are not, so
-    /// stop keys off meeting-end activity (app quit + dual-channel silence)
-    /// instead. Each flag is independent; either alone still renders the group.
+    /// Independent meeting reminders and automation controls: prompt-only
+    /// activity detection (ADR-024), calendar start (ADR-017), and activity
+    /// stop (ADR-023). Any enabled feature flag renders this subsection.
     private var meetingAutomationSection: some View {
         VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
             HStack(spacing: 6) {
                 Image(systemName: "clock.arrow.circlepath")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
-                Text("Automatic recording")
+                Text("Reminders and automation")
                     .font(DesignSystem.Typography.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
             }
 
+            if AppFeatures.meetingActivityDetectionEnabled {
+                settingsToggleRow(
+                    title: "Remind me to record meetings",
+                    detail:
+                        "Offers to record calls in supported meeting apps and Google Meet, Zoom, or Teams browser tabs. Browser detection uses Accessibility access. Recording starts only when you choose Record.",
+                    isBeta: true,
+                    isOn: Binding(
+                        get: { viewModel.meetingActivityDetectionMode != .off },
+                        set: { viewModel.meetingActivityDetectionMode = $0 ? .prompt : .off }
+                    )
+                )
+            }
+
             if AppFeatures.calendarEnabled {
+                if AppFeatures.meetingActivityDetectionEnabled { Divider() }
                 CalendarSettingsView(viewModel: viewModel)
             }
 
             if AppFeatures.meetingAutoStopEnabled {
-                if AppFeatures.calendarEnabled {
+                if AppFeatures.calendarEnabled || AppFeatures.meetingActivityDetectionEnabled {
                     Divider()
                 }
 
                 settingsToggleRow(
                     title: "Stop recording automatically",
-                    detail: "Stop after a meeting app quits, or both channels stay quiet for a few minutes. A countdown lets you keep recording first.",
+                    detail: "Stops when the meeting app quits, or when both your microphone and system audio stay quiet for a few minutes. A countdown lets you keep recording.",
                     isBeta: true,
                     isOn: $viewModel.meetingAutoStopEnabled
                 )
@@ -1516,7 +1607,7 @@ struct SettingsView: View {
 
     private var meetingAutoSaveOptionsView: some View {
         VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
-            Text("Complete meeting artifacts—including transcript, notes, metadata, prompt results, and retained audio—stay in \(meetingArtifactsDisplayPath). The selected format is also saved to the folder below after each meeting.")
+            Text("Each complete meeting, including its transcript, notes, details, AI results, and any saved audio, stays in \(meetingArtifactsDisplayPath). After each meeting, a copy in the selected format is also saved to the folder below.")
                 .font(DesignSystem.Typography.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1593,34 +1684,17 @@ struct SettingsView: View {
 
                 settingsToggleRow(
                     title: "Speaker detection",
-                    detail: "Add speaker labels to file and URL transcriptions when audio is clear.",
+                    detail: AppFeatures.isVoiceProfilesAvailable()
+                        ? "Add speaker labels to file and URL transcriptions when audio is clear."
+                        : "Automatically label up to eight speakers in file and URL transcriptions.",
                     isOn: $viewModel.speakerDiarization
                 )
 
                 Divider()
 
-                HStack(alignment: .center) {
-                    rowText(
-                        title: "Speaker detection engine",
-                        detail: viewModel.speakerDiarizationEngine.summary
-                            + " Applies to meetings and file transcriptions."
-                    )
-                    Spacer(minLength: DesignSystem.Spacing.md)
-                    Picker("Speaker detection engine", selection: $viewModel.speakerDiarizationEngine) {
-                        ForEach(SpeakerDiarizationEngine.allCases) { engine in
-                            Text(engine.displayName).tag(engine)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .frame(minWidth: 170, idealWidth: 230, maxWidth: 280)
-                }
-
-                Divider()
-
                 settingsToggleRow(
                     title: "Notify when transcription finishes",
-                    detail: "Play a sound when a file, YouTube, or batch transcription completes — plus a notification banner when MacParakeet is in the background.",
+                    detail: "Plays a sound when a file, URL, or batch transcription finishes, and shows a notification when MacParakeet is in the background.",
                     isOn: $viewModel.notifyOnTranscriptionComplete
                 )
 
@@ -1650,19 +1724,38 @@ struct SettingsView: View {
             meeting: viewModel.meetingHotkeyTrigger,
             fileTranscription: viewModel.fileTranscriptionHotkeyTrigger,
             youtubeTranscription: viewModel.youtubeTranscriptionHotkeyTrigger,
+            dictationAIPolish: viewModel.dictationAIPolishHotkeyTrigger,
+            alternateHandsFree: viewModel.alternateHandsFreeHotkeyTrigger,
+            alternatePushToTalk: viewModel.alternatePushToTalkHotkeyTrigger,
             transformHotkeys: transformHotkeys,
             meetingRecordingEnabled: AppFeatures.meetingRecordingEnabled
         )
+    }
+
+    /// The AI polish shortcut still dictates without a saved AI provider, but
+    /// formatting is skipped, so the row states which case applies.
+    private var aiPolishHotkeyDetail: String {
+        llmSettingsViewModel.isAIFormatterAvailable
+            ? "Tap to start and stop. Formats this dictation with AI before pasting, even when AI formatting for dictation is off."
+            : "Needs an AI provider to format your dictation. Until one is set up, this shortcut pastes plain, unformatted text."
     }
 
     private func transcriptionHotkeyRow(
         title: String,
         detail: String,
         surface: HotkeyConflictPolicy.Surface,
-        trigger: Binding<HotkeyTrigger>
+        trigger: Binding<HotkeyTrigger>,
+        setupAction: (title: String, action: () -> Void)? = nil
     ) -> some View {
         HStack(alignment: .center) {
-            rowText(title: title, detail: detail)
+            VStack(alignment: .leading, spacing: 2) {
+                rowText(title: title, detail: detail)
+                if let setupAction {
+                    Button(setupAction.title, action: setupAction.action)
+                        .parakeetAction(.subtle)
+                        .font(DesignSystem.Typography.caption)
+                }
+            }
             Spacer(minLength: DesignSystem.Spacing.md)
             VStack(alignment: .trailing, spacing: 4) {
                 HotkeyRecorderView(
@@ -1901,7 +1994,7 @@ struct SettingsView: View {
             VStack(spacing: DesignSystem.Spacing.md) {
                 settingsToggleRow(
                     title: "Save dictation history",
-                    detail: "When off, dictations are transcribed and pasted but not saved. Voice stats still tracked.",
+                    detail: "When off, dictations are still pasted but not saved to History. Voice stats are still counted.",
                     isOn: $viewModel.saveDictationHistory
                 )
 
@@ -1909,7 +2002,9 @@ struct SettingsView: View {
 
                 settingsToggleRow(
                     title: "Save audio recordings",
-                    detail: "Keep audio alongside your dictation history.",
+                    detail:
+                        "Keeps each dictation's audio in History. A dictation that fails to transcribe "
+                        + "always keeps its recording so you can retry.",
                     isOn: $viewModel.saveAudioRecordings
                 )
 
@@ -1995,7 +2090,7 @@ struct SettingsView: View {
                 }
             }
 
-            Text("Transcripts stay. Auto-removed audio is deleted permanently; playback and re-transcription will no longer be available, and MacParakeet cannot detect or backfill speakers for swept meetings.")
+            Text("Transcripts stay. Removed audio is deleted permanently, so those meetings can no longer be played back, retranscribed, or analyzed for speakers.")
                 .font(DesignSystem.Typography.caption)
                 .foregroundStyle(.secondary)
         }
@@ -2044,9 +2139,9 @@ struct SettingsView: View {
         case .keepForever:
             return ""
         case .deleteAfterDays(let days):
-            return "MacParakeet will remove saved meeting audio older than \(MeetingAudioRetention.normalizedDeleteAfterDays(days)) days. Transcripts stay, and notes, AI results, and chats stay if they exist. Playback and re-transcription will no longer be available, and MacParakeet cannot detect or backfill speakers for swept meetings."
+            return "MacParakeet will remove saved meeting audio older than \(MeetingAudioRetention.normalizedDeleteAfterDays(days)) days. Transcripts, notes, AI results, and chats stay, but those meetings can no longer be played back, retranscribed, or analyzed for speakers."
         case .deleteImmediately:
-            return "New recordings will not keep audio after each final transcript is saved. Audio already saved from past meetings is kept. The meeting stays with its transcript, and notes, AI results, and chats stay if they exist. Playback and re-transcription will no longer be available for new recordings, and MacParakeet cannot detect or backfill speakers for them."
+            return "New meetings will not keep audio once their transcript is saved. Audio from past meetings is kept. Transcripts, notes, AI results, and chats stay, but new meetings can no longer be played back, retranscribed, or analyzed for speakers."
         }
     }
 
@@ -2073,7 +2168,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.lg) {
                 resetSection(
                     label: "Delete data",
-                    caption: "Removes saved rows. Your lifetime stats stay."
+                    caption: "Deletes saved items. Your lifetime stats stay."
                 ) {
                     if let error = viewModel.storageCleanupError {
                         Text(error)
@@ -2097,7 +2192,7 @@ struct SettingsView: View {
                             buttonTitle: "Clear…",
                             accessibilityLabel: "Clear all dictations",
                             confirmationTitle: "Clear All Dictations?",
-                            confirmationMessage: "This will delete all \(viewModel.dictationCount) dictation\(viewModel.dictationCount == 1 ? "" : "s"), their audio files, and any private metric-only entries. Your lifetime stats are not affected. This cannot be undone.",
+                            confirmationMessage: "This will delete all \(viewModel.dictationCount) dictation\(viewModel.dictationCount == 1 ? "" : "s"), their audio files, and any hidden entries kept only for stats. Your lifetime stats are not affected. This cannot be undone.",
                             confirmButtonLabel: "Clear All",
                             perform: viewModel.clearAllDictations
                         )
@@ -2337,7 +2432,7 @@ struct SettingsView: View {
             strengths: [
                 "Fast everyday dictation",
                 "Timestamps for saved dictations",
-                "English + supported European languages"
+                "English + supported European languages",
             ],
             helpText: "Choose Parakeet for fast everyday dictation in supported languages. Use Whisper when your dictation language is outside Parakeet's coverage.",
             modelStatus: displayedParakeetModelStatus,
@@ -2357,7 +2452,7 @@ struct SettingsView: View {
             strengths: [
                 "Live preview while you speak",
                 "English or multilingual builds",
-                "Quality varies by language and audio"
+                "Quality varies by language and audio",
             ],
             helpText: "Choose Nemotron when responsive live preview matters more than proven final quality. It is Beta, so validate it on your language, device, and audio.",
             modelStatus: displayedNemotronModelStatus,
@@ -2377,7 +2472,7 @@ struct SettingsView: View {
             strengths: [
                 "Recorded dictation in many languages",
                 "Meeting preview with word timestamps",
-                "Slower cold starts; no dictation preview"
+                "Slower cold starts; no dictation preview",
             ],
             helpText: "Choose Whisper for recorded dictation outside Parakeet or Nemotron language coverage. It runs locally with word timestamps and can preview meetings, but first use can be slow and live dictation preview stays off.",
             modelStatus: displayedWhisperModelStatus,
@@ -2399,7 +2494,7 @@ struct SettingsView: View {
             strengths: [
                 "Local record-then-transcribe",
                 "Plain text with set language",
-                "No dictation or meeting preview"
+                "No dictation or meeting preview",
             ],
             helpText: "Choose Cohere when a local batch plain-text transcript is enough and you can set the language. It has no live preview, word timestamps, speaker labels, or auto language detection.",
             modelStatus: displayedCohereModelStatus,
@@ -2536,7 +2631,7 @@ struct SettingsView: View {
     }
 
     /// Parakeet build picker (multilingual `v3`, English-only `v2`, and the
-    /// English-only Unified build). Only shown when Parakeet is the active
+    /// English-only Unified build, plus the optional Orukeet preview). Only shown when Parakeet is the active
     /// engine — symmetric to the Whisper Language card. English-only builds fix
     /// the v3 auto-detect mis-firing English as another language (issues #311,
     /// #398); Unified is the punctuated English streaming build (issue #520).
@@ -2557,6 +2652,8 @@ struct SettingsView: View {
                     parakeetModelOptionRow(.v2)
                     Divider()
                     parakeetModelOptionRow(.unified)
+                    Divider()
+                    parakeetModelOptionRow(.orukeet)
                 }
             }
             .transition(.opacity)
@@ -3572,8 +3669,8 @@ struct SettingsView: View {
 
     private var permissionsCard: some View {
         let permissionsSubtitle = AppFeatures.meetingRecordingEnabled
-            ? "Microphone is needed for dictation and microphone meetings. Accessibility is required for the global hotkey and paste. Screen Recording is needed for system-audio meetings."
-            : "Microphone is needed for dictation. Accessibility is required for the global hotkey and paste."
+            ? "Dictation and meetings use these. File transcription does not."
+            : "Dictation uses these. File transcription does not."
 
         return SettingsCard(
             title: "Permissions",
@@ -3581,65 +3678,46 @@ struct SettingsView: View {
             icon: "lock.shield",
             status: permissionsCardStatus
         ) {
-            VStack(spacing: DesignSystem.Spacing.md) {
-                HStack {
-                    rowText(
-                        title: "Microphone",
-                        detail: "Needed for dictation and microphone meetings. File transcription does not use it."
-                    )
-                    Spacer()
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+                permissionStatusRow(
+                    title: "Microphone",
+                    detail: "Dictation and microphone meetings."
+                ) {
+                    if !viewModel.microphoneGranted {
+                        microphonePermissionActionButton
+                    }
                     permissionPill(granted: viewModel.microphoneGranted)
                 }
 
                 Divider()
 
-                HStack {
-                    rowText(title: "Accessibility", detail: "Required for global hotkey and paste.")
-                    Spacer()
+                permissionStatusRow(
+                    title: "Accessibility",
+                    detail: "Global hotkey and paste."
+                ) {
+                    if !viewModel.accessibilityGranted {
+                        permissionLink("Settings") {
+                            openAccessibilitySettings()
+                        }
+                    }
                     permissionPill(granted: viewModel.accessibilityGranted)
                 }
 
                 if AppFeatures.meetingRecordingEnabled {
                     Divider()
 
-                    HStack {
-                        rowText(
-                            title: "Screen & System Audio Recording",
-                            detail: "Required for meeting modes that capture system audio. MacParakeet never records your screen."
-                        )
-                        Spacer()
-                        screenRecordingPermissionPill
-                    }
-                }
-
-                let needsScreenRecordingAction = AppFeatures.meetingRecordingEnabled
-                    && viewModel.meetingAudioSourceMode.capturesSystemAudio
-                    && !viewModel.screenRecordingGranted
-                if !viewModel.microphoneGranted || !viewModel.accessibilityGranted || needsScreenRecordingAction {
-                    Divider()
-                    HStack(spacing: DesignSystem.Spacing.sm) {
-                        if !viewModel.microphoneGranted {
-                            microphonePermissionActionButton
-                        }
-
-                        if !viewModel.accessibilityGranted {
-                            Button("Open Accessibility Settings") {
-                                openAccessibilitySettings()
-                            }
-                            .parakeetAction(.primaryProminent)
-                        }
-
+                    let needsScreenRecordingAction = viewModel.meetingAudioSourceMode.capturesSystemAudio
+                        && !viewModel.screenRecordingGranted
+                    permissionStatusRow(
+                        title: "Screen & System Audio",
+                        detail: "Meetings that include other people's audio. MacParakeet does not record your screen."
+                    ) {
                         if needsScreenRecordingAction {
-                            Button("Enable meeting recording") {
+                            permissionLink("Allow") {
                                 viewModel.requestScreenRecordingAccess()
                             }
-                            .parakeetAction(.primaryProminent)
-
-                            Button("Open Screen Recording Settings") {
-                                viewModel.openScreenRecordingSystemSettings()
-                            }
-                            .parakeetAction(.secondary)
                         }
+                        screenRecordingPermissionPill
                     }
                 }
             }
@@ -3743,6 +3821,31 @@ struct SettingsView: View {
                 .font(DesignSystem.Typography.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    /// One row: the explanation takes the remaining width, and the status pill is
+    /// always the trailing edge so every permission lines up. A missing
+    /// permission has one quiet action immediately beside its pill.
+    private func permissionStatusRow<Accessory: View>(
+        title: String,
+        detail: String,
+        @ViewBuilder accessory: () -> Accessory
+    ) -> some View {
+        HStack(alignment: .center, spacing: DesignSystem.Spacing.md) {
+            rowText(title: title, detail: detail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(alignment: .center, spacing: 10) {
+                accessory()
+            }
+            .fixedSize(horizontal: true, vertical: false)
+        }
+    }
+
+    private func permissionLink(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(title, action: action)
+            .buttonStyle(.plain)
+            .font(DesignSystem.Typography.caption.weight(.medium))
+            .foregroundStyle(DesignSystem.Colors.accent)
     }
 
     private func metricTile(title: String, value: String, detail: String) -> some View {
@@ -3880,12 +3983,41 @@ struct SettingsView: View {
                     detail: "Tap again to stop"
                 )
             }
+
+            if (!viewModel.pushToTalkHotkeyTrigger.isDisabled || !viewModel.hotkeyTrigger.isDisabled)
+                && !viewModel.dictationAIPolishHotkeyTrigger.isDisabled
+            {
+                Divider()
+                    .padding(.leading, 108)
+            }
+
+            if !viewModel.dictationAIPolishHotkeyTrigger.isDisabled {
+                modeShortcutRow(
+                    keys: [viewModel.dictationAIPolishHotkeyTrigger.shortSymbol],
+                    separator: nil,
+                    verb: "Tap",
+                    action: "AI polish",
+                    detail: "Cleans this dictation"
+                )
+            }
         }
         .padding(DesignSystem.Spacing.sm)
         .background(
             RoundedRectangle(cornerRadius: DesignSystem.Layout.rowCornerRadius)
                 .fill(DesignSystem.Colors.surfaceElevated)
         )
+    }
+
+    private var additionalShortcutsDetail: String {
+        let handsFree = viewModel.alternateHandsFreeHotkeyTrigger
+        let pushToTalk = viewModel.alternatePushToTalkHotkeyTrigger
+        var parts: [String] = []
+        if !pushToTalk.isDisabled { parts.append("Hold " + pushToTalk.displayName) }
+        if !handsFree.isDisabled {
+            let shared = HotkeyTrigger.isSharedDictationGesture(handsFree: handsFree, pushToTalk: pushToTalk)
+            parts.append((shared ? "Double-tap " : "Tap ") + handsFree.displayName)
+        }
+        return parts.isEmpty ? "Optional second shortcuts for another keyboard." : parts.joined(separator: " · ")
     }
 
     private var usesSharedDictationGesture: Bool {
@@ -4107,15 +4239,13 @@ struct SettingsView: View {
     @ViewBuilder
     private var microphonePermissionActionButton: some View {
         if viewModel.microphoneStatus == .notDetermined {
-            Button("Grant Microphone Access") {
+            permissionLink("Allow") {
                 viewModel.requestMicrophoneAccess()
             }
-            .parakeetAction(.primaryProminent)
         } else {
-            Button("Open Microphone Settings") {
+            permissionLink("Settings") {
                 viewModel.openMicrophoneSystemSettings()
             }
-            .parakeetAction(.primaryProminent)
         }
     }
 
@@ -4123,5 +4253,81 @@ struct SettingsView: View {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
             NSWorkspace.shared.open(url)
         }
+    }
+}
+
+struct SettingsMicrophoneHeader<Controls: View>: View {
+    let microphoneGranted: Bool
+    let statusText: String
+    @ViewBuilder var controls: () -> Controls
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: DesignSystem.Spacing.md) {
+                    heading
+                    Spacer(minLength: DesignSystem.Spacing.md)
+                    controls()
+                }
+                VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+                    heading
+                    controls()
+                }
+            }
+            Text(statusText)
+                .font(DesignSystem.Typography.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var heading: some View {
+        HStack(spacing: DesignSystem.Spacing.sm) {
+            Image(systemName: "mic")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(DesignSystem.Colors.accent)
+                .frame(width: 30, height: 30)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(DesignSystem.Colors.accent.opacity(0.12))
+                )
+                .accessibilityHidden(true)
+            Text("Microphone")
+                .font(DesignSystem.Typography.body.weight(.semibold))
+            SettingsStatusChip(
+                status: microphoneGranted ? .ok : .required,
+                label: microphoneGranted ? "Granted" : "Permission required"
+            )
+        }
+        .fixedSize()
+    }
+}
+
+/// Changes the arrangement without remounting the search field, so resizing
+/// preserves its focus and does not run its initial-focus blocker again.
+struct SettingsHeaderLayout: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let layout = arrangement(for: proposal.width, subviews: subviews)
+        var layoutCache = layout.makeCache(subviews: subviews)
+        return layout.sizeThatFits(proposal: proposal, subviews: subviews, cache: &layoutCache)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let layout = arrangement(for: bounds.width, subviews: subviews)
+        var layoutCache = layout.makeCache(subviews: subviews)
+        layout.placeSubviews(in: bounds, proposal: proposal, subviews: subviews, cache: &layoutCache)
+    }
+
+    private func arrangement(for width: CGFloat?, subviews: Subviews) -> AnyLayout {
+        let row = AnyLayout(HStackLayout(spacing: DesignSystem.Spacing.md))
+        var rowCache = row.makeCache(subviews: subviews)
+        let minimum = row.sizeThatFits(
+            proposal: ProposedViewSize(width: 0, height: nil), subviews: subviews, cache: &rowCache
+        )
+        if let width, width < minimum.width {
+            return AnyLayout(VStackLayout(alignment: .leading, spacing: DesignSystem.Spacing.sm))
+        }
+        return row
     }
 }

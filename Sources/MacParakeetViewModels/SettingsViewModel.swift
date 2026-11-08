@@ -124,6 +124,22 @@ public final class SettingsViewModel {
             Telemetry.send(.settingChanged(setting: .hidePill, value: Self.settingValue(!showIdlePill)))
         }
     }
+    public var dictationOverlayPlacement: DictationOverlayPlacement {
+        didSet {
+            guard dictationOverlayPlacement != oldValue else { return }
+            defaults.set(
+                dictationOverlayPlacement.rawValue,
+                forKey: UserDefaultsAppRuntimePreferences.dictationOverlayPlacementKey
+            )
+            NotificationCenter.default.post(
+                name: .macParakeetDictationOverlayPlacementDidChange,
+                object: nil
+            )
+            Telemetry.send(
+                .settingChanged(setting: .overlayPlacement, value: dictationOverlayPlacement.rawValue)
+            )
+        }
+    }
     /// Show the Discover card in the main sidebar. Defaults to `true`, so
     /// nothing changes for existing users until they turn it off.
     ///
@@ -180,6 +196,19 @@ public final class SettingsViewModel {
             Telemetry.send(pushToTalkHotkeyTrigger.customizedEvent(surface: .pushToTalk))
         }
     }
+    public var alternateHandsFreeHotkeyTrigger: HotkeyTrigger {
+        didSet {
+            alternateHandsFreeHotkeyTrigger.save(to: defaults, defaultsKey: HotkeyTrigger.alternateHandsFreeDefaultsKey)
+            NotificationCenter.default.post(name: .macParakeetHotkeyTriggerDidChange, object: nil)
+        }
+    }
+    public var alternatePushToTalkHotkeyTrigger: HotkeyTrigger {
+        didSet {
+            alternatePushToTalkHotkeyTrigger.save(
+                to: defaults, defaultsKey: HotkeyTrigger.alternatePushToTalkDefaultsKey)
+            NotificationCenter.default.post(name: .macParakeetPushToTalkHotkeyTriggerDidChange, object: nil)
+        }
+    }
     public var meetingHotkeyTrigger: HotkeyTrigger {
         didSet {
             meetingHotkeyTrigger.save(to: defaults, defaultsKey: HotkeyTrigger.meetingDefaultsKey)
@@ -217,6 +246,16 @@ public final class SettingsViewModel {
                 object: nil
             )
             Telemetry.send(youtubeTranscriptionHotkeyTrigger.customizedEvent(surface: .youtubeTranscription))
+        }
+    }
+    public var dictationAIPolishHotkeyTrigger: HotkeyTrigger {
+        didSet {
+            dictationAIPolishHotkeyTrigger.save(to: defaults, defaultsKey: HotkeyTrigger.dictationAIPolishDefaultsKey)
+            NotificationCenter.default.post(
+                name: .macParakeetDictationAIPolishHotkeyTriggerDidChange,
+                object: nil
+            )
+            Telemetry.send(dictationAIPolishHotkeyTrigger.customizedEvent(surface: .dictationAIPolish))
         }
     }
     public var silenceAutoStop: Bool {
@@ -269,6 +308,12 @@ public final class SettingsViewModel {
             microphoneTestState = .idle
             microphoneTestLevel = 0
             NotificationCenter.default.post(name: .macParakeetMicrophoneSelectionDidChange, object: nil)
+            // Only an explicit selection rebuilds the idle preparation. Route
+            // notifications from Core Audio do not (#1227). The warm hold owns
+            // its own refresh while Instant Dictation is on.
+            if !instantDictationEnabled {
+                sharedMicStream?.refreshIdlePrewarm()
+            }
             Telemetry.send(.settingChanged(setting: .microphoneSelection))
         }
     }
@@ -279,6 +324,16 @@ public final class SettingsViewModel {
                 forKey: UserDefaultsAppRuntimePreferences.meetingAudioSourceModeKey
             )
             Telemetry.send(.settingChanged(setting: .meetingAudioSourceMode, value: meetingAudioSourceMode.rawValue))
+        }
+    }
+    public var dictationURLControlEnabled: Bool {
+        didSet {
+            defaults.set(dictationURLControlEnabled, forKey: UserDefaultsAppRuntimePreferences.dictationURLControlEnabledKey)
+        }
+    }
+    public var meetingURLControlEnabled: Bool {
+        didSet {
+            defaults.set(meetingURLControlEnabled, forKey: UserDefaultsAppRuntimePreferences.meetingURLControlEnabledKey)
         }
     }
     public var startMeetingsMuted: Bool {
@@ -340,6 +395,17 @@ public final class SettingsViewModel {
             Telemetry.send(.settingChanged(setting: .meetingAutoStop, value: Self.settingValue(meetingAutoStopEnabled)))
         }
     }
+    /// Auto-start values from older experimental builds are treated as prompt-only.
+    public var meetingActivityDetectionMode: MeetingActivityDetectionMode {
+        didSet {
+            defaults.set(meetingActivityDetectionMode.rawValue, forKey: MeetingActivityDetectionPreferences.modeKey)
+            NotificationCenter.default.post(name: .macParakeetMeetingActivitySettingsDidChange, object: nil)
+            Telemetry.send(.settingChanged(
+                setting: .meetingActivityDetectionMode,
+                value: meetingActivityDetectionMode.rawValue
+            ))
+        }
+    }
     public var pauseMediaDuringDictation: Bool {
         didSet {
             defaults.set(
@@ -349,6 +415,31 @@ public final class SettingsViewModel {
             Telemetry.send(.settingChanged(
                 setting: .pauseMediaDuringDictation,
                 value: Self.settingValue(pauseMediaDuringDictation)
+            ))
+        }
+    }
+    public var playDictationCaptureSounds: Bool {
+        didSet {
+            defaults.set(
+                playDictationCaptureSounds,
+                forKey: UserDefaultsAppRuntimePreferences.playDictationCaptureSoundsKey
+            )
+            Telemetry.send(.settingChanged(
+                setting: .playDictationCaptureSounds,
+                value: Self.settingValue(playDictationCaptureSounds)
+            ))
+        }
+    }
+
+    public var escapeCancelsDictation: Bool {
+        didSet {
+            defaults.set(
+                escapeCancelsDictation,
+                forKey: UserDefaultsAppRuntimePreferences.escapeCancelsDictationKey
+            )
+            Telemetry.send(.settingChanged(
+                setting: .escapeCancelsDictation,
+                value: Self.settingValue(escapeCancelsDictation)
             ))
         }
     }
@@ -521,6 +612,18 @@ public final class SettingsViewModel {
             Telemetry.send(.processingModeChanged(mode: processingMode))
         }
     }
+    public var spokenPunctuationEnabled: Bool {
+        didSet {
+            defaults.set(
+                spokenPunctuationEnabled,
+                forKey: UserDefaultsAppRuntimePreferences.spokenPunctuationEnabledKey
+            )
+            Telemetry.send(.settingChanged(
+                setting: .spokenPunctuation,
+                value: Self.settingValue(spokenPunctuationEnabled)
+            ))
+        }
+    }
     public var dictationInsertionStyle: DictationInsertionStyle {
         didSet {
             defaults.set(
@@ -536,8 +639,6 @@ public final class SettingsViewModel {
             Telemetry.send(.settingChanged(setting: .removeUmFiller, value: Self.settingValue(removeUmFiller)))
         }
     }
-    public var customWordCount: Int = 0
-    public var snippetCount: Int = 0
     public var customVocabularyRecognitionStatus: CustomVocabularyBoostingSupportPresentation {
         guard let capabilities = SpeechEngineCapabilityRegistry.capabilities(
             for: engine.speechEnginePreference,
@@ -613,11 +714,6 @@ public final class SettingsViewModel {
         didSet {
             defaults.set(speakerDiarization, forKey: UserDefaultsAppRuntimePreferences.speakerDiarizationKey)
             Telemetry.send(.settingChanged(setting: .speakerDiarization, value: Self.settingValue(speakerDiarization)))
-        }
-    }
-    public var speakerDiarizationEngine: SpeakerDiarizationEngine {
-        didSet {
-            defaults.set(speakerDiarizationEngine.rawValue, forKey: UserDefaultsAppRuntimePreferences.speakerDiarizationEngineKey)
         }
     }
     public var meetingSpeakerDiarization: Bool {
@@ -886,8 +982,6 @@ public final class SettingsViewModel {
     private var dictationRepo: DictationRepositoryProtocol?
     private var transcriptionRepo: TranscriptionRepositoryProtocol?
     private var transformHistoryRepo: TransformHistoryRepositoryProtocol?
-    private var customWordRepo: CustomWordRepositoryProtocol?
-    private var snippetRepo: TextSnippetRepositoryProtocol?
     private var entitlementsService: EntitlementsService?
     private var launchAtLoginService: LaunchAtLoginControlling?
     private var meetingRecoveryService: MeetingRecordingRecoveryServicing?
@@ -923,6 +1017,7 @@ public final class SettingsViewModel {
         parakeetModelVariantCached: @escaping @Sendable (ParakeetModelVariant) -> Bool = {
             // Unified is a separate FluidAudio runtime with no `AsrModelVersion`;
             // dispatch it to its own engine's cache check.
+            if $0 == .orukeet { return OrukeetModelStore.isInstalled }
             if $0.usesUnifiedEngine { return ParakeetUnifiedEngine.isModelCached() }
             guard let version = $0.asrModelVersion else { return false }
             return STTRuntime.isModelCached(version: version)
@@ -934,6 +1029,7 @@ public final class SettingsViewModel {
             CohereTranscribeEngine.isModelCached()
         },
         deleteParakeetModelOnDisk: @escaping @Sendable (ParakeetModelVariant) -> Bool = {
+            if $0 == .orukeet { return OrukeetModelStore.delete() }
             if $0.usesUnifiedEngine { return ParakeetUnifiedEngine.deleteModel() }
             guard let version = $0.asrModelVersion else { return false }
             return STTRuntime.deleteParakeetModel(version: version)
@@ -985,6 +1081,7 @@ public final class SettingsViewModel {
         }
         appAppearanceMode = AppPreferences.appearanceMode(defaults: defaults)
         showIdlePill = defaults.object(forKey: UserDefaultsAppRuntimePreferences.showIdlePillKey) as? Bool ?? true
+        dictationOverlayPlacement = DictationOverlayPlacement.current(defaults: defaults)
         showDiscover = defaults.object(forKey: UserDefaultsAppRuntimePreferences.showDiscoverKey) as? Bool ?? true
         telemetryEnabled = AppPreferences.isTelemetryEnabled(defaults: defaults)
         notifyOnTranscriptionComplete = defaults.object(
@@ -999,6 +1096,12 @@ public final class SettingsViewModel {
         if resolvedDictationHotkeys.shouldPersistPushToTalk {
             resolvedDictationHotkeys.pushToTalk.save(to: defaults, defaultsKey: HotkeyTrigger.pushToTalkDefaultsKey)
         }
+        alternateHandsFreeHotkeyTrigger = HotkeyTrigger.current(
+            defaults: defaults, defaultsKey: HotkeyTrigger.alternateHandsFreeDefaultsKey, fallback: .disabled
+        )
+        alternatePushToTalkHotkeyTrigger = HotkeyTrigger.current(
+            defaults: defaults, defaultsKey: HotkeyTrigger.alternatePushToTalkDefaultsKey, fallback: .disabled
+        )
         meetingHotkeyTrigger = Self.resolveMeetingHotkeyTrigger(defaults: defaults)
         voiceMemoHotkeyTrigger = HotkeyTrigger.current(
             defaults: defaults,
@@ -1013,6 +1116,10 @@ public final class SettingsViewModel {
             defaults: defaults,
             defaultsKey: HotkeyTrigger.youtubeTranscriptionDefaultsKey
         )
+        dictationAIPolishHotkeyTrigger = Self.resolveTranscriptionHotkeyTrigger(
+            defaults: defaults,
+            defaultsKey: HotkeyTrigger.dictationAIPolishDefaultsKey
+        )
         silenceAutoStop = defaults.bool(forKey: UserDefaultsAppRuntimePreferences.silenceAutoStopKey)
         let delay = defaults.double(forKey: UserDefaultsAppRuntimePreferences.silenceDelayKey)
         silenceDelay = delay == 0 ? 2.0 : delay
@@ -1026,16 +1133,26 @@ public final class SettingsViewModel {
             defaults.string(forKey: UserDefaultsAppRuntimePreferences.selectedMicrophoneDeviceUIDKey)
         )
         meetingAudioSourceMode = MeetingAudioSourceMode.current(defaults: defaults)
+        dictationURLControlEnabled = UserDefaultsAppRuntimePreferences.dictationURLControlEnabled(defaults: defaults)
+        meetingURLControlEnabled = UserDefaultsAppRuntimePreferences.meetingURLControlEnabled(defaults: defaults)
         startMeetingsMuted = UserDefaultsAppRuntimePreferences.startMeetingsMuted(defaults: defaults)
         showMeetingRecordingPill = UserDefaultsAppRuntimePreferences.showMeetingRecordingPill(defaults: defaults)
         openAppAfterMeetingEnd = UserDefaultsAppRuntimePreferences.openAppAfterMeetingEnd(defaults: defaults)
         notifyOnMeetingEnd = UserDefaultsAppRuntimePreferences.notifyOnMeetingEnd(defaults: defaults)
-        meetingAutoStopEnabled = defaults.object(
-            forKey: UserDefaultsAppRuntimePreferences.meetingAutoStopEnabledKey
-        ) as? Bool ?? false
-        pauseMediaDuringDictation = defaults.object(
-            forKey: UserDefaultsAppRuntimePreferences.pauseMediaDuringDictationKey
-        ) as? Bool ?? false
+        meetingAutoStopEnabled =
+            defaults.object(
+                forKey: UserDefaultsAppRuntimePreferences.meetingAutoStopEnabledKey
+            ) as? Bool ?? false
+        meetingActivityDetectionMode =
+            MeetingActivityDetectionMode(
+                rawValue: defaults.string(forKey: MeetingActivityDetectionPreferences.modeKey) ?? "off"
+            ).map { $0 == .off ? .off : .prompt } ?? .off
+        pauseMediaDuringDictation =
+            defaults.object(
+                forKey: UserDefaultsAppRuntimePreferences.pauseMediaDuringDictationKey
+            ) as? Bool ?? false
+        playDictationCaptureSounds = UserDefaultsAppRuntimePreferences.playDictationCaptureSounds(defaults: defaults)
+        escapeCancelsDictation = UserDefaultsAppRuntimePreferences.escapeCancelsDictation(defaults: defaults)
         preserveDiscardedDictations = UserDefaultsAppRuntimePreferences.preserveDiscardedDictations(defaults: defaults)
         instantDictationEnabled = defaults.object(
             forKey: UserDefaultsAppRuntimePreferences.instantDictationEnabledKey
@@ -1049,6 +1166,7 @@ public final class SettingsViewModel {
         voiceReturnTriggers = UserDefaultsAppRuntimePreferences.voiceReturnTriggerList(defaults: defaults)
         voiceReturnMode = VoiceReturnMode.current(defaults: defaults)
         processingMode = Self.normalizedProcessingMode(defaults.string(forKey: UserDefaultsAppRuntimePreferences.processingModeKey))
+        spokenPunctuationEnabled = UserDefaultsAppRuntimePreferences.spokenPunctuationEnabled(defaults: defaults)
         dictationInsertionStyle = DictationInsertionStyle.current(defaults: defaults)
         removeUmFiller = UserDefaultsAppRuntimePreferences.removeUmFiller(defaults: defaults)
         saveDictationHistory = defaults.object(forKey: UserDefaultsAppRuntimePreferences.saveDictationHistoryKey) as? Bool ?? true
@@ -1066,7 +1184,6 @@ public final class SettingsViewModel {
         meetingAudioRetention = UserDefaultsAppRuntimePreferences.meetingAudioRetention(defaults: defaults)
         youtubeAudioQuality = YouTubeAudioQuality.current(defaults: defaults)
         speakerDiarization = UserDefaultsAppRuntimePreferences.speakerDiarizationEnabled(defaults: defaults)
-        speakerDiarizationEngine = UserDefaultsAppRuntimePreferences.speakerDiarizationEngine(defaults: defaults)
         meetingSpeakerDiarization = UserDefaultsAppRuntimePreferences.meetingSpeakerDiarizationEnabled(defaults: defaults)
         meetingLiveTranscriptionEnabled = UserDefaultsAppRuntimePreferences.meetingLiveTranscriptionEnabled(
             defaults: defaults
@@ -1411,8 +1528,6 @@ public final class SettingsViewModel {
         entitlementsService: EntitlementsService,
         launchAtLoginService: LaunchAtLoginControlling? = nil,
         checkoutURL: URL?,
-        customWordRepo: CustomWordRepositoryProtocol? = nil,
-        snippetRepo: TextSnippetRepositoryProtocol? = nil,
         sttClient: STTClientProtocol? = nil,
         speechEngineSwitcher: SpeechEngineSwitching? = nil,
         speechEngineSwitchAvailabilityProvider: SpeechEngineSwitchAvailabilityProviding? = nil,
@@ -1426,8 +1541,6 @@ public final class SettingsViewModel {
         self.entitlementsService = entitlementsService
         self.launchAtLoginService = launchAtLoginService
         self.checkoutURL = checkoutURL
-        self.customWordRepo = customWordRepo
-        self.snippetRepo = snippetRepo
         engine.configure(
             sttClient: sttClient,
             speechEngineSwitcher: speechEngineSwitcher,
@@ -1628,7 +1741,12 @@ public final class SettingsViewModel {
     public func requestScreenRecordingAccess() {
         guard let permissionService else { return }
         Telemetry.send(.permissionPrompted(permission: .screenRecording))
-        _ = permissionService.requestScreenRecordingPermission()
+        // The request prompts only while access is undetermined; after a
+        // denial it returns false silently. Access is granted in System
+        // Settings either way, so take the user there.
+        if !permissionService.requestScreenRecordingPermission() {
+            permissionService.openScreenRecordingSettings()
+        }
         refreshPermissions()
     }
 
@@ -1788,10 +1906,6 @@ public final class SettingsViewModel {
         guard let repo = dictationRepo else { return }
         do { dictationCount = try repo.stats().visibleCount }
         catch { logger.error("Failed to load dictation stats: \(error.localizedDescription)") }
-        do { customWordCount = try customWordRepo?.fetchAll().count ?? 0 }
-        catch { logger.error("Failed to load custom word count: \(error.localizedDescription)") }
-        do { snippetCount = try snippetRepo?.fetchAll().count ?? 0 }
-        catch { logger.error("Failed to load snippet count: \(error.localizedDescription)") }
 
         refreshStorageStats()
     }

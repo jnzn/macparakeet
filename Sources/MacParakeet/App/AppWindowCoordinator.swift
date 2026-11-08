@@ -61,12 +61,14 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
     private let vocabularyBackupViewModel: VocabularyBackupViewModel
     private let feedbackViewModel: FeedbackViewModel
     private let libraryViewModel: TranscriptionLibraryViewModel
+    private let askWorkspaceViewModel: AskWorkspaceViewModel
     private let meetingsWorkspaceViewModel: MeetingsWorkspaceViewModel
     private let meetingPillViewModel: MeetingRecordingPillViewModel
     private let meetingSplitViewModel: MeetingSplitViewModel
     private let meetingImportViewModel: MeetingImportViewModel
     private let shareManagementViewModel: ShareManagementViewModel?
     private let onRecordMeeting: () -> Void
+    private let onOpenAskSource: (UUID) -> Void
     private let onRecordMeetingFromWorkspace: () -> Void
     private let onRecordVoiceMemo: () -> Void
     private let onPauseToggleMeeting: (() -> Void)?
@@ -93,12 +95,14 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
         vocabularyBackupViewModel: VocabularyBackupViewModel,
         feedbackViewModel: FeedbackViewModel,
         libraryViewModel: TranscriptionLibraryViewModel,
+        askWorkspaceViewModel: AskWorkspaceViewModel,
         meetingsWorkspaceViewModel: MeetingsWorkspaceViewModel,
         meetingPillViewModel: MeetingRecordingPillViewModel,
         meetingSplitViewModel: MeetingSplitViewModel,
         meetingImportViewModel: MeetingImportViewModel,
         shareManagementViewModel: ShareManagementViewModel? = nil,
         onRecordMeeting: @escaping () -> Void,
+        onOpenAskSource: @escaping (UUID) -> Void,
         onRecordMeetingFromWorkspace: @escaping () -> Void,
         onRecordVoiceMemo: @escaping () -> Void,
         onPauseToggleMeeting: (() -> Void)? = nil,
@@ -121,12 +125,14 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
         self.vocabularyBackupViewModel = vocabularyBackupViewModel
         self.feedbackViewModel = feedbackViewModel
         self.libraryViewModel = libraryViewModel
+        self.askWorkspaceViewModel = askWorkspaceViewModel
         self.meetingsWorkspaceViewModel = meetingsWorkspaceViewModel
         self.meetingPillViewModel = meetingPillViewModel
         self.meetingSplitViewModel = meetingSplitViewModel
         self.meetingImportViewModel = meetingImportViewModel
         self.shareManagementViewModel = shareManagementViewModel
         self.onRecordMeeting = onRecordMeeting
+        self.onOpenAskSource = onOpenAskSource
         self.onRecordMeetingFromWorkspace = onRecordMeetingFromWorkspace
         self.onRecordVoiceMemo = onRecordVoiceMemo
         self.onPauseToggleMeeting = onPauseToggleMeeting
@@ -236,12 +242,14 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
             vocabularyBackupViewModel: vocabularyBackupViewModel,
             feedbackViewModel: feedbackViewModel,
             libraryViewModel: libraryViewModel,
+            askWorkspaceViewModel: askWorkspaceViewModel,
             meetingsWorkspaceViewModel: meetingsWorkspaceViewModel,
             meetingPillViewModel: meetingPillViewModel,
             meetingSplitViewModel: meetingSplitViewModel,
             meetingImportViewModel: meetingImportViewModel,
             shareManagementViewModel: shareManagementViewModel,
             onRecordMeeting: onRecordMeeting,
+            onOpenAskSource: onOpenAskSource,
             onRecordMeetingFromWorkspace: onRecordMeetingFromWorkspace,
             onRecordVoiceMemo: onRecordVoiceMemo,
             onPauseToggleMeeting: onPauseToggleMeeting,

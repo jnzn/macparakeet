@@ -67,7 +67,12 @@ struct DictationsSubcommand: ParsableCommand {
                 // the CLI matches what the GUI shows for the same row.
                 let text = d.displayText
                 let preview = text.count > 80 ? String(text.prefix(80)) + "..." : text
-                let statusLabel = d.status == .cancelled ? " [cancelled]" : ""
+                let statusLabel: String
+                switch d.status {
+                case .cancelled: statusLabel = " [cancelled]"
+                case .error: statusLabel = " [failed]"
+                default: statusLabel = ""
+                }
                 print("[\(date)] (\(seconds)s)\(statusLabel) \(preview)  (\(d.id.uuidString.prefix(8)))")
             }
 
@@ -106,7 +111,7 @@ struct TranscriptionsSubcommand: ParsableCommand {
             ).items
 
             if json {
-                try printJSON(transcriptions)
+                try printHistoryTranscriptionsJSON(transcriptions, database: dbManager)
                 return
             }
 
@@ -223,7 +228,7 @@ struct SearchTranscriptionsSubcommand: ParsableCommand {
                 ).items
 
             if json {
-                try printJSON(results)
+                try printHistoryTranscriptionsJSON(results, database: dbManager)
                 return
             }
 
@@ -499,7 +504,7 @@ struct FavoritesSubcommand: ParsableCommand {
             ).items
 
             if json {
-                try printJSON(favorites)
+                try printHistoryTranscriptionsJSON(favorites, database: dbManager)
                 return
             }
 
@@ -708,4 +713,14 @@ private struct HistoryRenameResult: Encodable {
     let kind: String
     let id: UUID
     let title: String
+}
+
+/// History keeps its existing array schema while exposing the same effective
+/// transcript as export and the app. Never persist these materialized copies.
+private func printHistoryTranscriptionsJSON(
+    _ transcriptions: [Transcription],
+    database: DatabaseManager
+) throws {
+    let reader = SpeakerAttributionReadService(dbQueue: database.dbQueue)
+    try printJSON(transcriptions.map { try reader.effectiveTranscription(for: $0) })
 }

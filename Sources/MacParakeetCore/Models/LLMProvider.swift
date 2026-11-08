@@ -46,6 +46,7 @@ public enum LLMProviderID: String, Codable, Sendable, CaseIterable {
     case localCLI
     case inProcessLocal
     case appleOnDevice
+    case appleIntelligence
 
     public var descriptor: LLMProviderDescriptor {
         switch self {
@@ -59,12 +60,12 @@ public enum LLMProviderID: String, Codable, Sendable, CaseIterable {
                 requiresAPIKey: true,
                 requiresCustomEndpoint: false,
                 modelListEndpoint: .anthropic,
-                defaultModelName: "claude-sonnet-5",
+                defaultModelName: "claude-sonnet-5-5",
                 fallbackModels: [
-                    "claude-sonnet-5",
-                    "claude-fable-5",
-                    "claude-opus-4-8",
-                    "claude-haiku-4-5",
+                    "claude-sonnet-5-5",
+                    "claude-fable-5-1",
+                    "claude-opus-5-5",
+                    "claude-haiku-5-5",
                 ]
             )
         case .openai:
@@ -132,12 +133,12 @@ public enum LLMProviderID: String, Codable, Sendable, CaseIterable {
                 requiresAPIKey: true,
                 requiresCustomEndpoint: false,
                 modelListEndpoint: .openAICompatible,
-                defaultModelName: "anthropic/claude-sonnet-5",
+                defaultModelName: "anthropic/claude-sonnet-5.5",
                 fallbackModels: [
-                    "anthropic/claude-sonnet-5",
-                    "anthropic/claude-fable-5",
-                    "anthropic/claude-opus-4.8",
-                    "anthropic/claude-haiku-4.5",
+                    "anthropic/claude-sonnet-5.5",
+                    "anthropic/claude-fable-5.1",
+                    "anthropic/claude-opus-5.5",
+                    "anthropic/claude-haiku-5.5",
                     "openai/gpt-5.5",
                     "openai/gpt-5.5-pro",
                     "openai/gpt-5.4",
@@ -321,6 +322,19 @@ public enum LLMProviderID: String, Codable, Sendable, CaseIterable {
                 defaultModelName: FoundationModelsLLMClient.modelIdentifier,
                 fallbackModels: [FoundationModelsLLMClient.modelIdentifier]
             )
+        case .appleIntelligence:
+            return LLMProviderDescriptor(
+                id: self,
+                displayName: "Apple Intelligence",
+                defaultBaseURL: "appleintelligence://system",
+                isLocal: true,
+                supportsAPIKey: false,
+                requiresAPIKey: false,
+                requiresCustomEndpoint: false,
+                modelListEndpoint: .none,
+                defaultModelName: "apple-intelligence",
+                fallbackModels: ["apple-intelligence"]
+            )
         }
     }
 
@@ -330,9 +344,10 @@ public enum LLMProviderID: String, Codable, Sendable, CaseIterable {
 
     public static func userSelectableProviderIDs(
         inProcessLocalLLMVisible: Bool = AppFeatures.isInProcessLocalLLMVisible(),
-        appleOnDeviceLLMVisible: Bool = AppFeatures.isAppleOnDeviceLLMVisible()
+        appleOnDeviceLLMVisible: Bool = AppFeatures.isAppleOnDeviceLLMVisible(),
+        appleIntelligenceVisible: Bool = AppleIntelligenceAvailability.current().isUserSelectable
     ) -> [LLMProviderID] {
-        [
+        (appleIntelligenceVisible ? [.appleIntelligence] : []) + [
             .lmstudio,
             .ollama,
             .anthropic,
@@ -400,7 +415,7 @@ public enum LLMProviderID: String, Codable, Sendable, CaseIterable {
         switch self {
         case .openai, .openaiCompatible, .gemini, .openrouter, .moonshot, .deepseek, .qwen, .zai, .minimax, .lmstudio:
             return true
-        case .anthropic, .ollama, .localCLI, .inProcessLocal, .appleOnDevice:
+        case .anthropic, .ollama, .localCLI, .inProcessLocal, .appleOnDevice, .appleIntelligence:
             return false
         }
     }
@@ -411,7 +426,7 @@ public enum LLMProviderID: String, Codable, Sendable, CaseIterable {
         case .moonshot, .deepseek, .qwen, .zai, .minimax:
             return true
         case .anthropic, .openai, .openaiCompatible, .gemini, .openrouter, .ollama, .lmstudio, .localCLI,
-            .inProcessLocal, .appleOnDevice:
+            .inProcessLocal, .appleOnDevice, .appleIntelligence:
             return false
         }
     }
@@ -635,6 +650,18 @@ public struct LLMProviderConfig: Codable, Sendable, Equatable {
         )
     }
 
+    public static func appleIntelligence(
+        model: String = LLMProviderID.appleIntelligence.defaultModelName
+    ) -> LLMProviderConfig {
+        LLMProviderConfig(
+            id: .appleIntelligence,
+            baseURL: URL(string: LLMProviderID.appleIntelligence.defaultBaseURL)!,
+            apiKey: nil,
+            modelName: model,
+            isLocal: true
+        )
+    }
+
     public static func isLoopbackEndpoint(_ url: URL) -> Bool {
         guard let host = url.host?.lowercased() else { return false }
         return host == "localhost" || host == "::1" || host.hasPrefix("127.")
@@ -673,6 +700,13 @@ public extension LLMProviderConfig {
                     + "Remove the override or change the command in Settings."
             )
         }
+        guard id != .appleIntelligence else {
+            return .invalid(
+                model: modelOverride,
+                reason: "Apple Intelligence uses the on-device system model. "
+                    + "Remove the override or choose a different provider."
+            )
+        }
         return .resolved(
             LLMProviderConfig(
                 id: id,
@@ -695,7 +729,7 @@ public extension LLMProviderConfig {
             let components = model.split(separator: "/", omittingEmptySubsequences: false)
             return components.count == 2 && components.allSatisfy { !$0.isEmpty }
         case .openai, .openaiCompatible, .moonshot, .deepseek, .qwen, .zai, .minimax, .ollama, .lmstudio, .localCLI,
-            .inProcessLocal, .appleOnDevice:
+            .inProcessLocal, .appleOnDevice, .appleIntelligence:
             return true
         }
     }

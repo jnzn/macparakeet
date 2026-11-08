@@ -20,21 +20,24 @@ Sources/CLI/
     │                           #   taxonomy, emitJSONOrRethrow wrappers
     ├── CLITelemetry.swift      # opt-out/CI/DO_NOT_TRACK-gated instrumentation
     ├── SpecCommand.swift       # `spec --json`: the machine-readable catalog
+    ├── AskCommand.swift        # durable, source-scoped Ask automation
     ├── SavedMeetingProcessingContext.swift # shared import/split processing construction
     └── <Feature>Command.swift  # one file per top-level command / family
 ```
 
 Each command is a `ParsableCommand` / `AsyncParsableCommand`. Command families
-(`vocab`, `prompts`, `transforms`, `meetings`, `llm`) nest subcommands through
+(`vocab`, `prompts`, `transforms`, `meetings`, `llm`, `ask`) nest subcommands through
 `CommandConfiguration.subcommands`.
 
-## The contract, in three documents
+## The contract references
 
 - **[`CHANGELOG.md`](./CHANGELOG.md)** — what changed and the semver policy. The
   surface is versioned: removing a command/flag/JSON field or changing an
   exit-code meaning is **MAJOR**; additive changes are **MINOR**.
 - **[`spec/contracts/cli-json-v1.md`](../../spec/contracts/cli-json-v1.md)** —
   the canonical stdout/stderr, envelope, and exit-code contract.
+- **[`spec/contracts/ask-workspace.md`](../../spec/contracts/ask-workspace.md)** —
+  the additive Ask conversation, source-revision, citation, and CLI contract.
 - **`spec --json`** (from `SpecCommand.swift`) — the same contract as live,
   machine-readable data, plus a hand-maintained catalog of the agent-facing
   command surface.
@@ -89,6 +92,14 @@ Each command is a `ParsableCommand` / `AsyncParsableCommand`. Command families
 6. **Contract** — if you touched stdout/stderr shape, envelopes, or exit-code
    meaning, update [`spec/contracts/cli-json-v1.md`](../../spec/contracts/cli-json-v1.md)
    in the same change.
+
+## Reviewing GUI and agent parity
+
+Use the [capability map](../../integrations/capabilities.md) to check the
+workflow, shared Core owner, intentional boundary, and known gaps. In particular,
+a read command returning transcript text must use the effective correction
+projection where promised; a search hit alone does not establish output parity.
+Update the map when a gap closes or a new deliberate boundary is introduced.
 
 ## Testing
 

@@ -20,6 +20,17 @@ public enum NativeVoiceControlError: Error, LocalizedError, Sendable, Equatable 
 
 /// Actual AX handles never leave this actor. An ID belongs to exactly one snapshot.
 /// Synchronous AX IPC uses a short messaging timeout and never runs on MainActor.
+private final class AwaitGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var claimed = false
+    func claim() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if claimed { return false }
+        claimed = true
+        return true
+    }
+}
+
 public actor NativeVoiceControlAdapter: VoiceControlAdapter {
     private struct Element: @unchecked Sendable { let value: AXUIElement }
     private struct BoundTarget {
@@ -38,6 +49,9 @@ public actor NativeVoiceControlAdapter: VoiceControlAdapter {
         }
     }
     private let screenText: (any ScreenTextReading)?
+    /// A read that outlasted the observation budget. The next observation of the
+    /// same window uses it; a different window cancels it.
+    private var pendingScreenText: (token: UUID, pid: Int32, frame: CGRect, task: Task<[ScreenTextBlock], Never>)?
     /// Counts from the last `observe()`, for tests and logging. Never carries text.
     public private(set) var lastObservationStats: (axCandidates: Int, screenTextBlocks: Int, screenTextTargets: Int) =
         (0, 0, 0)
@@ -61,13 +75,18 @@ public actor NativeVoiceControlAdapter: VoiceControlAdapter {
             "com.apple.keychainaccess", "com.1password.1password", "com.agilebits.onepassword7",
             "com.bitwarden.desktop", "com.apple.Passwords",
         ], maxNodes: Int = 1_200, includeMenus: Bool = true, includeApplications: Bool = true,
-        screenText: (any ScreenTextReading)? = nil
+        screenText: (any ScreenTextReading)? = nil, expectedProcessID: Int32? = nil
     ) {
         self.excludedBundleIDs = excludedBundleIDs
         self.walkCaps = AXWalkCaps(maxNodes: min(2_000, max(1, maxNodes)))
         self.includeMenus = includeMenus; self.includeApplications = includeApplications
         self.screenText = screenText
+        self.expectedProcessID = expectedProcessID
     }
+
+    /// When set, observation refuses every other frontmost app. E2E uses this so a
+    /// focus slip cannot snapshot the person's real windows.
+    private let expectedProcessID: Int32?
 
     public func observe() async throws -> VoiceControlSnapshot {
         guard AXIsProcessTrusted() else { throw NativeVoiceControlError.permission }
@@ -86,6 +105,7 @@ public actor NativeVoiceControlAdapter: VoiceControlAdapter {
                 return (app.processIdentifier, app.localizedName ?? "App", app.bundleIdentifier ?? "", running)
             }
             guard let (pid, name, bundle, running) = context else { last = .noWindow; continue }
+            if let expectedProcessID, pid != expectedProcessID { last = .windowChanged; continue }
             if excludedBundleIDs.contains(bundle) { throw NativeVoiceControlError.excluded }
             if pid == ProcessInfo.processInfo.processIdentifier { last = .excluded; continue }
             let app = AXUIElementCreateApplication(pid)
@@ -116,10 +136,7 @@ public actor NativeVoiceControlAdapter: VoiceControlAdapter {
         let windowFrame = Self.frame(root)
         // Screen text is read on its own actor while the walk runs here, under
         // its own budget: a slow OCR pass never eats the Accessibility budget.
-        let screenTextTask: Task<[ScreenTextBlock], Never>? = {
-            guard let screenText, let windowFrame else { return nil }
-            return Task { await screenText.read(window: windowFrame) }
-        }()
+        let screenTextRead = screenTextTask(processID: pid, windowFrame: windowFrame)
         let walkStarted = ContinuousClock.now
         let walk = AXTreeWalk.run(
             roots: roots, source: LiveAXTreeSource(), display: display, window: windowFrame,
@@ -174,8 +191,15 @@ public actor NativeVoiceControlAdapter: VoiceControlAdapter {
         var textSummary: [String] = []
         var screenTextBlocks = 0
         var screenTextTargets = 0
-        if let screenTextTask {
-            let blocks = await Self.awaiting(screenTextTask, budget: Self.screenTextBudget) ?? []
+        if let (token, screenTextTask) = screenTextRead {
+            let blocks: [ScreenTextBlock]
+            if let finished = await Self.awaiting(screenTextTask, budget: Self.screenTextBudget) {
+                blocks = finished
+                if pendingScreenText?.token == token { pendingScreenText = nil }
+            } else {
+                VisionScreenTextReader.note("observe: screen text still running after \(Self.screenTextBudget)")
+                blocks = []
+            }
             try Task.checkCancellation()
             screenTextBlocks = blocks.count
             let controls = pending.compactMap { item -> (label: String, frame: CGRect)? in
@@ -231,7 +255,8 @@ public actor NativeVoiceControlAdapter: VoiceControlAdapter {
                 operations: item.target.operations, isNavigation: item.target.isNavigation,
                 isFocused: item.target.isFocused, selectedText: item.target.selectedText,
                 valueIsComplete: item.target.valueIsComplete, consequence: item.target.consequence,
-                isOffscreen: item.target.isOffscreen, region: item.target.region)
+                isOffscreen: item.target.isOffscreen, region: item.target.region,
+                frame: item.target.isOffscreen ? nil : item.bound.frame)
             handles[id] = BoundTarget(
                 element: item.bound.element, target: target, fingerprint: item.bound.fingerprint,
                 frame: item.bound.frame, pixelPoint: item.bound.pixelPoint)
@@ -279,8 +304,7 @@ public actor NativeVoiceControlAdapter: VoiceControlAdapter {
             isComplete: complete,
             metrics: VoiceControlObservationMetrics(
                 nodesVisited: walk.visited, capped: !walk.complete,
-                walkMilliseconds: Int(walkStarted.duration(to: .now).components.seconds) * 1000
-                    + Int(walkStarted.duration(to: .now).components.attoseconds / 1_000_000_000_000_000)))
+                walkMilliseconds: Self.milliseconds(walkStarted.duration(to: .now))))
         current = snapshot
         return snapshot
     }
@@ -290,6 +314,9 @@ public actor NativeVoiceControlAdapter: VoiceControlAdapter {
         authority: ActionAuthority
     ) async throws -> VoiceControlReceipt {
         try authority.check()
+        // Pixels from before this effect must not become the next observation's targets.
+        pendingScreenText?.task.cancel()
+        pendingScreenText = nil
         guard current?.id == snapshot.id, observedAt.duration(to: .now) < .seconds(20) else {
             throw NativeVoiceControlError.observationExpired
         }
@@ -313,6 +340,8 @@ public actor NativeVoiceControlAdapter: VoiceControlAdapter {
                 throw NativeVoiceControlError.unsupported
             }
             current = nil
+            let browser = AXUIElementCreateApplication(expectedPID)
+            let titleBefore = Self.focusedOrMainWindow(browser).map { Self.string($0, kAXTitleAttribute) }
             let opened = try await MainActor.run {
                 try authority.perform {
                     guard NSWorkspace.shared.frontmostApplication?.processIdentifier == expectedPID else {
@@ -322,9 +351,24 @@ public actor NativeVoiceControlAdapter: VoiceControlAdapter {
                 }
             }
             guard opened else { return VoiceControlReceipt(status: .failed, message: "Couldn’t open that website.") }
-            try await Task.sleep(for: .milliseconds(1_800))
+            // The page announces itself by retitling the window; a fast load
+            // should not wait out the old fixed 1.8 s. Browsers often show the URL
+            // or "Loading" first, so the new title must hold for two polls.
+            let deadline = ContinuousClock.now.advanced(by: .milliseconds(2_000))
+            var candidate: String?
+            var retitled = false
+            while ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(150))
+                let title = Self.focusedOrMainWindow(browser).map { Self.string($0, kAXTitleAttribute) }
+                guard let title, title != titleBefore, !title.isEmpty else { candidate = nil; continue }
+                retitled = true
+                if title == candidate { break }
+                candidate = title
+            }
+            // No retitle at all in 2 s is no evidence the page opened.
             return VoiceControlReceipt(
-                status: .transitionObserved, message: "Opened the requested website.")
+                status: retitled ? .transitionObserved : .unknown,
+                message: retitled ? "Opened the requested website." : "The website did not appear to load.")
         }
         guard let bound = handles[action.targetID], bound.target.operations.contains(action.operation) else {
             throw NativeVoiceControlError.unsupported
@@ -621,12 +665,12 @@ public actor NativeVoiceControlAdapter: VoiceControlAdapter {
         return false
     }
 
-    /// Webpage fields often ignore AXSelectedText. Unicode HID posts are the
+    /// Webpage fields often ignore AXSelectedText. Unicode session posts are the
     /// same path dictation already uses for Chrome, marked so hotkeys ignore them.
     private func typeUnicode(_ text: String, authority: ActionAuthority) throws {
         try authority.perform {
             guard AXIsProcessTrusted() else { throw NativeVoiceControlError.permission }
-            guard let source = CGEventSource(stateID: .hidSystemState) else {
+            guard let source = AppGeneratedKeyboardEvents.makeSource() else {
                 throw NativeVoiceControlError.unsupported
             }
             let units = Array(text.utf16)
@@ -634,19 +678,15 @@ public actor NativeVoiceControlAdapter: VoiceControlAdapter {
             while index < units.endIndex {
                 let end = units.index(index, offsetBy: 20, limitedBy: units.endIndex) ?? units.endIndex
                 var chunk = Array(units[index..<end])
-                guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
-                    let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false)
+                guard let down = AppGeneratedKeyboardEvents.makeEvent(source: source, keyCode: 0, keyDown: true, flags: []),
+                    let up = AppGeneratedKeyboardEvents.makeEvent(source: source, keyCode: 0, keyDown: false, flags: [])
                 else {
                     throw NativeVoiceControlError.unsupported
                 }
-                down.flags = []
-                up.flags = []
-                StreamingCursorEventMarker.mark(down)
-                StreamingCursorEventMarker.mark(up)
                 down.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: &chunk)
                 up.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: &chunk)
-                down.post(tap: .cghidEventTap)
-                up.post(tap: .cghidEventTap)
+                down.post(tap: AppGeneratedKeyboardEvents.postingLocation)
+                up.post(tap: AppGeneratedKeyboardEvents.postingLocation)
                 index = end
             }
         }
@@ -670,7 +710,10 @@ public actor NativeVoiceControlAdapter: VoiceControlAdapter {
                 [
                     kAXTextFieldRole, kAXComboBoxRole, kAXPopUpButtonRole, kAXMenuRole, kAXMenuItemRole,
                     kAXButtonRole, kAXCheckBoxRole, kAXRadioButtonRole, kAXStaticTextRole, "AXWebArea", "AXLink",
-                ].contains(role)
+                ].contains(role),
+                // A clock, a video timestamp or a progress figure changes on its
+                // own; it is not evidence that the press did anything.
+                role != kAXStaticTextRole || !Self.isVolatileText(Self.string(node, kAXValueAttribute))
             {
                 evidence.insert(
                     role + "|" + Self.label(node) + "|" + Self.string(node, kAXValueAttribute)
@@ -681,6 +724,21 @@ public actor NativeVoiceControlAdapter: VoiceControlAdapter {
             }
         }
         return evidence
+    }
+
+    static func milliseconds(_ duration: Duration) -> Int {
+        Int(duration.components.seconds) * 1000 + Int(duration.components.attoseconds / 1_000_000_000_000_000)
+    }
+
+    /// Times, percentages and progress figures (`7:42`, `45%`, `12 / 340`):
+    /// they change on their own. A plain number is kept, because a press can be
+    /// what changed it (a calculator display, a quantity stepper).
+    static func isVolatileText(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.unicodeScalars.contains(where: { CharacterSet.letters.contains($0) }),
+            trimmed.contains(where: \.isNumber)
+        else { return false }
+        return trimmed.contains { ":%/".contains($0) }
     }
 
     private func validateContext() throws {
@@ -694,15 +752,31 @@ public actor NativeVoiceControlAdapter: VoiceControlAdapter {
         "left": 123, "right": 124, "down": 125, "up": 126, "backspace": 51, "delete": 117,
     ]
     static let screenTextBudget: Duration = .milliseconds(1_200)
-    /// The task's value if it finishes within `budget`, else nil. The task keeps
-    /// running so its result is cached for the next observation.
+
+    private func screenTextTask(processID pid: Int32, windowFrame: CGRect?) -> (UUID, Task<[ScreenTextBlock], Never>)? {
+        guard let screenText, let windowFrame else { return nil }
+        if let pending = pendingScreenText, pending.pid == pid, pending.frame == windowFrame, !pending.task.isCancelled {
+            return (pending.token, pending.task)
+        }
+        pendingScreenText?.task.cancel()
+        let token = UUID()
+        let task = Task { await screenText.read(window: windowFrame, processID: pid) }
+        pendingScreenText = (token, pid, windowFrame, task)
+        return (token, task)
+    }
+    /// The task's value if it finishes within `budget`, else nil. Returning does
+    /// not cancel `task`: a slow read can still complete for the next observation.
     static func awaiting<T: Sendable>(_ task: Task<T, Never>, budget: Duration) async -> T? {
-        await withTaskGroup(of: T?.self) { group in
-            group.addTask { await task.value }
-            group.addTask { try? await Task.sleep(for: budget); return nil }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
+        await withCheckedContinuation { continuation in
+            let gate = AwaitGate()
+            Task {
+                let value = await task.value
+                if gate.claim() { continuation.resume(returning: value) }
+            }
+            Task {
+                try? await Task.sleep(for: budget)
+                if gate.claim() { continuation.resume(returning: nil) }
+            }
         }
     }
 
@@ -713,7 +787,7 @@ public actor NativeVoiceControlAdapter: VoiceControlAdapter {
         let pid = ProcessInfo.processInfo.processIdentifier
         let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
         return info.compactMap { window in
-            guard window[kCGWindowOwnerPID as String] as? Int32 == pid,
+            guard window[kCGWindowOwnerPID as String] as? Int32 == pid, !ScreenTextMerge.isOwnOverlay(window),
                 let bounds = window[kCGWindowBounds as String] as? [String: CGFloat],
                 let x = bounds["X"], let y = bounds["Y"], let w = bounds["Width"], let h = bounds["Height"], w > 0, h > 0
             else { return nil }

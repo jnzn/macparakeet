@@ -25,7 +25,18 @@ final class VoiceControlCoordinator {
     private let conflictingHotkeys: () -> [HotkeyTrigger]
     private let onShortcutChanged: () -> Void
     private var runner: VoiceControlTurnRunner?
+    private var jev: JevDecisionClient?
+    /// The last task completed, failed or was cancelled: nothing is revisable.
+    private var taskClosed = true
+    /// The running turn is a dry-run proposal: its question opens no conversation.
+    private var proposing = false
+    /// A command is between dispatch and the runner's start (observing first).
+    private var dispatching = false
+    private var dispatchGeneration = 0
+    /// After Stop, a highlight still in the event queue must not reappear.
+    private var overlaySuppressed = false
     private var panel: VoiceControlPanelController?
+    private let overlay = VoiceControlOverlayController()
     private var hotkey: HotkeyManager?
     private var speechEvents: Task<Void, Never>?
     private var runnerEvents: Task<Void, Never>?
@@ -91,6 +102,7 @@ final class VoiceControlCoordinator {
         model.onConfirm = { [weak self] in self?.confirm() }
         model.onResume = { [weak self] in self?.resume() }
         model.onSubmit = { [weak self] in self?.submit($0) }
+        model.onChoose = { [weak self] number in self?.submit("\(number)") }
         model.onSaveSetup = { [weak self] in self?.saveSetup() }
         model.onRevokeConsent = { [weak self] in
             guard let self else { return }
@@ -108,7 +120,7 @@ final class VoiceControlCoordinator {
                 _ = VisionScreenTextReader.requestScreenRecordingAccess()
             }
             // The adapter is built once at launch; a new one picks up the setting.
-            self?.model.message = "Restart Voice Control (End, then Start) to apply."
+            self?.model.message = "Quit and reopen MacParakeet to apply."
         }
         model.onDisable = { [weak self] in
             guard let self else { return }
@@ -191,6 +203,11 @@ final class VoiceControlCoordinator {
             }
             return
         }
+        // Hands-free listening holds the lease for the whole session. Clicking
+        // into a field to focus it, or scrolling, with nothing running is not a
+        // takeover: it must not discard the sentence being spoken.
+        guard runner?.hasLiveWork == true || dispatching || model.conversation.expectedResponse == .confirmation
+        else { return }
         submissions.invalidate()
         runner?.pauseForManualInput()
         speech.revokePendingTranscripts()
@@ -277,10 +294,12 @@ final class VoiceControlCoordinator {
                 UserDefaults.standard.bool(forKey: "voiceControl.cloudContextConsent.v1")
             },
             onDecision: { decision in await traces.noteDecision(decision) })
+        jev = engine
         let router = VoiceControlCommandRouter(
             fallback: engine, rewrite: rewrite,
             selectionAtInvocation: { [weak self] in
-                await MainActor.run { self?.invocationSnapshot }
+                guard let self else { return nil }
+                return await MainActor.run { self.invocationSnapshot }
             })
         let runner = VoiceControlTurnRunner(adapter: adapter, engine: router, sink: traces)
         self.runner = runner
@@ -289,6 +308,20 @@ final class VoiceControlCoordinator {
             for await event in runner.events {
                 guard !Task.isCancelled, let self, self.acceptingEvents else { return }
                 self.model.apply(event)
+                if self.proposing {
+                    // A proposal's question opens no conversation, and its choices are not clickable.
+                    if case .clarification = event { self.model.conversation.cancel(); self.taskClosed = true }
+                    self.model.choices = []
+                }
+                switch event {
+                case .completed, .failed, .cancelled, .paused where self.proposing: self.taskClosed = true
+                default: break
+                }
+                switch event {
+                case .highlight(let highlight): if !self.overlaySuppressed { self.overlay.show(highlight) }
+                case .observing, .completed, .failed, .paused, .cancelled: self.overlay.dismissPersistent()
+                default: break
+                }
                 let phase = "\(self.model.phase)"
                 let message = self.model.message
                 Task { await self.traces.noteStatus(phase: phase, message: message) }
@@ -307,6 +340,7 @@ final class VoiceControlCoordinator {
         if model.conversation.shouldPauseForSpeech { submissions.invalidate(); runner?.stop() }
         wantsCapture = true
         self.handsFree = handsFree
+        if let jev { Task { await jev.warm() } }
         let generation = sessionGeneration
         let captureID = UUID()
         currentCaptureID = captureID
@@ -389,6 +423,9 @@ final class VoiceControlCoordinator {
             speechSubmission = true
             submit(text)
             speechSubmission = false
+        case .measured(let metrics, let capture):
+            guard currentCaptureID == capture else { return }
+            Task { [traces] in await traces.noteSpeechTurn(metrics) }
         case .stopped(let capture):
             guard currentCaptureID == capture else { return }
             if wantsCapture { stop() }
@@ -401,13 +438,16 @@ final class VoiceControlCoordinator {
         }
     }
     private func startInboxMonitor() {
+        // Commands come only from the user log directory. The /tmp pointer is a
+        // read-only copy of traces; a world-writable command file must not act.
         let urls = [
-            VoiceControlTraceStore.defaultDirectory.appendingPathComponent("command.json"),
-            VoiceControlTraceStore.agentPointerDirectory.appendingPathComponent("command.json"),
+            VoiceControlTraceStore.defaultDirectory.appendingPathComponent("command.json")
         ]
         for url in urls {
             try? FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: url.deletingLastPathComponent().path)
         }
         Task { [weak self] in
             while !Task.isCancelled {
@@ -446,10 +486,13 @@ final class VoiceControlCoordinator {
         var app = VoiceControlAppActivation.runningApplication(matching: name)
         if app == nil {
             let bundleID: String? =
-                name.lowercased().contains("chrome") ? "com.google.Chrome"
-                : name.lowercased().contains("safari") ? "com.apple.Safari"
-                : name.lowercased().contains("firefox") ? "org.mozilla.firefox"
-                : name.contains(".") ? name : nil
+                name.lowercased().contains("chrome")
+                ? "com.google.Chrome"
+                : name.lowercased().contains("safari")
+                    ? "com.apple.Safari"
+                    : name.lowercased().contains("firefox")
+                        ? "org.mozilla.firefox"
+                        : name.contains(".") ? name : nil
             if let bundleID {
                 app = await VoiceControlAppActivation.launch(bundleIdentifier: bundleID)
             }
@@ -457,9 +500,21 @@ final class VoiceControlCoordinator {
         guard let app else { return false }
         return await VoiceControlAppActivation.bringForward(app)
     }
+    /// A dry run is a fresh proposal. It must not confirm, stop, or enter literal mode.
+    nonisolated static func admitsLiveGrammar(dryRun: Bool) -> Bool { !dryRun }
+
     private func submit(_ text: String, dryRun: Bool = false) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, ensureSession() else { return }
+        if !Self.admitsLiveGrammar(dryRun: dryRun) {
+            // A proposal must not stop the turn, answer a pending question, or
+            // revise the live goal. Those entry points ignore the dry-run flag.
+            if runner?.hasLiveWork == true || model.conversation.expectedResponse != nil {
+                return
+            }
+            dispatch(text, dryRun: true)
+            return
+        }
         let command = text.lowercased().trimmingCharacters(in: .punctuationCharacters)
         if literalMode {
             switch VoiceControlSessionGrammar.phrase(text, literalMode: true) {
@@ -510,7 +565,8 @@ final class VoiceControlCoordinator {
     }
     private func releaseFinishedSessionIfMicOff() {
         guard !wantsCapture, !model.microphoneOn, admissionRelease == nil,
-            let lease = interactionLease, let runner else { return }
+            let lease = interactionLease, let runner
+        else { return }
         switch model.phase {
         case .done, .failed, .idle, .paused: break
         default: return
@@ -537,25 +593,54 @@ final class VoiceControlCoordinator {
             break
         }
     }
-    private func dispatch(_ text: String, asRevision: Bool = false, asLiteralPayload: Bool = false, dryRun: Bool = false) {
+    private func dispatch(
+        _ text: String, asRevision: Bool = false, asLiteralPayload: Bool = false, dryRun: Bool = false
+    ) {
         let submission = submissions.begin()
-        let correction = !asLiteralPayload && (asRevision || (!model.goal.isEmpty && VoiceControlConversationState.isCorrection(text)))
-        if !correction && model.conversation.expectedResponse != .clarification {
-            model.goal = text; model.steps = []
+        // One rule decides what the words are: an answer to the open question,
+        // a correction of the open task, or a new instruction. A command said
+        // while a clarification is open starts a new task; a finished task is
+        // never revised.
+        let intent: VoiceControlUtteranceIntent =
+            dryRun || asLiteralPayload
+            ? .newInstruction
+            : asRevision
+                // An inbox revision of a finished task is a new instruction.
+                ? (taskClosed ? .newInstruction : .correction)
+                : VoiceControlUtteranceIntent.classify(
+                    text,
+                    state: .init(
+                        awaitingClarification: model.conversation.expectedResponse == .clarification,
+                        awaitingConfirmation: model.conversation.expectedResponse == .confirmation,
+                        hasOpenTask: !model.goal.isEmpty && !taskClosed, taskClosed: taskClosed && !asRevision,
+                        offeredLabels: model.choices.map(\.label)))
+        let correction = intent == .correction
+        let answering = intent == .answer && model.conversation.expectedResponse == .clarification
+        if intent == .newInstruction {
+            model.conversation.cancel()
+            model.goal = text; model.steps = []; model.choices = []
+            overlay.clear()
         }
+        taskClosed = false
+        proposing = dryRun
+        overlaySuppressed = false
         model.transcript = text
         if !correction {
-            model.appendActivity((model.conversation.expectedResponse == .clarification ? "Clarification: " : "Request: ") + text)
+            model.appendActivity((answering ? "Clarification: " : "Request: ") + text)
         }
         runner?.stop()
         guard let runner else { return }
-        let clarification = !asLiteralPayload && model.conversation.takeClarification()
+        let clarification = answering && model.conversation.takeClarification()
         let needsSnapshot = !speechSubmission && !skipInvocationSnapshot
         skipInvocationSnapshot = false
         let snapshotTask = invocationSnapshotTask
         let speechUtterance = currentUtteranceID
         let generation = sessionGeneration
+        dispatchGeneration += 1
+        let dispatchID = dispatchGeneration
+        dispatching = true
         execution = Task { [weak self] in
+            defer { if self?.dispatchGeneration == dispatchID { self?.dispatching = false } }
             guard let self, self.submissions.accepts(submission) else { return }
             if needsSnapshot {
                 self.invocationSnapshot = try? await self.adapter.observe()
@@ -563,14 +648,21 @@ final class VoiceControlCoordinator {
                 self.invocationSnapshot = await snapshotTask.value
             }
             if !needsSnapshot, self.currentUtteranceID != speechUtterance { return }
-            guard self.sessionGeneration == generation, self.acceptingEvents, self.submissions.accepts(submission) else { return }
-            if clarification { await runner.clarify(text, submissionAuthority: submission) }
-            else if correction { await runner.revise(text, submissionAuthority: submission) }
-            else { await runner.submit(text, submissionAuthority: submission, dryRun: dryRun) }
+            guard self.sessionGeneration == generation, self.acceptingEvents, self.submissions.accepts(submission)
+            else { return }
+            if clarification {
+                await runner.clarify(text, submissionAuthority: submission)
+            } else if correction {
+                await runner.revise(text, submissionAuthority: submission)
+            } else {
+                await runner.submit(text, submissionAuthority: submission, dryRun: dryRun)
+            }
         }
     }
     private func stop() {
         submissions.invalidate()
+        overlaySuppressed = true
+        overlay.clear()
         guard interactionLease != nil else { return }
         runner?.stop()
         speech.revokePendingTranscripts()
@@ -618,6 +710,7 @@ final class VoiceControlCoordinator {
         }
     }
     private func resume() {
+        overlaySuppressed = false
         guard ensureSession(), let runner else { return }
         let submission = submissions.begin()
         execution = Task { [weak self] in
@@ -699,6 +792,7 @@ final class VoiceControlCoordinator {
 
     private func end(hide: Bool = true, preservePresentation: Bool = false) {
         submissions.invalidate()
+        overlay.clear()
         guard cleanup == nil else { return }
         runner?.stop()
         speech.revokePendingTranscripts()
@@ -726,7 +820,7 @@ final class VoiceControlCoordinator {
             await currentRunner?.cancelAndDrain()
             guard let self else { return }
             if let lease { GUIMutationArbiter.shared.release(lease) }
-            self.interactionLease = nil; self.runner = nil; self.cleanup = nil
+            self.interactionLease = nil; self.runner = nil; self.jev = nil; self.cleanup = nil
             self.invocationSnapshot = nil
             if !preservePresentation {
                 self.model.phase = .idle; self.model.transcript = ""; self.model.goal = ""; self.model.steps = []
@@ -740,7 +834,6 @@ struct VoiceControlWritingConsentRequired: LocalizedError {
         "Enable selected-text sharing with your writing provider in Voice Control setup first."
     }
 }
-
 
 /// Main-actor submission identity plus a thread-safe fence carried across the
 /// runner actor hop. Stop invalidates preparation, not only existing effects.

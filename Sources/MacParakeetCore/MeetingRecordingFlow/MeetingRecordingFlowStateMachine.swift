@@ -107,6 +107,10 @@ public struct MeetingRecordingFlowStateMachine: Equatable, Sendable {
             state = .idle
             return [.updateMenuBar(.idle), .presentPermissionAlert(reason)]
 
+        case (.checkingPermissions, .stopRequested):
+            state = .idle
+            return [.hidePill, .updateMenuBar(.idle)]
+
         case (.checkingPermissions, .cancelRequested):
             state = .idle
             return [.cancelRecording, .hidePill, .updateMenuBar(.idle)]
@@ -137,11 +141,12 @@ public struct MeetingRecordingFlowStateMachine: Equatable, Sendable {
             state = .stopping
             return [.stopRecordingAndHandOff]
 
-        case (.stopping, .startFailed(let gen, _)):
+        case (.stopping, .startFailed(let gen, let message)):
             guard gen == generation else { return [] }
-            // The durable stop owns settlement now. Its queued/failure event is
-            // authoritative; a stale start error must not cover that outcome.
-            return []
+            // A stop during startup is deferred until `.recordingStarted`, so
+            // no handoff is running and nothing else can leave `.stopping`.
+            state = .finishing(outcome: .error(message))
+            return [.showError(message), .updateMenuBar(.idle), .startAutoDismissTimer(seconds: 5)]
 
         case (.recording, .cancelRequested):
             state = .idle

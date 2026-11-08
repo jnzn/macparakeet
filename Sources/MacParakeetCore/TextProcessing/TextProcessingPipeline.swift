@@ -3,7 +3,7 @@ import Foundation
 /// Deterministic 5-step text processing pipeline.
 /// Pure function: same input always produces same output.
 ///
-/// Steps: Filler Removal → Custom Words → Terminal Symbol Expansion (terminal profiles only) → Trailing Action Extraction → Snippet Expansion → Whitespace Cleanup
+/// Steps: Filler Removal → Custom Words → Terminal Symbol Expansion (terminal profiles only) → Trailing Action Extraction → Snippet Expansion (and spoken punctuation) → Whitespace Cleanup
 public struct TextProcessingPipeline: Sendable {
 
     public init() {}
@@ -17,6 +17,7 @@ public struct TextProcessingPipeline: Sendable {
         customWords: [CustomWord],
         snippets: [TextSnippet],
         insertionStyle: DictationInsertionStyle = .sentence,
+        spokenPunctuationEnabled: Bool = true,
         removeUmFiller: Bool = true,
         isTerminalProfile: Bool = false,
         smartFormatting: Bool = false
@@ -60,9 +61,13 @@ public struct TextProcessingPipeline: Sendable {
             actionIDs.insert(matchedSnippet.id)
         }
 
-        // Step 4: Text snippet expansion (text-type only)
+        // Step 4: Text snippet expansion (text-type only), then built-in
+        // spoken punctuation. User snippets of the same trigger win.
         let (expandedText, expandedIDs) = expandSnippets(in: result, snippets: textSnippets)
         result = expandedText
+        if spokenPunctuationEnabled {
+            result = SpokenPunctuation.apply(to: result)
+        }
 
         // Step 5: Whitespace cleanup — skip first-letter capitalisation for terminal
         let protectedLeadingTerms = protectedLeadingTerms(
@@ -223,7 +228,8 @@ public struct TextProcessingPipeline: Sendable {
             .sorted { $0.trigger.count > $1.trigger.count }
 
         for snippet in sorted {
-            let pattern = "\\b\(NSRegularExpression.escapedPattern(for: snippet.trigger))\\b"
+            guard !snippet.trigger.isEmpty else { continue }
+            let pattern = LiteralTextPattern.wholeToken(snippet.trigger)
             guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else {
                 continue
             }

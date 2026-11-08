@@ -80,7 +80,8 @@ final class ScreenTextSourceTests: XCTestCase {
                     id: "city", label: "Zurich, Switzerland", role: "AXStaticText", operations: [.press],
                     isFocused: true),
                 VoiceControlTarget(id: "search", label: "Search flights", role: "AXButton", operations: [.press]),
-                VoiceControlTarget(id: "else", label: "Where else?", role: "AXComboBox", operations: [.setValue, .press]),
+                VoiceControlTarget(
+                    id: "else", label: "Where else?", role: "AXComboBox", operations: [.setValue, .press]),
                 textTarget,
             ])
         XCTAssertEqual(VoiceControlSituation.classify(picker), .suggestionPicker)
@@ -108,5 +109,32 @@ final class ScreenTextSourceTests: XCTestCase {
             ScreenTextBlock(text: "Compose", confidence: 0.9, frame: CGRect(x: 0, y: 20, width: 60, height: 10)),
         ]
         XCTAssertEqual(ScreenTextMerge.unexplained(blocks, controls: [], excludedFrames: []).map(\.text), ["Compose"])
+    }
+
+    func testCapturePlanFailsClosedOnAmbiguousWindowsAndRecordsOccluders() {
+        let window = CGRect(x: 10, y: 20, width: 400, height: 300)
+        let owner = ScreenTextCaptureWindow(id: 7, processID: 42, frame: window, layer: 0)
+        let twin = ScreenTextCaptureWindow(id: 8, processID: 42, frame: window, layer: 0)
+        XCTAssertNil(ScreenTextCapturePlan.resolve(window: window, processID: 42, windows: [owner, twin]))
+        let overlay = ScreenTextCaptureWindow(
+            id: 3, processID: 99, frame: CGRect(x: 40, y: 40, width: 80, height: 40), layer: 0)
+        let plan = ScreenTextCapturePlan.resolve(window: window, processID: 42, windows: [overlay, owner])
+        XCTAssertEqual(plan?.windowID, 7)
+        XCTAssertEqual(plan?.exclusions, [overlay.frame])
+        XCTAssertNil(ScreenTextCapturePlan.resolve(window: .infinite, processID: 42, windows: [owner]))
+    }
+}
+
+extension ScreenTextSourceTests {
+    func testOnlyThisAppsCaptureExcludedWindowCountsAsTheOverlay() {
+        let me = NSNumber(value: ProcessInfo.processInfo.processIdentifier)
+        let other = NSNumber(value: Int32(1))
+        let none = NSNumber(value: 0), readOnly = NSNumber(value: 1)
+        func window(_ pid: NSNumber, _ sharing: NSNumber) -> [String: Any] {
+            [kCGWindowOwnerPID as String: pid, kCGWindowSharingState as String: sharing]
+        }
+        XCTAssertTrue(ScreenTextMerge.isOwnOverlay(window(me, none)))
+        XCTAssertFalse(ScreenTextMerge.isOwnOverlay(window(me, readOnly)), "the panel still hides its own text")
+        XCTAssertFalse(ScreenTextMerge.isOwnOverlay(window(other, none)), "another app's window still occludes")
     }
 }

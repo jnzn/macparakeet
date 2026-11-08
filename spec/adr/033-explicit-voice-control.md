@@ -1,6 +1,6 @@
 # ADR-033: Explicit Voice Control
 
-Status: ACCEPTED for implementation; release qualification pending.
+Status: ACCEPTED; implemented behind a default-off release flag; release qualification pending.
 Date: 2026-09-19.
 
 ## Decision
@@ -91,6 +91,9 @@ Accessibility is the primary and authoritative observation source. On-device
 Vision OCR of the frontmost window is an optional **second** source, opt-in per
 user because it needs Screen Recording permission.
 
+- **Capture.** Screen text is the frontmost app's own window id. The reader
+  does not photograph the window's screen rectangle, so overlapping windows
+  are not recognised, and an ambiguous window match contributes no text.
 - **Targets.** Recognised text that no Accessibility control already names
   becomes a `role: "text"` pressable target with a private pixel centre.
   Accessibility handles are always preferred; a pixel click is the fallback

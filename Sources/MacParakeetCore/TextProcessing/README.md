@@ -51,11 +51,11 @@ mode.
 - `spec/07-text-processing.md` — narrative spec.
 - ADR-011 — the LLM provider model that the separate AI formatter
   rides on.
-- ADR-032 — if cleanup and meeting AI later use different models, select
-  per task (inherit / general route / specialist recipe), not per feature.
-  Not implemented; formatter enablement toggles stay independent of that
-  policy. S1-mini-class normalizers are cleanup recipes, not the default
-  LLM.
+- [ADR-032](../../../spec/adr/032-llm-task-group-routing.md) — implemented
+  cleanup/analysis task routes inherit Default AI or select a general provider;
+  Transforms inherit Default AI. Formatter enablement stays independent of
+  routing. Apple Intelligence serves cleanup only. Specialist recipes are
+  not shipped; do not treat the earlier proposal as the current provider UI.
 
 ## What to know before editing
 
@@ -68,17 +68,28 @@ mode.
    languages. The remaining list stays short: anything longer ("like",
    "you know", "kind of") changes meaning too often to delete.
 2. **Custom word replacement.** User-defined `CustomWord` entries.
-   Replaces matches whole-word, case-insensitive, in the order
-   provided. Nil or blank replacements restore the stored word's casing;
-   nonblank replacements substitute the configured correction. Disabled
-   entries skip silently.
+   Matches literals case-insensitively in the order provided, excluding
+   adjacent Unicode word characters (letters, marks, digits, connectors,
+   and joiners). This supports punctuation-bearing terms such as `C++`,
+   `C#`, and `.NET` without matching `C++17` or `x.NET`. Surrounding
+   punctuation remains a delimiter. Nil or blank replacements restore the
+   stored word's casing; nonblank replacements substitute the configured
+   correction. Disabled and empty entries skip silently.
 3. **Trailing action extraction.** If the user's text ends with an
    action-snippet trigger (snippet whose `action != nil`), strip the
    trigger from the text and surface the action through
    `postPasteAction` on the result. Done **before** snippet
    expansion so the trigger phrase isn't mangled by step 4.
 4. **Text snippet expansion.** Plain text snippets (where
-   `action == nil`) replace their trigger phrases with their bodies.
+   `action == nil`) replace their trigger phrases with their bodies, using
+   the same literal boundaries as custom words. Empty triggers are ignored.
+   Built-in spoken punctuation (`question mark` → `?`) runs after user
+   snippets so a custom snippet of the same trigger still wins. A snippet
+   expansion that itself contains a command phrase is also converted.
+   Prefix `literal` keeps the words. Default on for Clean dictation (and
+   `vocab process`, which previews that pipeline on typed text). File, URL,
+   and meeting transcripts never run this step, because recorded speech that
+   mentions "a question mark" means the words.
 5. **Whitespace cleanup and insertion styling.** Collapse repeated
    spaces, fix punctuation spacing, normalize, then apply the selected
    dictation insertion style. Sentence style preserves the historic

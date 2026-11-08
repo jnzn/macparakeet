@@ -4,6 +4,19 @@ import Foundation
 /// without touching every call site. Release builds should set these to the
 /// shipping configuration before tagging a version.
 public enum AppFeatures {
+    /// Experimental cross-recording Ask. Mergeable for development while model
+    /// reliability and native interaction qualification remain release gates.
+    public static let askWorkspaceEnabled = false
+    public static let askWorkspaceDeveloperLaunchArgument = "--enable-ask-workspace"
+
+    public static func isAskWorkspaceAvailable(arguments: [String] = ProcessInfo.processInfo.arguments) -> Bool {
+        #if DEBUG
+        askWorkspaceEnabled || arguments.contains(askWorkspaceDeveloperLaunchArgument)
+        #else
+        askWorkspaceEnabled
+        #endif
+    }
+
     /// Encrypted text sharing remains opt-in for development until its separate
     /// privacy, service and interoperability release gates are complete.
     public static let shareLinksEnabled = false
@@ -91,12 +104,10 @@ public enum AppFeatures {
     /// unavailable) bypass this flag; silence and mute remain hidden.
     public static let meetingSourceHealthUIEnabled: Bool = false
 
-    /// Activity-based meeting detection (ADR-024). When `false`, Settings hides
-    /// the meeting-activity detection mode, the app does not construct the
-    /// coordinator, and no CoreAudio/CoreMediaIO collectors are started. Pure
-    /// detector types and tests remain compiled so flipping the flag is a
-    /// no-data operation after validation.
-    public static let meetingActivityDetectionEnabled: Bool = false
+    /// Opt-in Beta meeting-start reminders (ADR-024). The runtime and Settings
+    /// are available in builds from this revision; the per-user preference
+    /// defaults off. Recording always requires an explicit Record action.
+    public static let meetingActivityDetectionEnabled: Bool = true
 
     /// Transforms — productized Phase 2 (ADR-022). When `true`:
     /// - the Transforms tab appears in the main sidebar

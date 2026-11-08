@@ -30,6 +30,11 @@ JSON output schemas are part of the contract: top-level shape (array vs
 object), field names, and field types are stable within a major version. We
 may add new optional fields in a minor release.
 
+The one experimental exception is `voice-control replay`, a diagnostic for
+saved observations rather than a live speech-control command. Its report fields
+may change while Voice Control is release-gated. Shared JSON stdout and error
+envelope conventions still apply.
+
 ### Exit codes
 
 The CLI uses a small set of exit codes. They are part of the public contract;
@@ -71,9 +76,9 @@ input, lookup miss, runtime exception, etc.:
 ```
 
 `errorType` is a low-cardinality stable string. Current values: `auth`,
-`config`, `connection`, `context`, `input_empty`, `input_missing`,
+`config`, `connection`, `conflict`, `context`, `input_empty`, `input_missing`,
 `import_schema`, `invalid_response`, `lookup`, `model`, `provider`,
-`rate_limit`, `runtime`, `streaming`, `truncated`, `validation`. New error
+`rate_limit`, `runtime`, `streaming`, `timeout`, `truncated`, `validation`. New error
 classes get new values in minor releases; existing values are stable within a
 major.
 
@@ -88,6 +93,284 @@ agents that branch on `errorType` should also handle the parse-error case
 by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
 
 ## [Unreleased]
+
+## [5.2.0] — 2026-11-01 (prepared for the next MacParakeet release)
+
+This version is prepared in source; publication of the app and standalone CLI
+remain separate release steps.
+
+### Added
+
+- `meetings show --json` can report `activity_detection` in
+  `startContext.triggerKind` when the user accepts a meeting recording reminder.
+  Readers with a closed trigger enum must accept this additional value; existing
+  recordings keep their original trigger values.
+
+### Fixed
+
+- `history transcriptions --json`, `history search-transcriptions --json`,
+  and `history favorites --json` now resolve saved text and speaker
+  corrections, matching the app and corrected exports. A search for corrected
+  words returns those words in `cleanTranscript`; deliberately omitted text
+  remains empty. Automatic `rawTranscript` and recognized word text/times
+  remain available. Array shapes, fields, ordering, metadata, and exit codes
+  are unchanged (patch fix).
+
+- `vocab process` now matches punctuation-bearing custom words and plain text
+  snippet triggers such as `C++`, `C#`, and `.NET` at standalone boundaries,
+  while rejecting partial identifiers such as `C++17` and `x.NET`. Matching
+  preserves Unicode word-character boundaries and ignores empty rules. The
+  shared correction also applies to meeting vocabulary. JSON schemas and
+  trailing action commands are unchanged.
+
+- Knowledge-card generation now makes one corrective retry for incomplete or
+  malformed output, waits briefly for busy AI settings, and reserves provider
+  context for the answer. Usage totals include both responses when both report
+  usage; otherwise usage stays unknown. A failed replacement preserves saved cards.
+
+- Processing meetings may appear before playback preparation completes, with
+  unknown duration and an expected playback path. Source audio is already saved;
+  completed meeting schemas and durations are unchanged (#1291).
+
+- Automatic meeting titles retry transient provider failures and accept valid
+  topic years and titles within the character limit. Generic labels with only
+  a year appended are rejected. Adopted calendar names and user-edited titles
+  remain protected (#1309 and release review).
+
+- File transcription creates the audio-track probe's temporary folder when
+  missing and propagates scratch-output creation/read errors instead of treating
+  unreadable output as a successful empty track list.
+
+## [5.1.0] — 2026-10-12 (bundled with MacParakeet 0.8.10)
+
+Omitting `--model` on inline Anthropic and OpenRouter commands now selects
+Claude Sonnet 5.5. Pass `--model` to keep a previous id. JSON fields and exit
+codes are unchanged, so this stays a minor release. The standalone Homebrew CLI
+has its own release channel.
+
+### Changed
+
+- Inline Anthropic and OpenRouter LLM commands now default to Claude Sonnet 5.5
+  (`claude-sonnet-5-5` and `anthropic/claude-sonnet-5.5`). Pass `--model` to
+  keep a previous model. The `--model` help example references the same ID.
+- FluidAudio 0.17.7. Explicit `--speaker-count`, `--speaker-min` and
+  `--speaker-max` runs (Community-1) no longer over-split audio that contains
+  digital silence, such as a muted call track. Automatic speaker detection
+  (Nemotron), ASR, JSON fields and exit codes are unchanged.
+- Newly seeded built-in Summary prompts include meeting notes by default,
+  including when run through `prompts run`. Existing preferences, custom prompt
+  defaults, and saved result snapshots are preserved. Disable notes with
+  `prompts set Summary --no-include-meeting-notes`; `prompts restore-defaults`
+  continues to preserve notes preferences. No JSON schema changes (#1204).
+- Prompt-result context limiting reserves transcript space before bounding
+  oversized notes or system context, including LM Studio's smaller limit.
+- Transform shortcut assignment rejects collisions with either additional dictation
+  shortcut configured in the app. Existing error/output schemas are unchanged.
+
+### Fixed
+
+- A provider request that hits its idle timeout reports `errorType` `timeout`
+  with "The request timed out before the provider finished responding." It was
+  previously `connection` ("Connection failed: The request timed out.").
+- Non-streaming cloud LLM requests wait 300 seconds for the response body,
+  matching local providers. AI cleanup of a transcript longer than about
+  seven minutes was failing at 30 seconds.
+- AI cleanup of a long transcript is sent in sections of at most 12,000
+  characters and joined. Meetings are no longer skipped at 20,000 characters.
+
+- Saved Keychain credentials no longer open system password dialogs during CLI
+  execution. Blocked access returns an error; grant this executable access in
+  Keychain Access before retrying. Existing keys and routes are preserved.
+- `retranscribe --update` for saved transcriptions and meetings returns the row
+  committed by the shared transcription service. Notes, chat, names, favorites
+  and audio metadata changed during recognition are preserved; the CLI no longer
+  performs a second stale save that could undo those edits or recreate a deleted
+  recording. JSON shapes and exit-code meanings are unchanged.
+- Rerunning a completed or cancelled dictation requires its row still to exist
+  with the original status. A concurrent deletion or status change now fails
+  with a `lookup` error instead of restoring stale history or recounting a
+  deleted take. Failed-dictation recovery and audio-retention rules are unchanged.
+- When speaker detection finds remote speakers in a meeting, system-track words
+  that none of them claimed no longer appear as an extra `Others` speaker. Their
+  `speakers` entry keeps the id `system` with the label `Unattributed`, and
+  `speakerCount` leaves it out. When no remote speaker is detected, the entry
+  stays `Others` and is counted. Rows saved earlier keep their stored values.
+  JSON shapes are unchanged (#1228).
+
+## [5.0.0] — 2026-09-27 (bundled with MacParakeet 0.8.9)
+
+This major version removes Apple Intelligence analysis and Transform execution.
+Scripts using those requests must choose another provider. Apple Intelligence
+remains available for cleanup. The standalone Homebrew CLI has its own release
+channel.
+
+### Changed
+
+- Explicit Apple Intelligence summary, chat, Ask, prompt-result, and Transform
+  requests now fail before generation, including streaming CLI requests.
+  The shared service enforces the same cleanup-only policy as saved routes.
+- Task overrides can be used without a default provider, including Apple-only
+  cleanup. Tasks with no default or override remain unconfigured.
+
+- `llm routes set analysis --provider appleIntelligence` now fails validation.
+  Apple Intelligence's 4,096-token window (input and answer together) is too
+  small for summaries, chat, or knowledge cards over a transcript, so it serves
+  only the `cleanup` route. The app also clears a saved Apple Intelligence
+  default or analysis route at launch; saved API keys are kept.
+
+## [4.9.0] — 2026-09-27 (bundled with MacParakeet 0.8.8)
+
+The standalone Homebrew CLI has its own release channel.
+
+### Changed
+
+- `config set meeting-ai-output-language` accepts any Whisper language code
+  (for example `ko`, `it`, `nl`), a regional tag such as `ko-KR`, or an English
+  language name such as `korean`, in addition to `follow-transcript`. Values are
+  stored as the canonical code. Existing `en|pl|de|es|fr|pt|ja|zh` values keep
+  working. `spec --json` now reports this key with `valueSyntax`
+  `follow-transcript|<Whisper language code>` and `allowedValues: null`, matching
+  `whisper-language`.
+
+### Fixed
+
+- `config spoken-punctuation` now applies to Clean dictation only, including
+  `retranscribe --kind dictation` and `vocab process`. `transcribe` and file
+  retranscription keep spoken "question mark" / "exclamation mark" phrases as
+  words, so recorded speech such as "a question mark over the plan" is not
+  rewritten. No stable app or Homebrew CLI release shipped the earlier
+  file-transcription behavior from 4.6.0.
+
+## [4.8.0] — 2026-09-26 (development source; not a stable app release)
+
+### Added
+
+- Ask answers retain a bounded activity history describing source operations and
+  actual returned result counts. Older answers remain readable without activity.
+- `ask send --stream` emits additive `phase` and `step` events alongside existing
+  activity/text events. Step updates share a stable ID; terminal conversation
+  records include optional assistant-message `activities`. Consumers must tolerate
+  unknown event types. Ask remains default-off with Debug-only opt-in.
+
+## [4.7.0] — 2026-09-26 (development source; not a stable app release)
+
+This CLI source version adds saved-result editing, batch text revisions, shared
+AI routes and experimental Ask automation. It does not qualify or change the
+stable MacParakeet.app release or standalone CLI channel.
+
+### Added
+
+- `ask list|new|show|rename|delete|sources|select|draft|send|evidence` exposes
+  saved source-scoped Ask conversations through JSON by default. Writes use
+  conversation revisions; `send` requires an explicit inline provider and
+  `--revision`, requires `--allow-remote` for accepted remote endpoints, and
+  can emit NDJSON activity/text plus the final conversation with `--stream`.
+  Ask is experimental and disabled by default: developer builds require
+  `--enable-ask-workspace` on each command. Release builds reject Ask even with
+  that flag, before opening the database or constructing a model provider.
+
+- `meetings results edit <meeting> <result-uuid>` edits saved AI content in
+  place with a required exact-content precondition, preserving result identity
+  and generation receipts. It refreshes artifacts and records `contentEditedAt`;
+  stale writes fail with `conflict` instead of overwriting another edit.
+- `meetings corrections revise-text` applies a revision-checked JSON batch of
+  replacements and omissions as one reversible correction. Original audio and
+  recognition evidence are preserved.
+- `llm routes list|set|reset` inspects effective routes and configures or clears
+  cleanup/analysis overrides in the same stores as GUI Settings. Output omits
+  credentials and endpoint secrets; local CLI routes reuse the shared template.
+  Listing and mutation receipts read persisted route metadata only, never
+  Keychain. `routes set` without `--model` picks the provider's current app
+  default (matching GUI Settings), not the historical one-off inline-CLI
+  compatibility default that other inline LLM commands still use for scripts.
+  `set`/`reset` coordinate with the GUI and other CLI processes on a shared
+  lease: a concurrent mutation fails fast (exit `1`, "AI settings are being
+  updated") instead of racing, and a publication I/O failure reports an
+  unconfirmed save rather than a silent no-op. See
+  `spec/contracts/cli-json-v1.md` for the full contract.
+- `spec --json` documents the new commands and their mutation/precondition
+  boundaries. Existing commands, JSON fields and exit codes remain supported.
+- History JSON may now include `"status": "error"` for a dictation whose
+  transcription failed after capture. The row keeps its recording
+  (`audioPath`), has an empty `rawTranscript`, and carries the failure in
+  `errorMessage`. The human-readable list marks those rows `[failed]`.
+
+### Changed
+
+- Automatic speaker detection uses Nemotron 3 through FluidAudio 0.17.4,
+  with up to eight speakers per analyzed source. Explicit `--speaker-count`,
+  `--speaker-min`, and `--speaker-max` retain the Community-1 pipeline and
+  existing count semantics. Model setup prepares both backends for offline use, readiness covers both,
+  and `models clear` removes both speaker caches. Legacy unmarked speaker
+  caches need one connected `models warm-up` after the upgrade. Existing JSON fields and the microphone's `Me`
+  attribution are preserved.
+
+- `retranscribe --kind dictation --update` on a failed dictation completes
+  it the same way History Retry does. The update applies only if the row is
+  still failed; otherwise the command fails with a `lookup` error. After success
+  the kept recording is deleted and `audioPath` cleared, unless Save audio
+  recordings is on.
+
+- Developer-enabled Ask now retrieves passages with ranked any-term search and
+  exposes continuation metadata to its internal search/read tools. Search no
+  longer requires every query word in a passage. Public `ask` command JSON
+  envelopes and citation identities are unchanged. Ask remains disabled in
+  Release builds; this does not qualify model answer quality.
+
+## [4.6.0] — 2026-09-23
+
+### Fixed
+
+- `prompts run` records the correction revision used for its transcript input,
+  so a new result on an edited meeting does not immediately appear stale in
+  the app.
+
+### Added
+
+- Saved prompt-result JSON may include the additive `sourceTranscriptHash`
+  receipt for detecting retranscription even when the correction revision
+  resets. It is omitted for results with unknown source text.
+- `parakeet-model` accepts `orukeet`. `config set parakeet-model orukeet`,
+  `transcribe` / `retranscribe --parakeet-model orukeet`, and
+  `models download|select|delete parakeet-orukeet` address that preview.
+  `models list` may include the additive `parakeet-orukeet` entry (engine
+  `parakeet`, variant `orukeet`). The default remains `v3`. Transcription
+  results report `engineVariant` `orukeet`. Native streaming, tail-window
+  dictation preview, and recognition-time vocabulary boosting stay off.
+- Inline LLM commands accept `--provider appleIntelligence` (aliases `apple`,
+  `apple-intelligence`) to use macOS 26 Apple Intelligence on-device. No API
+  key. The on-device window is small; long transcripts still need a cloud or
+  Ollama provider.
+- `config get|set|list` includes `meeting-ai-output-language`
+  (`follow-transcript` or `en|pl|de|es|fr|pt|ja|zh`, default `follow-transcript`). This
+  controls the language of generated AI results, not speech recognition.
+  `prompts run` and saved-meeting completion read the same app defaults
+  suite as `config set`.
+- Saved prompt-result JSON includes additive nullable
+  `outputLanguagePolicySnapshot`.
+- `vocab import --policy replace-all` resets the manual vocabulary to the
+  bundle in one transaction. Dry-run JSON reports `wordsRemoved`,
+  `snippetsRemoved`, and `learnedWordsPreserved` only for `replace-all`;
+  skip and replace keep those fields empty. Apply JSON adds `wordsRemoved`
+  and `snippetsRemoved` for the writes that actually ran. Skip remains the
+  default; unmatched learned recognition terms are kept. Empty bundles cannot
+  replace all, and a changed dictionary requires a fresh preview.
+- `vocab import` now reports malformed bundles as `import_schema` with exit
+  code `2`, and empty `replace-all` bundles as `input_empty` with exit code
+  `2`. A stale preview reports `conflict` with exit code `1`.
+- `config get|set|list` includes `play-dictation-capture-sounds` (`on`/`off`,
+  default off). When on, dictation plays a short cue once the microphone is
+  live and another when that capture ends, whether it was stopped or
+  cancelled. A take whose start never went live stays silent.
+- `config spoken-punctuation` (`on`/`off`, default on) controls whether Clean
+  dictation and file transcription convert spoken question/exclamation marks.
+  Meetings never convert. `vocab process` honors the same app-defaults key.
+- `config get|set|list` includes `escape-cancels-dictation` (`on`/`off`,
+  default on). When off, Escape is left for other apps and does not cancel
+  a live dictation.
+- Saved prompt-result JSON includes additive `contentEditedAt` when the user
+  last edited result content in place. The key is omitted when content was
+  last written by generation.
 
 ## [4.5.0] — 2026-09-20
 

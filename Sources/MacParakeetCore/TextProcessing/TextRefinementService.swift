@@ -33,6 +33,7 @@ public struct TextRefinementService: Sendable {
         customWords: [CustomWord],
         snippets: [TextSnippet],
         insertionStyle: DictationInsertionStyle = .sentence,
+        spokenPunctuationEnabled: Bool = true,
         removeUmFiller: Bool = true,
         profile: AppProfile? = nil,
         smartFormatting: Bool = false
@@ -68,6 +69,7 @@ public struct TextRefinementService: Sendable {
             customWords: customWords,
             snippets: snippets,
             insertionStyle: insertionStyle,
+            spokenPunctuationEnabled: spokenPunctuationEnabled,
             removeUmFiller: removeUmFiller,
             isTerminalProfile: isTerminalProfile,
             smartFormatting: smartFormatting

@@ -26,7 +26,7 @@ Implementation uses `NSRegularExpression` with word boundaries (`\b`) to avoid p
 
 ### Step 2: Custom Word Replacements
 
-User-defined word corrections applied with case-insensitive matching and whole-word boundaries.
+User-defined word corrections. Matching and ordering rules are listed below.
 
 Two categories:
 
@@ -35,8 +35,12 @@ Two categories:
 | Vocabulary anchors | Enforce correct casing | "kubernetes" → "Kubernetes" |
 | Corrections | Fix common STT errors | "aye pee eye" → "API" |
 
-- Matching is **case-insensitive** with **whole-word boundaries**
-- **Disabled** words are skipped (user can toggle without deleting)
+- Matching is **case-insensitive** with **literal token boundaries**. Adjacent
+  Unicode word characters (letters, marks, digits, connectors, and joiners)
+  prevent a match. `C++`, `C#`, and `.NET` match standalone, but not within
+  `C++17` or `x.NET`. Surrounding punctuation remains a delimiter; this is not
+  programming-language tokenization.
+- **Disabled** words and empty literals are skipped (user can toggle without deleting)
 - Applied in the order they appear in the database
 
 **Meetings (REQ-PIPE-003):** these custom-word corrections also run on
@@ -65,9 +69,20 @@ Trigger phrases are replaced with their full expansion text.
 
 - **Triggers are natural language phrases**, not abbreviations — because Parakeet STT outputs natural speech, users will say "my signature" not "sig". Triggers must match what the STT actually produces.
 - Snippets are **sorted by trigger length descending** (longest first) to prevent partial matches when one trigger is a prefix of another
-- Matching is **case-insensitive** with **whole-phrase boundaries**
+- Matching is **case-insensitive**, using the same literal token boundaries as
+  custom words. Empty triggers are skipped. Terminal action snippets retain
+  their separate whitespace/end-of-text matching rules.
 - Expanded snippet IDs are tracked so use counts can be updated after processing
 - Example: `"my signature"` → `"Best regards, David"`
+- After user snippets, Clean mode optionally converts spoken punctuation
+  commands (`question mark` → `?`, `exclamation mark` / `exclamation point` → `!`,
+  plus DE/ES/FR/PT/PL aliases). Prefix `literal` (or `wörtlich` / `littéral` /
+  `dosłownie`) keeps the words. User snippets of the same trigger still win.
+  Default on; Vocabulary and `config set spoken-punctuation` can opt out.
+  This runs on dictation only; `vocab process` also applies it because it
+  previews the dictation Clean pipeline on typed text. File, URL, and meeting
+  transcripts keep the words, because recorded speech that mentions "a
+  question mark" means them.
 
 ### Step 5: Whitespace Cleanup + Insertion Style
 
@@ -141,6 +156,22 @@ Stores trigger-to-expansion mappings.
 | isEnabled | BOOLEAN | Whether this snippet is active |
 | createdAt | DATETIME | When created |
 | updatedAt | DATETIME | When last modified |
+
+---
+
+## Optional AI Formatting
+
+AI formatting runs after deterministic cleanup. The complete rendered system and
+user messages must fit the selected provider's existing round-trip character
+budget, including repeated transcript placeholders and appended transcript
+separators. Oversized requests fail before calling the provider; formatting never
+truncates or chunks the transcript. Responses ending in `length` or `max_tokens`,
+and detailed results marked as having truncated input, also fail formatting.
+
+These failures preserve the full deterministic cleanup result. A failed attempt
+is recorded without provider output or successful prompt-profile attribution.
+Existing transcription lane caps, cancellation, and lifecycle notifications remain
+unchanged.
 
 ---
 

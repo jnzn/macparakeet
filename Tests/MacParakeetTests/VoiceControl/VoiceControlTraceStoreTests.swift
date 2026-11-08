@@ -38,7 +38,29 @@ final class VoiceControlTraceStoreTests: XCTestCase {
         XCTAssertFalse(disk.contains("SECRET_SELECTION"))
         XCTAssertTrue(disk.contains("Where from?"))
         XCTAssertTrue(FileManager.default.fileExists(atPath: pointer.appendingPathComponent("latest.json").path))
-        XCTAssertTrue(String(decoding: try Data(contentsOf: pointer.appendingPathComponent("WHERE")), as: UTF8.self).contains(root.path))
+        let fileMode = try XCTUnwrap(
+            FileManager.default.attributesOfItem(atPath: store.latestURL.path)[.posixPermissions] as? NSNumber)
+        XCTAssertEqual(fileMode.intValue & 0o777, 0o600)
+        let directoryMode = try XCTUnwrap(
+            FileManager.default.attributesOfItem(atPath: root.path)[.posixPermissions] as? NSNumber)
+        XCTAssertEqual(directoryMode.intValue & 0o777, 0o700)
+        XCTAssertTrue(
+            String(decoding: try Data(contentsOf: pointer.appendingPathComponent("WHERE")), as: UTF8.self).contains(
+                root.path))
+    }
+
+    func testPointerSkipsASymlinkDirectory() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("voice-control-logs-\(UUID().uuidString)", isDirectory: true)
+        let real = root.appendingPathComponent("real", isDirectory: true)
+        let link = root.appendingPathComponent("link")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+        let store = VoiceControlTraceStore(
+            directory: root.appendingPathComponent("logs"), pointerDirectory: link, retention: 2)
+        await store.beginTask(id: UUID(), instruction: "Synthetic instruction")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: real.appendingPathComponent("latest.json").path))
     }
 
     func testRetentionKeepsOnlyRecentSessions() async throws {
@@ -61,6 +83,31 @@ final class VoiceControlTraceStoreTests: XCTestCase {
         XCTAssertEqual(sessions.count, 2)
     }
 
+    func testSpeechTimingAppendsOwnerOnlyLinesAndKeepsTheNewest() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("voice-control-logs-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = VoiceControlTraceStore(directory: root, pointerDirectory: nil, speechRetention: 2)
+        for merged in 0..<3 {
+            await store.noteSpeechTurn(
+                VoiceControlSpeechTurnMetrics(
+                    at: Date(), outcome: .delivered, speechMilliseconds: 1_300, pauseMilliseconds: [900],
+                    mergedSegments: merged, endpointSilenceMilliseconds: 900, transcribeMilliseconds: 120,
+                    sincePreviousMilliseconds: nil, overlapWithPrevious: nil))
+        }
+        let lines = try String(contentsOf: store.speechURL, encoding: .utf8).split(separator: "\n")
+        XCTAssertEqual(lines.count, 2)
+        XCTAssertTrue(lines[0].contains("\"merged_segments\":1"))
+        XCTAssertTrue(lines[1].contains("\"pauses_ms\":[900]"))
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let last = try decoder.decode(VoiceControlSpeechTurnMetrics.self, from: Data(lines[1].utf8))
+        XCTAssertEqual(last.mergedSegments, 2)
+        let mode = try XCTUnwrap(
+            FileManager.default.attributesOfItem(atPath: store.speechURL.path)[.posixPermissions] as? NSNumber)
+        XCTAssertEqual(mode.intValue & 0o777, 0o600)
+    }
+
     func testInboxParsesJSONAndPlainText() {
         XCTAssertEqual(
             VoiceControlInboxCommand.parse("Find flights to London"),
@@ -69,7 +116,8 @@ final class VoiceControlTraceStoreTests: XCTestCase {
             VoiceControlInboxCommand.parse(#"{"action":"revise","text":"Actually Paris"}"#),
             VoiceControlInboxCommand(action: .revise, text: "Actually Paris"))
         XCTAssertEqual(
-            VoiceControlInboxCommand.parse(#"{"action":"submit","text":"Find flights","activate":"com.google.Chrome"}"#),
+            VoiceControlInboxCommand.parse(
+                #"{"action":"submit","text":"Find flights","activate":"com.google.Chrome"}"#),
             VoiceControlInboxCommand(
                 action: .submit, text: "Find flights", activate: "com.google.Chrome"))
         XCTAssertEqual(
@@ -91,7 +139,8 @@ final class VoiceControlTraceStoreTests: XCTestCase {
         await runner.submit("Find one-way flights from Zurich to London")
         await runner.flushTraces()
         let traces = await runner.traceSnapshot()
-        XCTAssertTrue(traces.contains { $0.stage == "observation" && $0.outcome == "failed" && $0.detail == "noWindow" })
+        XCTAssertTrue(
+            traces.contains { $0.stage == "observation" && $0.outcome == "failed" && $0.detail == "noWindow" })
         let loaded = await store.loadLatest()
         let session = try XCTUnwrap(loaded)
         XCTAssertTrue(session.records.contains { $0.detail == "noWindow" })
@@ -115,7 +164,8 @@ final class VoiceControlTraceStoreTests: XCTestCase {
 
         let traces = await runner.traceSnapshot()
         XCTAssertTrue(traces.contains { $0.outcome == "duplicate_blocked" && $0.targetLabel == "Google Flights" })
-        XCTAssertTrue(traces.contains { $0.actor == "local" && $0.route == "destination" && $0.targetID == "web:google-flights" })
+        XCTAssertTrue(
+            traces.contains { $0.actor == "local" && $0.route == "destination" && $0.targetID == "web:google-flights" })
         XCTAssertFalse(String(decoding: try JSONEncoder().encode(traces), as: UTF8.self).contains("SECRET_VALUE"))
 
         let loaded = await store.loadLatest()

@@ -3,23 +3,27 @@ import Foundation
 /// Routes LLM requests to the appropriate client based on provider ID.
 /// HTTP-based providers go to `LLMClient`; `.localCLI` goes to
 /// `LocalCLILLMClient`; `.inProcessLocal` goes to `InProcessLLMClient`;
-/// `.appleOnDevice` goes to `FoundationModelsLLMClient`.
+/// `.appleOnDevice` goes to `FoundationModelsLLMClient`;
+/// `.appleIntelligence` goes to `AppleIntelligenceLLMClient`.
 public final class RoutingLLMClient: LLMClientProtocol, Sendable {
     private let httpClient: any LLMClientProtocol
     private let cliClient: any LLMClientProtocol
     private let inProcessClient: any LLMClientProtocol
     private let appleOnDeviceClient: any LLMClientProtocol
+    private let appleIntelligenceClient: any LLMClientProtocol
 
     public init(
         httpClient: any LLMClientProtocol = LLMClient(),
         cliClient: any LLMClientProtocol = LocalCLILLMClient(),
         inProcessClient: any LLMClientProtocol = InProcessLLMClient(),
-        appleOnDeviceClient: any LLMClientProtocol = FoundationModelsLLMClient()
+        appleOnDeviceClient: any LLMClientProtocol = FoundationModelsLLMClient(),
+        appleIntelligenceClient: any LLMClientProtocol = AppleIntelligenceLLMClient()
     ) {
         self.httpClient = httpClient
         self.cliClient = cliClient
         self.inProcessClient = inProcessClient
         self.appleOnDeviceClient = appleOnDeviceClient
+        self.appleIntelligenceClient = appleIntelligenceClient
     }
 
     public var supportsInProcessLocalLLM: Bool {
@@ -80,6 +84,8 @@ public final class RoutingLLMClient: LLMClientProtocol, Sendable {
             return inProcessClient
         case .appleOnDevice:
             return appleOnDeviceClient
+        case .appleIntelligence:
+            return appleIntelligenceClient
         case .anthropic, .openai, .openaiCompatible, .gemini, .openrouter, .moonshot, .deepseek, .qwen, .zai, .minimax,
             .ollama, .lmstudio:
             return httpClient

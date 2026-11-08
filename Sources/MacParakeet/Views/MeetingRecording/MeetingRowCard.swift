@@ -107,6 +107,7 @@ struct MeetingRowCard<MenuContent: View>: View {
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("library-item-\(transcription.id.uuidString)")
         .accessibilityValue(showsSelectionControls ? (isSelected ? "Selected" : "Not selected") : "")
         .accessibilityHint(showsSelectionControls ? "Toggles selection" : hoverTooltip)
     }
@@ -197,7 +198,9 @@ struct MeetingRowCard<MenuContent: View>: View {
 
     @ViewBuilder
     private var audioInline: some View {
-        if audioState == .missing {
+        if audioState == .missing
+            || (audioState == .sourcesSaved && transcription.status == .processing)
+        {
             MeetingAudioStateChip(state: audioState)
         }
     }
@@ -215,7 +218,7 @@ struct MeetingRowCard<MenuContent: View>: View {
                 ParakeetSpinner(.inline)
                     .scaleEffect(0.85)
                     .frame(width: 12, height: 12)
-                Text(statusLine("Transcribing"))
+                Text(statusLine("Processing"))
                     .font(DesignSystem.Typography.bodySmall)
                     .foregroundStyle(DesignSystem.Colors.textTertiary)
                     .lineLimit(1)
@@ -320,7 +323,7 @@ struct MeetingRowCard<MenuContent: View>: View {
             )
         }
         .buttonStyle(.plain)
-        .disabled(isRetrying || onRetry == nil || audioState != .saved)
+        .disabled(isRetrying || onRetry == nil || !MeetingAudioFile.canRetryFinalization(for: transcription))
         .help(retryHelp)
         .accessibilityLabel(isRetrying ? "Retrying transcription" : "Retry transcription")
     }
@@ -330,18 +333,20 @@ struct MeetingRowCard<MenuContent: View>: View {
     private var displayedTitle: String {
         let title = transcription.effectiveDisplayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         if !title.isEmpty { return title }
-        if transcription.status == .processing { return "Transcribing…" }
+        if transcription.status == .processing { return "Processing…" }
         return transcription.fileName
     }
 
     private var displayedSnippet: String? {
-        if let effectiveTranscriptText,
-            let effectiveSnippet = SnippetDeriver.derive(
-                from: effectiveTranscriptText,
+        if let effectiveTranscriptText {
+            // Empty means the effective transcript was cleared. The stored
+            // snippet still has the pre-edit text and must not fill the gap.
+            let trimmed = effectiveTranscriptText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            return SnippetDeriver.derive(
+                from: trimmed,
                 excluding: transcription.derivedTitle
-            ) ?? snippet(from: effectiveTranscriptText)
-        {
-            return effectiveSnippet
+            ) ?? snippet(from: trimmed)
         }
         if let derived = transcription.derivedSnippet?.trimmingCharacters(in: .whitespacesAndNewlines), !derived.isEmpty
         {
@@ -367,7 +372,9 @@ struct MeetingRowCard<MenuContent: View>: View {
     }
 
     private var displayedSpeakerCount: Int? {
-        let count = transcription.speakerCount ?? transcription.speakers?.count ?? 0
+        let count =
+            transcription.speakers.map { SpeakerInfo.participants(in: $0).count }
+            ?? transcription.speakerCount ?? 0
         return count >= 2 ? count : nil
     }
 
@@ -386,8 +393,8 @@ struct MeetingRowCard<MenuContent: View>: View {
 
     private var failedHeadline: String {
         switch audioState {
-        case .saved:
-            return "Transcription failed — audio is saved"
+        case .saved, .sourcesSaved:
+            return "Processing failed — audio is saved"
         case .removed:
             return "Transcription failed — audio unavailable"
         case .missing:
@@ -403,7 +410,7 @@ struct MeetingRowCard<MenuContent: View>: View {
     }
 
     private var retryButtonForeground: Color {
-        if isRetrying || onRetry == nil || audioState != .saved {
+        if isRetrying || onRetry == nil || !MeetingAudioFile.canRetryFinalization(for: transcription) {
             return DesignSystem.Colors.textTertiary
         }
         return DesignSystem.Colors.accent
@@ -416,7 +423,7 @@ struct MeetingRowCard<MenuContent: View>: View {
         guard onRetry != nil else {
             return "Retry is not available"
         }
-        return audioState == .saved
+        return MeetingAudioFile.canRetryFinalization(for: transcription)
             ? "Retry transcription from saved meeting audio"
             : "Saved meeting audio is required before retrying transcription"
     }
@@ -427,7 +434,7 @@ struct MeetingRowCard<MenuContent: View>: View {
 
     private var audioStateSuffix: String? {
         switch audioState {
-        case .saved:
+        case .saved, .sourcesSaved:
             return "audio saved"
         case .removed:
             return "audio unavailable"

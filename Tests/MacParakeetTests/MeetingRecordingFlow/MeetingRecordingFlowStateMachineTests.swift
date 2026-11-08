@@ -222,6 +222,22 @@ final class MeetingRecordingFlowStateMachineTests: XCTestCase {
         )
     }
 
+    func testStartFailureAfterDeferredStopShowsErrorInsteadOfStickingInStopping() {
+        var machine = MeetingRecordingFlowStateMachine()
+        _ = machine.handle(.startRequested)
+        _ = machine.handle(.permissionsGranted(generation: 1))
+        XCTAssertEqual(machine.handle(.stopRequested), [])
+        XCTAssertEqual(machine.state, .stopping)
+
+        let effects = machine.handle(.startFailed(generation: 1, message: "No mic"))
+
+        XCTAssertEqual(machine.state, .finishing(outcome: .error("No mic")))
+        XCTAssertEqual(
+            effects,
+            [.showError("No mic"), .updateMenuBar(.idle), .startAutoDismissTimer(seconds: 5)]
+        )
+    }
+
     func testAutoDismissReturnsToIdle() {
         var machine = MeetingRecordingFlowStateMachine()
         _ = machine.handle(.startRequested)

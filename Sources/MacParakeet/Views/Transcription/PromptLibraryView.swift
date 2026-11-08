@@ -43,7 +43,6 @@ struct PromptLibraryView: View {
     @State private var librarySheet: LibrarySheet?
     @Environment(\.dismiss) private var dismiss
     @Bindable var viewModel: PromptsViewModel
-    var showsDismissButton = true
     var presentation: PromptLibraryPresentation = .library
     @State private var editName: String = ""
     @State private var editContent: String = ""
@@ -91,12 +90,10 @@ struct PromptLibraryView: View {
                     }
                     .parakeetAction(.primaryProminent)
                     .controlSize(.large)
-                    if showsDismissButton {
-                        Button("Done") { dismiss() }
-                            .parakeetAction(.secondary)
-                            .controlSize(.large)
-                            .keyboardShortcut(.cancelAction)
-                    }
+                    Button("Done") { dismiss() }
+                        .parakeetAction(.secondary)
+                        .controlSize(.large)
+                        .keyboardShortcut(.cancelAction)
                 }
 
                 HStack(spacing: DesignSystem.Spacing.md) {
@@ -169,7 +166,7 @@ struct PromptLibraryView: View {
             }
             .ignoresSafeArea()
         }
-        .frame(minWidth: 720, minHeight: 560)
+        .frame(minWidth: Self.sheetMinWidth, minHeight: Self.sheetMinHeight)
         .onAppear { viewModel.refresh() }
         .onChange(of: viewModel.collections.map(\.id)) { _, ids in
             if let collectionFilterID, !ids.contains(collectionFilterID) {
@@ -977,8 +974,8 @@ struct PromptLibraryView: View {
                     "Adds user-authored notes when this prompt runs on a meeting."
                 )
             Text(
-                "When this prompt runs on a meeting with notes, use those notes as additional context. "
-                    + "The transcript remains the source of truth."
+                "Send your meeting notes to the selected AI provider as context, including spelling corrections and reference URLs. "
+                    + "Linked pages are not fetched. Changes apply to new results; Regenerate keeps the original setting."
             )
             .font(DesignSystem.Typography.caption)
             .foregroundStyle(DesignSystem.Colors.textSecondary)
@@ -1409,6 +1406,12 @@ struct PromptLibraryView: View {
         case .modified: return DesignSystem.Colors.accent.opacity(0.08)
         }
     }
+}
+
+extension PromptLibraryView {
+    /// Comfortable minimum size for the sheet presentations.
+    static let sheetMinWidth: CGFloat = 720
+    static let sheetMinHeight: CGFloat = 560
 }
 
 private struct GenerationSettingsEditor: View {

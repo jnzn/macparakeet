@@ -143,6 +143,7 @@ public enum TelemetryDictationTrigger: String, Sendable, Equatable {
     case hotkey
     case pillClick = "pill_click"
     case menuBar = "menu_bar"
+    case urlControl = "url_control"
 }
 
 public enum TelemetryDictationMode: String, Sendable, Equatable {
@@ -377,6 +378,7 @@ public enum TelemetryMeetingRecordingTrigger: String, Sendable, Equatable {
     case manual
     case hotkey
     case calendarAutoStart = "calendar_auto_start"
+    case activityDetection = "activity_detection"
 }
 
 /// Why a full meeting recording operation moved through its lifecycle. This is
@@ -385,6 +387,7 @@ public enum TelemetryMeetingOperationTrigger: String, Sendable, Equatable {
     case manual
     case hotkey
     case calendarAutoStart = "calendar_auto_start"
+    case activityDetection = "activity_detection"
     case autoStop = "auto_stop"
 
     public init(_ trigger: TelemetryMeetingRecordingTrigger) {
@@ -395,6 +398,8 @@ public enum TelemetryMeetingOperationTrigger: String, Sendable, Equatable {
             self = .hotkey
         case .calendarAutoStart:
             self = .calendarAutoStart
+        case .activityDetection:
+            self = .activityDetection
         }
     }
 }
@@ -510,6 +515,12 @@ public enum TelemetryOnboardingAction: String, Sendable, Equatable {
     case dismissed
     case engineReady = "engine_ready"
     case engineFailed = "engine_failed"
+    /// Continue after a dictation key lit on the Try It card.
+    case hotkeyConfirmed = "hotkey_confirmed"
+    /// The first practice dictation delivered text into the Try It box.
+    case practiceSucceeded = "practice_succeeded"
+    /// Skip on the Try It step.
+    case practiceSkipped = "practice_skipped"
 }
 
 /// Which capture surface a hotkey customization applies to. Lets us answer
@@ -522,6 +533,7 @@ public enum TelemetryHotkeySurface: String, Sendable, Equatable {
     case meeting
     case fileTranscription = "file_transcription"
     case youtubeTranscription = "youtube_transcription"
+    case dictationAIPolish = "dictation_ai_polish"
 }
 
 /// Mirrors `HotkeyTrigger.Kind` for telemetry. Kept separate so changes to the
@@ -546,6 +558,7 @@ public enum TelemetrySettingName: String, Sendable, Equatable {
     case menuBarOnly = "menu_bar_only"
     case menuBarIcon = "menu_bar_icon"
     case hidePill = "hide_pill"
+    case overlayPlacement = "overlay_placement"
     case saveTranscriptionAudio = "save_transcription_audio"
     case saveMeetingAudio = "save_meeting_audio"
     case meetingAudioRetention = "meeting_audio_retention"
@@ -571,14 +584,18 @@ public enum TelemetrySettingName: String, Sendable, Equatable {
     case startMeetingsMuted = "start_meetings_muted"
     case meetingRecordingPill = "meeting_recording_pill"
     case meetingAutoStop = "meeting_auto_stop"
+    case meetingActivityDetectionMode = "meeting_activity_detection_mode"
     case openAppAfterMeetingEnd = "open_app_after_meeting_end"
     case notifyOnMeetingEnd = "notify_on_meeting_end"
     case pauseMediaDuringDictation = "pause_media_during_dictation"
+    case playDictationCaptureSounds = "play_dictation_capture_sounds"
+    case escapeCancelsDictation = "escape_cancels_dictation"
     case preserveDiscardedDictations = "preserve_discarded_dictations"
     case instantDictation = "instant_dictation"
     case liveDictationPreview = "live_dictation_preview"
     case dictationUndoCountdown = "dictation_undo_countdown"
     case dictationInsertionStyle = "dictation_insertion_style"
+    case spokenPunctuation = "spoken_punctuation"
     case removeUmFiller = "remove_um_filler"
     case transcriptionCompletionNotification = "transcription_completion_notification"
 
@@ -991,7 +1008,8 @@ public enum TelemetryEventSpec: Sendable {
         crashTimestamp: String, crashAppVer: String,
         crashOsVer: String, uuid: String,
         slide: String, reason: String?, stackTrace: String,
-        siCode: String? = nil, pc: String? = nil, faultAddr: String? = nil
+        siCode: String? = nil, pc: String? = nil, faultAddr: String? = nil,
+        diagnosticMetadata: CrashDiagnosticMetadata? = nil
     )
     case cliOperation(
         operationID: String,
@@ -1771,8 +1789,8 @@ extension TelemetryEventSpec {
         case .crashOccurred(
             let crashType, let signal, let name, let crashTimestamp,
             let crashAppVer, let crashOsVer, let uuid, let slide,
-            _, let stackTrace, let siCode, let pc, let faultAddr):
-            return Self.compactProps(
+            _, let stackTrace, let siCode, let pc, let faultAddr, let diagnosticMetadata):
+            var props = Self.compactProps(
                 ("crash_type", crashType),
                 ("signal", signal),
                 ("name", name),
@@ -1785,7 +1803,9 @@ extension TelemetryEventSpec {
                 ("si_code", siCode),
                 ("pc", pc),
                 ("fault_addr", faultAddr)
-            )
+            ) ?? [:]
+            for (key, value) in diagnosticMetadata?.props ?? [:] { props[key] = value }
+            return props
         case .cliOperation(
             let operationID,
             let operationContext,

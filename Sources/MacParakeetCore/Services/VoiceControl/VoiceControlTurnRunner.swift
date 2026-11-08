@@ -1,5 +1,17 @@
 import Foundation
 
+private final class LiveWorkFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+    var isSet: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return value
+    }
+    func set(_ next: Bool) {
+        lock.lock(); value = next; lock.unlock()
+    }
+}
+
 public actor VoiceControlTurnRunner {
     public nonisolated let events: AsyncStream<VoiceControlEvent>
     private let continuation: AsyncStream<VoiceControlEvent>.Continuation
@@ -21,6 +33,10 @@ public actor VoiceControlTurnRunner {
     private var pending: Pending?
     private var expiryTask: Task<Void, Never>?
     private var running = false
+    /// In-flight work or a pending confirmation. A dry run reads this without
+    /// hopping to the actor, and must not stop either one.
+    private nonisolated let liveWork = LiveWorkFlag()
+    public nonisolated var hasLiveWork: Bool { liveWork.isSet }
     private var cancelled = false
     private var dryRun = false
     private var submissionID = UUID()
@@ -80,6 +96,7 @@ public actor VoiceControlTurnRunner {
     public func cancel(submissionAuthority: ActionAuthority? = nil) {
         guard submissionAuthority?.isValid != false else { return }
         stop(); submissionID = UUID(); pending = nil; expiryTask?.cancel(); cancelled = true
+        liveWork.set(false)
         goal = ""; amendments = []; history = []; referenceSnapshot = nil; referenceAction = nil
         lastSnapshot = nil; manualOverrides = [:]; otherRequested = false; alternativeLabels = []; alternativeIDs = []; alternativeRawLabels = []; chosenAlternative = nil; chosenTargetID = nil
         record("task", outcome: "cancelled")
@@ -113,6 +130,7 @@ public actor VoiceControlTurnRunner {
         await run()
     }
     public func revise(_ correction: String, submissionAuthority: ActionAuthority? = nil) async {
+        dryRun = false
         guard submissionAuthority?.isValid != false else { return }
         guard hasTask else { await submit(correction, submissionAuthority: submissionAuthority); return }
         stop()
@@ -125,7 +143,7 @@ public actor VoiceControlTurnRunner {
         let normalized = correction.lowercased().trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
         otherRequested = ["other one", "the other one", "no the other one", "no, the other one", "not that one"].contains(normalized)
         chosenAlternative = nil; chosenTargetID = nil; alternativeLabels = []; alternativeIDs = []; alternativeRawLabels = []
-        amendments.append("User correction (overrides earlier conflicting requirements): " + correction)
+        amendments.append(VoiceControlGoalText.correction + correction)
         if amendments.count > 20 { amendments.removeFirst(amendments.count - 20) }
         record("revision", outcome: otherRequested ? "alternative_requested" : "goal_amended")
         continuation.yield(.activity("Correction: " + correction))
@@ -133,6 +151,7 @@ public actor VoiceControlTurnRunner {
     }
     public func continueTask(submissionAuthority: ActionAuthority? = nil) async { await resume(submissionAuthority: submissionAuthority) }
     public func resume(submissionAuthority: ActionAuthority? = nil) async {
+        dryRun = false
         guard hasTask, !running, submissionAuthority?.isValid != false else { return }
         ingressAuthority = submissionAuthority
         pending = nil; expiryTask?.cancel()
@@ -140,16 +159,24 @@ public actor VoiceControlTurnRunner {
         await run()
     }
     public func clarify(_ answer: String, submissionAuthority: ActionAuthority? = nil) async {
+        dryRun = false
         guard hasTask, !running, submissionAuthority?.isValid != false else { return }
         ingressAuthority = submissionAuthority
         if !alternativeLabels.isEmpty || !alternativeIDs.isEmpty {
             let count = max(alternativeLabels.count, alternativeIDs.count)
-            if let index = VoiceControlSpokenPick.index(in: answer, count: count) {
+            // The same reading the classifier used: `select 2`, `click Open`, `Select All.`
+            let exact = VoiceControlSessionGrammar.normalize(answer)
+            // An offered `Please Save` is matched before the politeness is dropped.
+            let said = alternativeLabels.contains { VoiceControlSessionGrammar.normalize($0) == exact }
+                ? exact : (exact.hasPrefix("please ") ? String(exact.dropFirst(7)) : exact)
+            let spoken = VoiceControlUtteranceIntent.withoutPickVerb(said)
+            if let index = VoiceControlSpokenPick.index(in: spoken, count: count) {
                 if alternativeLabels.indices.contains(index) { chosenAlternative = alternativeLabels[index] }
                 if alternativeIDs.indices.contains(index) { chosenTargetID = alternativeIDs[index] }
             } else {
                 let matches = alternativeLabels.filter {
-                    $0.caseInsensitiveCompare(answer.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame
+                    let label = VoiceControlSessionGrammar.normalize($0)
+                    return label == said || label == spoken
                 }
                 guard matches.count == 1, let match = matches.first,
                     let index = alternativeLabels.firstIndex(of: match)
@@ -161,15 +188,17 @@ public actor VoiceControlTurnRunner {
                 if alternativeIDs.indices.contains(index) { chosenTargetID = alternativeIDs[index] }
             }
         }
-        amendments.append("User clarification: " + answer); revision += 1
+        amendments.append(VoiceControlGoalText.clarification + answer); revision += 1
         record("revision", outcome: "clarified")
         await run()
     }
     public func confirm(submissionAuthority: ActionAuthority? = nil) async {
+        dryRun = false
         guard !running, let pending, submissionAuthority?.isValid != false else { return }
         self.pending = nil; expiryTask?.cancel()
         guard pending.authority.isValid, Date().timeIntervalSince(pending.created) < limits.confirmationSeconds,
               withinBudget else {
+            liveWork.set(false)
             record("policy", outcome: "confirmation_expired")
             continuation.yield(.paused("Confirmation expired. Repeat or revise the request.")); return
         }
@@ -188,20 +217,15 @@ public actor VoiceControlTurnRunner {
             record(
                 "dispatch", operation: action.operation, outcome: "stale_reobserve",
                 observation: snapshot, action: action)
-            do {
-                let fresh = try await adapter.observe()
-                lastSnapshot = fresh
-                guard let bound = bind(action, to: fresh) else {
-                    record("policy", outcome: "unoffered_target", observation: fresh, action: action)
-                    continuation.yield(.failed("The requested control is no longer available."))
-                    finishSegment()
-                    return
-                }
-                continueGoal = try await perform(bound, snapshot: fresh, authority: authority)
-            } catch { report(error) }
+            // Confirmation authorizes this observation. Target ids are walk
+            // positions, so a fresh snapshot can reuse n:4 for a different control.
+            record("policy", outcome: "confirmation_stale", observation: snapshot, action: action)
+            continuation.yield(
+                .paused("The confirmed interface changed. Repeat or revise the request to review the current action."))
         } catch { report(error) }
         finishSegment()
         if continueGoal, authority.isValid, !cancelled { await run() }
+        else { liveWork.set(false) }
     }
 
     private var withinBudget: Bool {
@@ -213,10 +237,15 @@ public actor VoiceControlTurnRunner {
     private static func seconds(_ duration: Duration) -> Double {
         Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
     }
-    private func beginSegment() { running = true; segmentStarted = .now }
+    private func beginSegment() {
+        running = true
+        liveWork.set(true)
+        segmentStarted = .now
+    }
     private func finishSegment() {
         if let segmentStarted { activeSeconds += Self.seconds(segmentStarted.duration(to: .now)) }
         segmentStarted = nil; running = false; gate.clearCancellation()
+        if pending == nil { liveWork.set(false) }
         let waiters = stoppedWaiters; stoppedWaiters = []
         for waiter in waiters { waiter.resume() }
     }
@@ -330,18 +359,23 @@ public actor VoiceControlTurnRunner {
             } else {
                 record("decision", outcome: authority.isValid ? "failed" : "cancelled", started: start)
             }
+            // Whatever the engine threw, a revoked authority means Stop won.
+            if !authority.isValid { throw CancellationError() }
             throw error
         }
     }
     private var effectiveGoal: String {
         guard !amendments.isEmpty || !manualOverrides.isEmpty || !uncertainEffects.isEmpty else { return goal }
-        var parts = ["Continue this task using the latest corrections. Original goal: " + goal]
+        var parts = [VoiceControlGoalText.header + goal]
         parts += amendments
         if !manualOverrides.isEmpty {
-            parts.append("The user manually changed these fields. Preserve their current values; these override earlier conflicting requirements:")
-            parts += manualOverrides.keys.sorted().map { "\($0): \(manualOverrides[$0]!)" }
+            parts.append(VoiceControlGoalText.manualHeader)
+            // One line per field: a multiline value must not read as scaffold lines.
+            parts += manualOverrides.keys.sorted().map {
+                "\($0): \(manualOverrides[$0]!)".components(separatedBy: .newlines).joined(separator: " ")
+            }
         }
-        if !uncertainEffects.isEmpty { parts.append("Some executed effects have unknown outcomes. Inspect the current state; never repeat those effects. Ask if their outcome is necessary but cannot be determined.") }
+        if !uncertainEffects.isEmpty { parts.append(VoiceControlGoalText.uncertainNote) }
         return parts.joined(separator: "\n")
     }
     private func absorbManualChanges(_ snapshot: VoiceControlSnapshot) -> Bool {
@@ -510,6 +544,12 @@ public actor VoiceControlTurnRunner {
                         snapshot.targets.first(where: { $0.id == id })?.label
                     }
                     record("policy", outcome: "numbered_pick")
+                    let marks = zip(alternativeLabels, alternativeIDs).enumerated().map { offset, pair in
+                        VoiceControlHighlight.Mark(
+                            label: pair.0, frame: snapshot.targets.first(where: { $0.id == pair.1 })?.frame,
+                            number: offset + 1)
+                    }
+                    continuation.yield(.highlight(VoiceControlHighlight(style: .numbered, marks: marks)))
                     continuation.yield(.clarification(prompt)); return
                 case .action(let action):
                     guard let bound = bind(action, to: snapshot),
@@ -557,6 +597,7 @@ public actor VoiceControlTurnRunner {
             "policy", operation: action.operation, outcome: "confirmation_" + consequence.rawValue,
             observation: snapshot, action: action)
         let prefix = VoiceControlConfirmationCopy.prompt(action: action, target: target, consequence: consequence)
+        continuation.yield(.highlight(VoiceControlHighlight(style: .confirming, marks: [.init(label: target.label, frame: target.frame)])))
         continuation.yield(.confirmation(action, prefix))
         expiryTask?.cancel()
         let seconds = limits.confirmationSeconds
@@ -568,6 +609,7 @@ public actor VoiceControlTurnRunner {
     private func expireConfirmation(_ id: UUID) {
         guard pending?.id == id else { return }
         pending?.authority.revoke(); pending = nil
+        liveWork.set(false)
         record("policy", outcome: "confirmation_expired")
         continuation.yield(.paused("Confirmation expired. Repeat or revise the request."))
     }
@@ -578,6 +620,9 @@ public actor VoiceControlTurnRunner {
         dispatchedStates.insert(identity); dispatched += 1
         let effect = effectIdentity(action, snapshot: snapshot)
         referenceSnapshot = snapshot; referenceAction = action; referenceTime = Date()
+        if let target = snapshot.targets.first(where: { $0.id == action.targetID }) {
+            continuation.yield(.highlight(VoiceControlHighlight(style: .acting, marks: [.init(label: target.label, frame: target.frame)])))
+        }
         continuation.yield(.acting(action))
         record("dispatch", operation: action.operation, outcome: "started", observation: snapshot, action: action)
         let start = ContinuousClock.now
@@ -629,7 +674,8 @@ public actor VoiceControlTurnRunner {
         VoiceControlAction(operation: action.operation, targetID: action.targetID, value: action.value,
             targetLabel: snapshot.targets.first(where: { $0.id == action.targetID })?.label ?? action.targetLabel,
             receiptStatus: status, consequence: action.consequence, modelID: action.modelID,
-            decisionConfidence: action.decisionConfidence, postcondition: action.postcondition)
+            decisionConfidence: action.decisionConfidence, postcondition: action.postcondition,
+            completesRequest: action.completesRequest)
     }
     private func reconcilePostcondition(in snapshot: VoiceControlSnapshot) {
         guard let last = history.last, last.postcondition != .unknown,
@@ -640,7 +686,8 @@ public actor VoiceControlTurnRunner {
             operation: last.operation, targetID: last.targetID, value: last.value,
             targetLabel: last.targetLabel, requiresConfirmation: last.requiresConfirmation,
             receiptStatus: .verified, consequence: last.consequence, modelID: last.modelID,
-            decisionConfidence: last.decisionConfidence, postcondition: last.postcondition)
+            decisionConfidence: last.decisionConfidence, postcondition: last.postcondition,
+            completesRequest: last.completesRequest)
         record(
             "verification", operation: last.operation, outcome: "postcondition_holds",
             observation: snapshot, action: last)
@@ -663,7 +710,7 @@ public actor VoiceControlTurnRunner {
             targetLabel: target.label, requiresConfirmation: action.requiresConfirmation,
             receiptStatus: action.receiptStatus, consequence: action.consequence,
             modelID: action.modelID, decisionConfidence: action.decisionConfidence,
-            postcondition: action.postcondition)
+            postcondition: action.postcondition, completesRequest: action.completesRequest)
     }
     private func isRepeated(_ action: VoiceControlAction, snapshot: VoiceControlSnapshot) -> Bool {
         if uncertainEffects.contains(effectIdentity(action, snapshot: snapshot)) {

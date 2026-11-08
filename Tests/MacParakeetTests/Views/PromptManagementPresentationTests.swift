@@ -13,12 +13,4 @@ final class PromptManagementPresentationTests: XCTestCase {
             XCTAssertEqual(presentation.creationCategory, .result)
         }
     }
-
-    func testPromptsWorkspaceDefaultsToTranscriptPrompts() {
-        XCTAssertEqual(PromptsWorkspaceSection.defaultSection, .transcriptPrompts)
-        XCTAssertEqual(
-            PromptsWorkspaceSection.allCases,
-            [.transcriptPrompts, .liveAsk]
-        )
-    }
 }

@@ -77,6 +77,7 @@ final class AppEnvironment {
     let llmClient: RoutingLLMClient
     let llmConfigStore: LLMConfigStore
     let llmService: LLMService
+    let askWorkspaceService: AskWorkspaceService?
     let cardGenerationService: CardGenerationService
     let runtimePreferences: AppRuntimePreferencesProtocol
     let derivedFieldsBackfill: DerivedFieldsBackfillService
@@ -84,7 +85,8 @@ final class AppEnvironment {
     init(databaseManager: DatabaseManager) throws {
         SpeechEnginePreference.migrateMaterializedFinalTranscriptionOverrideIfNeeded()
         self.databaseManager = databaseManager
-        shareCoordinator = AppFeatures.isShareLinksAvailable()
+        shareCoordinator =
+            AppFeatures.isShareLinksAvailable()
             ? ShareCoordinator(dbQueue: databaseManager.dbQueue, origin: .production) : nil
 
         // Repositories
@@ -287,6 +289,10 @@ final class AppEnvironment {
             runtimePreferences.processingMode
         }
 
+        let spokenPunctuationEnabledClosure: @Sendable () -> Bool = { [runtimePreferences] in
+            runtimePreferences.spokenPunctuationEnabled
+        }
+
         let dictationInsertionStyleClosure: @Sendable () -> DictationInsertionStyle = { [runtimePreferences] in
             runtimePreferences.dictationInsertionStyle
         }
@@ -303,13 +309,7 @@ final class AppEnvironment {
         Task.detached(priority: .utility) {
             await binaryBootstrap.autoUpdateYtDlpIfNeeded()
         }
-        // The standard engine is the default; Settings can opt into Nemotron 3.
-        // The choice is read per call, so it applies to the next run.
-        diarizationService = EngineSelectingDiarizationService(
-            standard: DiarizationService(),
-            nemotron3: Nemotron3DiarizationService(),
-            selectedEngine: { UserDefaultsAppRuntimePreferences.speakerDiarizationEngine() }
-        )
+        diarizationService = DiarizationServiceFactory.live.make(speakerConstraint: nil)
 
         let voiceReturnTriggersClosure: @Sendable () -> [String] = { [runtimePreferences] in
             runtimePreferences.voiceReturnTriggers
@@ -344,7 +344,7 @@ final class AppEnvironment {
         }
         let meetingTitleGenerationEnabledClosure: @Sendable () -> Bool = { [runtimePreferences, llmConfigStore] in
             guard runtimePreferences.shouldAutoGenerateMeetingTitles else { return false }
-            return (try? llmConfigStore.loadConfig()) != nil
+            return (try? llmConfigStore.loadRouteMetadata(for: .analysis)) != nil
         }
         let aiFormatterPromptResolver: any AIFormatterPromptResolving
         if AppFeatures.aiFormatterProfilesEnabled {
@@ -383,6 +383,18 @@ final class AppEnvironment {
                 cliConfigStore: LocalCLIConfigStore()
             )
         )
+        if AppFeatures.isAskWorkspaceAvailable() {
+            askWorkspaceService = AskWorkspaceService(
+                databaseManager: databaseManager,
+                client: llmClient,
+                contextResolver: StoredLLMExecutionContextResolver(
+                    configStore: llmConfigStore,
+                    cliConfigStore: LocalCLIConfigStore()
+                )
+            )
+        } else {
+            askWorkspaceService = nil
+        }
         cardGenerationService = CardGenerationService(
             transcriptionRepository: transcriptionRepo,
             segmentRepository: segmentRepo,
@@ -407,11 +419,13 @@ final class AppEnvironment {
             voiceReturnTriggers: voiceReturnTriggersClosure,
             voiceReturnMode: voiceReturnModeClosure,
             processingMode: processingModeClosure,
+            spokenPunctuationEnabled: spokenPunctuationEnabledClosure,
             dictationInsertionStyle: dictationInsertionStyleClosure,
             removeUmFiller: removeUmFillerClosure,
             llmService: llmService,
             llmRunRepo: llmRunRepo,
             shouldUseAIFormatter: dictationAIFormatterEnabledClosure,
+            isAIFormatterEnabled: { [runtimePreferences] in runtimePreferences.aiFormatterEnabled },
             aiFormatterPromptResolver: aiFormatterPromptResolver,
             shouldAttemptLiveDictationTranscription: {
                 Self.shouldAttemptLiveDictationTranscription()
@@ -436,6 +450,7 @@ final class AppEnvironment {
                         activationWindow: TelemetryActivationWindow(secondsSinceOnboarding: secondsSinceOnboarding)
                     ))
             },
+            failedDictationAudioDirectory: URL(fileURLWithPath: AppPaths.dictationsDir, isDirectory: true),
             resolveActiveProfile: {
                 AppProfile.resolve(bundleID: AppContextService.frontmostBundleID())
             },
@@ -486,7 +501,9 @@ final class AppEnvironment {
         meetingRecordingRecoveryService = MeetingRecordingRecoveryService(
             lockFileStore: meetingRecordingLockFileStore,
             transcriptionService: transcriptionService,
-            transcriptionRepo: transcriptionRepo
+            transcriptionRepo: transcriptionRepo,
+            meetingArtifactStore: meetingArtifactStore,
+            promptResultRepo: promptResultRepo
         )
 
         let savedAudioCompletionService = SavedAudioAutoPromptCompletionService(
@@ -497,7 +514,10 @@ final class AppEnvironment {
             transcriptionLabelRepository: transcriptionMeetingLabelRepo,
             speakerAttributionReader: speakerAttributionReader,
             meetingArtifactStore: meetingArtifactStore,
-            cardGenerator: cardGenerationService
+            cardGenerator: cardGenerationService,
+            outputLanguagePolicyProvider: { [runtimePreferences] in
+                runtimePreferences.meetingAIOutputLanguagePolicy
+            }
         )
         meetingSplitService = MeetingSplitService(
             transcriptionRepo: transcriptionRepo,
@@ -603,7 +623,7 @@ final class AppEnvironment {
     ) {
         let config: LLMProviderConfig?
         do {
-            config = try configStore.loadConfig()
+            config = try configStore.loadRouteMetadata(for: .cleanup)?.config
         } catch {
             return
         }

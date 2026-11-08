@@ -4,19 +4,6 @@ import CoreGraphics
 import Foundation
 import OSLog
 
-/// Marks Unicode HID events posted by streaming insertion so hotkey taps ignore them.
-public enum StreamingCursorEventMarker {
-    public static let userData: Int64 = 0x4D50_5343
-
-    public static func mark(_ event: CGEvent) {
-        event.setIntegerValueField(.eventSourceUserData, value: userData)
-    }
-
-    public static func isMarked(_ event: CGEvent) -> Bool {
-        event.getIntegerValueField(.eventSourceUserData) == userData
-    }
-}
-
 public enum StreamingCursorError: Error, Equatable {
     case eventSourceUnavailable
     case eventCreationFailed
@@ -40,6 +27,7 @@ protocol StreamingCursorInterruptListening: Sendable {
 }
 
 protocol StreamingCursorInterruptToken: Sendable {
+    /// Idempotently stop listening and wait for any in-flight callback to finish.
     func invalidate()
 }
 
@@ -51,31 +39,39 @@ struct ContinuousStreamingClock: StreamingCursorClock {
 }
 
 struct CGStreamingCursorEventPosting: StreamingCursorEventPosting {
+    /// Forward intercepted input at the same stage as the flushed text. The
+    /// original event has reached the session stage; replay must not write to HID.
+    /// Preserve user/third-party identity rather than marking it as our output.
+    static func replayInterceptedInput(
+        _ event: CGEvent,
+        postEvent: (CGEvent, CGEventTapLocation) -> Void = { $0.post(tap: $1) }
+    ) -> Bool {
+        guard let copy = event.copy() else { return false }
+        postEvent(copy, AppGeneratedKeyboardEvents.postingLocation)
+        return true
+    }
+
     func typeUnicode(_ text: String) throws {
         guard AXIsProcessTrusted() else {
             throw StreamingCursorError.eventSourceUnavailable
         }
-        guard let source = CGEventSource(stateID: .hidSystemState) else {
+        guard let source = AppGeneratedKeyboardEvents.makeSource() else {
             throw StreamingCursorError.eventSourceUnavailable
         }
         let units = Array(text.utf16)
         guard !units.isEmpty else { return }
         var mutable = units
 
-        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
-            let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false)
+        guard let keyDown = AppGeneratedKeyboardEvents.makeEvent(source: source, keyCode: 0, keyDown: true, flags: []),
+            let keyUp = AppGeneratedKeyboardEvents.makeEvent(source: source, keyCode: 0, keyDown: false, flags: [])
         else {
             throw StreamingCursorError.eventCreationFailed
         }
 
-        keyDown.flags = []
-        keyUp.flags = []
-        StreamingCursorEventMarker.mark(keyDown)
-        StreamingCursorEventMarker.mark(keyUp)
         keyDown.keyboardSetUnicodeString(stringLength: mutable.count, unicodeString: &mutable)
         keyUp.keyboardSetUnicodeString(stringLength: mutable.count, unicodeString: &mutable)
-        keyDown.post(tap: .cghidEventTap)
-        keyUp.post(tap: .cghidEventTap)
+        keyDown.post(tap: AppGeneratedKeyboardEvents.postingLocation)
+        keyUp.post(tap: AppGeneratedKeyboardEvents.postingLocation)
     }
 }
 
@@ -86,11 +82,9 @@ final class HeadInsertStreamingCursorInterrupt: StreamingCursorInterruptListenin
 }
 
 private final class HeadInsertStreamingCursorInterruptToken: StreamingCursorInterruptToken, @unchecked Sendable {
-    private var eventTap: CFMachPort?
-    private var runLoopSource: CFRunLoopSource?
-    private var retainedSelf: Unmanaged<HeadInsertStreamingCursorInterruptToken>?
     private let onInterrupt: @Sendable () -> Void
     private let lock = NSLock()
+    private var eventTap: BackgroundEventTap?
     private var didInterrupt = false
 
     init(onInterrupt: @escaping @Sendable () -> Void) {
@@ -101,50 +95,26 @@ private final class HeadInsertStreamingCursorInterruptToken: StreamingCursorInte
             | (1 << CGEventType.rightMouseDown.rawValue)
             | (1 << CGEventType.otherMouseDown.rawValue)
 
-        let retained = Unmanaged.passRetained(self)
-        retainedSelf = retained
-        guard
-            let tap = CGEvent.tapCreate(
-                tap: .cgSessionEventTap,
-                place: .headInsertEventTap,
-                options: .defaultTap,
-                eventsOfInterest: mask,
-                callback: { _, type, event, refcon -> Unmanaged<CGEvent>? in
-                    guard let refcon else { return Unmanaged.passUnretained(event) }
-                    let token = Unmanaged<HeadInsertStreamingCursorInterruptToken>
-                        .fromOpaque(refcon)
-                        .takeUnretainedValue()
-                    return token.handle(type: type, event: event)
-                },
-                userInfo: retained.toOpaque()
-            )
-        else {
-            retained.release()
-            retainedSelf = nil
-            return
-        }
-        eventTap = tap
-        runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-        if let runLoopSource {
-            CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
-        }
-        CGEvent.tapEnable(tap: tap, enable: true)
+        // Runs on `EventTapThread`, so a stalled main thread cannot hold the
+        // user's keys and clicks while text streams (#1142).
+        let tap = BackgroundEventTap.start(
+            options: .defaultTap,
+            eventsOfInterest: mask,
+            handler: { [weak self] type, event in
+                guard let self else { return Unmanaged.passUnretained(event) }
+                return self.handle(type: type, event: event)
+            }
+        )
+        lock.withLock { eventTap = tap }
     }
 
     func invalidate() {
-        lock.lock()
-        defer { lock.unlock() }
-        guard eventTap != nil || retainedSelf != nil || runLoopSource != nil else { return }
-        if let tap = eventTap {
-            CGEvent.tapEnable(tap: tap, enable: false)
+        let tap = lock.withLock {
+            let tap = eventTap
+            eventTap = nil
+            return tap
         }
-        if let runLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
-        }
-        retainedSelf?.release()
-        retainedSelf = nil
-        eventTap = nil
-        runLoopSource = nil
+        tap?.stop()
     }
 
     deinit {
@@ -153,9 +123,7 @@ private final class HeadInsertStreamingCursorInterruptToken: StreamingCursorInte
 
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            if let tap = eventTap {
-                CGEvent.tapEnable(tap: tap, enable: true)
-            }
+            // `BackgroundEventTap` already re-enabled the tap.
             return Unmanaged.passUnretained(event)
         }
         if StreamingCursorEventMarker.isMarked(event) {
@@ -167,12 +135,11 @@ private final class HeadInsertStreamingCursorInterruptToken: StreamingCursorInte
         lock.unlock()
         if first {
             onInterrupt()
-            // Swallow the in-flight session event and re-inject a copy at HID so
-            // remainder Unicode posts land before the user's key/click.
-            guard let copy = event.copy() else {
+            // Queue input behind any text the flush posted, even if it failed.
+            // Use the session entry point; replaying upstream contaminates HID.
+            guard CGStreamingCursorEventPosting.replayInterceptedInput(event) else {
                 return Unmanaged.passUnretained(event)
             }
-            copy.post(tap: .cghidEventTap)
             return nil
         }
         return Unmanaged.passUnretained(event)
@@ -230,8 +197,11 @@ public final class StreamingCursorInserter: StreamingCursorInserting, @unchecked
             playback.interruptAndDrain()
             return
         } catch {
-            if playback.committedCount == 0 {
-                throw error
+            if playback.stopIfUncommitted() {
+                // Do not hold playback's lock while waiting for the tap. An
+                // in-flight callback may still record the user's interruption.
+                invalidateInterruptTap(token)
+                throw playback.isInterrupted ? StreamingCursorError.partialInsert : error
             }
             do {
                 try playback.drainRemaining(soft: false)
@@ -247,33 +217,24 @@ public final class StreamingCursorInserter: StreamingCursorInserting, @unchecked
     }
 
     private func startInterruptTap(playback: StreamingCursorPlayback) -> any StreamingCursorInterruptToken {
-        let start = { [interrupts] in
-            interrupts.start {
-                playback.interruptAndDrain()
-            }
+        // The tap lives on `EventTapThread`; no main-thread hop is needed.
+        interrupts.start {
+            playback.interruptAndDrain()
         }
-        if Thread.isMainThread {
-            return start()
-        }
-        return DispatchQueue.main.sync(execute: start)
     }
 
     private func invalidateInterruptTap(_ token: any StreamingCursorInterruptToken) {
-        let invalidate = { token.invalidate() }
-        if Thread.isMainThread {
-            invalidate()
-            return
-        }
-        DispatchQueue.main.sync(execute: invalidate)
+        token.invalidate()
     }
 }
 
-/// Serializes HID posts so a head-insert interrupt cannot reorder or duplicate chunks.
+/// Serializes text posts so a head-insert interrupt cannot reorder or duplicate chunks.
 private final class StreamingCursorPlayback: @unchecked Sendable {
     private let posting: any StreamingCursorEventPosting
     private let lock = NSRecursiveLock()
     private var remaining: [String]
     private var interrupted = false
+    private var postingStopped = false
     private var committed = 0
 
     init(posting: any StreamingCursorEventPosting, remaining: [String]) {
@@ -293,6 +254,15 @@ private final class StreamingCursorPlayback: @unchecked Sendable {
         return committed
     }
 
+    /// Stop pending posts before error handling waits for the interrupt tap.
+    func stopIfUncommitted() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard committed == 0 else { return false }
+        postingStopped = true
+        return true
+    }
+
     func interruptAndDrain() {
         lock.lock()
         defer { lock.unlock() }
@@ -303,7 +273,7 @@ private final class StreamingCursorPlayback: @unchecked Sendable {
     func playIfCurrent(_ expected: String) throws {
         lock.lock()
         defer { lock.unlock() }
-        guard !interrupted, remaining.first == expected else { return }
+        guard !interrupted, !postingStopped, remaining.first == expected else { return }
         remaining.removeFirst()
         do {
             try posting.typeUnicode(expected)
@@ -321,6 +291,10 @@ private final class StreamingCursorPlayback: @unchecked Sendable {
     }
 
     private func drainLocked(soft: Bool) throws {
+        // The user's key/click resumes after the interrupt callback. Once its
+        // flush fails, retrying here could type into a different cursor or app.
+        // partialInsert also prevents the caller's automatic full-paste fallback.
+        guard !postingStopped else { throw StreamingCursorError.partialInsert }
         while let chunk = remaining.first {
             remaining.removeFirst()
             guard !chunk.isEmpty else { continue }
@@ -329,7 +303,10 @@ private final class StreamingCursorPlayback: @unchecked Sendable {
                 committed += 1
             } catch {
                 remaining.insert(chunk, at: 0)
-                if soft { return }
+                if soft {
+                    postingStopped = true
+                    return
+                }
                 throw error
             }
         }

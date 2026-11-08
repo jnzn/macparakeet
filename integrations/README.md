@@ -5,9 +5,10 @@
 > people running them) that want to *call* `macparakeet-cli` to add local STT
 > to their stack.
 
-Examples describe the current development contract (CLI 4.4.0), not a
-promise about an older stable or Homebrew binary. Check `--version` and
-`spec --json` first; [release channels](../spec/README.md#release-channels-and-feature-flags)
+Examples describe the current development contract (see
+[`Sources/CLI/CHANGELOG.md`](../Sources/CLI/CHANGELOG.md)), not a promise
+about an older stable or Homebrew binary. Check `--version` and `spec --json`
+first; [release channels](../spec/README.md#release-channels-and-feature-flags)
 distinguish published binaries from the development source.
 
 ## Scope of the CLI
@@ -48,17 +49,25 @@ testing.
 
 - **Interactive dictation** -- live mic capture, push-to-talk, the global
   hotkey, and the dictation overlay are GUI surfaces. The CLI does not record
-  from the microphone.
+  from the microphone. Explicit, opt-in [dictation URL controls](#dictation-url-controls)
+  invoke the app; they do not add headless capture or a completion receipt.
 - **Live meeting UI** -- the Notes / Transcript / Ask three-tab live panel,
   the floating meeting pill, live recording controls, and in-flight
-  post-stop transcription abort/delete confirmation are GUI-only. The CLI
-  inspects meeting artifacts after the fact.
-- **Onboarding, settings UI, library grids, sounds, overlays** -- none of these
-  have automation analogues; they remain in the .app.
+  post-stop transcription abort/delete confirmation belong to the GUI. The CLI
+  inspects meeting artifacts after the fact. The app also offers the opt-in
+  [meeting URL controls](#meeting-url-controls) below.
+- **Interactive presentation and system consent** -- onboarding, permission
+  prompts, grids, playback, and overlays remain in the app. Supported shared
+  preferences are scriptable through `config`; this includes the dictation
+  sound master switch, but not every GUI preference or per-cue sound setting.
 
 The principle: if a use case can be automated, scripted, or driven by an agent,
 the CLI should support it through a stable contract. If it requires a user
 sitting at a keyboard, it lives in the .app.
+
+See the [capability and parity map](capabilities.md) for workflow coverage,
+known gaps, and safe alternatives. Command discovery describes syntax; it does
+not certify complete parity or permission to execute a write.
 
 ## What `macparakeet-cli` gives your agent
 
@@ -82,8 +91,10 @@ sitting at a keyboard, it lives in the .app.
   telemetry without driving the GUI.
 - **Prompt library + LLM-backed summarization** -- bring your own provider
   (OpenAI, Anthropic, Gemini, OpenRouter, Moonshot/Kimi, DeepSeek, Qwen, Z.AI,
-  MiniMax, Ollama, LM Studio, OpenAI-compatible, or a configured CLI
-  subprocess), or skip the LLM entirely and consume raw transcripts.
+  MiniMax, Ollama, LM Studio, OpenAI-compatible, or a configured CLI subprocess),
+  or skip the LLM entirely and consume raw transcripts. Apple Intelligence on
+  macOS 26+ is a separate cleanup-only option; it cannot run summaries, chat,
+  knowledge cards, or Transforms.
 - **Machine-readable output** -- read-only query commands use `--json`,
   format-selecting commands use `--format json`, and LLM/prompt commands use
   `--json` for structured envelopes (see
@@ -185,12 +196,13 @@ rather than treating it as a database fault.
   isolate preferences, Keychain, models, downloads, or the audio/artifact paths
   stored in copied rows. Never run destructive commands against a copied
   production database that still points to original user files.
-- For source-build smoke work, a **DEBUG** binary with
-  `MACPARAKEET_DEBUG_APP_STATE_DIR` set to an absolute test-owned directory
-  redirects app-support/artifact paths and speech/speaker model caches.
-  Release binaries ignore this override. It does **not** redirect the shared
-  UserDefaults suite or Keychain; avoid configuration writes, or use a
-  disposable macOS account when full user-state isolation is required.
+- For source-build smoke work, set `MACPARAKEET_DEBUG_APP_STATE_DIR` to an
+  absolute test-owned directory to redirect app-support/artifact paths and
+  speech/speaker model caches. `AppPaths` accepts this override in both Debug
+  and Release binaries. It does **not** redirect the shared UserDefaults suite
+  or Keychain, and paths already embedded in copied rows stay untouched; avoid
+  configuration writes, or use a disposable macOS account when full
+  user-state isolation is required.
 - `--no-history` avoids completed transcript retention, not all I/O. Transcribe
   can still initialize a database, use models/helpers, and emit telemetry.
   `MACPARAKEET_TELEMETRY=0` disables telemetry for one invocation without
@@ -285,7 +297,12 @@ temporary when `--no-history` is set.
 
 Parakeet is the default local engine for compatibility with existing scripts:
 use v3 for English plus supported European languages, v2 for English timestamped
-transcripts, or Unified for readable English with word timestamps. Use Nemotron
+transcripts, or Unified for readable English with word timestamps. Orukeet is
+an optional Parakeet preview, not a separate engine. Download it with
+`models download parakeet-orukeet`, then use `models select parakeet-orukeet`
+or `transcribe --parakeet-model orukeet`. The default stays v3, and results
+from that build report `engineVariant` `orukeet`. It has no native streaming,
+tail-window preview, or recognition-time vocabulary boosting. Use Nemotron
 Beta when streaming preview matters, Whisper for broad-language
 files/media/retranscription, and Cohere only for local batch plain text with an
 explicit language.
@@ -468,6 +485,47 @@ appears in the aggregate report, and makes the command exit `1`.
 The `selected` count for `--stale` is the SQL-prefiltered stale/missing subset;
 the backfill also rebuilds the card FTS index for integrity recovery.
 
+### Investigate selected recordings in Ask
+
+The additive `ask` command family manages saved, source-scoped conversations.
+It is default-off. The examples below require a Debug CLI and
+`--enable-ask-workspace` on each command; Release builds reject this flag and
+perform no Ask database/model work. Existing single-transcript chat is separate.
+Use `ask sources` to find completed recordings by picker metadata, then pass
+their full UUIDs to `ask new`. A run reads only that selected set. Conversation
+and source revisions are returned in JSON; carry the latest conversation
+revision into each mutation or send so stale writes fail instead of overwriting
+another app or CLI change.
+
+```bash
+macparakeet-cli ask sources --enable-ask-workspace --search pricing --type meeting --limit 20
+macparakeet-cli ask new --enable-ask-workspace --source <recording-uuid-1> --source <recording-uuid-2>
+macparakeet-cli ask show --enable-ask-workspace <conversation-uuid>
+macparakeet-cli ask select --enable-ask-workspace <conversation-uuid> --revision 1 \
+  --source <recording-uuid-1> --source <recording-uuid-3>
+macparakeet-cli ask draft --enable-ask-workspace <conversation-uuid> "What changed in the decision?" --revision 2
+macparakeet-cli ask send --enable-ask-workspace <conversation-uuid> \
+  --question "What changed in the decision?" --revision 3 \
+  --provider openai --model gpt-4o --api-key-env OPENAI_API_KEY --allow-remote
+macparakeet-cli ask evidence --enable-ask-workspace <recording-uuid> \
+  --source-revision <revision-from-citation> --segment 4
+```
+
+`ask list`, `new`, `show`, `rename`, `delete`, `sources`, `select`, `draft`,
+`send`, and `evidence` emit JSON by default. Use `send --stream` for NDJSON
+activity, phase, step, and text records followed by a final conversation
+record; ignore unknown event types. Provider configuration is inline for each
+send; Ask accepts direct model providers and rejects Local CLI and cleanup-only
+Apple Intelligence. `--allow-remote`
+is required for providers that may receive selected transcript content,
+including generic OpenAI-compatible endpoints even when their URL is loopback.
+In-process MLX and Ollama or LM Studio loopback routes are the
+consent-free local paths. Ask never silently switches providers. See the
+[Ask contract](../spec/contracts/ask-workspace.md) for source revisions,
+citations, consent, streaming event fields, and lifecycle behavior. CLI 4.8.0
+adds this surface in development source; it does not announce a stable app or
+standalone CLI release.
+
 ### Search past dictations
 
 ```bash
@@ -572,9 +630,9 @@ These commands accept `--database <path>` for an isolated automation database.
 Set source-specific auto-run (`--source`) in a separate command from collection
 assignment; the CLI rejects combining those mutations.
 
-The GUI's Prompts destination contains Transcript prompts and Live Ask.
-Meetings provides contextual access to the same managers. Transforms remains
-its own selected-text rewrite destination. This navigation does not change
+In the GUI, transcript prompts are managed from the Library header **Prompts**
+button and from completed transcripts; Live Ask is managed from Meetings.
+Transforms remains its own selected-text rewrite destination. This navigation does not change
 CLI categories or storage: Live Ask uses the separate quick-prompt commands
 below, and existing prompt/version commands continue to support Transforms.
 
@@ -603,6 +661,73 @@ The bundle envelope is stable within the CLI major version:
 
 Meeting commands are deterministic local database operations. They do not
 require an LLM provider.
+
+Saved results can be edited in place without replacing their IDs or generation
+receipts. Read the existing content first, then supply it as a write
+precondition. A stale precondition fails with `conflict`; reload before retrying.
+
+```bash
+macparakeet-cli meetings results edit <meeting-id> <result-uuid> \
+  --expected-content-file original.md --file edited.md --json
+```
+
+For the equivalent of the reading editor's batch edit, write a JSON array using
+segment IDs from the latest `meetings transcript --format json` response:
+
+```json
+[
+  {"segment": "<first-segment-uuid>", "text": "Corrected passage."},
+  {"segment": "<second-segment-uuid>", "omit": true}
+]
+```
+
+```bash
+macparakeet-cli meetings corrections revise-text <meeting-id> \
+  --expected-revision 0 --file changes.json --json
+```
+
+The whole batch is one Undo step. Omissions affect the effective transcript,
+exports and AI context while preserving the original recognition and audio.
+Use `--database <path>` for an owned database; see the isolation rules below.
+
+### Inspect and configure AI task routes
+
+```bash
+macparakeet-cli llm routes list --json
+macparakeet-cli llm routes set cleanup --provider ollama --model <local-model> --json
+macparakeet-cli llm routes set analysis --provider anthropic \
+  --model <analysis-model> --api-key-env ANTHROPIC_API_KEY --json
+macparakeet-cli llm routes reset analysis --json
+```
+
+List reports default, cleanup, analysis and transform routes with effective
+provider/model and inheritance. It omits credentials and exposes only endpoint
+origins without reading Keychain. Mutation descriptions also avoid credential
+reads. Set changes one cleanup/analysis override; reset restores inheritance
+without deleting keys. Configure Default AI in GUI Settings first; a saved
+task override alone does not enable AI in the app. `configured` describes the
+stored route, not app or provider readiness. Default configuration remains
+managed in GUI Settings.
+When `--model` is omitted, a saved route uses the provider's current GUI default.
+Explicit model names and custom-provider requirements still apply. One-off inline
+LLM commands retain their historical model defaults for script compatibility.
+No LLM request is made by these commands. Explicit key flags take precedence
+over saved provider keys, then provider environment variables; keys are shared
+per provider, so explicitly replacing a key also affects other routes using it.
+Local CLI routes reuse the existing shared command template and reject a
+different `--command`. Preferences and Keychain are shared with the GUI and are
+not isolated by `--database` or a state-directory override. Relaunch or refresh
+a running GUI if it still displays cached settings. Close AI Settings before
+changing routes from the CLI, then reopen it: saving an already-open Settings
+draft writes its cached configuration, including routes and provider keys.
+The GUI model picker rejects a stale selection if a concurrent CLI change has
+replaced or reset the displayed route. Route metadata updates are coordinated
+across processes; credentials remain separate, shared per-provider Keychain values.
+Competing changes fail busy before mutation, including while another change is
+writing credentials. An unconfirmed-save error means publication could
+not be confirmed after mutation; inspect the current routes before retrying.
+
+### Other meeting commands
 
 ```bash
 macparakeet-cli meetings list --json
@@ -823,7 +948,7 @@ structured failure envelope instead of the success shape:
 `errorType` is a stable low-cardinality string; `fix` and `meta` are optional.
 Branch on the exit code, then classify the error with
 `Sources/CLI/CHANGELOG.md`. A potentially transient provider error
-(`rate_limit`, `connection`, `streaming`) does not by itself authorize replaying
+(`rate_limit`, `connection`, `timeout`, `streaming`) does not by itself authorize replaying
 a mutating command. Check whether partial output or saved results already
 exist before retrying; fix `auth`, `model`, input, lookup, and validation
 problems rather than retrying them unchanged.
@@ -953,3 +1078,63 @@ Configure source auto-run separately, for example
 `prompts set PROMPT --source meeting --auto-run`. Label availability still
 limits which transcriptions qualify. Editing prompt text or inference settings
 in the app preserves existing policies unless the label selection is changed.
+
+## Dictation URL controls
+
+Development adds opt-in GUI dictation controls for Stream Deck, Shortcuts,
+Raycast, Keyboard Maestro, and scripts ([contract](../spec/contracts/dictation-url-control-v1.md),
+#1273). Enable **Allow dictation control from links** under Settings → Capture
+→ Dictation. This is separate from meeting control and allows any app or
+website to invoke the URLs while enabled.
+
+```sh
+open -g 'macparakeet://dictation/start'
+open -g 'macparakeet://dictation/stop'
+open -g 'macparakeet://dictation/toggle'
+```
+
+Use background delivery (`open -g`) and keep the intended text field focused.
+The caller needs no Accessibility permission to send a URL; MacParakeet still
+needs its normal permissions for capture and automatic insertion. Complete
+onboarding/permissions first. Launchers, cold launch, or permission dialogs can
+change focus, so restore the target before dictating and stopping if needed.
+
+`start` never replaces an active take. `stop` uses normal transcription and
+insertion; during entitlement or microphone permission checks it cancels the pending start,
+and during service startup it waits for capture before stopping. `toggle`
+starts when idle/ready and stops when starting/recording. All three ignore
+pending stop, processing, undo countdown, and result display/paste. Busy starts
+are not deferred; retry after idle. Prefer start/stop to toggle for retries.
+`open` returns no recording or transcription status. No parameters are accepted.
+Use `macparakeet-dev://` for development bundles. This controls the GUI app,
+not the CLI, and requires a build containing this feature.
+
+## Meeting URL controls
+
+Development adds opt-in GUI recording control for Shortcuts, launchers, and
+shell scripts ([contract](../spec/contracts/meeting-url-control-v1.md), #1198).
+Enable **Allow recording control from links** under Settings → Capture →
+Meetings. This permits any app or website to send recording commands, so only
+enable it for automations you trust. macOS audio permissions still apply.
+
+```sh
+open 'macparakeet://meeting/start?title=Weekly%20Planning'
+open 'macparakeet://meeting/pause'
+open 'macparakeet://meeting/resume'
+open 'macparakeet://meeting/stop'
+```
+
+Omit `title` to use the normal date-based title. Percent-encode title text;
+for example, `R&D` is `R%26D`. Repeated commands are safe: `start` never toggles
+or renames an active recording, and `pause`/`resume` set an explicit state.
+Pause/resume require capture to have started. A stop during permission checks
+cancels the pending start. For starting or active capture, stop uses the normal
+save workflow. `open` does not return recording status or wait for saving.
+A `start` sent while stopping, saving, or showing an error pill is not queued:
+the app shows a "Meeting Recorder Is Busy" alert, so a script that runs `stop`
+then `start` must retry the `start` once the recorder is idle.
+The app may launch to receive the URL; controls are ignored while disabled or
+during onboarding. Use `macparakeet-dev://` for development bundles.
+
+This controls the GUI app, which owns audio capture. It does not change the
+headless CLI contract or promise support in previously released binaries.

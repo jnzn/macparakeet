@@ -57,8 +57,9 @@ Stable lock fields:
 Stable states:
 
 - `recording`: capture may still be writing source audio.
-- `awaitingTranscription`: source/mixed audio has been finalized, but final
-  transcription or recovery cleanup has not completed.
+- `awaitingTranscription`: source writers and capture metadata are settled;
+  canonical playback preparation, final transcription, or recovery cleanup may
+  still be pending. Playback need not exist. The lock remains a retention barrier.
 
 `notes` is a backward-compatible additive field. Missing values decode to safe
 defaults, and malformed `notes` does not block recovery of the structural lock
@@ -70,9 +71,10 @@ the optional retention clock for the managed copy, and a normalized explicit
 title when present. Older locks omit both fields and keep their existing behavior.
 
 `finalizationLeaseId` is a backward-compatible optional ownership token.
-Normal stop-and-queue locks and older locks omit it. Retry and crash-recovery
-flows write a fresh token together with the claiming process PID before they
-touch the transcript row or start STT. A missing token decodes as `nil`. A
+Older normal stop-and-queue locks omit it. Source-only capture admission now
+claims a token before entering the existing queue; retry and crash-recovery
+also claim before processing. A live lease spans playback preparation, final
+transcription, and settlement. No second capture owns that folder. A missing token decodes as `nil`. A
 malformed token or zero-byte file makes `read` return `nil` (the same as
 today's corrupt-JSON path). Reconciliation then treats that row as unowned
 and marks it retryable; claim treats a *present but unreadable* lock as dead
@@ -160,6 +162,28 @@ pre-claim lock, so repeated fail/retry cycles cannot restore an abandoned lease
 or wedge the next retry. A relinquished token is not a live owner and remains
 visible to recovery discovery even while its former process PID is alive.
 
+## Recovery Artifact Settlement
+
+Recovery saves its final `recoveredFromCrash` and notes metadata, then refreshes
+meeting artifacts before deleting `recording.lock`. The configured artifact store
+retains effective speaker corrections/classification, and refresh reads existing
+prompt results rather than replacing them with an empty list. A refresh failure
+leaves the completed row and lock available for recovery. A retry refreshes the
+existing completed row and settles its lock without another audio mix or STT run.
+An existing row's notes are canonical, including explicit nil or empty clears;
+older notes in a retained lock or a recovered `MeetingRecordingOutput` must not
+repopulate the row or its notes artifact. This holds for the finalize and
+recovery paths covered by this contract: `TranscriptionService.finalizeMeetingTranscription`
+on a queued/processing/error row, and recovery's completed-row paths (both the direct
+`awaitingTranscription` refresh and `completeRecovery` for a completed row found
+under a non-`awaitingTranscription` lock). Only a genuinely new row (a fresh
+stub with no prior DB state) takes its initial notes from the lock/recording.
+`TranscriptionService.retranscribeArchivedMeeting` (explicit user-triggered
+re-run) is outside this contract's recovery/finalize scope and still falls
+back to `recording.userNotes` when the row's notes are nil.
+A stale descriptor for an already settled session is refused with `missingLock`;
+rediscovery is empty and does not recreate rows or audio.
+
 ## Source Writer Finalization Ownership
 
 The release-readiness candidate gives source-writer finalization one aggregate
@@ -195,6 +219,23 @@ and unavailable-source status; interruption, capture failure, missing coverage,
 and playback fallback remain partial. Decodable repaired files alone do not
 prove healthy capture; see the
 [capture-report contract](meeting-artifacts-v1.md#stable-json-fields).
+
+## Stop Source Inspection
+
+After writer finalization, Stop inspects every settled source in microphone,
+then system order. Usable decoded frames, including silence, remain valid audio.
+Only an absent, zero-byte, or decoded zero-frame source with confirmed zero
+written frames is empty. Missing size attributes, audio-open failures, and any
+absence or emptiness contradicting writer evidence fail Stop recoverably.
+An uncertain source preserves the entire folder and `recording.lock`, including
+its healthy sibling; it is never silently omitted from successful output.
+
+Inspection failure finishes the live session, releases its speech-engine lease,
+and clears recording state before returning a storage error, allowing another
+recording to start. The retained marker does not guarantee immediate same-process
+recovery. Pending writers remain excluded from inspection and retain their
+existing ownership protection; genuinely empty sessions are deleted only when
+no writer finalization remains pending.
 
 ## Retention Rule
 
@@ -427,3 +468,42 @@ name, or acquisition semantics must also update this file's Meeting Media
 Mutation Lease section and `MeetingMediaMutationLeaseTests`. Migrating a GUI
 or CLI call site to `deleteTranscription`/`clearManagedMeetingAudio` should
 update the call-site bullet above rather than leave it stale.
+
+## Source-only capture handoff (#1291)
+
+The recorder releases shared capture state after finalized sources, alignment,
+notes, and the awaiting-transcription lock are durable. The coordinator persists
+one processing row under the expected canonical playback path and admits it to
+the existing queue before advertising idle. Its duration/size are unknown until
+playback preparation succeeds. Recovery already rebuilds playback from source
+files and matches that canonical path to reuse an existing row.
+
+A failed row save or queue admission explicitly relinquishes an unleased,
+awaiting-transcription lock belonging to the same session/process: under the
+ownership mutex it first marks a still-processing row retryable, then writes a
+dead owner PID (0) and a fresh token. No row mutation follows that release. This makes
+Pending Recovery discover it without restarting. It never revokes an active
+lease, a recording-state lock, or pending writer finalization. If relinquishing
+also fails, source data stays retained and restart recovery remains available.
+A failed prepared job restores its previous ownership and marks its existing
+row retryable. Retry rebuilds absent/undecodable playback before STT.
+
+The meeting detail offers the same finalization Retry as the Library when an
+error/cancelled row retains source audio but has no playback. It reuses the
+canonical row, rather than starting a generic Retranscribe run. An accepted
+detail retry stays visibly processing until the queue reports completion or
+failure, including time spent behind another meeting. Admission errors are
+shown for the initiating meeting; completion clears its pending state even
+when another detail is selected. Processing copy covers playback preparation
+and transcription without implying that either has already started. Pending
+detail retries disable transcript editing, speaker renames, and generic
+retranscription, including saving a draft opened before admission. Their completion refreshes the same
+meeting quietly without switching to it after the user navigates elsewhere.
+
+Cleaned-microphone rendering starts only when final STT consumes its readiness
+handle, after entitlement preflight and row persistence, under queue ownership.
+Capture settlement and playback preparation snapshot its dependencies without
+starting a writer. Copies of the handle share one render and its published result.
+An early finalization failure therefore leaves no renderer for Retry to overlap. Unknown row duration remains an incomplete-preparation
+signal even when a failed attempt installed a decodable playback file; Retry
+repeats preparation to commit fallback/source truth before accepting that file.

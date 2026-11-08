@@ -25,6 +25,7 @@ final class AppEnvironmentConfigurer {
         let hotkeyCoordinator: AppHotkeyCoordinator
         let meetingAutoStartCoordinator: MeetingAutoStartCoordinator?
         let meetingAutoStopCoordinator: MeetingAutoStopCoordinator?
+        let meetingActivityDetectionCoordinator: MeetingActivityDetectionCoordinator?
     }
 
     struct Callbacks {
@@ -39,11 +40,13 @@ final class AppEnvironmentConfigurer {
         let onHotkeyConflict: (HotkeyTrigger, [HotkeyTrigger]) -> Void
         let onRecoverPendingMeetingRecordings: () -> Void
         let isHotkeyRecordingActive: () -> Bool
-        /// True while the onboarding window is showing. Used to gate the real
-        /// dictation flow so a hotkey press during onboarding (e.g. the "Learn
-        /// the Hotkey" rehearsal, or a returning user whose taps are armed)
-        /// can never start a real, model-less dictation.
-        let isOnboardingVisible: () -> Bool
+        /// True while the onboarding window is showing and its practice box is
+        /// not listening. Gates the real dictation flow so a hotkey press
+        /// during onboarding (the Try It key rehearsal, or a returning user
+        /// whose taps are armed) can never start a model-less dictation, while
+        /// the practice box can still run a real one.
+        let isOnboardingBlockingDictation: () -> Bool
+        let isActivityRecordingSuppressed: @MainActor () -> Bool
         /// Number of meetings transcribing in the background changed — drives
         /// the menu-bar "N processing" row and the processing icon state.
         let onMeetingProcessingCountChanged: (Int) -> Void
@@ -56,6 +59,7 @@ final class AppEnvironmentConfigurer {
     private let textSnippetsViewModel: TextSnippetsViewModel
     private let vocabularyBackupViewModel: VocabularyBackupViewModel
     private let libraryViewModel: TranscriptionLibraryViewModel
+    private let askWorkspaceViewModel: AskWorkspaceViewModel
     private let meetingsWorkspaceViewModel: MeetingsWorkspaceViewModel
     private let llmSettingsViewModel: LLMSettingsViewModel
     private let chatViewModel: TranscriptChatViewModel
@@ -75,6 +79,7 @@ final class AppEnvironmentConfigurer {
         textSnippetsViewModel: TextSnippetsViewModel,
         vocabularyBackupViewModel: VocabularyBackupViewModel,
         libraryViewModel: TranscriptionLibraryViewModel,
+        askWorkspaceViewModel: AskWorkspaceViewModel,
         meetingsWorkspaceViewModel: MeetingsWorkspaceViewModel,
         llmSettingsViewModel: LLMSettingsViewModel,
         chatViewModel: TranscriptChatViewModel,
@@ -91,6 +96,7 @@ final class AppEnvironmentConfigurer {
         self.textSnippetsViewModel = textSnippetsViewModel
         self.vocabularyBackupViewModel = vocabularyBackupViewModel
         self.libraryViewModel = libraryViewModel
+        self.askWorkspaceViewModel = askWorkspaceViewModel
         self.meetingsWorkspaceViewModel = meetingsWorkspaceViewModel
         self.llmSettingsViewModel = llmSettingsViewModel
         self.chatViewModel = chatViewModel
@@ -112,7 +118,10 @@ final class AppEnvironmentConfigurer {
             await env.entitlementsService.refreshValidationIfNeeded()
         }
 
-        let hasLLMConfig = (try? env.llmConfigStore.loadConfig()) != nil
+        // Apple Intelligence is cleanup-only; retire routes saved before that
+        // rule. A failure leaves the routes as they were until the next launch.
+        try? env.llmConfigStore.clearRoutesProvidersCannotServe()
+        let hasLLMConfig = (try? env.llmConfigStore.loadRouteMetadata(for: .analysis)) != nil
 
         transcriptionViewModel.configure(
             transcriptionService: env.transcriptionService,
@@ -127,7 +136,13 @@ final class AppEnvironmentConfigurer {
             speakerVoiceprints: AppFeatures.isVoiceProfilesAvailable()
                 ? env.speakerVoiceprintService : nil
         )
-        historyViewModel.configure(dictationRepo: env.dictationRepo)
+        let dictationService = env.dictationService
+        historyViewModel.configure(
+            dictationRepo: env.dictationRepo,
+            retryFailedDictation: { id in
+                try await dictationService.retryFailedDictation(id: id)
+            }
+        )
         libraryViewModel.configure(
             transcriptionRepo: env.transcriptionRepo,
             meetingTypeRepository: env.meetingTypeRepo,
@@ -136,6 +151,9 @@ final class AppEnvironmentConfigurer {
             speakerAttributionReader: env.speakerAttributionReader,
             llmService: hasLLMConfig ? env.llmService : nil
         )
+        if let askWorkspaceService = env.askWorkspaceService {
+            askWorkspaceViewModel.configure(service: askWorkspaceService)
+        }
         meetingsWorkspaceViewModel.configure(
             transcriptionRepo: env.transcriptionRepo,
             quickPromptRepo: env.quickPromptRepo,
@@ -161,8 +179,6 @@ final class AppEnvironmentConfigurer {
             entitlementsService: env.entitlementsService,
             launchAtLoginService: env.launchAtLoginService,
             checkoutURL: env.checkoutURL,
-            customWordRepo: env.customWordRepo,
-            snippetRepo: env.snippetRepo,
             sttClient: env.sttScheduler,
             speechEngineSwitcher: env.sttScheduler,
             speechEngineSwitchAvailabilityProvider: env.sttScheduler,
@@ -195,7 +211,6 @@ final class AppEnvironmentConfigurer {
         vocabularyBackupViewModel.configure(service: vocabularyBackupService) { [weak self] in
             self?.customWordsViewModel.loadWords()
             self?.textSnippetsViewModel.loadSnippets()
-            self?.settingsViewModel.refreshStats()
         }
         promptsViewModel.configure(
             repo: env.promptRepo,
@@ -214,7 +229,7 @@ final class AppEnvironmentConfigurer {
             repo: env.promptRepo,
             historyRepo: env.transformHistoryRepo,
             clipboardService: env.clipboardService,
-            hasLLMProvider: hasLLMConfig
+            hasLLMProvider: (try? env.llmConfigStore.loadRouteMetadata(for: .transform)) != nil
         )
         llmSettingsViewModel.configure(
             configStore: env.llmConfigStore,
@@ -348,9 +363,9 @@ final class AppEnvironmentConfigurer {
                     || coordinatorRefs.voiceMemo?.isVoiceMemoActive == true
             },
             // Gate every dictation start (hotkey *and* idle-pill click) while
-            // onboarding is up: the model isn't downloaded until a later step,
-            // and the "Learn the Hotkey" step runs its own no-STT rehearsal.
-            isStartSuppressed: { callbacks.isOnboardingVisible() },
+            // onboarding is up, except for the practice box once the model is
+            // ready and the user has clicked it.
+            isStartSuppressed: { callbacks.isOnboardingBlockingDictation() },
             onMenuBarIconUpdate: { _ in callbacks.onMenuBarIconUpdate() },
             onHistoryReload: { [weak self] in self?.historyViewModel.loadDictations() },
             onPresentEntitlementsAlert: callbacks.onPresentEntitlementsAlert
@@ -358,6 +373,7 @@ final class AppEnvironmentConfigurer {
         coordinatorRefs.dictation = dictationCoordinator
 
         var meetingAutoStopCoordinator: MeetingAutoStopCoordinator?
+        var meetingActivityDetectionCoordinator: MeetingActivityDetectionCoordinator?
         var calendarCoordinator: MeetingAutoStartCoordinator?
         var isMeetingAutoStopObservingRecording = false
         let endMeetingAutoStopObservation = {
@@ -430,15 +446,18 @@ final class AppEnvironmentConfigurer {
                 )
             },
             onQueuedTranscriptionReady: { [weak self] transcription, canPresent in
-                self?.handleMeetingTranscriptReady(
+                guard let self else { return }
+                let wasDetailRetry = self.transcriptionViewModel.finishMeetingFinalizationRetry(id: transcription.id)
+                self.handleMeetingTranscriptReady(
                     transcription,
                     preferences: env.runtimePreferences,
-                    canPresent: canPresent,
+                    canPresent: canPresent && !wasDetailRetry,
                     openMainWindow: callbacks.onOpenMainWindow
                 )
             },
             onQueuedTranscriptionFailed: { [weak self] transcriptionID, content in
                 guard let self else { return }
+                self.transcriptionViewModel.finishMeetingFinalizationRetry(id: transcriptionID)
                 self.transcriptionViewModel.refreshCurrentTranscriptionIfMatching(
                     id: transcriptionID
                 )
@@ -450,12 +469,14 @@ final class AppEnvironmentConfigurer {
                 coordinatorRefs.dictation?.hideIdlePill()
                 isMeetingAutoStopObservingRecording = true
                 meetingAutoStopCoordinator?.recordingDidStart()
+                meetingActivityDetectionCoordinator?.recordingDidBegin()
             },
             onRecordingStopping: {
                 endMeetingAutoStopObservation()
             },
             onFlowReturnedToIdle: {
                 endMeetingAutoStopObservation()
+                meetingActivityDetectionCoordinator?.recordingFlowDidReturnToIdle()
                 callbacks.onMenuBarIconUpdate()
                 guard coordinatorRefs.dictation?.isDictationActive != true else { return }
                 coordinatorRefs.dictation?.showIdlePill()
@@ -472,6 +493,7 @@ final class AppEnvironmentConfigurer {
         }
         libraryViewModel.onRetryMeetingTranscription = retryMeetingFinalization
         meetingsWorkspaceViewModel.recentMeetingsViewModel.onRetryMeetingTranscription = retryMeetingFinalization
+        transcriptionViewModel.onRetryMeetingFinalization = retryMeetingFinalization
 
         Task { [weak self] in
             do {
@@ -518,11 +540,21 @@ final class AppEnvironmentConfigurer {
 
         let hotkeyCoordinator = AppHotkeyCoordinator(
             settingsViewModel: settingsViewModel,
-            onStartDictation: { mode in
-                coordinatorRefs.dictation?.startDictation(mode: mode, trigger: .hotkey)
+            onStartDictation: { mode, aiFormatterEnabled in
+                coordinatorRefs.dictation?.startDictation(
+                    mode: mode,
+                    trigger: .hotkey,
+                    aiFormatterEnabled: aiFormatterEnabled
+                ) ?? false
             },
             onStopDictation: {
                 coordinatorRefs.dictation?.stopDictation()
+            },
+            onStopDictationPending: {
+                coordinatorRefs.dictation?.showStopPending()
+            },
+            onStopDictationPendingCancelled: {
+                coordinatorRefs.dictation?.cancelStopPending()
             },
             onCancelDictation: {
                 coordinatorRefs.dictation?.cancelDictation(reason: .escape)
@@ -552,6 +584,13 @@ final class AppEnvironmentConfigurer {
                 coordinatorRefs.dictation?.hotkeyRecordingMode
             }
         )
+
+        dictationCoordinator.onSyncHotkeyRecordingMode = { [weak hotkeyCoordinator] mode in
+            hotkeyCoordinator?.syncDictationHotkeyRecordingMode(mode)
+        }
+        dictationCoordinator.onHotkeyRecordingEnded = { [weak hotkeyCoordinator] in
+            hotkeyCoordinator?.clearActiveDictationHotkey()
+        }
 
         if callbacks.isHotkeyRecordingActive() {
             hotkeyCoordinator.suspend()
@@ -604,13 +643,35 @@ final class AppEnvironmentConfigurer {
             meetingAutoStopCoordinator = coordinator
         }
 
+        if AppFeatures.meetingRecordingEnabled, AppFeatures.meetingActivityDetectionEnabled {
+            let coordinator = MeetingActivityDetectionCoordinator(
+                settingsViewModel: settingsViewModel,
+                isRecordingActive: { [weak meetingCoordinator] in
+                    meetingCoordinator?.isCapturingMeetingAudioForAutoStop == true
+                },
+                isMeetingFlowBusy: { [weak meetingCoordinator] in
+                    meetingCoordinator?.canStartMeetingRecording == false
+                },
+                isDictationActive: { [weak dictationCoordinator] in
+                    dictationCoordinator?.isBusyForMeetingRecording == true
+                },
+                isStartSuppressed: callbacks.isActivityRecordingSuppressed,
+                onRecordingConfirmed: { [weak meetingCoordinator] in
+                    meetingCoordinator?.startRecording(trigger: .activityDetection, presentLivePanelWhenReady: true)
+                }
+            )
+            coordinator.start()
+            meetingActivityDetectionCoordinator = coordinator
+        }
+
         return Runtime(
             dictationFlowCoordinator: dictationCoordinator,
             meetingRecordingFlowCoordinator: meetingCoordinator,
             voiceMemoFlowCoordinator: voiceMemoCoordinator,
             hotkeyCoordinator: hotkeyCoordinator,
             meetingAutoStartCoordinator: calendarCoordinator,
-            meetingAutoStopCoordinator: meetingAutoStopCoordinator
+            meetingAutoStopCoordinator: meetingAutoStopCoordinator,
+            meetingActivityDetectionCoordinator: meetingActivityDetectionCoordinator
         )
     }
 
@@ -658,7 +719,7 @@ final class AppEnvironmentConfigurer {
     }
 
     func refreshLLMAvailability(in env: AppEnvironment) {
-        let hasConfig = (try? env.llmConfigStore.loadConfig()) != nil
+        let hasConfig = (try? env.llmConfigStore.loadRouteMetadata(for: .analysis)) != nil
         let service: LLMService? = hasConfig ? env.llmService : nil
         transcriptionViewModel.updateLLMAvailability(hasConfig, llmService: service)
         libraryViewModel.updateLLMAvailability(hasConfig, llmService: service)
@@ -667,7 +728,7 @@ final class AppEnvironmentConfigurer {
             service,
             cardGenerator: hasConfig ? env.cardGenerationService : nil
         )
-        transformsViewModel.setHasLLMProvider(hasConfig)
+        transformsViewModel.setHasLLMProvider((try? env.llmConfigStore.loadRouteMetadata(for: .transform)) != nil)
         promptsViewModel.refreshGenerationSettingsContext()
         liveMeetingCoordinator?.updateLLMService(service)
     }

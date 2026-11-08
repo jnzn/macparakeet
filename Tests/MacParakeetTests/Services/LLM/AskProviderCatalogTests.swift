@@ -13,8 +13,17 @@ final class AskProviderCatalogTests: XCTestCase {
         func loadAPIKey() throws -> String? { global.flatMap { keys[$0.id] } }
         func loadAPIKey(for provider: LLMProviderID) throws -> String? { keys[provider] }
         func saveAPIKey(_ key: String) throws {}
-        func deleteAPIKey() throws {}
+        func deleteAPIKey(for provider: LLMProviderID) throws {}
         func updateModelName(_ modelName: String) throws {}
+        func loadConfig(for task: LLMTaskGroup) throws -> LLMProviderConfig? { global }
+        func updateModelName(_ modelName: String, for task: LLMTaskGroup, expected: LLMModelSelectionRoute) throws -> Bool { false }
+        func loadTaskOverride(_ task: LLMTaskGroup) throws -> LLMProviderConfig? { nil }
+        func saveTaskOverride(_ config: LLMProviderConfig?, for task: LLMTaskGroup) throws -> LLMModelSelectionRoute? { nil }
+        func loadConfigMetadata() throws -> LLMProviderConfig? { global }
+        func loadTaskOverrideMetadata(_ task: LLMTaskGroup) throws -> LLMProviderConfig? { nil }
+        func loadRouteMetadata(for task: LLMTaskGroup) throws -> LLMModelSelectionRoute? {
+            global.map { LLMModelSelectionRoute(config: $0, isOverride: false) }
+        }
     }
 
     /// All existing tests pin Apple On-Device availability to `false` so

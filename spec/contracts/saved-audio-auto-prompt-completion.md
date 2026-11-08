@@ -44,6 +44,16 @@ retention. Callers own those effects.
 - Each generated `PromptResult` is saved with `transcriptionId` equal to
   the supplied `transcription.id`. No parent/original content is read or
   copied; the caller is responsible for passing the correct saved child.
+- The transcript text and `sourceCorrectionRevision` receipt come from the
+  same effective-attribution read before card generation or provider calls.
+  The result also stores `sourceTranscriptHash` from the supplied saved
+  transcription before those calls. For an unedited transcript with timed
+  cues, it hashes joined cue words without timestamps or speaker labels;
+  otherwise it uses automatic clean/raw text.
+  A correction made while those calls run leaves the saved result tied to its
+  original input revision, so the app can mark it stale. If no attribution
+  projection is available, the service uses the supplied transcript and
+  revision zero.
 - **First-processing retry dedup**: before generating a prompt, the service
   checks existing `PromptResult`s for the supplied transcription. If one
   already exists for that `promptId`, the prompt is skipped
@@ -78,10 +88,11 @@ retention. Callers own those effects.
 
 ## Versioning and compatibility
 
-This is a new, additive Core type. No existing public API, CLI flag, or
-persisted field changes shape. `PromptResultsViewModel`'s public API and
-observable behavior are unchanged; only its private selection
-implementation now calls into the shared `PromptAutoRunSelector`.
+This boundary was introduced as an additive Core type, without changing
+existing CLI flags. `PromptResultsViewModel` delegates its private selection
+implementation to the shared `PromptAutoRunSelector`. Migration v0.48 later
+adds a nullable `sourceTranscriptHash` receipt to persisted `PromptResult`s;
+older results retain an unknown source.
 
 ## Known residual limitations (reported, not solved here)
 
@@ -129,3 +140,35 @@ coordinator wraps or renames this service's call site, update
 [Split and Transcribe](meeting-splitting.md) and this document in the same
 change, and record any newly discovered exactly-once or hook-ordering
 requirement here rather than silently working around it.
+
+### Bounded knowledge-card recovery
+
+The shared card generator retains its source/speaker/correction fingerprint
+checks and atomic conditional save. Failure or cancellation leaves a previous
+valid card untouched; changed or deleted sources cannot receive the late
+result. Fresh cards still skip generation.
+
+The LLM stage waits only for temporary AI configuration contention: four reads
+at most, with cancellable waits of 100, 300 and 600 ms. It never writes settings.
+After resolving the analysis route, at most two LLM client requests use that
+same context. Cloud and other unknown-window routes preserve the 700-token
+initial allowance, with 4,096 only on an explicit output-limit finish reason.
+This also preserves requests to manually named models and overridden endpoints.
+Native Ollama uses 2,048/4,096; LM Studio uses 1,024/1,536 to leave input room
+in its smaller configured window. Custom OpenAI-compatible endpoints retain
+700 initially and permit 2,048 only after explicit truncation, since their
+model context window is unknown. Recovery can still fail at that endpoint's
+limit; no context capacity is inferred. Input is budgeted with the output reserve,
+including Ollama's native 8,192-token window. LocalCLI does not expose a token
+limit or usage and remains unknown where unsupported.
+
+A malformed or empty-synopsis response gets one fresh request with corrective
+JSON instructions; partial model output is not replayed. An explicit truncated
+finish is rejected even when its JSON parses. Timeouts, rate limits, provider
+rejections (including unsupported schemas) and cancellation are terminal rather
+than blind replays. Generic formatter/chat/prompt retry behavior is unchanged.
+The stored card retains its approximately 350-token text budget. These recovery
+changes do not invalidate fresh cards or change schema/prompt provenance versions.
+
+Tests: KnowledgeCardRecoveryTests, CardGenerationServiceTests, LLMServiceTests,
+LLMHTTPAdapterTests, LLMConfigStoreTests.

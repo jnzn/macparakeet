@@ -5,6 +5,320 @@ import XCTest
 @testable import MacParakeetCore
 
 final class MeetingsCommandTests: XCTestCase {
+    func testShowSourceOnlyProcessingMeetingKeepsIdentityWithoutInventingDuration() async throws {
+        let dbURL = temporaryDatabaseURL()
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer {
+            try? FileManager.default.removeItem(at: dbURL)
+            try? FileManager.default.removeItem(at: folder)
+        }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let source = folder.appendingPathComponent("microphone-raw.m4a")
+        try writeM4A(to: source)
+        let db = try DatabaseManager(path: dbURL.path)
+        let repo = TranscriptionRepository(dbQueue: db.dbQueue)
+        let playback = folder.appendingPathComponent("meeting-playback.m4a")
+        let row = Transcription(
+            fileName: "Saved capture", filePath: playback.path, meetingArtifactFolderPath: folder.path,
+            durationMs: nil, status: .processing, sourceType: .meeting
+        )
+        try repo.save(row)
+        let command = try MeetingsCommand.ShowSubcommand.parse([
+            row.id.uuidString, "--json", "--database", dbURL.path,
+        ])
+        let output = try await captureStandardOutput { try await command.run() }
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any])
+        XCTAssertEqual(object["id"] as? String, row.id.uuidString)
+        XCTAssertEqual(object["status"] as? String, "processing")
+        XCTAssertEqual(object["filePath"] as? String, playback.path)
+        XCTAssertEqual(object["playbackAudioPath"] as? String, playback.path)
+        XCTAssertNil(object["durationMs"])
+        XCTAssertEqual(object["rawMicrophoneAudioPath"] as? String, source.path)
+
+        let artifactCommand = try MeetingsCommand.ArtifactSubcommand.parse([
+            row.id.uuidString, "--json", "--database", dbURL.path,
+        ])
+        let artifactOutput = try await captureStandardOutput { try await artifactCommand.run() }
+        let snapshot = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(artifactOutput.utf8)) as? [String: Any])
+        XCTAssertEqual(snapshot["meetingID"] as? String, row.id.uuidString)
+        XCTAssertEqual(snapshot["playbackAudioPath"] as? String, playback.path)
+        XCTAssertEqual(snapshot["rawMicrophoneAudioPath"] as? String, source.path)
+        // Duration belongs to the manifest's meeting summary, not the artifact snapshot.
+        let manifestPath = try XCTUnwrap(snapshot["manifestPath"] as? String)
+        let manifestData = try Data(contentsOf: URL(fileURLWithPath: manifestPath))
+        let manifest = try XCTUnwrap(JSONSerialization.jsonObject(with: manifestData) as? [String: Any])
+        let manifestMeeting = try XCTUnwrap(manifest["meeting"] as? [String: Any])
+        XCTAssertEqual(manifestMeeting["id"] as? String, row.id.uuidString)
+        XCTAssertEqual(manifestMeeting["status"] as? String, "processing")
+        XCTAssertNil(manifestMeeting["durationMs"])
+
+        let exportCommand = try MeetingsCommand.ExportSubcommand.parse([
+            row.id.uuidString, "--format", "json", "--stdout", "--database", dbURL.path,
+        ])
+        let exportOutput = try await captureStandardOutput { try await exportCommand.run() }
+        let exported = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(exportOutput.utf8)) as? [String: Any])
+        XCTAssertEqual(exported["id"] as? String, row.id.uuidString)
+        XCTAssertEqual(exported["status"] as? String, "processing")
+        XCTAssertEqual(exported["filePath"] as? String, playback.path)
+        XCTAssertEqual(exported["playbackAudioPath"] as? String, playback.path)
+        XCTAssertNil(exported["durationMs"])
+        XCTAssertEqual(exported["rawMicrophoneAudioPath"] as? String, source.path)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: playback.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
+        XCTAssertEqual(try repo.fetchAll(limit: nil).map(\.id), [row.id])
+    }
+
+    func testResultEditAndTextRevisionRequireExplicitInputs() throws {
+        XCTAssertThrowsError(
+            try MeetingsCommand.ResultsSubcommand.EditSubcommand.parse([
+                "meeting", UUID().uuidString, "--content", "new",
+            ]))
+        XCTAssertThrowsError(
+            try MeetingsCommand.ResultsSubcommand.EditSubcommand.parse([
+                "meeting", UUID().uuidString, "--expected-content", "old", "--content", "new", "--stdin",
+            ]))
+        XCTAssertThrowsError(
+            try MeetingsCommand.CorrectionsSubcommand.ReviseText.parse([
+                "meeting", "--expected-revision", "0",
+            ]))
+        XCTAssertThrowsError(
+            try MeetingsCommand.CorrectionsSubcommand.ReviseText.parse([
+                "meeting", "--expected-revision", "-1", "--stdin",
+            ]))
+    }
+
+    func testResultEditPreservesIdentityProvenanceAndRejectsStaleContent() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let dbURL = folder.appendingPathComponent("test.sqlite")
+        let audioURL = folder.appendingPathComponent("meeting-playback.m4a")
+        try Data("audio".utf8).write(to: audioURL)
+        let db = try DatabaseManager(path: dbURL.path)
+        let meeting = Transcription(
+            fileName: "Edit", filePath: audioURL.path,
+            rawTranscript: "Raw transcript", status: .completed, sourceType: .meeting)
+        try TranscriptionRepository(dbQueue: db.dbQueue).save(meeting)
+        let repo = PromptResultRepository(dbQueue: db.dbQueue)
+        let result = PromptResult(
+            transcriptionId: meeting.id, promptName: "Summary",
+            promptContent: "Original instructions", extraInstructions: "Provenance", content: "Original",
+            createdAt: Date(timeIntervalSince1970: 1_720_000_000))
+        try repo.save(result)
+        let command = try MeetingsCommand.ResultsSubcommand.EditSubcommand.parse([
+            meeting.id.uuidString, result.id.uuidString, "--expected-content", "Original",
+            "--content", "Edited", "--database", dbURL.path,
+        ])
+        _ = try await captureStandardOutput { try await command.run() }
+        let edited = try XCTUnwrap(repo.fetchAll(transcriptionId: meeting.id).first)
+        XCTAssertEqual(edited.id, result.id)
+        XCTAssertEqual(edited.promptContent, result.promptContent)
+        XCTAssertEqual(edited.extraInstructions, result.extraInstructions)
+        XCTAssertEqual(edited.createdAt, result.createdAt)
+        XCTAssertEqual(edited.content, "Edited")
+        XCTAssertNotNil(edited.contentEditedAt)
+        let artifactResults = try XCTUnwrap(
+            JSONSerialization.jsonObject(
+                with:
+                    Data(contentsOf: folder.appendingPathComponent(MeetingArtifactStore.promptResultsFileName)))
+                as? [[String: Any]])
+        XCTAssertEqual(artifactResults.count, 1)
+        XCTAssertEqual(artifactResults.first?["content"] as? String, "Edited")
+        let resultMarkdownURL = folder.appendingPathComponent(MeetingArtifactStore.promptResultsDirectoryName)
+            .appendingPathComponent(MeetingArtifactStore.promptResultMarkdownFileName(index: 1, name: "Summary"))
+        let markdown = try String(contentsOf: resultMarkdownURL, encoding: .utf8)
+        XCTAssertTrue(markdown.contains("## Output\n\nEdited"))
+        let stale = try MeetingsCommand.ResultsSubcommand.EditSubcommand.parse([
+            meeting.id.uuidString, result.id.uuidString, "--expected-content", "Original",
+            "--content", "Stale overwrite", "--json", "--database", dbURL.path,
+        ])
+        var staleError: Error?
+        let output = try await captureStandardOutput {
+            do { try await stale.run(); XCTFail("Stale content must not overwrite a result") } catch {
+                staleError = error
+            }
+        }
+        XCTAssertEqual(CLI.normalizedExitCode(for: try XCTUnwrap(staleError)), .failure)
+        let envelope = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any])
+        XCTAssertEqual(envelope["errorType"] as? String, "conflict")
+        XCTAssertEqual(try repo.fetchAll(transcriptionId: meeting.id).count, 1)
+        let expectedFile = folder.appendingPathComponent("expected.txt")
+        let replacementFile = folder.appendingPathComponent("replacement.txt")
+        try Data("Edited".utf8).write(to: expectedFile)
+        try Data("  File content\n".utf8).write(to: replacementFile)
+        let fileEdit = try MeetingsCommand.ResultsSubcommand.EditSubcommand.parse([
+            meeting.id.uuidString, result.id.uuidString, "--expected-content-file", expectedFile.path,
+            "--file", replacementFile.path, "--envelope", "--database", dbURL.path,
+        ])
+        let fileOutput = try await captureStandardOutput { try await fileEdit.run() }
+        let success = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(fileOutput.utf8)) as? [String: Any])
+        XCTAssertEqual(success["ok"] as? Bool, true)
+        XCTAssertEqual(try repo.fetchAll(transcriptionId: meeting.id).first?.content, "  File content\n")
+        XCTAssertEqual(try Data(contentsOf: audioURL), Data("audio".utf8))
+    }
+
+    func testResultEditRejectsWrongMeetingAndPreservesExactPrecondition() async throws {
+        let dbURL = temporaryDatabaseURL()
+        defer { try? FileManager.default.removeItem(at: dbURL) }
+        let db = try DatabaseManager(path: dbURL.path)
+        let transcriptions = TranscriptionRepository(dbQueue: db.dbQueue)
+        let owner = Transcription(
+            fileName: "Owner", rawTranscript: "Original", status: .completed, sourceType: .meeting)
+        let other = Transcription(fileName: "Other", rawTranscript: "Other", status: .completed, sourceType: .meeting)
+        try transcriptions.save(owner)
+        try transcriptions.save(other)
+        let repo = PromptResultRepository(dbQueue: db.dbQueue)
+        let original = PromptResult(
+            transcriptionId: owner.id, promptName: "Summary", promptContent: "Prompt",
+            content: " Original\n", updatedAt: Date(timeIntervalSince1970: 1_720_000_000))
+        try repo.save(original)
+        for (meeting, expected, errorType) in [
+            (other.id, original.content, CLIErrorType.lookup),
+            (owner.id, "Original", CLIErrorType.conflict),
+        ] {
+            let command = try MeetingsCommand.ResultsSubcommand.EditSubcommand.parse([
+                meeting.uuidString, original.id.uuidString, "--expected-content", expected,
+                "--content", "Wrong overwrite", "--database", dbURL.path,
+            ])
+            do { try await command.run(); XCTFail("Unsafe write must fail") } catch {
+                XCTAssertEqual(CLIErrorType.key(for: error), errorType)
+            }
+            let unchanged = try XCTUnwrap(repo.fetchAll(transcriptionId: owner.id).first)
+            XCTAssertEqual(unchanged.content, original.content)
+            XCTAssertNil(unchanged.contentEditedAt)
+            XCTAssertEqual(unchanged.updatedAt, original.updatedAt)
+            XCTAssertTrue(try repo.fetchAll(transcriptionId: other.id).isEmpty)
+        }
+        // The GUI saves unchanged drafts too: a successful conditional save records
+        // an edit receipt without creating another result or changing provenance.
+        let noOp = try MeetingsCommand.ResultsSubcommand.EditSubcommand.parse([
+            owner.id.uuidString, original.id.uuidString, "--expected-content", original.content,
+            "--content", original.content, "--database", dbURL.path,
+        ])
+        _ = try await captureStandardOutput { try await noOp.run() }
+        let saved = try XCTUnwrap(repo.fetchAll(transcriptionId: owner.id).first)
+        XCTAssertEqual(saved.content, original.content)
+        XCTAssertEqual(saved.id, original.id)
+        XCTAssertEqual(saved.promptContent, original.promptContent)
+        XCTAssertNotNil(saved.contentEditedAt)
+        XCTAssertGreaterThan(saved.updatedAt, original.updatedAt)
+        XCTAssertEqual(try repo.fetchAll(transcriptionId: owner.id).count, 1)
+    }
+
+    func testReviseTextIsAtomicReversibleAndRetainsRawTranscript() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let dbURL = folder.appendingPathComponent("test.sqlite")
+        let payloadURL = folder.appendingPathComponent("changes.json")
+        let db = try DatabaseManager(path: dbURL.path)
+        let repo = TranscriptionRepository(dbQueue: db.dbQueue)
+        let ids = [UUID(), UUID()]
+        let words = [
+            WordTimestamp(word: "one", startMs: 0, endMs: 100, confidence: 1),
+            WordTimestamp(word: "two", startMs: 3000, endMs: 3100, confidence: 1),
+        ]
+        let meeting = Transcription(
+            fileName: "Batch", rawTranscript: "one two", wordTimestamps: words,
+            transcriptSegments: words.enumerated().map { index, word in
+                TranscriptSegmentRecord(
+                    id: ids[index], startMs: word.startMs, endMs: word.endMs,
+                    speakerId: nil, speakerLabel: "Unassigned", text: word.word,
+                    wordRange: .init(startIndex: index, endIndexExclusive: index + 1))
+            }, status: .completed, sourceType: .meeting)
+        try repo.save(meeting)
+        func write(_ changes: [[String: Any]]) throws {
+            try JSONSerialization.data(withJSONObject: changes).write(to: payloadURL)
+        }
+        let command = try MeetingsCommand.CorrectionsSubcommand.ReviseText.parse([
+            meeting.id.uuidString, "--file", payloadURL.path, "--expected-revision", "0", "--database", dbURL.path,
+        ])
+        let reader = SpeakerAttributionReadService(dbQueue: db.dbQueue)
+        for invalid in [
+            [],
+            [["segment": ids[0].uuidString, "text": "changed"], ["segment": UUID().uuidString, "omit": true]],
+            [["segment": ids[0].uuidString, "text": "changed"], ["segment": ids[0].uuidString, "omit": true]],
+            [["segment": ids[0].uuidString, "text": "changed", "typo": true]],
+            [["segment": ids[0].uuidString, "text": "changed", "omit": true]],
+            [["segment": ids[0].uuidString, "text": "   "]],
+            [["segment": ids[0].uuidString, "text": NSNull()]],
+            [["segment": ids[0].uuidString, "omit": false]],
+            [["segment": ids[0].uuidString, "omit": "true"]],
+            [["segment": ids[0].uuidString]],
+            [["text": "Missing segment"]],
+            [["segment": "invalid-uuid", "omit": true]],
+        ] as [[[String: Any]]] {
+            try write(invalid)
+            do { try await command.run(); XCTFail("Invalid batch must fail: \(invalid)") } catch {
+                XCTAssertEqual(CLI.normalizedExitCode(for: error), cliValidationMisuseExitCode)
+            }
+            let unchanged = try reader.resolve(transcription: meeting)
+            XCTAssertEqual(unchanged.correctionRevision, 0, "Rejected batch must not advance revision")
+            XCTAssertFalse(unchanged.canUndo, "Rejected batch must not add undo history")
+            XCTAssertEqual(unchanged.effectiveTranscription.transcriptSegments, meeting.transcriptSegments)
+            XCTAssertEqual(try repo.fetch(id: meeting.id)?.wordTimestamps, words)
+            XCTAssertEqual(try repo.fetch(id: meeting.id)?.rawTranscript, "one two")
+        }
+        try write([
+            ["segment": ids[0].uuidString, "text": "Must not be committed"],
+            ["segment": ids[1].uuidString, "text": " \n\t "],
+        ])
+        for outputFlag in ["--json", "--envelope"] {
+            let blankReplacement = try MeetingsCommand.CorrectionsSubcommand.ReviseText.parse([
+                meeting.id.uuidString, "--file", payloadURL.path, "--expected-revision", "0",
+                outputFlag, "--database", dbURL.path,
+            ])
+            var capturedError: Error?
+            let output = try await captureStandardOutput {
+                do {
+                    try await blankReplacement.run()
+                    XCTFail("Blank replacement must fail before any correction is stored")
+                } catch { capturedError = error }
+            }
+            XCTAssertTrue(capturedError is CLIJSONEnvelopeExit)
+            XCTAssertEqual(CLI.normalizedExitCode(for: try XCTUnwrap(capturedError)), cliValidationMisuseExitCode)
+            let errorEnvelope = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any]
+            )
+            XCTAssertEqual(errorEnvelope["errorType"] as? String, "input_empty")
+            let unchanged = try reader.resolve(transcription: meeting)
+            XCTAssertEqual(unchanged.correctionRevision, 0)
+            XCTAssertFalse(unchanged.canUndo)
+            XCTAssertFalse(unchanged.canRedo)
+            XCTAssertEqual(unchanged.effectiveTranscription.transcriptSegments, meeting.transcriptSegments)
+            XCTAssertEqual(try repo.fetch(id: meeting.id)?.wordTimestamps, words)
+            XCTAssertEqual(try repo.fetch(id: meeting.id)?.rawTranscript, meeting.rawTranscript)
+        }
+        for malformed in ["{}", "null", "[", "[null]"] {
+            try Data(malformed.utf8).write(to: payloadURL)
+            do { try await command.run(); XCTFail("Malformed JSON must fail") } catch {
+                XCTAssertEqual(CLI.normalizedExitCode(for: error), cliValidationMisuseExitCode)
+            }
+            XCTAssertEqual(try reader.resolve(transcription: meeting).correctionRevision, 0)
+        }
+        try write([["segment": ids[0].uuidString, "text": "Corrected"], ["segment": ids[1].uuidString, "omit": true]])
+        _ = try await captureStandardOutput { try await command.run() }
+        let projection = try reader.resolve(transcription: meeting)
+        XCTAssertEqual(projection.correctionRevision, 1)
+        XCTAssertTrue(projection.effectiveTranscription.cleanTranscript?.contains("Corrected") == true)
+        XCTAssertFalse(projection.effectiveTranscription.cleanTranscript?.contains("two") == true)
+        do { try await command.run(); XCTFail("Stale revision must fail") } catch {
+            XCTAssertEqual(CLIErrorType.key(for: error), CLIErrorType.conflict)
+        }
+        let undo = try MeetingsCommand.CorrectionsSubcommand.Undo.parse([
+            meeting.id.uuidString, "--expected-revision", "1", "--database", dbURL.path,
+        ])
+        _ = try await captureStandardOutput { try await undo.run() }
+        let restored = try reader.resolve(transcription: meeting)
+        XCTAssertEqual(restored.effectiveTranscription.rawTranscript, "one two")
+        XCTAssertEqual(restored.effectiveTranscription.transcriptSegments, meeting.transcriptSegments)
+        XCTAssertFalse(restored.canUndo)
+        XCTAssertTrue(restored.canRedo)
+        XCTAssertEqual(try repo.fetch(id: meeting.id)?.rawTranscript, "one two")
+    }
+
     func testTimedTextCorrectionErrorsUseSpecificCLIErrorTypes() {
         XCTAssertEqual(
             CLIErrorType.key(for: SpeakerCorrectionServiceError.invalidCommand(.invalidText)),
@@ -32,15 +346,17 @@ final class MeetingsCommandTests: XCTestCase {
             cleanTranscript: "Wrong words.",
             wordTimestamps: words,
             speakers: [SpeakerInfo(id: "S1", label: "Alice")],
-            transcriptSegments: [TranscriptSegmentRecord(
-                id: segmentID,
-                startMs: 0,
-                endMs: 500,
-                speakerId: "S1",
-                speakerLabel: "Alice",
-                text: "Wrong words.",
-                wordRange: .init(startIndex: 0, endIndexExclusive: 2)
-            )],
+            transcriptSegments: [
+                TranscriptSegmentRecord(
+                    id: segmentID,
+                    startMs: 0,
+                    endMs: 500,
+                    speakerId: "S1",
+                    speakerLabel: "Alice",
+                    text: "Wrong words.",
+                    wordRange: .init(startIndex: 0, endIndexExclusive: 2)
+                )
+            ],
             status: .completed,
             sourceType: .meeting
         )
@@ -314,7 +630,7 @@ final class MeetingsCommandTests: XCTestCase {
                     id: segmentID, startMs: 0, endMs: 220, speakerId: "S1",
                     speakerLabel: "Alice", text: "hello there.",
                     wordRange: .init(startIndex: 0, endIndexExclusive: 2)
-                ),
+                )
             ],
             status: .completed,
             sourceType: .meeting
@@ -644,7 +960,9 @@ final class MeetingsCommandTests: XCTestCase {
             transcriptionId: meeting.id,
             command: .add(
                 speaker: ManualSpeaker(id: manualID, label: "Alice"),
-                assigning: [.init(anchorTranscriptSegmentIDs: target.anchorTranscriptSegmentIDs, wordRange: target.wordRange)]
+                assigning: [
+                    .init(anchorTranscriptSegmentIDs: target.anchorTranscriptSegmentIDs, wordRange: target.wordRange)
+                ]
             ),
             expectedFingerprint: SpeakerAttributionResolver.fingerprint(for: meeting),
             expectedRevision: 0
@@ -657,9 +975,10 @@ final class MeetingsCommandTests: XCTestCase {
             meeting.id.uuidString, "--add-label", label.id.uuidString, "--json", "--database", dbURL.path,
         ])
         _ = try await captureStandardOutput { try await command.run() }
-        let transcript = try XCTUnwrap(JSONSerialization.jsonObject(
-            with: Data(contentsOf: folder.appendingPathComponent(MeetingArtifactStore.transcriptFileName))
-        ) as? [String: Any])
+        let transcript = try XCTUnwrap(
+            JSONSerialization.jsonObject(
+                with: Data(contentsOf: folder.appendingPathComponent(MeetingArtifactStore.transcriptFileName))
+            ) as? [String: Any])
         XCTAssertEqual(transcript["speakerCorrectionsApplied"] as? Bool, true)
         XCTAssertEqual(transcript["speakerCorrectionRevision"] as? Int, 1)
         let exportedWords = try XCTUnwrap(transcript["wordTimestamps"] as? [[String: Any]])
@@ -686,9 +1005,10 @@ final class MeetingsCommandTests: XCTestCase {
         XCTAssertNoThrow(try MeetingsCommand.LabelsSubcommand.List.parse(["--json"]))
         XCTAssertNoThrow(try MeetingsCommand.LabelsSubcommand.Add.parse(["--name", "QBR", "--json"]))
         XCTAssertNoThrow(try MeetingsCommand.LabelsSubcommand.Set.parse(["QBR", "--color", "blue", "--json"]))
-        XCTAssertNoThrow(try MeetingsCommand.ClassifySubcommand.parse([
-            "Meeting", "--type", "Customer", "--add-label", "QBR", "--json",
-        ]))
+        XCTAssertNoThrow(
+            try MeetingsCommand.ClassifySubcommand.parse([
+                "Meeting", "--type", "Customer", "--add-label", "QBR", "--json",
+            ]))
     }
 
     func testMeetingClassificationValidation() {
@@ -863,22 +1183,27 @@ final class MeetingsCommandTests: XCTestCase {
         XCTAssertNoThrow(try MeetingsCommand.ListSubcommand.parse(["--json"]))
         XCTAssertNoThrow(try MeetingsCommand.ShowSubcommand.parse(["abcd", "--json"]))
         XCTAssertNoThrow(try MeetingsCommand.TranscriptSubcommand.parse(["abcd", "--format", "srt"]))
-        XCTAssertNoThrow(try MeetingsCommand.CorrectionsSubcommand.EditLine.parse([
-            "abcd", "--segment", UUID().uuidString, "--text", "fixed", "--expected-revision", "0",
-        ]))
-        XCTAssertNoThrow(try MeetingsCommand.CorrectionsSubcommand.MergeLines.parse([
-            "abcd", "--segment", UUID().uuidString, "--segment", UUID().uuidString,
-            "--expected-revision", "0",
-        ]))
-        XCTAssertNoThrow(try MeetingsCommand.CorrectionsSubcommand.Undo.parse([
-            "abcd", "--expected-revision", "1",
-        ]))
-        XCTAssertNoThrow(try MeetingsCommand.CorrectionsSubcommand.Redo.parse([
-            "abcd", "--expected-revision", "1",
-        ]))
-        XCTAssertNoThrow(try MeetingsCommand.CorrectionsSubcommand.Reset.parse([
-            "abcd", "--expected-revision", "1",
-        ]))
+        XCTAssertNoThrow(
+            try MeetingsCommand.CorrectionsSubcommand.EditLine.parse([
+                "abcd", "--segment", UUID().uuidString, "--text", "fixed", "--expected-revision", "0",
+            ]))
+        XCTAssertNoThrow(
+            try MeetingsCommand.CorrectionsSubcommand.MergeLines.parse([
+                "abcd", "--segment", UUID().uuidString, "--segment", UUID().uuidString,
+                "--expected-revision", "0",
+            ]))
+        XCTAssertNoThrow(
+            try MeetingsCommand.CorrectionsSubcommand.Undo.parse([
+                "abcd", "--expected-revision", "1",
+            ]))
+        XCTAssertNoThrow(
+            try MeetingsCommand.CorrectionsSubcommand.Redo.parse([
+                "abcd", "--expected-revision", "1",
+            ]))
+        XCTAssertNoThrow(
+            try MeetingsCommand.CorrectionsSubcommand.Reset.parse([
+                "abcd", "--expected-revision", "1",
+            ]))
         XCTAssertNoThrow(try MeetingsCommand.NotesSubcommand.GetSubcommand.parse(["abcd", "--envelope"]))
         XCTAssertNoThrow(
             try MeetingsCommand.NotesSubcommand.SetSubcommand.parse(["abcd", "--text", "Decision: ship", "--envelope"]))
@@ -1031,6 +1356,10 @@ final class MeetingsCommandTests: XCTestCase {
         XCTAssertEqual(saved[0].content, "Decision: ship the parser.")
         XCTAssertNil(saved[0].userNotesSnapshot)
         XCTAssertFalse(saved[0].includeMeetingNotesSnapshot)
+        XCTAssertNil(payload["contentEditedAt"])
+        XCTAssertNil(payload["sourceTranscriptHash"])
+        XCTAssertNil(saved[0].contentEditedAt)
+        XCTAssertNil(saved[0].sourceTranscriptHash)
     }
 
     func testMeetingSurfacesExposePromptResultAvailability() async throws {
@@ -1057,7 +1386,9 @@ final class MeetingsCommandTests: XCTestCase {
                     maxTokens: 300,
                     thinkingMode: .enabled,
                     reasoningEffort: .low
-                )
+                ),
+                sourceTranscriptHash: PromptResultFreshness.sourceTranscriptHash(for: meeting),
+                contentEditedAt: Date(timeIntervalSince1970: 1_700_000_000)
             ))
 
         let resultsCommand = try MeetingsCommand.ResultsSubcommand.ListSubcommand.parse([
@@ -1077,6 +1408,11 @@ final class MeetingsCommandTests: XCTestCase {
         XCTAssertEqual(settings["temperature"] as? Double, 0.15)
         XCTAssertEqual(settings["reasoningEffort"] as? String, "low")
         XCTAssertEqual(settings["maxTokens"] as? Int, 300)
+        XCTAssertNotNil(resultsPayload.first?["contentEditedAt"])
+        XCTAssertEqual(
+            resultsPayload.first?["sourceTranscriptHash"] as? String,
+            PromptResultFreshness.sourceTranscriptHash(for: meeting)
+        )
 
         let listCommand = try MeetingsCommand.ListSubcommand.parse([
             "--json",
@@ -1239,44 +1575,50 @@ final class MeetingsCommandTests: XCTestCase {
     }
 
     func testShowJSONIncludesMeetingStartContext() async throws {
-        let dbURL = temporaryDatabaseURL()
-        defer { try? FileManager.default.removeItem(at: dbURL) }
-        let db = try DatabaseManager(path: dbURL.path)
-        let transcriptionRepo = TranscriptionRepository(dbQueue: db.dbQueue)
-        let startContext = MeetingStartContext(
-            triggerKind: .calendarAutoStart,
-            frontmostApplication: .init(
-                bundleIdentifier: "COM.Google.Chrome",
-                localizedName: "Google Chrome"
-            ),
-            sourceMode: .microphoneAndSystem
-        )
-        let meeting = Transcription(
-            fileName: "Customer Sync",
-            rawTranscript: "We discussed onboarding.",
-            status: .completed,
-            sourceType: .meeting,
-            meetingStartContext: startContext
-        )
-        try transcriptionRepo.save(meeting)
+        let triggers: [(MeetingStartContext.TriggerKind, String)] = [
+            (.calendarAutoStart, "calendar_auto_start"),
+            (.activityDetection, "activity_detection"),
+        ]
+        for (trigger, expectedTrigger) in triggers {
+            let dbURL = temporaryDatabaseURL()
+            defer { try? FileManager.default.removeItem(at: dbURL) }
+            let db = try DatabaseManager(path: dbURL.path)
+            let transcriptionRepo = TranscriptionRepository(dbQueue: db.dbQueue)
+            let startContext = MeetingStartContext(
+                triggerKind: trigger,
+                frontmostApplication: .init(
+                    bundleIdentifier: "COM.Google.Chrome",
+                    localizedName: "Google Chrome"
+                ),
+                sourceMode: .microphoneAndSystem
+            )
+            let meeting = Transcription(
+                fileName: "Customer Sync",
+                rawTranscript: "We discussed onboarding.",
+                status: .completed,
+                sourceType: .meeting,
+                meetingStartContext: startContext
+            )
+            try transcriptionRepo.save(meeting)
 
-        let showCommand = try MeetingsCommand.ShowSubcommand.parse([
-            meeting.id.uuidString,
-            "--json",
-            "--database", dbURL.path,
-        ])
-        let showOutput = try await captureStandardOutput {
-            try await showCommand.run()
+            let showCommand = try MeetingsCommand.ShowSubcommand.parse([
+                meeting.id.uuidString,
+                "--json",
+                "--database", dbURL.path,
+            ])
+            let showOutput = try await captureStandardOutput {
+                try await showCommand.run()
+            }
+            let showPayload = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: Data(showOutput.utf8)) as? [String: Any]
+            )
+            let context = try XCTUnwrap(showPayload["startContext"] as? [String: Any])
+            XCTAssertEqual(context["triggerKind"] as? String, expectedTrigger)
+            XCTAssertEqual(context["sourceMode"] as? String, "microphone_and_system")
+            let app = try XCTUnwrap(context["frontmostApplication"] as? [String: Any])
+            XCTAssertEqual(app["bundleIdentifier"] as? String, "com.google.chrome")
+            XCTAssertEqual(app["localizedName"] as? String, "Google Chrome")
         }
-        let showPayload = try XCTUnwrap(
-            JSONSerialization.jsonObject(with: Data(showOutput.utf8)) as? [String: Any]
-        )
-        let context = try XCTUnwrap(showPayload["startContext"] as? [String: Any])
-        XCTAssertEqual(context["triggerKind"] as? String, "calendar_auto_start")
-        XCTAssertEqual(context["sourceMode"] as? String, "microphone_and_system")
-        let app = try XCTUnwrap(context["frontmostApplication"] as? [String: Any])
-        XCTAssertEqual(app["bundleIdentifier"] as? String, "com.google.chrome")
-        XCTAssertEqual(app["localizedName"] as? String, "Google Chrome")
     }
 
     func testArtifactSubcommandMaterializesMeetingFolder() async throws {
