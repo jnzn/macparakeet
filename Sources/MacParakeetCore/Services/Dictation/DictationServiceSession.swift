@@ -42,6 +42,10 @@ public final class DictationServiceSession {
         )
     }
 
+    public func cleanupTextLive(_ text: String) async -> String? {
+        await service.cleanupTextLive(text)
+    }
+
     public func reserveNextSessionID() -> Int {
         activeSessionID += 1
         return activeSessionID

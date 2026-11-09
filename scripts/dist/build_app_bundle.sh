@@ -585,6 +585,19 @@ fi
 # no HuggingFace download, no per-binary firewall (Little Snitch) prompt on first
 # use. Seeded into FluidAudio's cache at runtime by
 # MeetingVADService.seedBundledModelIfNeeded().
+
+# Bundle the local-only per-app profile seed (the user's real prompts) when
+# present. Gitignored (seeds/*.local.json), so public/CI builds ship nothing
+# here and the app falls back to the 3 generic AppProfile.defaults.
+PROFILE_SEED_SRC="$ROOT_DIR/seeds/app-profiles.local.json"
+if [[ -f "$PROFILE_SEED_SRC" ]]; then
+  mkdir -p "$RESOURCES_DIR/ProfileSeeds"
+  cp "$PROFILE_SEED_SRC" "$RESOURCES_DIR/ProfileSeeds/app-profiles.json"
+  echo "Bundled app-profile seed: $RESOURCES_DIR/ProfileSeeds/app-profiles.json"
+else
+  echo "No local app-profile seed ($PROFILE_SEED_SRC); shipping generic samples only."
+fi
+
 SILERO_SRC="$ROOT_DIR/BundledModels/SileroVAD/silero-vad"
 if [[ -d "$SILERO_SRC" ]]; then
   mkdir -p "$RESOURCES_DIR/SileroVAD"

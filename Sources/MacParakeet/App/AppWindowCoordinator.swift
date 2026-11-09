@@ -60,6 +60,17 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
     private let textSnippetsViewModel: TextSnippetsViewModel
     private let vocabularyBackupViewModel: VocabularyBackupViewModel
     private let feedbackViewModel: FeedbackViewModel
+    /// Set once the environment finishes bootstrapping. The menu bar is live
+    /// before that, so an earlier open is deferred and replayed from here.
+    var appProfilesViewModel: AppProfilesViewModel? {
+        didSet {
+            if appProfilesViewModel != nil, pendingMainWindowOpen {
+                pendingMainWindowOpen = false
+                openMainWindow()
+            }
+        }
+    }
+    private var pendingMainWindowOpen = false
     private let libraryViewModel: TranscriptionLibraryViewModel
     private let askWorkspaceViewModel: AskWorkspaceViewModel
     private let meetingsWorkspaceViewModel: MeetingsWorkspaceViewModel
@@ -146,6 +157,10 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
     }
 
     func openMainWindow() {
+        guard appProfilesViewModel != nil else {
+            pendingMainWindowOpen = true
+            return
+        }
         if mainWindow == nil {
             createMainWindow()
         }
@@ -226,6 +241,7 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
     }
 
     private func createMainWindow() {
+        guard let appProfilesViewModel else { return }
         let contentView = MainWindowView(
             state: mainWindowState,
             transcriptionViewModel: transcriptionViewModel,
@@ -241,6 +257,7 @@ final class AppWindowCoordinator: NSObject, NSWindowDelegate {
             textSnippetsViewModel: textSnippetsViewModel,
             vocabularyBackupViewModel: vocabularyBackupViewModel,
             feedbackViewModel: feedbackViewModel,
+            appProfilesViewModel: appProfilesViewModel,
             libraryViewModel: libraryViewModel,
             askWorkspaceViewModel: askWorkspaceViewModel,
             meetingsWorkspaceViewModel: meetingsWorkspaceViewModel,

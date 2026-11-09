@@ -31,6 +31,7 @@ final class MeetingAutoStopCoordinator {
     private var context: MeetingAutoStopPolicy.MeetingContext?
     private var silenceStartedAt: Date?
     private var callInactiveStartedAt: Date?
+    private var isCallActiveAtLastEvaluation = false
     private var signalFirstSeenAt: [StopReason: Date] = [:]
     private var vetoedReasons: Set<StopReason> = []
     private var countdownReason: StopReason?
@@ -66,6 +67,7 @@ final class MeetingAutoStopCoordinator {
         featureEnabled: Bool = AppFeatures.meetingAutoStopEnabled,
         config: MeetingAutoStopPolicy.Config = .default,
         countdownDuration: TimeInterval = 15,
+        callEndedCountdownDuration: TimeInterval = 5,
         pollInterval: TimeInterval = 1,
         silenceLevelThreshold: Float = 0.02
     ) {
@@ -81,7 +83,7 @@ final class MeetingAutoStopCoordinator {
         self.showCountdown = showCountdown ?? { reason, onOutcome in
             toastController.showAutoStop(
                 title: Self.countdownTitle(for: reason),
-                duration: countdownDuration,
+                duration: reason == .callEnded ? callEndedCountdownDuration : countdownDuration,
                 onOutcome: onOutcome
             )
         }
@@ -262,6 +264,12 @@ final class MeetingAutoStopCoordinator {
         if isCallActive {
             activeContext.callSeenActive = true
         }
+        if isCallActive != isCallActiveAtLastEvaluation {
+            AudioCaptureDiagnostics.append(
+                "meeting_auto_stop_call_activity active=\(isCallActive) paused=\(paused)"
+            )
+        }
+        isCallActiveAtLastEvaluation = isCallActive && !paused
         let continuousCallInactiveSeconds = updateCallInactiveDuration(
             now: now,
             isCallActive: isCallActive,
@@ -340,9 +348,18 @@ final class MeetingAutoStopCoordinator {
         switch decision {
         case .keepRecording:
             signalFirstSeenAt = [:]
-            if countdownReason != nil {
+            if let reason = countdownReason {
+                AudioCaptureDiagnostics.append(
+                    "meeting_auto_stop_countdown_cleared reason=\(reason) call_active=\(isCallActiveAtLastEvaluation)"
+                )
                 closeCountdown()
                 countdownReason = nil
+                // The mic was released for the whole grace period, so a call
+                // app taking it back is the next call. Keeping the recording
+                // alive here would merge the two meetings.
+                if reason == .callEnded, isCallActiveAtLastEvaluation {
+                    confirmStop(reason)
+                }
             }
 
         case .proposeStop(let reason):
@@ -356,6 +373,7 @@ final class MeetingAutoStopCoordinator {
                 closeCountdown()
             }
             countdownReason = reason
+            AudioCaptureDiagnostics.append("meeting_auto_stop_countdown_shown reason=\(reason)")
             Telemetry.send(.meetingAutoStopProposed(reason: reason.telemetryReason))
             showCountdown(reason) { [weak self] outcome in
                 self?.handleCountdownOutcome(outcome, reason: reason)
@@ -381,6 +399,7 @@ final class MeetingAutoStopCoordinator {
     private func handleCountdownOutcome(_ outcome: MeetingCountdownToastOutcome, reason: StopReason) {
         guard countdownReason == reason else { return }
         countdownReason = nil
+        AudioCaptureDiagnostics.append("meeting_auto_stop_countdown_outcome reason=\(reason) outcome=\(outcome)")
 
         switch outcome {
         case .completed, .primedEarly:
@@ -397,12 +416,7 @@ final class MeetingAutoStopCoordinator {
                     self.signalFirstSeenAt = [:]
                     return
                 }
-                if self.onAutoStopConfirmed(reason) {
-                    Telemetry.send(.meetingAutoStopConfirmed(reason: reason.telemetryReason))
-                    self.stopSignalObservation(clearSession: true)
-                } else if !self.isRecordingActive() {
-                    self.stopSignalObservation(clearSession: true)
-                }
+                self.confirmStop(reason)
             }
         case .userDismissed:
             vetoedReasons.insert(reason)
@@ -410,6 +424,17 @@ final class MeetingAutoStopCoordinator {
             Telemetry.send(.meetingAutoStopVetoed(reason: reason.telemetryReason))
         case .programmaticClose:
             return
+        }
+    }
+
+    private func confirmStop(_ reason: StopReason) {
+        let accepted = onAutoStopConfirmed(reason)
+        AudioCaptureDiagnostics.append("meeting_auto_stop_confirmed reason=\(reason) accepted=\(accepted)")
+        if accepted {
+            Telemetry.send(.meetingAutoStopConfirmed(reason: reason.telemetryReason))
+            stopSignalObservation(clearSession: true)
+        } else if !isRecordingActive() {
+            stopSignalObservation(clearSession: true)
         }
     }
 

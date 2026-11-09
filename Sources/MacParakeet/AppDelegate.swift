@@ -722,6 +722,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Shared resolver for the user's LLM provider — returns the live
         // service when a provider is configured, nil otherwise. Consumed by
         // the Transforms coordinator below.
+        // Needs the bootstrapped profile store and LLM service, so it is built
+        // here and handed over before the main window is first created.
+        windowCoordinator.appProfilesViewModel = AppProfilesViewModel(
+            store: env.appProfileStore,
+            runPreview: { [llmService = env.llmService] sample, template in
+                try await llmService.formatTranscript(
+                    transcript: sample,
+                    promptTemplate: template,
+                    source: .dictation,
+                    defaultPromptUsed: false
+                )
+            }
+        )
+
         let configStore = env.llmConfigStore
         let llmService = env.llmService
         let llmServiceProvider: () -> LLMServiceProtocol? = { [weak configStore, llmService] in

@@ -156,13 +156,12 @@ final class VoiceMemoFlowCoordinator {
         actionTask = Task { @MainActor in
             do {
                 if let notes { await self.meetingRecordingService.updateNotes(notes) }
-                // Finalize audio (fast — just mux/close files), then hand the
-                // transcription to the shared background processor and free the
-                // pill immediately. This lets the user start a new memo/meeting
-                // right away instead of waiting minutes for the transcript.
-                let output = try await self.meetingRecordingService.stopRecording()
+                // Close the source tracks, then hand playback and transcription
+                // to the shared background processor and free the pill
+                // immediately, so a new memo or meeting can start right away.
+                let input = try await self.meetingRecordingService.stopForFinalization()
                 self.backgroundProcessor.process(
-                    output: output,
+                    input: input,
                     operationContext: ObservabilityOperationContext(),
                     trigger: nil,
                     liveWordCount: liveWordCount,

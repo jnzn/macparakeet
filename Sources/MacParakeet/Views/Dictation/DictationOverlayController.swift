@@ -104,7 +104,7 @@ final class DictationOverlayController: DictationOverlayControlling {
 
         // Start with generous size — SwiftUI content sizes itself, panel background is clear
         let panelWidth: CGFloat = 300
-        let panelHeight: CGFloat = 160
+        let panelHeight: CGFloat = 180
         hosting.frame = NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight)
 
         let panel = ClickablePanel(
@@ -237,6 +237,7 @@ final class DictationOverlayViewModel {
 
     var state: OverlayState = .recording
     var sessionKind: SessionKind = .dictation
+    var inputDeviceName: String = ""
     var recordingMode: FnKeyStateMachine.RecordingMode = .persistent
     var audioLevel: Float = 0.0
     var recordingElapsedSeconds: Int = 0

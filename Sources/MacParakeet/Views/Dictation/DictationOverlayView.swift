@@ -495,6 +495,14 @@ struct DictationOverlayView: View {
         return words.suffix(Self.liveTranscriptPreviewWordLimit).joined(separator: " ")
     }
 
+    /// Active microphone shown above the live preview while dictating.
+    private var liveInputDeviceName: String? {
+        guard case .recording = viewModel.state, viewModel.sessionKind == .dictation,
+            !viewModel.inputDeviceName.isEmpty
+        else { return nil }
+        return viewModel.inputDeviceName
+    }
+
     /// Visual metrics for the live preview, keyed off the user's size choice.
     /// Width stays fixed (the floating panel is 300pt wide and the shadow must
     /// not clip); the type scale, line spacing, vertical breathing room, and the
@@ -513,7 +521,8 @@ struct DictationOverlayView: View {
 
     @ViewBuilder
     private var liveTranscriptPreviewPanel: some View {
-        if let liveTranscriptPreview {
+        let micName = liveInputDeviceName
+        if liveTranscriptPreview != nil || micName != nil {
             let metrics = previewMetrics
             // Content-hugging, bottom-anchored rolling readout. A short
             // transcript shows in a snug card (height == its own text) so the
@@ -539,6 +548,15 @@ struct DictationOverlayView: View {
             // scroll offset is independent state, it "doesn't recover." A fixed
             // bottom-aligned frame is a pure function of (content, viewport) and
             // cannot reach that stuck state.
+            VStack(spacing: 5) {
+            if let micName {
+                Label(micName, systemImage: "mic.fill")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .lineLimit(1)
+                    .frame(width: 252, alignment: .center)
+            }
+            if let liveTranscriptPreview {
             Text(liveTranscriptPreview)
                 .font(.system(size: metrics.font, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.92))
@@ -580,6 +598,8 @@ struct DictationOverlayView: View {
                         endPoint: .bottom
                     )
                 )
+            }
+            }
             .padding(.horizontal, 12)
             .padding(.vertical, metrics.verticalPadding)
             .background(
@@ -592,7 +612,7 @@ struct DictationOverlayView: View {
                     .shadow(color: .black.opacity(0.24), radius: 8, y: 3)
             )
             .allowsHitTesting(false)
-            .accessibilityLabel(liveTranscriptPreview)
+            .accessibilityLabel(liveTranscriptPreview ?? micName ?? "")
             // Drop the measured height when the readout leaves the screen so the
             // next dictation starts snug from one line rather than inheriting the
             // previous session's tall viewport (which would strand the first

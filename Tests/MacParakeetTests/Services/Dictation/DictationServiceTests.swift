@@ -2487,6 +2487,61 @@ final class DictationServiceTests: XCTestCase {
         XCTAssertEqual(runs.first?.messageCount, 2)
     }
 
+    private func makeAppProfileService(llm: MockLLMService) -> DictationService {
+        let profile = AppProfile(
+            id: "chat", displayName: "Chat", bundleIDs: ["com.example.chat"],
+            promptOverride: "PROFILE PROMPT {{TRANSCRIPT}}")
+        return DictationService(
+            audioProcessor: mockAudio,
+            sttTranscriber: mockSTT,
+            dictationRepo: dictationRepo,
+            llmService: llm,
+            llmRunRepo: llmRunRepo,
+            shouldUseAIFormatter: { true },
+            aiFormatterPromptTemplate: { "GLOBAL PROMPT {{TRANSCRIPT}}" },
+            resolveActiveProfile: { profile }
+        )
+    }
+
+    func testAppProfilePromptReplacesResolvedPromptForFinalPaste() async throws {
+        await mockSTT.configure(result: STTResult(text: "hello world"))
+        let llm = MockLLMService()
+        service = makeAppProfileService(llm: llm)
+
+        try await service.startRecording()
+        _ = try await service.stopRecording()
+
+        XCTAssertEqual(llm.lastFormatterPromptTemplate, "PROFILE PROMPT {{TRANSCRIPT}}")
+    }
+
+    func testAppProfilePromptDrivesLiveCleanup() async throws {
+        await mockSTT.configure(result: STTResult(text: "hello world"))
+        let llm = MockLLMService()
+        llm.formatTranscriptResult = "  Hello, world.  "
+        service = makeAppProfileService(llm: llm)
+
+        try await service.startRecording()
+        let cleaned = await service.cleanupTextLive("hello world")
+        let liveCleanupPrompt = llm.lastFormatterPromptTemplate
+        _ = try await service.stopRecording()
+
+        XCTAssertEqual(cleaned, "Hello, world.")
+        XCTAssertEqual(liveCleanupPrompt, "PROFILE PROMPT {{TRANSCRIPT}}")
+    }
+
+    func testLiveCleanupReturnsNilWhenFormatterIsOff() async throws {
+        let llm = MockLLMService()
+        service = DictationService(
+            audioProcessor: mockAudio, sttTranscriber: mockSTT, dictationRepo: dictationRepo,
+            llmService: llm, shouldUseAIFormatter: { false }
+        )
+
+        let cleaned = await service.cleanupTextLive("hello world")
+
+        XCTAssertNil(cleaned)
+        XCTAssertEqual(llm.formatTranscriptCallCount, 0)
+    }
+
     func testStopRecordingSnapshotsAIFormatterPreferenceAtStart() async throws {
         await mockSTT.configure(result: STTResult(text: "hello world"))
         let mockLLMService = MockLLMService()

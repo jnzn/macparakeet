@@ -465,6 +465,11 @@ public final class SettingsViewModel {
             Telemetry.send(.settingChanged(setting: .instantDictation, value: Self.settingValue(instantDictationEnabled)))
         }
     }
+    public var liveBubbleCleanupEnabled: Bool {
+        didSet {
+            defaults.set(liveBubbleCleanupEnabled, forKey: UserDefaultsAppRuntimePreferences.liveBubbleCleanupEnabledKey)
+        }
+    }
     public var showLiveDictationPreview: Bool {
         didSet {
             defaults.set(
@@ -1157,6 +1162,7 @@ public final class SettingsViewModel {
         instantDictationEnabled = defaults.object(
             forKey: UserDefaultsAppRuntimePreferences.instantDictationEnabledKey
         ) as? Bool ?? false
+        liveBubbleCleanupEnabled = defaults.object(forKey: UserDefaultsAppRuntimePreferences.liveBubbleCleanupEnabledKey) as? Bool ?? true
         showLiveDictationPreview = defaults.object(
             forKey: UserDefaultsAppRuntimePreferences.showLiveDictationPreviewKey
         ) as? Bool ?? true

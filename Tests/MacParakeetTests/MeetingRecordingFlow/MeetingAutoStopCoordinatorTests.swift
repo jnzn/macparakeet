@@ -234,6 +234,28 @@ final class MeetingAutoStopCoordinatorTests: XCTestCase {
         coordinator.stop()
     }
 
+    func testNewCallDuringCallEndedCountdownEndsTheFirstRecording() async {
+        let now = Date()
+        let coordinator = makeCoordinator(callEndedGrace: 5)
+        runningApps = []
+        coordinator.recordingDidStart(now: now)
+
+        capturingBundleIDs = ["us.zoom.xos"]
+        await coordinator.testHook_forceEvaluate(now: now)
+        capturingBundleIDs = []
+        await coordinator.testHook_forceEvaluate(now: now.addingTimeInterval(1))
+        await coordinator.testHook_forceEvaluate(now: now.addingTimeInterval(6))
+        XCTAssertEqual(shownReasons, [.callEnded])
+
+        // The mic was released past the grace, so this is the next call.
+        capturingBundleIDs = ["us.zoom.xos"]
+        await coordinator.testHook_forceEvaluate(now: now.addingTimeInterval(8))
+
+        XCTAssertEqual(stoppedReasons, [.callEnded])
+        XCTAssertNil(coordinator.testHook_countdownReason)
+        coordinator.stop()
+    }
+
     func testCallNeverActiveNeverProposesCallEnded() async {
         // In-person recording: capturingBundleIDs stays empty the whole time,
         // so callSeenActive never arms. Must never fire even well past grace.

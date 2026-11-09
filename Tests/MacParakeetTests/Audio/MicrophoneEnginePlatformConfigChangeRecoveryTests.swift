@@ -302,7 +302,7 @@ final class MicrophoneEnginePlatformConfigChangeRecoveryTests: XCTestCase {
                 // change, which must still post.
                 let live = engine.inputNode.outputFormat(forBus: 0)
                 let differentRate = live.sampleRate == 16_000 ? 48_000.0 : 16_000.0
-                let channels = live.channelCount == 0 ? 1 : live.channelCount
+                let channels = min(max(live.channelCount, 1), 2)  // Standard formats stop at stereo.
                 guard
                     let format = AVAudioFormat(
                         standardFormatWithSampleRate: differentRate,

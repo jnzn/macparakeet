@@ -8,8 +8,8 @@ import MacParakeetCore
 /// Each `process(...)` call owns one job keyed by the recording's session id.
 /// `processingCount` drives the menu-bar "N processing" indicator. Jobs never
 /// send events back into the flow state machine — they operate only on their
-/// own captured `MeetingRecordingOutput`, which is why concurrent recordings
-/// can't collide on shared completion state.
+/// own captured finalization input, which is why concurrent recordings can't
+/// collide on shared completion state.
 @MainActor
 final class MeetingBackgroundProcessor {
     private let transcriptionService: TranscriptionServiceProtocol
@@ -19,6 +19,7 @@ final class MeetingBackgroundProcessor {
     private var llmService: LLMServiceProtocol?
     private let onTranscriptionReady: (Transcription) -> Void
     private let onProcessingCountChanged: (Int) -> Void
+    private let preparePlayback: @Sendable (MeetingRecordingCapture) async throws -> MeetingRecordingOutput
 
     private var jobs: [UUID: Task<Void, Never>] = [:]
     private(set) var processingCount = 0
@@ -30,7 +31,10 @@ final class MeetingBackgroundProcessor {
         conversationRepo: ChatConversationRepositoryProtocol,
         llmService: LLMServiceProtocol?,
         onTranscriptionReady: @escaping (Transcription) -> Void,
-        onProcessingCountChanged: @escaping (Int) -> Void
+        onProcessingCountChanged: @escaping (Int) -> Void,
+        preparePlayback: @escaping @Sendable (MeetingRecordingCapture) async throws -> MeetingRecordingOutput = {
+            try await $0.preparePlayback()
+        }
     ) {
         self.transcriptionService = transcriptionService
         self.meetingRecordingSettlement = meetingRecordingSettlement
@@ -39,6 +43,7 @@ final class MeetingBackgroundProcessor {
         self.llmService = llmService
         self.onTranscriptionReady = onTranscriptionReady
         self.onProcessingCountChanged = onProcessingCountChanged
+        self.preparePlayback = preparePlayback
     }
 
     func updateLLMService(_ service: LLMServiceProtocol?) {
@@ -54,7 +59,7 @@ final class MeetingBackgroundProcessor {
     /// Begin background transcription for a finalized recording. Returns
     /// immediately; the work runs in a detached-from-flow Task.
     func process(
-        output: MeetingRecordingOutput,
+        input: MeetingFinalizationInput,
         operationContext: ObservabilityOperationContext,
         trigger: TelemetryMeetingOperationTrigger?,
         liveWordCount: Int,
@@ -63,7 +68,7 @@ final class MeetingBackgroundProcessor {
         carriedChat: [ChatMessage],
         sourceType: Transcription.SourceType = .meeting
     ) {
-        let sessionID = output.sessionID
+        let sessionID = input.sessionID
         adjustCount(by: 1)
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -71,7 +76,16 @@ final class MeetingBackgroundProcessor {
                 self.jobs[sessionID] = nil
                 self.adjustCount(by: -1)
             }
+            var preparedOutput: MeetingRecordingOutput?
             do {
+                // The source tracks are already durable. Mixing playback scales
+                // with meeting length, so it must not hold up the next recording.
+                let output: MeetingRecordingOutput
+                switch input {
+                case .prepared(let prepared): output = prepared
+                case .capture(let capture): output = try await self.preparePlayback(capture)
+                }
+                preparedOutput = output
                 var transcription = try await Observability.withOperationContext(operationContext) {
                     var base = try await self.transcriptionService.transcribeMeeting(recording: output, onProgress: nil)
                     if sourceType != base.sourceType {
@@ -112,15 +126,20 @@ final class MeetingBackgroundProcessor {
                     errorType: TelemetryErrorClassifier.classify(error),
                     errorDetail: TelemetryErrorClassifier.errorDetail(error)
                 ))
-                self.emitOperation(
-                    operationContext: operationContext,
-                    outcome: .failure,
-                    trigger: trigger,
-                    output: output,
-                    stage: .transcription,
-                    liveWordCount: liveWordCount,
-                    liveTranscriptLagged: liveTranscriptLagged,
-                    errorType: TelemetryErrorClassifier.classify(error)
+                if let preparedOutput {
+                    self.emitOperation(
+                        operationContext: operationContext,
+                        outcome: .failure,
+                        trigger: trigger,
+                        output: preparedOutput,
+                        stage: .transcription,
+                        liveWordCount: liveWordCount,
+                        liveTranscriptLagged: liveTranscriptLagged,
+                        errorType: TelemetryErrorClassifier.classify(error)
+                    )
+                }
+                AudioCaptureDiagnostics.append(
+                    "meeting_background_processing_failed session=\(sessionID.uuidString) error_type=\(TelemetryErrorClassifier.classify(error))"
                 )
                 // The lock file is intentionally NOT deleted on failure
                 // (completeTranscription never ran), so crash recovery offers

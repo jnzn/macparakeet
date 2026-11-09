@@ -97,7 +97,7 @@ final class MainWindowStateTests: XCTestCase {
 
     func testPromptsAreManagedInContextRatherThanFromTheSidebar() {
         XCTAssertNil(SidebarItem(rawValue: "Prompts"))
-        var expected: [SidebarItem] = [.vocabulary, .feedback, .settings]
+        var expected: [SidebarItem] = [.vocabulary, .appProfiles, .feedback, .settings]
         if AppFeatures.transformsEnabled {
             expected.insert(.transforms, at: 0)
         }

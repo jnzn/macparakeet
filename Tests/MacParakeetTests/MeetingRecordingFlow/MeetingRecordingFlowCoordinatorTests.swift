@@ -20,6 +20,55 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
         super.tearDown()
     }
 
+    func testStopFreesTheRecorderBeforePlaybackIsPrepared() async throws {
+        let output = makeRecordingOutput()
+        defer { try? FileManager.default.removeItem(at: output.folderURL) }
+        let lock = MeetingRecordingLockFile(
+            sessionId: output.sessionID, startedAt: Date(), displayName: output.displayName,
+            state: .awaitingTranscription, folderURL: output.folderURL
+        )
+        try MeetingRecordingLockFileStore().write(lock, folderURL: output.folderURL)
+        let capture = MeetingRecordingCapture(
+            lock: lock, metadata: MeetingRecordingMetadata(sourceAlignment: output.sourceAlignment),
+            folderURL: output.folderURL, microphoneAudioURL: output.microphoneAudioURL,
+            systemAudioURL: output.systemAudioURL
+        )
+        let service = MeetingRecordingServiceSpy(output: output)
+        await service.setFinalizationInput(.capture(capture))
+        let transcriptionService = MockTranscriptionService()
+        let harness = await makeSettlementHarness(transcriptionService: transcriptionService)
+        let playbackEntered = expectation(description: "Playback is being prepared")
+        let (release, continuation) = AsyncStream<Void>.makeStream()
+        defer { continuation.finish() }
+        let coordinator = MeetingRecordingFlowCoordinator(
+            meetingRecordingService: service, transcriptionService: transcriptionService,
+            permissionService: MockPermissionService(), transcriptionRepo: harness.transcriptionRepo,
+            conversationRepo: MockChatConversationRepository(), quickPromptRepo: NoOpQuickPromptRepository(),
+            configStore: NoOpLLMConfigStore(), llmService: nil,
+            backgroundProcessor: makeBackgroundProcessor(
+                transcriptionService: transcriptionService,
+                meetingRecordingSettlement: harness.settlement,
+                transcriptionRepo: harness.transcriptionRepo,
+                preparePlayback: { _ in
+                    playbackEntered.fulfill()
+                    for await _ in release { break }
+                    return output
+                }
+            ),
+            pillViewModel: MeetingRecordingPillViewModel(), meetingRecordingSettlement: harness.settlement,
+            onMenuBarIconUpdate: { _ in }, onTranscriptionReady: { _ in }
+        )
+        coordinator.testHook_enterRecording()
+
+        XCTAssertTrue(coordinator.stopRecording())
+        await coordinator.testHook_waitForActionTask()
+        await fulfillment(of: [playbackEntered], timeout: 5)
+
+        XCTAssertEqual(coordinator.testHook_state, .idle, "A long mix must not block the next recording")
+        continuation.yield(())
+        await coordinator.testHook_waitForBackgroundProcessing()
+    }
+
     func testURLStopWaitsForStartBeforeSessionExistsThenSavesExactlyOnce() async throws {
         throw XCTSkip("PDX keeps the background handoff, which defers a stop during startup and bypasses the durable meeting queue.")
         let service = MeetingRecordingServiceSpy(
@@ -2162,7 +2211,10 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
         transcriptionRepo: TranscriptionRepositoryProtocol? = nil,
         conversationRepo: ChatConversationRepositoryProtocol? = nil,
         llmService: LLMServiceProtocol? = nil,
-        onTranscriptionReady: @escaping (Transcription) -> Void = { _ in }
+        onTranscriptionReady: @escaping (Transcription) -> Void = { _ in },
+        preparePlayback: @escaping @Sendable (MeetingRecordingCapture) async throws -> MeetingRecordingOutput = {
+            try await $0.preparePlayback()
+        }
     ) -> MeetingBackgroundProcessor {
         MeetingBackgroundProcessor(
             transcriptionService: transcriptionService ?? MockTranscriptionService(),
@@ -2171,7 +2223,8 @@ final class MeetingRecordingFlowCoordinatorTests: XCTestCase {
             conversationRepo: conversationRepo ?? MockChatConversationRepository(),
             llmService: llmService,
             onTranscriptionReady: onTranscriptionReady,
-            onProcessingCountChanged: { _ in }
+            onProcessingCountChanged: { _ in },
+            preparePlayback: preparePlayback
         )
     }
 

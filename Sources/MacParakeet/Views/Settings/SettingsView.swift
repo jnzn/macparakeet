@@ -1175,6 +1175,13 @@ struct SettingsView: View {
                         .pickerStyle(.segmented)
                         .fixedSize()
                     }
+                    Divider()
+                    settingsToggleRow(
+                        title: "AI cleanup in preview",
+                        detail: "Polishes the live preview with your AI provider as you speak. Only changes what you see while dictating. Paid providers use extra tokens.",
+                        isBeta: true,
+                        isOn: $viewModel.liveBubbleCleanupEnabled
+                    )
                 }
 
                 Divider()

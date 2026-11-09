@@ -427,6 +427,9 @@ final class MeetingRecordingFlowCoordinator {
 
     @discardableResult
     func stopRecording(operationTrigger trigger: TelemetryMeetingOperationTrigger) -> Bool {
+        AudioCaptureDiagnostics.append(
+            "meeting_stop_requested trigger=\(trigger) state=\(stateMachine.state)"
+        )
         switch stateMachine.state {
         case .recording, .starting:
             currentMeetingTrigger = trigger
@@ -977,17 +980,24 @@ final class MeetingRecordingFlowCoordinator {
                     // Transcription.userNotes (ADR-020 §8).
                     await notesVM?.commit()
                     await self.meetingTypeUpdateTail?.value
-                    let output = try await meetingRecordingService.stopRecording()
+                    let input = try await meetingRecordingService.stopForFinalization()
+                    let durationSeconds: TimeInterval
+                    switch input {
+                    case .capture(let capture):
+                        durationSeconds = Double(capture.metadata.captureReport?.capturedDurationMs ?? 0) / 1_000
+                    case .prepared(let output):
+                        durationSeconds = output.durationSeconds
+                    }
                     Telemetry.send(.meetingRecordingCompleted(
-                        durationSeconds: output.durationSeconds,
+                        durationSeconds: durationSeconds,
                         liveWordCount: liveWordCount,
                         liveTranscriptLagged: liveTranscriptLagged
                     ))
-                    // Hand the slow transcription off to the background
-                    // processor and return to idle immediately so a new
-                    // recording can start right away.
+                    // The source tracks are saved. Hand the playback mix and
+                    // transcription to the background processor and return to
+                    // idle immediately so a new recording can start right away.
                     self.backgroundProcessor.process(
-                        output: output,
+                        input: input,
                         operationContext: operationContext,
                         trigger: trigger,
                         liveWordCount: liveWordCount,

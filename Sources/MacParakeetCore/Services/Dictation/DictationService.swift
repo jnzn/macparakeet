@@ -1820,6 +1820,35 @@ public actor DictationService: DictationServiceProtocol {
         let voiceReturnActive: Bool
     }
 
+    /// Runs one AI cleanup pass over the live preview, using the same prompt as
+    /// the final paste. Returns nil when cleanup is off or the call fails.
+    /// Display-only: posts no formatter notifications and writes no history.
+    public func cleanupTextLive(_ text: String) async -> String? {
+        guard shouldUseAIFormatter(), let llmService else { return nil }
+        let profilePrompt = activeProfile?.promptOverride
+        let template: String
+        if let profilePrompt {
+            template = profilePrompt
+        } else {
+            let context = currentAIFormatterFinishContext ?? currentAIFormatterStartContext
+            template = await aiFormatterPromptResolver.resolvePrompt(for: context).promptTemplate
+        }
+        do {
+            let formatted = try await llmService.formatTranscript(
+                transcript: text,
+                promptTemplate: AIFormatter.injectContextIntoPrompt(template: template, context: activeAppContext),
+                source: .dictation,
+                defaultPromptUsed: profilePrompt == nil
+                    && AIFormatter.normalizedPromptTemplate(template) == AIFormatter.defaultPromptTemplate
+            )
+            let trimmed = formatted.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        } catch {
+            logger.warning("live_cleanup_failed error_type=\(Self.errorType(for: error), privacy: .public)")
+            return nil
+        }
+    }
+
     /// Applies the current processing mode, custom words, snippets, and Voice
     /// Return triggers to raw STT text. Shared by stop and History retry.
     private func refineDictationText(
@@ -1988,13 +2017,20 @@ public actor DictationService: DictationServiceProtocol {
             )
             let promptResolver = aiFormatterPromptResolver
             let appContext = activeAppContext
+            let profilePrompt = activeProfile?.promptOverride
             do {
                 formatterOutcome = try await transcriptFormatter.format(
                     baseText,
                     runSource: saveHistory ? LLMRunSource(dictationId: dictationID) : nil,
                     lane: .dictation,
                     resolvePrompt: {
-                        let resolution = await promptResolver.resolvePrompt(for: formatterContext)
+                        // A matching PDX App Profile replaces the resolved prompt.
+                        let resolution =
+                            if let profilePrompt {
+                                AIFormatterPromptResolution.global(promptTemplate: profilePrompt)
+                            } else {
+                                await promptResolver.resolvePrompt(for: formatterContext)
+                            }
                         let promptTemplate = AIFormatter.injectContextIntoPrompt(
                             template: resolution.promptTemplate,
                             context: appContext

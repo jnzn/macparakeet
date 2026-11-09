@@ -69,6 +69,7 @@ final class AppEnvironment {
     let exportService: ExportService
     let permissionService: PermissionService
     let accessibilityService: AccessibilityService
+    let appProfileStore: AppProfileStore
     let focusedAppContextService: FocusedAppContextService
     let entitlementsService: EntitlementsService
     let launchAtLoginService: LaunchAtLoginService
@@ -147,6 +148,17 @@ final class AppEnvironment {
         aiFormatterProfileRepo = AIFormatterProfileRepository(dbQueue: databaseManager.dbQueue)
         transformHistoryRepo = TransformHistoryRepository(dbQueue: databaseManager.dbQueue)
         quickPromptRepo = QuickPromptRepository(dbQueue: databaseManager.dbQueue)
+
+        // App Profile store, seeded on first launch.
+        let appProfileRepository = AppProfileRepository(dbQueue: databaseManager.dbQueue)
+        let bundledProfileSeedURL = Bundle.main.url(
+            forResource: "app-profiles", withExtension: "json", subdirectory: "ProfileSeeds"
+        )
+        try? AppProfileSeeder.seedIfEmpty(repository: appProfileRepository, bundledSeedURL: bundledProfileSeedURL)
+        try? AppProfileSeeder.reseedIfVersionOutdated(repository: appProfileRepository, bundledSeedURL: bundledProfileSeedURL)
+        let appProfileStore = AppProfileStore(repository: appProfileRepository)
+        appProfileStore.load()
+        self.appProfileStore = appProfileStore
 
         // Services
         let llmConfigStore = LLMConfigStore()
@@ -451,8 +463,8 @@ final class AppEnvironment {
                     ))
             },
             failedDictationAudioDirectory: URL(fileURLWithPath: AppPaths.dictationsDir, isDirectory: true),
-            resolveActiveProfile: {
-                AppProfile.resolve(bundleID: AppContextService.frontmostBundleID())
+            resolveActiveProfile: { [snapshot = appProfileStore.snapshot] in
+                snapshot.resolve(bundleID: AppContextService.frontmostBundleID())
             },
             resolveAppContext: { [accessibilityService] in
                 let ctx = await AppContextService.captureContext(accessibility: accessibilityService)

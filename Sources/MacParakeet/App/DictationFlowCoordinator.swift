@@ -166,6 +166,9 @@ final class DictationFlowCoordinator {
     // MARK: - Dependencies
 
     private let serviceSession: DictationServiceSession
+    private var liveCleanupComposer = LiveTranscriptCleanupComposer()
+    private var liveCleanupDebounceTask: Task<Void, Never>?
+    private var pendingCleanupSnapshot = ""
     private let clipboardService: ClipboardServiceProtocol
     private let streamingInserter: any StreamingCursorInserting
     private let shouldReduceMotion: () -> Bool
@@ -685,6 +688,11 @@ final class DictationFlowCoordinator {
             vm.busyProcessingMessage = nil
             setProcessingLoadCaption(nil)
             vm.liveTranscript = ""
+            resetLiveCleanup()
+            vm.inputDeviceName =
+                runtimePreferences.showLiveDictationPreview
+                ? Self.resolveInputDeviceName(selectedUID: runtimePreferences.selectedMicrophoneDeviceUID)
+                : ""
             vm.previewTextSize = runtimePreferences.dictationPreviewTextSize
             vm.state = .recording
             vm.startTimer()
@@ -1592,6 +1600,51 @@ final class DictationFlowCoordinator {
         }
     }
 
+    /// The microphone dictation will capture from: the selected device when it
+    /// is present, otherwise the current system default.
+    private static func resolveInputDeviceName(selectedUID: String?) -> String {
+        if let selectedUID,
+            let match = AudioDeviceManager.inputDevices().first(where: { $0.uid == selectedUID })
+        {
+            return match.name
+        }
+        return AudioDeviceManager.defaultInputDeviceInfo()?.name ?? "Default microphone"
+    }
+
+    private func resetLiveCleanup() {
+        liveCleanupDebounceTask?.cancel()
+        liveCleanupDebounceTask = nil
+        pendingCleanupSnapshot = ""
+        liveCleanupComposer.reset()
+    }
+
+    /// Runs AI cleanup 250 ms after the live transcript last changed. The
+    /// level loop polls at 20 Hz, so an unchanged snapshot must not reschedule.
+    private func scheduleLiveCleanup(for text: String) {
+        guard settingsViewModel.liveBubbleCleanupEnabled else { return }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 3, trimmed != pendingCleanupSnapshot else { return }
+        liveCleanupDebounceTask?.cancel()
+        pendingCleanupSnapshot = trimmed
+        liveCleanupDebounceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled, let self else { return }
+            self.liveCleanupDebounceTask = nil
+            await self.runLiveCleanup(snapshot: trimmed)
+        }
+    }
+
+    private func runLiveCleanup(snapshot: String) async {
+        guard pendingCleanupSnapshot == snapshot,
+            let cleaned = await serviceSession.cleanupTextLive(snapshot),
+            pendingCleanupSnapshot == snapshot,
+            let overlayViewModel,
+            case .recording = overlayViewModel.state
+        else { return }
+        liveCleanupComposer.record(cleaned: cleaned, forRaw: snapshot)
+        overlayViewModel.liveTranscript = cleaned
+    }
+
     private func runRecordingLevelLoop() async {
         let (autoStopEnabled, silenceDelay) = (settingsViewModel.silenceAutoStop, settingsViewModel.silenceDelay)
         var lastNonSilenceAt = Date()
@@ -1607,8 +1660,12 @@ final class DictationFlowCoordinator {
             // polls at 20 Hz for the waveform, but the transcript changes ~1×/s,
             // and an equal write to the @Observable VM would still rebuild the
             // overlay's live-readout view tree every frame.
-            if let overlayViewModel, overlayViewModel.liveTranscript != snapshot.liveTranscript {
-                overlayViewModel.liveTranscript = snapshot.liveTranscript
+            if let overlayViewModel {
+                let displayText = liveCleanupComposer.compose(snapshot.liveTranscript)
+                if overlayViewModel.liveTranscript != displayText {
+                    overlayViewModel.liveTranscript = displayText
+                }
+                scheduleLiveCleanup(for: snapshot.liveTranscript)
             }
 
             if autoStopEnabled {

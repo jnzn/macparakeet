@@ -603,6 +603,7 @@ public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProto
     public static let instantDictationEnabledKey = "instantDictationEnabled"
     public static let customVocabularyRecognitionBoostingEnabledKey = "customVocabularyRecognitionBoostingEnabled"
     public static let showLiveDictationPreviewKey = "showLiveDictationPreview"
+    public static let liveBubbleCleanupEnabledKey = "liveBubbleCleanupEnabled"
     public static let dictationPreviewTextSizeKey = "dictationPreviewTextSize"
     public static let dictationUndoCountdownKey = "dictationUndoCountdown"
     public static let keepDictationOnClipboardKey = "keepDictationOnClipboard"

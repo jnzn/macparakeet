@@ -10,6 +10,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
     case dictations = "Dictations"
     case meetings = "Meetings"
     case transforms = "Transforms"
+    case appProfiles = "App Profiles"
     case vocabulary = "Vocabulary"
     case feedback = "Feedback"
     case settings = "Settings"
@@ -25,6 +26,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         case .sharedPages: return "link"
         case .dictations: return "clock.arrow.circlepath"
         case .transforms: return "wand.and.stars"
+        case .appProfiles: return "person.crop.rectangle.stack"
         case .vocabulary: return "book.fill"
         case .feedback: return "bubble.left.and.text.bubble.right"
         case .settings: return "gearshape"
@@ -50,7 +52,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
     /// Transcript prompts are managed from Library and completed transcripts;
     /// Live Ask questions are managed from Meetings.
     static var configItems: [SidebarItem] {
-        var items: [SidebarItem] = [.vocabulary, .feedback, .settings]
+        var items: [SidebarItem] = [.vocabulary, .appProfiles, .feedback, .settings]
         if AppFeatures.transformsEnabled {
             items.insert(.transforms, at: 0)
         }
@@ -77,6 +79,7 @@ struct MainWindowView: View {
     let textSnippetsViewModel: TextSnippetsViewModel
     let vocabularyBackupViewModel: VocabularyBackupViewModel
     let feedbackViewModel: FeedbackViewModel
+    let appProfilesViewModel: AppProfilesViewModel
     let libraryViewModel: TranscriptionLibraryViewModel
     let askWorkspaceViewModel: AskWorkspaceViewModel
     let meetingsWorkspaceViewModel: MeetingsWorkspaceViewModel
@@ -300,6 +303,8 @@ struct MainWindowView: View {
                                     } : nil
                             )
                         }
+                    case .appProfiles:
+                        AppProfilesView(viewModel: appProfilesViewModel)
                     case .vocabulary:
                         VocabularyView(
                             settingsViewModel: settingsViewModel,
